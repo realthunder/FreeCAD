@@ -134,7 +134,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. 2026-10-09 10:16: part (a) written by the build session and building; its three choices answered by the reporter 10:25 -- the type is a combo list on the preferences page and is kept as usual; the render cache is hidden from the page, settable by program, and ignored (route 3 always) while the engine draws. The MSAA part, the split turned into tabs, is not decided or read further |
 | 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
-| 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges | OPEN; the report log of the open is kept, nothing run |
+| 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; after a recompute the page is complete | OPEN; the report log of the open is kept, nothing run |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -4400,8 +4400,12 @@ be either. The note-taker's reading: "sometimes" and "one time" make it
 depend on something that differs between opens of the same file, timing or
 order, as entry 47 does (once, a first load whose 3D view was empty) and as
 entry 28 was reported ("sometimes").
-Still not said: whether the page is complete once the document has been
+Asked then: whether the page is complete once the document has been
 recomputed, and whether Qt and the backend agree.
+**Answered by the reporter, 2026-10-09 10:36, to the first:** "after
+recompute the page shows complete". So a recompute of the document puts the
+page right; the views are missing only while the document stands as it was
+loaded. Still not said: whether Qt and the backend agree.
 
 **2026-10-09 10:29, reported:** "new defect. opening the scanner file, it
 will prompt for recompute. if do not recompute, the auto opened techdraw
