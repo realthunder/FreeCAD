@@ -1188,8 +1188,13 @@ RenderParamsP *instance() {
 static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "Type", "Type", App::ParamInfo::String, "Default")
         .setTitle("Renderer type")
-        .setDoc("Type of the experimental render engine backend. 'Default' keeps\n"
-"the plain GL pipeline. Only effective with render cache mode 3."),
+        .setDoc("What draws a 3D view. 'Default': the render engine, on this\n"
+"platform's backend. 'Legacy': the old Coin rendering, without the\n"
+"engine. A backend can also be named, as 'bgfx - Direct3D11'. With\n"
+"the engine the render cache is always 3, whatever its own setting\n"
+"says; under 'Legacy' that setting is what counts.")
+        .setProxy("ComboBox")
+        .setItems({{"Default (the render engine)", "", "Default"}, {"Legacy (Coin, without the render engine)", "", "Legacy"}}, true, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OutputTransform", "OutputTransform", App::ParamInfo::Int, 1)
         .setTitle("Output colour transform")
         .setDoc("Colour management of the engine. 'sRGB' decodes authored colours to\n"
@@ -2090,8 +2095,11 @@ ParameterGrp::handle RenderParams::getHandle() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docType() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Type of the experimental render engine backend. 'Default' keeps\n"
-"the plain GL pipeline. Only effective with render cache mode 3.");
+"What draws a 3D view. 'Default': the render engine, on this\n"
+"platform's backend. 'Legacy': the old Coin rendering, without the\n"
+"engine. A backend can also be named, as 'bgfx - Direct3D11'. With\n"
+"the engine the render cache is always 3, whatever its own setting\n"
+"says; under 'Legacy' that setting is what counts.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6910,11 +6918,17 @@ void foreach3DViewer(FuncT func) {
 void RenderParams::onRenderParamChanged(const char *sReason)
 {
     if (boost::equals(sReason, "Type")) {
-        // Re-select the renderer backend on all 3D views. Same rule as
-        // View3DSettings: the experimental backend only runs in render
-        // cache mode 3; any other mode keeps the plain GL pipeline.
-        std::string type = ViewParams::getRenderCache() == 3
-            ? getType() : std::string();
+        // The type alone says whether the engine draws, and with it
+        // which render cache mode the program goes by (renderCache()):
+        // from "Legacy" with another mode stored to the engine, or back,
+        // the mode in force changes though its setting did not. Those
+        // who follow the mode are told as if it had; they ask
+        // renderCache() for it.
+        App::GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/View")->Notify("RenderCache");
+        // Then the backend on every 3D view: what the type means, not
+        // what it reads.
+        const std::string type = renderCache() == 3 ? engineType() : std::string();
         foreach3DViewer([&type](Gui::View3DInventorViewer *viewer) {
             viewer->setRendererType(type);
         });
@@ -6942,20 +6956,47 @@ void RenderParams::onRenderParamChanged(const char *sReason)
     });
 }
 
-void RenderParams::selectRenderPath()
+bool RenderParams::usesEngine()
 {
-    // Render cache 3 is what feeds the render engine, so it is the path
-    // whether or not a backend comes up: with one, the backend draws;
-    // without one, the cache's own GL renderer does, and a failure at
-    // any stage below falls back to that by itself (a backend that
-    // cannot be created, a shader pack that will not load, and a frame
-    // that returns false all leave canSkipInternal() false).
-    if (ViewParams::getRenderCache() != 3)
-        ViewParams::setRenderCache(3);
+    return getType() != legacyType();
+}
 
-    const std::string type = preferredType();
-    if (getType() != type)
-        setType(type);
+std::string RenderParams::engineType()
+{
+    const std::string &type = getType();
+    if (type == legacyType())
+        return std::string();
+    if (!type.empty() && type != "Default") {
+        for (const auto &t : Render::RendererFactory::types()) {
+            if (t == type)
+                return type;
+        }
+    }
+    const std::string preferred = preferredType();
+    return preferred == "Default" ? std::string() : preferred;
+}
+
+int RenderParams::renderCache()
+{
+    // Render cache 3 is what feeds the render engine, so with the engine
+    // it is the path whether or not a backend comes up: with one, the
+    // backend draws; without one, the cache's own GL renderer does, and
+    // a failure at any stage falls back to that by itself (a backend
+    // that cannot be created, a shader pack that will not load, and a
+    // frame that returns false all leave canSkipInternal() false).
+    const std::string type = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View/Render")
+                ->GetASCII("Type", defaultType().c_str());
+    if (type != legacyType())
+        return 3;
+    return int(App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View")
+                ->GetInt("RenderCache", ViewParams::defaultRenderCache()));
+}
+
+std::vector<std::string> RenderParams::backendTypes()
+{
+    return Render::RendererFactory::types();
 }
 
 std::string RenderParams::preferredType()

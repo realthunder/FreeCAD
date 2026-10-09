@@ -66,11 +66,19 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutGeneral->addLayout(layoutRow);
     labelType = new QLabel(this);
     layoutRow->addWidget(labelType);
-    Type = new Gui::PrefLineEdit(this);
+    Type = new Gui::PrefComboBox(this);
     layoutRow->addWidget(Type);
-    Type->setText(QString::fromUtf8(Gui::RenderParams::defaultType().c_str()));
     Type->setEntryName("Type");
     Type->setParamGrpPath("View/Render");
+
+    // Auto generated code (Gui/RenderParams.py:71)
+    Type->setProperty("prefType", QByteArray());
+    Type->addItem(QString(), QByteArray("Default"));
+    Type->addItem(QString(), QByteArray("Legacy"));
+    for (const std::string &type : Gui::RenderParams::backendTypes())
+        Type->addItem(QString::fromUtf8(type.c_str()), QByteArray(type.c_str()));
+    Type->setCurrentIndex(Type->findData(QByteArray(
+                Gui::RenderParams::defaultType().c_str())));
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -938,6 +946,9 @@ void DlgSettingsRender::retranslateUi()
     Type->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docType()));
     labelType->setText(QObject::tr("Renderer type"));
     labelType->setToolTip(Type->toolTip());
+    // Auto generated code (Gui/RenderParams.py:85)
+    Type->setItemText(0, QObject::tr("Default (the render engine)"));
+    Type->setItemText(1, QObject::tr("Legacy (Coin, without the render engine)"));
     OutputTransform->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docOutputTransform()));
     labelOutputTransform->setText(QObject::tr("Output colour transform"));
     labelOutputTransform->setToolTip(OutputTransform->toolTip());

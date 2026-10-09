@@ -149,9 +149,9 @@ public:
     ///
     /// Which render path draws a 3D view: 0 auto, 1 distributed,
     /// 2 centralized Coin caching, 3 the render cache that feeds the
-    /// render engine. NOT a user setting -- the path is chosen at
-    /// startup (RenderParams::selectRenderPath), which overrides
-    /// whatever a config carries. Set it at runtime to compare paths.
+    /// render engine. Looked at only under the render type 'Legacy'
+    /// (View/Render/Type): with the render engine the program draws
+    /// by 3 whatever this holds. Not on a preferences page.
     static const long & getRenderCache();
     static const long & defaultRenderCache();
     static void removeRenderCache();

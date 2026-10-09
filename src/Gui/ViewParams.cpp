@@ -39,6 +39,7 @@
 #include "ViewArea.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "RenderParams.h"
 #include "QSint/actionpanel/taskheader_p.h"
 
 /*[[[cog
@@ -1969,9 +1970,9 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Render Cache")
         .setDoc("Which render path draws a 3D view: 0 auto, 1 distributed,\n"
 "2 centralized Coin caching, 3 the render cache that feeds the\n"
-"render engine. NOT a user setting -- the path is chosen at\n"
-"startup (RenderParams::selectRenderPath), which overrides\n"
-"whatever a config carries. Set it at runtime to compare paths.")
+"render engine. Looked at only under the render type 'Legacy'\n"
+"(View/Render/Type): with the render engine the program draws\n"
+"by 3 whatever this holds. Not on a preferences page.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UnifiedCanvas", "UnifiedCanvas", App::ParamInfo::Bool, false)
         .setTitle("Unified split-view canvas")
@@ -3235,9 +3236,9 @@ const char *ViewParams::docRenderCache() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Which render path draws a 3D view: 0 auto, 1 distributed,\n"
 "2 centralized Coin caching, 3 the render cache that feeds the\n"
-"render engine. NOT a user setting -- the path is chosen at\n"
-"startup (RenderParams::selectRenderPath), which overrides\n"
-"whatever a config carries. Set it at runtime to compare paths.");
+"render engine. Looked at only under the render type 'Legacy'\n"
+"(View/Render/Type): with the render engine the program draws\n"
+"by 3 whatever this holds. Not on a preferences page.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -10724,13 +10725,17 @@ void ViewParams::onUnifiedCanvasChanged() {
 
 bool ViewParams::isUsingRenderer()
 {
-    return getRenderCache() == 3;
+    // the mode the program draws by: 3 with the render engine whatever
+    // the setting holds, the setting under the render type "Legacy"
+    return RenderParams::renderCache() == 3;
 }
 
 void ViewParams::useRenderer(bool enable)
 {
+    // Only under "Legacy" is there anything to switch: with the render
+    // engine the render cache is in use, and stays so.
     if (isUsingRenderer()) {
-        if (!enable)
+        if (!enable && !RenderParams::usesEngine())
             setRenderCache(0);
     } else if (enable)
         setRenderCache(3);

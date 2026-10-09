@@ -2453,7 +2453,9 @@ private:
     // stored for the first time with its default is no change either.
     long readRenderCache() const
     {
-        return hView->GetInt("RenderCache", Gui::ViewParams::defaultRenderCache());
+        // the mode the program draws by: 3 with the render engine
+        // whatever the key holds (Gui::RenderParams::renderCache())
+        return Gui::RenderParams::renderCache();
     }
     std::string readRendererType() const
     {

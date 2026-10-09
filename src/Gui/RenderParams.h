@@ -72,8 +72,11 @@ public:
     //@{
     /// Accessor for parameter Type
     ///
-    /// Type of the experimental render engine backend. 'Default' keeps
-    /// the plain GL pipeline. Only effective with render cache mode 3.
+    /// What draws a 3D view. 'Default': the render engine, on this
+    /// platform's backend. 'Legacy': the old Coin rendering, without the
+    /// engine. A backend can also be named, as 'bgfx - Direct3D11'. With
+    /// the engine the render cache is always 3, whatever its own setting
+    /// says; under 'Legacy' that setting is what counts.
     static const std::string & getType();
     static const std::string & defaultType();
     static void removeType();
@@ -2368,25 +2371,52 @@ public:
     /// Called once at Gui::Application startup.
     static void migrate();
 
-    /// Decide the render path this session draws with, overriding
-    /// whatever the configuration carries: render cache 3 and the
-    /// render engine's backend. Called once at Gui::Application startup,
-    /// before anything reads either.
-    ///
-    /// The path is a development switch rather than a setting. A stored
-    /// choice is ignored -- a machine that once wrote one keeps it out
-    /// of every later session, and a backend that no longer exists in
-    /// this build cannot leave a view pointing at it -- while a change
-    /// made at runtime (console, script) works exactly as before, for
-    /// as long as that session lasts.
-    static void selectRenderPath();
-    /** The backend type to use, without stating it as a preference
+    /// What the Type setting says of whether the render engine draws:
+    /// "Legacy" is the old Coin rendering without it, and anything else
+    /// -- "Default", nothing stored, a backend by name -- is the engine.
+    static const char *legacyType() { return "Legacy"; }
+    static bool usesEngine();
+    /** The backend a 3D view is to be drawn with, as the factory names it
      *
-     * What selectRenderPath() would settle on: the engine's own backend
-     * where this build registered one, whatever else registered if not,
-     * and "Default" -- meaning plain GL -- where nothing did. Separate
-     * from getType() because a caller may need the engine for a reason
-     * of its own without touching what the user chose for their views.
+     * The Type setting read for what it MEANS: empty under "Legacy" (no
+     * backend: Coin draws); under "Default", or with nothing stored, the
+     * platform's backend (preferredType()); a backend named outright if
+     * this build has it, and the platform's if it has not -- a name from
+     * another build cannot leave a view pointing at nothing. Empty also
+     * where no backend is registered at all.
+     *
+     * Every place that creates a backend asks this, never getType():
+     * "Default" used to mean no backend, a choice made once at startup
+     * wrote the real one over it, and a session whose parameters were
+     * cleared ("Reset all" in the preferences) was left without the
+     * engine until the next start.
+     */
+    static std::string engineType();
+
+    /** The render cache mode the program draws by
+     *
+     * 3 with the engine, whatever View/RenderCache holds -- the setting
+     * is left as it is and not looked at; under "Legacy" the setting,
+     * which then means what it says (0 auto, 1 distributed, 2
+     * centralized, 3 the render cache with its own GL renderer).
+     *
+     * Everything that asks which path draws asks this, never
+     * ViewParams::getRenderCache(). Read from the parameters themselves,
+     * not from the cached getters: it is asked from inside the change
+     * notifications of both keys, where a cached value may still be the
+     * old one.
+     */
+    static int renderCache();
+    /// The backends this build has, by the names the Type setting takes
+    /// besides "Default" and "Legacy": what the preferences page lists.
+    static std::vector<std::string> backendTypes();
+    /** The platform's backend, without stating it as a preference
+     *
+     * What "Default" resolves to: the engine's own backend where this
+     * build registered one, whatever else registered if not, and
+     * "Default" -- which no factory creates -- where nothing did.
+     * Separate from engineType() because a caller may need the engine
+     * for a reason of its own whatever the user chose for their views.
      */
     static std::string preferredType();
 

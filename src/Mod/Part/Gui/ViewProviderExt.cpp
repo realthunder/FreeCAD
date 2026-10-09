@@ -1572,7 +1572,7 @@ static bool shapeInstancingActive()
 {
     if (!PartParams::getShapeInstancing())
         return false;
-    if (Gui::ViewParams::getRenderCache() != 3)
+    if (Gui::RenderParams::renderCache() != 3)
         return false;
     if (Render::Renderer::activeCount() == 0)
         return false;

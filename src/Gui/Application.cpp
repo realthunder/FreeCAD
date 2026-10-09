@@ -2474,9 +2474,6 @@ void Application::initApplication()
         // Preferences/View/Render before anything reads them.
         RenderParams::migrate();
         ViewParams::migrate();
-        // Which render path this session draws with, decided here rather
-        // than read from the configuration.
-        RenderParams::selectRenderPath();
         new Base::ScriptProducer( "FreeCADGuiInit", FreeCADGuiInit );
         init_resources();
         setCategoryFilterRules();
@@ -3124,8 +3121,8 @@ void postMainWindowSetup(MainWindow &mw)
     // screen is a second nobody is waiting through. Only when a backend
     // is configured -- render cache 3 with a real type -- so a session
     // that will never use one pays nothing.
-    if (ViewParams::getRenderCache() == 3) {
-        const std::string rtype = RenderParams::getType();
+    if (RenderParams::renderCache() == 3) {
+        const std::string rtype = RenderParams::engineType();
         // The widget MainWindow keeps to settle the window's surface
         // type is exactly what this needs: a QOpenGLWidget whose format
         // the backend's own context can be built from.

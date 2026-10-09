@@ -1717,8 +1717,8 @@ SceneServeSource::SceneServeSource(Document *doc)
     pimpl->doc = doc;
     pimpl->owner = this;
 
-    const std::string &type = RenderParams::getType();
-    if (type.empty() || type == "Default") {
+    const std::string type = RenderParams::engineType();
+    if (type.empty()) {
         Base::Console().Warning(
             "SceneServeSource: no render engine configured; nothing to "
             "publish through\n");

@@ -1149,6 +1149,24 @@ survive into it -- the type is resolved against
 registered (a build without `BUILD_BGFX`), so it never asks for a
 backend nobody can create.
 
+**Changed 2026-10-09** (`docs/HandsOnQueue.md` entry 50, the reporter's
+decision). The type is no longer written at startup; it is read for what
+it MEANS wherever a backend is made (`RenderParams::engineType()`):
+- `Default`, or nothing stored: the render engine on the platform's
+  backend. It used to mean no backend, with the real one written over it
+  at startup -- so a session whose parameters were cleared ("Reset all"
+  in the preferences) had no engine until the next start;
+- `Legacy`: the old Coin rendering, without the engine. This one is a
+  setting and is kept from session to session;
+- a backend by name: that backend if this build has it, the platform's
+  if not.
+With the engine the program draws by render cache 3 whatever
+`View/RenderCache` holds: the setting is left as it is and not looked at
+(`RenderParams::renderCache()` is what everything asks). Under `Legacy`
+the setting means what it says again, default 3. So an A/B comparison of
+cache modes now sets the type to `Legacy` first. `selectRenderPath()` is
+gone: nothing is written at startup.
+
 Runtime changes work exactly as before: setting either parameter from
 the console or a script re-selects the path for that session, which is
 what an A/B comparison needs. Nothing in the tree selected it any other

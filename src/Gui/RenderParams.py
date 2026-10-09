@@ -35,7 +35,8 @@ sys.path.append(path.join(path.dirname(path.dirname(path.abspath(__file__))), 'T
 import params_utils
 
 from params_utils import ParamBool, ParamString, ParamFloat, ParamInt, \
-                         ParamHex, ParamColor, ParamComboBox, auto_comment
+                         ParamHex, ParamColor, ParamComboBox, ParamProxy, \
+                         auto_comment
 
 NameSpace = 'Gui'
 ClassName = 'RenderParams'
@@ -43,10 +44,66 @@ ParamPath = 'User parameter:BaseApp/Preferences/View/Render'
 ClassDoc = 'Convenient class to obtain the experimental render engine parameters'
 UserOnChange = 'RenderParams::onRenderParamChanged(sReason);'
 
+
+class ParamRenderTypeCombo(ParamProxy):
+    '''The render type as a list to pick from.
+
+    "Default" and "Legacy", then the backends this build has, by the names
+    the factory knows them by -- which only the running program can say, so
+    the generated page asks RenderParams::backendTypes() for them. The
+    stored value is the item's ASCII data, a word (the "prefType" property
+    is what makes Gui::PrefComboBox read and write item data, as for
+    OpenViewParams' ParamTargetCombo), not the item's position.
+    '''
+
+    WidgetType = "Gui::PrefComboBox"
+    Fixed = (('Default', 'Default (the render engine)'),
+             ('Legacy', 'Legacy (Coin, without the render engine)'))
+
+    def widget_setter(self, _param):
+        return None
+
+    def init_widget(self, param, row, group_name):
+        param._init_widget(row, group_name)
+        widget = param.widget_name
+        cog.out(f"""
+
+    {params_utils.trace_comment()}
+    {widget}->setProperty("prefType", QByteArray());""")
+        for value, _text in self.Fixed:
+            cog.out(f"""
+    {widget}->addItem(QString(), QByteArray("{value}"));""")
+        cog.out(f"""
+    for (const std::string &type : {param.namespace}::{param.class_name}::backendTypes())
+        {widget}->addItem(QString::fromUtf8(type.c_str()), QByteArray(type.c_str()));
+    {widget}->setCurrentIndex({widget}->findData(QByteArray(
+                {param.namespace}::{param.class_name}::default{param.name}().c_str())));""")
+
+    def retranslate(self, param):
+        param._retranslate()
+        cog.out(f"""
+    {params_utils.trace_comment()}""")
+        for i, (_value, text) in enumerate(self.Fixed):
+            cog.out(f"""
+    {param.widget_name}->setItemText({i}, QObject::tr("{text}"));""")
+
+    # To the registry a plain combo box whose stored value is the item
+    # data; the backends by name are not in it, they are not known here.
+    RegistryName = "ComboBox"
+
+    def registry_fields(self, param):
+        items = ', '.join(f'{{"{text}", "", "{value}"}}' for value, text in self.Fixed)
+        return (super().registry_fields(param)
+                + '\n        .setItems({' + items + '}, true, true)')
+
 Params = [
     ParamString('Type', 'Default', title='Renderer type',
-        doc="Type of the experimental render engine backend. 'Default' keeps\n"
-        "the plain GL pipeline. Only effective with render cache mode 3."),
+        doc="What draws a 3D view. 'Default': the render engine, on this\n"
+        "platform's backend. 'Legacy': the old Coin rendering, without the\n"
+        "engine. A backend can also be named, as 'bgfx - Direct3D11'. With\n"
+        "the engine the render cache is always 3, whatever its own setting\n"
+        "says; under 'Legacy' that setting is what counts.",
+        proxy=ParamRenderTypeCombo()),
     # The long form, kept here; the documentation shown is the short one below.
     # Whether the engine is colour managed.
     #

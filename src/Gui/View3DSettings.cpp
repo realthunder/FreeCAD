@@ -323,14 +323,18 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
             // only writes when the value is not already 3) then had the
             // engine warmed up at startup and every 3D view told to use
             // nothing.
-            int mode = int(rGrp.GetInt("RenderCache",
-                                       ViewParams::defaultRenderCache()));
+            // And what the program goes by, not the key alone: with the
+            // render engine the mode is 3 whatever the key holds, and a
+            // change of the render type arrives here as a change of the
+            // mode (RenderParams::renderCache(), which reads both keys
+            // raw, for the reason above).
+            int mode = RenderParams::renderCache();
             // The renderer backend is only used in render cache mode 3;
             // any other mode keeps the plain GL pipeline. Changes of the
             // renderer type itself are applied by
             // RenderParams::onRenderParamChanged.
             std::string type = mode == 3 ?
-                RenderParams::getType() : std::string();
+                RenderParams::engineType() : std::string();
             for (auto _viewer : _viewers) {
                 _viewer->setRenderCache(mode);
                 _viewer->setRendererType(type);

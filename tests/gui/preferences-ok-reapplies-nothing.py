@@ -175,12 +175,20 @@ def run():
         nodes = root.getNodeId()
         view = FreeCAD.ParamGet(PREFS + "View")
         cache = view.GetInt("RenderCache", 3)
+        # a setting only under the render type "Legacy": with the render
+        # engine another mode is put back to 3
+        render = FreeCAD.ParamGet(PREFS + "View/Render")
+        kind = render.GetString("Type", "Default")
+        render.SetString("Type", "Legacy")
+        settle(2.0)
+        nodes = root.getNodeId()
         view.SetInt("RenderCache", 0 if cache != 0 else 3)
         settle(2.0)
         now = root.getNodeId()
         check("another render cache mode rebuilds the Part object", now != nodes,
               "node id %d, %d before" % (now, nodes))
         view.SetInt("RenderCache", cache)
+        render.SetString("Type", kind)
         settle(1.5)
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))

@@ -169,9 +169,8 @@ bool ViewAreaCanvas::wanted()
     // The canvas composites what a backend renders; without the render
     // engine there is nothing for it to draw and the cells must keep
     // their own GL widgets.
-    return ViewParams::getRenderCache() == 3
-        && !RenderParams::getType().empty()
-        && RenderParams::getType() != "Default";
+    return RenderParams::renderCache() == 3
+        && !RenderParams::engineType().empty();
 }
 
 View3DInventorViewer *ViewAreaCanvas::viewerOf(const ViewAreaCell *cell)
@@ -648,7 +647,7 @@ void ViewAreaCanvas::syncOnce()
 
     if (!_renderer) {
         Render::RendererFactory::setMaxViewIds(int(RenderParams::getMaxViewIds()));
-        _renderer = Render::RendererFactory::create(RenderParams::getType(), this);
+        _renderer = Render::RendererFactory::create(RenderParams::engineType(), this);
         if (!_renderer) {
             hide();
             return;

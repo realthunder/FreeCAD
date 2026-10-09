@@ -3518,7 +3518,7 @@ void View3DInventorViewer::setRenderCache(int mode)
         // https://forum.freecad.org/viewtopic.php?f=18&t=43305&start=10#p412537
         coin_setenv("COIN_AUTO_CACHING", "0", TRUE);
 
-        int setting = ViewParams::getRenderCache();
+        int setting = RenderParams::renderCache();
         if (mode == -2) {
             if (pcViewProviderRoot && setting != 1) {
                 pcViewProviderRoot->renderCaching = SoSeparator::ON;
@@ -5045,8 +5045,8 @@ void View3DInventorViewer::adoptRenderer(
         // traversal, where it means what it means on a plain view.
         _pimpl->canvasStyleMode = CanvasStyleOff;
         applyOverrideMode();
-        const int mode = int(ViewParams::getRenderCache());
-        setRendererType(mode == 3 ? RenderParams::getType() : std::string());
+        const int mode = RenderParams::renderCache();
+        setRendererType(mode == 3 ? RenderParams::engineType() : std::string());
         getSoRenderManager()->scheduleRedraw();
         return;
     }

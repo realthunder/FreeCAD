@@ -44,6 +44,7 @@ OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 V = FreeCAD.Vector
 VIEW = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+RENDER = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
 PART = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
 VIEW.SetInt("RenderCache", 3)
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool(
@@ -176,10 +177,15 @@ def run():
 
     comp = doc.getObject("Comp").ViewObject
     inst = count(comp, coin.SoGroup)
+    # another render cache mode is a setting only under the render type
+    # "Legacy": with the render engine it is put back to 3
+    kind = RENDER.GetString("Type", "Default")
+    RENDER.SetString("Type", "Legacy")
     VIEW.SetInt("RenderCache", 0)
     wait(2)
     flat = count(comp, coin.SoGroup)
     VIEW.SetInt("RenderCache", 3)
+    RENDER.SetString("Type", kind)
     wait(2)
     again = count(comp, coin.SoGroup)
     check("the compound is flattened when the render cache goes off",

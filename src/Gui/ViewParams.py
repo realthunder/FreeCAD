@@ -177,9 +177,9 @@ Params = [
     ParamInt('RenderCache', 3, on_change=True,
         doc="Which render path draws a 3D view: 0 auto, 1 distributed,\n"
         "2 centralized Coin caching, 3 the render cache that feeds the\n"
-        "render engine. NOT a user setting -- the path is chosen at\n"
-        "startup (RenderParams::selectRenderPath), which overrides\n"
-        "whatever a config carries. Set it at runtime to compare paths."),
+        "render engine. Looked at only under the render type 'Legacy'\n"
+        "(View/Render/Type): with the render engine the program draws\n"
+        "by 3 whatever this holds. Not on a preferences page."),
     ParamBool('UnifiedCanvas', False, on_change=True,
         title='Unified split-view canvas',
         doc="Draw all the 3D cells of a split view (ViewArea) into ONE\n"
