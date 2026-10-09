@@ -41,6 +41,7 @@
 #include "PrefWidgets.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "ViewArea.h"
 #include "ViewParams.h"
 #include "Renderer/Renderer.h"
 #include "ui_DlgSettings3DView.h"
@@ -190,6 +191,18 @@ void applyAntiAlias(ParameterGrp *)
             sMsg += ppReturn;
             const char** pReturnIgnore=0;
             clone->onMsg(sMsg.c_str(), pReturnIgnore);
+        }
+        // A view in a cell of a split hands its cell to the copy. Given to
+        // the main window like any new view, the copy became a tab of its
+        // own and the cell went with the view deleted below: a 3D view and
+        // a page side by side came out of a change of this setting as two
+        // tabs.
+        ViewArea *area = ViewArea::areaOf(view);
+        ViewAreaCell *cell = area ? area->cellOf(view) : nullptr;
+        if (cell && area->setCellView(cell, clone)) {
+            // the cell closed the old view to take the new one
+            viewMap[view] = clone;
+            continue;
         }
         if (view->currentViewMode() == MDIView::Child)
             getMainWindow()->addWindow(clone);

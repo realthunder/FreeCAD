@@ -1612,6 +1612,27 @@ fc_add_gui_test(GuiTechDrawPageBackendHatch_tests_run
                 techdraw-page-backend-hatch.py
                 --timeout 180)
 
+# "Reset all" in the preferences, on a maximized window under a theme: the
+# workbench toolbar stays shown (the toolbar manager hid it taking it out of
+# the title bar) and the 3D view keeps its render backend.
+fc_add_gui_test(GuiPreferencesResetAll_tests_run
+                preferences-reset-all.py
+                --timeout 180)
+
+# The render type alone says whether the render engine draws: "Default" is
+# the engine on the platform's backend with the render cache always 3,
+# "Legacy" the old Coin rendering with the render cache the user's own.
+fc_add_gui_test(GuiRenderTypeDefaultAndLegacy_tests_run
+                render-type-default-and-legacy.py
+                --timeout 180)
+
+# A change of the anti-aliasing setting leaves a split view as it is: a 3D
+# view that Coin draws is replaced by a copy, which took a tab of its own
+# and left its cell to collapse.
+fc_add_gui_test(GuiAntiAliasingChangeKeepsTheCells_tests_run
+                antialiasing-change-keeps-the-cells.py
+                --timeout 180)
+
 # The outline of a highlighted face has no staircase on its inner edge: the
 # stencil cut of the face is one sample a pixel, the lines fade in from it.
 fc_add_gui_test(GuiFaceOutlineInnerEdge_tests_run
