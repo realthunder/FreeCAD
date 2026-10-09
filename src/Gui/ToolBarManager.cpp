@@ -848,14 +848,26 @@ void ToolBarManager::onTimer()
             continue;
         }
 
+        // Whether it is shown, when no setting says: asked BEFORE a toolbar
+        // is taken out of an area, and then of the toolbar alone. The move
+        // hides it, and isVisible() asked afterwards wrote that hide down
+        // as the answer. "Reset all" in the preferences is what gets here
+        // with a toolbar still in the title bar -- every area's entries are
+        // gone at once, and on a maximized window the title bar swap that
+        // would have taken the workbench toolbar out properly waits for the
+        // window to leave the maximized state, so this ran first and the
+        // toolbar stayed hidden through the swap and through the theme
+        // applied after it.
+        bool shown = tb->isVisible();
         if (tb->parentWidget() != getMainWindow()) {
+            shown = !tb->isHidden();
             addToolBarToMainWindow(tb);
         }
 
         if (defArea != curArea && mw->toolBarArea(tb) == defArea)
             lines.emplace(ToolBarKey(tb),tb);
         if (tb->toggleViewAction()->isVisible())
-            setToolBarVisible(tb, hPref->GetBool(name, tb->isVisible()));
+            setToolBarVisible(tb, hPref->GetBool(name, shown));
     }
 
     bool first = true;
@@ -1189,7 +1201,11 @@ void ToolBarManager::restoreState()
             continue;
         }
         if (toolbar->parentWidget() != getMainWindow()) {
+            // The move hides it; what was decided above is put back (see
+            // onTimer()).
+            const bool shown = !toolbar->isHidden();
             addToolBarToMainWindow(toolbar);
+            setToolBarVisible(toolbar, shown);
         }
     }
 
