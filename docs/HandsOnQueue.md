@@ -4967,6 +4967,24 @@ one (the page's own document, by the note-taker's reading); and what the
 frames show for such a split while it is dragged (the new cell as for any
 split, by the same reading).
 Passed on to the build session.
+**Added by the reporter, 2026-10-09 14:09 -- point (k), a drag that is
+interrupted leaves its frame on screen:** "also notice that when I am
+dragging and mouse grag got interrupted by another application popping, the
+cell frame is still visible when mouse button released"
+While a cell is being dragged another application comes to the front and
+takes the mouse away; the button is then released, and the cell's drag frame
+is STILL shown. A defect of entry 29's frames, on the copy staged
+2026-10-09 12:25.
+The note-taker's reading, with (f): the release goes to the other
+application, so the drag here never hears of it and never ends. A drag
+whose mouse is taken away -- the grab lost, the window no longer the active
+one -- belongs with Esc and "any mouse click" of (f): it is CANCELLED, and
+the frames go. Read, nothing run: the code as committed in `ViewArea.cpp`
+has no handling of a lost mouse grab or of the window being deactivated.
+Not said: whether cancelling is what is wanted there, or the drag carried
+out as it stood; and whether a border drag left the same way was seen to do
+it too (the same frames, so presumably).
+Passed on to the build session.
 
 ## 57. The browser viewer's split view: the same view cell logic as the desktop's (a change request) -- OPEN
 
