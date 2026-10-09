@@ -99,9 +99,22 @@ same commit. So the stage has entry 60, the three changes to entry 56, and
 entry 57's commit (the browser viewer itself is not part of the staged
 copy). Smoke-tested on the staged copy right after:
 `view-cell-close-keeps-the-picture.py` 17, `view-cell-drag-cancel-and-
-look.py` 88, `view-cell-drag-frames.py` 38, no FAIL. The two full suites
-were started on that tree after it; their result is the next thing
-written here.
+look.py` 88, `view-cell-drag-frames.py` 38, no FAIL. ctest on that tree:
+790 of 790.
+
+After it, on the reporter's words to the build session: a border that
+takes room from the cell next to it only (`b4004d2635`, entry 56 once
+more), and "pause after cycle fix, then push and stage" -- entry 65, the
+Cycles view upside down on Direct3D (`6a6fa208d6`).
+
+Pushed 2026-10-09 17:35: origin/PartDesignPort at `6a6fa208d6`. Staged
+2026-10-09 17:36:07 at the same commit. Smoke-tested on the staged copy
+right after: `cycles-view-right-way-up.py` 4, `view-cell-drag-cancel-and-
+look.py` 94, `view-cell-close-keeps-the-picture.py` 17, no FAIL. ctest on
+the tree with the border change: 790 of 790 (the Cycles fix after it is a
+shader alone). The Python suite was started on the staged tree at 17:37
+-- its first start hung in `run.cmd`'s `chcp` before it ran anything --
+and its result is the next thing written here. Then PAUSED, as told.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
@@ -141,9 +154,10 @@ Evidence that does not belong in the repository is under
 | 53 | FIXED `c820c3aea1`, not staged, not pushed | not the recompute and not the projection: a page that comes back with the window layout is drawn while a progressive load is still building the view providers of its views. Without one the Qt page draws nothing of a view and the backend draws it by fallback widths, 0.6 mm; the view provider's own request to draw came while the document was flagged as restoring and was dropped. It asks again a turn of the event loop later |
 | 54 | STAGED 2026-10-09 15:11, fixed `8bb8bd10fa`; the cost measured | a fully selected object shown on top drew every edge at full colour, front or behind: the engine had copied the old Coin renderer's rule, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected by itself still shows through. Cost: nothing in the engine; Coin 2.18 to 2.54 ms a frame on 100 heavy spheres all selected, nothing measurable on `scanner.FCStd` |
 | 55 | STAGED 2026-10-09 15:11, fixed `739120f1c7` | a warning or error for the user is QStatusBar's temporary message, which hides every non-permanent widget -- the preselection label whose stretch held the progress bar in its place. A bar that came up with a message showing sat at the left end, over the message. It is a permanent widget now, the first of the right-hand group |
-| 56 | STAGED 2026-10-09 15:11, done `f5a651b723`, all eleven points; three changes asked after it done `dbff5c6378`, STAGED 16:42; choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
+| 56 | STAGED 2026-10-09 15:11, done `f5a651b723`, all eleven points; three changes asked after it `dbff5c6378`, STAGED 16:42; a border that takes room from its neighbour only `b4004d2635`, STAGED 17:36; choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
 | 59 | STAGED 2026-10-09 15:11, fixed `e9ac624959` | "Reset all" cleared the record of the Start workbench's migration of 2024; the next start ran it again on a profile whose startup workbench was PartDesign and switched the Start page off. The reset keeps the record (the reporter's decision) |
 | 57 | DONE `a50e708959`, and the changes to entry 56 in `dbff5c6378`; pushed 16:41; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
+| 65 | STAGED 2026-10-09 17:36, fixed `6a6fa208d6` | the path tracer's frame is an uploaded image drawn with a render target's texture coordinate, which is turned over on every backend but OpenGL: upside down on Direct3D, the Windows default. The fragment shader takes the turn back out. Found by reading by the note-taking session; confirmed and scored by a picture |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
@@ -3638,7 +3652,7 @@ new cell is told from a kept one by its plus alone; (2) the 12 pixels a
 border goes past the minimum before it means "close"; (3) the active
 cell's border: its width, 2, and its strength.
 
-## 56, once more. A border takes room from the cell next to it only -- DONE `b4004d2635`, not staged
+## 56, once more. A border takes room from the cell next to it only -- DONE `b4004d2635`, staged 17:36
 
 The reporter, on the copy staged 16:42: "when dragging the splitter, do
 not move the other splitter in case the next view size limit is reached.
@@ -3668,3 +3682,35 @@ row: 44 PASS. `view-cell-drag-frames.py` 38,
 **The full suites** on the tree staged 16:42 (`0246b900df`): ctest 790 of
 790. The Python suite was stopped under way to build this change; both
 are run again on the tree with it.
+
+## 65. The Cycles view mirrors the object -- FIXED `6a6fa208d6`, staged 17:36
+
+The cause was found by the note-taking session by reading, and is as it
+wrote it. The path tracer's frame is an image uploaded to a texture,
+bottom row first, and drawn over the scene target as one fullscreen
+triangle (`FrameImageConsumer::drawFrame`, `vs_fc_comp` +
+`fs_fc_cycles_blit`). The triangle's texture coordinate comes from
+`fc_clipToUv`, written for render targets, which turns v over on every
+backend but OpenGL; an uploaded texture's first row is at v = 0 on all of
+them. Direct3D 11 became the Windows default on 2026-09-10, after the
+Cycles files were last touched.
+
+**Confirmed by a picture** on the copy staged 16:42
+(`..\dl\handson6-10-09\q4\g-c65-staged\cycles.png`): a cone on its
+base comes out apex down in the path tracer's picture, with the host's own
+edge lines over it apex up. The whole frame is turned, the lit background
+with it.
+
+**The fix.** `fs_fc_cycles_blit` takes the turn back out, under the same
+`BGFX_SHADER_LANGUAGE_GLSL` test that puts it in. A shader alone.
+
+**Scored.** `tests/gui/cycles-view-right-way-up.py`, a red cone, its width
+near the top and near the bottom: on the staged copy the engine 87 and 247
+pixels, Cycles 238 and 84 -- 2 PASS and 2 FAIL; on the tree Cycles 84 and
+239, 4 PASS; with "bgfx - OpenGL" chosen from the start the same 84 and
+239, 4 PASS. Not run: Vulkan and Metal, which take Direct3D's branch.
+
+**A measurement that lied first:** telling the model from the background
+by the colour at the row's end. The path tracer's background is a lit
+environment, the whole row counted as "model", and the upside-down picture
+passed. The cone is red now and the red is what is counted.
