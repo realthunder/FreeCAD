@@ -257,6 +257,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | OPEN; nothing run |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | FOUND by the note-taker by reading, nothing run: it depends on the backend. The picture is an uploaded image drawn with the engine's full-screen stage, whose texture coordinate is flipped off OpenGL for RENDER TARGETS (`fc_clipToUv`); an uploaded image needs no such flip, so it is right way up on OpenGL (Linux/WSL, the browser) and UPSIDE DOWN on Direct3D 11 (the Windows default since 2026-09-10), Direct3D 12, Vulkan and Metal |
+| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | OPEN: there was no entry for it; nothing measured, nothing run. Kin: entry 26 (the first OK, fixed) and entry 30's second task (a preset's freeze, measured, not changed) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5835,6 +5836,55 @@ which document); whether the whole picture is turned -- background and all
 -- or the object alone against a right-way-up view; and whether it is
 mirrored top to bottom or left to right on the screen.
 
+## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- OPEN
+
+**2026-10-09 17:40, the reporter asks whether it is in the queue and
+fixed:** "is there any entry for 'first time preference dialog loads slow.
+and if I then choose 'reset all' it freeze for several 10s of seconds.'. is
+it fixed"
+Two things:
+(a) the preferences dialog is slow to come up the FIRST time it is opened;
+(b) "Reset all..." chosen in it after that freezes the program for several
+tens of seconds.
+
+**The note-taker's answer, from both documents: there was NO entry for
+either, and neither is fixed.** This entry is made for them now. What is
+there is kin, and none of it covers the two:
+- Entry 26 (STAGED 2026-10-09 08:40, `175ffce199`) is the FIRST OK of a
+  profile: 11 to 15 s, now 0.9 s. It was the stylesheet set again (4.2 s),
+  every Part view provider re-meshed (3.2 s) and the language activated
+  again, each because a key stored for the first time was reported as
+  changed. It is about OK, not about the dialog opening and not about the
+  reset.
+- Entry 30's second task: applying an overlay PRESET holds the program 13 s
+  on a fresh profile with `scanner.FCStd` open, 9.6 s of it the
+  application's style sheet being replaced, 3.3 s the combo view switched
+  off. Measured, NOT changed -- "what to do about it is the reporter's to
+  say", still unanswered.
+- Entry 38 (the omni search's first bring-up) is the same shape for another
+  window: everything made before anything is shown.
+- Entries 49, 50 and 59 are what "Reset all" left WRONG afterwards (the
+  toolbar, the backend, the Start page). None of them is about how long the
+  reset takes.
+
+**Where to look, the note-taker's reading, nothing read further and nothing
+timed:**
+- (b): "Reset all" clears every user parameter in the running session
+  (`DlgPreferencesImp::restoreDefaults`, `mgr->Clear(true)`), and
+  everything that watches a key hears of it. Unlike entry 26's first OK,
+  the values really do change here -- theme, style sheet, the renderer's
+  type, the title bar -- so entry 26's "act on a difference only" does not
+  spare the work: the program is restyled and its views rebuilt, each as
+  many times as keys it watches fall. Entry 30's measurement says which of
+  those are dear: the application's style sheet above all.
+- (a): a dialog that builds all its pages before it shows itself, on the
+  first opening only; whether it is the pages of every loaded module, or
+  one page in particular, is the first thing to time.
+
+Not said yet by the reporter: with which document open (`scanner.FCStd`?);
+how long the first opening takes; and whether a second "Reset all" in the
+same session is as slow.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -5842,4 +5892,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 65)
+so far entries 46 to 66)
