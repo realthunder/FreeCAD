@@ -13,9 +13,9 @@ close at a sharp corner between two planes (section 14); a coarse fuzzy
 try for neighbours tangent to each other (section 15); tolerances the fuse
 widened, brought back (section 16). 2026-10-09: tangent propagation as an
 option; off, only the picked faces turn, and a fillet beside them is made
-again at its radius after the draft (section 17). The roof -- the chain's
-walls meeting over the body once a wall narrows to nothing -- designed in
-section 18, not built yet.
+again at its radius after the draft (section 17). 2026-10-09: the roof -- the chain's
+walls meeting over the body once a wall narrows to nothing -- built
+(section 18).
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
@@ -648,7 +648,7 @@ already does (`OCC_VERSION_HEX`).
    it (section 17).
 7. The roof: the chain's sheet as a straight skeleton -- edge events,
    new ridges, the collapse -- and a self-crossing check on the sheet
-   (section 18).
+   (done 2026-10-09, section 18).
 
 ## 9. Decisions (2026-10-05)
 
@@ -664,6 +664,11 @@ already does (`OCC_VERSION_HEX`).
    draft's result both ways -- the self-intersection check always, the
    envelope check with the stop on -- and on a flag takes the cell draft;
    if the cell draft refuses, Auto keeps the classic result and warns.
+7. (2026-10-09, the roof, section 18) The roof is built, and a neighbour
+   under it is consumed: the filleted block at 30 deg becomes a hipped
+   roof with no top. A face of the chain that was not picked may vanish
+   under the roof; a picked one is refused. The first build takes plane
+   edge events only, as section 18.4 says.
 
 ## 10. The implementation (2026-10-05/06)
 
@@ -1619,9 +1624,11 @@ swept region: the fill takes it away (drafted inward) or fills over it
 (outward), as it does for any feature in `K` (section 4). Two cases stay
 refused:
 
-- a member whose face lies entirely past its edge event: the face is not
-  in the result, `FaceVanishes` as before (the check on the result,
-  "every member's new surface must be in the result", already gives it);
+- a picked face that lies entirely past its edge event: it is not in the
+  result, `FaceVanishes` as before (decision 9.1). A face the chain took in
+  without being picked may go (decided 2026-10-09): the check on the
+  result ("every member's new surface must be in the result") passes a
+  member that is not picked and has an edge event;
 - the sheet crossing itself (18.4).
 
 The top of the block (a neighbour, not a member) is gone in the result:
@@ -1676,3 +1683,105 @@ now.
 - The sweep (the 1222 and the 500, `Method = New`): every result
   unchanged except former `FaceVanishes` "narrows to nothing"; the sheet's
   self-crossing check counted on its own.
+
+### 18.6 Built (2026-10-09)
+
+`makeSheet` orders the chain (a path from an open end, or a cycle) and runs
+the wavefront of 18.1 from the neutral plane up and down, each way to the
+box's end along the seams. Each side of each plane is a polyline traced as
+the run goes -- the seam's new line, the apex and the ridge past it, a new
+ridge after each edge event beside it -- and a plane's face is its two
+sides joined at both ends. Collinear points are dropped, so a chain with no
+event in the box gets the same faces as before.
+
+Every event that 18.4 leaves unbuilt **stops** the run instead of refusing
+outright: the run is done again to just short of the event's level (1e-3 of
+it), and the draft is refused only if a face of the chain, or where it moves
+to, lies past there -- the test 14.1 had for its one case, now for all:
+
+| Stop | Error if a face reaches it |
+|--------|------|
+| a plane narrowing to nothing beside a cone short of its apex | `FaceVanishes` (as before) |
+| two planes joined along a level line (opposite walls meeting) while the rest of the chain does not close over at that level -- an L's arms | `UnsupportedSurface`, "closes over along part of its outline only" |
+| the planes beside a narrowing plane do not meet; the last two sides are not one line | `UnsupportedSurface` |
+| the sheet runs into itself | `UnsupportedSurface`, "runs into itself" |
+
+The stop matters most below and above the body: the sheet runs on to the
+box, and the chain drafted one way above the neutral plane is drafted the
+other way below it. The L drafted outward shrinks below its bottom, where
+its arms close over 8.66 down; refused there, every outward draft of the L
+past 26.6 deg was lost for an event outside the body.
+
+The self-crossing check of 18.4 is `BOPAlgo_ArgumentAnalyzer`'s
+self-interference on the sewn sheet. Where it finds two faces crossing,
+their section's nearest level either way is taken -- not the section's
+vertices: a cone crossing a plane meets it in a conic whose lowest point
+lies inside the edge, its vertices on the faces' far ends -- and the sheet
+is built again short of it (at most three times). The V notch of 18.7
+crosses at 12.2 over its floor at 10 deg, over its top at 10: the stop lets
+it through, at the closed-form volume; a plain refusal on any crossing had
+refused it.
+
+Not needed, against 18.2: a distance past a plane's own edge event.
+`sweptDists` takes a point as swept when its old and new distances differ
+in sign for any member whose slab holds it, and over the roof one always
+does (the plane whose face lies under it); every case below comes out at
+its closed-form volume with the distances as they were.
+
+A defect of phase 2 the roof brought out: the cone face's way round from
+one seam to the other was picked by a point inside the old fillet
+projected onto the new cone. Where the fillet runs past the new cone's
+apex (the top of the fillet above it) that point projects onto the far
+side of the axis, and the cone face went round the other way, 270 deg:
+the block at 30 deg came out valid with the four cones' volume missing
+(659.68 against 717.72). Nor is it the roof's alone: from 26 deg the
+fillets' tops lie past the apex on the block with no roof under its top,
+and the build before this one drafts it valid, 780.58 against 849.29 -- a
+wrong body that passes every check. The point is now moved along the axis
+to the seams' height first.
+
+The mixed edge event of 18.4 is not refused by a test of its own: the new
+ridge is built as the line of the two planes, and the self-crossing check
+is its guard.
+
+### 18.7 Measured
+
+The suite (`occt/tests/fork/draft`), each against its closed form:
+
+- `new_chain_rbox_a26/a30/a45`: the filleted block -- at 26 deg no roof
+  (the walls would meet at 10.25, over the top), the fillets past their
+  apex; at 30 and 45 deg the hipped roof, 717.7230 and 414.3776, 9 faces;
+  every angle from 16 to 29 deg checked by hand the same way.
+- `new_roof_chamfer_a20/a25`: the block with a 45 deg corner wall, its end
+  wall narrowing to nothing at 7.77 (6.07) under the top, the top kept; the
+  closed form is the area of the outline's half-planes moved in, integrated.
+- `new_chain_pocket_roof_a20/a30`: the pocket closing over at 13.74 (8.66)
+  over its floor, under the top: a hollow inside the block (one solid, two
+  shells), its volume the block's less the roofed pocket's.
+- `new_roof_L_a10/a30/a-10/a-20`: the L, outward (its arms closing over
+  below the body, where the sheet stops) and inward (the concave corner's
+  fillet growing); `new_roof_L_a-30` refused, "closes over along part of
+  its outline only" (the arms meet at 8.66, the corner between them not).
+- `new_roof_notch_a10/a-10`: the V notch both ways, its split over the top
+  at 10 deg; `new_roof_notch_a15` refused, "runs into itself" (the notch's
+  fillet reaches the bottom wall at 8.06).
+
+The L and the notch come from a closed form for a filleted outline offset
+before any event (the area less the integral of the perimeter, the convex
+corners sharp past the fillet's radius, the concave ones growing), checked
+against the drafts to 1e-10. `TestDraft`: the block at 30 deg, valid, 9
+faces, its top 8.66 up with one ridge 10 long.
+
+The sweep (the 1222 and the 500, `Method = New`, the stop on), against the
+build before:
+
+| | 1222 | 500 |
+|--------|------:|------:|
+| the same result | 1222 | 499 |
+| refused both, for another reason | 0 | 1 |
+
+The 1: #334's stored draft, face 5 about 6 at 60 deg -- before, its chain
+narrowed to nothing past the cones' apex (14.1); now the run gets past that
+and finds two of its walls meeting along a level line, under the top. No
+result changed; the self-crossing check flagged nothing the sweep reaches.
+Time: 613 s against 610 for the 1222, 408 against 406 for the 500.
