@@ -247,6 +247,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
+| 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5664,6 +5665,46 @@ Nothing of the entry's questions is left with the reporter but that last
 reading.
 Passed on to the build session.
 
+## 64. Cavity shading is jagged, MSAA or not -- OPEN
+
+**2026-10-09 17:07, reported:** "new defect. cavity option shows jagger
+regardless of msaa. I think it should be fixed in its shader"
+With the cavity option on, what it draws -- the darkened creases and ridges
+-- is jagged, and multisampling makes no difference. The reporter's view of
+the fix: in the option's own shader.
+On the copy staged 2026-10-09 16:42 (`0246b900df`), the render engine
+drawing, MSAA 4x the default since entry 51.
+
+**What the option is, and why MSAA cannot reach it: read from the source by
+the note-taker, nothing run.**
+- "Cavity shading" is `View/Render/Cavity`, ON by default
+  (`src/Gui/RenderParams.py`, about line 1475): "darken creases and ridges
+  of the geometry in screen space"; "works best with the Shaded draw style,
+  where no edges are drawn" -- there the darkened crease stands in for the
+  edge line.
+- It is one full-screen pass over the FINISHED picture
+  (`src/Gui/Renderer/bgfx/shaders/fs_fc_cavity.sc`: "one fullscreen
+  multiply over the finished opaque scene"). It reads the prepass's normal
+  and depth, one value a pixel, and compares each pixel's two opposed
+  neighbours; at the default `CavityRadius` of 1 "it sees only what turns
+  within a single pixel: hard creases, crisply".
+- So the crease it draws is decided a whole pixel at a time, from a
+  prepass that is not multisampled, and laid over the picture after the
+  multisampled scene has been resolved: a staircase that MSAA has no part
+  in. It is the same shape as entry 25 (a cut one sample a pixel whatever
+  the multisampling) and entry 51 (a rim with no coverage of its own) --
+  and it bears out the reporter's "in its shader": the smoothing has to
+  come from the pass itself.
+- For whoever does it, from the shader's own text: the pass multiplies an
+  8 bit colour, so it only darkens; `CavityRadius` widens a crease "into a
+  band of this width", which softens it but is not anti-aliasing; idle
+  accumulation (`Render/TemporalAccum`, off by default) is said to smooth
+  "outlines" and the like in a still picture.
+
+Not said yet by the reporter: under which draw style it was seen (Shaded,
+where the crease is the only edge, or one with edge lines over it); and
+whether it is every crease or the ones at a slant.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -5671,4 +5712,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 63)
+so far entries 46 to 64)
