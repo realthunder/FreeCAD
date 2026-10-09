@@ -134,6 +134,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. 2026-10-09 10:16: part (a) written by the build session and building; its three choices answered by the reporter 10:25 -- the type is a combo list on the preferences page and is kept as usual; the render cache is hidden from the page, settable by program, and ignored (route 3 always) while the engine draws. The MSAA part, the split turned into tabs, is not decided or read further |
 | 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
+| 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself shows only part of the geometry | OPEN; the report log of the open is kept, nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4383,6 +4384,44 @@ code change (the id pass turns it off by a negated width).
 Not said yet by the reporter: on which models, and what difference in
 frame time would be enough to drop it.
 
+## 53. `scanner.FCStd` opened without the recompute: the TechDraw page shows only part of the geometry -- OPEN
+
+**2026-10-09 10:29, reported:** "new defect. opening the scanner file, it
+will prompt for recompute. if do not recompute, the auto opened techdraw
+page only shows part of the geometry."
+The steps: open `scanner.FCStd`; the program asks whether to recompute (the
+file is from the older kernel); answer no. The TechDraw page that opens with
+the document then shows only a part of its geometry.
+On the copy staged 2026-10-09 08:40 (`9bcbdc191d`), the session of entries
+49 and 50 (started 09:24:59, the render engine drawing again since the type
+was set back by hand).
+
+**Evidence:** the session's report log as it stood at 10:29, copied by the
+note-taker to `..\dl\handson\2026-10-09\entry53\mcp_console-1029.log`.
+
+**What it shows: read by the note-taker, nothing run.** The file was opened
+twice in this session, 09:28:30 and 10:12:40. The second time:
+
+| time | report log |
+|---|---|
+| 10:12:40 | "Recomputation required for document 'scanner' on geo element version change in scanner#Body.Shape: 1.15.70200.4 -> 1.15.80001.4" -- the question |
+| 10:12:50 to 10:12:57 | the page's views worked out with no recompute of the document: sketches set up, "DVS: SectionOrigin doesn't intersect part in SectionView003", "DVS::prepareShape - failed to build shape SectionView003 - Bnd_Box is void", and the dimensions' "no exact match for changed 2d reference" |
+| 10:12:57 to 10:13:40 | nothing: the page as the reporter describes it would be on screen here |
+| 10:13:40 to 10:14:22 | a recompute of the document after all (`Pad033` and `Fillet011` in error, as known; "Recompute failed!" at 10:14:20), and the page's views worked out again |
+
+So the page was drawn once from the shapes as the file has them, and again
+after a recompute about a minute later. `SectionView003` fails to build its
+shape BOTH times, so it is not what makes the difference. What is missing
+on the page between the two is not in the log.
+Where it may touch other entries, a guess: entry 47 (once, a first load
+whose 3D view was empty for a while) is also something not drawn right
+after a load.
+
+Not said yet by the reporter: which page; WHAT is missing -- whole views,
+or some of a view's lines, the hidden ones, the dimensions; whether the
+page is complete once the document has been recomputed; and whether it is
+the same with the page drawn by Qt and by the backend.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4390,4 +4429,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 52)
+so far entries 46 to 53)
