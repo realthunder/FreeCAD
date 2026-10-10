@@ -4547,6 +4547,23 @@ two ways are for the crash only; the log puts the wait on the deferred
 restore's slices, and does not say whether the reporter's "mesh loading
 in other thread" has a part in it.)
 
+**2026-10-10 21:43, the build session takes that point up: what the empty
+stretch is made of is BEING MEASURED.** Passed to it by the note-taker at
+21:41; its answer:
+- The log does not say what the 20 s on LinkVibe are made of: the
+  view-provider drain, Part's visual drain, or the pre-mesh on the worker
+  threads. (So "the log puts the wait on the deferred restore's slices"
+  just above was the note-taker's reading of it, and says too much.)
+- One open with the Gui and Part log on is running (started 21:43 by its
+  clock, tag `s-e47b-log`); the drains print their own account of slices
+  and seconds. The split goes into `docs/HandsOnLog.md`, and here after
+  it.
+- For the reporter, in its words: "whether the empty stretch itself is to
+  be worked on is not decided; what it is made of is being measured".
+- Whether the reporter's "mesh loading in other thread" explains the
+  stretch: no evidence either way yet. Nothing is to be read into the
+  measurement on that until the split is there.
+
 ## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- both FIXED, not staged: `31c09e28e7`, and `8a7595512d`, which is the TEST's -- the "real defect" of 14:14 is WITHDRAWN; the third no defect (see `docs/HandsOnLog.md`)
 
 **2026-10-10 16:57, from the build session: the second test FIXED
