@@ -1996,9 +1996,18 @@ Still refused (17):
 
 - #631 (12): the wall drafted about the other side wall (the hinge at
   x=7.5) and the like on Fillet002/003. With the edges joined, OCCT fails
-  in `StartSol`, where the fillet's walk starts: at the moving end the ramp
-  is 1.98 wide and narrows under a loft face, and the r=49 contact line
-  runs onto it (r=45 works at 5 deg, from 35 fails at 15).
+  in `StartSol`, where the fillet's walk starts (r=45 works at 5 deg, from
+  35 fails at 15). The fillet does not fit: no section of it has both
+  contacts on their faces. Undrafted, the r=49 fillet already overflows --
+  its ramp contact leaves the ramp under the arm's side face for x < 4.06
+  and OCCT trims the cylinder there -- and it starts in the 3.4 left
+  between x=4.06 and the side wall at 7.5. The hinge skews the edge, so
+  the ramp contact slides one way along it and the wall contact the other,
+  and the window closes: at 5 deg the ramp contact is on the ramp only for
+  w < 1.10 along the 15.1 edge and the wall contact on the wall only from
+  1.83. Making it means a fillet trimmed on both sides with nowhere to
+  start the walk, which OCCT does not build; refused, and open only if
+  that is wanted.
 - #962 at 60 deg (4): the wall swings past its sloped top, the two faces
   the fillet joined no longer meet. Drafted first, there is no edge to
   fillet; refused, as it should be.
