@@ -39,6 +39,9 @@
 #ifndef _PreComp_
 #endif
 
+#include <chrono>
+#include <mutex>
+
 #include <QVector>
 
 #include <Base/Console.h>
@@ -315,11 +318,35 @@ std::vector< std::vector<std::string> > LineGenerator::getLineDefinitions()
 }
 
 //! retrieve a sorted list of available line definition files.
+//!
+//! The folder is read once for the place the preference names, and again
+//! no sooner than two seconds after. This is asked for EVERY EDGE that is
+//! drawn -- getLinePen() asks isCurrentProportional(), which asks for the
+//! list -- and each asking listed the folder and asked the file system
+//! about every entry in it. On one load of a document with ten pages that
+//! was 14.5 s of the GUI thread's 44, where the file system is watched and
+//! a question to it is dear (docs/HandsOnLog.md, entry 47); it is thousands
+//! of folder listings anywhere. A standard added to the folder is found
+//! within the two seconds.
 std::vector<std::string> LineGenerator::getAvailableLineStandards()
 {
+    static std::mutex guard;
+    static std::string scannedLocation;
+    static std::vector<std::string> scanned;
+    static std::chrono::steady_clock::time_point scannedAt;
+    static bool haveScanned = false;
+
+    const std::string location = Preferences::lineDefinitionLocation();
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(guard);
+    if (haveScanned && location == scannedLocation
+        && now - scannedAt < std::chrono::seconds(2)) {
+        return scanned;
+    }
+
     std::vector<std::string> result;
     std::string lineDefToken{"LineDef"};
-    Base::FileInfo fi(Preferences::lineDefinitionLocation());
+    Base::FileInfo fi(location);
     auto fiAll = fi.getDirectoryContent();
     for (auto& entry : fiAll) {
         if (!entry.isFile()) {
@@ -332,6 +359,10 @@ std::vector<std::string> LineGenerator::getAvailableLineStandards()
         }
     }
     std::sort(result.begin(),result.end());
+    scanned = result;
+    scannedLocation = location;
+    scannedAt = now;
+    haveScanned = true;
     return result;
 }
 
