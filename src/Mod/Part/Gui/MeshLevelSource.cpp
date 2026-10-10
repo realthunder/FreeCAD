@@ -478,7 +478,7 @@ void pumpLandings()
     // (docs/DocumentLoad.md sec 18.11). Its work runs the clock the
     // drains' slices run, so that neither takes the other's turns for
     // the price of a frame.
-    static Gui::TurnPace s_pace;
+    static Gui::TurnPace s_pace {"level landing"};
     Gui::TurnPace::Turn turn(
         s_pace, std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0);
     const double budget = turn.budget();

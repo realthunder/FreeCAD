@@ -922,7 +922,7 @@ struct DeferredVisuals {
     bool running = false;
     /// What the drain knows of the event loop between its slices: a slice
     /// grows with what a frame costs (Gui/TurnBudget.h).
-    Gui::TurnPace pace;
+    Gui::TurnPace pace {"visual drain"};
     /// The drain's own progress indicator (KeepInteractive: it reports,
     /// it does not take the window away). Created at the first slice
     /// that can work, one step per parked visual popped, reset when the

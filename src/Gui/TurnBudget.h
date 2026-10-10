@@ -104,8 +104,9 @@ public:
     class GuiExport Turn
     {
     public:
-        /// \a budget and \a share as for turnBudget().
-        Turn(TurnPace& pace, double budget, double share = 0.5);
+        /// \a budget and \a share as for turnBudget(). \a what names this
+        /// turn where it is not the party's usual work (TurnPace's name).
+        Turn(TurnPace& pace, double budget, double share = 0.5, const char* what = nullptr);
         ~Turn();
         Turn(const Turn&) = delete;
         Turn& operator=(const Turn&) = delete;
@@ -133,6 +134,7 @@ public:
         double _workedAtStart;
         double _yielded = 0.0;
         double _budget;
+        const char* _what;
         bool _backlog = true;
         bool _wasWorking;
     };
@@ -158,6 +160,16 @@ public:
         bool _wasWorking;
     };
 
+    TurnPace() = default;
+    /// \a name says whose turns these are, in the report of a slow one:
+    /// with Render_LevelDebug, a turn that held the thread for
+    /// Render_LevelSlowBuildMS or longer is logged with its work and with
+    /// what it yielded, beside the event loop's "slow dispatch" lines --
+    /// which see a turn only as a call queued on the application.
+    explicit TurnPace(const char* name)
+        : _name(name)
+    {}
+
     /// The next turn does not follow from the last: the work waited of
     /// its own accord -- for a worker, for a load -- and what passes
     /// until then says nothing of what a frame costs.
@@ -171,6 +183,7 @@ public:
     static double worked();
 
 private:
+    const char* _name = "a turn";
     std::chrono::steady_clock::time_point _lastEnd;
     double _workedAtEnd = 0.0;
     /// What the event loop took from inside the last turn.

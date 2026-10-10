@@ -296,7 +296,7 @@ struct DocumentP
     FC_DURATION _deferLongest {0};
     // What the drain knows of the event loop between its slices: a slice
     // grows with what a frame costs (TurnBudget.h)
-    TurnPace _deferPace;
+    TurnPace _deferPace {"view provider drain"};
     // The drain's progress indicator (KeepInteractive -- it reports, it
     // does not take the window away), one step per object unit over all
     // three phases. Without it the stretch between the open returning
@@ -3988,7 +3988,7 @@ void Document::runDeferredServeSlice()
     // A slice as the drain's: longer where a frame is dear
     TurnPace::Turn turn(d->_deferPace,
         std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0,
-        loadTurnShare);
+        loadTurnShare, "deferred files");
     // Deliberately without the drain's restore semantics: phase zero serves
     // entries a parked record is about to read back, while this serves them
     // into a document that is fully live -- an ordinary property change

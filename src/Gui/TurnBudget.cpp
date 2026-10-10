@@ -22,6 +22,9 @@
 
 #include "PreCompiled.h"
 
+#include <Base/Console.h>
+
+#include "RenderParams.h"
 #include "TurnBudget.h"
 
 using namespace Gui;
@@ -79,12 +82,13 @@ double TurnPace::worked()
     return workedAt(Clock::now());
 }
 
-TurnPace::Turn::Turn(TurnPace& pace, double budget, double share)
+TurnPace::Turn::Turn(TurnPace& pace, double budget, double share, const char* what)
     : _pace(pace)
     , _outer(account().current)
     , _start(Clock::now())
     , _workedAtStart(workedAt(_start))
     , _budget(budget)
+    , _what(what ? what : pace._name)
     , _wasWorking(account().working)
 {
     // Away for the time that passed, less the work of the turns taken in
@@ -110,6 +114,19 @@ TurnPace::Turn::~Turn()
     _pace._backlog = _backlog;
     account().current = _outer;
     setWorking(_wasWorking, now);
+    // Whose turn a slow dispatch was (see TurnPace's constructor)
+    if (RenderParams::getLevelDebug() && RenderParams::getLevelSlowBuildMS() > 0) {
+        const double held = seconds(_start, now) * 1000.0;
+        if (held >= double(RenderParams::getLevelSlowBuildMS())) {
+            Base::Console().Message(
+                "slow turn: %s %.0fms = work %.0fms + yielded %.0fms (budget %.0fms)\n",
+                _what,
+                held,
+                held - _yielded * 1000.0,
+                _yielded * 1000.0,
+                _budget * 1000.0);
+        }
+    }
 }
 
 double TurnPace::Turn::elapsed() const
