@@ -326,7 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), not pushed; a crash FOUND on both, not fixed, two ways to fix it for the reporter | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, not pushed; the rest of the wait being chased, and x16win asked for its numbers | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5022,7 +5022,7 @@ two agree. Nine more GUI tests take their second view the same way
 (`grep -A4 Std_ViewCreate tests/gui`); they pass, being the first document
 of their run, and are left as they are.
 
-## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe, 14 to 18 s after `24f7c8a2bd`; a close from inside the load crashes on both, NOT fixed
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe, 14 to 18 s after `24f7c8a2bd`; a close from inside the load crashed on both, FIXED `93fc6cd58a`
 
 **The entry:** once in three sessions the first load's view was empty 13 s
 after opening, the background and the navigation cube only.
@@ -5157,6 +5157,49 @@ it skips, being unable to write.
   clipboard (that is 0.18 s once here), not looked at.
 
 The crash is as it was: not fixed, the two ways with the reporter.
+
+**The reporter, 2026-10-10 about 23:15:** "Defer close. Chase load toming
+further. Push and then Ask x16win to try loading. That laptop is not
+company managed". Pushed 23:20 (`80498e6178`) and again with the measuring
+script (`a810955c86`); x16win asked, building; its `scanner.FCStd` is not
+this one (5.5 and 6.5 MB there, 6,119,171 bytes here).
+
+**The crash -- FIXED `93fc6cd58a`, the close deferred as far as it has to
+be.** Not the close: the deletion. A close that finds a slice of the
+document's own drain on the stack goes ahead as any close does -- the
+views, the tree, the signals, the application's lists, so that
+`listDocuments()` is empty when `closeDocument()` returns and the file can
+be opened again in the same breath -- and the two documents are let go of
+without being deleted. `App::Application::closeDocument` and
+`Gui::Application::slotDeleteDocument` go by the document's `RestoreDrain`
+status, which is the slice's own guard; `Gui::Document::beforeDelete` marks
+the Gui document by the same. The slice asks after every call that can run
+events (each step of its sequence, the parked files, each record, each
+finish) and ends at once; the last thing out of it posts the deletion of
+both for the event loop's next turn, the Gui document first as a close has
+it. Holding the whole close back until the slice was out would have left a
+closed document in the list and under its name for a script that goes on
+in the same call.
+
+`tests/gui/close-during-view-provider-drain.py`: a timer that runs every
+millisecond and closes the document the first time it finds it restoring
+-- after the open has returned that is a slice on the stack -- five loads
+of 1500 solids closed so, one reopened in the same breath, then a load
+left to finish; each closed document's Python object stops answering once
+its slice has unwound. Before the change: dead at the first close (access
+violation in `FreeCADGui`), no check reached. After: 5 of 5 in four runs of
+four. `close-during-visual-drain.py` 4 of 4; `scanner.FCStd` closed 10 and
+15 s after its open, four sessions, clean. The test first asked for the
+second, third and fifth such moment of a load and found one: the bar runs
+events once in a fifth of a second and that drain is through in two or
+three of them; a load that gives none is done again.
+
+Not covered: a close that comes while a slice run by
+`flushDeferredRestore()` is on the stack and whose caller then goes on
+with the document (a save that flushes): the documents live until the
+event loop's next turn, which is enough unless that caller runs events
+itself. And the serve slice (`runDeferredServeSlice`), which holds no
+guard, is as it was.
 
 **The close.** The script closes its document when its last frame is
 taken.
