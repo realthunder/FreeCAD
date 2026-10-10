@@ -182,6 +182,19 @@ known thickness failures, 50 skipped, 6 expected failures
 what waits for the push is tested as it stands. PAUSED here for the
 reporter's word on the push and the stage.
 
+Taken up again the same night on three words of the reporter's: "Do the new
+dash" (the dashes counted in the width asked for, which the account above had
+left with them as a choice of mine); "Add a techdraw setting for backend
+rendering line width rounding"; and "After the rendering fix is done, push
+and stage". Done: `721fdcf39b`, both in one commit (entry 61, once more,
+below). On its build: ten GUI tests by hand, 193 claims, no FAIL.
+Both full suites on that build, ended 2026-10-10 09:28 and 09:41 (the box
+slept in between): Python 3411 tests with the two known thickness
+failures; ctest 790 of 791 -- `ReaderTest.readDataSmallerThanBuffer` could
+not make its temporary directory (`unit_test_Reader_0`, a name two Reader
+tests run side by side both ask for), and the fourteen Reader tests run
+again by themselves all pass. Nothing of the base library was touched.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -226,7 +239,7 @@ Evidence that does not belong in the repository is under
 | 65 | STAGED 2026-10-09 17:36, fixed `6a6fa208d6` | the path tracer's frame is an uploaded image drawn with a render target's texture coordinate, which is turned over on every backend but OpenGL: upside down on Direct3D, the Windows default. The fragment shader takes the turn back out. Found by reading by the note-taking session; confirmed and scored by a picture |
 | 64 | FIXED `66ccd277b9`, in its shader as asked; a second defect found on the way FIXED `dfdfc04c5c`; not pushed, not staged | the pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of. It now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes: along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line and strays 0.01 to 0.04, with the same weight of line. On the way: under an orthographic camera the creases of whatever lay near the camera dropped out (the depth test was a fraction of the depth); they are whole now |
 | 66 | MEASURED; the freeze FIXED `6073d32437`, not pushed, not staged; the first opening and what a reset costs under a theme measured and NOT changed, for the reporter | the freeze is not the reset but the dialog being destroyed, which a reset, OK and Cancel all bring about: each of its 11 to 17 file choosers had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s when the dialog was closed within half a minute of opening. One model for all, made when a line is first typed into: 0.0 to 0.9 s. The first opening is 3.5 s for 1.6 to 2.4 later (the Material library read once, 1.8 s; showing 2600 widgets under a theme, 1.2 s) |
-| 61 | REVERSED on the reporter's word, `2649caa38f`, not pushed, not staged: the widths asked for, and the highlight its line's | first (`f7408b1f9f`) the backend was fed Qt's cut widths, 0.35 mm as 0.3, so that the highlight, read off the Qt item's pen, was not the thinner of the two. Now the other way: every line at the width asked for, fractions included; a captured item's width is taken off the item and not its pen; and an edge that is lit is left out of the drawing under its highlight |
+| 61 | REVERSED on the reporter's word, `2649caa38f`; the dashes with the widths, and a setting that rounds both as Qt does, `721fdcf39b` | first (`f7408b1f9f`) the backend was fed Qt's cut widths, 0.35 mm as 0.3, so that the highlight, read off the Qt item's pen, was not the thinner of the two. Now the other way: every line at the width asked for, fractions included, its dashes counted in that width; a captured item's width is taken off the item and not its pen; an edge that is lit is left out of the drawing under its highlight. `PageRendererVgRoundLineWidth` (off) gives Qt's whole tenths back, dashes and all |
 | 62 | DONE `9d354a8c44`; the recent items BEFORE the modes `f5dc9027e7`, as the reporter decided; not pushed, not staged; four choices of mine still with the reporter | the box comes up with the items last confirmed in it -- a command run, a parameter or a property opened, an object selected -- ten at most, the newest first, above the three modes, and ON the first of them: Return on a box just brought up repeats the last item |
 | 63 | DONE `b20c825573`, and the reporter's three changes `8fed56f3df`; not pushed, not staged; for the reporter to try: the menu as a popup, and the handle by hand | the menu has the style as a combo, the anti-aliasing and the lights. Since: the tool button wears the split cube; "Apply all" is a button that copies the active view's lights to the other views once; "Direction" raises Coin's light dragger in the view, drawn over the model, asked before the navigation |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
@@ -4373,3 +4386,63 @@ FAIL: `view-settings.py` 7, `general-settings.py` 9, `entry24-decisions.py`
 **Not run:** the legacy Coin rendering (render type `Legacy`), where Coin
 draws the annotation itself; a drag of the ball; the navigation styles
 other than the default with the handle up.
+
+## 61, once more. The dashes with the widths; a setting for the rounding -- DONE `721fdcf39b`
+
+Two words of the reporter's on the account above: "Do the new dash" -- the
+dashes had been left as Qt counts them, and that was put to them as a
+choice -- and "Add a techdraw setting for backend rendering line width
+rounding".
+
+**The dashes.** A dash pattern is so many line widths long, and it is
+counted in the width the line is DRAWN at now, for an edge and for anything
+captured off a Qt item alike. Measured at 12 pixels to the millimetre
+(`techdraw-page-backend-dashes.py`):
+
+| a hidden line, 0.35 mm asked | Qt | the backend | the backend, rounding on |
+|---|---|---|---|
+| dashes along the pocket's side | 7 | 6 | 7 |
+| from one dash to the next | 54.0 px | 63.0 px | 54.0 px |
+| against Qt's | | 1.167, as 0.35 to 0.3 | 1.000 |
+
+A line asked for at whole tenths (0.5, 0.7) has Qt's dashes exactly, as
+before. How the dashes take a zoom -- counted in pixels where the pen is
+thinner than one -- is unchanged (entry 36).
+
+**The setting.** `Mod/TechDraw/General/PageRendererVgRoundLineWidth`, a
+switch, OFF by default:
+- off, a line is as wide as it is asked to be (0.35 mm is 0.35);
+- on, its width is rounded DOWN to a whole tenth of a millimetre, as the Qt
+  page draws it (0.35 mm is 0.3), a line under a tenth is a hairline, and
+  its dashes are Qt's, being counted in the width drawn.
+A line and its highlight agree either way: one function says what a line
+is drawn at, for the edge, for the item captured as its highlight and for
+the dashes of both. A change reaches an open page at once. Where it is: in
+the omni search (`/param PageRendererVgRoundLineWidth`), as the other
+`PageRendererVg` switches are; no preference page has any of them. For the
+reporter to say if it should be on a page, and under what name.
+
+**Choices of mine, for the reporter:**
+1. OFF by default, since fractional widths were what was asked for.
+2. Rounded DOWN, as Qt does, not to the nearest tenth: the point of the
+   switch, by my reading, is the Qt page's picture.
+3. One switch for the widths and the dashes together, not two.
+
+**Scored.** `techdraw-page-backend-dashes.py` 30 PASS;
+`techdraw-page-backend-line-widths.py` 30 PASS, the setting turned on with
+the page up: every line 0.300 mm at once, a selected line 6.00 px for its
+6.00, nothing beside it. On the build, no FAIL:
+`techdraw-page-backend-single-draw.py` 17, `-hatch.py` 39, `-switch.py` 11,
+`techdraw-section-line-click.py` 10,
+`techdraw-page-before-its-view-providers.py` 12,
+`state-and-missed-settings.py` 21, `entry24-decisions.py` 13,
+`python-settings-door.py` 10.
+
+**Seen once, not followed up:** on the build before this one,
+`techdraw-page-before-its-view-providers.py` failed two of its Qt claims
+("the view's outline is drawn as loaded": no ink) -- 12 PASS an hour before
+and 12 PASS on the next build, and nothing between them touches how the Qt
+page draws. A matter of when the test looks, by my guess; not shown.
+
+**Not run:** the streamed page, as before -- it takes the same feed and so
+the same setting.
