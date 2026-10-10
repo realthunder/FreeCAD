@@ -1675,6 +1675,17 @@ void Document::addViewProvider(Gui::ViewProviderDocumentObject* vp)
 
 void Document::setModified(bool b)
 {
+    // Not while the load's view providers are still being built. What sets
+    // the flag then is the drain: its slices replay the file's own record
+    // through the handlers every change goes through, and
+    // finishDeferredRestore() puts the flag back to what the load left. In
+    // between the document said it was modified: its tab had the mark, and
+    // a close (Ctrl+W, the tab's button) asked "save your changes?" of a
+    // document that was only opened -- from inside a slice, if that is
+    // where the event ran, where Save wrote the file without the view
+    // providers the drain had not reached.
+    if (b && d->_deferVPs)
+        return;
     if(d->_isModified == b)
         return;
     d->_isModified = b;

@@ -33,6 +33,11 @@ What is asserted:
   - the process lived, and came back to its event loop each time (a hang
     ends in the driver's timeout, with no DONE);
   - no document is left over after each close;
+  - one of the closes is the window's own (Std_CloseActiveWindow, what
+    Ctrl+W runs) and not closeDocument(): it comes back -- it used to ask
+    "save your changes?", the document counting as modified for as long as
+    its view providers were being built -- and the document is gone with
+    its view soon after;
   - each closed document is deleted soon after: its Python object no
     longer answers;
   - a load after all of that still finishes: every object has its view
@@ -47,7 +52,7 @@ import traceback
 
 import FreeCAD
 import FreeCADGui
-from PySide import QtCore
+from PySide import QtCore, QtWidgets
 
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
@@ -55,9 +60,12 @@ PATH = os.path.join(OUT, "drain.FCStd")
 COUNT = 1500
 # Loads closed from inside a slice, and one more closed and reopened there
 CLOSES = 4
+# The one of them closed by the command of the window's close, not by closeDocument()
+BY_COMMAND = 1
 
 state = {"done": False, "cycle": -1, "armed": False, "inside": 0, "closed": 0, "left": 0,
-         "reopen": False, "old": [], "gone": 0, "attempt": 0, "retries": 0}
+         "reopen": False, "old": [], "gone": 0, "attempt": 0, "retries": 0,
+         "boxes": []}
 
 WATCH = QtCore.QTimer()
 WATCH.setInterval(1)
@@ -76,6 +84,21 @@ def check(name, cond, detail=""):
 
 def watch():
     """Every millisecond: between two slices, and from inside one when the bar runs events."""
+    box = QtWidgets.QApplication.activeModalWidget()
+    if box is not None:
+        # A close that asks: said, and answered so that the close goes on
+        text = box.text() if isinstance(box, QtWidgets.QMessageBox) else type(box).__name__
+        state["boxes"].append(text.replace("\n", " ")[:120])
+        discard = None
+        if isinstance(box, QtWidgets.QMessageBox):
+            for button in box.buttons():
+                if box.buttonRole(button) == QtWidgets.QMessageBox.DestructiveRole:
+                    discard = button
+        if discard is not None:
+            discard.click()
+        else:
+            box.reject()
+        return
     if not state["armed"]:
         return
     doc = FreeCAD.ActiveDocument
@@ -91,12 +114,23 @@ WATCH.timeout.connect(watch)
 
 def close_now(doc=None):
     try:
+        by_command = doc is not None and state["cycle"] == BY_COMMAND
         if doc is not None:
             state["old"].append(doc)
-        for name in list(FreeCAD.listDocuments().keys()):
-            FreeCAD.closeDocument(name)
+        if by_command:
+            # What Ctrl+W runs: the view's own close, which asks its document whether it may.
+            # The view goes when the event loop is back where it was asked, and the document
+            # with its last view: after the slice, so what is to be seen here is that the
+            # command comes back at all -- it asked "save your changes?" of a document that
+            # was only opened, and waited for an answer -- and that the document is gone by
+            # the next cycle, left alone.
+            FreeCADGui.runCommand("Std_CloseActiveWindow")
+            state["asked"] = True
+        else:
+            for name in list(FreeCAD.listDocuments().keys()):
+                FreeCAD.closeDocument(name)
+            state["left"] += len(FreeCAD.listDocuments())
         state["closed"] += 1
-        state["left"] += len(FreeCAD.listDocuments())
         if state["reopen"]:
             # In the same breath: the same name is a new document's now
             FreeCAD.openDocument(PATH)
@@ -122,6 +156,8 @@ def next_cycle():
         return
     try:
         # The document closed in the cycle before has had its slice unwind
+        if state.pop("asked", False):
+            state["command"] = len(FreeCAD.listDocuments())
         state["gone"] = sum(1 for doc in state["old"] if deleted(doc))
         for name in list(FreeCAD.listDocuments().keys()):
             FreeCAD.closeDocument(name)
@@ -179,6 +215,11 @@ def verdict():
         check("the process lived through every close and came back to its event loop",
               state["closed"] == cycles, "%d of %d" % (state["closed"], cycles))
         check("no document was left over by a close", state["left"] == 0, state["left"])
+        check("the window's own close (Std_CloseActiveWindow), from inside a slice, came back "
+              "and its document went with the view", state.get("command") == 0,
+              state.get("command"))
+        check("no close raised a box: a document that was only opened has nothing to ask about",
+              not state["boxes"], state["boxes"][:3])
         check("each closed document was deleted once its slice had unwound",
               state["gone"] == len(state["old"]) and state["gone"] == state["inside"],
               "%d of %d" % (state["gone"], len(state["old"])))
