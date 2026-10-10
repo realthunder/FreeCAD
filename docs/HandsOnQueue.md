@@ -4633,6 +4633,16 @@ and relayed by it verbatim at 23:04 (the note-taker did not hear it):**
   also be read as WAY 2 for the crash (the close defers to the slice).
   How the questions were put to the reporter in the build session the
   note-taker did not see. Put to both at 23:04 -- NOT ANSWERED YET.
+- 23:06, the build session on it: the message the reporter answered had a
+  numbered list of exactly two things, in its words: "1. The crash on
+  close during the load -- make a slice run no events (my recommendation)
+  or defer the close as 3c7c8bdcbf does. 2. Whether to work on the wait
+  itself." The two ways were NOT numbered in that message (they had been,
+  1 and 2, in an earlier one of about 21:40). So "2 = the wait, yes" is
+  the nearer reading, and it acted on that; the other stays possible. For
+  the CRASH the answer is kept as NOT ANSWERED until the reporter says;
+  the crash is not touched. Nothing done on the wait would be wrong under
+  either reading.
 
 **The build session's answer to "what events current in a slice"** (in
 `docs/HandsOnLog.md`, `0a12ff66b7`; told to the reporter by it): all of
