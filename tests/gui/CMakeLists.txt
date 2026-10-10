@@ -1594,6 +1594,13 @@ fc_add_gui_test(GuiThemeOverlayThemes_tests_run
                 theme-overlay-themes.py
                 --timeout 300)
 
+# The Python editor and console take a theme's colours when it is applied --
+# the band on the current line, the text already in the console -- and each
+# theme's syntax colours can be read on its page.
+fc_add_gui_test(GuiEditorColoursFollowTheTheme_tests_run
+                editor-colours-follow-the-theme.py
+                --timeout 180)
+
 # A drag in a split view -- a corner zone or a border -- is shown as frames
 # over the cells it changes and carried out at the release; a split that
 # would leave a cell under the minimum cell size is refused.

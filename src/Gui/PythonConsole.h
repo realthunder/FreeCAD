@@ -191,6 +191,10 @@ public:
 
 protected:
     void colorChanged(const QString& type, const QColor& col) override;
+
+private:
+    /// A pass over the console's text is owed for a changed colour
+    bool recolorPending = false;
 };
 
 } // namespace Gui
