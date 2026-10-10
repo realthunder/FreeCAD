@@ -326,6 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; nothing changed; a crash FOUND on both, not fixed, two ways to fix it for the reporter | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5020,3 +5021,95 @@ the view placed in an area takes the focus with the activation, so the
 two agree. Nine more GUI tests take their second view the same way
 (`grep -A4 Std_ViewCreate tests/gui`); they pass, being the first document
 of their run, and are left as they are.
+
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe; a close from inside the load crashes on both, NOT fixed
+
+**The entry:** once in three sessions the first load's view was empty 13 s
+after opening, the background and the navigation cube only.
+
+**It is every first open, and it is the load not being over.** One open in
+a fresh session, then the engine's own frame (`saveRenderDump`) at 1, 5,
+10, ... 90 s after `openDocument` returned (`e47b.py` in
+`..\dl\handson\2026-10-10\q2`). The frame's sidecar tells an empty frame
+from a full one: 4839 or 4225 geometry pixels of 489846 at an average
+colour of (160, 161, 172) is the cube alone; 108337 at (138, 132, 112) is
+the model after a fit. Four variants -- with a fit after the open, without,
+with a redraw asked before each frame, with the reporter's two addons --
+and they do not differ in when the model comes:
+
+| | PartDesignPort, `2a45e36492` | LinkVibe, `85250d4cc0` |
+|---|---|---|
+| the open returns after | 16.9 to 20.2 s | 18.0 to 21.3 s |
+| the frame still empty | at 30 s in 9 sessions of 9; at 35 s in 3 of 3 | at 15 s in 13 of 13; at 20 to 23 s in 9 of 10 |
+| the frame complete | at 40 to 45 s, 3 of 3 | at 25 s in 7 of 7 |
+| with a redraw before each frame | complete at 33 s; the frame asked at 5 s came back at 33 | complete at 5.6 s; the next frame came back at 23.8 |
+
+So the view shows nothing until the last view provider is built, and the
+camera's clipping planes move while it does (0.999 and 10.01, then 22.2 and
+67.9, then 0.98 and 112.8): the scene's bounds grow and nothing of it is
+drawn. The 13 s of the entry was a frame taken inside that time; the two
+loads that were "complete" were later loads of the same session, taken
+later. With a redraw asked, the call does not come back until the drain is
+done -- the slices run inside it.
+
+**The reporter, the same afternoon:** "it could be mesh loading in other
+thread which has a fix in other branch. check remote LinkVibe branch. you
+can switch to this branch from now on for testing." LinkVibe has the first
+picture of every object before any refine (`fc74256a24`), the visual drain's
+own close (`3c7c8bdcbf`) and the pre-mesh's end at quit (`806ab94621`).
+Merged with PartDesignPort (`7cd1dc14ea`; the bgfx and cycles pointers the
+merge on the remote had dropped are back, `85250d4cc0`), built, and the
+right column above is that build. The wait is 15 to 20 s shorter and still
+there: about 20 s of an empty view after the open has returned.
+
+**The close.** The script closes its document when its last frame is
+taken.
+
+| | closes | crashed |
+|---|---|---|
+| PartDesignPort, 31 s after the open (inside the load) | 6 | 5: reading 0x10 in `Gui::Document::slotNewObject`, `activeView->getViewer()`, called from `runDeferredRestoreSlice` |
+| PartDesignPort, after the load's end | 4 | 0 |
+| LinkVibe, 10 s after | 2 | 0 |
+| LinkVibe, 15 s after | 3 | 1: reading 0x258 in `Base::XMLReader::endCharStream`, from `readElement`, from `runDeferredRestoreSlice` (`Document.cpp` 3722) |
+| LinkVibe, 20 s after | 3 | 0 |
+| LinkVibe, 30 s after (the load is over by 25) | 4 | 0 |
+
+**Why.** A slice of `Gui::Document::runDeferredRestoreSlice` reports to a
+progress sequence, `d->_deferSeq->next()`, and the progress bar runs
+`qApp->processEvents()` from inside that call when 200 ms have passed since
+it last did. The script's timer is one of those events. Its
+`closeDocument` runs to the end with the slice on the stack:
+`Gui::Application::slotDeleteDocument` calls the document's
+`beforeDelete()`, which clears the parked records and resets the reader,
+and then deletes the `Gui::Document`; `App::Application::closeDocument`
+deletes the `App::Document` after it. The slice goes on -- on LinkVibe with
+`*d->_deferReader` of a reader that is null, on PartDesignPort into
+`slotNewObject` and a view that is gone -- and what it would touch after
+that (`d`, the document, the guards it holds on both) is freed. A close
+that falls between two slices is clean: the timer that runs the next slice
+looks the document up by name and finds none. That is why it is 1 of 12
+here and was 5 of 6 there; it is the chance of the event arriving inside a
+slice, not a fix. `3c7c8bdcbf` is this same thing for Part's visual drain
+and does not reach this one.
+
+Not tried: the reporter's own close (the tab's button, Ctrl+W) while the
+bar runs. `3c7c8bdcbf` says those "are not acted on while the bar runs";
+the sequence here is `KeepInteractive`, which takes no grab on the input,
+and the pump is a plain `processEvents()`, so I do not know that it holds
+for this drain.
+
+**Not fixed. Two ways, for the reporter:**
+1. A slice runs no events. Between two slices the event loop has its turn
+   already, so the pump inside one buys nothing but this; the sequence
+   would report its step and the bar draw it on the loop's own turn. Small,
+   and it also takes away every other event a slice is not written for (a
+   second open, an undo, a recompute from a timer). My choice.
+2. As `3c7c8bdcbf` does it: a close that finds a slice on the stack empties
+   the parked work and counts itself, the two documents are deleted when
+   the slice has unwound, and the slice reads the count around every call
+   that can run events. Keeps the pump; more to get right, as both
+   documents have to outlive the slice.
+
+Pictures and logs: `..\dl\handson\2026-10-10\q2\g-r-e47b-*-dev`
+(PartDesignPort), `g-s-e47b-*-dev` (LinkVibe; the crash is
+`g-s-e47b-close15-3-dev`, its stack in `FreeCAD.log`).
