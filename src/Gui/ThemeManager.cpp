@@ -138,6 +138,12 @@ const std::vector<std::string>& ThemeManager::appearanceKeys()
         // one's answer.
         "CustomTitleBar",
         "TitleBarToolBars",
+        // The style sheet's parameters come from the file named after the
+        // theme unless this names another, and a theme that is another
+        // theme's look under a name of its own does name it (the overlay
+        // themes: Dark.yaml, Light.yaml). Left behind, the next theme
+        // would be drawn with the last one's parameters.
+        "ThemeStyleParametersFile",
     };
     return keys;
 }

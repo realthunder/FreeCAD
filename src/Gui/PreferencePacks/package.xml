@@ -40,6 +40,28 @@
       <tag>stylesheet</tag>
       <tag>theme</tag>
     </preferencepack>
+    <preferencepack>
+      <name>Overlay dark theme</name>
+      <type>Theme</type>
+      <description>The Dark theme with the dock windows in overlay mode, over the 3D view.</description>
+      <version>1.0.0</version>
+      <tag>built-in</tag>
+      <tag>dark</tag>
+      <tag>overlay</tag>
+      <tag>stylesheet</tag>
+      <tag>theme</tag>
+    </preferencepack>
+    <preferencepack>
+      <name>Overlay light theme</name>
+      <type>Theme</type>
+      <description>The Light theme with the dock windows in overlay mode, over the 3D view.</description>
+      <version>1.0.0</version>
+      <tag>built-in</tag>
+      <tag>light</tag>
+      <tag>overlay</tag>
+      <tag>stylesheet</tag>
+      <tag>theme</tag>
+    </preferencepack>
   </content>
 
 </package>
