@@ -5062,6 +5062,27 @@ merge on the remote had dropped are back, `85250d4cc0`), built, and the
 right column above is that build. The wait is 15 to 20 s shorter and still
 there: about 20 s of an empty view after the open has returned.
 
+**What the 20 s on LinkVibe are made of** -- one more open with the Gui
+and Part log on (`g-s-e47b-log-dev`; empty at 20.3 s, complete at 25.0),
+the drains' own account:
+
+| | slices | their time | |
+|---|---|---|---|
+| the view providers (`Gui::Document`) | 17 | 7.35 s, longest 0.70 | 320 of them; update 4.39 s, finish 1.62, restore 1.57, instantiate 0.71 |
+| the visuals (Part) | 14 | 2.68 s, longest 0.93 | 275 of 275, after the view providers are done |
+| the pre-mesh, on the worker threads | | 0.66 s | 166 of the 275 shapes, none failed |
+
+So the meshing on other threads is not it: 0.66 s. The two drains worked
+for 10.0 s between them, and the model was there 20 to 25 s after the open:
+the other 10 to 15 s went by BETWEEN the 31 slices, a third to a half of a
+second for each turn of the event loop. A slice runs as long as the loop
+took to give the thread back, up to five budgets, and these ran 0.43 s on
+average, which says the same. What a turn of the loop does for that long
+with nothing on the screen is not measured -- the frame, the tree, the
+pages; my five frames and the sweeper's timer are in it too. That, and the
+view showing nothing until the last slice, are the two things to look at
+if the wait is to be worked on. Not decided by the reporter.
+
 **The close.** The script closes its document when its last frame is
 taken.
 
