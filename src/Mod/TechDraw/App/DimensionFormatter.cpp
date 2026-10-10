@@ -26,6 +26,10 @@
 # include <QRegularExpression>
 #endif
 
+#include <set>
+#include <string>
+
+#include <App/Document.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Base/UnitsApi.h>
@@ -134,8 +138,19 @@ std::string DimensionFormatter::formatValue(const qreal value,
         }
 
         if (isTooSmall(userVal, formatSpecifier)) {
-            Base::Console().Warning("Dimension %s value %.6f is too small for format specifier: %s\n",
-                            m_dimension->getNameInDocument(), userVal, qPrintable(formatSpecifier));
+            // Once for a dimension, a value and a format. A label is
+            // formatted whenever anything asks for its text, and this was
+            // said each time: 56 lines for one tolerance of one dimension
+            // in a single recompute (docs/HandsOnQueue.md entry 58).
+            static std::set<std::string> said;
+            App::Document* doc = m_dimension->getDocument();
+            std::string what = std::string(doc ? doc->getName() : "") + '#'
+                + m_dimension->getNameInDocument() + ' ' + std::to_string(userVal) + ' '
+                + formatSpecifier.toStdString();
+            if (said.insert(what).second) {
+                Base::Console().Warning("Dimension %s value %.6f is too small for format specifier: %s\n",
+                                m_dimension->getNameInDocument(), userVal, qPrintable(formatSpecifier));
+            }
         }
 
         formattedValue = formatValueToSpec(userVal, formatSpecifier);
