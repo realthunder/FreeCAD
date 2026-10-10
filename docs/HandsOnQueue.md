@@ -4753,6 +4753,13 @@ loading. That laptop is not company managed"
 - (The note-taker's count: the closes are a script's. The reporter's own
   close by hand during the load -- the tab's button, Ctrl+W -- was "not
   tried" at 21:40, and the message does not say it is tried now.)
+- 2026-10-11 00:28, the build session confirms it: the clean closes are
+  all a script's `closeDocument()`; the close by hand is still NOT tried.
+  It cannot press the tab's button, but it can run what the button runs
+  (`Std_CloseActiveWindow`, the view's own close) from inside a slice --
+  "a different way in to the same deletion", through
+  `Gui::Document::canClose` and the view. It will add that to the test
+  and say what it shows; until then: not tried.
 
 **Pushed twice on the reporter's word, by the build session** (checked by
 the note-taker: origin/LinkVibe = `a810955c86`):
