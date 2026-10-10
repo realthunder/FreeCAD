@@ -202,7 +202,13 @@ reporter's own FreeCAD was not running). So the stage has entries 64, 66,
 `PageRendererVgRoundLineWidth`. Smoke-tested on the staged copy right
 after: `display-style-menu.py` 34, `techdraw-page-backend-line-widths.py`
 30, `techdraw-page-backend-dashes.py` 30, `omni-search-recent-items.py` 18,
-no FAIL. PAUSED here.
+no FAIL.
+
+After the stage, on the reporter's answer to the setting's four points
+("1,2,3 yes. 4 expose to techdraw preference page"): the rounding has a
+check box on TechDraw's Advanced preference page, `a343a386b6` (entry 61,
+once more, below). Local: not pushed, not staged -- the word to push and
+stage was given before this was asked. PAUSED here.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
@@ -4436,6 +4442,18 @@ reporter to say if it should be on a page, and under what name.
 2. Rounded DOWN, as Qt does, not to the nearest tenth: the point of the
    switch, by my reading, is the Qt page's picture.
 3. One switch for the widths and the dashes together, not two.
+
+**ANSWERED by the reporter, 2026-10-10 about 10:00:** "1,2,3 yes. 4 expose
+to techdraw preference page" (4 was whether it should be on a preference
+page). DONE `a343a386b6`, not pushed, not staged: a check box "Round Line
+Widths (Backend Renderer)" on TechDraw's Advanced page, unticked by
+default. Scored by the same test, which now turns the setting on by that
+check box and OK with the page up: 33 PASS. And no FAIL:
+`preferences-ok-keeps-defaults.py` 7, `preferences-ok-reapplies-nothing.py`
+13, `preferences-reset-all.py` 12, `preferences-cancel-asks-nothing.py` 3,
+`state-and-missed-settings.py` 21, `techdraw-page-backend-dashes.py` 30.
+The full suites were not run again: a check box and its two lines of save
+and load.
 
 **Scored.** `techdraw-page-backend-dashes.py` 30 PASS;
 `techdraw-page-backend-line-widths.py` 30 PASS, the setting turned on with
