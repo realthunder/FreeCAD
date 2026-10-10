@@ -1244,6 +1244,11 @@ void Pattern::initProperty(Type type, Property* prop, const char* propName)
     }
 }
 
+long Pattern::maxOccurrences()
+{
+    return occurrencesRange()->UpperBound;
+}
+
 void Pattern::setupProperties(Type type, PropertyContainer& obj)
 {
     for (const auto& spec : getPropertySpecs(type)) {

@@ -23,6 +23,15 @@ loaded again. Claims:
   - recomputed, the array has that many elements;
   - it cannot be raised past what the file held, and a new array is still
     stopped at the limit.
+
+And the panel SAYS so (the same entry, 2026-10-10: "add some warning when
+enter edit if it exceeds ... mention this setting in warning message"): a
+count that stops at an odd number with no word of why reads as a defect.
+  - the panel of the array over the limit carries a note with the count, the
+    limit and the setting's name, Mod/Part/MaximumPatternOccurrences;
+  - so does the panel of an array along a path, whose count is another
+    widget's;
+  - the panel of an array within the limit carries none.
 """
 import os
 import re
@@ -55,12 +64,20 @@ def check(name, cond, detail=""):
 
 
 def make():
+    FreeCADGui.getMainWindow().showMaximized()
     doc = FreeCAD.newDocument("CountOverLimit")
     source = doc.addObject("Part::Box", "Source")
     array = doc.addObject("App::LinkArray", "Array")
     array.LinkedObject = source
     array.Occurrences = 3
     array.Length = 30
+    line = doc.addObject("Part::Line", "Line")
+    line.X2, line.Y2, line.Z2 = 100, 0, 0
+    along = doc.addObject("App::LinkArray", "Along")
+    along.LinkedObject = source
+    along.PatternType = "Path"
+    along.Path = (line, ["Edge1"])
+    along.Count = 3
     doc.recompute()
     src = os.path.join(OUT, "three.FCStd")
     dst = os.path.join(OUT, "over-the-limit.FCStd")
@@ -75,6 +92,10 @@ def make():
                 prop = xml.index('<Property name="Occurrences" ', start)
                 xml = xml[:prop] + re.sub(r'<Integer value="3"/>', '<Integer value="%d"/>' % HELD,
                                           xml[prop:], count=1)
+                start = xml.index('<Object name="Along"')
+                prop = xml.index('<Property name="Count" ', start)
+                xml = xml[:prop] + re.sub(r'<Integer value="3"/>', '<Integer value="%d"/>' % HELD,
+                                          xml[prop:], count=1)
                 data = xml.encode("utf-8")
             zo.writestr(item, data)
     doc = FreeCAD.openDocument(dst)
@@ -83,11 +104,67 @@ def make():
     check("the array holds the file's count after the load", array.Occurrences == HELD,
           "%d, the file's %d, the limit %d" % (array.Occurrences, HELD, LIMIT))
     check("and the load asks for no recompute of it", "Touched" not in array.State, array.State)
+    along = doc.getObject("Along")
+    check("the array along a path holds the file's count too", along.Count == HELD, along.Count)
 
 
-def open_panel():
-    doc = FreeCAD.getDocument(SEEN["doc"])
-    FreeCADGui.getDocument(doc.Name).setEdit(doc.getObject("Array"), 0)
+def widen():
+    """The panel at a width it is read at: the test profile's dock is narrower than the panel,
+    and a picture of it cuts every row short."""
+    mw = FreeCADGui.getMainWindow()
+    for w in mw.findChildren(QtWidgets.QWidget):
+        if w.metaObject().className() == "Gui::TaskView::TaskView":
+            dock = w
+            while dock is not None and not isinstance(dock, QtWidgets.QDockWidget):
+                dock = dock.parentWidget()
+            if dock is not None:
+                mw.resizeDocks([dock], [460], QtCore.Qt.Horizontal)
+            return
+
+
+def edit(name):
+    def fn():
+        doc = FreeCAD.getDocument(SEEN["doc"])
+        gdoc = FreeCADGui.getDocument(doc.Name)
+        gdoc.resetEdit()
+        gdoc.setEdit(doc.getObject(name), 0)
+        widen()
+    fn.__name__ = "edit_" + name
+    return fn
+
+
+def said():
+    """The notes naming the setting that the panel shows."""
+    return [w.text() for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QLabel)
+            if w.isVisible() and "MaximumPatternOccurrences" in w.text()]
+
+
+def picture(tag):
+    for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QWidget):
+        if w.metaObject().className() == "Gui::TaskView::TaskView" and w.isVisible():
+            w.grab().save(os.path.join(OUT, "panel-%s.png" % tag))
+            note("NOTE picture panel-%s.png" % tag)
+            return
+
+
+def says(tag, what):
+    def fn():
+        texts = said()
+        check("the panel of %s says the count is over the limit, once" % what, len(texts) == 1,
+              texts)
+        if texts:
+            check("naming the count and the limit",
+                  str(HELD) in texts[0] and str(LIMIT) in texts[0], texts[0])
+        picture(tag)
+    fn.__name__ = "says_" + tag
+    return fn
+
+
+def says_nothing():
+    values = [w.value() + (1 << 31) for w in boxes()]
+    check("the panel of an array within the limit is up", LIMIT in values, values)
+    check("and says nothing of a limit", not said(), said())
+    picture("within")
 
 
 def boxes():
@@ -169,8 +246,13 @@ def advance():
 
 
 STEPS.append((1500, make))
-STEPS.append((1500, open_panel))
+STEPS.append((1500, edit("Array")))
 STEPS.append((1500, look))
+STEPS.append((300, says("over", "an array over the limit")))
 STEPS.append((300, accept))
 STEPS.append((1500, after))
+STEPS.append((500, edit("Along")))
+STEPS.append((1500, says("along", "an array along a path")))
+STEPS.append((500, edit("Other")))
+STEPS.append((1500, says_nothing))
 advance()
