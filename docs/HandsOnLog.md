@@ -195,6 +195,15 @@ not make its temporary directory (`unit_test_Reader_0`, a name two Reader
 tests run side by side both ask for), and the fourteen Reader tests run
 again by themselves all pass. Nothing of the base library was touched.
 
+Pushed 2026-10-10 09:43, on the reporter's word: origin/PartDesignPort at
+`72180a4812`. Staged 2026-10-10 09:44:51 at the same commit (the
+reporter's own FreeCAD was not running). So the stage has entries 64, 66,
+61 in its last form, 62 and 63, and the setting
+`PageRendererVgRoundLineWidth`. Smoke-tested on the staged copy right
+after: `display-style-menu.py` 34, `techdraw-page-backend-line-widths.py`
+30, `techdraw-page-backend-dashes.py` 30, `omni-search-recent-items.py` 18,
+no FAIL. PAUSED here.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
