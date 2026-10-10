@@ -257,6 +257,24 @@ pushed, not staged. Tested on their builds: `TestLinkArray` 15,
 45, `editor-colours-follow-the-theme.py` 18; the full suites were NOT run
 again after the morning's (the pattern code and three theme files since).
 
+They were, started 16:15 on the afternoon's tree (`438216ad93`) and ended
+16:21 and 16:33: ctest 791 of 791; Python 3411 tests with the two known
+thickness failures, 50 skipped, 6 expected failures.
+
+Pushed 2026-10-10 about 16:30, on the reporter's word ("push first"):
+origin/PartDesignPort at `e7f5ee912a`. Not staged: the copy under test is
+still `72180a4812`.
+
+The session of 2026-10-10, from 16:30 (the reporter: "continue as planned",
+then "push first"). The warning put off from the afternoon is in,
+`2a45e36492` ("58, once more" below). Entry 48's second test is fixed,
+`8a7595512d`, and it was the TEST: the defect this log reported in the
+morning does not exist ("48, again" below). Both LOCAL, not pushed, not
+staged. GUI tests by hand on that build, no FAIL:
+`pattern-count-over-the-limit.py` 16, `element-color-hide.py` 624 of 624.
+The full suites were not run again (one accessor in App, two labels in the
+pattern panels, two test scripts since the run above).
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -307,8 +325,8 @@ Evidence that does not belong in the repository is under
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
-| 48 | one FIXED `31c09e28e7`, not pushed; the other FOUND, not fixed | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found |
-| 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, not pushed; the rest listed with a proposal each; a warning on entering edit asked, for the next session | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
+| 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
+| 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -4718,7 +4736,7 @@ and `g-h-e30overlay-dev` after; `g-e-e30overlay-staged` is the old preset).
 - the freeze of the second task is as it was: a change of theme sets the
   application's style sheet again.
 
-## 48. Two GUI tests that failed on every build here -- one FIXED `31c09e28e7`; the other FOUND, not fixed
+## 48. Two GUI tests that failed on every build here -- one FIXED `31c09e28e7`; the other FOUND, not fixed (WITHDRAWN: see "48, again")
 
 **`per-view-shown-eviction.py`, "the plan evicts H1, released": FIXED.**
 The test simulates a GPU budget of 1 MB, "GL states no GPU budget, so one
@@ -4733,6 +4751,10 @@ user states was held against render targets, textures and the environment
 too. A stated budget is held against the upload accounting now; the API's
 number stays with the API's own limit, which is what applies with nothing
 stated. 4 of 5 before, 5 of 5 after.
+
+**What follows on `element-color-hide.py` is WRONG and is kept as it was
+written: the probe compared view 1 with itself. "48, again" has what is
+true.**
 
 **`element-color-hide.py`, two of 624 ("mirror Link2 hide + v1 path hide,
 other view: asm.box2 picks as before"): a REAL defect, reproduced and
@@ -4910,3 +4932,91 @@ divide); the preset carries the old panel sizes; Dark and Light name the
 outline overlay sheets instead of upstream's `Dark_overlay.qss` and
 `Light_overlay.qss`; the unbundled packs are untouched. The 3D background
 is the theme's, as asked.
+
+## 58, once more. A pattern over the limit says so in its panel -- DONE `2a45e36492`, not pushed, not staged
+
+**The reporter, 2026-10-10 afternoon:** "add some warning when enter edit
+if it exceeds. did we expose the setting to preference? mention this
+setting in warning message".
+
+**What there is now.** A pattern whose count is over
+`Mod/Part/MaximumPatternOccurrences` opens its panel with a note under the
+count box:
+
+> This pattern has 1024 occurrences, more than the 1000 a pattern may be
+> given. They are kept: the count can be lowered here, not raised. The
+> limit is the setting "Most occurrences of a pattern"
+> (Mod/Part/MaximumPatternOccurrences). It is on no preference page, the
+> search box finds it, and a change of it counts from the next start.
+
+In the panel and not a message box: it stays for as long as the panel is
+open, beside the box whose odd upper end it explains, and entering edit of
+the code wheel is not stopped by a question each time. Both pattern panels
+have it, PartDesign's and the link array's, since the count boxes are
+`Gui/PatternWidgets`'; a pattern along a path too, whose count is another
+widget's. A count within the limit has no note. It is shown for as long as
+the property carries the range of its own that `a30fdda2a5` gave it, so it
+does not go away while the count is lowered and brought back in one edit.
+
+**The reporter's question, "did we expose the setting to preference?":**
+no. It is on no preference page; the search box lists it (Part, "Most
+occurrences of a pattern"), and it is read ONCE in a session
+(`occurrencesRange()` in `src/App/Pattern.cpp`, as upstream reads it), so
+a changed value counts from the next start -- the note says both. Two
+things left for the reporter to decide, neither done: a row for it on a
+preference page (Part Design's or Part's general page), and reading it
+again at each use, so that raising it works at once.
+
+**Scored.** `tests/gui/pattern-count-over-the-limit.py`, 16 claims, 7 of
+them new: the note in the panel of a linear array of 1024, once, with the
+count and the limit in it; the same for an array along a path; none in the
+panel of an array of 1000. Pictures `panel-over.png`, `panel-along.png`,
+`panel-within.png` in `..\dl\handson\2026-10-10\q2\g-o-overlimit-dev`. Not
+tried on `scanner.FCStd` itself: its panel is PartDesign's, the same
+widget, and the file is the reporter's.
+
+## 48, again. `element-color-hide.py`: the test's fault, and no leak between views -- FIXED `8a7595512d`, not pushed; this morning's finding WITHDRAWN
+
+**This log said this morning** that one view's own hide of a path takes the
+object out of the other view too, "when the hiding view is the first to be
+traversed after the hide". That is wrong. There is no such defect.
+
+**What it was.** The test makes its second view with `Std_ViewCreate` and
+then takes `gdoc.activeView()` for it. In the first document of a run that
+is the new view. In the second document -- the test's "mirror" half, the
+one that failed -- it answered view 1 again, so "the other view" was the
+hiding view itself and had of course lost the object. The check on the
+number of views (two) passed all the while. My probe of the morning had
+the same line, and its table's two rows were not two orders of traversal
+but the first document and the later ones: three of its four scenarios
+print "v1 picks" for both views, which I did not read.
+
+**With the views told apart** (`e48probe2.py`: the second view is the one
+in `mdiViewsOfType` that is not view 1), in four documents, both link
+modes, either view looked at first: view 2 picks Box2 and draws it (210,
+210, 235) after view 1's hide, before and after view 1 has picked and
+drawn; view 1 picks nothing and draws the background. The test, with the
+same change: 624 of 624.
+
+**Left, seen on the way and not chased to its end: which view is active
+after `Std_ViewCreate`.** `ViewPlacement` splits the area and makes the new
+view's cell the active one. Measured (`e48probe3.py`, `e48probe4.py`,
+`e48probe5.py`):
+
+| keyboard focus as the command runs | documents | active view after | focus after |
+|---|---|---|---|
+| in view 1's viewer | 9 of 9 | the new view | still in view 1's viewer |
+| on nothing | 3 of 3 | view 1 | in view 1's viewer |
+| on nothing, cleared by the script | 1 of 1 | the new view | on nothing |
+
+So where the focus arrives in view 1 while the command runs, view 1 is the
+active view again -- a view area makes the cell that takes the focus its
+active one (`ViewArea::onFocusChanged`) -- and where it was there already,
+the new view is active while the keys still go to the old one. What leaves
+a document with no focus at all is not found (the three were the second
+and later documents of `e48probe4.py`; a picture of each view before the
+close, tried in `e48probe5.py`, does not do it). A proposal, not made:
+the view placed in an area takes the focus with the activation, so the
+two agree. Nine more GUI tests take their second view the same way
+(`grep -A4 Std_ViewCreate tests/gui`); they pass, being the first document
+of their run, and are left as they are.
