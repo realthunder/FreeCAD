@@ -3,7 +3,7 @@ applied, all of them and at once, and the colours suit the theme's page.
 
 docs/HandsOnQueue.md entry 30: "switching in combinations got some setting
 stuck at a bad combination, such as the python editor colors", and, on the
-two overlay themes, "need to modify python editor part to make it more
+overlay, "need to modify python editor part to make it more
 suitable to the theme" (2026-10-10). Three things were behind it:
 
   - the Light theme had the Dark theme's syntax colours, pale ones made for

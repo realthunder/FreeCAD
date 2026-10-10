@@ -1592,12 +1592,12 @@ fc_add_gui_test(GuiOmniSearchHighlightedRow_tests_run
                 omni-search-highlighted-row.py
                 --timeout 180)
 
-# The two overlay themes are whole themes -- each its base theme and the
-# overlay layout -- and no theme of the five leaves a key of another behind:
-# the editor's current line, the style sheet's parameters, the console's
-# background the overlay presets used to leave.
-fc_add_gui_test(GuiThemeOverlayThemes_tests_run
-                theme-overlay-themes.py
+# The one overlay preset is the layout alone and its colours are the
+# theme's, whichever is applied before or after it; and no theme leaves a
+# key of another behind -- the editor's current line, the console's
+# background the old overlay presets used to leave.
+fc_add_gui_test(GuiOverlayPresetFollowsTheTheme_tests_run
+                overlay-preset-follows-the-theme.py
                 --timeout 300)
 
 # The Python editor and console take a theme's colours when it is applied --

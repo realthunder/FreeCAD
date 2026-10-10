@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<FCParameters>
+
+  <!-- The dock windows in overlay mode: where the panels are, and nothing of
+       how they look. An overlay's colours are the theme's own: Dark and Light
+       name the overlay style sheet for see-through panels, and with no theme,
+       or the Classic one, the overlay picks the light or the dark one by the
+       colour scheme in effect. This is what OverlayDark.FCParam and
+       OverlayLight.FCParam were before 2026-10, less the colours and style
+       sheets they wrote over whatever theme was there. -->
+  <FCParamGroup Name="Root">
+    <FCParamGroup Name="BaseApp">
+      <FCParamGroup Name="MainWindow">
+        <FCParamGroup Name="DockWindows">
+          <FCParamGroup Name="OverlayLeft">
+            <FCText Name="Widgets">Tree view,Property view,</FCText>
+            <FCText Name="Sizes">220,220</FCText>
+            <FCBool Name="Transparent" Value="1"/>
+            <FCInt Name="Width" Value="300"/>
+            <FCInt Name="Height" Value="502"/>
+          </FCParamGroup>
+          <FCParamGroup Name="OverlayRight">
+            <FCText Name="Widgets">Combo View,</FCText>
+            <FCBool Name="Transparent" Value="1"/>
+            <FCInt Name="Width" Value="300"/>
+            <FCInt Name="Height" Value="360"/>
+          </FCParamGroup>
+          <FCParamGroup Name="OverlayBottom">
+            <FCText Name="Widgets">Python console,Selection view,</FCText>
+            <FCText Name="Sizes">632,631</FCText>
+            <FCBool Name="AutoHide" Value="1"/>
+            <FCBool Name="EditShow" Value="0"/>
+            <FCBool Name="EditHide" Value="0"/>
+            <FCBool Name="TaskShow" Value="0"/>
+            <FCInt Name="Width" Value="1305"/>
+            <FCInt Name="Height" Value="180"/>
+          </FCParamGroup>
+          <FCParamGroup Name="OverlayTop">
+            <FCText Name="Widgets">Report view,</FCText>
+            <FCText Name="Sizes">1263</FCText>
+            <FCBool Name="Transparent" Value="1"/>
+            <FCBool Name="AutoHide" Value="1"/>
+            <FCBool Name="EditShow" Value="0"/>
+            <FCBool Name="EditHide" Value="0"/>
+            <FCBool Name="TaskShow" Value="0"/>
+            <FCInt Name="Width" Value="803"/>
+            <FCInt Name="Height" Value="150"/>
+          </FCParamGroup>
+          <FCBool Name="Std_PythonView" Value="1"/>
+          <FCBool Name="Std_ReportView" Value="0"/>
+          <FCBool Name="Std_SelectionView" Value="1"/>
+        </FCParamGroup>
+      </FCParamGroup>
+      <FCParamGroup Name="Preferences">
+        <FCParamGroup Name="TreeView">
+          <FCBool Name="HideColumn" Value="1"/>
+        </FCParamGroup>
+        <FCParamGroup Name="DockWindows">
+          <FCParamGroup Name="ComboView">
+            <FCBool Name="Enabled" Value="0"/>
+          </FCParamGroup>
+          <FCParamGroup Name="TreeView">
+            <FCBool Name="Enabled" Value="1"/>
+          </FCParamGroup>
+          <FCParamGroup Name="PropertyView">
+            <FCBool Name="Enabled" Value="1"/>
+          </FCParamGroup>
+        </FCParamGroup>
+        <FCParamGroup Name="View">
+          <FCBool Name="DockOverlayCheckNaviCube" Value="1"/>
+          <FCBool Name="DockOverlayActivateOnHover" Value="0"/>
+        </FCParamGroup>
+      </FCParamGroup>
+    </FCParamGroup>
+    <FCText Name="Name">Overlay</FCText>
+    <FCText Name="ToolTip">Switch on dock widget overlay mode. Its colours follow the theme.</FCText>
+  </FCParamGroup>
+
+</FCParameters>

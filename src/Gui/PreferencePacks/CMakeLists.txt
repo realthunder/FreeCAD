@@ -3,15 +3,11 @@ SET(PreferencePacks_Files
 "package.xml"
 )
 
-# The themes a build ships: what upstream bundles, and the two overlay themes,
-# each its base theme with the dock windows in overlay mode. Those two are
-# written by make-overlay-themes.py from Dark.cfg and Light.cfg, by hand.
+# The themes a build ships, matching what upstream bundles.
 SET(PreferencePacks_Directories
 "Classic"
 "Dark"
 "Light"
-"Overlay dark theme"
-"Overlay light theme"
 )
 
 # Kept in the source tree but not shipped: the stylesheets they select are

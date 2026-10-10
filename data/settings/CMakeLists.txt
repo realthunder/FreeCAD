@@ -3,14 +3,15 @@ SET(Conf_Files
     LargeFontIcon.FCParam
     VerticalToolBars.FCParam
     VerticalSplit.FCParam
+    Overlay.FCParam
     DisplaySettings.FCParam
 )
 
-# The two overlay presets are themes now ("Overlay dark theme", "Overlay light
-# theme" in src/Gui/PreferencePacks). A tree built before that still has the
-# copies made of them here, and every *.FCParam in this directory is listed
-# in the presets menu: take them out, or the menu shows what the source no
-# longer has.
+# The two overlay presets are one now, Overlay.FCParam, which is the layout
+# alone; the colours of an overlay are the theme's. A tree built before that
+# still has the copies made of the two here, and every *.FCParam in this
+# directory is listed in the presets menu: take them out, or the menu shows
+# what the source no longer has.
 if(NOT "${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
     file(REMOVE
         "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/settings/OverlayDark.FCParam"

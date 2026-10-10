@@ -586,7 +586,6 @@ void DlgSettingsTheme::attachObserver()
                                                "ColorScheme",
                                                "MenuStyleSheet",
                                                "OverlayActiveStyleSheet",
-                                               "ThemeStyleParametersFile",
                                                "Theme"},
                                               applyStyleSheet);
     handlers.addHandler("BaseApp/Preferences/Themes",
