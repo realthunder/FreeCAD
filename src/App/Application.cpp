@@ -592,6 +592,16 @@ bool Application::closeDocument(const char* name)
     // Trigger observers after removing the document from the internal map.
     signalDeletedDocument();
 
+    // Closed from inside a slice of the view-side drain that follows its own
+    // load (Document::RestoreDrainGuard): an event the slice let through --
+    // a script's timer, a macro. The slice is on the stack with this
+    // document and its objects in hand, so it is not deleted here. It is
+    // out of the application as any closed document is, and whoever holds
+    // the guard deletes it once the slice has unwound
+    // (Gui::Document::runDeferredRestoreSlice()).
+    if (delDoc->testStatus(Document::RestoreDrain))
+        delDoc.release();
+
     return true;
 }
 

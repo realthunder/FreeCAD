@@ -2048,3 +2048,15 @@ fc_add_gui_test(GuiCavityCreaseIsSmooth_tests_run
 fc_add_gui_test(GuiPasteFollowsTheClipboard_tests_run
                 paste-follows-the-clipboard.py
                 --timeout 120)
+
+# A document closed from inside a slice of its own view provider drain: the
+# slice's progress sequence runs events, a timer among them closes the
+# document, and the close deleted the Gui document the slice is a member
+# function of. The close goes ahead now and the two documents are deleted
+# when the slice has unwound. The timer closes only when it finds the
+# document restoring -- a slice on the stack -- five times over, once with
+# the file reopened in the same breath, then a load left to finish. Scored
+# against the tree before: dead at the first close, no check reached.
+fc_add_gui_test(GuiCloseDuringViewProviderDrain_tests_run
+                close-during-view-provider-drain.py
+                --timeout 300)

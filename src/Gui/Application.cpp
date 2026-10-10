@@ -1169,6 +1169,12 @@ void Application::slotDeleteDocument(const App::Document& Doc)
 
     if(tryNewActiveDocument)
         switchActiveDocument();
+
+    // Closed from inside a slice of its own drain: the slice is on the
+    // stack, and deletes the document itself once it has unwound
+    // (Document::beforeDelete(), which went by this same status).
+    if (Doc.testStatus(App::Document::RestoreDrain))
+        delDoc.release();
 }
 
 void Application::slotRelabelDocument(const App::Document& Doc)

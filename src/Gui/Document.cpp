@@ -246,6 +246,11 @@ struct DocumentP
     std::unordered_map<const App::DocumentObject*, std::vector<std::string>> _deferLateChanges;
     bool _deferRecordsRead = false;  // GuiDocument.xml parked: what changes now is late
     bool _deferScheduled = false;
+    // Closed from inside a slice of its own drain (beforeDelete()): this
+    // document and its App document are not deleted by the close, but by
+    // the slice once it has unwound (runDeferredRestoreSlice()).
+    bool _deferClosedUnder = false;
+    bool _deferBurialPosted = false;
     // The drain runs in the eager load's order: every object gets its view
     // provider, then every property its update (the sweep), then the parked
     // records are replayed onto them, then each is finished. Creating them
@@ -1413,6 +1418,22 @@ void Document::slotDeletedObject(const App::DocumentObject& Obj)
 }
 
 void Document::beforeDelete() {
+    // Closed from INSIDE a slice of this document's own drain: the slice
+    // says how it is going through a progress sequence, the progress bar
+    // runs events, and one of them -- a script's timer, a macro -- closed
+    // the document. The slice is on the stack, a member function of this
+    // object with the App document, its objects and their view providers in
+    // hand; deleted here, it went on into freed memory (a null reader, a
+    // view that was gone: 5 closes of 6 died on PartDesignPort, 1 of 12 on
+    // LinkVibe, docs/HandsOnLog.md entry 47). The close itself goes ahead
+    // -- the views, the tree, the application's maps -- and the two
+    // documents outlive it until the slice has unwound: the status is the
+    // slice's App::Document::RestoreDrainGuard, which is what
+    // App::Application::closeDocument() and
+    // Gui::Application::slotDeleteDocument() go by as well.
+    if (d->_pcDocument->testStatus(App::Document::RestoreDrain))
+        d->_deferClosedUnder = true;
+
     // A closing document keeps none of its parked view providers; anything
     // that needed them to exist (a save) flushed before getting here.
     d->_deferVPs = false;
@@ -3438,6 +3459,29 @@ void Document::runDeferredRestoreSlice()
     // (docs/DocumentLoad.md sec 18.16, tests/gui/drain-turn-grows.py).
     // Every exit below leaves work for the next slice or is the drain's
     // end.
+
+    // Last out of this slice, whichever way it ends: a document closed
+    // under it (beforeDelete()) is deleted now that nothing of the slice is
+    // left on the stack -- on the event loop's next turn, as whoever ran
+    // the slice (flushDeferredRestore()) may still be holding this object.
+    // The Gui document first, as an ordinary close has it: the view
+    // providers go before the objects they show.
+    struct Burial {
+        Document *doc;
+        ~Burial() {
+            auto dp = doc->d;
+            if (!dp->_deferClosedUnder || dp->_deferBurialPosted)
+                return;
+            dp->_deferBurialPosted = true;
+            Document *guiDoc = doc;
+            App::Document *appDoc = dp->_pcDocument;
+            QTimer::singleShot(0, QCoreApplication::instance(), [guiDoc, appDoc]() {
+                delete guiDoc;
+                delete appDoc;
+            });
+        }
+    } burial{this};
+
     TurnPace::Turn turn(d->_deferPace,
         std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0,
         loadTurnShare);
@@ -3461,6 +3505,19 @@ void Document::runDeferredRestoreSlice()
             d->_deferLongest = took;
     };
     ++d->_deferSlices;
+    // Whether this document was closed under this slice, asked after every
+    // call that can run events -- the progress sequence above all. Nothing
+    // is freed (beforeDelete()), but everything parked is gone and the
+    // views with it: the slice has nothing left to do but end, and its
+    // sequence with it.
+    auto closedUnder = [this, &spend]() {
+        if (!d->_deferClosedUnder)
+            return false;
+        d->_deferSeq.reset();
+        d->_pcDocument->setStatus(App::Document::Restoring, false);
+        spend();
+        return true;
+    };
 
     // The set of objects this drain owes work to, fixed here: everything
     // the load created (afterRestore's additions included) exists by now,
@@ -3545,7 +3602,10 @@ void Document::runDeferredRestoreSlice()
         // Left to the per-access fault-in instead, the records below
         // pull the shapes one at a time from inside the property
         // applications, which turns this drain into minutes.
-        if (d->_pcDocument->serveDeferredFiles(budget)) {
+        const bool serving = d->_pcDocument->serveDeferredFiles(budget);
+        if (closedUnder())
+            return;
+        if (serving) {
             d->_pcDocument->setStatus(App::Document::Restoring, false);
             spend();
             scheduleDeferredRestore();
@@ -3558,6 +3618,8 @@ void Document::runDeferredRestoreSlice()
             while (auto obj = d->_deferCreate.next(d->_pcDocument)) {
                 if (d->_deferSeq)
                     d->_deferSeq->next();
+                if (closedUnder())
+                    return;
                 if (!getViewProvider(obj)) {
                     slotNewObject(*obj);
                     if (auto vpd = Base::freecad_dynamic_cast<
@@ -3566,6 +3628,8 @@ void Document::runDeferredRestoreSlice()
                         vpd->setStatus(Gui::isRestoring, true);
                     }
                 }
+                if (closedUnder())
+                    return;
                 if (elapsed().count() >= budget)
                     break;
             }
@@ -3607,6 +3671,8 @@ void Document::runDeferredRestoreSlice()
             while (auto obj = d->_deferSweep.next(d->_pcDocument)) {
                 if (d->_deferSeq)
                     d->_deferSeq->next();
+                if (closedUnder())
+                    return;
                 auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                         getViewProvider(obj));
                 if (vpd && vpd->testStatus(Gui::isRestoring)) {
@@ -3621,6 +3687,8 @@ void Document::runDeferredRestoreSlice()
                                 << " (" << vpd->getTypeId().getName() << "): "
                                 << dSweep.count() << 's');
                 }
+                if (closedUnder())
+                    return;
                 if (elapsed().count() >= budget)
                     break;
             }
@@ -3717,6 +3785,9 @@ void Document::runDeferredRestoreSlice()
             --d->_deferCount;
             if (d->_deferSeq)
                 d->_deferSeq->next();
+            // The reader is gone with the close, and the count with it
+            if (closedUnder())
+                return;
             auto &xmlReader = *d->_deferReader;
             int guard;
             xmlReader.readElement("ViewProvider",&guard);
@@ -3734,6 +3805,10 @@ void Document::runDeferredRestoreSlice()
             }
             FC_TIME_INIT(tSplit);
             readObject(xmlReader);
+            // A record can run Python (a proxy's restore), and the reader
+            // it was read from is the document's
+            if (closedUnder())
+                return;
             {
                 auto dRead = Base::GetDuration(tSplit);
                 d->_deferReadTime += dRead;
@@ -3762,6 +3837,8 @@ void Document::runDeferredRestoreSlice()
             while (auto obj = d->_deferFinish.next(d->_pcDocument)) {
                 if (d->_deferSeq)
                     d->_deferSeq->next();
+                if (closedUnder())
+                    return;
                 auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                         getViewProvider(obj));
                 bool fresh = false;
@@ -3810,6 +3887,8 @@ void Document::runDeferredRestoreSlice()
                                 << "): finish " << dRest.count()
                                 << "s + mode " << dMode.count() << 's');
                 }
+                if (closedUnder())
+                    return;
                 if (elapsed().count() >= budget)
                     break;
             }
@@ -3853,6 +3932,8 @@ void Document::runDeferredRestoreSlice()
         d->_deferReader.reset();
         d->_deferStream.reset();
     }
+    if (closedUnder())
+        return;
     d->_pcDocument->setStatus(App::Document::Restoring, false);
     spend();
 
