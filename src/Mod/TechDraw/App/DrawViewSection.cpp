@@ -536,6 +536,8 @@ void DrawViewSection::makeSectionCut(const Part::TopoShape &baseShape)
         m_cutHistory = params.history;
         // the copy keeps the element map: makECopy, not BRepBuilderAPI_Copy
         params.baseShape = baseShape.makECopy();
+        // Here, not on the worker: see SectionParams::solids
+        params.solids = params.baseShape.getSubTopoShapes(TopAbs_SOLID);
         m_saveShape = params.baseShape;//save shape for 2nd pass
         params.cuttingTool = makeCuttingTool(m_shapeSize);
         params.history->tool = params.cuttingTool;
@@ -588,7 +590,7 @@ void DrawViewSection::doSectionCut(const SectionParams &params)
     // them on the main thread, since the hasher they would write to is shared
     // with the document and has no locking (CutHistory in the header).
     const TopoDS_Shape& tool = params.cuttingTool.getShape();
-    for (auto& solid : params.baseShape.getSubTopoShapes(TopAbs_SOLID)) {
+    for (auto& solid : params.solids) {
         const TopoDS_Shape& s = solid.getShape();
 #if OCC_VERSION_HEX < 0x070600
         auto mkCut = std::make_shared<BRepAlgoAPI_Cut>(s, tool);

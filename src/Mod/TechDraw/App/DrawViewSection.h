@@ -240,6 +240,12 @@ protected:
         std::shared_ptr<TopoDS_Shape> output;
         std::shared_ptr<CutHistory> history;
         Part::TopoShape baseShape;
+        /// The solids of baseShape, taken on the main thread. Asking a
+        /// shape for its parts writes the shape's cache, and that cache is
+        /// shared with every copy of the shape -- m_saveShape among them --
+        /// so the worker is handed the parts and asks for nothing
+        /// (docs/TransactionLog.md sec 31.28).
+        std::vector<Part::TopoShape> solids;
         Part::TopoShape cuttingTool;
         bool trimAfterCut;
     };
