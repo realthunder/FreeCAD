@@ -277,8 +277,12 @@ class TestLinkArray(unittest.TestCase):
         self.assertEqual(self.array.Occurrences, maximum)
         self.assertEqual(self.array.Occurrences2, maximum)
 
-    def testRestoreClampsOccurrences(self):
-        # A file may hold more than the limit: it loads clamped and recomputed
+    def testRestoreKeepsOccurrencesOverTheLimit(self):
+        # A file may hold more than the limit -- one written before it, or
+        # with a larger MaximumPatternOccurrences -- and keeps what it holds:
+        # the limit is on what is typed in. The first port of the limit cut a
+        # restored count to it and recomputed (a code wheel of 1024 slots came
+        # back with 1000, docs/HandsOnQueue.md entry 58).
         import re
         import zipfile
 
@@ -308,6 +312,20 @@ class TestLinkArray(unittest.TestCase):
                 zo.writestr(item, data)
         self.doc = App.openDocument(dst)
         self.array = self.doc.getObject("Array")
-        self.assertEqual(self.array.Occurrences, maximum)
+        self.assertEqual(self.array.Occurrences, maximum + 5)
+        # the restore asks for no recompute of its own: nothing was changed
+        self.assertNotIn("Touched", self.array.State)
+        self.array.touch()
         self.doc.recompute()
-        self.assertEqual(self.array.ElementCount, maximum)
+        self.assertEqual(self.array.getStatusString(), "Valid")
+        self.assertEqual(self.array.Occurrences, maximum + 5)
+        self.assertEqual(self.array.ElementCount, maximum + 5)
+        # Stored again as it is -- what a panel's OK and the property editor
+        # do, through this very assignment -- it stays; it can be lowered;
+        # and it cannot be raised past what the file held
+        self.array.Occurrences = maximum + 5
+        self.assertEqual(self.array.Occurrences, maximum + 5)
+        self.array.Occurrences = maximum + 6
+        self.assertEqual(self.array.Occurrences, maximum + 5)
+        self.array.Occurrences = maximum + 2
+        self.assertEqual(self.array.Occurrences, maximum + 2)

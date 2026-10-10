@@ -1607,6 +1607,13 @@ fc_add_gui_test(GuiEditorColoursFollowTheTheme_tests_run
                 editor-colours-follow-the-theme.py
                 --timeout 180)
 
+# A pattern keeps the count its file holds over MaximumPatternOccurrences,
+# which is a limit on what is typed in: through the load, and through its
+# panel, where OK stored the limit for it.
+fc_add_gui_test(GuiPatternCountOverTheLimit_tests_run
+                pattern-count-over-the-limit.py
+                --timeout 180)
+
 # A drag in a split view -- a corner zone or a border -- is shown as frames
 # over the cells it changes and carried out at the release; a split that
 # would leave a cell under the minimum cell size is refused.

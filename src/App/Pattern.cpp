@@ -769,28 +769,37 @@ void setEnums(PropertyEnumeration* prop, const char** enums)
     }
 }
 
-/** A file may hold more occurrences than the limit allows (one written
- * before it, or with a larger MaximumPatternOccurrences): the value is
- * brought into range on restore, with a warning, and the object recomputed.
+/** The range of an occurrence count: the limit on what is typed in, or, for
+ * a count that is over it already, the count itself.
+ *
+ * A file may hold more occurrences than the limit allows -- one written
+ * before it, or with a larger MaximumPatternOccurrences -- and KEEPS them:
+ * the limit is there to stop a typo (upstream: "Constraints for user-entered
+ * pattern occurrence counts"), not to change a model. The first port of it
+ * (d882d9d88b) cut a restored count to the limit and recomputed the object:
+ * a code wheel of 1024 lines was made with 1000, on a warning
+ * (docs/HandsOnQueue.md entry 58). Leaving the count alone at the restore is
+ * not enough, since everything that stores it again goes through the
+ * constraint -- the panel's OK and the property editor both assign it from
+ * Python, which clamps -- so such an object takes a range of its own that
+ * ends at what it holds: the count can be kept or lowered, not raised.
  */
-void clampToConstraints(PropertyContainer& obj, Property* prop)
+void setOccurrencesRange(PropertyIntegerConstraint* prop)
 {
-    auto intProp = dynamic_cast<PropertyIntegerConstraint*>(prop);
-    auto constraints = intProp ? intProp->getConstraints() : nullptr;
-    if (!constraints || intProp->getValue() <= constraints->UpperBound) {
+    const auto* limit = occurrencesRange();
+    if (prop->getValue() <= limit->UpperBound) {
+        prop->setConstraints(limit);
         return;
     }
-    auto docObj = dynamic_cast<DocumentObject*>(&obj);
-    Base::Console().Warning("%s.%s: %ld occurrences, more than MaximumPatternOccurrences "
-                            "allows; set to %ld\n",
-                            docObj ? docObj->getFullName().c_str() : "?",
-                            prop->getName(),
-                            intProp->getValue(),
-                            constraints->UpperBound);
-    intProp->setValue(constraints->UpperBound);
-    if (docObj && docObj->getDocument()) {
-        docObj->getDocument()->addRecomputeObject(docObj);
+    const auto* held = prop->getConstraints();
+    if (held && held->isDeletable() && held->UpperBound == prop->getValue()) {
+        return;
     }
+    auto own = new PropertyIntegerConstraint::Constraints(limit->LowerBound,
+                                                          prop->getValue(),
+                                                          limit->StepSize);
+    own->setDeletable(true);
+    prop->setConstraints(own);
 }
 
 void setupProperty(Pattern::Type type, Property* prop, const char* name = nullptr)
@@ -812,7 +821,7 @@ void setupProperty(Pattern::Type type, Property* prop, const char* name = nullpt
             intProp->setConstraints(&SymmetryRange);
         }
         else {
-            intProp->setConstraints(occurrencesRange());
+            setOccurrencesRange(intProp);
         }
     }
     else if (auto angleProp = dynamic_cast<PropertyAngle*>(prop)) {
@@ -1240,7 +1249,6 @@ void Pattern::setupProperties(Type type, PropertyContainer& obj)
     for (const auto& spec : getPropertySpecs(type)) {
         if (auto prop = getProperty(obj, spec.name)) {
             setupProperty(type, prop);
-            clampToConstraints(obj, prop);
         }
     }
     switch (type) {
