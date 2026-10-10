@@ -17573,3 +17573,93 @@ recommended.
 4. The overlay, the dialog's and the row's entry, a Gui check.
 5. The versions list; the whole document.
 6. Volumes; the merged result; the stream.
+
+### 32.5 Step 1, measured: what pairs two faces (2026-10-10)
+
+`scripts/shape-diff-measure.py`, on scanner.FCStd (27.52): the body of 15
+features -- pads, pockets, two fillets, a hole, a polar pattern -- whose
+tip has 65 faces. One edit at a time, recomputed, the tip's shape kept,
+the edit undone; then each kept shape against the base (what a row or a
+pick shows) and one against another (what two branches show). The faces
+are paired in four stages, each with what the one before left:
+
+1. **One name** in both.
+2. **One name once the steps only one side has are taken out of it.**
+3. **One geometry** (`searchSubShape`).
+4. **The same paired faces around it**: one unpaired face on each side
+   sharing edges with the same two or more paired faces; again until
+   nothing more pairs.
+
+| compared | 1 | 2 | 3 | 4 | left (A / B) | geometry alone |
+| --- | --- | --- | --- | --- | --- | --- |
+| base / the first pad 1 mm longer | 65 (36 changed) | | | | 0 / 0 | 28 |
+| base / a fillet's radius | 65 (12 changed) | | | | 0 / 0 | 55 |
+| base / a circle more in a pocket's sketch | 65 | | | | 0 / 3 | 65 |
+| base / one line of a sketch redrawn | 63 | | 2 | | 0 / 0 | 65 |
+| base / all four redrawn | 57 | | 8 | | 0 / 0 | 65 |
+| base / a hole put in after the 4th feature | 24 | 37 | 4 | | 0 / 1 | 65 |
+| base / the 6th feature removed | 22 | 36 | 4 | | 3 / 1 | 53 |
+| pad longer / hole put in | 24 | 37 (17 changed) | 3 | 1 | 0 / 1 | 28 |
+| pad longer / one line redrawn | 63 | | 0 | 2 | 0 / 0 | 28 |
+| pad longer / all four redrawn | 57 | | 0 | 8 | 0 / 0 | 28 |
+| fillet / one line redrawn | 63 | | 0 | 2 | 0 / 0 | 55 |
+| hole put in / all four redrawn | 16 | 37 | 12 | | 1 / 0 | 65 |
+| hole put in / fillet | 24 | 37 | 4 | | 1 / 0 | 55 |
+
+What is left is right in each: the hole's wall, the three faces the
+circle made, the faces of the pocket that was removed. With freezing off
+the numbers move by one face between stages 1 and 3 and no further.
+
+**What it says (Q1, from numbers).**
+
+- *The name first, as ruled.* Where the geometry changed nothing else
+  pairs: geometry alone has 28 of the 65 after a pad is made longer.
+- *One name is not enough.* A feature put in or taken out early renames
+  every face that passes it: 41 of 65 have another name, though 61 are
+  the faces they were. A name is its root and then a step for each shape
+  the element was in -- `...;:H4eb,F;:H4ed,F...` -- and the new feature
+  is a step more: `...;:H4eb,F;:H1241,F;:H4ed,F...`. Read as steps and
+  compared without the steps of the objects only one side has, 37 of the
+  41 are one name again, and where the face was unchanged the geometry
+  agreed on every one. That is stage 2, and it is new work: nothing in
+  the tree compares names so. `Part.getRelatedElements` does not do it:
+  it answered for 33 of the 41, and with more than one face for 30.
+- *How a step is written decides how it is taken out.* The tag in a step
+  is the shape the element came **from**, and the operation written
+  before it is what the **next** object did:
+  `X;:M;CUT;:H4eb:7,F;:H1241,F` is X as it was in 4eb, cut by 1241,
+  then as it was in 1241. So 1241 goes out as its own tag and the
+  operation before it, and the operation before its tag moves to the
+  step before. The names an operation lists (`:M(a|b)`) are names
+  themselves and are treated the same, and sorted. The lengths in a step
+  count the hashed text and are dropped.
+- *Geometry is for what a name cannot say*: an element of a sketch drawn
+  again has a new id, so its faces a new root (2 of 65 for a line, 8 for
+  four); and a few names are composed otherwise on the two sides (a
+  count of duplicates, another list of sources).
+- *The faces around are for what is left when the other side changed the
+  geometry too*: a line redrawn here and a pad made longer there. All of
+  them, in these cases.
+- *`searchSubShape` is not "unchanged".* It paired the top face with the
+  same face with a hole more in it -- a welcome pair, and a changed one.
+  Whether a pair is changed is a test of its own (area, centre, box here;
+  the congruence index in the build).
+- *One `TShape` is rare* in a recomputed chain: none of the 65 with
+  freezing on, one with it off. It is the cheap answer for objects the
+  edit did not reach, which are not in this table.
+- *Aside:* the same face of the same document has another name with
+  freezing off than with it on, here and there (the top face, composed
+  of other sources). Two branches recomputed under the two settings would
+  pair worse. Not looked into.
+
+**Cost**, in Python and so an upper bound: the names of both shapes
+0.3 ms; spelling 41 names out and taking the steps out 15 to 30 ms; the
+geometry search 0.5 ms a face.
+
+**Limits.** One body of one model; faces only; PartDesign's features (a
+Part boolean writes its steps the same way). Stage 2 was done on the
+spelled-out text; the build walks the steps.
+
+**So, for step 2:** the four stages as measured, each pair saying which
+stage found it, and whether it is changed said apart from how it was
+paired.
