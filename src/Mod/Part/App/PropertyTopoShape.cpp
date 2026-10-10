@@ -1513,6 +1513,9 @@ bool PropertyPartShape::canSaveOffThread() const
     // thread that asks, the worker's Save finds it there and writes
     // nothing to the cache.
     _Shape.flushElementMap();
+    // And the map itself is shared, and edited in place by whoever edits
+    // it: told that a reader on another thread has it now (sec 31.28).
+    _Shape.holdElementMap();
     return true;
 }
 

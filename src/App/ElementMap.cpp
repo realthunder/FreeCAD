@@ -25,6 +25,8 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <set>
 #include <sstream>
@@ -311,8 +313,54 @@ static ElementMapPtr& restoredMap(unsigned id)
     return _IdToElementMap[id];
 }
 
+// A map that a value given to another thread holds -- a shape's copy the
+// transaction log saves on its worker, the auto saver on its pool -- is read
+// there with no lock, and a map is edited in place, with no copy made for
+// whoever else holds it (docs/TransactionLog.md sec 31.28). The check: such a
+// map is marked when the value is handed over, and an edit of a marked map
+// is counted and reported. On with FC_ELEMENTMAP_CHECK in the environment
+// ("abort" to stop at the first, for a stack), or by a test.
+static std::atomic<int> _heldMapCheck {-1};
+static std::atomic<unsigned long> _heldMapEdits {0};
+
+static bool checkingHeldMaps()
+{
+    int on = _heldMapCheck.load(std::memory_order_relaxed);
+    if (on < 0) {
+        on = std::getenv("FC_ELEMENTMAP_CHECK") ? 1 : 0;
+        _heldMapCheck = on;
+    }
+    return on > 0;
+}
+
+static void editedWhileHeld(const char *how)
+{
+    const unsigned long n = ++_heldMapEdits;
+    if (n <= 50)
+        FC_ERR("element map edited in place while another holder may read it: " << how);
+    const char *mode = std::getenv("FC_ELEMENTMAP_CHECK");
+    if (mode && boost::equals(mode, "abort"))
+        std::abort();
+}
+
 class ElementMap : public std::enable_shared_from_this<ElementMap> {
 public:
+
+    /// Marks this map and the maps of its children as held by a value
+    /// another thread reads. Only while the check is on.
+    void hold() const
+    {
+        if (_held || !checkingHeldMaps())
+            return;
+        std::map<const ElementMap*, int> childMapSet;
+        std::vector<const ElementMap*> childMaps;
+        std::map<QByteArray, int> postfixMap;
+        std::vector<QByteArray> postfixes;
+        collectChildMaps(childMapSet, childMaps, postfixMap, postfixes);
+        for (const ElementMap *map : childMaps)
+            map->_held = true;
+        _held = true;
+    }
 
     ElementMap()
     {
@@ -612,7 +660,7 @@ public:
             return map;
         }
         map = shared_from_this();
-        ++_revision;
+        changed("restore");
 
         const char *hasherWarn = nullptr;
         const char *hasherIDWarn = nullptr;
@@ -829,7 +877,7 @@ public:
                        bool overwrite,
                        IndexedName * existing)
     {
-        ++_revision;
+        changed("addName");
         MappedName name = withSharedPostfix(_name);
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
             if (name.find("#") >= 0
@@ -870,7 +918,7 @@ public:
         MappedNameRef * ref = findMappedRef(it->second);
         if (!ref)
             return false;
-        ++_revision;
+        changed("erase by name");
         ref->erase(name);
         this->mappedNames.erase(it);
         return true;
@@ -885,7 +933,7 @@ public:
         if (idx.getIndex() >= (int)indices.names.size())
             return false;
         auto & ref = indices.names[idx.getIndex()];
-        ++_revision;
+        changed("erase by index");
         for (auto *r = &ref; r; r = r->next.get())
             this->mappedNames.erase(r->name);
         ref.clear();
@@ -1067,7 +1115,7 @@ public:
     {
         if (childElements.empty() || !master.Hasher)
             return;
-        ++_revision;
+        changed("hashChildMaps");
         std::ostringstream ss;
         for (auto & v : this->indexedNames) {
             for (auto & vv : v.second.children) {
@@ -1095,7 +1143,7 @@ public:
     void addChildElements(ComplexGeoData & master,
                           const std::vector<MappedChildElements> &children)
     {
-        ++_revision;
+        changed("addChildElements");
         std::ostringstream ss;
         ss << std::hex;
 
@@ -1475,6 +1523,17 @@ private:
     /// (translateElementMap).
     unsigned long _revision = 0;
 
+    /// A value another thread reads holds this map: see hold().
+    mutable bool _held = false;
+
+    /// Every edit of the map comes through here.
+    void changed(const char *how)
+    {
+        ++_revision;
+        if (_held)
+            editedWhileHeld(how);
+    }
+
 public:
     unsigned long revision() const
     {
@@ -1853,6 +1912,22 @@ ElementMapPtr ComplexGeoData::elementMap(bool flush) const
 
 void ComplexGeoData::flushElementMap() const
 {
+}
+
+void ComplexGeoData::holdElementMap() const
+{
+    if (_elementMap)
+        _elementMap->hold();
+}
+
+void ComplexGeoData::setElementMapCheck(bool on)
+{
+    _heldMapCheck = on ? 1 : 0;
+}
+
+unsigned long ComplexGeoData::elementMapEditsWhileHeld()
+{
+    return _heldMapEdits.load();
 }
 
 void ComplexGeoData::setElementMap(const std::vector<MappedElement> &map) {

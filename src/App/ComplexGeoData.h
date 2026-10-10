@@ -402,6 +402,20 @@ public:
 
     /** Flush an internal buffering for element mapping */
     virtual void flushElementMap() const;
+
+    /** Says this geometry's element map is held by a value another thread
+     * reads -- a copy the transaction log saves on its worker. A map is
+     * edited in place and shared by every copy of the geometry, so an edit
+     * after this is an edit under that reader. Nothing is done about it
+     * here; with the check on (FC_ELEMENTMAP_CHECK in the environment, or
+     * setElementMapCheck) the map is marked and such an edit is counted
+     * and reported (docs/TransactionLog.md sec 31.28).
+     */
+    void holdElementMap() const;
+    /// Turns the check of holdElementMap() on or off, for a test.
+    static void setElementMapCheck(bool on);
+    /// How many edits of a held element map the check has seen.
+    static unsigned long elementMapEditsWhileHeld();
     virtual unsigned long getElementMapReserve() const { return 0; }
     //@}
 

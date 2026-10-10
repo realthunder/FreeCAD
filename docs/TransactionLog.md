@@ -17012,6 +17012,99 @@ property and in the copy; asked, the copy has it.
 - *Since when* is not known: it was not bisected. No gate run before
   this one recorded such a crash.
 
+### 31.28 Who else is handed a shape on another thread, and the map they share (user, 2026-10-09 and 10)
+
+31.27 left the cache shared and unlocked. **Asked (user):** "Do 2" -- who
+else gives a `Part::TopoShape` to another thread on this branch -- and
+then: "Fix the two cases and do the check on element map".
+
+**Surveyed** (read, not measured). A `Part::TopoShape` copied shares its
+cache and its element map with the original; a `TopoDS_Shape` shares
+TShapes, which is 27.98's lock and another matter.
+
+| who | what the other thread is given | the cache |
+| --- | --- | --- |
+| the log's worker | a copy of the property | read, not written, since 31.27 |
+| TechDraw's section cut | `baseShape` and `cuttingTool`, as `Part::TopoShape` | **written**: the worker asked `baseShape` for its solids, and `m_saveShape` on the main thread shares that cache |
+| the auto saver, uncompressed | a copy of the property, `SaveDocFile` on a pool thread | not touched: the geometry is exported from a `TopoShape` made of the bare shape. But it never asked `canSaveOffThread` |
+| the level-of-detail mesher, the pre-mesh, both cross-section dialogs, check geometry, TechDraw's detail, complex section and hidden lines | `TopoDS_Shape` | none |
+
+Only `PropertyPartShape` answers `canSaveOffThread`; a shape list's copy
+is a copy of the geometry.
+
+**Fixed: the section cut.** The solids are taken on the main thread,
+before the worker starts (`SectionParams::solids`), and the worker goes
+through them and asks no shape for anything. No main-thread use of
+`m_saveShape` during a cut was seen; nothing now depends on there being
+none.
+
+**Fixed: the auto saver asks.** A property that answers no to
+`canSaveOffThread` is written where it stands, by the branch that writes
+whatever is not a property. Two things found while trying it, which make
+this a guard on a path little is on:
+
+- The auto saver does nothing at all while the transaction log is on
+  (`AutoSaver::saveDocument` returns first), which is this branch's
+  default.
+- With the log off (`autosave/as.sh`, one timeout, the freeze on and
+  off), a shape's geometry is not written by the pool at all: it goes
+  through the document's blob store, on the main thread
+  (`blobs/Box.Shape.bin`). The pool gets a shape only in a document that
+  does not keep its shapes as blob entries. The recovery files came out
+  whole both ways; the guarded path was not run with a shape.
+
+**The check on the element map.** A map is one object, held by every copy
+of the shape, and edited in place: no copy is made for the other holders
+(`ComplexGeoData::setElementName`). The worker reads it in
+`ElementMap::save`. So: is a map ever edited after a value holding it has
+been handed over?
+
+- *Built.* `ComplexGeoData::holdElementMap()`, called where a frozen copy
+  answers yes to `canSaveOffThread`. With the check on -- the environment
+  variable `FC_ELEMENTMAP_CHECK`, or `setElementMapCheck` for a test -- it
+  marks the map and the maps of its children; every edit of a map goes
+  through one function (`ElementMap::changed`, where the revision was
+  counted already), which counts and reports one of a marked map.
+  `FC_ELEMENTMAP_CHECK=abort` stops at the first, for a stack. Off, a
+  handover marks nothing and costs one test.
+- *Run:* the gates with it on, all green. The Gui checks, ctest with
+  the freeze on and off, and the Python suite with the freeze off:
+  nothing. The Python suite with the freeze on: **eight edits, one
+  site**, in four of `femtest.app.test_ccxtools`.
+- *The site* (`abort`, under gdb): `Part::Feature::getExportElementName`.
+  A reference set to a solid -- `obj.References = [(box, "Solid1")]` ->
+  `PropertyLinkSubList::setValues` -> `_updateElementReference` ->
+  `GeoFeature::resolveElement` -> `Feature::getElementName`. A solid, a
+  shell, a wire or a compound has no name of its own; one is made of the
+  names of its faces or edges and **set on the shape passed by value,
+  which is the property's own map** (`setElementComboName`). The code
+  says so itself, from long before the log: "setting names to shape will
+  change its underlying shared element name table. This actually
+  violates the const'ness of this function ... Not sure if there is any
+  side effect of indirectly change the element map inside the Shape
+  property without recording the change in undo stack."
+- *What it means here.* Two things, and neither was seen to fail. The
+  worker may be walking that map as the name goes in. And the value the
+  log stores has the name or has not, by which came first -- the same
+  shape under two hashes -- with no row for the change.
+- *Not narrowed:* which handover came before those eight. The four tests
+  alone report nothing, nor does a short script of the same steps; in the
+  whole suite they report every run.
+
+**Left, for a ruling.** The edit is the design's own, so it is not mended
+here. What could be done: (a) name the solid in a map of the caller's own
+-- a copy of the map where it is shared -- so the property's is never
+written, and the name is made again each time it is asked; (b) give every
+solid, shell and wire its name when the value is set, so nothing is added
+later, at the cost of doing it for shapes nobody refers into; (c) a lock
+taken by the worker's save and by an edit of a held map, which closes the
+race and leaves the value with two contents.
+
+**Tests.** gtest `PropertyShapeImmutableTest.anEditOfAMapTheWorkerHoldsIsCounted`:
+an edit before the handover is no finding, a new shape made of the value
+is none, a name set on a copy of the value afterwards is one. TechDraw's
+own section tests cover the cut.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

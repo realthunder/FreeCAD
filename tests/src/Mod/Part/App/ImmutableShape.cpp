@@ -264,6 +264,45 @@ TEST_F(PropertyShapeImmutableTest, aCopyForTheWorkerHasItsElementMap)
     EXPECT_GT(value->getShape().getElementMapSize(false), 0U);
 }
 
+// A copy given to the worker shares its element map with the live value and
+// with every other copy, and a map is edited in place. The check
+// (ComplexGeoData::holdElementMap, FC_ELEMENTMAP_CHECK) marks the map when
+// the copy is handed over and counts an edit of it afterwards
+// (docs/TransactionLog.md sec 31.28).
+TEST_F(PropertyShapeImmutableTest, anEditOfAMapTheWorkerHoldsIsCounted)
+{
+    struct Checking
+    {
+        Checking() { Data::ComplexGeoData::setElementMapCheck(true); }
+        ~Checking() { Data::ComplexGeoData::setElementMapCheck(false); }
+    } checking;
+    const App::StringHasherRef hasher = _doc->getStringHasher();
+    Part::TopoShape one(1, hasher, BRepPrimAPI_MakeBox(10, 20, 30).Shape());
+    Part::TopoShape two(2, hasher, BRepPrimAPI_MakeBox(1, 2, 3).Shape());
+    Part::TopoShape both(_feature->getID(), hasher);
+    both.makECompound({one, two});
+    _feature->Shape.setValue(both);
+    ASSERT_GT(_feature->Shape.getShape().getElementMapSize(), 0U);
+
+    // Not held yet: a name given to a copy of the value is no finding.
+    const unsigned long before = Data::ComplexGeoData::elementMapEditsWhileHeld();
+    Part::TopoShape early = _feature->Shape.getShape();
+    early.setElementName(Data::IndexedName::fromConst("Face", 1), Data::MappedName("early"));
+    EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before);
+
+    std::unique_ptr<App::Property> copy(_feature->Shape.Copy());
+    ASSERT_TRUE(copy->canSaveOffThread());
+    // What a later shape is made of is its own map: no finding.
+    Part::TopoShape made(_feature->getID(), hasher);
+    made.makECompound({_feature->Shape.getShape()});
+    EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before);
+    // A name given in place to a copy of the value is the worker's map
+    // changed under it.
+    Part::TopoShape late = _feature->Shape.getShape();
+    late.setElementName(Data::IndexedName::fromConst("Face", 2), Data::MappedName("late"));
+    EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before + 1);
+}
+
 TEST(ImmutableShapeTest, booleanGoesNonDestructive)
 {
     TopoDS_Shape a = BRepPrimAPI_MakeBox(2, 2, 2).Shape();
