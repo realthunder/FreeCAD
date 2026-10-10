@@ -1079,6 +1079,8 @@ void BGFXView::init(bool keepShared)
         ensureProgram(m_progLine, "vs_fc_line", "fs_fc_line");
         ensureProgram(m_progLineClip, "vs_fc_line_clip",
                       "fs_fc_line_clip");
+        if (lineCoverageOff())
+            ensureProgram(m_progLinePlain, "vs_fc_line", "fs_fc_flat");
         ensureProgram(m_progLinePat, "vs_fc_line_pat", "fs_fc_line_pat");
         ensureProgram(m_progLinePatClip, "vs_fc_line_pat_clip",
                       "fs_fc_line_pat_clip");

@@ -1402,6 +1402,12 @@ fc_add_gui_test(GuiMsaaReachesTheView_tests_run
                 msaa-reaches-the-view.py
                 --timeout 180)
 
+# A line weighs the width it was asked for, fractions included, at every
+# angle, multisampled or not: what the coverage of fs_fc_line is for.
+fc_add_gui_test(GuiLineWeightIsItsWidth_tests_run
+                line-weight-is-its-width.py
+                --timeout 180)
+
 # The report view's settings are behind ReportViewParams: listed by the
 # omni search, one default each, followed at once -- and "Record critical
 # messages" no longer switches normal messages off.

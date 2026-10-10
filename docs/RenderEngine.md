@@ -1278,6 +1278,48 @@ the coverage off: that image is decoded as exact integers with alpha <
 0.5 meaning "no draw owns this pixel", so a ramp would orphan every edge
 fragment.
 
+**What the coverage buys and what it costs, measured 2026-10-10** (Direct3D
+11, `docs/HandsOnQueue.md` entry 52: with MSAA on by default, is it still
+needed?). `FC_BGFX_LINE_NO_COVERAGE` in the environment draws scene lines
+the way they were before it -- plain quads of the asked width, no feather,
+no blend of their own, the flat fragment stage with no discard
+(`m_progLinePlain`) -- so both sides run in one binary. It is a measurement
+switch: the overlay and outline passes do not read it.
+
+The weight of a line, the ink across it added up in the frame and divided
+by its length (`tests/gui/line-weight-is-its-width.py`: six widths from 1
+to 3.5 px, each at six angles), against the width asked for:
+
+| | furthest from the width asked | widest difference between two angles of one width |
+|---|---|---|
+| coverage, no MSAA | 0.09 px | 0.09 px |
+| coverage, MSAA 4x | 0.13 px | 0.13 px |
+| plain quads, no MSAA | 0.75 px | 1.29 px |
+| plain quads, MSAA 4x | 0.26 px | 0.29 px |
+
+So MSAA 4x does not replace it: four samples give a plain quad its width in
+steps (a 1.5 px line at 45 degrees weighs 1.76), and without MSAA a 1.25 px
+line is 2 px wide lying flat and 0.71 px at 45 degrees. With the coverage a
+multisampled line is up to 0.13 px LIGHTER than asked: the quad ends where
+the coverage reaches nothing, its outermost pixels are covered in part, and
+a multisampled pixel keeps its colour for the samples the quad covers
+alone, which cuts that little coverage again. Half a pixel more quad on
+each side would close it at the price of those fragments; not done.
+
+The cost, GPU time a frame at 1280x720 (`scripts/render-bench.py` with
+`FC_BENCH_MSAA`, `FC_BENCH_DRAWSTYLE`), coverage against plain quads, two
+rounds of each leg:
+
+| scene | no MSAA | MSAA 4x |
+|---|---|---|
+| a 686-object document, as it is (68 draws) | 0.92 against 0.94 ms; 0.95 against 0.81 | 1.23 against 1.33; 1.02 against 1.08 |
+| the same in wireframe | 0.82 against 0.83; 0.63 against 0.63 | 1.06 against 0.88; 0.83 against 1.09 |
+| 20000 lines as long as the view, in one object | 2.25 against 2.03; 2.32 against 2.35 | 3.44 against 3.39; 3.52 against 3.50 |
+
+One leg run twice differs by up to 0.2 ms, which is more than the coverage
+differs from plain quads in any pair, the scene made to be its worst case
+included. Its cost is under what this harness resolves.
+
 Points keep `fs_fc_flat` and integer sizes. A sprite is a square whose
 apparent weight does not turn with the model, so it has nothing to gain.
 

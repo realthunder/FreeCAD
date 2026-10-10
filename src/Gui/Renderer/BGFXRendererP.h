@@ -606,6 +606,20 @@ inline uint32_t bgfxResetFlags()
         | uint32_t(BGFX_RESET_MAXANISOTROPY);
 }
 
+/// FC_BGFX_LINE_NO_COVERAGE: scene lines as plain quads of the asked
+/// width -- no half-pixel feather, no coverage ramp, no blend of their
+/// own, and for the unclipped solid line no discard in the fragment
+/// stage either (m_progLinePlain), so the draw is back in early-Z. It is
+/// what a line was before fs_fc_line resolved its coverage, kept as a
+/// switch so that the coverage can be priced and its effect on a line's
+/// width measured (docs/RenderEngine.md, "Lines"). A measurement switch,
+/// not a mode: the overlay and outline passes do not read it.
+inline bool lineCoverageOff()
+{
+    static const bool off = (getenv("FC_BGFX_LINE_NO_COVERAGE") != nullptr);
+    return off;
+}
+
 /// Whether the once-a-second frame-cost line is due. Unlike the
 /// far-field readouts below, what it reports is accumulated on every
 /// frame and only *printed* on a tick, so this gates the printing.
@@ -5529,6 +5543,7 @@ public:
         fn(m_progFlatClip, LifeProgram);
         fn(m_progLine, LifeProgram);
         fn(m_progLineClip, LifeProgram);
+        fn(m_progLinePlain, LifeProgram);
         fn(m_progLinePat, LifeProgram);
         fn(m_progLinePatClip, LifeProgram);
         fn(m_progPoint, LifeProgram);
@@ -7481,6 +7496,10 @@ public:
     bgfx::ProgramHandle m_progFlatClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progLine = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progLineClip = BGFX_INVALID_HANDLE;
+    /// The line quad with the flat fragment stage: no coverage, no
+    /// discard. Built and used under FC_BGFX_LINE_NO_COVERAGE only, the
+    /// A/B that prices the coverage (lineCoverageOff()).
+    bgfx::ProgramHandle m_progLinePlain = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progLinePat = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progLinePatClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPoint = BGFX_INVALID_HANDLE;
