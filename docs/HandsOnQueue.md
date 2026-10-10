@@ -60,6 +60,20 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-10 16:14, two results more, on the reporter's words to the build
+session this afternoon; LOCAL, not pushed, not staged:**
+- Entry 58: `PolarPattern003`'s 1024 occurrences are right ("now I
+  remembered, yes it is 1024"); the limit was wrong to cut a file's own
+  count: FIXED `a30fdda2a5`. A warning on entering edit that names the
+  setting is asked, for the NEXT session ("do that in next session").
+- Entry 30, the first task turned again: ONE overlay preset whose colours
+  are the theme's, DONE `438216ad93`; the morning's two overlay themes are
+  gone.
+- Both full suites are running on this tree; the build session sends the
+  result.
+- origin/PartDesignPort is at `1151e3a6e5` and the copy under test at
+  `72180a4812` (09:44:51), as before.
+
 **Where it stands, 2026-10-10 14:14: four entries more have results, all
 LOCAL.** The build session worked from 11:30 on the reporter's "continue
 as planned" through the open entries in the order left.
@@ -422,7 +436,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21). The reporter on the staged copy, 2026-10-09 10:51: entry 56 |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | FIRST TASK DONE `3d9edca80c` and `5c021cb111`, not pushed, not staged: "Overlay dark theme" and "Overlay light theme" are themes (Tools > Preset configurations > Themes), the two presets are gone; an overlay theme is its base theme (Dark or Light, every key) plus the presets' LAYOUT; the overlay's LOOK (the outline overlay sheet, the tree items' backing, a console background that is the theme's own page) is in Dark and Light themselves, on the reporter's words to the build session ("color shall follow the Dark/Light theme. port those onverlay part"; "need to modify python editor part to make it more suitable to the theme"); Light, Dark and Classic each list every key another sets; Light has syntax colours of its own; the editor's current line and the console's old text take a changed colour at once. Five choices of the build session's for the reporter. THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK as DECIDED ANEW by the reporter 2026-10-09 09:47: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | FIRST TASK DONE as TURNED by the reporter on 2026-10-10 afternoon ("one overlay preset that can auto change its color to match the main theme"): ONE preset "Overlay" `438216ad93` (it replaces the morning's two overlay themes `3d9edca80c`), and `5c021cb111`; not pushed, not staged. The preset is the layout alone, no colour and no style sheet; an overlay's look is the theme's (Dark, Light and now Classic too name the overlay sheet for see-through panels, the tree's backing and the console's page), so the preset under Dark is Dark's and turns Light's when Light is applied. Kept from the morning: the themes listing each other's keys, Light's own syntax colours, the editor and console fixes. Four of the morning's choices still with the reporter. THE MORNING'S FORM, replaced: "Overlay dark theme" and "Overlay light theme" are themes (Tools > Preset configurations > Themes), the two presets are gone; an overlay theme is its base theme (Dark or Light, every key) plus the presets' LAYOUT; the overlay's LOOK (the outline overlay sheet, the tree items' backing, a console background that is the theme's own page) is in Dark and Light themselves, on the reporter's words to the build session ("color shall follow the Dark/Light theme. port those onverlay part"; "need to modify python editor part to make it more suitable to the theme"); Light, Dark and Classic each list every key another sets; Light has syntax colours of its own; the editor's current line and the console's old text take a changed colour at once. Five choices of the build session's for the reporter. THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK as DECIDED ANEW by the reporter 2026-10-09 09:47: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | STAGED 2026-10-09 08:40, fixed `47b5e72c79`: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | STAGED 2026-10-09 08:40, fixed `b960092ea5`: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | STAGED 2026-10-09 08:40, fixed `ef4df215b5` (the cycles submodule at its `35a3bd898`): the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Both pushed since (`docs/HandsOnLog.md`) |
@@ -450,7 +464,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | STAGED 2026-10-09 15:11, fixed `739120f1c7`: a warning or an error shown to the user is the status bar's own temporary message, which hides every non-permanent widget -- the preselection label that held the progress bar in place; a bar that came up with a message showing sat at x 2 of 1920 instead of 1441. It is a permanent widget now, first of the right-hand group. 4 PASS and 2 FAIL on the staged copy, 6 PASS now (`docs/HandsOnLog.md`) |
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | STAGED 2026-10-09 15:11, fixed `f5a651b723`, all eleven points (a) to (k); five choices for the reporter: Esc, any other button, or the window losing the front or the mouse give a drag up, a border's too; one look for the overlay's and the cells' frames -- the theme's accent at 0.3, a white border, a thin dark line; a join's cell that goes has a red stop sign and no dim; a border pushed more than 12 px past a cell's minimum closes it, a corner only creates and its refusal is an ERROR; handles on the accent colour and off a scroll bar; a page's or sheet's cell splits with a 3D view of its document. 19 PASS and 26 FAIL on the staged copy, 82 PASS now (`docs/HandsOnLog.md`). CHANGED AGAIN on the reporter's words to the build session, DONE `dbff5c6378`, STAGED 2026-10-09 16:42 (the desktop's), desktop and browser both: a refused corner drag shows NO frame, only the forbidden cursor, with the error said at each turn from the splitting cursor to the forbidden one; the cell that goes (a join's, a border's) is framed RED and crossed out, the stop sign is gone; the active cell has a subtle border in the frames' accent. 81 PASS and 7 FAIL on the staged copy, 88 PASS now. Three choices left with the reporter. ONE MORE, DONE `b4004d2635`, STAGED 2026-10-09 17:36: a dragged border takes room from the cell next to it and from no other -- at that cell's minimum the drag closes it instead of pushing the next border along; 91 PASS and 3 FAIL on the copy staged 16:42, 94 PASS now |
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | FIXED `a50e708959`, PUSHED 2026-10-09 16:41; not in the staged copy (the browser viewer is not part of it); three choices for the reporter: the browser's split view shows a drag as frames and carries it out at the release, with the desktop's cancel (Escape, another button, a second finger, the window losing the front), a minimum cell size of 300, a border that closes a cell pushed 12 px past the minimum, the stop sign and the frame look. 7 PASS and 22 FAIL on the old bundle, 36 PASS now, in headless Chrome. Not run: a touch screen, Safari (`docs/HandsOnLog.md`). The view cell changes of `dbff5c6378` (entry 56, points (l) to (n)) are in the browser's too |
-| 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | AUDITED, two kinds FIXED, not pushed, not staged: `1adffbfe7c` (the origin's point had no icon file: "Cannot find icon: Std_Point") and `b4f22e0b60` (one dimension's tolerance warned of 56 times a recompute, once now). The rest is in `docs/HandsOnLog.md` as a table with a proposal each, nothing changed: 90 "hasher mismatch" from the optics addon's rays, 45 "auto change element reference", `SectionView003` said three times over, a sketch whose first solver fails without being named, three TechDraw view providers writing into the document while attached, and `PolarPattern003` cut from 1024 to 1000 occurrences (which changes the model -- a question for the reporter). Before the audit: a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
+| 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | AUDITED; three FIXED, not pushed, not staged: `1adffbfe7c` (the origin's point had no icon file: "Cannot find icon: Std_Point"), `b4f22e0b60` (one dimension's tolerance warned of 56 times a recompute, once now) and `a30fdda2a5` (the pattern limit cut a FILE's own count, `PolarPattern003`'s 1024 -> 1000; the reporter: "yes it is 1024"; a restored count is kept now). A WARNING on entering edit when a count exceeds the limit, naming the setting, is asked by the reporter, for the next session. The rest is in `docs/HandsOnLog.md` as a table with a proposal each, nothing changed: 90 "hasher mismatch" from the optics addon's rays, 45 "auto change element reference", `SectionView003` said three times over, a sketch whose first solver fails without being named, three TechDraw view providers writing into the document while attached, and `PolarPattern003` cut from 1024 to 1000 occurrences (answered and fixed since, as the head of this cell says). Before the audit: a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | STAGED 2026-10-09 15:11, fixed `e9ac624959`, as decided: "Reset all" puts `Mod/Start/Migration2024Complete` back when it was set; the migration is untouched. A profile already switched off this way (the reporter's) STAYS off until Preferences > Start or `Mod/Start/ShowOnStartup` switches it on. 10 PASS and 2 FAIL on the staged copy, 12 PASS now (`docs/HandsOnLog.md`) |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | STAGED 2026-10-09 16:42, fixed `d6f640f4ee`: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | STAGED 2026-10-10 09:44, in its third form. REVERSED by a new request of the reporter's about 22:25 ("support fractional line width, but make sure the highlight shows the same width"), done `2649caa38f`; then the dashes with the widths and a rounding setting, done `721fdcf39b`: the backend draws every line of a page at the width asked for, fractions included (0.35 mm is 0.35; Qt's page has 0.3), dimension lines, section lines and leaders too; the highlight of an edge is as wide as the edge, and the edge under it is left out of the drawing while it is lit (7.00 px selected for a 7.00 px line, no ink of another colour beside it). `techdraw-page-backend-line-widths.py` 19 PASS. The DASHES, decided by the reporter ("Do the new dash"): counted in the width the line is drawn at -- a 0.35 mm hidden line has six dashes where the Qt page has seven; a line of whole tenths has Qt's dashes exactly. A new setting asked by the reporter, `Mod/TechDraw/General/PageRendererVgRoundLineWidth`, OFF by default: on, a width is rounded DOWN to a whole tenth of a millimetre as the Qt page draws it and the dashes are Qt's too; it reaches an open page at once; in the omni search, on no preference page. `techdraw-page-backend-dashes.py` 30 PASS, `techdraw-page-backend-line-widths.py` 30 PASS. The setting's four points ANSWERED by the reporter about 10:10 ("1,2,3 yes. 4 expose to techdraw preference page"): off by default, rounded down, one switch -- confirmed; and it goes on a preference page: DONE `a343a386b6`, NOT staged, not pushed -- a check box "Round Line Widths (Backend Renderer)" on TechDraw's Advanced page; `techdraw-page-backend-line-widths.py` 33 PASS. BEFORE the reversal, superseded: FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
@@ -2791,7 +2805,7 @@ What is asked now:
   and the border still has to be wide enough to grab and to right-click (its
   menu closes a neighbouring view).
 
-## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DONE `3d9edca80c` and `5c021cb111`, not staged: the two overlay presets are themes, "Overlay dark theme" and "Overlay light theme"; five choices for the reporter (see `docs/HandsOnLog.md`)
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DONE as turned by the reporter 2026-10-10: ONE overlay preset, its colours the theme's, `438216ad93` and `5c021cb111`, not staged (the morning's two overlay themes `3d9edca80c` are gone); four choices for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 09:47, the reporter changed their mind on the first task; THIS
 is the one to do, and it replaces the answer of 09:38 below:** "regarding
@@ -3064,6 +3078,51 @@ NOT ANSWERED YET:**
 Found on the way, not changed (the log has them): a theme saved from the
 Theme page under a name of its own has no style parameters file; the
 freeze of the second task is as it was.
+
+**2026-10-10 afternoon, the reporter turns the first task again, said to
+the build session and relayed by it verbatim (the note-taker did not hear
+it):** "also regarding the overlay themes. I have second thought. Can you
+make one overlay preset that can auto change its color to match the main
+theme, so the overlay preset only change the overlay pattern and their
+colors, like before"
+- ONE overlay preset, not two overlay themes.
+- Its colours follow the main theme by themselves.
+- The preset changes only the overlay pattern (and the overlays' colours),
+  as the presets did before.
+(This replaces the decision of 2026-10-09 09:47 and 09:50: two new themes,
+the presets gone.)
+
+**2026-10-10 16:14, from the build session: DONE `438216ad93`; local, not
+pushed, not staged.** It replaces the morning's two overlay themes
+(`3d9edca80c`). The account is in `docs/HandsOnLog.md`, "30, again"; in
+short:
+- Tools > Preset configurations has ONE "Overlay": the layout alone (35
+  keys -- the panels in their overlays, the tree and the property view
+  apart, the tree's hidden column, two overlay switches), no colour and no
+  style sheet.
+- The Themes menu is Classic, Dark and Light again; the two overlay themes
+  of the morning are gone.
+- An overlay's look is the THEME's: Dark, Light and now Classic too name
+  the overlay sheet for see-through panels, the tree items' backing and
+  the console's page. So the preset applied under Dark is Dark's, and it
+  turns Light's when Light is applied; the panels stay where they are.
+- Classic, changed with it: it names `Dark-Outline.qss` now (its 3D view
+  is dark blue), with the tree backing and a white console page.
+- Kept from the morning: the themes listing each other's keys, Light's
+  own syntax colours, the editor and console fixes (`5c021cb111`).
+- `tests/gui/overlay-preset-follows-the-theme.py` 45 claims,
+  `editor-colours-follow-the-theme.py` 18. Pictures in
+  `..\dl\handson\2026-10-10\q2\g-t-e30overlay-dev`.
+
+**Of the morning's five choices, what is left for the reporter -- NOT
+ANSWERED YET (the build session's count, four):**
+1. the plain themes leave the layout alone -- "now simply how a preset
+   and a theme divide";
+2. the preset carries the old panel SIZES;
+3. Dark and Light name the outline overlay sheets instead of
+   `Dark_overlay.qss` and `Light_overlay.qss`;
+5. the six unbundled packs are untouched.
+(Choice 4, the 3D background, is the theme's -- "as asked".)
 
 ## 31. Report view: "Go to end" on by default (a change request) -- STAGED 2026-10-09, fixed `47b5e72c79` (see `docs/HandsOnLog.md`)
 
@@ -5541,7 +5600,7 @@ desktop's setting carried over to the browser or a value of the viewer's
 own; and whether touch (a finger has no Esc and no second button) gets a
 way to cancel of its own.
 
-## 58. Audit the warnings of opening and recomputing `scanner.FCStd`, and fix what can be fixed (a task, for later) -- AUDITED; two kinds FIXED `1adffbfe7c` and `b4f22e0b60`, not staged; the rest listed with proposals for the reporter (see `docs/HandsOnLog.md`)
+## 58. Audit the warnings of opening and recomputing `scanner.FCStd`, and fix what can be fixed (a task, for later) -- AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60` and `a30fdda2a5` (the pattern limit cut a file's own count), not staged; a warning on entering edit asked, for the next session; the rest listed with proposals for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 11:37, the reporter:** "new task, can do it later. audit for all
 warning when opening and recomputing the scanner document. fix when
@@ -5628,6 +5687,47 @@ audit, still not answered: 72 "no exact match for changed 2d reference"
 at Message level, and 100 solver timing lines at Log level. And without
 the addons installed, the open alone is 743 lines of error for this
 file's 37 addon objects; not changed.
+
+**2026-10-10 afternoon, the reporter on `PolarPattern003`, said to the
+build session and relayed by it verbatim, in order (the note-taker did
+not hear them):**
+- "PolarPattern003 got 1024 occurrence? that must be an error"
+- "show me the screeshot of this pattern. I don't remember having any
+  pattern that big"
+- then, with the pictures: "are right. now I remembered, yes it is 1024.
+  so add some warning when enter edit if it exceeds. did we expose the
+  setting to preference? mention this setting in warning message"
+- then: "do that in next session"
+So the question of 14:14 is ANSWERED: 1024 is right; 1000 is NOT wanted
+for this file. The pattern is the code wheel's 1024 encoder lines (label
+"CodeWheel", in `Body007`).
+
+**2026-10-10 16:14, from the build session: FIXED `a30fdda2a5`; local, not
+pushed, not staged.** The account is in `docs/HandsOnLog.md`, "58,
+again"; in short:
+- The error was the LIMIT's: `MaximumPatternOccurrences` is for typed-in
+  counts, and its port of 2026-10-02 (`d882d9d88b`) cut a FILE's count to
+  1000 at every load. Every load of `scanner.FCStd` since made the code
+  wheel with 1000 lines, on one warning; a save after it would have kept
+  1000.
+- Now a restored count is kept, through the load and through the panel's
+  OK. An object restored over the limit can keep or lower its count, not
+  raise it. A new pattern and a typed-in count stop at the limit as
+  before.
+- `scanner.FCStd`'s wheel recomputes with 1024 again, and the warning is
+  gone.
+- `TestLinkArray` 15, `TestPartDesignApp` 347 with the two known
+  thickness failures, `tests/gui/pattern-count-over-the-limit.py` (new) 9.
+
+**Asked by the reporter and NOT done, on their word ("do that in next
+session"):** a WARNING on entering edit when a pattern's count exceeds
+the limit, the message naming the setting.
+The build session's answer to "did we expose the setting to preference?":
+it is on NO preference page; it is in the settings list the omni search
+reads (Part, "Most occurrences of a pattern"), and it is read once, so a
+change counts from the next start.
+(Not said by the reporter, the note-taker's count: whether the setting is
+then to go on a preference page.)
 
 ## 59. The Start page no longer opens at startup: the Start module's migration ran again after "Reset all" -- STAGED 2026-10-09 15:11, fixed `e9ac624959` (see `docs/HandsOnLog.md`)
 
