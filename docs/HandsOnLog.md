@@ -326,7 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; nothing changed; a crash FOUND on both, not fixed, two ways to fix it for the reporter | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), not pushed; a crash FOUND on both, not fixed, two ways to fix it for the reporter | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5022,7 +5022,7 @@ two agree. Nine more GUI tests take their second view the same way
 (`grep -A4 Std_ViewCreate tests/gui`); they pass, being the first document
 of their run, and are left as they are.
 
-## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe; a close from inside the load crashes on both, NOT fixed
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe, 14 to 18 s after `24f7c8a2bd`; a close from inside the load crashes on both, NOT fixed
 
 **The entry:** once in three sessions the first load's view was empty 13 s
 after opening, the background and the navigation cube only.
@@ -5074,14 +5074,89 @@ the drains' own account:
 
 So the meshing on other threads is not it: 0.66 s. The two drains worked
 for 10.0 s between them, and the model was there 20 to 25 s after the open:
-the other 10 to 15 s went by BETWEEN the 31 slices, a third to a half of a
-second for each turn of the event loop. A slice runs as long as the loop
-took to give the thread back, up to five budgets, and these ran 0.43 s on
-average, which says the same. What a turn of the loop does for that long
-with nothing on the screen is not measured -- the frame, the tree, the
-pages; my five frames and the sweeper's timer are in it too. That, and the
-view showing nothing until the last slice, are the two things to look at
-if the wait is to be worked on. Not decided by the reporter.
+the other 10 to 15 s are the event loop's -- its turns between the 31
+slices AND the events a slice lets through from inside (a slice's clock
+stands while the progress bar pumps; I first wrote "between the slices",
+which is half of it).
+
+**The reporter, 22:10:** "what events current in a slice. 2 yes" -- the
+second being the wait itself: work on it.
+
+**What a slice lets through now.** Each object a slice handles is a step
+of its progress sequence; when the percentage moves and 200 ms have passed
+since the last time, the bar runs `qApp->processEvents()` -- all of them.
+The sequence is `KeepInteractive`, so the bar's filter (which drops mouse
+and keys and refuses the main window's close while a blocking sequence
+runs) is not installed: paints and the view's frame, every timer (Part's
+visual drain, another document's slices, a script's), the mouse and the
+keys and so any command, a close of a tab or of the window, queued signals
+and sockets. Only this document's own next slice is kept out
+(`_deferApplying`). And `TurnBudget.h` says the pump is where the window is
+repainted during a load, on purpose: the next slice is posted when one ends
+and is served before the timer that would draw. So "a slice runs no
+events", my way 1 for the crash, is not free as I put it: it needs the
+repaint given another place.
+
+**Where the 10 to 15 s went: the pass over the commands -- FIXED
+`24f7c8a2bd`.** The slow-dispatch trace (`Render/LevelDebug` with
+`LevelSlowBuildMS` 10; `g-s-e47b-trace-dev`), from the open's return to the
+last visual, dispatches from the event loop itself:
+
+| | before | after `24f7c8a2bd` |
+|---|---|---|
+| the slices and other queued calls (`GUISingleApplication`) | 15.7 s, 58 | 15.3 s, 89 |
+| `activityTimer`, the pass over every command's `isActive()` | 10.8 s, 13 passes | 0.85 s, 1 |
+| TechDraw's `QFutureWatcher` results | 1.0 s, 3 (and 3.3 s, 23, inside slices) | 2.7 s, 6 (and 3.4 s, 22, inside) |
+
+The pass is `MainWindow::_updateActions`, re-armed by every object a slice
+brings in and kept out of a restore -- but between two slices the document
+is not restoring. Asked one by one (`e47c.py`), of 742 commands two cost
+anything: `Std_Paste` 760 to 900 ms and `Material_Paste` 150 to 180 ms,
+with `scanner.FCStd` open or with no document at all. Both ask the
+clipboard, five questions and one, and here a question takes 170 ms
+(`clipprobe.py`, a bare Qt application: the same). Now they read
+`Gui::ClipboardFormats`, the formats asked once for each change of the
+clipboard; a pass takes 0.005 s. Three plain opens after it: the model is
+first on the screen 14.2, 14.9 and 17.9 s after the open returns, complete
+at 16 to 22 s.
+
+**What that number is worth to the reporter I do not know.** The 170 ms is
+not a slow clipboard: the sessions I start are REFUSED it. `OpenClipboard`
+fails with access denied (5) in PowerShell and in FreeCAD alike, Qt tries
+again, and a copy in such a session fails too (`OleSetClipboard: ...
+OpenClipboard Failed` in the run's log). The clipboard held six formats
+owned by Edge all the while and was not altered. The job these processes
+run in has no clipboard restriction set and they run at medium integrity,
+so my guess is the box's data-loss agent (its `dgapi64.dll` is in the
+process), by what was copied or by who asks -- a guess. If copy and paste of
+objects work in the reporter's own FreeCAD, it is not refused there, the
+questions cost little, and most of this 10 s was never in THEIR wait: the
+entry itself was seen by me, in a session of mine. The change is right
+either way (an `isActive()` must not call into another process on every
+pass) and guards any clipboard that answers late. The "~765 ms on a
+17800-object document" that `_updateActions` quotes as its reason to stay
+out of a restore was, I take it, this and not the document: the same pass
+is 6 ms on 686 objects without the two commands.
+
+The list is asked again when the clipboard announces a change, when
+`Std_Copy` or `Material_Copy` has written it, and when the application is
+come back to. `tests/gui/paste-follows-the-clipboard.py`: `Std_Paste` after
+a copy, a clear, a file's URL and a text put there -- 5 of 5 on Qt's
+offscreen platform, whose clipboard is the process's own; on this desktop
+it skips, being unable to write.
+
+**Left of the wait, not started:**
+- nothing is drawn until the view provider drain is through (first picture
+  at about 14 s now): the visuals are built after it, 275 in 10 slices;
+- in the visuals' phase the event loop runs 33 queued calls for 7.7 s where
+  Part's ten slices account for 2.7 s -- 5 s of calls I have not named;
+- TechDraw's views finish their hidden-line threads during the load and
+  take 6.1 s of the GUI thread for it (up to 1.2 s a view), for pages that
+  are not on the screen;
+- one pass over the commands of 0.85 s remains after the drain; not the
+  clipboard (that is 0.18 s once here), not looked at.
+
+The crash is as it was: not fixed, the two ways with the reporter.
 
 **The close.** The script closes its document when its last frame is
 taken.
