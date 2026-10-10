@@ -326,7 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, not pushed; the rest of the wait being chased, and x16win asked for its numbers | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, not pushed; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen -- for the reporter; x16win asked for its numbers | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5200,6 +5200,64 @@ with the document (a save that flushes): the documents live until the
 event loop's next turn, which is enough unless that caller runs events
 itself. And the serve slice (`runDeferredServeSlice`), which holds no
 guard, is as it was.
+
+**The close by hand -- tried (the notes session's point, 00:30), and it
+asked to save: FIXED `43fdcb1435`.** All the closes above are a script's
+`closeDocument()`. Run from inside a slice, the window's own close
+(`Std_CloseActiveWindow`, what Ctrl+W runs) did not come back: the session
+stood until the driver's timeout, three runs of three. Not a hang -- the
+native stack (`hang-stack.txt`) is `Document::canClose` ->
+`MainWindow::confirmSave` -> `QDialog::exec`, under the bar's pump under
+the slice: "Do you want to save your changes?", of a document of 1500
+primitives that had only been opened. The Gui document counts as modified
+for as long as its view providers are being built -- the slices replay the
+file's record through the handlers that set the flag, and
+`finishDeferredRestore()` puts it back -- so the tab has the mark and every
+close by hand in that time asks. Save, chosen there from inside a slice,
+writes the file without what the drain has not reached, a flush doing
+nothing from inside a slice. Now `setModified(true)` is not taken while
+the drain is pending. With it the command comes back and no box is
+raised; the view goes when the event loop is back where the close was
+asked, and the document with it, after the slice -- so the by-hand close
+never deletes under a slice at all. The test has it as one of its five
+closes: 7 of 7 in three runs of three.
+
+**What the wait is made of now, and it is TechDraw.** The turns are named
+in the trace (`e7e7454dba`; `g-a-loadtrace-dev`, trace on, which makes
+everything about four tenths slower): from the open's return to the last
+visual, 70 turns of the view provider drain with 9.96 s of work and 0.92 s
+yielded; 10 of the visual drain, 2.88 s and 0.10 s; ten queued calls of
+2.1 s before the drain's last turn that are no party's (not named yet);
+one pass over the commands of 1.16 s (not the clipboard); TechDraw's
+`QFutureWatcher` results. The slices follow one another with a paint of 10
+to 17 ms between: the event loop is no longer where the time goes. Inside
+the drain, by class, of the steps slow enough to be logged:
+
+| | the update (sweep) | the record (restore) | the finish |
+|---|---|---|---|
+| `TechDrawGui::ViewProviderDimension` (147) | 1.11 s | 1.13 s | |
+| `TechDrawGui::ViewProviderPage` (10) | 1.05 s | 0.24 s | |
+| `TechDrawGui::ViewProviderViewSection` (9) | 0.13 s | 0.64 s | 0.19 s |
+| PartDesign's Pocket, Pad, Pattern, Fillet, Hole, Helix | 1.2 s | | 1.6 s |
+
+And the file without its 229 TechDraw objects (`mk-notd.py`: a copy, the
+objects removed, saved; 457 objects, 5.0 MB), plain runs, two each,
+alternating:
+
+| | `scanner.FCStd` | without TechDraw |
+|---|---|---|
+| the open returns after | 17.6, 18.6 s | 3.9, 3.9 s |
+| the model first on the screen, after that | 13.9, 17.2 s | 6.3, 7.0 s |
+| from the open to the model | 32 to 35 s | 10 to 11 s |
+
+So 22 s of the 33 are the ten pages', none of which is on the screen: 14 s
+inside the open -- in the traced run the open has 6.2 s of reading
+`GuiDocument.xml` and 5.1 s of view provider updates made during it, not
+parked -- and 7 to 10 s after it, the 3D model's visuals waiting for the
+whole view provider drain (by design: a visual built between its slices
+is touched again by the sweep). Not started: the pages doing their work
+when they are first shown; that is TechDraw's design and the reporter's
+to decide.
 
 **The close.** The script closes its document when its last frame is
 taken.
