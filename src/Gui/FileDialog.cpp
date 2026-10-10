@@ -51,6 +51,7 @@
 
 #include "FileDialog.h"
 #include "BitmapFactory.h"
+#include "DialogParams.h"
 #include "MainWindow.h"
 #include "PrefWidgets.h"
 #include "Tools.h"
@@ -69,12 +70,9 @@ bool DialogOptions::dontUseNativeFileDialog(bool checkModifier)
 #if defined(FORCE_USE_QT_FILEDIALOG) // ignore user parameter settings
     notNativeDialog = true;
 #else
-#   if defined(USE_QT_FILEDIALOG)
-    notNativeDialog = true;
-#   endif
-    ParameterGrp::handle group = App::GetApplication().GetUserParameter().
-          GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Dialog");
-    notNativeDialog = group->GetBool("DontUseNativeDialog", notNativeDialog);
+    // What an unset key means is the build's choice (USE_QT_FILEDIALOG);
+    // DialogParams has it as the setting's default.
+    notNativeDialog = DialogParams::getDontUseNativeDialog();
 #endif
 
     if (checkModifier && QApplication::queryKeyboardModifiers() == Qt::ShiftModifier)
@@ -84,9 +82,7 @@ bool DialogOptions::dontUseNativeFileDialog(bool checkModifier)
 
 bool DialogOptions::dontUseNativeColorDialog(bool checkModifier)
 {
-    ParameterGrp::handle group = App::GetApplication().GetUserParameter().
-          GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Dialog");
-    bool notNativeDialog = group->GetBool("DontUseNativeColorDialog", true);
+    bool notNativeDialog = DialogParams::getDontUseNativeColorDialog();
     if (checkModifier && QApplication::queryKeyboardModifiers() == Qt::ShiftModifier)
         return !notNativeDialog;
     return notNativeDialog;
@@ -830,6 +826,35 @@ QString FileIconProvider::type(const QFileInfo & info) const
 
 /* TRANSLATOR Gui::FileChooser */
 
+namespace {
+
+// The model of the file system that completes what is typed into a file
+// chooser: one for the session, made when a chooser's line is first given
+// the focus, and shared by all of them.
+//
+// A QFileSystemModel has a thread of its own that reads the file system,
+// and its destructor waits for that thread, up to a second, when it is in
+// the middle of something -- listing the drives, a network one among them,
+// and fetching their icons is something. Each chooser had a model of its
+// own, made with the chooser: the preferences dialog has eleven before a
+// module adds its pages, so opening it started as many threads all listing
+// the drives, and destroying it soon after -- "Reset all" closes it, and so
+// does a quick OK -- waited on them one after the other, 11 to 57 seconds
+// with the program frozen (docs/HandsOnQueue.md entry 66). Nearly none of
+// those lines is ever typed into. The one model is the application's and
+// goes with it.
+QFileSystemModel* completionModel()
+{
+    static QPointer<QFileSystemModel> model;
+    if (!model) {
+        model = new QFileSystemModel(qApp);
+        model->setRootPath(QString());
+    }
+    return model;
+}
+
+} // namespace
+
 /**
  * Constructs a file chooser called \a name with the parent \a parent.
  */
@@ -844,12 +869,9 @@ FileChooser::FileChooser ( QWidget * parent )
     layout->setSpacing( 2 );
 
     lineEdit = new QLineEdit ( this );
-    completer = new QCompleter ( this );
-    completer->setMaxVisibleItems( 12 );
-    fs_model = new QFileSystemModel( completer );
-    fs_model->setRootPath(QString::fromUtf8(""));
-    completer->setModel( fs_model );
-    lineEdit->setCompleter( completer );
+    // its completer is made when it is first wanted: see eventFilter()
+    completer = nullptr;
+    lineEdit->installEventFilter(this);
 
     layout->addWidget( lineEdit );
 
@@ -870,6 +892,22 @@ FileChooser::FileChooser ( QWidget * parent )
 }
 
 FileChooser::~FileChooser() = default;
+
+/**
+ * Gives the line edit its completer the first time it has the focus: the
+ * completion of a path is of no use to a line nobody types into, and its
+ * model is not free (completionModel()).
+ */
+bool FileChooser::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == lineEdit && !completer && event->type() == QEvent::FocusIn) {
+        completer = new QCompleter(this);
+        completer->setMaxVisibleItems(12);
+        completer->setModel(completionModel());
+        lineEdit->setCompleter(completer);
+    }
+    return QWidget::eventFilter(watched, event);
+}
 
 void FileChooser::resizeEvent(QResizeEvent* e)
 {

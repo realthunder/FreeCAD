@@ -30,6 +30,8 @@
 #include "DlgSettingsFemZ88Imp.h"
 #include "ui_DlgSettingsFemZ88.h"
 
+#include <Mod/Fem/App/FemParams.h>
+
 
 using namespace FemGui;
 
@@ -95,7 +97,7 @@ void DlgSettingsFemZ88Imp::populateSolverType()
 
     // set default index
     auto hGrp = ui->cmb_solver->getWindowParameter();
-    std::string current = hGrp->GetASCII(ui->cmb_solver->entryName(), "sorcg");
+    std::string current = hGrp->GetASCII(ui->cmb_solver->entryName(), Fem::FemParams::defaultZ88Solver().c_str());
     int index = ui->cmb_solver->findData(QByteArray::fromStdString(current));
     ui->cmb_solver->setCurrentIndex(index);
 }

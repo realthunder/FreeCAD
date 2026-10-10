@@ -53,9 +53,16 @@ Params = [
         doc="Allow return key in expression edit box"),
     ParamBool('EvalFuncOnEdit', False,
         doc="Auto evaluate function call when editing expression"),
-    ParamInt('EditDialogWidth',0),
-    ParamInt('EditDialogHeight',0),
-    ParamInt('EditDialogTextHeight',0),
+    ParamInt('EditDialogWidth',0,
+        doc = "Width in pixels the expression editor dialog had when it was last\n"
+              "closed. The dialog opens at least this wide. 0 uses the default."),
+    ParamInt('EditDialogHeight',0,
+        doc = "Height in pixels the expression editor dialog had when it was last\n"
+              "closed. The dialog opens at least this tall. 0 uses the default."),
+    ParamInt('EditDialogTextHeight',0,
+        doc = "Height in pixels the text box of the expression editor dialog had\n"
+              "when it was last closed. The box opens at least this tall. 0 sizes\n"
+              "it to the text, between four and eight lines."),
     ParamInt('EditDialogBGAlpha','FC_EXPR_PARAM_EDIT_BG_ALPHA', title="Background opacity", proxy=ParamSpinBox(0, 255, 1),
         doc="Expression editor background opacity value when using in place editing"),
 ]

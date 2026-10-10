@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "TechDrawParams.h"
 #ifndef _PreComp_
 # include <BRepBuilderAPI_MakeEdge.hxx>
 # include <boost/uuid/uuid_generators.hpp>
@@ -103,7 +105,7 @@ App::Color LineFormat::getDefEdgeColor()
 
 int LineFormat::getDefEdgeStyle()
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetInt("CenterLineStyle", 2);   //dashed
+    return Preferences::getPreferenceGroup("Decorations")->GetInt("CenterLineStyle", TechDraw::TechDrawParams::defaultCenterLineStyle());   //dashed
 }
 
 //******************************************
@@ -573,6 +575,6 @@ PyObject* GeomFormat::getPyObject()
 
 bool CosmeticVertex::restoreCosmetic()
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("restoreCosmetic", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("restoreCosmetic", TechDraw::TechDrawParams::defaultrestoreCosmetic());
 }
 

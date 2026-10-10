@@ -56,6 +56,7 @@ public:
     long OutputTransform;
     double Exposure;
     long MaxViewIds;
+    long ReadbackFrameMode;
     long BackgroundReleaseDelay;
     long CoarseTessellation;
     long CoarseDeferFaces;
@@ -226,6 +227,8 @@ public:
         funcs["Exposure"] = &RenderParamsP::updateExposure;
         MaxViewIds = this->handle->GetInt("MaxViewIds", 1024);
         funcs["MaxViewIds"] = &RenderParamsP::updateMaxViewIds;
+        ReadbackFrameMode = this->handle->GetInt("ReadbackFrameMode", 1);
+        funcs["ReadbackFrameMode"] = &RenderParamsP::updateReadbackFrameMode;
         BackgroundReleaseDelay = this->handle->GetInt("BackgroundReleaseDelay", 1000);
         funcs["BackgroundReleaseDelay"] = &RenderParamsP::updateBackgroundReleaseDelay;
         CoarseTessellation = this->handle->GetInt("CoarseTessellation", 2);
@@ -570,6 +573,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMaxViewIds(RenderParamsP *self) {
         self->MaxViewIds = self->handle->GetInt("MaxViewIds", 1024);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateReadbackFrameMode(RenderParamsP *self) {
+        self->ReadbackFrameMode = self->handle->GetInt("ReadbackFrameMode", 1);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateBackgroundReleaseDelay(RenderParamsP *self) {
@@ -1209,133 +1216,54 @@ RenderParamsP *instance() {
 static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "Type", "Type", App::ParamInfo::String, "Default")
         .setTitle("Renderer type")
-        .setDoc("Type of the experimental render engine backend. 'Default' keeps\n"
-"the plain GL pipeline. Only effective with render cache mode 3."),
+        .setDoc("What draws a 3D view. 'Default': the render engine, on this\n"
+"platform's backend. 'Legacy': the old Coin rendering, without the\n"
+"engine. A backend can also be named, as 'bgfx - Direct3D11'. With\n"
+"the engine the render cache is always 3, whatever its own setting\n"
+"says; under 'Legacy' that setting is what counts.")
+        .setProxy("ComboBox")
+        .setItems({{"Default (the render engine)", "", "Default"}, {"Legacy (Coin, without the render engine)", "", "Legacy"}}, true, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OutputTransform", "OutputTransform", App::ParamInfo::Int, 1)
         .setTitle("Output colour transform")
-        .setDoc("Whether the engine is colour managed.\n"
-"\n"
-"The shading is linear -- mixes, the GGX lobe, the image based\n"
-"lighting product are all arithmetic on light, and they are only\n"
-"correct on linear numbers. A colour someone picked is not: it\n"
-"is a display number, which makes it sRGB encoded. And a display\n"
-"reads the byte it is handed as sRGB too.\n"
-"\n"
-"'sRGB' honours both ends. Authored colours -- materials, the\n"
-"lights, the background, the base colour and emissive textures --\n"
-"are decoded to linear as they enter, and the finished frame is\n"
-"encoded once at the last write before it is shown. An UNSHADED\n"
-"authored colour therefore survives the round trip exactly, and\n"
-"so does a fully lit surface; what changes is the shading in\n"
-"between, which is the part that was wrong.\n"
-"\n"
-"'Off' is the older pipeline, which did neither: it fed display\n"
-"numbers to the linear shading and wrote the linear result out\n"
-"raw. The two errors partly cancel -- a fully lit surface comes\n"
-"out right -- but everything in falloff and shadow renders about\n"
-"a gamma too dark. Documents written before this existed are\n"
-"drawn that way, which is how they were authored.")
+        .setDoc("Colour management of the engine. 'sRGB' decodes authored colours to\n"
+"linear for shading and encodes the finished frame for the display,\n"
+"which is the correct pipeline. 'Off' is the older one, which shades\n"
+"display numbers and renders falloff and shadow too dark; documents\n"
+"written before this setting existed use it.")
         .setProxy("ComboBox")
         .setItems({{"Off", "", nullptr}, {"sRGB", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "Exposure", "Exposure", App::ParamInfo::Float, 1.0)
         .setTitle("Exposure")
-        .setDoc("How much light the frame is developed with, as a plain\n"
-"multiplier on the linear image before it is encoded for the\n"
-"screen. One leaves it alone.\n"
-"\n"
-"It exists because a colour managed scene is lit in real\n"
-"reflectances, and a mid grey reflects about 18 per cent of what\n"
-"falls on it rather than the 45 per cent its number reads as. A\n"
-"scene whose lights were set before that was true is lit about\n"
-"two to three times too dimly, and this is the control that\n"
-"answers it without touching a single light.\n"
-"\n"
-"Raising it does not clip. Anything the multiplier pushes past\n"
-"the top of the range rolls off smoothly instead, and the roll\n"
-"off is exactly nothing below the knee -- so at an exposure of\n"
-"one the frame is bit for bit what it would have been without\n"
-"this stage at all.\n"
-"\n"
-"Only meaningful while the output colour transform is on: with\n"
-"it off the engine is not working in light, and a multiplier\n"
-"there would scale display numbers rather than exposure."),
+        .setDoc("Brightness multiplier applied to the finished image before it is\n"
+"encoded for the screen. 1 leaves it alone. Bright areas roll off\n"
+"smoothly instead of clipping. Only used while the output colour\n"
+"transform is on."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MaxViewIds", "MaxViewIds", App::ParamInfo::Int, 1024)
         .setTitle("Backend view id budget")
-        .setDoc("How many backend view ids the render engine may hand out, which\n"
-"is what decides how many 3D views can draw on it at once: each\n"
-"view takes a block for its pass sequence (about 13 ids for a\n"
-"plain viewer, docs/RenderEngine.md #3.1), and a view that finds\n"
-"no block left falls back to plain GL rather than failing. So the\n"
-"default is roughly 64 viewers, and 0 asks for the build's own\n"
-"ceiling instead, which is four times that.\n"
-"\n"
-"It is worth having a limit below the ceiling because the backend\n"
-"copies its whole view table once a frame and sizes its per-view\n"
-"pools from this number, so ids nobody opens are still paid for\n"
-"in every frame. Measured on a desktop GPU that cost is invisible\n"
-"against a 16ms frame at this width - but at the ceiling, with\n"
-"render stage timing on, it is not: the per-view GPU timer pools\n"
-"take a 59fps session to 19. Raise it for many-viewer work, not\n"
-"as a matter of course.\n"
-"\n"
-"Read once, when the backend starts: a change needs a restart."),
+        .setDoc("How many view ids the render backend may hand out, which limits how\n"
+"many 3D views can draw with it at once (about 13 ids per view; a view\n"
+"that finds none left falls back to plain GL). 0 asks for the build's\n"
+"maximum. Read when the backend starts: a change needs a restart."),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ReadbackFrameMode", "ReadbackFrameMode", App::ParamInfo::Int, 1)
+        .setTitle("Frame delivery through read-back")
+        .setDoc("How a frame reaches the screen on Direct3D, Vulkan and Metal. 'Wait'\n"
+"shows every frame as soon as it is drawn. 'Pipelined' shows it a frame\n"
+"or two late and is faster. 'Pipelined while animating' waits except\n"
+"while the view redraws by itself. Not used with OpenGL.")
+        .setProxy("ComboBox")
+        .setItems({{"Wait", "", nullptr}, {"Pipelined while animating", "", nullptr}, {"Pipelined", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "BackgroundReleaseDelay", "BackgroundReleaseDelay", App::ParamInfo::Int, 1000)
         .setTitle("Background view release delay")
-        .setDoc("Milliseconds a 3D view may sit in the background before it gives\n"
-"its render targets back, or 0 to let a hidden view keep them.\n"
-"\n"
-"Targets are what a view mostly costs: 287MB was measured for one\n"
-"1644x653 view with every effect on, and until now it held them\n"
-"whether or not anyone could see it -- so a session with several\n"
-"documents open paid for all of their views to look at one. This\n"
-"gives that back for the views nobody is looking at. What the view\n"
-"keeps is everything a resize keeps: its programs, its uniforms\n"
-"and its uploaded scene, so coming back is the resize path and not\n"
-"a reload.\n"
-"\n"
-"The delay is what stops it firing on a click through the tabs.\n"
-"Coming back costs the one frame that rebuilds the targets (~68ms\n"
-"on the view measured above) and gives a byte-identical picture --\n"
-"the trade is a hitch on return against the memory in between,\n"
-"never a difference in the image. Lower it to release sooner on a\n"
-"machine short of VRAM; raise it if switching back and forth\n"
-"hitches."),
+        .setDoc("Milliseconds a 3D view may stay in the background before it gives its\n"
+"render targets back to free GPU memory. Returning to the view costs\n"
+"one frame to rebuild them, with the same picture. 0 never releases."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CoarseTessellation", "CoarseTessellation", App::ParamInfo::Int, 2)
         .setTitle("Coarse tessellation level")
-        .setDoc("Ladder level shapes are tessellated at under coarse-first\n"
-"(docs/SceneStreaming.md #7): the display mesh is built at this\n"
-"rung of the fidelity ladder and the exact tessellation is\n"
-"declared unbuilt, generated on demand when a camera asks for it.\n"
-"0 is the coarsest rung, each level halves the error; -1 always\n"
-"tessellates exact up front (pre-ladder behavior).\n"
-"\n"
-"Consulted whenever something can deliver the exact rung on\n"
-"demand, which is a scene stream server (its viewers ask) OR a\n"
-"desktop view in render cache mode 3 whose backend drives mesh\n"
-"levels (its own level plan asks when the camera settles) - see\n"
-"PartGui::coarseTessellationLevel. Plain Coin display has neither\n"
-"and keeps the exact tessellation, because a coarse build there\n"
-"would stay coarse forever. This is not a serving-only feature,\n"
-"and it does engage for geometry built while a document loads.\n"
-"\n"
-"What a serving process lacks is not this setting but the local\n"
-"level plan, which is disabled there - its rungs refine only where\n"
-"a connected viewer's camera asks, so with no viewer attached they\n"
-"stay coarse, while a desktop view refines its own. That, not the\n"
-"setting, is why the two publish different geometry for one\n"
-"document (measured on a 40-object scene: 8310 vertices serving,\n"
-"25595 on the desktop). Desktop refinement is tolerance-limited,\n"
-"so what it settles at is a property of the framing.\n"
-"\n"
-"A level whose rung is already finer than a shape's exact\n"
-"tessellation coarsens nothing, so on small shapes the low levels\n"
-"do nothing visible - the default 2 is a no-op on a scene of small\n"
-"ellipsoids that level 0 visibly coarsens.\n"
-"\n"
-"The FC_COARSE_TESSELLATION environment variable overrides this for\n"
-"a whole process and returns before the gate is evaluated, so it\n"
-"forces coarse-first on where the gate would have refused. Takes\n"
-"effect when a shape (re)tessellates."),
+        .setDoc("Ladder level a shape is first tessellated at: 0 is the coarsest, each\n"
+"level halves the error, and the exact mesh is built on demand when a\n"
+"camera needs it. -1 always tessellates exact up front. Used by a view\n"
+"in render cache mode 3 and by a scene stream server; takes effect when\n"
+"a shape is tessellated again."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CoarseDeferFaces", "CoarseDeferFaces", App::ParamInfo::Int, 1000)
         .setTitle("Coarse defer face threshold")
         .setDoc("During a progressive import on the bgfx renderer, a shape with\n"
@@ -1346,153 +1274,45 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "disables the stand-in so every shape tessellates inline."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CoarseDeferAtLeisure", "CoarseDeferAtLeisure", App::ParamInfo::Bool, true)
         .setTitle("Mesh a bounding-box stand-in out of view")
-        .setDoc("A shape drawn as a bounding-box stand-in (CoarseDeferFaces) gets\n"
-"its coarse tessellation also where the camera does not see it, at\n"
-"leisure: behind everything asked for in view, and landed once the\n"
-"load has built its visuals (docs/DocumentLoad.md sec 18.13). Its\n"
-"picture is then there when the camera turns. Off, such a shape\n"
-"stays a box until the camera turns to it, and costs no mesh\n"
-"until then. Takes effect when a shape (re)tessellates."),
+        .setDoc("A shape drawn as a bounding box (CoarseDeferFaces) gets its mesh in the\n"
+"background also where the camera does not see it, so its picture is\n"
+"there when the camera turns. Off, it stays a box until the camera turns\n"
+"to it. Takes effect when a shape is tessellated again."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PreMeshOnLoad", "PreMeshOnLoad", App::ParamInfo::Bool, true)
         .setTitle("Pre-mesh a restored document in parallel")
-        .setDoc("Tessellate a restored document's parked shapes on worker\n"
-"threads, before the drain that displays them builds any of them\n"
-"(docs/DocumentLoad.md sec 18).\n"
-"A load's visual build is mostly tessellation -- measured on a\n"
-"17058-solid assembly, 16.0s of the drain's 25.3s -- and it runs\n"
-"one shape at a time on the GUI thread, which is where the display\n"
-"nodes are. OCCT's own parallelism does not answer that: BRepMesh\n"
-"splits ONE shape over its faces, and a model made of thousands of\n"
-"small parts gives it nothing to split. Measured over such a build\n"
-"the process held 2.04 cores of 28 -- and turning that parallelism\n"
-"off costs 4.8s of a 22s mesh term, so it does help, it just\n"
-"cannot scale.\n"
-"Meshing DIFFERENT shapes at once scales: 7171 shapes took 3.8s of\n"
-"wall time against 16.0s serial, the drain's build fell from 25.3s\n"
-"to 13.5s, and the settled frame arrived about 12s sooner -- with\n"
-"the frame pixel-identical and every triangle count unchanged.\n"
-"Only shapes whose ask can be reproduced exactly are pre-meshed.\n"
-"The claim carries the GEOMETRY bounding box the ask derives from,\n"
-"because BRepBndLib prefers a resident triangulation and enlarges\n"
-"the box by its deflection -- measuring again after the pre-mesh\n"
-"would ask for something coarser than what is resident, and a\n"
-"finer resident mesh is refused by default, so the call would\n"
-"re-tessellate exactly what was just built. Roots sharing a face\n"
-"or an edge with another root, instancing candidates and the\n"
-"oversized shapes that take a stand-in are left alone, and a build\n"
-"whose shape is still being meshed parks itself rather than read\n"
-"a triangulation mid-write.\n"
-""),
+        .setDoc("Tessellate the shapes of a document being opened on worker threads,\n"
+"before they are built for display one by one on the GUI thread. Opens\n"
+"a document of many small parts sooner, with the same result. Shapes\n"
+"that share faces or edges with another, and instancing candidates, are\n"
+"left to the normal path."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MeshSkipRedundant", "MeshSkipRedundant", App::ParamInfo::Bool, true)
         .setTitle("Skip redundant tessellation")
-        .setDoc("Ask the shape whether it is already tessellated the way this\n"
-"rebuild wants it, and skip the tessellation call outright when it\n"
-"is (docs/SceneStreaming.md #13e).\n"
-"A visual rebuild always called BRepMesh_IncrementalMesh, on the\n"
-"assumption that a mesh already resident makes the call nearly\n"
-"free. Measured, it does not: half the calls of a mass descent --\n"
-"2462 of 4942 -- changed no triangle at all and still cost about\n"
-"19ms each, 27% of the whole descent's rebuild time, because\n"
-"reaching the conclusion means building OCCT's internal mesh model\n"
-"of the shape first.\n"
-"The check asks the same question that model would have answered,\n"
-"off the triangulations already hanging on the faces: OCCT's own\n"
-"consistency rule (BRepMesh_ModelPreProcessor), per face, plus the\n"
-"3D polygon of every free edge. It is all-or-nothing per shape and\n"
-"deliberately the stricter test -- one face that would be\n"
-"re-tessellated, one triangulation with an index out of range, and\n"
-"the call runs exactly as before, because the fallback is the real\n"
-"thing and there is nothing to gain by guessing.\n"
-"A resident mesh FINER than the ask is not adequate. That is not\n"
-"an oversight: the descent asks for a coarser mesh on purpose, to\n"
-"give memory back, and OCCT would coarsen it. Skipping there would\n"
-"quietly hold the memory the plan asked for.\n"
-"Off, the call is made unconditionally, as it always was. With the\n"
-"level plan narrating, the off arm also reports how often the\n"
-"check and the call agreed, which is what says the check is safe."),
+        .setDoc("Check whether a shape is already tessellated the way a rebuild wants\n"
+"it, and skip the tessellation call when it is. The check is strict: a\n"
+"single face that would be re-tessellated and the call runs as before.\n"
+"Off makes the call every time."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MeshSkipFinerResident", "MeshSkipFinerResident", App::ParamInfo::Bool, false)
         .setTitle("Skip when the mesh is finer than asked")
-        .setDoc("Count a resident mesh FINER than the rebuild asked for as\n"
-"adequate, instead of re-tessellating to coarsen it\n"
-"(docs/SceneStreaming.md #13e). Only consulted when redundant\n"
-"tessellation is being skipped at all.\n"
-"Strictly, finer is not adequate: the descent asks coarse on\n"
-"purpose to hand memory back, and OCCT coarsens the mesh when\n"
-"asked with quality decrease allowed. That is why the check\n"
-"refuses it by default -- accepting it would be the feature\n"
-"quietly holding the memory the level plan asked for.\n"
-"Measured on the descent, though, that is what the refusal is\n"
-"actually costing and it is nearly all of it: 2599 of the 2765\n"
-"refused calls had a resident mesh exactly twice as fine as the\n"
-"ask -- the previous ladder rung, one dynamic scale step back --\n"
-"and every one of them changed no triangle when the call was\n"
-"made anyway. The faces were already at their floor; a face of\n"
-"two triangles does not coarsen.\n"
-"So this trades a coarsening that mostly achieves nothing for the\n"
-"~19ms it costs to find that out. What it risks is the minority\n"
-"where the coarsening WOULD have removed triangles, which is\n"
-"memory the plan then has to recover some other way -- through\n"
-"the refine pool's own coarser rung, where it was always meant to\n"
-"come from.\n"
-"OFF BY DEFAULT, and the reason is that risk, measured. Audited\n"
-"with every call still made so the check can be scored against\n"
-"what the call actually did, this rule predicted 3381 calls\n"
-"redundant and 753 of them -- 22%, better than one in five --\n"
-"rebuilt anyway. Those are real coarsenings it would have\n"
-"skipped, and real memory the plan would not get back. The\n"
-"strict rule's own score on the same instrument is 1 in 7403.\n"
-"/!\\ Never read that count from a run with the skip ON: a call\n"
-"that is skipped is never made, so nothing can say whether it\n"
-"would have rebuilt, and the wrong-verdict column can only\n"
-"count calls the check refused. A zero there is guaranteed by\n"
-"construction rather than earned."),
+        .setDoc("With redundant tessellation skipped, also count a mesh finer than the\n"
+"one asked for as good enough, instead of re-tessellating to coarsen it.\n"
+"Saves time on a descent, but can keep memory the level plan asked to\n"
+"have back, which is why it is off by default."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MeshSkipInvariant", "MeshSkipInvariant", App::ParamInfo::Bool, true)
         .setTitle("Skip deflection-invariant tessellation")
-        .setDoc("Skip a tessellation call on a shape whose mesh provably cannot\n"
-"depend on the deflection asked: every face planar, every edge\n"
-"curve a straight line (docs/SceneStreaming.md #13e). A plane\n"
-"deviates from its triangulation by zero and a straight edge\n"
-"discretizes to its two endpoints at ANY deflection, so the call\n"
-"would rebuild the identical mesh -- there is no ask, coarser or\n"
-"finer, at which such a shape tessellates differently.\n"
-"This is the geometric statement behind the measured descent\n"
-"waste: most mechanical parts hit their floor immediately, and a\n"
-"mass descent then pays ~19-38ms per object per step (56-60% of\n"
-"all drop-phase mesh time on the rack model) for BRepMesh to\n"
-"rebuild what cannot change. The empirical exhaustion proof the\n"
-"ladder keeps (scaleSpent) cannot be used for a skip -- audited\n"
-"twice, 14-20% of proved shapes resume coarsening at some later\n"
-"ask, and those rebuilds reclaim real memory. The geometric rule\n"
-"is immune to that leak: the shapes that resume are exactly the\n"
-"curved ones it refuses to claim, and an all-linear mesh cannot\n"
-"shrink, so no reclaim is ever forgone.\n"
-"The classification walks surface and curve TYPES once per shape\n"
-"and is cached; conservative on both counts (a trimmed or offset\n"
-"plane, a straight b-spline, count as curved). The skip is also\n"
-"refused while any face is missing its triangulation -- building\n"
-"that is exactly the call's job.\n"
-"With the level plan narrating and this OFF, the rule is still\n"
-"evaluated and scored against every call it would have skipped --\n"
-"read its WRONG column from that arm only; a run with the skip on\n"
-"cannot score calls it never made."),
+        .setDoc("Skip a tessellation call on a shape whose mesh cannot depend on the\n"
+"deflection asked for: every face planar and every edge a straight\n"
+"line. Such a shape gives the same mesh at any coarseness, so the call\n"
+"would only rebuild what is there."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ProgressiveLoad", "ProgressiveLoad", App::ParamInfo::Bool, true)
         .setTitle("Progressive document load")
-        .setDoc("Build the visual representation of a restored document after\n"
-"the load instead of inline inside it. Opening a large document\n"
-"otherwise tessellates every shape on the main thread while\n"
-"nothing paints - the visual build is the largest single stage of\n"
-"a load. Deferred, the window comes up first and the parts appear\n"
-"in bounded slices with the view painting between them. Read as\n"
-"each restored shape asks for its visual."),
+        .setDoc("Build the display of a document after it has opened instead of during\n"
+"the load. The window comes up first and the parts appear in slices,\n"
+"with the view painting in between."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ProgressiveLoadBudgetMS", "ProgressiveLoadBudgetMS", App::ParamInfo::Int, 100)
         .setTitle("Progressive load slice (ms)")
-        .setDoc("How long one slice of deferred visual building may run before\n"
-"returning to the event loop, when Progressive document load is\n"
-"on. Larger finishes the document sooner, smaller keeps the window\n"
-"more responsive while it fills in. Each slice is paid for with a\n"
-"repaint of a large scene, which is why slices this long are worth\n"
-"it - much smaller and the fill is paced by redraws rather than by\n"
-"the building. Read at each slice."),
+        .setDoc("With ProgressiveLoad: milliseconds one slice of building the display\n"
+"may run before the window is updated. Larger finishes sooner, smaller\n"
+"keeps the window more responsive."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelThreads", "LevelThreads", App::ParamInfo::Int, 0)
         .setTitle("Level build threads")
         .setDoc("How many mesh level builds (the scene server's on-demand\n"
@@ -1503,101 +1323,46 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "Read when the server spawns its first level worker."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelMemoryFloorMB", "LevelMemoryFloorMB", App::ParamInfo::Int, 0)
         .setTitle("Level memory floor (MB)")
-        .setDoc("Available system memory below which an exact re-tessellation\n"
-"will not start (docs/SceneStreaming.md #13): the desktop refine\n"
-"worker checks the system's own estimate of allocatable memory\n"
-"before each exact build, and dropping under this floor counts as\n"
-"a memory-ceiling observation - the same as a caught allocation\n"
-"failure - after which the level plans also demote exact meshes\n"
-"the camera would not miss back to their resident coarse rung.\n"
-"0 sizes the floor automatically (at least 512 MB, or 1/16 of\n"
-"physical memory if that is more). Read when the first refine is\n"
-"queued."),
+        .setDoc("Free system memory, in megabytes, below which no exact\n"
+"re-tessellation is started; from then on exact meshes the camera does\n"
+"not need are given up as well. 0 chooses automatically (512 MB, or a\n"
+"sixteenth of physical memory if that is more)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelDebug", "LevelDebug", App::ParamInfo::Bool, false)
         .setTitle("Level plan debug")
-        .setDoc("Narrate what each mesh-level plan decides (docs/SceneStreaming.md\n"
-"#13): the GPU budget it decided against and the bytes in use, how\n"
-"many displayed sources stand at their coarse and exact rungs, and\n"
-"how many refines, demotes and downgrades the plan asked for.\n"
-"Reported on the plan's own cadence - a camera pause - because it\n"
-"is a decision, not a per-frame cost.\n"
-"Needed to tell a ladder that will not descend apart from one that\n"
-"never ran: on the desktop OpenGL backend the automatic GPU budget\n"
-"is 0 (bgfx's GL renderer reports no limit), so the downgrade half\n"
-"of the plan never executed at all and nothing said so.\n"
-"The FC_LEVEL_DEBUG environment variable also turns it on. Read\n"
-"once, at the first plan."),
+        .setDoc("Diagnostic. Logs what each mesh level plan decides: the GPU budget and\n"
+"the memory in use, how many objects are coarse or exact, and how many\n"
+"refines and downgrades it ordered. The FC_LEVEL_DEBUG environment\n"
+"variable turns it on too. Read at the first plan."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelCeilingSimulateMB", "LevelCeilingSimulateMB", App::ParamInfo::Int, 0)
         .setTitle("Simulate memory ceiling below (MB)")
-        .setDoc("Pretend the system ran out of memory for exact re-tessellation\n"
-"(docs/SceneStreaming.md #13), so the CPU-side half of the level\n"
-"plan can be exercised on a machine that has memory to spare.\n"
-"Non-zero raises the floor that the refine worker compares\n"
-"available memory against, so builds are refused and a memory\n"
-"ceiling is observed - after which the plans start demoting exact\n"
-"meshes the camera would not miss back to their coarse rung.\n"
-"A simulation knob, not a tuning one: LevelMemoryFloorMB is the\n"
-"real floor, and this overrides it upward only.\n"
-"Read when a refine is dequeued, so it takes effect live."),
+        .setDoc("Testing aid. Pretend the system has less free memory than this many\n"
+"megabytes, so the low-memory behaviour of the level plan can be tried\n"
+"on a machine with memory to spare. 0 turns it off."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "GpuMemoryBudgetMB", "GpuMemoryBudgetMB", App::ParamInfo::Int, 0)
         .setTitle("GPU memory budget (MB)")
-        .setDoc("GPU geometry budget of the desktop mesh-level plan\n"
-"(docs/SceneStreaming.md #13): while the uploaded geometry exceeds\n"
-"it, a camera pause downgrades the *displayed* mesh of objects the\n"
-"camera would not miss - off screen, or coarse within half the\n"
-"Level tolerance - back to their coarse rung. Their exact meshes\n"
-"stay in CPU RAM, so zooming back in re-activates them instantly,\n"
-"with no re-tessellation. 0 means automatic: the graphics API's\n"
-"own reported GPU memory limit where it states one (Direct3D and\n"
-"Vulkan do; OpenGL reports nothing, and then no budget applies)."),
+        .setDoc("GPU memory, in megabytes, the displayed geometry may use. Over it,\n"
+"objects the camera would not miss are shown with their coarse mesh;\n"
+"the exact one stays in main memory and returns at once on zooming in.\n"
+"0 uses the limit the graphics API reports (OpenGL reports none, and\n"
+"then no budget applies)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelTolerance", "LevelTolerance", App::ParamInfo::Float, 2.0)
         .setTitle("Level tolerance")
-        .setDoc("Screen-space error, in pixels, a coarse tessellation may\n"
-"commit before the exact one is built (docs/SceneStreaming.md\n"
-"#13): on a coarse-first desktop view (render cache mode 3 with\n"
-"a backend that drives the level plan), a camera pause re-plans\n"
-"the scene and only objects whose coarse mesh errs by more than\n"
-"this many pixels on screen re-tessellate exactly - off-screen\n"
-"and distant objects stay at the cheap coarse mesh until the\n"
-"camera makes them matter. 0 or less refines everything\n"
-"immediately; larger keeps more of the scene coarse. The\n"
-"streamed viewer's own tolerance is its lodpx URL parameter\n"
-"(same meaning, same default)."),
+        .setDoc("Error in pixels on screen a coarse mesh may show before the exact one\n"
+"is built. When the camera stops, only objects that exceed it are\n"
+"refined. 0 or less refines everything at once; larger keeps more of\n"
+"the scene coarse."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelPressureRelease", "LevelPressureRelease", App::ParamInfo::Float, 0.5)
         .setTitle("Level pressure release")
-        .setDoc("How much of the raised refine tolerance the plan keeps each\n"
-"time it comes in under the GPU budget (docs/SceneStreaming.md\n"
-"#13c.3). While the budget is exceeded the plan accepts visible\n"
-"error to fit the scene, and it must not hand that error straight\n"
-"back the moment one plan fits: measured on a 5455-object model at\n"
-"a 64MB budget, clearing it in one step took the tolerance from\n"
-"51 pixels to 2, asked 946 objects to re-tessellate at once, broke\n"
-"the budget again and cycled -- 43 plans in 611 seconds with no\n"
-"steady state at any point.\n"
-"So quality comes back in steps: each plan that fits keeps this\n"
-"fraction of the standing tolerance, and a step that puts the\n"
-"scene back over budget is remembered as a floor the release never\n"
-"passes again, so the ladder settles at the coarsest tolerance\n"
-"that actually fits instead of oscillating around it. The floor is\n"
-"forgotten when the camera moves or the budget changes, which is\n"
-"when what a rung costs on screen changes.\n"
-"Smaller gives quality back faster and risks the cycle; larger is\n"
-"gentler and slower. 0 or less restores the immediate snap."),
+        .setDoc("After the scene has been coarsened to fit the GPU budget: the fraction\n"
+"of the raised tolerance kept each time a plan fits again, so quality\n"
+"returns in steps instead of all at once and over the budget again.\n"
+"Smaller returns quality faster. 0 or less returns it in one step."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ClimbHardLimit", "ClimbHardLimit", App::ParamInfo::Bool, true)
         .setTitle("Hard GPU budget for climbs")
-        .setDoc("Whether the GPU budget is an absolute ceiling for the level\n"
-"plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a\n"
-"plan whose allocator-exact uploaded total stands at or above\n"
-"the budget admits NO refine and cancels every climb still in\n"
-"flight -- the existing de-want pass aborts them -- and below\n"
-"the ceiling climbs are admitted in small batches (Climb\n"
-"admission batch) so the total approaches the ceiling in\n"
-"verified steps instead of overshooting it in one plan. Judged\n"
-"against the uploaded TOTAL, not the two-frame live census: the\n"
-"census alternates under churn and is what let climbs land\n"
-"over budget. A crossing is bounded by one batch's bytes;\n"
-"per-climb pre-sizing needs rung-keyed GPU cache entries and is\n"
-"future work. Off restores unadmitted climbing."),
+        .setDoc("Treat the GPU memory budget as a hard ceiling for refinement: at or\n"
+"above it no object is refined and refinements under way are\n"
+"cancelled; below it they are admitted in small batches\n"
+"(ClimbAdmitBatch). Off refines without this check."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ClimbAdmitBatch", "ClimbAdmitBatch", App::ParamInfo::Int, 64)
         .setTitle("Climb admission batch")
         .setDoc("How many refines one plan may admit while the hard climb\n"
@@ -1609,55 +1374,20 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "starves across plans."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelLandBudgetMS", "LevelLandBudgetMS", App::ParamInfo::Int, 50)
         .setTitle("Level landing budget (ms)")
-        .setDoc("How long one event-loop turn may spend landing finished\n"
-"worker jobs (climb refines and descent coarsenings alike).\n"
-"Landings arrive as queued events, and Qt delivers every\n"
-"pending one in a single sweep -- a batch of 64 landings ran\n"
-"back-to-back for measured 1-2.7s stretches in which no paint,\n"
-"timer or input event was served. The pump runs landings until\n"
-"this budget is spent, then yields the loop and reschedules;\n"
-"a single landing larger than the budget still lands whole\n"
-"(items are not sliceable). Small keeps the UI responsive\n"
-"under a landing storm; large lands a converging scene sooner."),
+        .setDoc("Milliseconds one turn of the event loop may spend installing finished\n"
+"mesh level changes before it returns to painting and input. Smaller\n"
+"keeps the window more responsive, larger finishes sooner."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MeshSkipLanded", "MeshSkipLanded", App::ParamInfo::Bool, true)
         .setTitle("Skip mesh call on landing rebuilds")
-        .setDoc("Whether the rebuild half of a landing skips its OCCT mesh\n"
-"call. A worker landing (climb, scale-descent, stand-in\n"
-"resolution) or a demote/downgrade installs or re-activates the\n"
-"very triangulation the following rebuild displays, and on\n"
-"every such path the resident rung is never coarser than the\n"
-"ask -- BRepMesh there can only validate: measured 18.3s of a\n"
-"92s budget drop (991 validated-only calls, 0.1-0.8s each on\n"
-"large compounds), plus ~1s per landing of a giant re-FAILING\n"
-"the faces the worker's mesher had already failed. Keyed on\n"
-"the path of the one rebuild the landing just prepared, never\n"
-"on the shape's descent history (the exhaustion-proof leak\n"
-"that killed the spent-keyed skip does not reach a per-rebuild\n"
-"claim). Audited at 94 percent exact no-ops; the rest are\n"
-"BRepMesh re-meshing a few faces within ~5 percent of the\n"
-"triangle count in either direction -- perturbation of a rung\n"
-"the ladder chose to display, not reclaim forgone. The level\n"
-"debug flag scores the claim either way; read the 'landed\n"
-"rule' audit line before trusting a change here."),
+        .setDoc("Skip the tessellation call in the rebuild that follows a mesh level\n"
+"change, where the mesh just installed is the one to display and the\n"
+"call could only confirm it."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "VisualFillOnPool", "VisualFillOnPool", App::ParamInfo::Bool, true)
         .setTitle("Fill landing rebuilds on the refine pool")
-        .setDoc("Whether the display-array fill of a big landing rebuild runs\n"
-"on the refine worker pool instead of the GUI thread. After the\n"
-"mesh call was skipped on landings (Skip mesh call on landing\n"
-"rebuilds), the traversal that copies the resident\n"
-"triangulations into the Coin arrays became the per-item floor\n"
-"of the landing pump: 0.3-0.65s per 15-21k-face compound,\n"
-"unsliceable, against a 200ms interactivity gate. With this on,\n"
-"the rebuild captures handles to the resident triangulations\n"
-"and edge polygons (the only state another thread may swap\n"
-"under it -- the topology itself is immutable at runtime),\n"
-"fills detached arrays on a worker, and lands them back through\n"
-"the landing pump as plain array writes. The landing is\n"
-"guarded by the shape identity and a per-object generation\n"
-"count, so a rebuild that ran for any other reason in between\n"
-"simply wins. Only rebuilds inside the landing pump with at\n"
-"least 'Minimum faces for a pooled fill' faces take this path;\n"
-"everything else fills inline exactly as before."),
+        .setDoc("Fill the display arrays of a large object on a worker thread instead\n"
+"of the GUI thread, after a mesh level change. Keeps the window\n"
+"responsive while big objects change level. Applies to objects with at\n"
+"least VisualFillMinFaces faces."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "VisualFillMinFaces", "VisualFillMinFaces", App::ParamInfo::Int, 2000)
         .setTitle("Minimum faces for a pooled fill")
         .setDoc("How many faces a landing rebuild must have before its\n"
@@ -1669,341 +1399,110 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "queue hop and a second landing each."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "WorkerVertexCache", "WorkerVertexCache", App::ParamInfo::Int, 1)
         .setTitle("Adopt worker-emitted vertex caches")
-        .setDoc("Whether a scene publish adopts the vertex-cache content the\n"
-"fill worker emitted at landing instead of re-capturing the\n"
-"shape by traversal (docs/WorkerVertexCache.md). The capture\n"
-"walks every triangle through a hash-dedup a second time to\n"
-"rebuild exactly the arrays the fill already computed; with\n"
-"this on, the worker emits those arrays next to the display\n"
-"arrays and the publish installs them directly. Uniform-color\n"
-"shapes only -- per-face colors, textures and marker sets fall\n"
-"back to the traversal capture, as does any shape whose nodes\n"
-"were touched after the landing registered the content. 0 is\n"
-"off, 1 adopts, 2 adopts nothing but runs the traversal capture\n"
-"and compares it against the worker's content, logging any\n"
-"disagreement -- slow, for checking the emission, not for use."),
+        .setDoc("Use the vertex arrays a worker thread already computed for a rebuilt\n"
+"shape instead of capturing them again from the scene. 0 off, 1 on,\n"
+"2 does both and logs any difference (slow, for checking). Shapes with\n"
+"one colour only."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CaptureBudgetMS", "CaptureBudgetMS", App::ParamInfo::Int, 50)
         .setTitle("Vertex capture budget per publish (ms)")
-        .setDoc("How long one scene publish may spend re-capturing changed\n"
-"shapes into vertex caches before the rest are deferred. The\n"
-"capture walks a changed shape's primitives one triangle at a\n"
-"time, and during a descent storm every landed batch pays that\n"
-"on the next paint: mid-paint stack samples put the capture at\n"
-"about half of 250-850ms publish frames. Once this budget is\n"
-"spent, each remaining changed shape keeps its previous vertex\n"
-"cache for this frame (a shape captured for the first time\n"
-"stays out of the frame entirely -- progressive appearance,\n"
-"same as a live import), the caches on its path are left\n"
-"unclosed for reuse, and another publish is scheduled; captured\n"
-"shapes turn valid and prune, so successive frames always make\n"
-"progress. The display is at worst a few frames stale in a\n"
-"scene that is churning anyway; a single changed object never\n"
-"comes near the budget. 0 captures everything in one frame,\n"
-"as before this parameter existed."),
+        .setDoc("Milliseconds one scene update may spend capturing changed shapes\n"
+"before the rest wait for the next frame. Keeps frames short while many\n"
+"objects change at once; a waiting shape shows its previous state for\n"
+"a frame or two. 0 captures everything in one frame."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelSlowBuildMS", "LevelSlowBuildMS", App::ParamInfo::Int, 200)
         .setTitle("Slow visual build report (ms)")
-        .setDoc("A visual rebuild whose own cost passes this many\n"
-"milliseconds reports its time split (traversal, mesh,\n"
-"prologue, instancing, highlight) on one line naming the\n"
-"object, under the level debug flag. The aggregate split says\n"
-"where a mass descent's time goes; the landing pump's worst\n"
-"turn is a single object's whole rebuild, and only a per-build\n"
-"line says what that object spent it on. The same threshold\n"
-"arms the slow-dispatch line in GUIApplication::notify, which\n"
-"names the receiver of any single event-loop dispatch this\n"
-"slow -- the net that catches a stall no timer above\n"
-"bracketed. 0 turns both lines off."),
+        .setDoc("Diagnostic, with LevelDebug: a display rebuild, or a single event,\n"
+"that takes longer than this many milliseconds is logged with where the\n"
+"time went. 0 turns it off."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DescentOrderBatch", "DescentOrderBatch", App::ParamInfo::Int, 64)
         .setTitle("Descent order batch")
-        .setDoc("How many descents (demotes/downgrades) one plan pass may\n"
-"order, free tier and priced tier together; 0 removes the cap.\n"
-"Each order enqueues a worker job -- the coarsening itself runs\n"
-"on the refine pool -- but the enqueue snapshots the object's\n"
-"display arrays on the GUI thread, so an unbounded pass (the\n"
-"measured 1500-order plans) is itself a stall. Deferred\n"
-"candidates keep their hooks and the replan after the batch\n"
-"lands re-finds them, so nothing is refused, only paced -- the\n"
-"climb admission batch's mirror."),
+        .setDoc("How many downgrades one plan may order at a time. The rest are found\n"
+"again by the next plan, so nothing is lost, only paced. 0 removes the\n"
+"limit."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DowngradeLedger", "DowngradeLedger", App::ParamInfo::Bool, true)
         .setTitle("Downgrade ledger")
-        .setDoc("Whether the GPU downgrade sweep carries its own unlanded\n"
-"orders as credit against the next plan's deficit\n"
-"(docs/SceneStreaming.md #13c.4). A downgrade frees exactly the\n"
-"bytes it prices, but not WHEN the plan next looks: the swap\n"
-"uploads the coarse rung immediately while the fine buffers\n"
-"leave the live meter only after the collection window -- on a\n"
-"heavy scene, seconds -- so a plan sampling mid-transition reads\n"
-"old+new at once, computes a larger deficit than the one just\n"
-"covered, and walks other sources further down. Measured on a\n"
-"5455-object model at 64MB with the camera inside the assembly:\n"
-"single plans requesting 1500+ downgrades, live tripling during\n"
-"the storm, and the whole registry drained to its bottom rung\n"
-"while the settled memory was under budget all along.\n"
-"With the ledger, promised bytes hold the sweep until they are\n"
-"observed landing or written off a few frames after the ordered\n"
-"worker jobs have all drained (an order's bytes cannot land\n"
-"before its descent job does); off restores the storming\n"
-"behaviour for comparison."),
+        .setDoc("Count the GPU memory that downgrades already ordered will free as\n"
+"credit against the next plan's shortfall. Without it a plan made while\n"
+"those are still in flight orders them again, and far more than needed.\n"
+"Off is the older behaviour, kept for comparison."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelCount", "LevelCount", App::ParamInfo::Int, 8)
         .setTitle("Ladder rung count")
-        .setDoc("How many rungs the fidelity ladder declares\n"
-"(docs/SceneStreaming.md #13). Rung n is tessellated at a\n"
-"deflection of the shape diagonal over 8<<n, so rung 0 is the\n"
-"coarsest and each further rung halves the error; this bounds\n"
-"what Coarse tessellation level may select and how far a source\n"
-"may climb. Raising it adds finer rungs, not coarser ones -- to\n"
-"go below rung 0 the plan scales an object's error instead, see\n"
-"Level scale."),
+        .setDoc("Number of levels of the mesh ladder. Level 0 is the coarsest and each\n"
+"further level halves the error, so raising this adds finer levels."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelScale", "LevelScale", App::ParamInfo::Float, 2.0)
         .setTitle("Dynamic coarseness scale")
-        .setDoc("What the level plan multiplies an object's error by when it\n"
-"must free memory and every ordinary descent is exhausted\n"
-"(docs/SceneStreaming.md #13). Rung 0 is not the floor: under a\n"
-"budget the plan keeps picking objects -- individually, cheapest\n"
-"visible error first, never the whole scene at once -- and\n"
-"re-tessellates each one this much coarser again, until the\n"
-"model fits. An object whose scaled error reaches Level scale\n"
-"box error is replaced by its bounding box, which is the real\n"
-"floor: coarsening a deflection cannot drop a planar face below\n"
-"the two triangles it always has, and on a measured STEP\n"
-"assembly a 4x coarser tessellation removed only 19% of the\n"
-"primitives. 1 or less turns dynamic scaling off, and then a\n"
-"budget under what rung 0 costs cannot be honoured."),
+        .setDoc("Factor by which an object is tessellated coarser again when GPU\n"
+"memory is still short at the coarsest ladder level. Applied object by\n"
+"object, least visible error first, until the scene fits. 1 or less\n"
+"turns this off."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelBudgetDeadband", "LevelBudgetDeadband", App::ParamInfo::Float, 0.03)
         .setTitle("GPU budget deadband")
-        .setDoc("The rest band above the GPU memory budget, as a fraction of\n"
-"it, inside which the level plan orders NO downgrades. The sweep\n"
-"triggers only past budget*(1+this) and still corrects back to\n"
-"the budget itself, so the band is hysteresis, not a higher\n"
-"budget.\n"
-"Without it an equilibrium that lands ON the budget line has\n"
-"nowhere to rest: the plan orders 2-3 downgrades, the release\n"
-"staircase re-wants the quality back, and the ladder dithers\n"
-"0.2-0.4MB across the line for as long as the process lives --\n"
-"measured on the rack model as the difference between a run\n"
-"that settles in ~250s and one that churns its whole 600s\n"
-"window. Climbs already stop AT the budget (Climb hard limit),\n"
-"so inside the band neither direction acts and the plans go\n"
-"genuinely quiet; pressure counts as standing there, which\n"
-"keeps the raised tolerance and the edge gate latched exactly\n"
-"as they were while the equilibrium was reached.\n"
-"The band tolerates standing that fraction over the stated\n"
-"budget (about 2MB at 64MB). 0 restores the bare line and with\n"
-"it the dither."),
+        .setDoc("Band above the GPU memory budget, as a fraction of it, inside which no\n"
+"downgrades are ordered. Keeps a scene that settles at the budget from\n"
+"going back and forth across it. 0 removes the band."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PerViewShownEvictWatermark", "PerViewShownEvictWatermark", App::ParamInfo::Float, 0.9)
         .setTitle("Per-view shown eviction watermark")
-        .setDoc("The memory level, as a fraction of the GPU memory budget, above\n"
-"which the level plan evicts RELEASED per-view-shown objects:\n"
-"hidden objects some view showed on its own and none shows any\n"
-"more, which the shared capture keeps for a quick show again.\n"
-"Nothing on screen needs them, so they go first -- below the\n"
-"budget, before any sweep that costs visible quality -- the big\n"
-"and the long released before the recent, until the use is back\n"
-"at the watermark. Under an observed CPU memory ceiling they go\n"
-"first too, against the CPU shortfall. No GPU budget (GL states\n"
-"none) means no GPU trigger. 1 or more waits for the budget\n"
-"itself."),
+        .setDoc("GPU memory use, as a fraction of the budget, above which objects that\n"
+"one view had shown on its own and no view shows any more are freed.\n"
+"They go first, before anything that costs visible quality. 1 or more\n"
+"waits for the budget itself."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelScaleBoxError", "LevelScaleBoxError", App::ParamInfo::Float, 0.25)
         .setTitle("Level scale box error")
-        .setDoc("The scaled error at which an object stops being tessellated\n"
-"at all and is drawn as its bounding box (12 triangles whatever\n"
-"its face count), expressed relative to the shape diagonal. This\n"
-"is where the ladder stops paying for topology it can no longer\n"
-"resolve: past roughly a quarter of the diagonal a re-tessellated\n"
-"shape and its box commit similar error, and only the box\n"
-"actually removes the faces. 0 or less never substitutes a box."),
+        .setDoc("Error, relative to its diagonal, at which an object is no longer\n"
+"tessellated and is drawn as its bounding box. 0 or less never uses a\n"
+"box."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "SimplifyExhausted", "SimplifyExhausted", App::ParamInfo::Bool, true)
         .setTitle("Decimate when tessellation is spent")
-        .setDoc("When re-tessellating an object coarser stops removing\n"
-"geometry, decimate the mesh it already has instead of dropping\n"
-"straight to its bounding box (docs/SceneStreaming.md #13c).\n"
-"The descent coarsens an object by asking OCCT for a larger\n"
-"deflection, and that saturates: a planar face is two triangles\n"
-"at any deflection, so a shape of flat faces answers the same\n"
-"mesh however coarse the ask. Past that point the only thing\n"
-"that removes geometry is a representation with fewer faces.\n"
-"Vertex clustering is the rung between the two: it keeps the\n"
-"object's shape, where the bounding box does not.\n"
-"Rewrites the display nodes only. Nothing re-tessellates and the\n"
-"OCCT triangulation is untouched, so the way back is one ordinary\n"
-"rebuild, and each further step down clusters on a coarser grid.\n"
-"Face and edge numbering survive: a face that decimates away to\n"
-"nothing keeps its (empty) slot, because those tables are read by\n"
-"element number.\n"
-"What it gives up is exactness of the decimated rung -- section\n"
-"caps through it can be rough, since clustering does not preserve\n"
-"watertightness, and the hidden-line seam filter is dropped\n"
-"because a welded edge may fold a seam and a non-seam together."),
+        .setDoc("When tessellating an object coarser no longer removes triangles,\n"
+"decimate the mesh it has instead of going straight to its bounding\n"
+"box. Display only: the shape and its exact mesh are untouched. Section\n"
+"caps through a decimated object can be rough."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "SimplifyMergeParts", "SimplifyMergeParts", App::ParamInfo::Bool, false)
         .setTitle("Decimate across faces")
-        .setDoc("Let the decimator weld vertices across face boundaries\n"
-"instead of clustering each face on its own grid.\n"
-"Off, no output triangle spans two faces, so a modelled crease\n"
-"stays a crease and each face keeps at least the triangles its\n"
-"own cells produce. That floor is the catch: this rung is reached\n"
-"precisely when a shape is mostly flat faces, and per-face\n"
-"clustering cannot take a two-triangle face below two triangles.\n"
-"On, positions and attributes cluster once over the whole mesh,\n"
-"which is what actually removes geometry there -- at the cost of\n"
-"shading round creases the model really has.\n"
-"Face identity survives either way: a triangle still belongs to\n"
-"the face it came from, so per-face colour and selection keep\n"
-"working. Only the geometry is shared."),
+        .setDoc("Let decimation merge vertices across face boundaries. Removes far\n"
+"more triangles on shapes made of flat faces, but rounds real creases.\n"
+"Per-face colour and selection keep working either way."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "SimplifyMinReduction", "SimplifyMinReduction", App::ParamInfo::Float, 20.0)
         .setTitle("Decimation worth doing (%)")
-        .setDoc("How much of an object's triangle count a decimation pass has\n"
-"to remove for the result to be kept, as a percentage.\n"
-"Below it the pass is refused and the descent takes its next step\n"
-"instead, which is the bounding box. A rung that removes almost\n"
-"nothing is worse than not having one: it costs a node rewrite\n"
-"and still holds the memory that made the plan ask.\n"
-"This is also what stops the descent looping. Each step clusters\n"
-"on a coarser grid, so a mesh that has run out of things to merge\n"
-"keeps answering no and the object moves on to the box."),
+        .setDoc("Percentage of an object's triangles a decimation has to remove for the\n"
+"result to be kept. Below it the decimation is dropped and the object\n"
+"goes on to its bounding box."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ShapeVertices", "ShapeVertices", App::ParamInfo::Bool, true)
         .setTitle("Draw edge-attached vertices")
-        .setDoc("Let the vertex points that sit on the ends of a shape's edges\n"
-"draw under the element contract (docs/SceneStreaming.md #13b):\n"
-"an attached point set draws only while its object's line set is\n"
-"shown and memory allows, is the FIRST class dropped under\n"
-"pressure and the LAST taken back. Off suppresses attached point\n"
-"sets outright, memory or not.\n"
-"A point is not cheap: it costs the GPU a 32-byte sprite instance\n"
-"record plus its index, roughly nine times what it occupies in\n"
-"the heap, which is why a CPU-currency measurement made them look\n"
-"negligible.\n"
-"All or nothing per point set, and only ATTACHED sets are ever\n"
-"gated: one floating vertex -- one no edge touches, and every\n"
-"point of a point cloud -- and the whole set ranks with the\n"
-"faces, because nothing else would show it. Objects are in\n"
-"practice all floating or none, so a per-vertex subset would buy\n"
-"nothing and cost an index permutation.\n"
-"It never applies in the Points display mode, where the vertices\n"
-"are what the mode exists to show.\n"
-"Picking, pre-selection and selection highlighting are unaffected:\n"
-"the point geometry stays published and resident, the highlight\n"
-"draws render on top as always, and only the base-pass submission\n"
-"is skipped."),
+        .setDoc("Draw the vertex points at the ends of a shape's edges. They are the\n"
+"first thing dropped when GPU memory is short and the last to return.\n"
+"Off never draws them. Free vertices and point clouds are always drawn,\n"
+"as is everything in Points mode; picking and highlighting are\n"
+"unaffected."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PressureDropEdges", "PressureDropEdges", App::ParamInfo::Bool, true)
         .setTitle("Drop face edges under pressure")
-        .setDoc("Let the pressure stages of the element contract\n"
-"(docs/SceneStreaming.md #13b) stop drawing the edges that bound\n"
-"faces. Under the contract an attached line set draws only while\n"
-"its object's face set is shown and memory allows; pressure\n"
-"spends the classes points -> lines -> faces and takes them back\n"
-"in reverse, and this is the switch on the lines stage. Off\n"
-"exempts line sets from the pressure stages (a loading document\n"
-"still drops them).\n"
-"Edge geometry is the GPU's most expensive geometry per unit of\n"
-"screen information: a segment is 8 bytes of index in the heap\n"
-"and those 8 bytes plus a 64-byte quad-expansion instance record\n"
-"on the GPU.\n"
-"All or nothing per edge set, attached sets only: one floating\n"
-"edge -- a wire, a sketch, a datum line, any edge no face uses --\n"
-"and the whole set ranks with the faces, because it is the\n"
-"object, and dropping it would show nothing at all.\n"
-"It never applies in the Wireframe display mode, where the edges\n"
-"are what the mode exists to show.\n"
-"A display gate, not a residency change -- nothing is demoted and\n"
-"nothing re-tessellates, so entering and leaving it costs one\n"
-"frame, which is why it is spent before any rung is given up.\n"
-"Picking, highlighting and on-top rendering are unaffected."),
+        .setDoc("Allow the edges that bound faces to stop being drawn when GPU memory\n"
+"is short, after the vertices and before any face quality is given up.\n"
+"Wires, sketches and other edges no face uses are never dropped, and\n"
+"nothing is dropped in Wireframe mode. Picking and highlighting are\n"
+"unaffected."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ElementGateStagger", "ElementGateStagger", App::ParamInfo::Int, 15)
         .setTitle("Element gate stage frames")
-        .setDoc("How many frames the element contract's pressure latch waits\n"
-"between stages (docs/SceneStreaming.md #13b), both escalating\n"
-"(points dropped, then lines if the budget is still exceeded) and\n"
-"releasing (lines back, then points, once the ladder has given\n"
-"back all raised error). The wait is what lets the buffer\n"
-"collector's census answer whether the cheaper stage was enough\n"
-"before the next one is spent, and what keeps the release from\n"
-"re-opening into the memory the collector just freed."),
+        .setDoc("Frames to wait between the steps that drop vertices and then edges\n"
+"when GPU memory is short, and between the steps that bring them back."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "TinyElementCutoff", "TinyElementCutoff", App::ParamInfo::Int, 0)
         .setTitle("Tiny element draw cutoff")
-        .setDoc("MEASUREMENT INSTRUMENT, 0 = off. Suppress every line and\n"
-"point draw issuing this many primitives or fewer, regardless of\n"
-"the element contract -- floating sets included, which is the\n"
-"point: the contract deliberately never gates those, and they\n"
-"are what a far-field cut is left drawing\n"
-"(docs/FarFieldProxies.md 11.1i).\n"
-"\n"
-"It exists to price the DRAW axis, which this engine has only\n"
-"ever measured in the opposite regime. docs/DrawSubmission.md\n"
-"dismissed draw count on a frame averaging ~1540 primitives per\n"
-"draw, where the GPU is geometry-bound and a draw is free; the\n"
-"far-field residue is ~12 primitives per draw, where a draw is\n"
-"nearly all overhead. Setting this to ~24 on MiSTer removes\n"
-"about 2% of the primitives and about 44% of the draws, so any\n"
-"frame-time difference is attributable to draw count and not to\n"
-"geometry.\n"
-"\n"
-"Not a display feature: it makes real edges vanish, and picking,\n"
-"highlighting and on-top draws are exempt so the scene stays\n"
-"usable while it is on."),
+        .setDoc("Measuring tool, 0 = off. Stops drawing every line and point set of\n"
+"this many primitives or fewer, to see what the number of draw calls\n"
+"costs. Real edges disappear while it is on; not a display setting."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LoadDropElements", "LoadDropElements", App::ParamInfo::Bool, true)
         .setTitle("Drop elements while loading")
-        .setDoc("Stop drawing edges AND vertices for as long as a document is\n"
-"still arriving (docs/SceneStreaming.md #13b), and let the two\n"
-"standing gates above decide again the moment it has finished.\n"
-"A load is when the tier can least afford those two classes and\n"
-"can least use them: the faces are arriving coarse-first and\n"
-"being replaced under the camera, nobody inspects a vertex of a\n"
-"model that is still half there, and every byte not uploaded to\n"
-"an edge instance buffer now is one the arriving geometry gets\n"
-"instead.\n"
-"RE-MEASURED 2026-08-15, and the earlier reading no longer\n"
-"holds. It used to suppress NOTHING on a .FCStd open: the load\n"
-"parked every visual build and published in one step at the\n"
-"end, so the renderer held an empty scene throughout -- 0\n"
-"drawables across 17.8s on a 5455-object model. The publish is\n"
-"incremental now, so the same open feeds the scene while the\n"
-"drain runs and the gate has real work: on the same model it\n"
-"climbs from 1123 to 5909 point and line draws suppressed, out\n"
-"of 11818 eligible in a 17727-drawable scene, and both edges\n"
-"are logged -- ON with an empty scene, OFF as the drain ends.\n"
-"It overrides both gates while it lasts -- vertices drop even\n"
-"with ShapeVertices on, edges drop with no pressure yet declared\n"
-"-- but it is subject to the same all-or-nothing classification\n"
-"and the same display-mode exemptions: a wire, a sketch, a datum\n"
-"line or a point cloud draws throughout, because nothing else on\n"
-"screen would show it, and neither class is dropped in the mode\n"
-"that exists to show it.\n"
-"Independent of this gate, the contract's dependency rule already\n"
-"holds back an attached point or line set whose companion the\n"
-"publish's capture budget deferred: an adopted vertex cache never\n"
-"draws frames ahead of the face set it decorates, load gate or\n"
-"not.\n"
-"Costs one frame to leave, like the pressure gate, so what it\n"
-"holds back comes straight back when the load lets go.\n"
-"Applies only where coarse-first is on (CoarseTessellation 0 or\n"
-"above): with everything tessellated exact up front there is no\n"
-"progressive arrival for this to make room for.\n"
-"A load here means a document restoring, a progressive import\n"
-"filling one, or the deferred view-provider drain that follows a\n"
-"restore -- geometry is still being built into the view in all\n"
-"three."),
+        .setDoc("Stop drawing face edges and edge vertices while a document is still\n"
+"loading, and draw them again once it has arrived. Wires, sketches,\n"
+"datum lines and point clouds are always drawn. Applies only with\n"
+"coarse-first tessellation (CoarseTessellation 0 or above)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ElementTakeInSets", "ElementTakeInSets", App::ParamInfo::Int, 1000)
         .setTitle("Element sets a frame takes in")
-        .setDoc("How many edge and point sets that are not on the GPU yet one\n"
-"frame may take in (docs/DocumentLoad.md sec 18.17). The rest is\n"
-"held back and comes in the frames after, which the view asks\n"
-"for; a frame holding some back is not a finished picture, and a\n"
-"capture waits for the one that is. 0 = no bound of this kind.\n"
-"A load holds every such set back while it fills in\n"
-"(LoadDropElements) and those whose faces were exact by then all\n"
-"came back in the one frame after it: 14600 sets on a\n"
-"17000-object assembly, 8.7 s in a single call into the driver\n"
-"and the thread away for 12 s. A camera fitted to an assembly it\n"
-"showed a corner of does the same, and a document opened whole.\n"
-"What a set costs is the buffer made for it and not its size --\n"
-"0.6 ms a set on Mesa's D3D12 driver under WSL, those 14600 being\n"
-"11 MB together -- which is why the bound is a count. At 1000 the\n"
-"same load has no stretch longer than the 3.3 s its other frames\n"
-"take, and the last edge is in 13 s later than it was.\n"
-"Applies to the sets the element contract counts as attached --\n"
-"the edges and vertices of a shape that has faces -- and never to\n"
-"an on-top or highlight draw, nor to a wire, a sketch or a point\n"
-"cloud, which are the object."),
+        .setDoc("How many edge and point sets not on the GPU yet one frame may take in;\n"
+"the rest comes in the frames after. 0 = no bound. Keeps the frame after\n"
+"a load, or a camera fitted to a large assembly, from uploading every\n"
+"set in one long call. Never holds back a wire, a sketch, a point cloud\n"
+"or a highlight."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ElementTakeInKB", "ElementTakeInKB", App::ParamInfo::Int, 0)
         .setTitle("Element buffers a frame takes in (KB)")
         .setDoc("The same bound in kilobytes of GPU buffers (ElementTakeInSets):\n"
@@ -2014,86 +1513,28 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "model of few and very large edge sets, which was not measured."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "EffectResolution", "EffectResolution", App::ParamInfo::Float, 1.0)
         .setTitle("Effect resolution")
-        .setDoc("Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
-"passes -- the planar/ground reflection scene re-render, the water\n"
-"body depth prepass and screen-space ambient occlusion -- relative to\n"
-"the main view resolution. Lowering it trades effect sharpness for\n"
-"speed on large windows, where those per-pixel passes dominate the\n"
-"frame; the main geometry, edges, text and overlays stay full\n"
-"resolution. 1.0 renders the effects at full resolution. The\n"
-"volumetric light shafts already render at half resolution."),
+        .setDoc("Resolution of the costly screen-space passes (ground reflection,\n"
+"water depth, ambient occlusion) relative to the view, 0.25 to 1.\n"
+"Lower is faster and softer; geometry, edges and text stay at full\n"
+"resolution."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "TemporalAccum", "TemporalAccum", App::ParamInfo::Bool, false)
         .setTitle("Idle temporal accumulation")
-        .setDoc("Keep refining the image while the camera holds still.\n"
-"\n"
-"Multisampling antialiases the geometry it rasterizes and nothing\n"
-"else: every sample inside one triangle is shaded once, so a\n"
-"specular highlight crawling across a curved surface, a normal or\n"
-"texture detail below the pixel, and every screen-space pass\n"
-"computed after the resolve -- ambient occlusion, outlines,\n"
-"section caps, the light shafts -- are left exactly as aliased or\n"
-"as noisy as they were drawn. More coverage samples cannot help\n"
-"any of them.\n"
-"\n"
-"This spends time instead. Once the camera stops, each further\n"
-"frame offsets the projection by a fraction of a pixel and\n"
-"averages into what is already on screen, so the whole pipeline\n"
-"converges toward what supersampling it would have given -- and\n"
-"it costs nothing at all while anything is moving.\n"
-"\n"
-"There is no reprojection and no history rejection, because\n"
-"nothing moved: the accumulation is thrown away outright on any\n"
-"camera, scene or highlight change, so a drag or an orbit returns\n"
-"to the ordinary multisampled frame immediately with no ghosting,\n"
-"smearing or trailing on thin edges. It is a refinement on top of\n"
-"multisampling, not a replacement for it -- leave the antialiasing\n"
-"preference where it is.\n"
-"\n"
-"The cost is idle GPU time: a parked view keeps drawing until it\n"
-"has converged (TemporalAccumSamples), then stops and asks for\n"
-"nothing more. On a laptop or a tablet that is battery, which is\n"
-"why this is off by default and why it does not travel in a saved\n"
-"document."),
+        .setDoc("Keep refining the image while the camera holds still: each further\n"
+"frame is shifted by a fraction of a pixel and averaged in, which\n"
+"smooths what multisampling cannot (highlights, ambient occlusion,\n"
+"outlines). Discarded on any change, so nothing ghosts. Costs GPU time\n"
+"while idle, until TemporalAccumSamples frames have been added."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "TemporalAccumSamples", "TemporalAccumSamples", App::ParamInfo::Int, 32)
         .setTitle("Idle accumulation samples")
-        .setDoc("How many jittered samples the idle accumulation converges over\n"
-"before the view goes quiet (2-256, TemporalAccum only).\n"
-"\n"
-"The sequence is a Halton (2,3) pair over the pixel, so it fills\n"
-"the pixel evenly at every count rather than clumping, and it is\n"
-"indexed by sample number -- frame N of an accumulation is the\n"
-"same frame N every time, which is what keeps a rendered\n"
-"comparison reproducible.\n"
-"\n"
-"Most of the visible gain arrives in the first handful of\n"
-"samples, since the error of an average falls with the square\n"
-"root of the count: 32 halves the residual noise of 8, and 128\n"
-"halves it again for four times the work. Raise it for a still\n"
-"worth waiting on, lower it to reach the quiet state sooner."),
+        .setDoc("How many frames idle accumulation adds up before the view goes quiet,\n"
+"2 to 256. Most of the gain comes in the first few; more gives a\n"
+"cleaner still image and takes longer."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "Occlusion", "Occlusion", App::ParamInfo::Bool, false)
         .setTitle("Occlusion culling")
-        .setDoc("Skip drawing what the depth buffer proves could not have\n"
-"reached the screen (docs/FarFieldProxies.md §12). Bounding boxes\n"
-"of the spatial index's nodes are tested against the depth the\n"
-"occluders leave behind -- by default in a software depth buffer\n"
-"on the CPU (Render_OcclusionSoftware), which answers within the\n"
-"frame that asked -- and a node that puts no pixel through has\n"
-"its whole subtree skipped, one test standing for thousands of\n"
-"draws.\n"
-"\n"
-"Exact, not approximate: only geometry that could not have been\n"
-"seen is removed, so the image is unchanged and what is saved is\n"
-"the draw call, which measures ~1.2-1.5us of CPU submission plus\n"
-"~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on\n"
-"assemblies that hide themselves -- an enclosed chassis, a\n"
-"populated rack, any interior -- and does nothing for a model\n"
-"that is mostly silhouette. Expect roughly a fifth of the draws\n"
-"from a camera inside a large assembly (§10.3); the far larger\n"
-"figure from outside a closed model is a bound, not a promise.\n"
-"\n"
-"Casters and reflections are judged separately: geometry hidden\n"
-"from the eye still casts its shadow and still appears in the\n"
-"ground reflection."),
+        .setDoc("Skip drawing objects that are completely hidden behind others. The\n"
+"image does not change; what is saved is the draw calls. Helps on\n"
+"assemblies that hide their own insides, does little for a model that\n"
+"is mostly outline. Shadows and reflections of hidden objects are kept."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionVisibleTtl", "OcclusionVisibleTtl", App::ParamInfo::Int, 6)
         .setTitle("Occlusion visible lifetime")
         .setDoc("How many frames a node found visible is believed before it is\n"
@@ -2118,72 +1559,26 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "save one draw loses whether it answers hidden or visible."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionMaxHidden", "OcclusionMaxHidden", App::ParamInfo::Int, 120)
         .setTitle("Occlusion hidden lifetime")
-        .setDoc("How many frames a hidden node may go without an answer before\n"
-"it is drawn again. A hidden node is re-tested continuously and\n"
-"the answer is its only way back, so if answers stop arriving --\n"
-"no query handles left, a dropped batch -- this is what returns\n"
-"the geometry instead of leaving it missing. Answers that keep\n"
-"confirming the node is hidden keep it hidden indefinitely, so\n"
-"this never flickers a node the tests are still reaching."),
+        .setDoc("With GPU occlusion queries: frames a hidden object may go without a\n"
+"new answer before it is drawn again. A safeguard for when answers\n"
+"stop arriving."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionDepthPad", "OcclusionDepthPad", App::ParamInfo::Int, 16)
         .setTitle("Occlusion depth padding")
-        .setDoc("How far a test box is pushed towards the viewer before it is\n"
-"tested, in steps of the 24-bit depth buffer. A test box has to\n"
-"be a conservative bound, and at the last bit of the depth buffer\n"
-"it is not: a small part lying flush on a large panel quantizes\n"
-"to the same stored depth as the panel, LEQUAL loses the tie\n"
-"whichever way the rasterizer rounds, and the node reports itself\n"
-"hidden while in plain view. Measured that way, the components on\n"
-"a board disappeared while the board stayed. Too large costs\n"
-"frame time by testing visible what could have been skipped; too\n"
-"small deletes geometry, so err high."),
+        .setDoc("With GPU occlusion queries: how far a test box is moved towards the\n"
+"viewer, in depth buffer steps, so that a part lying flat on a larger\n"
+"one is not judged hidden. Too small hides visible parts, too large\n"
+"hides less; err high."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionConfirm", "OcclusionConfirm", App::ParamInfo::Int, 2)
         .setTitle("Occlusion confirmations")
-        .setDoc("How many consecutive answers of 'no pixels' a node must give\n"
-"before its geometry is actually skipped. 1 acts on every\n"
-"answer, and is what an occlusion test naively does.\n"
-"\n"
-"A test is issued against one frame's depth and read against a\n"
-"later one -- it does not block, because stalling for it would\n"
-"cost the frame time the culling exists to save -- so while an\n"
-"answer is in flight, other geometry is culled and the occluders\n"
-"move underneath it. Acted on singly, a node tested while an\n"
-"occluder was still drawn gets skipped after that occluder has\n"
-"gone; the hole it leaves tests visible; it comes back; and it\n"
-"oscillates, which is a picture that flickers rather than one\n"
-"that is merely wrong.\n"
-"\n"
-"Confirmations DILUTE that oscillation; measured, they do not\n"
-"remove it (docs/FarFieldProxies.md #12.7): the false answers\n"
-"arrive in runs, so tripling the confirmations bought a factor\n"
-"of two, and the residual damage tracks how often nodes are\n"
-"re-tested, which this setting cannot reach. The query path is\n"
-"therefore not image-stable at any value here; occlusion on the\n"
-"CPU (the default oracle) does not read this setting at all."),
+        .setDoc("With GPU occlusion queries: how many answers of 'hidden' in a row an\n"
+"object needs before it is skipped. More reduces flicker and does not\n"
+"remove it. Not used when occlusion runs on the CPU, the default."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionSoftware", "OcclusionSoftware", App::ParamInfo::Bool, true)
         .setTitle("Occlusion on the CPU")
-        .setDoc("Answer the occlusion question with a software depth buffer on\n"
-"the CPU instead of hardware occlusion queries\n"
-"(docs/FarFieldProxies.md #12.12). The default, because it is\n"
-"the one oracle whose picture holds still.\n"
-"\n"
-"A hardware query cannot be asked at the moment its answer would\n"
-"be right. It is issued against one frame's depth and read a\n"
-"frame or two later, so a node is tested after the pass that drew\n"
-"its own geometry and is asked to win a depth comparison against\n"
-"itself -- measured as boxes returning no samples at all while\n"
-"their contents were plainly on screen. The confirmations,\n"
-"lifetimes and padding beside this setting all exist to contain\n"
-"that, and none of them reach it.\n"
-"\n"
-"On the CPU, occluders are rasterized and nodes tested against\n"
-"the same buffer in one pass, so a node is asked before its own\n"
-"geometry joins the buffer and the answer arrives in the frame\n"
-"that asked. There is no latency to age, no verdict to confirm\n"
-"and no query pool to run out of. It costs CPU time in a frame\n"
-"that is already CPU-bound, which is the trade to measure, and it\n"
-"behaves identically in the browser, where hardware queries do\n"
-"not."),
+        .setDoc("Decide what is hidden with a depth buffer drawn on the CPU instead of\n"
+"GPU occlusion queries. The default: its answers belong to the frame\n"
+"that asked, where a GPU query answers a frame or two late and can\n"
+"flicker. Costs some CPU time per frame."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionOccluderTris", "OcclusionOccluderTris", App::ParamInfo::Int, 250000)
         .setTitle("Occlusion occluder budget")
         .setDoc("How many triangles the CPU occlusion buffer may rasterize in one\n"
@@ -2201,106 +1596,35 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "spend budget that a larger one could use."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionThreads", "OcclusionThreads", App::ParamInfo::Int, 0)
         .setTitle("Occlusion occluder threads")
-        .setDoc("How many worker threads the CPU occlusion buffer may rasterize\n"
-"its occluders on. 0 picks automatically, leaving the submitting\n"
-"thread and one other alone -- this runs in the middle of a\n"
-"frame, not on an idle machine.\n"
-"\n"
-"Each worker rasterizes its own slice of the occluder list into\n"
-"its own buffer and the buffers are merged afterwards, so there\n"
-"is no locking. The merge is slightly lossy -- two two-layer\n"
-"blocks cannot combine into one without loss -- so a higher\n"
-"worker count can hide marginally less. Never more."),
+        .setDoc("Worker threads the CPU occlusion buffer may draw its occluders on.\n"
+"0 chooses automatically."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionSimd", "OcclusionSimd", App::ParamInfo::Bool, true)
         .setTitle("Occlusion vector pre-pass")
-        .setDoc("Let the CPU occlusion buffer discard triangles four at a time\n"
-"with SIMD before its exact rasterizer looks at them\n"
-"(docs/FarFieldProxies.md #12.14).\n"
-"\n"
-"Two thirds of the triangles offered to the buffer cover no pixel\n"
-"at all -- a full-detail CAD tessellation is mostly triangles\n"
-"smaller than the pixel grid -- and every one of them is paid for\n"
-"in full before being thrown away. The pre-pass transforms and\n"
-"projects four at once in single precision and drops the ones that\n"
-"land on no pixel centre.\n"
-"\n"
-"It cannot make the buffer claim a surface that is not there:\n"
-"everything it does not discard is handed to the same exact path\n"
-"as before, recomputed from the original vertices, and a triangle\n"
-"it drops in error is occlusion lost rather than geometry deleted.\n"
-"Turn it off to measure what it saves, not to work around a\n"
-"suspected fault."),
+        .setDoc("With CPU occlusion, discard triangles too small to cover a pixel four\n"
+"at a time before the exact rasterizer sees them. Faster, and it cannot\n"
+"hide anything visible. Turn off only to measure what it saves."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionResolution", "OcclusionResolution", App::ParamInfo::Int, 1)
         .setTitle("Occlusion buffer divisor")
-        .setDoc("Resolution of the CPU occlusion buffer, as a divisor of the\n"
-"viewport. 1 matches the viewport.\n"
-"\n"
-"Above 1 this can remove geometry that was visible, which is the\n"
-"one failure this mechanism exists to avoid: a coarse pixel is\n"
-"marked covered when an occluder reaches its centre, but it\n"
-"stands for several real pixels, and the ones the occluder missed\n"
-"are claimed with it. Reduce it only to measure what it costs, not\n"
-"as a setting."),
+        .setDoc("Resolution of the CPU occlusion buffer, as a divisor of the view size.\n"
+"1 matches the view. Above 1 it can hide visible geometry; change it\n"
+"only to measure."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionPerInstance", "OcclusionPerInstance", App::ParamInfo::Bool, true)
         .setTitle("Occlusion per instance")
-        .setDoc("Test each object against the CPU occlusion buffer, not just the\n"
-"group it was partitioned into\n"
-"(docs/FarFieldProxies.md #12.17). Only used when occlusion runs\n"
-"on the CPU.\n"
-"\n"
-"The cull walk tests boxes of groups, and a group is skipped only\n"
-"when all of it is hidden -- so one visible object keeps its\n"
-"hidden neighbours on screen. Measured, that is what limits the\n"
-"culling rather than the quality of the depth buffer: after a\n"
-"cull, 91% of what is still drawn reaches no pixel, and making\n"
-"the occluders ten times better barely moved it.\n"
-"\n"
-"The extra tests are read-only against a buffer that is already\n"
-"finished, so they run on the same worker threads the occluders\n"
-"used and add no state, no latency and nothing the backend has to\n"
-"support.\n"
-"\n"
-"On by default: measured on the benchmark it hides 17% more for\n"
-"0.4ms, against 3% for 3.4ms from making the occluders ten times\n"
-"better, and it over-culls nothing. It can only ever be more\n"
-"correct than testing the group -- a draw is skipped when its own\n"
-"box is covered rather than when its neighbours' collectively\n"
-"are."),
+        .setDoc("With CPU occlusion, test each object on its own and not only the group\n"
+"it was sorted into, so one visible object no longer keeps its hidden\n"
+"neighbours drawn. Hides more for little cost; on by default."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionDemoteStreak", "OcclusionDemoteStreak", App::ParamInfo::Int, 8)
         .setTitle("Occlusion demote streak")
-        .setDoc("How many consecutive frames every draw of an object must have\n"
-"been culled before the level plan's downgrade sweep may treat\n"
-"it as free -- give its GPU upload back without charging the\n"
-"camera any visible error. 0 never does. Only used when\n"
-"occlusion runs on the CPU, whose verdicts are exact per frame.\n"
-"\n"
-"This is occlusion acting as a MEMORY mechanism: an enclosed\n"
-"assembly's interior is inside the view frustum, so without a\n"
-"hidden verdict the plan prices its downgrade as visible error\n"
-"and pays for it in quality somewhere that actually shows. What\n"
-"the sweep drops stays resident in CPU RAM; the way back is an\n"
-"ordinary refine, so a verdict the camera later overturns costs\n"
-"one upload. The streak is the hysteresis that keeps a drifting\n"
-"camera from paying that upload per flap."),
+        .setDoc("With CPU occlusion: how many frames in a row an object must have been\n"
+"completely hidden before its GPU memory may be given back at no\n"
+"quality cost. It stays in main memory and returns when seen again.\n"
+"0 never does this."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionCoarse", "OcclusionCoarse", App::ParamInfo::Bool, false)
         .setTitle("Occlusion coarse occluders")
-        .setDoc("Rasterize the CPU occlusion buffer's occluders from coarse\n"
-"hulls instead of from their meshes\n"
-"(docs/FarFieldProxies.md #12.16). Only used when occlusion runs\n"
-"on the CPU.\n"
-"\n"
-"An occluder does not need the mesh, it needs the surface, and a\n"
-"hull carries that at a fraction of the triangles. What the\n"
-"triangle budget above buys is what this changes: measured, 1285\n"
-"of 1322 candidate occluders never entered the buffer because 37\n"
-"full-detail draws spent the whole allowance, and the buffer then\n"
-"hid 45% of what was there to hide.\n"
-"\n"
-"The hulls are built by vertex clustering from the meshes the\n"
-"renderer already holds -- no shape, no tessellator -- a few per\n"
-"frame, and cached. A hull recedes by its own measured error\n"
-"before it is rasterized, so it cannot claim to be nearer than\n"
-"the surface it stands for."),
+        .setDoc("With CPU occlusion, draw the occluders from simplified hulls instead\n"
+"of their full meshes, so many more of them fit the triangle budget and\n"
+"more gets hidden. A hull is moved back by its own error, so it cannot\n"
+"hide what is visible."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionCoarseLevel", "OcclusionCoarseLevel", App::ParamInfo::Int, 2)
         .setTitle("Occlusion hull level")
         .setDoc("Which rung of the decimation ladder an occluder hull is built\n"
@@ -2322,17 +1646,9 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "0 freezes the cache at what it already holds."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionCoarseBias", "OcclusionCoarseBias", App::ParamInfo::Int, 100)
         .setTitle("Occlusion hull bias")
-        .setDoc("How far an occluder hull recedes from the camera before it is\n"
-"rasterized, as a percentage of its own measured displacement.\n"
-"\n"
-"Every point of a hull lies within that displacement of a point of\n"
-"the mesh it was built from, so at 100 the hull cannot be nearer\n"
-"than the surface it stands for -- which is what makes an\n"
-"approximate occluder admissible at all. Below 100 it hides more\n"
-"and may hide geometry that was visible; above 100 it hides\n"
-"progressively less for nothing. 0 rasterizes the hull where it\n"
-"sits, which is the measurement that says whether the bias is\n"
-"needed."),
+        .setDoc("With coarse occluders: how far a hull is moved away from the camera,\n"
+"as a percentage of its own error. 100 guarantees it hides nothing\n"
+"visible; less hides more and may hide visible parts."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionCoarseMemory", "OcclusionCoarseMemory", App::ParamInfo::Int, 64)
         .setTitle("Occlusion hull memory")
         .setDoc("What the occluder hull cache may hold, in megabytes, before\n"
@@ -2341,16 +1657,10 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "correctness."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "OcclusionBenefitProbe", "OcclusionBenefitProbe", App::ParamInfo::Bool, false)
         .setTitle("Occlusion benefit probe")
-        .setDoc("Measure whether the culling pays for itself on THIS scene and\n"
-"camera (docs/FarFieldProxies.md 12.13): alternate stretches of\n"
-"frames with the whole occlusion block on and off, compare median\n"
-"frame cost, and print the verdict with the culling readout\n"
-"(Render_LevelDebug cadence). The probe is an intervention -- its\n"
-"off arm draws everything and pauses the hidden-streak demote\n"
-"feed for those frames -- so it is a measuring instrument, not a\n"
-"mode to leave on. The verdict gates nothing yet; it is the\n"
-"number the wire-or-delete decision for CullBenefitEstimator\n"
-"reads."),
+        .setDoc("Diagnostic. Measures whether occlusion culling pays for itself on this\n"
+"scene and camera, by turning it on and off for stretches of frames and\n"
+"comparing their cost. It disturbs the frames it measures; not for\n"
+"normal use."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "AO", "AO", App::ParamInfo::Bool, false)
         .setTitle("Ambient occlusion")
         .setDoc("Enable screen space ambient occlusion of the experimental render\n"
@@ -2393,47 +1703,19 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
         .setDoc("Ambient occlusion darkening strength."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "AOResolution", "AOResolution", App::ParamInfo::Float, 1.0)
         .setTitle("AO resolution")
-        .setDoc("Resolution scale (0.25-1.0) of the ambient occlusion resolve\n"
-"targets relative to the main view resolution, independent of the\n"
-"shared Effect resolution. Ambient occlusion is resolution-sensitive\n"
-"(contact and crevice detail), so it has its own control; the shared\n"
-"Effect resolution drives only the costlier reflection re-render.\n"
-"1.0 renders the occlusion at full resolution; lower trades AO\n"
-"sharpness for speed."),
+        .setDoc("Resolution of ambient occlusion relative to the view, 0.25 to 1,\n"
+"independent of EffectResolution. Lower is faster and less sharp."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "Cavity", "Cavity", App::ParamInfo::Bool, true)
         .setTitle("Cavity shading")
-        .setDoc("Enable screen space cavity (curvature) shading of the\n"
-"experimental render engine (render cache mode 3 with a selected\n"
-"renderer type). Darkens concave creases and convex ridges found\n"
-"in the geometry prepass normals, which makes surface shape and\n"
-"small features read without relying on the lighting.\n"
-"\n"
-"Best paired with the Shaded draw style, the one that draws no\n"
-"edges: there the darkened crease is the only thing stating where\n"
-"a face ends, so cavity does the job the edge lines do elsewhere,\n"
-"without the wireframe over every tessellated curve. In a style\n"
-"that already draws edges (Flat Lines) the two land on the same\n"
-"pixels and cavity mostly restates them.\n"
-"\n"
-"Independent of ambient occlusion: cavity is a local curvature\n"
-"term, occlusion is a visibility integral over a world-space\n"
-"radius (contact darkening). They compose."),
+        .setDoc("Darken creases and ridges of the geometry in screen space, so the\n"
+"shape reads without relying on the lighting. Works best with the\n"
+"Shaded draw style, where no edges are drawn. Independent of ambient\n"
+"occlusion. Needs render cache mode 3 with a renderer selected."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CavityRadius", "CavityRadius", App::ParamInfo::Float, 1.0)
         .setTitle("Cavity radius")
-        .setDoc("Baseline the cavity curvature is measured over, in pixels.\n"
-"\n"
-"This decides which features the pass can see at all. The term\n"
-"reads how far the surface normal turns between the two\n"
-"neighbours, so at the default of 1 it sees only what turns\n"
-"within a single pixel: hard creases, crisply, which is what\n"
-"stands in for the edge lines the Shaded draw style does not\n"
-"draw. Widening it brings broad curvature (fillets, blends, a\n"
-"sculpted face) in, at the cost of spreading a hard crease into a\n"
-"band of this width.\n"
-"\n"
-"Being in pixels it is resolution-relative: the same value covers\n"
-"less of the model on a high-DPI display, so a large model on a\n"
-"dense screen may want more than 1."),
+        .setDoc("Distance in pixels over which cavity shading measures curvature. 1\n"
+"sees only hard creases, sharply. Larger values bring in fillets and\n"
+"broad curvature and widen the creases to a band of that width."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CavityValley", "CavityValley", App::ParamInfo::Float, 1.0)
         .setTitle("Valley darkening")
         .setDoc("Cavity darkening strength in concave creases (inside corners,\n"
@@ -2449,26 +1731,17 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "some workbench renderers use is not available here."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "Matcap", "Matcap", App::ParamInfo::Bool, false)
         .setTitle("Matcap shading")
-        .setDoc("Enable matcap shading of the experimental render engine\n"
-"(render cache mode 3 with a selected renderer type). Replaces\n"
-"the scene's lighting with a fixed studio attached to the camera,\n"
-"looked up by each fragment's view space normal: the shading of a\n"
-"surface then depends only on which way it faces the viewer, so\n"
-"form reads identically wherever the scene light happens to be.\n"
-"The classic inspection shading -- pair it with Cavity for edge\n"
-"definition. Overrides physically based shading while on."),
+        .setDoc("Shade surfaces by the direction they face the viewer, with a fixed\n"
+"studio lighting attached to the camera, so shape reads the same\n"
+"wherever the scene light is. Overrides physically based shading.\n"
+"Needs render cache mode 3 with a renderer selected."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MatcapPreset", "MatcapPreset", App::ParamInfo::Int, 0)
         .setTitle("Matcap")
-        .setDoc("Which matcap to shade with. The presets are computed in the\n"
-"shader rather than sampled from images, so they cost no assets\n"
-"and stay sharp at any resolution. Studio = soft key light with a\n"
-"rim; Clay = matte, no highlight, the most neutral read of form;\n"
-"Metal = banded sweep with a hard edge, exaggerates curvature;\n"
-"Pearl = warm/cool dual tone, shows shallow undulation;\n"
-"Zebra = black and white stripes, the surface as a mirror in a\n"
-"room of parallel light strips: the stripes step where two faces\n"
-"meet at an angle, meet with a kink where they are tangent, and\n"
-"run through where the curvature is continuous as well.")
+        .setDoc("Which matcap to shade with, computed in the shader. Studio: soft key\n"
+"light with a rim. Clay: matte, the most neutral read of form. Metal:\n"
+"banded, exaggerates curvature. Pearl: warm and cool, shows shallow\n"
+"undulation. Zebra: black and white stripes that step at an angle, kink\n"
+"at a tangent seam and run through where curvature is continuous.")
         .setProxy("ComboBox")
         .setItems({{"Studio", "", nullptr}, {"Clay", "", nullptr}, {"Metal", "", nullptr}, {"Pearl", "", nullptr}, {"Zebra", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MatcapStripes", "MatcapStripes", App::ParamInfo::Int, 6)
@@ -2503,79 +1776,24 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "Zero means automatic (derived from each material's shininess)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PBRFromSpecular", "PBRFromSpecular", App::ParamInfo::Bool, true)
         .setTitle("Specular to metallic")
-        .setDoc("Read an ordinary Phong appearance's specular COLOUR as\n"
-"physically based material data, where nothing states a\n"
-"metalness of its own. The metallic/roughness model has no\n"
-"specular slot -- its reflectance follows from the base colour\n"
-"and the metalness -- so a classic Gold, whose gold-ness lives\n"
-"entirely in that colour, otherwise shades as yellow-brown\n"
-"plastic, and the presets built from a black diffuse and a\n"
-"bright specular (Steel, Satin, Metalized) shade as nearly\n"
-"black. Anything authored stands: a stated metalness, a PBR\n"
-"appearance, a metallic-roughness map."),
+        .setDoc("Read the specular colour of a classic appearance as metalness when\n"
+"the material states none, so that presets such as Gold or Steel look\n"
+"like metal under physically based shading. A stated metalness is\n"
+"never changed."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ShininessMapping", "ShininessMapping", App::ParamInfo::Int, 1)
         .setTitle("Shininess mapping")
-        .setDoc("How a classic Phong appearance's SHININESS becomes a\n"
-"roughness, where the material states no roughness of its own.\n"
-"\n"
-"Either way the conversion itself is the standard match of the\n"
-"GGX lobe width to a Phong exponent n, roughness =\n"
-"(2 / (n + 2)) ^ 1/4. What differs is what shininess MEANS.\n"
-"\n"
-"'GL exponent' reads it the way fixed-function GL did, as the\n"
-"exponent scaled onto 0..128. That is faithful, but 128 is the\n"
-"sharpest exponent GL could state, and it converts to a\n"
-"roughness of 0.35 -- so on this reading a fully shiny Phong\n"
-"material is satin, and the lower half of the roughness range\n"
-"cannot be reached from shininess at all.\n"
-"\n"
-"'Full range' reads shininess as what the Appearance dialog\n"
-"presents, a 0 to 100% appearance control, and maps it onto the\n"
-"whole exponent range instead: n = 128 * s / (1 - s). Matte at\n"
-"zero and a mirror at one, and over the low shininess values\n"
-"real materials use it agrees with the GL reading to within a\n"
-"few percent (FreeCAD's default 0.2 gives 0.49 rather than\n"
-"0.52, the Gold preset 0.66 rather than 0.67).\n"
-"\n"
-"Neither reading touches anything authored: a stated roughness,\n"
-"a PBR appearance, a metallic-roughness map and the per-object\n"
-"Render_Roughness override all stand.")
+        .setDoc("How the shininess of a classic appearance becomes a roughness when the\n"
+"material states none. 'GL exponent' reads it as the OpenGL exponent,\n"
+"where the shiniest material is still satin. 'Full range' reads it as\n"
+"0 to 100%, matte to mirror. A stated roughness is never changed.")
         .setProxy("ComboBox")
         .setItems({{"GL exponent", "", nullptr}, {"Full range", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PBREnvPreset", "PBREnvPreset", App::ParamInfo::Int, 1)
         .setTitle("Environment")
-        .setDoc("Which built-in environment lights the scene, where no\n"
-"environment image is set. They are computed rather than\n"
-"sampled from a file, so they cost no assets and work on every\n"
-"tier including the browser.\n"
-"\n"
-"What separates them is contrast and structure, not brightness:\n"
-"all five integrate to the same mean radiance, so the exposure\n"
-"that suits one suits the others. That matters because a\n"
-"surround with no bright sources and no edges cannot put a\n"
-"highlight on anything that reads as a light, and a smooth\n"
-"surface reflecting it shows the same flat grey at every\n"
-"roughness -- which is what made physically based shading look\n"
-"like painted plastic.\n"
-"\n"
-"Interior = a room with one window and a ceiling\n"
-"panel, walls close enough to bounce. One hard key against a\n"
-"dark surround, which is what gives the crispest highlight and\n"
-"the strongest read of form. Studio = four soft boxes on a dark\n"
-"surround, the product-shot rig, gentler and more even than\n"
-"Interior. Gradient (the default) = the smooth three-band dome\n"
-"this engine used before the others existed; the flattest and\n"
-"the most even, which is why it is where a view starts -- it\n"
-"stays out of the way of the model being worked on, and it is\n"
-"the one to pick to have an older document's look back.\n"
-"Overcast = a bright sky weighted to the zenith over dark\n"
-"ground, soft and neutral. Sunset = a low warm sun with a deep\n"
-"sky, the strongest colour separation, and the only one that\n"
-"tints the whole frame. Light tent = a box of white panels,\n"
-"bright BELOW the horizon as well as above it and seamed all\n"
-"the way round; the one to pick when the SIDES of a subject\n"
-"matter, since every other environment here puts a floor under\n"
-"it and a standing wall reflects the floor.")
+        .setDoc("Built-in environment that lights the scene when no environment image\n"
+"is set: Gradient (the default, the most even), Interior, Studio,\n"
+"Overcast, Sunset or Light tent. They differ in contrast and structure,\n"
+"not in brightness, so one exposure suits them all.")
         .setProxy("ComboBox")
         .setItems({{"Studio", "", nullptr}, {"Gradient", "", nullptr}, {"Overcast", "", nullptr}, {"Sunset", "", nullptr}, {"Interior", "", nullptr}, {"Light tent", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PBREnvIntensity", "PBREnvIntensity", App::ParamInfo::Float, 1.0)
@@ -2583,102 +1801,26 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
         .setDoc("Brightness of the image based lighting environment."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PBREnvImage", "PBREnvImage", App::ParamInfo::String, "")
         .setTitle("Environment image")
-        .setDoc("Image file used as the image based lighting environment,\n"
-"replacing the built-in procedural studio environment. A 2:1\n"
-"image is read as equirectangular (lat-long), anything squarer\n"
-"as a sphere map — the same convention as the Texture mapping\n"
-"dialog's Environment mode, so the same file works in both.\n"
-"\n"
-"A Radiance picture (.hdr, .pic) is read as real radiance and\n"
-"is the format worth using: a sky is thousands of times\n"
-"brighter than the wall beneath it, and an ordinary 8-bit image\n"
-"cannot hold that ratio, which is what makes one light a model\n"
-"like a picture rather than like a place. An HDR environment\n"
-"needs the output colour transform on, since it is the exposure\n"
-"that decides how its range lands on the screen.\n"
-"\n"
-"What to load, in short:\n"
-"\n"
-" - A Radiance .hdr or .pic. OpenEXR is NOT read: anything\n"
-"   that is not Radiance goes through Qt, which has no EXR\n"
-"   plugin, so an .exr loads nothing and the procedural\n"
-"   environment stays on.\n"
-" - 2:1 proportions, so it is taken as a lat-long panorama\n"
-"   and not as a mirror ball. Up is +Z, and the middle of\n"
-"   the image faces +X.\n"
-" - 1K or 2K is plenty. The picture is held as 32-bit float\n"
-"   RGB (2K is about 25 MB, 8K about 400 MB) and is baked\n"
-"   into a 128 pixel per face cubemap, so a larger one\n"
-"   costs memory without showing more.\n"
-" - Free CC0 panoramas: polyhaven.com/hdris.\n"
-"\n"
-"How sharp it is DRAWN behind the model is a separate\n"
-"question, and the answer is Render_PBREnvBlur: the background\n"
-"pass draws that cubemap through a lens aperture, the way a\n"
-"real backdrop is out of focus, and at zero the aperture is\n"
-"shut and it is drawn as baked. The lighting and the\n"
-"reflections read the sharp environment whatever the blur\n"
-"says.\n"
-"\n"
-"Empty falls back to that dialog's current image, then to the\n"
-"procedural environment."),
+        .setDoc("Image file used as the lighting environment instead of the built-in\n"
+"one. A 2:1 image is read as a lat-long panorama, anything squarer as a\n"
+"sphere map. Radiance files (.hdr, .pic) keep their real brightness and\n"
+"are the format to use; OpenEXR is not read. 1K or 2K is plenty. Empty\n"
+"uses the Texture mapping dialog's image, then the built-in environment."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PBREnvEmbed", "PBREnvEmbed", App::ParamInfo::Bool, true)
         .setTitle("Embed environment image")
-        .setDoc("Store a copy of the environment image inside the document,\n"
-"so it travels with the file instead of depending on the\n"
-"original path. The copy lives in the view's\n"
-"Render_PBREnvImageData property and takes precedence over the\n"
-"image path while set.\n"
-"\n"
-"On by default: a document whose lighting depends on a file\n"
-"somewhere on one machine opens lit differently everywhere\n"
-"else, and the path is the part of the setting least likely\n"
-"to survive the trip."),
+        .setDoc("Store a copy of the environment image in the document, so the lighting\n"
+"travels with the file instead of depending on a path on one machine.\n"
+"The copy takes precedence over the path."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PBREnvBackground", "PBREnvBackground", App::ParamInfo::Bool, true)
         .setTitle("Environment background")
-        .setDoc("Show the image based lighting environment itself as the view\n"
-"background while physically based shading is active, so\n"
-"reflective surfaces visibly mirror their surroundings.\n"
-"\n"
-"On by default, because a reflective object standing in front of\n"
-"a flat gradient reads as fake for a reason that is not the\n"
-"object's fault: the reflection has no visible source, so there\n"
-"is nothing in the frame for the eye to reconcile it against.\n"
-"Affects nothing outside physically based shading -- the\n"
-"Classic and Matcap models keep the background gradient."),
+        .setDoc("Show the lighting environment as the view background while physically\n"
+"based shading is active, so reflections have a visible source. Other\n"
+"shading models keep the background gradient."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PBREnvBlur", "PBREnvBlur", App::ParamInfo::Float, 0.25)
         .setTitle("Environment background blur")
-        .setDoc("How far out of focus the environment background is, 0 to 1.\n"
-"Zero is sharp -- the resolution it was baked at; one opens the\n"
-"aperture to 45 degrees, and in between it doubles every eighth\n"
-"of the range. Only the BACKGROUND is affected -- the lighting\n"
-"and the reflections read the whole environment whatever this\n"
-"says.\n"
-"\n"
-"It is a defocus, not a smudge: the environment is convolved\n"
-"with the disc of directions an aperture subtends, in linear\n"
-"radiance, so a small bright source spreads into an even bokeh\n"
-"disc that keeps its energy rather than being averaged away.\n"
-"\n"
-"A backdrop wants some of this. A real one is out of focus, and\n"
-"softening also lets a small bright source bleed into a wide\n"
-"gentle falloff instead of sitting in the frame as a hard\n"
-"rectangle. Too much of it and there is nothing left for a\n"
-"reflection to be reconciled against, which is the whole reason\n"
-"the background is drawn at all. Blender's viewport shading\n"
-"carries the same control for the same reasons, and defaults it\n"
-"higher than this does.\n"
-"\n"
-"Both shading models honour it, and at zero the two show the\n"
-"same backdrop: they bake the environment at the same angular\n"
-"resolution. The external path tracer gets there differently,\n"
-"since the world it samples IS the light and softening it\n"
-"would relight the scene -- so a second bake of the same\n"
-"environment through the same aperture is mixed in on CAMERA\n"
-"rays alone, and the lighting, reflections and refractions keep\n"
-"the sharp world. One consequence of that rule: a camera ray\n"
-"stays a camera ray through a transparent surface, so a\n"
-"see-through pass-through shows the soft backdrop as well."),
+        .setDoc("How far out of focus the environment is drawn as the background, 0 to\n"
+"1. 0 is as sharp as it was baked. Only the background is affected:\n"
+"lighting and reflections always read the sharp environment."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "BumpScale", "BumpScale", App::ParamInfo::Float, 1.0)
         .setTitle("Bump strength")
         .setDoc("Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
@@ -2776,13 +1918,9 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "regardless."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "WaterRippleType", "WaterRippleType", App::ParamInfo::Int, 0)
         .setTitle("Ripple type")
-        .setDoc("The ambient ripple pattern on the water surface - the motion\n"
-"the surface has of its own accord. 0 = waves: the default sum\n"
-"of directional wind waves. 1 = rain: circular rings expanding\n"
-"from randomly placed, randomly timed drop impacts, as on a pond\n"
-"in rainfall. 2 = none: a still surface, which leaves only what\n"
-"the scene disturbs - fountain splash rings and the impact rings\n"
-"of particles striking the water still show.")
+        .setDoc("Ripples the water surface has by itself: 0 wind waves, 1 rain rings,\n"
+"2 none. Rings from fountains and from particles striking the water\n"
+"show in every case.")
         .setProxy("ComboBox")
         .setItems({{"Waves (directional)", "", nullptr}, {"Rain (drops)", "", nullptr}, {"None (still)", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "WaterRippleDensity", "WaterRippleDensity", App::ParamInfo::Float, 1.0)
@@ -2831,32 +1969,28 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "footprint; larger blooms wider."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "Light", "Light", App::ParamInfo::Bool, false)
         .setTitle("Renderer scene light")
-        .setDoc("Let the render engine supply its own directional or spot scene\n"
-"light, described by the Light* settings below, instead of taking\n"
-"one out of the Coin traversal.\n"
-"\n"
-"Everything the engine keys off a light -- shadows, volumetric\n"
-"shafts, the sun disc, ground reflection -- today has exactly one\n"
-"source: the Shadow display style, which is what puts an\n"
-"SoShadowDirectionalLight or SoSpotLight in the scene graph at all\n"
-"(the viewer headlight is a plain SoDirectionalLight, which the\n"
-"engine rejects by type). That makes a draw style the owner of the\n"
-"lighting, and it is why the style cannot simply be retired\n"
-"(docs/CoinRetirement.md 3.4).\n"
-"\n"
-"Off by default, and while off nothing changes. A light found in\n"
-"the traversal still wins when one is there, so the Shadow style\n"
-"keeps behaving exactly as before; these settings supply a light\n"
-"when it does not."),
+        .setDoc("Let the render engine use a scene light of its own, described by the\n"
+"Light settings below, for shadows, light shafts and ground reflection.\n"
+"Without it the only such light is the one the Shadow display style\n"
+"adds. A light found in the scene still takes precedence."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightIntensity", "LightIntensity", App::ParamInfo::Float, 0.8)
         .setTitle("Light intensity")
         .setDoc("Brightness of the renderer's own scene light."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightDirectionX", "LightDirectionX", App::ParamInfo::Float, -1.0)
-        .setTitle("Light Direction X"),
+        .setTitle("Light Direction X")
+        .setDoc("X component of the direction the render engine's own scene light\n"
+"shines along, in world coordinates. A direction of zero length\n"
+"falls back to (-1, -1, -1)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightDirectionY", "LightDirectionY", App::ParamInfo::Float, -1.0)
-        .setTitle("Light Direction Y"),
+        .setTitle("Light Direction Y")
+        .setDoc("Y component of the direction the render engine's own scene light\n"
+"shines along, in world coordinates. A direction of zero length\n"
+"falls back to (-1, -1, -1)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightDirectionZ", "LightDirectionZ", App::ParamInfo::Float, -1.0)
-        .setTitle("Light Direction Z"),
+        .setTitle("Light Direction Z")
+        .setDoc("Z component of the direction the render engine's own scene light\n"
+"shines along, in world coordinates. A direction of zero length\n"
+"falls back to (-1, -1, -1)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightColor", "LightColor", App::ParamInfo::Hex, 0xF0FDFFFF)
         .setTitle("Light color")
         .setDoc("Colour of the renderer's own scene light.")
@@ -2868,11 +2002,17 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "one. A spot has a position and a cone; a directional light has\n"
 "only a direction."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightPositionX", "LightPositionX", App::ParamInfo::Float, 0.0)
-        .setTitle("Light Position X"),
+        .setTitle("Light Position X")
+        .setDoc("X coordinate of the render engine's own scene light when it is a\n"
+"spot light, in world coordinates. A directional light ignores it."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightPositionY", "LightPositionY", App::ParamInfo::Float, 0.0)
-        .setTitle("Light Position Y"),
+        .setTitle("Light Position Y")
+        .setDoc("Y coordinate of the render engine's own scene light when it is a\n"
+"spot light, in world coordinates. A directional light ignores it."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightPositionZ", "LightPositionZ", App::ParamInfo::Float, 0.0)
-        .setTitle("Light Position Z"),
+        .setTitle("Light Position Z")
+        .setDoc("Z coordinate of the render engine's own scene light when it is a\n"
+"spot light, in world coordinates. A directional light ignores it."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LightCutOffAngle", "LightCutOffAngle", App::ParamInfo::Float, 45.0)
         .setTitle("Spot cut-off angle")
         .setDoc("Half angle of the spot cone, in degrees."),
@@ -2903,13 +2043,9 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
         .setDoc("Blend factor of the mirrored model on the ground plane."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CyclesDevice", "CyclesDevice", App::ParamInfo::String, "CPU")
         .setTitle("Cycles device")
-        .setDoc("Compute device type the External shading model path traces\n"
-"on, as Gui.cyclesDevices() names them: 'CPU' always works, and\n"
-"'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the\n"
-"driver for it. Seeds the per-view Cycles_Device property, which\n"
-"offers only the devices the machine actually has -- a document\n"
-"saved elsewhere falls back to the first local device when its\n"
-"choice does not exist here."),
+        .setDoc("Device the path tracer runs on: 'CPU' always works; 'CUDA', 'OPTIX' or\n"
+"'HIP' when the machine has the GPU and driver. A document saved with a\n"
+"device this machine lacks uses the first one available."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CyclesSamples", "CyclesSamples", App::ParamInfo::Int, 256)
         .setTitle("Cycles samples")
         .setDoc("Samples per pixel the External shading model refines to\n"
@@ -2933,29 +2069,15 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "view fluid on a weak device at the cost of a blockier preview."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CyclesMaxStreams", "CyclesMaxStreams", App::ParamInfo::Int, 4)
         .setTitle("Cycles served sessions")
-        .setDoc("How many path-traced sessions this process serves at once\n"
-"(docs/CyclesIntegration.md sec 7.1). A browser viewer that asks\n"
-"for a path-traced view gets a Cycles session of its own -- one\n"
-"per traced cell, per connection, across every served document --\n"
-"and each holds a device context and the scene on that device.\n"
-"A start made when this many are already running is refused with\n"
-"'TooManyStreams'; the viewer says so and stays on its raster\n"
-"view. 0 or less means no cap, which is what the desktop views\n"
-"and the offline render have always had: this counts served\n"
-"streams only."),
+        .setDoc("How many path-traced views this process serves to browser viewers at\n"
+"once. A request past the limit is refused and that viewer stays on its\n"
+"raster view. 0 or less means no limit. Desktop views are not counted."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugViewMode", "DebugViewMode", App::ParamInfo::Int, 0)
         .setTitle("Debug view mode")
-        .setDoc("Render debugging buffer visualization (docs/RenderDebug.md).\n"
-"Routes an intermediate render target to the screen instead of the\n"
-"shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
-"3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow\n"
-"map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =\n"
-"shadow-moment filtering-precision probe, 8 = UV / texcoord,\n"
-"9 = the planar reflection target, 10 = the particle impact map\n"
-"(green where a hit is recorded, brightness its age, red where\n"
-"nothing has ever struck).\n"
-"0 renders normally. The on-top, highlight and overlay passes\n"
-"still draw on top so the view stays navigable.")
+        .setDoc("Diagnostic. Shows an intermediate buffer instead of the shaded scene:\n"
+"1 depth, 2 normals, 3 ambient occlusion, 4 shadow, 5 shadow map\n"
+"coverage, 6 overdraw, 7 shadow precision, 8 texture coordinates,\n"
+"9 reflection target, 10 particle impact map. 0 renders normally.")
         .setProxy("ComboBox")
         .setItems({{"Off", "", nullptr}, {"Depth", "", nullptr}, {"Normal", "", nullptr}, {"AO", "", nullptr}, {"Shadow", "", nullptr}, {"ShadowTile", "", nullptr}, {"Overdraw", "", nullptr}, {"ShadowFilter", "", nullptr}, {"UV", "", nullptr}, {"Reflection", "", nullptr}, {"ImpactMap", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugFreezeFrame", "DebugFreezeFrame", App::ParamInfo::Bool, false)
@@ -2975,18 +2097,9 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "sidecar (docs/RenderDebug.md)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugTiming", "DebugTiming", App::ParamInfo::Bool, false)
         .setTitle("Render stage timing")
-        .setDoc("Log where the time of a rendered frame goes, by pipeline\n"
-"stage: the Coin traversal, the flattening of the vertex caches,\n"
-"the draw-entry build, the translation to the backend, the\n"
-"backend's own bookkeeping and the draw itself. One summary line\n"
-"per second, so a long operation shows how each stage grows with\n"
-"the scene rather than one average (docs/IncrementalPublish.md).\n"
-"Those stages end at submission, so a second line reports what\n"
-"happens after it: the frame's cost on the CPU issuing draw\n"
-"commands against its cost on the GPU drawing them, and the same\n"
-"pair per draw call (docs/FarFieldProxies.md §10.1). Which of the\n"
-"two a scene is bound by is what decides whether a culling scheme\n"
-"has to remove the draw or may leave it to the GPU to reject."),
+        .setDoc("Diagnostic. Logs once a second where the time of a rendered frame\n"
+"goes, by pipeline stage, and what the frame costs on the CPU against\n"
+"the GPU."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugDelta", "DebugDelta", App::ParamInfo::Bool, false)
         .setTitle("Publish change set")
         .setDoc("Log what each published frame actually changed: how many of\n"
@@ -2998,89 +2111,36 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "(docs/IncrementalPublish.md §5)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugCoverage", "DebugCoverage", App::ParamInfo::Bool, false)
         .setTitle("Screen coverage histogram")
-        .setDoc("Log how much of the screen each drawn object actually covers,\n"
-"as a histogram over its projected size in pixels. A camera that\n"
-"sees a whole assembly draws most of it at a few pixels, and every\n"
-"one of those parts still costs a full object; the histogram says\n"
-"how much of the model is in that state, which is what decides\n"
-"whether aggregating distant parts is worth building\n"
-"(docs/FarFieldProxies.md §9)."),
+        .setDoc("Diagnostic. Logs how much of the screen each drawn object covers,\n"
+"as a histogram over its size in pixels. Shows how much of a model is\n"
+"drawn only a few pixels large."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugProxyCut", "DebugProxyCut", App::ParamInfo::Bool, false)
         .setTitle("Far-field cut estimate")
-        .setDoc("Log what a far-field cut would cost this camera, without\n"
-"generating anything: the drawn instances are partitioned into the\n"
-"spatial index of docs/FarFieldProxies.md §3, a frontier is chosen\n"
-"by projected error at several tolerances, and the draws that cut\n"
-"would issue -- one per (cell, material) proxy plus whatever stays\n"
-"exact -- are reported against the draws issued today. This is the\n"
-"number that says whether generating proxies is worth building\n"
-"(§11.1). Also reports the distributions that size the partition:\n"
-"instances and material buckets per cell, per level."),
+        .setDoc("Diagnostic. Logs how many draw calls replacing distant parts by\n"
+"far-field proxies would save for the current camera, without building\n"
+"any."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugOcclusion", "DebugOcclusion", App::ParamInfo::Bool, false)
         .setTitle("Occluded fraction")
-        .setDoc("Measure how much of what the frame draws could not have\n"
-"reached the screen (docs/FarFieldProxies.md §10.1). Bounding\n"
-"boxes of the spatial index's nodes are re-rasterized against the\n"
-"finished depth buffer under hardware occlusion queries, writing\n"
-"neither colour nor depth, and every instance is attributed to the\n"
-"highest node that rejects it -- so a hidden subtree is counted\n"
-"once, not at every level it is hidden at. Boxes bound their\n"
-"contents loosely and the frustum's own rejections are reported\n"
-"separately, so the hidden share it prints is a floor rather than\n"
-"an estimate. A GPU offers 256 queries at a time, so a large model\n"
-"takes several frames to walk and a line is printed per completed\n"
-"walk, never for a partial one."),
+        .setDoc("Diagnostic. Measures how much of what a frame draws is hidden behind\n"
+"something else, using GPU occlusion queries. A large model takes\n"
+"several frames per report."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugProxyGen", "DebugProxyGen", App::ParamInfo::Bool, false)
         .setTitle("Far-field proxy generation")
-        .setDoc("Generate real proxies for a sample of the nodes a far-field\n"
-"cut stops on, and report what they cost and what they commit\n"
-"(docs/FarFieldProxies.md §11.1c). The cut estimate above selects\n"
-"by a node's projected *extent* because no proxy exists yet to\n"
-"have an error; this one merges each (cell, material) group and\n"
-"decimates it, so the error it commits can be measured as a\n"
-"fraction of that extent -- which is the ratio that says whether\n"
-"the estimate reads as its 16px row or its 64px row. Reports\n"
-"alongside it the triangle cost against what instancing already\n"
-"achieves (§7.1) and how much surface area survives, since\n"
-"clustering deletes geometry smaller than a cell rather than\n"
-"shrinking it. Expensive: it builds meshes. Samples a bounded\n"
-"number of nodes and reports how many it skipped."),
+        .setDoc("Diagnostic. Builds real far-field proxies for a sample of nodes and\n"
+"reports their triangle cost and the error they introduce. Expensive:\n"
+"it builds meshes."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugCullAudit", "DebugCullAudit", App::ParamInfo::Bool, false)
         .setTitle("Occlusion cull audit")
-        .setDoc("Check what the occlusion culling skipped against what the\n"
-"geometry actually put on screen (docs/FarFieldProxies.md §12.9).\n"
-"Every other measurement of the culling compares two pictures and\n"
-"reports how many pixels differ, which says that something is\n"
-"wrong without saying what: this re-rasterizes the scene with the\n"
-"cull mask ignored and each draw writing its own identity instead\n"
-"of a colour, so the ids that own a pixel are an exact answer to\n"
-"which draws reach the screen. Their intersection with the mask is\n"
-"a list of proven over-culls -- each one a named draw with a pixel\n"
-"count -- and the ids that own nothing while being drawn are the\n"
-"converse: the headroom the culling has not taken. Reads the image\n"
-"back to the CPU once a second, so it costs a full-resolution\n"
-"transfer on the frames it reports and nothing while off. Needs a\n"
-"backend with texture readback, which WebGL2 is not."),
+        .setDoc("Diagnostic. Checks what occlusion culling skipped against what really\n"
+"reaches the screen, by drawing every object once more with its\n"
+"identity as its colour, and reports objects culled by mistake. Reads\n"
+"the image back once a second. Not available on WebGL2."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugCullBounds", "DebugCullBounds", App::ParamInfo::Bool, false)
         .setTitle("Occludee bound diagnostic")
-        .setDoc("Measure whether a tighter occludee volume would cull more\n"
-"(docs/FarFieldProxies.md §12.19). After per-instance testing, 90%\n"
-"of the draws a frame still submits reach no pixel while each was\n"
-"tested and answered visible -- so the geometry is hidden and the\n"
-"box around it is not. This re-asks every still-drawn row three\n"
-"ways against the same occluder buffer: with the world box that\n"
-"ships, with the mesh's own box through the model matrix (an\n"
-"oriented box, where the shipping one is the axis-aligned box\n"
-"around it), and with every triangle asked separately -- which is\n"
-"far too slow to ship and is here as the ceiling, since nothing\n"
-"asked about the occludee can beat asking about its geometry. The\n"
-"verdicts are counted against the cull audit's id image, never\n"
-"acted on, so an arm that would have deleted something visible\n"
-"reports itself instead of being believed.\n"
-"Needs the cull audit on (it supplies the image) and the software\n"
-"occluder pass, which owns the buffer being asked. Runs on the\n"
-"audit's frame only, and costs far more than a frame: it is a\n"
-"measurement, not a mode to leave on."),
+        .setDoc("Diagnostic. Measures whether tighter bounds around objects would let\n"
+"occlusion culling hide more, by asking again about every object still\n"
+"drawn in three ways. Reports only, changes nothing on screen. Needs\n"
+"the cull audit and CPU occlusion, and is far too slow to leave on."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -3091,8 +2151,11 @@ ParameterGrp::handle RenderParams::getHandle() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docType() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Type of the experimental render engine backend. 'Default' keeps\n"
-"the plain GL pipeline. Only effective with render cache mode 3.");
+"What draws a 3D view. 'Default': the render engine, on this\n"
+"platform's backend. 'Legacy': the old Coin rendering, without the\n"
+"engine. A backend can also be named, as 'bgfx - Direct3D11'. With\n"
+"the engine the render cache is always 3, whatever its own setting\n"
+"says; under 'Legacy' that setting is what counts.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3120,28 +2183,11 @@ void RenderParams::removeType() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOutputTransform() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Whether the engine is colour managed.\n"
-"\n"
-"The shading is linear -- mixes, the GGX lobe, the image based\n"
-"lighting product are all arithmetic on light, and they are only\n"
-"correct on linear numbers. A colour someone picked is not: it\n"
-"is a display number, which makes it sRGB encoded. And a display\n"
-"reads the byte it is handed as sRGB too.\n"
-"\n"
-"'sRGB' honours both ends. Authored colours -- materials, the\n"
-"lights, the background, the base colour and emissive textures --\n"
-"are decoded to linear as they enter, and the finished frame is\n"
-"encoded once at the last write before it is shown. An UNSHADED\n"
-"authored colour therefore survives the round trip exactly, and\n"
-"so does a fully lit surface; what changes is the shading in\n"
-"between, which is the part that was wrong.\n"
-"\n"
-"'Off' is the older pipeline, which did neither: it fed display\n"
-"numbers to the linear shading and wrote the linear result out\n"
-"raw. The two errors partly cancel -- a fully lit surface comes\n"
-"out right -- but everything in falloff and shadow renders about\n"
-"a gamma too dark. Documents written before this existed are\n"
-"drawn that way, which is how they were authored.");
+"Colour management of the engine. 'sRGB' decodes authored colours to\n"
+"linear for shading and encodes the finished frame for the display,\n"
+"which is the correct pipeline. 'Off' is the older one, which shades\n"
+"display numbers and renders falloff and shadow too dark; documents\n"
+"written before this setting existed use it.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3169,26 +2215,10 @@ void RenderParams::removeOutputTransform() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docExposure() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How much light the frame is developed with, as a plain\n"
-"multiplier on the linear image before it is encoded for the\n"
-"screen. One leaves it alone.\n"
-"\n"
-"It exists because a colour managed scene is lit in real\n"
-"reflectances, and a mid grey reflects about 18 per cent of what\n"
-"falls on it rather than the 45 per cent its number reads as. A\n"
-"scene whose lights were set before that was true is lit about\n"
-"two to three times too dimly, and this is the control that\n"
-"answers it without touching a single light.\n"
-"\n"
-"Raising it does not clip. Anything the multiplier pushes past\n"
-"the top of the range rolls off smoothly instead, and the roll\n"
-"off is exactly nothing below the knee -- so at an exposure of\n"
-"one the frame is bit for bit what it would have been without\n"
-"this stage at all.\n"
-"\n"
-"Only meaningful while the output colour transform is on: with\n"
-"it off the engine is not working in light, and a multiplier\n"
-"there would scale display numbers rather than exposure.");
+"Brightness multiplier applied to the finished image before it is\n"
+"encoded for the screen. 1 leaves it alone. Bright areas roll off\n"
+"smoothly instead of clipping. Only used while the output colour\n"
+"transform is on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3216,24 +2246,10 @@ void RenderParams::removeExposure() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docMaxViewIds() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many backend view ids the render engine may hand out, which\n"
-"is what decides how many 3D views can draw on it at once: each\n"
-"view takes a block for its pass sequence (about 13 ids for a\n"
-"plain viewer, docs/RenderEngine.md #3.1), and a view that finds\n"
-"no block left falls back to plain GL rather than failing. So the\n"
-"default is roughly 64 viewers, and 0 asks for the build's own\n"
-"ceiling instead, which is four times that.\n"
-"\n"
-"It is worth having a limit below the ceiling because the backend\n"
-"copies its whole view table once a frame and sizes its per-view\n"
-"pools from this number, so ids nobody opens are still paid for\n"
-"in every frame. Measured on a desktop GPU that cost is invisible\n"
-"against a 16ms frame at this width - but at the ceiling, with\n"
-"render stage timing on, it is not: the per-view GPU timer pools\n"
-"take a 59fps session to 19. Raise it for many-viewer work, not\n"
-"as a matter of course.\n"
-"\n"
-"Read once, when the backend starts: a change needs a restart.");
+"How many view ids the render backend may hand out, which limits how\n"
+"many 3D views can draw with it at once (about 13 ids per view; a view\n"
+"that finds none left falls back to plain GL). 0 asks for the build's\n"
+"maximum. Read when the backend starts: a change needs a restart.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3259,27 +2275,42 @@ void RenderParams::removeMaxViewIds() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docReadbackFrameMode() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How a frame reaches the screen on Direct3D, Vulkan and Metal. 'Wait'\n"
+"shows every frame as soon as it is drawn. 'Pipelined' shows it a frame\n"
+"or two late and is faster. 'Pipelined while animating' waits except\n"
+"while the view redraws by itself. Not used with OpenGL.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & RenderParams::getReadbackFrameMode() {
+    return instance()->ReadbackFrameMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & RenderParams::defaultReadbackFrameMode() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setReadbackFrameMode(const long &v) {
+    instance()->handle->SetInt("ReadbackFrameMode",v);
+    instance()->ReadbackFrameMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removeReadbackFrameMode() {
+    instance()->handle->RemoveInt("ReadbackFrameMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docBackgroundReleaseDelay() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Milliseconds a 3D view may sit in the background before it gives\n"
-"its render targets back, or 0 to let a hidden view keep them.\n"
-"\n"
-"Targets are what a view mostly costs: 287MB was measured for one\n"
-"1644x653 view with every effect on, and until now it held them\n"
-"whether or not anyone could see it -- so a session with several\n"
-"documents open paid for all of their views to look at one. This\n"
-"gives that back for the views nobody is looking at. What the view\n"
-"keeps is everything a resize keeps: its programs, its uniforms\n"
-"and its uploaded scene, so coming back is the resize path and not\n"
-"a reload.\n"
-"\n"
-"The delay is what stops it firing on a click through the tabs.\n"
-"Coming back costs the one frame that rebuilds the targets (~68ms\n"
-"on the view measured above) and gives a byte-identical picture --\n"
-"the trade is a hitch on return against the memory in between,\n"
-"never a difference in the image. Lower it to release sooner on a\n"
-"machine short of VRAM; raise it if switching back and forth\n"
-"hitches.");
+"Milliseconds a 3D view may stay in the background before it gives its\n"
+"render targets back to free GPU memory. Returning to the view costs\n"
+"one frame to rebuild them, with the same picture. 0 never releases.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3307,40 +2338,11 @@ void RenderParams::removeBackgroundReleaseDelay() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docCoarseTessellation() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Ladder level shapes are tessellated at under coarse-first\n"
-"(docs/SceneStreaming.md #7): the display mesh is built at this\n"
-"rung of the fidelity ladder and the exact tessellation is\n"
-"declared unbuilt, generated on demand when a camera asks for it.\n"
-"0 is the coarsest rung, each level halves the error; -1 always\n"
-"tessellates exact up front (pre-ladder behavior).\n"
-"\n"
-"Consulted whenever something can deliver the exact rung on\n"
-"demand, which is a scene stream server (its viewers ask) OR a\n"
-"desktop view in render cache mode 3 whose backend drives mesh\n"
-"levels (its own level plan asks when the camera settles) - see\n"
-"PartGui::coarseTessellationLevel. Plain Coin display has neither\n"
-"and keeps the exact tessellation, because a coarse build there\n"
-"would stay coarse forever. This is not a serving-only feature,\n"
-"and it does engage for geometry built while a document loads.\n"
-"\n"
-"What a serving process lacks is not this setting but the local\n"
-"level plan, which is disabled there - its rungs refine only where\n"
-"a connected viewer's camera asks, so with no viewer attached they\n"
-"stay coarse, while a desktop view refines its own. That, not the\n"
-"setting, is why the two publish different geometry for one\n"
-"document (measured on a 40-object scene: 8310 vertices serving,\n"
-"25595 on the desktop). Desktop refinement is tolerance-limited,\n"
-"so what it settles at is a property of the framing.\n"
-"\n"
-"A level whose rung is already finer than a shape's exact\n"
-"tessellation coarsens nothing, so on small shapes the low levels\n"
-"do nothing visible - the default 2 is a no-op on a scene of small\n"
-"ellipsoids that level 0 visibly coarsens.\n"
-"\n"
-"The FC_COARSE_TESSELLATION environment variable overrides this for\n"
-"a whole process and returns before the gate is evaluated, so it\n"
-"forces coarse-first on where the gate would have refused. Takes\n"
-"effect when a shape (re)tessellates.");
+"Ladder level a shape is first tessellated at: 0 is the coarsest, each\n"
+"level halves the error, and the exact mesh is built on demand when a\n"
+"camera needs it. -1 always tessellates exact up front. Used by a view\n"
+"in render cache mode 3 and by a scene stream server; takes effect when\n"
+"a shape is tessellated again.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3401,13 +2403,10 @@ void RenderParams::removeCoarseDeferFaces() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docCoarseDeferAtLeisure() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"A shape drawn as a bounding-box stand-in (CoarseDeferFaces) gets\n"
-"its coarse tessellation also where the camera does not see it, at\n"
-"leisure: behind everything asked for in view, and landed once the\n"
-"load has built its visuals (docs/DocumentLoad.md sec 18.13). Its\n"
-"picture is then there when the camera turns. Off, such a shape\n"
-"stays a box until the camera turns to it, and costs no mesh\n"
-"until then. Takes effect when a shape (re)tessellates.");
+"A shape drawn as a bounding box (CoarseDeferFaces) gets its mesh in the\n"
+"background also where the camera does not see it, so its picture is\n"
+"there when the camera turns. Off, it stays a box until the camera turns\n"
+"to it. Takes effect when a shape is tessellated again.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3435,34 +2434,11 @@ void RenderParams::removeCoarseDeferAtLeisure() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPreMeshOnLoad() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Tessellate a restored document's parked shapes on worker\n"
-"threads, before the drain that displays them builds any of them\n"
-"(docs/DocumentLoad.md sec 18).\n"
-"A load's visual build is mostly tessellation -- measured on a\n"
-"17058-solid assembly, 16.0s of the drain's 25.3s -- and it runs\n"
-"one shape at a time on the GUI thread, which is where the display\n"
-"nodes are. OCCT's own parallelism does not answer that: BRepMesh\n"
-"splits ONE shape over its faces, and a model made of thousands of\n"
-"small parts gives it nothing to split. Measured over such a build\n"
-"the process held 2.04 cores of 28 -- and turning that parallelism\n"
-"off costs 4.8s of a 22s mesh term, so it does help, it just\n"
-"cannot scale.\n"
-"Meshing DIFFERENT shapes at once scales: 7171 shapes took 3.8s of\n"
-"wall time against 16.0s serial, the drain's build fell from 25.3s\n"
-"to 13.5s, and the settled frame arrived about 12s sooner -- with\n"
-"the frame pixel-identical and every triangle count unchanged.\n"
-"Only shapes whose ask can be reproduced exactly are pre-meshed.\n"
-"The claim carries the GEOMETRY bounding box the ask derives from,\n"
-"because BRepBndLib prefers a resident triangulation and enlarges\n"
-"the box by its deflection -- measuring again after the pre-mesh\n"
-"would ask for something coarser than what is resident, and a\n"
-"finer resident mesh is refused by default, so the call would\n"
-"re-tessellate exactly what was just built. Roots sharing a face\n"
-"or an edge with another root, instancing candidates and the\n"
-"oversized shapes that take a stand-in are left alone, and a build\n"
-"whose shape is still being meshed parks itself rather than read\n"
-"a triangulation mid-write.\n"
-"");
+"Tessellate the shapes of a document being opened on worker threads,\n"
+"before they are built for display one by one on the GUI thread. Opens\n"
+"a document of many small parts sooner, with the same result. Shapes\n"
+"that share faces or edges with another, and instancing candidates, are\n"
+"left to the normal path.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3490,31 +2466,10 @@ void RenderParams::removePreMeshOnLoad() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docMeshSkipRedundant() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Ask the shape whether it is already tessellated the way this\n"
-"rebuild wants it, and skip the tessellation call outright when it\n"
-"is (docs/SceneStreaming.md #13e).\n"
-"A visual rebuild always called BRepMesh_IncrementalMesh, on the\n"
-"assumption that a mesh already resident makes the call nearly\n"
-"free. Measured, it does not: half the calls of a mass descent --\n"
-"2462 of 4942 -- changed no triangle at all and still cost about\n"
-"19ms each, 27% of the whole descent's rebuild time, because\n"
-"reaching the conclusion means building OCCT's internal mesh model\n"
-"of the shape first.\n"
-"The check asks the same question that model would have answered,\n"
-"off the triangulations already hanging on the faces: OCCT's own\n"
-"consistency rule (BRepMesh_ModelPreProcessor), per face, plus the\n"
-"3D polygon of every free edge. It is all-or-nothing per shape and\n"
-"deliberately the stricter test -- one face that would be\n"
-"re-tessellated, one triangulation with an index out of range, and\n"
-"the call runs exactly as before, because the fallback is the real\n"
-"thing and there is nothing to gain by guessing.\n"
-"A resident mesh FINER than the ask is not adequate. That is not\n"
-"an oversight: the descent asks for a coarser mesh on purpose, to\n"
-"give memory back, and OCCT would coarsen it. Skipping there would\n"
-"quietly hold the memory the plan asked for.\n"
-"Off, the call is made unconditionally, as it always was. With the\n"
-"level plan narrating, the off arm also reports how often the\n"
-"check and the call agreed, which is what says the check is safe.");
+"Check whether a shape is already tessellated the way a rebuild wants\n"
+"it, and skip the tessellation call when it is. The check is strict: a\n"
+"single face that would be re-tessellated and the call runs as before.\n"
+"Off makes the call every time.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3542,40 +2497,10 @@ void RenderParams::removeMeshSkipRedundant() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docMeshSkipFinerResident() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Count a resident mesh FINER than the rebuild asked for as\n"
-"adequate, instead of re-tessellating to coarsen it\n"
-"(docs/SceneStreaming.md #13e). Only consulted when redundant\n"
-"tessellation is being skipped at all.\n"
-"Strictly, finer is not adequate: the descent asks coarse on\n"
-"purpose to hand memory back, and OCCT coarsens the mesh when\n"
-"asked with quality decrease allowed. That is why the check\n"
-"refuses it by default -- accepting it would be the feature\n"
-"quietly holding the memory the level plan asked for.\n"
-"Measured on the descent, though, that is what the refusal is\n"
-"actually costing and it is nearly all of it: 2599 of the 2765\n"
-"refused calls had a resident mesh exactly twice as fine as the\n"
-"ask -- the previous ladder rung, one dynamic scale step back --\n"
-"and every one of them changed no triangle when the call was\n"
-"made anyway. The faces were already at their floor; a face of\n"
-"two triangles does not coarsen.\n"
-"So this trades a coarsening that mostly achieves nothing for the\n"
-"~19ms it costs to find that out. What it risks is the minority\n"
-"where the coarsening WOULD have removed triangles, which is\n"
-"memory the plan then has to recover some other way -- through\n"
-"the refine pool's own coarser rung, where it was always meant to\n"
-"come from.\n"
-"OFF BY DEFAULT, and the reason is that risk, measured. Audited\n"
-"with every call still made so the check can be scored against\n"
-"what the call actually did, this rule predicted 3381 calls\n"
-"redundant and 753 of them -- 22%, better than one in five --\n"
-"rebuilt anyway. Those are real coarsenings it would have\n"
-"skipped, and real memory the plan would not get back. The\n"
-"strict rule's own score on the same instrument is 1 in 7403.\n"
-"/!\\ Never read that count from a run with the skip ON: a call\n"
-"that is skipped is never made, so nothing can say whether it\n"
-"would have rebuilt, and the wrong-verdict column can only\n"
-"count calls the check refused. A zero there is guaranteed by\n"
-"construction rather than earned.");
+"With redundant tessellation skipped, also count a mesh finer than the\n"
+"one asked for as good enough, instead of re-tessellating to coarsen it.\n"
+"Saves time on a descent, but can keep memory the level plan asked to\n"
+"have back, which is why it is off by default.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3603,33 +2528,10 @@ void RenderParams::removeMeshSkipFinerResident() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docMeshSkipInvariant() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Skip a tessellation call on a shape whose mesh provably cannot\n"
-"depend on the deflection asked: every face planar, every edge\n"
-"curve a straight line (docs/SceneStreaming.md #13e). A plane\n"
-"deviates from its triangulation by zero and a straight edge\n"
-"discretizes to its two endpoints at ANY deflection, so the call\n"
-"would rebuild the identical mesh -- there is no ask, coarser or\n"
-"finer, at which such a shape tessellates differently.\n"
-"This is the geometric statement behind the measured descent\n"
-"waste: most mechanical parts hit their floor immediately, and a\n"
-"mass descent then pays ~19-38ms per object per step (56-60% of\n"
-"all drop-phase mesh time on the rack model) for BRepMesh to\n"
-"rebuild what cannot change. The empirical exhaustion proof the\n"
-"ladder keeps (scaleSpent) cannot be used for a skip -- audited\n"
-"twice, 14-20% of proved shapes resume coarsening at some later\n"
-"ask, and those rebuilds reclaim real memory. The geometric rule\n"
-"is immune to that leak: the shapes that resume are exactly the\n"
-"curved ones it refuses to claim, and an all-linear mesh cannot\n"
-"shrink, so no reclaim is ever forgone.\n"
-"The classification walks surface and curve TYPES once per shape\n"
-"and is cached; conservative on both counts (a trimmed or offset\n"
-"plane, a straight b-spline, count as curved). The skip is also\n"
-"refused while any face is missing its triangulation -- building\n"
-"that is exactly the call's job.\n"
-"With the level plan narrating and this OFF, the rule is still\n"
-"evaluated and scored against every call it would have skipped --\n"
-"read its WRONG column from that arm only; a run with the skip on\n"
-"cannot score calls it never made.");
+"Skip a tessellation call on a shape whose mesh cannot depend on the\n"
+"deflection asked for: every face planar and every edge a straight\n"
+"line. Such a shape gives the same mesh at any coarseness, so the call\n"
+"would only rebuild what is there.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3657,13 +2559,9 @@ void RenderParams::removeMeshSkipInvariant() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docProgressiveLoad() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Build the visual representation of a restored document after\n"
-"the load instead of inline inside it. Opening a large document\n"
-"otherwise tessellates every shape on the main thread while\n"
-"nothing paints - the visual build is the largest single stage of\n"
-"a load. Deferred, the window comes up first and the parts appear\n"
-"in bounded slices with the view painting between them. Read as\n"
-"each restored shape asks for its visual.");
+"Build the display of a document after it has opened instead of during\n"
+"the load. The window comes up first and the parts appear in slices,\n"
+"with the view painting in between.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3691,13 +2589,9 @@ void RenderParams::removeProgressiveLoad() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docProgressiveLoadBudgetMS() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How long one slice of deferred visual building may run before\n"
-"returning to the event loop, when Progressive document load is\n"
-"on. Larger finishes the document sooner, smaller keeps the window\n"
-"more responsive while it fills in. Each slice is paid for with a\n"
-"repaint of a large scene, which is why slices this long are worth\n"
-"it - much smaller and the fill is paced by redraws rather than by\n"
-"the building. Read at each slice.");
+"With ProgressiveLoad: milliseconds one slice of building the display\n"
+"may run before the window is updated. Larger finishes sooner, smaller\n"
+"keeps the window more responsive.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3758,16 +2652,10 @@ void RenderParams::removeLevelThreads() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelMemoryFloorMB() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Available system memory below which an exact re-tessellation\n"
-"will not start (docs/SceneStreaming.md #13): the desktop refine\n"
-"worker checks the system's own estimate of allocatable memory\n"
-"before each exact build, and dropping under this floor counts as\n"
-"a memory-ceiling observation - the same as a caught allocation\n"
-"failure - after which the level plans also demote exact meshes\n"
-"the camera would not miss back to their resident coarse rung.\n"
-"0 sizes the floor automatically (at least 512 MB, or 1/16 of\n"
-"physical memory if that is more). Read when the first refine is\n"
-"queued.");
+"Free system memory, in megabytes, below which no exact\n"
+"re-tessellation is started; from then on exact meshes the camera does\n"
+"not need are given up as well. 0 chooses automatically (512 MB, or a\n"
+"sixteenth of physical memory if that is more).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3795,18 +2683,10 @@ void RenderParams::removeLevelMemoryFloorMB() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelDebug() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Narrate what each mesh-level plan decides (docs/SceneStreaming.md\n"
-"#13): the GPU budget it decided against and the bytes in use, how\n"
-"many displayed sources stand at their coarse and exact rungs, and\n"
-"how many refines, demotes and downgrades the plan asked for.\n"
-"Reported on the plan's own cadence - a camera pause - because it\n"
-"is a decision, not a per-frame cost.\n"
-"Needed to tell a ladder that will not descend apart from one that\n"
-"never ran: on the desktop OpenGL backend the automatic GPU budget\n"
-"is 0 (bgfx's GL renderer reports no limit), so the downgrade half\n"
-"of the plan never executed at all and nothing said so.\n"
-"The FC_LEVEL_DEBUG environment variable also turns it on. Read\n"
-"once, at the first plan.");
+"Diagnostic. Logs what each mesh level plan decides: the GPU budget and\n"
+"the memory in use, how many objects are coarse or exact, and how many\n"
+"refines and downgrades it ordered. The FC_LEVEL_DEBUG environment\n"
+"variable turns it on too. Read at the first plan.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3834,16 +2714,9 @@ void RenderParams::removeLevelDebug() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelCeilingSimulateMB() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Pretend the system ran out of memory for exact re-tessellation\n"
-"(docs/SceneStreaming.md #13), so the CPU-side half of the level\n"
-"plan can be exercised on a machine that has memory to spare.\n"
-"Non-zero raises the floor that the refine worker compares\n"
-"available memory against, so builds are refused and a memory\n"
-"ceiling is observed - after which the plans start demoting exact\n"
-"meshes the camera would not miss back to their coarse rung.\n"
-"A simulation knob, not a tuning one: LevelMemoryFloorMB is the\n"
-"real floor, and this overrides it upward only.\n"
-"Read when a refine is dequeued, so it takes effect live.");
+"Testing aid. Pretend the system has less free memory than this many\n"
+"megabytes, so the low-memory behaviour of the level plan can be tried\n"
+"on a machine with memory to spare. 0 turns it off.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3871,15 +2744,11 @@ void RenderParams::removeLevelCeilingSimulateMB() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docGpuMemoryBudgetMB() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"GPU geometry budget of the desktop mesh-level plan\n"
-"(docs/SceneStreaming.md #13): while the uploaded geometry exceeds\n"
-"it, a camera pause downgrades the *displayed* mesh of objects the\n"
-"camera would not miss - off screen, or coarse within half the\n"
-"Level tolerance - back to their coarse rung. Their exact meshes\n"
-"stay in CPU RAM, so zooming back in re-activates them instantly,\n"
-"with no re-tessellation. 0 means automatic: the graphics API's\n"
-"own reported GPU memory limit where it states one (Direct3D and\n"
-"Vulkan do; OpenGL reports nothing, and then no budget applies).");
+"GPU memory, in megabytes, the displayed geometry may use. Over it,\n"
+"objects the camera would not miss are shown with their coarse mesh;\n"
+"the exact one stays in main memory and returns at once on zooming in.\n"
+"0 uses the limit the graphics API reports (OpenGL reports none, and\n"
+"then no budget applies).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3907,17 +2776,10 @@ void RenderParams::removeGpuMemoryBudgetMB() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelTolerance() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Screen-space error, in pixels, a coarse tessellation may\n"
-"commit before the exact one is built (docs/SceneStreaming.md\n"
-"#13): on a coarse-first desktop view (render cache mode 3 with\n"
-"a backend that drives the level plan), a camera pause re-plans\n"
-"the scene and only objects whose coarse mesh errs by more than\n"
-"this many pixels on screen re-tessellate exactly - off-screen\n"
-"and distant objects stay at the cheap coarse mesh until the\n"
-"camera makes them matter. 0 or less refines everything\n"
-"immediately; larger keeps more of the scene coarse. The\n"
-"streamed viewer's own tolerance is its lodpx URL parameter\n"
-"(same meaning, same default).");
+"Error in pixels on screen a coarse mesh may show before the exact one\n"
+"is built. When the camera stops, only objects that exceed it are\n"
+"refined. 0 or less refines everything at once; larger keeps more of\n"
+"the scene coarse.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3945,24 +2807,10 @@ void RenderParams::removeLevelTolerance() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelPressureRelease() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How much of the raised refine tolerance the plan keeps each\n"
-"time it comes in under the GPU budget (docs/SceneStreaming.md\n"
-"#13c.3). While the budget is exceeded the plan accepts visible\n"
-"error to fit the scene, and it must not hand that error straight\n"
-"back the moment one plan fits: measured on a 5455-object model at\n"
-"a 64MB budget, clearing it in one step took the tolerance from\n"
-"51 pixels to 2, asked 946 objects to re-tessellate at once, broke\n"
-"the budget again and cycled -- 43 plans in 611 seconds with no\n"
-"steady state at any point.\n"
-"So quality comes back in steps: each plan that fits keeps this\n"
-"fraction of the standing tolerance, and a step that puts the\n"
-"scene back over budget is remembered as a floor the release never\n"
-"passes again, so the ladder settles at the coarsest tolerance\n"
-"that actually fits instead of oscillating around it. The floor is\n"
-"forgotten when the camera moves or the budget changes, which is\n"
-"when what a rung costs on screen changes.\n"
-"Smaller gives quality back faster and risks the cycle; larger is\n"
-"gentler and slower. 0 or less restores the immediate snap.");
+"After the scene has been coarsened to fit the GPU budget: the fraction\n"
+"of the raised tolerance kept each time a plan fits again, so quality\n"
+"returns in steps instead of all at once and over the budget again.\n"
+"Smaller returns quality faster. 0 or less returns it in one step.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3990,19 +2838,10 @@ void RenderParams::removeLevelPressureRelease() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docClimbHardLimit() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Whether the GPU budget is an absolute ceiling for the level\n"
-"plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a\n"
-"plan whose allocator-exact uploaded total stands at or above\n"
-"the budget admits NO refine and cancels every climb still in\n"
-"flight -- the existing de-want pass aborts them -- and below\n"
-"the ceiling climbs are admitted in small batches (Climb\n"
-"admission batch) so the total approaches the ceiling in\n"
-"verified steps instead of overshooting it in one plan. Judged\n"
-"against the uploaded TOTAL, not the two-frame live census: the\n"
-"census alternates under churn and is what let climbs land\n"
-"over budget. A crossing is bounded by one batch's bytes;\n"
-"per-climb pre-sizing needs rung-keyed GPU cache entries and is\n"
-"future work. Off restores unadmitted climbing.");
+"Treat the GPU memory budget as a hard ceiling for refinement: at or\n"
+"above it no object is refined and refinements under way are\n"
+"cancelled; below it they are admitted in small batches\n"
+"(ClimbAdmitBatch). Off refines without this check.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4064,16 +2903,9 @@ void RenderParams::removeClimbAdmitBatch() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelLandBudgetMS() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How long one event-loop turn may spend landing finished\n"
-"worker jobs (climb refines and descent coarsenings alike).\n"
-"Landings arrive as queued events, and Qt delivers every\n"
-"pending one in a single sweep -- a batch of 64 landings ran\n"
-"back-to-back for measured 1-2.7s stretches in which no paint,\n"
-"timer or input event was served. The pump runs landings until\n"
-"this budget is spent, then yields the loop and reschedules;\n"
-"a single landing larger than the budget still lands whole\n"
-"(items are not sliceable). Small keeps the UI responsive\n"
-"under a landing storm; large lands a converging scene sooner.");
+"Milliseconds one turn of the event loop may spend installing finished\n"
+"mesh level changes before it returns to painting and input. Smaller\n"
+"keeps the window more responsive, larger finishes sooner.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4101,24 +2933,9 @@ void RenderParams::removeLevelLandBudgetMS() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docMeshSkipLanded() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Whether the rebuild half of a landing skips its OCCT mesh\n"
-"call. A worker landing (climb, scale-descent, stand-in\n"
-"resolution) or a demote/downgrade installs or re-activates the\n"
-"very triangulation the following rebuild displays, and on\n"
-"every such path the resident rung is never coarser than the\n"
-"ask -- BRepMesh there can only validate: measured 18.3s of a\n"
-"92s budget drop (991 validated-only calls, 0.1-0.8s each on\n"
-"large compounds), plus ~1s per landing of a giant re-FAILING\n"
-"the faces the worker's mesher had already failed. Keyed on\n"
-"the path of the one rebuild the landing just prepared, never\n"
-"on the shape's descent history (the exhaustion-proof leak\n"
-"that killed the spent-keyed skip does not reach a per-rebuild\n"
-"claim). Audited at 94 percent exact no-ops; the rest are\n"
-"BRepMesh re-meshing a few faces within ~5 percent of the\n"
-"triangle count in either direction -- perturbation of a rung\n"
-"the ladder chose to display, not reclaim forgone. The level\n"
-"debug flag scores the claim either way; read the 'landed\n"
-"rule' audit line before trusting a change here.");
+"Skip the tessellation call in the rebuild that follows a mesh level\n"
+"change, where the mesh just installed is the one to display and the\n"
+"call could only confirm it.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4146,23 +2963,10 @@ void RenderParams::removeMeshSkipLanded() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docVisualFillOnPool() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Whether the display-array fill of a big landing rebuild runs\n"
-"on the refine worker pool instead of the GUI thread. After the\n"
-"mesh call was skipped on landings (Skip mesh call on landing\n"
-"rebuilds), the traversal that copies the resident\n"
-"triangulations into the Coin arrays became the per-item floor\n"
-"of the landing pump: 0.3-0.65s per 15-21k-face compound,\n"
-"unsliceable, against a 200ms interactivity gate. With this on,\n"
-"the rebuild captures handles to the resident triangulations\n"
-"and edge polygons (the only state another thread may swap\n"
-"under it -- the topology itself is immutable at runtime),\n"
-"fills detached arrays on a worker, and lands them back through\n"
-"the landing pump as plain array writes. The landing is\n"
-"guarded by the shape identity and a per-object generation\n"
-"count, so a rebuild that ran for any other reason in between\n"
-"simply wins. Only rebuilds inside the landing pump with at\n"
-"least 'Minimum faces for a pooled fill' faces take this path;\n"
-"everything else fills inline exactly as before.");
+"Fill the display arrays of a large object on a worker thread instead\n"
+"of the GUI thread, after a mesh level change. Keeps the window\n"
+"responsive while big objects change level. Applies to objects with at\n"
+"least VisualFillMinFaces faces.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4224,19 +3028,10 @@ void RenderParams::removeVisualFillMinFaces() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docWorkerVertexCache() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Whether a scene publish adopts the vertex-cache content the\n"
-"fill worker emitted at landing instead of re-capturing the\n"
-"shape by traversal (docs/WorkerVertexCache.md). The capture\n"
-"walks every triangle through a hash-dedup a second time to\n"
-"rebuild exactly the arrays the fill already computed; with\n"
-"this on, the worker emits those arrays next to the display\n"
-"arrays and the publish installs them directly. Uniform-color\n"
-"shapes only -- per-face colors, textures and marker sets fall\n"
-"back to the traversal capture, as does any shape whose nodes\n"
-"were touched after the landing registered the content. 0 is\n"
-"off, 1 adopts, 2 adopts nothing but runs the traversal capture\n"
-"and compares it against the worker's content, logging any\n"
-"disagreement -- slow, for checking the emission, not for use.");
+"Use the vertex arrays a worker thread already computed for a rebuilt\n"
+"shape instead of capturing them again from the scene. 0 off, 1 on,\n"
+"2 does both and logs any difference (slow, for checking). Shapes with\n"
+"one colour only.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4264,22 +3059,10 @@ void RenderParams::removeWorkerVertexCache() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docCaptureBudgetMS() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How long one scene publish may spend re-capturing changed\n"
-"shapes into vertex caches before the rest are deferred. The\n"
-"capture walks a changed shape's primitives one triangle at a\n"
-"time, and during a descent storm every landed batch pays that\n"
-"on the next paint: mid-paint stack samples put the capture at\n"
-"about half of 250-850ms publish frames. Once this budget is\n"
-"spent, each remaining changed shape keeps its previous vertex\n"
-"cache for this frame (a shape captured for the first time\n"
-"stays out of the frame entirely -- progressive appearance,\n"
-"same as a live import), the caches on its path are left\n"
-"unclosed for reuse, and another publish is scheduled; captured\n"
-"shapes turn valid and prune, so successive frames always make\n"
-"progress. The display is at worst a few frames stale in a\n"
-"scene that is churning anyway; a single changed object never\n"
-"comes near the budget. 0 captures everything in one frame,\n"
-"as before this parameter existed.");
+"Milliseconds one scene update may spend capturing changed shapes\n"
+"before the rest wait for the next frame. Keeps frames short while many\n"
+"objects change at once; a waiting shape shows its previous state for\n"
+"a frame or two. 0 captures everything in one frame.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4307,17 +3090,9 @@ void RenderParams::removeCaptureBudgetMS() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelSlowBuildMS() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"A visual rebuild whose own cost passes this many\n"
-"milliseconds reports its time split (traversal, mesh,\n"
-"prologue, instancing, highlight) on one line naming the\n"
-"object, under the level debug flag. The aggregate split says\n"
-"where a mass descent's time goes; the landing pump's worst\n"
-"turn is a single object's whole rebuild, and only a per-build\n"
-"line says what that object spent it on. The same threshold\n"
-"arms the slow-dispatch line in GUIApplication::notify, which\n"
-"names the receiver of any single event-loop dispatch this\n"
-"slow -- the net that catches a stall no timer above\n"
-"bracketed. 0 turns both lines off.");
+"Diagnostic, with LevelDebug: a display rebuild, or a single event,\n"
+"that takes longer than this many milliseconds is logged with where the\n"
+"time went. 0 turns it off.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4345,15 +3120,9 @@ void RenderParams::removeLevelSlowBuildMS() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDescentOrderBatch() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many descents (demotes/downgrades) one plan pass may\n"
-"order, free tier and priced tier together; 0 removes the cap.\n"
-"Each order enqueues a worker job -- the coarsening itself runs\n"
-"on the refine pool -- but the enqueue snapshots the object's\n"
-"display arrays on the GUI thread, so an unbounded pass (the\n"
-"measured 1500-order plans) is itself a stall. Deferred\n"
-"candidates keep their hooks and the replan after the batch\n"
-"lands re-finds them, so nothing is refused, only paced -- the\n"
-"climb admission batch's mirror.");
+"How many downgrades one plan may order at a time. The rest are found\n"
+"again by the next plan, so nothing is lost, only paced. 0 removes the\n"
+"limit.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4381,24 +3150,10 @@ void RenderParams::removeDescentOrderBatch() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDowngradeLedger() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Whether the GPU downgrade sweep carries its own unlanded\n"
-"orders as credit against the next plan's deficit\n"
-"(docs/SceneStreaming.md #13c.4). A downgrade frees exactly the\n"
-"bytes it prices, but not WHEN the plan next looks: the swap\n"
-"uploads the coarse rung immediately while the fine buffers\n"
-"leave the live meter only after the collection window -- on a\n"
-"heavy scene, seconds -- so a plan sampling mid-transition reads\n"
-"old+new at once, computes a larger deficit than the one just\n"
-"covered, and walks other sources further down. Measured on a\n"
-"5455-object model at 64MB with the camera inside the assembly:\n"
-"single plans requesting 1500+ downgrades, live tripling during\n"
-"the storm, and the whole registry drained to its bottom rung\n"
-"while the settled memory was under budget all along.\n"
-"With the ledger, promised bytes hold the sweep until they are\n"
-"observed landing or written off a few frames after the ordered\n"
-"worker jobs have all drained (an order's bytes cannot land\n"
-"before its descent job does); off restores the storming\n"
-"behaviour for comparison.");
+"Count the GPU memory that downgrades already ordered will free as\n"
+"credit against the next plan's shortfall. Without it a plan made while\n"
+"those are still in flight orders them again, and far more than needed.\n"
+"Off is the older behaviour, kept for comparison.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4426,14 +3181,8 @@ void RenderParams::removeDowngradeLedger() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelCount() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many rungs the fidelity ladder declares\n"
-"(docs/SceneStreaming.md #13). Rung n is tessellated at a\n"
-"deflection of the shape diagonal over 8<<n, so rung 0 is the\n"
-"coarsest and each further rung halves the error; this bounds\n"
-"what Coarse tessellation level may select and how far a source\n"
-"may climb. Raising it adds finer rungs, not coarser ones -- to\n"
-"go below rung 0 the plan scales an object's error instead, see\n"
-"Level scale.");
+"Number of levels of the mesh ladder. Level 0 is the coarsest and each\n"
+"further level halves the error, so raising this adds finer levels.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4461,19 +3210,10 @@ void RenderParams::removeLevelCount() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelScale() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"What the level plan multiplies an object's error by when it\n"
-"must free memory and every ordinary descent is exhausted\n"
-"(docs/SceneStreaming.md #13). Rung 0 is not the floor: under a\n"
-"budget the plan keeps picking objects -- individually, cheapest\n"
-"visible error first, never the whole scene at once -- and\n"
-"re-tessellates each one this much coarser again, until the\n"
-"model fits. An object whose scaled error reaches Level scale\n"
-"box error is replaced by its bounding box, which is the real\n"
-"floor: coarsening a deflection cannot drop a planar face below\n"
-"the two triangles it always has, and on a measured STEP\n"
-"assembly a 4x coarser tessellation removed only 19% of the\n"
-"primitives. 1 or less turns dynamic scaling off, and then a\n"
-"budget under what rung 0 costs cannot be honoured.");
+"Factor by which an object is tessellated coarser again when GPU\n"
+"memory is still short at the coarsest ladder level. Applied object by\n"
+"object, least visible error first, until the scene fits. 1 or less\n"
+"turns this off.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4501,25 +3241,9 @@ void RenderParams::removeLevelScale() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelBudgetDeadband() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"The rest band above the GPU memory budget, as a fraction of\n"
-"it, inside which the level plan orders NO downgrades. The sweep\n"
-"triggers only past budget*(1+this) and still corrects back to\n"
-"the budget itself, so the band is hysteresis, not a higher\n"
-"budget.\n"
-"Without it an equilibrium that lands ON the budget line has\n"
-"nowhere to rest: the plan orders 2-3 downgrades, the release\n"
-"staircase re-wants the quality back, and the ladder dithers\n"
-"0.2-0.4MB across the line for as long as the process lives --\n"
-"measured on the rack model as the difference between a run\n"
-"that settles in ~250s and one that churns its whole 600s\n"
-"window. Climbs already stop AT the budget (Climb hard limit),\n"
-"so inside the band neither direction acts and the plans go\n"
-"genuinely quiet; pressure counts as standing there, which\n"
-"keeps the raised tolerance and the edge gate latched exactly\n"
-"as they were while the equilibrium was reached.\n"
-"The band tolerates standing that fraction over the stated\n"
-"budget (about 2MB at 64MB). 0 restores the bare line and with\n"
-"it the dither.");
+"Band above the GPU memory budget, as a fraction of it, inside which no\n"
+"downgrades are ordered. Keeps a scene that settles at the budget from\n"
+"going back and forth across it. 0 removes the band.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4547,17 +3271,10 @@ void RenderParams::removeLevelBudgetDeadband() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPerViewShownEvictWatermark() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"The memory level, as a fraction of the GPU memory budget, above\n"
-"which the level plan evicts RELEASED per-view-shown objects:\n"
-"hidden objects some view showed on its own and none shows any\n"
-"more, which the shared capture keeps for a quick show again.\n"
-"Nothing on screen needs them, so they go first -- below the\n"
-"budget, before any sweep that costs visible quality -- the big\n"
-"and the long released before the recent, until the use is back\n"
-"at the watermark. Under an observed CPU memory ceiling they go\n"
-"first too, against the CPU shortfall. No GPU budget (GL states\n"
-"none) means no GPU trigger. 1 or more waits for the budget\n"
-"itself.");
+"GPU memory use, as a fraction of the budget, above which objects that\n"
+"one view had shown on its own and no view shows any more are freed.\n"
+"They go first, before anything that costs visible quality. 1 or more\n"
+"waits for the budget itself.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4585,13 +3302,9 @@ void RenderParams::removePerViewShownEvictWatermark() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLevelScaleBoxError() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"The scaled error at which an object stops being tessellated\n"
-"at all and is drawn as its bounding box (12 triangles whatever\n"
-"its face count), expressed relative to the shape diagonal. This\n"
-"is where the ladder stops paying for topology it can no longer\n"
-"resolve: past roughly a quarter of the diagonal a re-tessellated\n"
-"shape and its box commit similar error, and only the box\n"
-"actually removes the faces. 0 or less never substitutes a box.");
+"Error, relative to its diagonal, at which an object is no longer\n"
+"tessellated and is drawn as its bounding box. 0 or less never uses a\n"
+"box.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4619,26 +3332,10 @@ void RenderParams::removeLevelScaleBoxError() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docSimplifyExhausted() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"When re-tessellating an object coarser stops removing\n"
-"geometry, decimate the mesh it already has instead of dropping\n"
-"straight to its bounding box (docs/SceneStreaming.md #13c).\n"
-"The descent coarsens an object by asking OCCT for a larger\n"
-"deflection, and that saturates: a planar face is two triangles\n"
-"at any deflection, so a shape of flat faces answers the same\n"
-"mesh however coarse the ask. Past that point the only thing\n"
-"that removes geometry is a representation with fewer faces.\n"
-"Vertex clustering is the rung between the two: it keeps the\n"
-"object's shape, where the bounding box does not.\n"
-"Rewrites the display nodes only. Nothing re-tessellates and the\n"
-"OCCT triangulation is untouched, so the way back is one ordinary\n"
-"rebuild, and each further step down clusters on a coarser grid.\n"
-"Face and edge numbering survive: a face that decimates away to\n"
-"nothing keeps its (empty) slot, because those tables are read by\n"
-"element number.\n"
-"What it gives up is exactness of the decimated rung -- section\n"
-"caps through it can be rough, since clustering does not preserve\n"
-"watertightness, and the hidden-line seam filter is dropped\n"
-"because a welded edge may fold a seam and a non-seam together.");
+"When tessellating an object coarser no longer removes triangles,\n"
+"decimate the mesh it has instead of going straight to its bounding\n"
+"box. Display only: the shape and its exact mesh are untouched. Section\n"
+"caps through a decimated object can be rough.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4666,19 +3363,9 @@ void RenderParams::removeSimplifyExhausted() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docSimplifyMergeParts() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Let the decimator weld vertices across face boundaries\n"
-"instead of clustering each face on its own grid.\n"
-"Off, no output triangle spans two faces, so a modelled crease\n"
-"stays a crease and each face keeps at least the triangles its\n"
-"own cells produce. That floor is the catch: this rung is reached\n"
-"precisely when a shape is mostly flat faces, and per-face\n"
-"clustering cannot take a two-triangle face below two triangles.\n"
-"On, positions and attributes cluster once over the whole mesh,\n"
-"which is what actually removes geometry there -- at the cost of\n"
-"shading round creases the model really has.\n"
-"Face identity survives either way: a triangle still belongs to\n"
-"the face it came from, so per-face colour and selection keep\n"
-"working. Only the geometry is shared.");
+"Let decimation merge vertices across face boundaries. Removes far\n"
+"more triangles on shapes made of flat faces, but rounds real creases.\n"
+"Per-face colour and selection keep working either way.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4706,15 +3393,9 @@ void RenderParams::removeSimplifyMergeParts() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docSimplifyMinReduction() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How much of an object's triangle count a decimation pass has\n"
-"to remove for the result to be kept, as a percentage.\n"
-"Below it the pass is refused and the descent takes its next step\n"
-"instead, which is the bounding box. A rung that removes almost\n"
-"nothing is worse than not having one: it costs a node rewrite\n"
-"and still holds the memory that made the plan ask.\n"
-"This is also what stops the descent looping. Each step clusters\n"
-"on a coarser grid, so a mesh that has run out of things to merge\n"
-"keeps answering no and the object moves on to the box.");
+"Percentage of an object's triangles a decimation has to remove for the\n"
+"result to be kept. Below it the decimation is dropped and the object\n"
+"goes on to its bounding box.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4742,28 +3423,11 @@ void RenderParams::removeSimplifyMinReduction() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docShapeVertices() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Let the vertex points that sit on the ends of a shape's edges\n"
-"draw under the element contract (docs/SceneStreaming.md #13b):\n"
-"an attached point set draws only while its object's line set is\n"
-"shown and memory allows, is the FIRST class dropped under\n"
-"pressure and the LAST taken back. Off suppresses attached point\n"
-"sets outright, memory or not.\n"
-"A point is not cheap: it costs the GPU a 32-byte sprite instance\n"
-"record plus its index, roughly nine times what it occupies in\n"
-"the heap, which is why a CPU-currency measurement made them look\n"
-"negligible.\n"
-"All or nothing per point set, and only ATTACHED sets are ever\n"
-"gated: one floating vertex -- one no edge touches, and every\n"
-"point of a point cloud -- and the whole set ranks with the\n"
-"faces, because nothing else would show it. Objects are in\n"
-"practice all floating or none, so a per-vertex subset would buy\n"
-"nothing and cost an index permutation.\n"
-"It never applies in the Points display mode, where the vertices\n"
-"are what the mode exists to show.\n"
-"Picking, pre-selection and selection highlighting are unaffected:\n"
-"the point geometry stays published and resident, the highlight\n"
-"draws render on top as always, and only the base-pass submission\n"
-"is skipped.");
+"Draw the vertex points at the ends of a shape's edges. They are the\n"
+"first thing dropped when GPU memory is short and the last to return.\n"
+"Off never draws them. Free vertices and point clouds are always drawn,\n"
+"as is everything in Points mode; picking and highlighting are\n"
+"unaffected.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4791,28 +3455,11 @@ void RenderParams::removeShapeVertices() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPressureDropEdges() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Let the pressure stages of the element contract\n"
-"(docs/SceneStreaming.md #13b) stop drawing the edges that bound\n"
-"faces. Under the contract an attached line set draws only while\n"
-"its object's face set is shown and memory allows; pressure\n"
-"spends the classes points -> lines -> faces and takes them back\n"
-"in reverse, and this is the switch on the lines stage. Off\n"
-"exempts line sets from the pressure stages (a loading document\n"
-"still drops them).\n"
-"Edge geometry is the GPU's most expensive geometry per unit of\n"
-"screen information: a segment is 8 bytes of index in the heap\n"
-"and those 8 bytes plus a 64-byte quad-expansion instance record\n"
-"on the GPU.\n"
-"All or nothing per edge set, attached sets only: one floating\n"
-"edge -- a wire, a sketch, a datum line, any edge no face uses --\n"
-"and the whole set ranks with the faces, because it is the\n"
-"object, and dropping it would show nothing at all.\n"
-"It never applies in the Wireframe display mode, where the edges\n"
-"are what the mode exists to show.\n"
-"A display gate, not a residency change -- nothing is demoted and\n"
-"nothing re-tessellates, so entering and leaving it costs one\n"
-"frame, which is why it is spent before any rung is given up.\n"
-"Picking, highlighting and on-top rendering are unaffected.");
+"Allow the edges that bound faces to stop being drawn when GPU memory\n"
+"is short, after the vertices and before any face quality is given up.\n"
+"Wires, sketches and other edges no face uses are never dropped, and\n"
+"nothing is dropped in Wireframe mode. Picking and highlighting are\n"
+"unaffected.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4840,14 +3487,8 @@ void RenderParams::removePressureDropEdges() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docElementGateStagger() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many frames the element contract's pressure latch waits\n"
-"between stages (docs/SceneStreaming.md #13b), both escalating\n"
-"(points dropped, then lines if the budget is still exceeded) and\n"
-"releasing (lines back, then points, once the ladder has given\n"
-"back all raised error). The wait is what lets the buffer\n"
-"collector's census answer whether the cheaper stage was enough\n"
-"before the next one is spent, and what keeps the release from\n"
-"re-opening into the memory the collector just freed.");
+"Frames to wait between the steps that drop vertices and then edges\n"
+"when GPU memory is short, and between the steps that bring them back.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4875,26 +3516,9 @@ void RenderParams::removeElementGateStagger() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docTinyElementCutoff() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"MEASUREMENT INSTRUMENT, 0 = off. Suppress every line and\n"
-"point draw issuing this many primitives or fewer, regardless of\n"
-"the element contract -- floating sets included, which is the\n"
-"point: the contract deliberately never gates those, and they\n"
-"are what a far-field cut is left drawing\n"
-"(docs/FarFieldProxies.md 11.1i).\n"
-"\n"
-"It exists to price the DRAW axis, which this engine has only\n"
-"ever measured in the opposite regime. docs/DrawSubmission.md\n"
-"dismissed draw count on a frame averaging ~1540 primitives per\n"
-"draw, where the GPU is geometry-bound and a draw is free; the\n"
-"far-field residue is ~12 primitives per draw, where a draw is\n"
-"nearly all overhead. Setting this to ~24 on MiSTer removes\n"
-"about 2% of the primitives and about 44% of the draws, so any\n"
-"frame-time difference is attributable to draw count and not to\n"
-"geometry.\n"
-"\n"
-"Not a display feature: it makes real edges vanish, and picking,\n"
-"highlighting and on-top draws are exempt so the scene stays\n"
-"usable while it is on.");
+"Measuring tool, 0 = off. Stops drawing every line and point set of\n"
+"this many primitives or fewer, to see what the number of draw calls\n"
+"costs. Real edges disappear while it is on; not a display setting.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4922,46 +3546,10 @@ void RenderParams::removeTinyElementCutoff() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLoadDropElements() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Stop drawing edges AND vertices for as long as a document is\n"
-"still arriving (docs/SceneStreaming.md #13b), and let the two\n"
-"standing gates above decide again the moment it has finished.\n"
-"A load is when the tier can least afford those two classes and\n"
-"can least use them: the faces are arriving coarse-first and\n"
-"being replaced under the camera, nobody inspects a vertex of a\n"
-"model that is still half there, and every byte not uploaded to\n"
-"an edge instance buffer now is one the arriving geometry gets\n"
-"instead.\n"
-"RE-MEASURED 2026-08-15, and the earlier reading no longer\n"
-"holds. It used to suppress NOTHING on a .FCStd open: the load\n"
-"parked every visual build and published in one step at the\n"
-"end, so the renderer held an empty scene throughout -- 0\n"
-"drawables across 17.8s on a 5455-object model. The publish is\n"
-"incremental now, so the same open feeds the scene while the\n"
-"drain runs and the gate has real work: on the same model it\n"
-"climbs from 1123 to 5909 point and line draws suppressed, out\n"
-"of 11818 eligible in a 17727-drawable scene, and both edges\n"
-"are logged -- ON with an empty scene, OFF as the drain ends.\n"
-"It overrides both gates while it lasts -- vertices drop even\n"
-"with ShapeVertices on, edges drop with no pressure yet declared\n"
-"-- but it is subject to the same all-or-nothing classification\n"
-"and the same display-mode exemptions: a wire, a sketch, a datum\n"
-"line or a point cloud draws throughout, because nothing else on\n"
-"screen would show it, and neither class is dropped in the mode\n"
-"that exists to show it.\n"
-"Independent of this gate, the contract's dependency rule already\n"
-"holds back an attached point or line set whose companion the\n"
-"publish's capture budget deferred: an adopted vertex cache never\n"
-"draws frames ahead of the face set it decorates, load gate or\n"
-"not.\n"
-"Costs one frame to leave, like the pressure gate, so what it\n"
-"holds back comes straight back when the load lets go.\n"
-"Applies only where coarse-first is on (CoarseTessellation 0 or\n"
-"above): with everything tessellated exact up front there is no\n"
-"progressive arrival for this to make room for.\n"
-"A load here means a document restoring, a progressive import\n"
-"filling one, or the deferred view-provider drain that follows a\n"
-"restore -- geometry is still being built into the view in all\n"
-"three.");
+"Stop drawing face edges and edge vertices while a document is still\n"
+"loading, and draw them again once it has arrived. Wires, sketches,\n"
+"datum lines and point clouds are always drawn. Applies only with\n"
+"coarse-first tessellation (CoarseTessellation 0 or above).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4989,26 +3577,11 @@ void RenderParams::removeLoadDropElements() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docElementTakeInSets() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many edge and point sets that are not on the GPU yet one\n"
-"frame may take in (docs/DocumentLoad.md sec 18.17). The rest is\n"
-"held back and comes in the frames after, which the view asks\n"
-"for; a frame holding some back is not a finished picture, and a\n"
-"capture waits for the one that is. 0 = no bound of this kind.\n"
-"A load holds every such set back while it fills in\n"
-"(LoadDropElements) and those whose faces were exact by then all\n"
-"came back in the one frame after it: 14600 sets on a\n"
-"17000-object assembly, 8.7 s in a single call into the driver\n"
-"and the thread away for 12 s. A camera fitted to an assembly it\n"
-"showed a corner of does the same, and a document opened whole.\n"
-"What a set costs is the buffer made for it and not its size --\n"
-"0.6 ms a set on Mesa's D3D12 driver under WSL, those 14600 being\n"
-"11 MB together -- which is why the bound is a count. At 1000 the\n"
-"same load has no stretch longer than the 3.3 s its other frames\n"
-"take, and the last edge is in 13 s later than it was.\n"
-"Applies to the sets the element contract counts as attached --\n"
-"the edges and vertices of a shape that has faces -- and never to\n"
-"an on-top or highlight draw, nor to a wire, a sketch or a point\n"
-"cloud, which are the object.");
+"How many edge and point sets not on the GPU yet one frame may take in;\n"
+"the rest comes in the frames after. 0 = no bound. Keeps the frame after\n"
+"a load, or a camera fitted to a large assembly, from uploading every\n"
+"set in one long call. Never holds back a wire, a sketch, a point cloud\n"
+"or a highlight.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5069,14 +3642,10 @@ void RenderParams::removeElementTakeInKB() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docEffectResolution() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
-"passes -- the planar/ground reflection scene re-render, the water\n"
-"body depth prepass and screen-space ambient occlusion -- relative to\n"
-"the main view resolution. Lowering it trades effect sharpness for\n"
-"speed on large windows, where those per-pixel passes dominate the\n"
-"frame; the main geometry, edges, text and overlays stay full\n"
-"resolution. 1.0 renders the effects at full resolution. The\n"
-"volumetric light shafts already render at half resolution.");
+"Resolution of the costly screen-space passes (ground reflection,\n"
+"water depth, ambient occlusion) relative to the view, 0.25 to 1.\n"
+"Lower is faster and softer; geometry, edges and text stay at full\n"
+"resolution.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5104,36 +3673,11 @@ void RenderParams::removeEffectResolution() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docTemporalAccum() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Keep refining the image while the camera holds still.\n"
-"\n"
-"Multisampling antialiases the geometry it rasterizes and nothing\n"
-"else: every sample inside one triangle is shaded once, so a\n"
-"specular highlight crawling across a curved surface, a normal or\n"
-"texture detail below the pixel, and every screen-space pass\n"
-"computed after the resolve -- ambient occlusion, outlines,\n"
-"section caps, the light shafts -- are left exactly as aliased or\n"
-"as noisy as they were drawn. More coverage samples cannot help\n"
-"any of them.\n"
-"\n"
-"This spends time instead. Once the camera stops, each further\n"
-"frame offsets the projection by a fraction of a pixel and\n"
-"averages into what is already on screen, so the whole pipeline\n"
-"converges toward what supersampling it would have given -- and\n"
-"it costs nothing at all while anything is moving.\n"
-"\n"
-"There is no reprojection and no history rejection, because\n"
-"nothing moved: the accumulation is thrown away outright on any\n"
-"camera, scene or highlight change, so a drag or an orbit returns\n"
-"to the ordinary multisampled frame immediately with no ghosting,\n"
-"smearing or trailing on thin edges. It is a refinement on top of\n"
-"multisampling, not a replacement for it -- leave the antialiasing\n"
-"preference where it is.\n"
-"\n"
-"The cost is idle GPU time: a parked view keeps drawing until it\n"
-"has converged (TemporalAccumSamples), then stops and asks for\n"
-"nothing more. On a laptop or a tablet that is battery, which is\n"
-"why this is off by default and why it does not travel in a saved\n"
-"document.");
+"Keep refining the image while the camera holds still: each further\n"
+"frame is shifted by a fraction of a pixel and averaged in, which\n"
+"smooths what multisampling cannot (highlights, ambient occlusion,\n"
+"outlines). Discarded on any change, so nothing ghosts. Costs GPU time\n"
+"while idle, until TemporalAccumSamples frames have been added.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5161,20 +3705,9 @@ void RenderParams::removeTemporalAccum() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docTemporalAccumSamples() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many jittered samples the idle accumulation converges over\n"
-"before the view goes quiet (2-256, TemporalAccum only).\n"
-"\n"
-"The sequence is a Halton (2,3) pair over the pixel, so it fills\n"
-"the pixel evenly at every count rather than clumping, and it is\n"
-"indexed by sample number -- frame N of an accumulation is the\n"
-"same frame N every time, which is what keeps a rendered\n"
-"comparison reproducible.\n"
-"\n"
-"Most of the visible gain arrives in the first handful of\n"
-"samples, since the error of an average falls with the square\n"
-"root of the count: 32 halves the residual noise of 8, and 128\n"
-"halves it again for four times the work. Raise it for a still\n"
-"worth waiting on, lower it to reach the quiet state sooner.");
+"How many frames idle accumulation adds up before the view goes quiet,\n"
+"2 to 256. Most of the gain comes in the first few; more gives a\n"
+"cleaner still image and takes longer.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5202,28 +3735,10 @@ void RenderParams::removeTemporalAccumSamples() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusion() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Skip drawing what the depth buffer proves could not have\n"
-"reached the screen (docs/FarFieldProxies.md §12). Bounding boxes\n"
-"of the spatial index's nodes are tested against the depth the\n"
-"occluders leave behind -- by default in a software depth buffer\n"
-"on the CPU (Render_OcclusionSoftware), which answers within the\n"
-"frame that asked -- and a node that puts no pixel through has\n"
-"its whole subtree skipped, one test standing for thousands of\n"
-"draws.\n"
-"\n"
-"Exact, not approximate: only geometry that could not have been\n"
-"seen is removed, so the image is unchanged and what is saved is\n"
-"the draw call, which measures ~1.2-1.5us of CPU submission plus\n"
-"~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on\n"
-"assemblies that hide themselves -- an enclosed chassis, a\n"
-"populated rack, any interior -- and does nothing for a model\n"
-"that is mostly silhouette. Expect roughly a fifth of the draws\n"
-"from a camera inside a large assembly (§10.3); the far larger\n"
-"figure from outside a closed model is a bound, not a promise.\n"
-"\n"
-"Casters and reflections are judged separately: geometry hidden\n"
-"from the eye still casts its shadow and still appears in the\n"
-"ground reflection.");
+"Skip drawing objects that are completely hidden behind others. The\n"
+"image does not change; what is saved is the draw calls. Helps on\n"
+"assemblies that hide their own insides, does little for a model that\n"
+"is mostly outline. Shadows and reflections of hidden objects are kept.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5348,13 +3863,9 @@ void RenderParams::removeOcclusionMinSubtree() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionMaxHidden() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many frames a hidden node may go without an answer before\n"
-"it is drawn again. A hidden node is re-tested continuously and\n"
-"the answer is its only way back, so if answers stop arriving --\n"
-"no query handles left, a dropped batch -- this is what returns\n"
-"the geometry instead of leaving it missing. Answers that keep\n"
-"confirming the node is hidden keep it hidden indefinitely, so\n"
-"this never flickers a node the tests are still reaching.");
+"With GPU occlusion queries: frames a hidden object may go without a\n"
+"new answer before it is drawn again. A safeguard for when answers\n"
+"stop arriving.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5382,16 +3893,10 @@ void RenderParams::removeOcclusionMaxHidden() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionDepthPad() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How far a test box is pushed towards the viewer before it is\n"
-"tested, in steps of the 24-bit depth buffer. A test box has to\n"
-"be a conservative bound, and at the last bit of the depth buffer\n"
-"it is not: a small part lying flush on a large panel quantizes\n"
-"to the same stored depth as the panel, LEQUAL loses the tie\n"
-"whichever way the rasterizer rounds, and the node reports itself\n"
-"hidden while in plain view. Measured that way, the components on\n"
-"a board disappeared while the board stayed. Too large costs\n"
-"frame time by testing visible what could have been skipped; too\n"
-"small deletes geometry, so err high.");
+"With GPU occlusion queries: how far a test box is moved towards the\n"
+"viewer, in depth buffer steps, so that a part lying flat on a larger\n"
+"one is not judged hidden. Too small hides visible parts, too large\n"
+"hides less; err high.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5419,27 +3924,9 @@ void RenderParams::removeOcclusionDepthPad() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionConfirm() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many consecutive answers of 'no pixels' a node must give\n"
-"before its geometry is actually skipped. 1 acts on every\n"
-"answer, and is what an occlusion test naively does.\n"
-"\n"
-"A test is issued against one frame's depth and read against a\n"
-"later one -- it does not block, because stalling for it would\n"
-"cost the frame time the culling exists to save -- so while an\n"
-"answer is in flight, other geometry is culled and the occluders\n"
-"move underneath it. Acted on singly, a node tested while an\n"
-"occluder was still drawn gets skipped after that occluder has\n"
-"gone; the hole it leaves tests visible; it comes back; and it\n"
-"oscillates, which is a picture that flickers rather than one\n"
-"that is merely wrong.\n"
-"\n"
-"Confirmations DILUTE that oscillation; measured, they do not\n"
-"remove it (docs/FarFieldProxies.md #12.7): the false answers\n"
-"arrive in runs, so tripling the confirmations bought a factor\n"
-"of two, and the residual damage tracks how often nodes are\n"
-"re-tested, which this setting cannot reach. The query path is\n"
-"therefore not image-stable at any value here; occlusion on the\n"
-"CPU (the default oracle) does not read this setting at all.");
+"With GPU occlusion queries: how many answers of 'hidden' in a row an\n"
+"object needs before it is skipped. More reduces flicker and does not\n"
+"remove it. Not used when occlusion runs on the CPU, the default.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5467,28 +3954,10 @@ void RenderParams::removeOcclusionConfirm() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionSoftware() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Answer the occlusion question with a software depth buffer on\n"
-"the CPU instead of hardware occlusion queries\n"
-"(docs/FarFieldProxies.md #12.12). The default, because it is\n"
-"the one oracle whose picture holds still.\n"
-"\n"
-"A hardware query cannot be asked at the moment its answer would\n"
-"be right. It is issued against one frame's depth and read a\n"
-"frame or two later, so a node is tested after the pass that drew\n"
-"its own geometry and is asked to win a depth comparison against\n"
-"itself -- measured as boxes returning no samples at all while\n"
-"their contents were plainly on screen. The confirmations,\n"
-"lifetimes and padding beside this setting all exist to contain\n"
-"that, and none of them reach it.\n"
-"\n"
-"On the CPU, occluders are rasterized and nodes tested against\n"
-"the same buffer in one pass, so a node is asked before its own\n"
-"geometry joins the buffer and the answer arrives in the frame\n"
-"that asked. There is no latency to age, no verdict to confirm\n"
-"and no query pool to run out of. It costs CPU time in a frame\n"
-"that is already CPU-bound, which is the trade to measure, and it\n"
-"behaves identically in the browser, where hardware queries do\n"
-"not.");
+"Decide what is hidden with a depth buffer drawn on the CPU instead of\n"
+"GPU occlusion queries. The default: its answers belong to the frame\n"
+"that asked, where a GPU query answers a frame or two late and can\n"
+"flicker. Costs some CPU time per frame.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5581,16 +4050,8 @@ void RenderParams::removeOcclusionMinOccluder() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionThreads() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many worker threads the CPU occlusion buffer may rasterize\n"
-"its occluders on. 0 picks automatically, leaving the submitting\n"
-"thread and one other alone -- this runs in the middle of a\n"
-"frame, not on an idle machine.\n"
-"\n"
-"Each worker rasterizes its own slice of the occluder list into\n"
-"its own buffer and the buffers are merged afterwards, so there\n"
-"is no locking. The merge is slightly lossy -- two two-layer\n"
-"blocks cannot combine into one without loss -- so a higher\n"
-"worker count can hide marginally less. Never more.");
+"Worker threads the CPU occlusion buffer may draw its occluders on.\n"
+"0 chooses automatically.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5618,23 +4079,9 @@ void RenderParams::removeOcclusionThreads() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionSimd() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Let the CPU occlusion buffer discard triangles four at a time\n"
-"with SIMD before its exact rasterizer looks at them\n"
-"(docs/FarFieldProxies.md #12.14).\n"
-"\n"
-"Two thirds of the triangles offered to the buffer cover no pixel\n"
-"at all -- a full-detail CAD tessellation is mostly triangles\n"
-"smaller than the pixel grid -- and every one of them is paid for\n"
-"in full before being thrown away. The pre-pass transforms and\n"
-"projects four at once in single precision and drops the ones that\n"
-"land on no pixel centre.\n"
-"\n"
-"It cannot make the buffer claim a surface that is not there:\n"
-"everything it does not discard is handed to the same exact path\n"
-"as before, recomputed from the original vertices, and a triangle\n"
-"it drops in error is occlusion lost rather than geometry deleted.\n"
-"Turn it off to measure what it saves, not to work around a\n"
-"suspected fault.");
+"With CPU occlusion, discard triangles too small to cover a pixel four\n"
+"at a time before the exact rasterizer sees them. Faster, and it cannot\n"
+"hide anything visible. Turn off only to measure what it saves.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5662,15 +4109,9 @@ void RenderParams::removeOcclusionSimd() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionResolution() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Resolution of the CPU occlusion buffer, as a divisor of the\n"
-"viewport. 1 matches the viewport.\n"
-"\n"
-"Above 1 this can remove geometry that was visible, which is the\n"
-"one failure this mechanism exists to avoid: a coarse pixel is\n"
-"marked covered when an occluder reaches its centre, but it\n"
-"stands for several real pixels, and the ones the occluder missed\n"
-"are claimed with it. Reduce it only to measure what it costs, not\n"
-"as a setting.");
+"Resolution of the CPU occlusion buffer, as a divisor of the view size.\n"
+"1 matches the view. Above 1 it can hide visible geometry; change it\n"
+"only to measure.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5698,29 +4139,9 @@ void RenderParams::removeOcclusionResolution() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionPerInstance() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Test each object against the CPU occlusion buffer, not just the\n"
-"group it was partitioned into\n"
-"(docs/FarFieldProxies.md #12.17). Only used when occlusion runs\n"
-"on the CPU.\n"
-"\n"
-"The cull walk tests boxes of groups, and a group is skipped only\n"
-"when all of it is hidden -- so one visible object keeps its\n"
-"hidden neighbours on screen. Measured, that is what limits the\n"
-"culling rather than the quality of the depth buffer: after a\n"
-"cull, 91% of what is still drawn reaches no pixel, and making\n"
-"the occluders ten times better barely moved it.\n"
-"\n"
-"The extra tests are read-only against a buffer that is already\n"
-"finished, so they run on the same worker threads the occluders\n"
-"used and add no state, no latency and nothing the backend has to\n"
-"support.\n"
-"\n"
-"On by default: measured on the benchmark it hides 17% more for\n"
-"0.4ms, against 3% for 3.4ms from making the occluders ten times\n"
-"better, and it over-culls nothing. It can only ever be more\n"
-"correct than testing the group -- a draw is skipped when its own\n"
-"box is covered rather than when its neighbours' collectively\n"
-"are.");
+"With CPU occlusion, test each object on its own and not only the group\n"
+"it was sorted into, so one visible object no longer keeps its hidden\n"
+"neighbours drawn. Hides more for little cost; on by default.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5748,20 +4169,10 @@ void RenderParams::removeOcclusionPerInstance() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionDemoteStreak() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many consecutive frames every draw of an object must have\n"
-"been culled before the level plan's downgrade sweep may treat\n"
-"it as free -- give its GPU upload back without charging the\n"
-"camera any visible error. 0 never does. Only used when\n"
-"occlusion runs on the CPU, whose verdicts are exact per frame.\n"
-"\n"
-"This is occlusion acting as a MEMORY mechanism: an enclosed\n"
-"assembly's interior is inside the view frustum, so without a\n"
-"hidden verdict the plan prices its downgrade as visible error\n"
-"and pays for it in quality somewhere that actually shows. What\n"
-"the sweep drops stays resident in CPU RAM; the way back is an\n"
-"ordinary refine, so a verdict the camera later overturns costs\n"
-"one upload. The streak is the hysteresis that keeps a drifting\n"
-"camera from paying that upload per flap.");
+"With CPU occlusion: how many frames in a row an object must have been\n"
+"completely hidden before its GPU memory may be given back at no\n"
+"quality cost. It stays in main memory and returns when seen again.\n"
+"0 never does this.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5789,23 +4200,10 @@ void RenderParams::removeOcclusionDemoteStreak() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionCoarse() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Rasterize the CPU occlusion buffer's occluders from coarse\n"
-"hulls instead of from their meshes\n"
-"(docs/FarFieldProxies.md #12.16). Only used when occlusion runs\n"
-"on the CPU.\n"
-"\n"
-"An occluder does not need the mesh, it needs the surface, and a\n"
-"hull carries that at a fraction of the triangles. What the\n"
-"triangle budget above buys is what this changes: measured, 1285\n"
-"of 1322 candidate occluders never entered the buffer because 37\n"
-"full-detail draws spent the whole allowance, and the buffer then\n"
-"hid 45% of what was there to hide.\n"
-"\n"
-"The hulls are built by vertex clustering from the meshes the\n"
-"renderer already holds -- no shape, no tessellator -- a few per\n"
-"frame, and cached. A hull recedes by its own measured error\n"
-"before it is rasterized, so it cannot claim to be nearer than\n"
-"the surface it stands for.");
+"With CPU occlusion, draw the occluders from simplified hulls instead\n"
+"of their full meshes, so many more of them fit the triangle budget and\n"
+"more gets hidden. A hull is moved back by its own error, so it cannot\n"
+"hide what is visible.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5927,17 +4325,9 @@ void RenderParams::removeOcclusionCoarseBuilds() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionCoarseBias() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How far an occluder hull recedes from the camera before it is\n"
-"rasterized, as a percentage of its own measured displacement.\n"
-"\n"
-"Every point of a hull lies within that displacement of a point of\n"
-"the mesh it was built from, so at 100 the hull cannot be nearer\n"
-"than the surface it stands for -- which is what makes an\n"
-"approximate occluder admissible at all. Below 100 it hides more\n"
-"and may hide geometry that was visible; above 100 it hides\n"
-"progressively less for nothing. 0 rasterizes the hull where it\n"
-"sits, which is the measurement that says whether the bias is\n"
-"needed.");
+"With coarse occluders: how far a hull is moved away from the camera,\n"
+"as a percentage of its own error. 100 guarantees it hides nothing\n"
+"visible; less hides more and may hide visible parts.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5996,16 +4386,10 @@ void RenderParams::removeOcclusionCoarseMemory() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docOcclusionBenefitProbe() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Measure whether the culling pays for itself on THIS scene and\n"
-"camera (docs/FarFieldProxies.md 12.13): alternate stretches of\n"
-"frames with the whole occlusion block on and off, compare median\n"
-"frame cost, and print the verdict with the culling readout\n"
-"(Render_LevelDebug cadence). The probe is an intervention -- its\n"
-"off arm draws everything and pauses the hidden-streak demote\n"
-"feed for those frames -- so it is a measuring instrument, not a\n"
-"mode to leave on. The verdict gates nothing yet; it is the\n"
-"number the wire-or-delete decision for CullBenefitEstimator\n"
-"reads.");
+"Diagnostic. Measures whether occlusion culling pays for itself on this\n"
+"scene and camera, by turning it on and off for stretches of frames and\n"
+"comparing their cost. It disturbs the frames it measures; not for\n"
+"normal use.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6246,13 +4630,8 @@ void RenderParams::removeAOIntensity() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docAOResolution() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Resolution scale (0.25-1.0) of the ambient occlusion resolve\n"
-"targets relative to the main view resolution, independent of the\n"
-"shared Effect resolution. Ambient occlusion is resolution-sensitive\n"
-"(contact and crevice detail), so it has its own control; the shared\n"
-"Effect resolution drives only the costlier reflection re-render.\n"
-"1.0 renders the occlusion at full resolution; lower trades AO\n"
-"sharpness for speed.");
+"Resolution of ambient occlusion relative to the view, 0.25 to 1,\n"
+"independent of EffectResolution. Lower is faster and less sharp.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6280,22 +4659,10 @@ void RenderParams::removeAOResolution() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docCavity() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Enable screen space cavity (curvature) shading of the\n"
-"experimental render engine (render cache mode 3 with a selected\n"
-"renderer type). Darkens concave creases and convex ridges found\n"
-"in the geometry prepass normals, which makes surface shape and\n"
-"small features read without relying on the lighting.\n"
-"\n"
-"Best paired with the Shaded draw style, the one that draws no\n"
-"edges: there the darkened crease is the only thing stating where\n"
-"a face ends, so cavity does the job the edge lines do elsewhere,\n"
-"without the wireframe over every tessellated curve. In a style\n"
-"that already draws edges (Flat Lines) the two land on the same\n"
-"pixels and cavity mostly restates them.\n"
-"\n"
-"Independent of ambient occlusion: cavity is a local curvature\n"
-"term, occlusion is a visibility integral over a world-space\n"
-"radius (contact darkening). They compose.");
+"Darken creases and ridges of the geometry in screen space, so the\n"
+"shape reads without relying on the lighting. Works best with the\n"
+"Shaded draw style, where no edges are drawn. Independent of ambient\n"
+"occlusion. Needs render cache mode 3 with a renderer selected.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6323,20 +4690,9 @@ void RenderParams::removeCavity() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docCavityRadius() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Baseline the cavity curvature is measured over, in pixels.\n"
-"\n"
-"This decides which features the pass can see at all. The term\n"
-"reads how far the surface normal turns between the two\n"
-"neighbours, so at the default of 1 it sees only what turns\n"
-"within a single pixel: hard creases, crisply, which is what\n"
-"stands in for the edge lines the Shaded draw style does not\n"
-"draw. Widening it brings broad curvature (fillets, blends, a\n"
-"sculpted face) in, at the cost of spreading a hard crease into a\n"
-"band of this width.\n"
-"\n"
-"Being in pixels it is resolution-relative: the same value covers\n"
-"less of the model on a high-DPI display, so a large model on a\n"
-"dense screen may want more than 1.");
+"Distance in pixels over which cavity shading measures curvature. 1\n"
+"sees only hard creases, sharply. Larger values bring in fillets and\n"
+"broad curvature and widen the creases to a band of that width.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6427,14 +4783,10 @@ void RenderParams::removeCavityRidge() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docMatcap() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Enable matcap shading of the experimental render engine\n"
-"(render cache mode 3 with a selected renderer type). Replaces\n"
-"the scene's lighting with a fixed studio attached to the camera,\n"
-"looked up by each fragment's view space normal: the shading of a\n"
-"surface then depends only on which way it faces the viewer, so\n"
-"form reads identically wherever the scene light happens to be.\n"
-"The classic inspection shading -- pair it with Cavity for edge\n"
-"definition. Overrides physically based shading while on.");
+"Shade surfaces by the direction they face the viewer, with a fixed\n"
+"studio lighting attached to the camera, so shape reads the same\n"
+"wherever the scene light is. Overrides physically based shading.\n"
+"Needs render cache mode 3 with a renderer selected.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6462,16 +4814,11 @@ void RenderParams::removeMatcap() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docMatcapPreset() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Which matcap to shade with. The presets are computed in the\n"
-"shader rather than sampled from images, so they cost no assets\n"
-"and stay sharp at any resolution. Studio = soft key light with a\n"
-"rim; Clay = matte, no highlight, the most neutral read of form;\n"
-"Metal = banded sweep with a hard edge, exaggerates curvature;\n"
-"Pearl = warm/cool dual tone, shows shallow undulation;\n"
-"Zebra = black and white stripes, the surface as a mirror in a\n"
-"room of parallel light strips: the stripes step where two faces\n"
-"meet at an angle, meet with a kink where they are tangent, and\n"
-"run through where the curvature is continuous as well.");
+"Which matcap to shade with, computed in the shader. Studio: soft key\n"
+"light with a rim. Clay: matte, the most neutral read of form. Metal:\n"
+"banded, exaggerates curvature. Pearl: warm and cool, shows shallow\n"
+"undulation. Zebra: black and white stripes that step at an angle, kink\n"
+"at a tangent seam and run through where curvature is continuous.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6654,16 +5001,10 @@ void RenderParams::removePBRRoughness() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPBRFromSpecular() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Read an ordinary Phong appearance's specular COLOUR as\n"
-"physically based material data, where nothing states a\n"
-"metalness of its own. The metallic/roughness model has no\n"
-"specular slot -- its reflectance follows from the base colour\n"
-"and the metalness -- so a classic Gold, whose gold-ness lives\n"
-"entirely in that colour, otherwise shades as yellow-brown\n"
-"plastic, and the presets built from a black diffuse and a\n"
-"bright specular (Steel, Satin, Metalized) shade as nearly\n"
-"black. Anything authored stands: a stated metalness, a PBR\n"
-"appearance, a metallic-roughness map.");
+"Read the specular colour of a classic appearance as metalness when\n"
+"the material states none, so that presets such as Gold or Steel look\n"
+"like metal under physically based shading. A stated metalness is\n"
+"never changed.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6691,31 +5032,10 @@ void RenderParams::removePBRFromSpecular() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docShininessMapping() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How a classic Phong appearance's SHININESS becomes a\n"
-"roughness, where the material states no roughness of its own.\n"
-"\n"
-"Either way the conversion itself is the standard match of the\n"
-"GGX lobe width to a Phong exponent n, roughness =\n"
-"(2 / (n + 2)) ^ 1/4. What differs is what shininess MEANS.\n"
-"\n"
-"'GL exponent' reads it the way fixed-function GL did, as the\n"
-"exponent scaled onto 0..128. That is faithful, but 128 is the\n"
-"sharpest exponent GL could state, and it converts to a\n"
-"roughness of 0.35 -- so on this reading a fully shiny Phong\n"
-"material is satin, and the lower half of the roughness range\n"
-"cannot be reached from shininess at all.\n"
-"\n"
-"'Full range' reads shininess as what the Appearance dialog\n"
-"presents, a 0 to 100% appearance control, and maps it onto the\n"
-"whole exponent range instead: n = 128 * s / (1 - s). Matte at\n"
-"zero and a mirror at one, and over the low shininess values\n"
-"real materials use it agrees with the GL reading to within a\n"
-"few percent (FreeCAD's default 0.2 gives 0.49 rather than\n"
-"0.52, the Gold preset 0.66 rather than 0.67).\n"
-"\n"
-"Neither reading touches anything authored: a stated roughness,\n"
-"a PBR appearance, a metallic-roughness map and the per-object\n"
-"Render_Roughness override all stand.");
+"How the shininess of a classic appearance becomes a roughness when the\n"
+"material states none. 'GL exponent' reads it as the OpenGL exponent,\n"
+"where the shiniest material is still satin. 'Full range' reads it as\n"
+"0 to 100%, matte to mirror. A stated roughness is never changed.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6743,38 +5063,10 @@ void RenderParams::removeShininessMapping() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPBREnvPreset() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Which built-in environment lights the scene, where no\n"
-"environment image is set. They are computed rather than\n"
-"sampled from a file, so they cost no assets and work on every\n"
-"tier including the browser.\n"
-"\n"
-"What separates them is contrast and structure, not brightness:\n"
-"all five integrate to the same mean radiance, so the exposure\n"
-"that suits one suits the others. That matters because a\n"
-"surround with no bright sources and no edges cannot put a\n"
-"highlight on anything that reads as a light, and a smooth\n"
-"surface reflecting it shows the same flat grey at every\n"
-"roughness -- which is what made physically based shading look\n"
-"like painted plastic.\n"
-"\n"
-"Interior = a room with one window and a ceiling\n"
-"panel, walls close enough to bounce. One hard key against a\n"
-"dark surround, which is what gives the crispest highlight and\n"
-"the strongest read of form. Studio = four soft boxes on a dark\n"
-"surround, the product-shot rig, gentler and more even than\n"
-"Interior. Gradient (the default) = the smooth three-band dome\n"
-"this engine used before the others existed; the flattest and\n"
-"the most even, which is why it is where a view starts -- it\n"
-"stays out of the way of the model being worked on, and it is\n"
-"the one to pick to have an older document's look back.\n"
-"Overcast = a bright sky weighted to the zenith over dark\n"
-"ground, soft and neutral. Sunset = a low warm sun with a deep\n"
-"sky, the strongest colour separation, and the only one that\n"
-"tints the whole frame. Light tent = a box of white panels,\n"
-"bright BELOW the horizon as well as above it and seamed all\n"
-"the way round; the one to pick when the SIDES of a subject\n"
-"matter, since every other environment here puts a floor under\n"
-"it and a standing wall reflects the floor.");
+"Built-in environment that lights the scene when no environment image\n"
+"is set: Gradient (the default, the most even), Interior, Studio,\n"
+"Overcast, Sunset or Light tent. They differ in contrast and structure,\n"
+"not in brightness, so one exposure suits them all.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6830,45 +5122,11 @@ void RenderParams::removePBREnvIntensity() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPBREnvImage() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Image file used as the image based lighting environment,\n"
-"replacing the built-in procedural studio environment. A 2:1\n"
-"image is read as equirectangular (lat-long), anything squarer\n"
-"as a sphere map — the same convention as the Texture mapping\n"
-"dialog's Environment mode, so the same file works in both.\n"
-"\n"
-"A Radiance picture (.hdr, .pic) is read as real radiance and\n"
-"is the format worth using: a sky is thousands of times\n"
-"brighter than the wall beneath it, and an ordinary 8-bit image\n"
-"cannot hold that ratio, which is what makes one light a model\n"
-"like a picture rather than like a place. An HDR environment\n"
-"needs the output colour transform on, since it is the exposure\n"
-"that decides how its range lands on the screen.\n"
-"\n"
-"What to load, in short:\n"
-"\n"
-" - A Radiance .hdr or .pic. OpenEXR is NOT read: anything\n"
-"   that is not Radiance goes through Qt, which has no EXR\n"
-"   plugin, so an .exr loads nothing and the procedural\n"
-"   environment stays on.\n"
-" - 2:1 proportions, so it is taken as a lat-long panorama\n"
-"   and not as a mirror ball. Up is +Z, and the middle of\n"
-"   the image faces +X.\n"
-" - 1K or 2K is plenty. The picture is held as 32-bit float\n"
-"   RGB (2K is about 25 MB, 8K about 400 MB) and is baked\n"
-"   into a 128 pixel per face cubemap, so a larger one\n"
-"   costs memory without showing more.\n"
-" - Free CC0 panoramas: polyhaven.com/hdris.\n"
-"\n"
-"How sharp it is DRAWN behind the model is a separate\n"
-"question, and the answer is Render_PBREnvBlur: the background\n"
-"pass draws that cubemap through a lens aperture, the way a\n"
-"real backdrop is out of focus, and at zero the aperture is\n"
-"shut and it is drawn as baked. The lighting and the\n"
-"reflections read the sharp environment whatever the blur\n"
-"says.\n"
-"\n"
-"Empty falls back to that dialog's current image, then to the\n"
-"procedural environment.");
+"Image file used as the lighting environment instead of the built-in\n"
+"one. A 2:1 image is read as a lat-long panorama, anything squarer as a\n"
+"sphere map. Radiance files (.hdr, .pic) keep their real brightness and\n"
+"are the format to use; OpenEXR is not read. 1K or 2K is plenty. Empty\n"
+"uses the Texture mapping dialog's image, then the built-in environment.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6896,16 +5154,9 @@ void RenderParams::removePBREnvImage() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPBREnvEmbed() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Store a copy of the environment image inside the document,\n"
-"so it travels with the file instead of depending on the\n"
-"original path. The copy lives in the view's\n"
-"Render_PBREnvImageData property and takes precedence over the\n"
-"image path while set.\n"
-"\n"
-"On by default: a document whose lighting depends on a file\n"
-"somewhere on one machine opens lit differently everywhere\n"
-"else, and the path is the part of the setting least likely\n"
-"to survive the trip.");
+"Store a copy of the environment image in the document, so the lighting\n"
+"travels with the file instead of depending on a path on one machine.\n"
+"The copy takes precedence over the path.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6933,16 +5184,9 @@ void RenderParams::removePBREnvEmbed() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPBREnvBackground() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Show the image based lighting environment itself as the view\n"
-"background while physically based shading is active, so\n"
-"reflective surfaces visibly mirror their surroundings.\n"
-"\n"
-"On by default, because a reflective object standing in front of\n"
-"a flat gradient reads as fake for a reason that is not the\n"
-"object's fault: the reflection has no visible source, so there\n"
-"is nothing in the frame for the eye to reconcile it against.\n"
-"Affects nothing outside physically based shading -- the\n"
-"Classic and Matcap models keep the background gradient.");
+"Show the lighting environment as the view background while physically\n"
+"based shading is active, so reflections have a visible source. Other\n"
+"shading models keep the background gradient.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6970,37 +5214,9 @@ void RenderParams::removePBREnvBackground() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docPBREnvBlur() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How far out of focus the environment background is, 0 to 1.\n"
-"Zero is sharp -- the resolution it was baked at; one opens the\n"
-"aperture to 45 degrees, and in between it doubles every eighth\n"
-"of the range. Only the BACKGROUND is affected -- the lighting\n"
-"and the reflections read the whole environment whatever this\n"
-"says.\n"
-"\n"
-"It is a defocus, not a smudge: the environment is convolved\n"
-"with the disc of directions an aperture subtends, in linear\n"
-"radiance, so a small bright source spreads into an even bokeh\n"
-"disc that keeps its energy rather than being averaged away.\n"
-"\n"
-"A backdrop wants some of this. A real one is out of focus, and\n"
-"softening also lets a small bright source bleed into a wide\n"
-"gentle falloff instead of sitting in the frame as a hard\n"
-"rectangle. Too much of it and there is nothing left for a\n"
-"reflection to be reconciled against, which is the whole reason\n"
-"the background is drawn at all. Blender's viewport shading\n"
-"carries the same control for the same reasons, and defaults it\n"
-"higher than this does.\n"
-"\n"
-"Both shading models honour it, and at zero the two show the\n"
-"same backdrop: they bake the environment at the same angular\n"
-"resolution. The external path tracer gets there differently,\n"
-"since the world it samples IS the light and softening it\n"
-"would relight the scene -- so a second bake of the same\n"
-"environment through the same aperture is mixed in on CAMERA\n"
-"rays alone, and the lighting, reflections and refractions keep\n"
-"the sharp world. One consequence of that rule: a camera ray\n"
-"stays a camera ray through a transparent surface, so a\n"
-"see-through pass-through shows the soft backdrop as well.");
+"How far out of focus the environment is drawn as the background, 0 to\n"
+"1. 0 is as sharp as it was baked. Only the background is affected:\n"
+"lighting and reflections always read the sharp environment.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7598,13 +5814,9 @@ void RenderParams::removeWaterShadow() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docWaterRippleType() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"The ambient ripple pattern on the water surface - the motion\n"
-"the surface has of its own accord. 0 = waves: the default sum\n"
-"of directional wind waves. 1 = rain: circular rings expanding\n"
-"from randomly placed, randomly timed drop impacts, as on a pond\n"
-"in rainfall. 2 = none: a still surface, which leaves only what\n"
-"the scene disturbs - fountain splash rings and the impact rings\n"
-"of particles striking the water still show.");
+"Ripples the water surface has by itself: 0 wind waves, 1 rain rings,\n"
+"2 none. Rings from fountains and from particles striking the water\n"
+"show in every case.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7876,23 +6088,10 @@ void RenderParams::removeBloomRadius() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLight() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Let the render engine supply its own directional or spot scene\n"
-"light, described by the Light* settings below, instead of taking\n"
-"one out of the Coin traversal.\n"
-"\n"
-"Everything the engine keys off a light -- shadows, volumetric\n"
-"shafts, the sun disc, ground reflection -- today has exactly one\n"
-"source: the Shadow display style, which is what puts an\n"
-"SoShadowDirectionalLight or SoSpotLight in the scene graph at all\n"
-"(the viewer headlight is a plain SoDirectionalLight, which the\n"
-"engine rejects by type). That makes a draw style the owner of the\n"
-"lighting, and it is why the style cannot simply be retired\n"
-"(docs/CoinRetirement.md 3.4).\n"
-"\n"
-"Off by default, and while off nothing changes. A light found in\n"
-"the traversal still wins when one is there, so the Shadow style\n"
-"keeps behaving exactly as before; these settings supply a light\n"
-"when it does not.");
+"Let the render engine use a scene light of its own, described by the\n"
+"Light settings below, for shadows, light shafts and ground reflection.\n"
+"Without it the only such light is the one the Shadow display style\n"
+"adds. A light found in the scene still takes precedence.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7947,7 +6146,10 @@ void RenderParams::removeLightIntensity() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLightDirectionX() {
-    return "";
+    return QT_TRANSLATE_NOOP("RenderParams",
+"X component of the direction the render engine's own scene light\n"
+"shines along, in world coordinates. A direction of zero length\n"
+"falls back to (-1, -1, -1).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7974,7 +6176,10 @@ void RenderParams::removeLightDirectionX() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLightDirectionY() {
-    return "";
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Y component of the direction the render engine's own scene light\n"
+"shines along, in world coordinates. A direction of zero length\n"
+"falls back to (-1, -1, -1).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8001,7 +6206,10 @@ void RenderParams::removeLightDirectionY() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLightDirectionZ() {
-    return "";
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Z component of the direction the render engine's own scene light\n"
+"shines along, in world coordinates. A direction of zero length\n"
+"falls back to (-1, -1, -1).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8086,7 +6294,9 @@ void RenderParams::removeLightSpot() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLightPositionX() {
-    return "";
+    return QT_TRANSLATE_NOOP("RenderParams",
+"X coordinate of the render engine's own scene light when it is a\n"
+"spot light, in world coordinates. A directional light ignores it.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8113,7 +6323,9 @@ void RenderParams::removeLightPositionX() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLightPositionY() {
-    return "";
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Y coordinate of the render engine's own scene light when it is a\n"
+"spot light, in world coordinates. A directional light ignores it.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8140,7 +6352,9 @@ void RenderParams::removeLightPositionY() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docLightPositionZ() {
-    return "";
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Z coordinate of the render engine's own scene light when it is a\n"
+"spot light, in world coordinates. A directional light ignores it.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8346,13 +6560,9 @@ void RenderParams::removeGroundReflectionIntensity() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docCyclesDevice() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Compute device type the External shading model path traces\n"
-"on, as Gui.cyclesDevices() names them: 'CPU' always works, and\n"
-"'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the\n"
-"driver for it. Seeds the per-view Cycles_Device property, which\n"
-"offers only the devices the machine actually has -- a document\n"
-"saved elsewhere falls back to the first local device when its\n"
-"choice does not exist here.");
+"Device the path tracer runs on: 'CPU' always works; 'CUDA', 'OPTIX' or\n"
+"'HIP' when the machine has the GPU and driver. A document saved with a\n"
+"device this machine lacks uses the first one available.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8501,16 +6711,9 @@ void RenderParams::removeCyclesPixelSize() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docCyclesMaxStreams() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"How many path-traced sessions this process serves at once\n"
-"(docs/CyclesIntegration.md sec 7.1). A browser viewer that asks\n"
-"for a path-traced view gets a Cycles session of its own -- one\n"
-"per traced cell, per connection, across every served document --\n"
-"and each holds a device context and the scene on that device.\n"
-"A start made when this many are already running is refused with\n"
-"'TooManyStreams'; the viewer says so and stays on its raster\n"
-"view. 0 or less means no cap, which is what the desktop views\n"
-"and the offline render have always had: this counts served\n"
-"streams only.");
+"How many path-traced views this process serves to browser viewers at\n"
+"once. A request past the limit is refused and that viewer stays on its\n"
+"raster view. 0 or less means no limit. Desktop views are not counted.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8538,17 +6741,10 @@ void RenderParams::removeCyclesMaxStreams() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugViewMode() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Render debugging buffer visualization (docs/RenderDebug.md).\n"
-"Routes an intermediate render target to the screen instead of the\n"
-"shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
-"3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow\n"
-"map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =\n"
-"shadow-moment filtering-precision probe, 8 = UV / texcoord,\n"
-"9 = the planar reflection target, 10 = the particle impact map\n"
-"(green where a hit is recorded, brightness its age, red where\n"
-"nothing has ever struck).\n"
-"0 renders normally. The on-top, highlight and overlay passes\n"
-"still draw on top so the view stays navigable.");
+"Diagnostic. Shows an intermediate buffer instead of the shaded scene:\n"
+"1 depth, 2 normals, 3 ambient occlusion, 4 shadow, 5 shadow map\n"
+"coverage, 6 overdraw, 7 shadow precision, 8 texture coordinates,\n"
+"9 reflection target, 10 particle impact map. 0 renders normally.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8641,18 +6837,9 @@ void RenderParams::removeDebugLabel() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugTiming() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Log where the time of a rendered frame goes, by pipeline\n"
-"stage: the Coin traversal, the flattening of the vertex caches,\n"
-"the draw-entry build, the translation to the backend, the\n"
-"backend's own bookkeeping and the draw itself. One summary line\n"
-"per second, so a long operation shows how each stage grows with\n"
-"the scene rather than one average (docs/IncrementalPublish.md).\n"
-"Those stages end at submission, so a second line reports what\n"
-"happens after it: the frame's cost on the CPU issuing draw\n"
-"commands against its cost on the GPU drawing them, and the same\n"
-"pair per draw call (docs/FarFieldProxies.md §10.1). Which of the\n"
-"two a scene is bound by is what decides whether a culling scheme\n"
-"has to remove the draw or may leave it to the GPU to reject.");
+"Diagnostic. Logs once a second where the time of a rendered frame\n"
+"goes, by pipeline stage, and what the frame costs on the CPU against\n"
+"the GPU.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8714,13 +6901,9 @@ void RenderParams::removeDebugDelta() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugCoverage() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Log how much of the screen each drawn object actually covers,\n"
-"as a histogram over its projected size in pixels. A camera that\n"
-"sees a whole assembly draws most of it at a few pixels, and every\n"
-"one of those parts still costs a full object; the histogram says\n"
-"how much of the model is in that state, which is what decides\n"
-"whether aggregating distant parts is worth building\n"
-"(docs/FarFieldProxies.md §9).");
+"Diagnostic. Logs how much of the screen each drawn object covers,\n"
+"as a histogram over its size in pixels. Shows how much of a model is\n"
+"drawn only a few pixels large.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8748,15 +6931,9 @@ void RenderParams::removeDebugCoverage() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugProxyCut() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Log what a far-field cut would cost this camera, without\n"
-"generating anything: the drawn instances are partitioned into the\n"
-"spatial index of docs/FarFieldProxies.md §3, a frontier is chosen\n"
-"by projected error at several tolerances, and the draws that cut\n"
-"would issue -- one per (cell, material) proxy plus whatever stays\n"
-"exact -- are reported against the draws issued today. This is the\n"
-"number that says whether generating proxies is worth building\n"
-"(§11.1). Also reports the distributions that size the partition:\n"
-"instances and material buckets per cell, per level.");
+"Diagnostic. Logs how many draw calls replacing distant parts by\n"
+"far-field proxies would save for the current camera, without building\n"
+"any.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8784,18 +6961,9 @@ void RenderParams::removeDebugProxyCut() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugOcclusion() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Measure how much of what the frame draws could not have\n"
-"reached the screen (docs/FarFieldProxies.md §10.1). Bounding\n"
-"boxes of the spatial index's nodes are re-rasterized against the\n"
-"finished depth buffer under hardware occlusion queries, writing\n"
-"neither colour nor depth, and every instance is attributed to the\n"
-"highest node that rejects it -- so a hidden subtree is counted\n"
-"once, not at every level it is hidden at. Boxes bound their\n"
-"contents loosely and the frustum's own rejections are reported\n"
-"separately, so the hidden share it prints is a floor rather than\n"
-"an estimate. A GPU offers 256 queries at a time, so a large model\n"
-"takes several frames to walk and a line is printed per completed\n"
-"walk, never for a partial one.");
+"Diagnostic. Measures how much of what a frame draws is hidden behind\n"
+"something else, using GPU occlusion queries. A large model takes\n"
+"several frames per report.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8823,19 +6991,9 @@ void RenderParams::removeDebugOcclusion() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugProxyGen() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Generate real proxies for a sample of the nodes a far-field\n"
-"cut stops on, and report what they cost and what they commit\n"
-"(docs/FarFieldProxies.md §11.1c). The cut estimate above selects\n"
-"by a node's projected *extent* because no proxy exists yet to\n"
-"have an error; this one merges each (cell, material) group and\n"
-"decimates it, so the error it commits can be measured as a\n"
-"fraction of that extent -- which is the ratio that says whether\n"
-"the estimate reads as its 16px row or its 64px row. Reports\n"
-"alongside it the triangle cost against what instancing already\n"
-"achieves (§7.1) and how much surface area survives, since\n"
-"clustering deletes geometry smaller than a cell rather than\n"
-"shrinking it. Expensive: it builds meshes. Samples a bounded\n"
-"number of nodes and reports how many it skipped.");
+"Diagnostic. Builds real far-field proxies for a sample of nodes and\n"
+"reports their triangle cost and the error they introduce. Expensive:\n"
+"it builds meshes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8863,20 +7021,10 @@ void RenderParams::removeDebugProxyGen() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugCullAudit() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Check what the occlusion culling skipped against what the\n"
-"geometry actually put on screen (docs/FarFieldProxies.md §12.9).\n"
-"Every other measurement of the culling compares two pictures and\n"
-"reports how many pixels differ, which says that something is\n"
-"wrong without saying what: this re-rasterizes the scene with the\n"
-"cull mask ignored and each draw writing its own identity instead\n"
-"of a colour, so the ids that own a pixel are an exact answer to\n"
-"which draws reach the screen. Their intersection with the mask is\n"
-"a list of proven over-culls -- each one a named draw with a pixel\n"
-"count -- and the ids that own nothing while being drawn are the\n"
-"converse: the headroom the culling has not taken. Reads the image\n"
-"back to the CPU once a second, so it costs a full-resolution\n"
-"transfer on the frames it reports and nothing while off. Needs a\n"
-"backend with texture readback, which WebGL2 is not.");
+"Diagnostic. Checks what occlusion culling skipped against what really\n"
+"reaches the screen, by drawing every object once more with its\n"
+"identity as its colour, and reports objects culled by mistake. Reads\n"
+"the image back once a second. Not available on WebGL2.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8904,24 +7052,10 @@ void RenderParams::removeDebugCullAudit() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *RenderParams::docDebugCullBounds() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Measure whether a tighter occludee volume would cull more\n"
-"(docs/FarFieldProxies.md §12.19). After per-instance testing, 90%\n"
-"of the draws a frame still submits reach no pixel while each was\n"
-"tested and answered visible -- so the geometry is hidden and the\n"
-"box around it is not. This re-asks every still-drawn row three\n"
-"ways against the same occluder buffer: with the world box that\n"
-"ships, with the mesh's own box through the model matrix (an\n"
-"oriented box, where the shipping one is the axis-aligned box\n"
-"around it), and with every triangle asked separately -- which is\n"
-"far too slow to ship and is here as the ceiling, since nothing\n"
-"asked about the occludee can beat asking about its geometry. The\n"
-"verdicts are counted against the cull audit's id image, never\n"
-"acted on, so an arm that would have deleted something visible\n"
-"reports itself instead of being believed.\n"
-"Needs the cull audit on (it supplies the image) and the software\n"
-"occluder pass, which owns the buffer being asked. Runs on the\n"
-"audit's frame only, and costs far more than a frame: it is a\n"
-"measurement, not a mode to leave on.");
+"Diagnostic. Measures whether tighter bounds around objects would let\n"
+"occlusion culling hide more, by asking again about every object still\n"
+"drawn in three ways. Reports only, changes nothing on screen. Needs\n"
+"the cull audit and CPU occlusion, and is far too slow to leave on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8968,11 +7102,17 @@ void foreach3DViewer(FuncT func) {
 void RenderParams::onRenderParamChanged(const char *sReason)
 {
     if (boost::equals(sReason, "Type")) {
-        // Re-select the renderer backend on all 3D views. Same rule as
-        // View3DSettings: the experimental backend only runs in render
-        // cache mode 3; any other mode keeps the plain GL pipeline.
-        std::string type = ViewParams::getRenderCache() == 3
-            ? getType() : std::string();
+        // The type alone says whether the engine draws, and with it
+        // which render cache mode the program goes by (renderCache()):
+        // from "Legacy" with another mode stored to the engine, or back,
+        // the mode in force changes though its setting did not. Those
+        // who follow the mode are told as if it had; they ask
+        // renderCache() for it.
+        App::GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/View")->Notify("RenderCache");
+        // Then the backend on every 3D view: what the type means, not
+        // what it reads.
+        const std::string type = renderCache() == 3 ? engineType() : std::string();
         foreach3DViewer([&type](Gui::View3DInventorViewer *viewer) {
             viewer->setRendererType(type);
         });
@@ -9000,20 +7140,47 @@ void RenderParams::onRenderParamChanged(const char *sReason)
     });
 }
 
-void RenderParams::selectRenderPath()
+bool RenderParams::usesEngine()
 {
-    // Render cache 3 is what feeds the render engine, so it is the path
-    // whether or not a backend comes up: with one, the backend draws;
-    // without one, the cache's own GL renderer does, and a failure at
-    // any stage below falls back to that by itself (a backend that
-    // cannot be created, a shader pack that will not load, and a frame
-    // that returns false all leave canSkipInternal() false).
-    if (ViewParams::getRenderCache() != 3)
-        ViewParams::setRenderCache(3);
+    return getType() != legacyType();
+}
 
-    const std::string type = preferredType();
-    if (getType() != type)
-        setType(type);
+std::string RenderParams::engineType()
+{
+    const std::string &type = getType();
+    if (type == legacyType())
+        return std::string();
+    if (!type.empty() && type != "Default") {
+        for (const auto &t : Render::RendererFactory::types()) {
+            if (t == type)
+                return type;
+        }
+    }
+    const std::string preferred = preferredType();
+    return preferred == "Default" ? std::string() : preferred;
+}
+
+int RenderParams::renderCache()
+{
+    // Render cache 3 is what feeds the render engine, so with the engine
+    // it is the path whether or not a backend comes up: with one, the
+    // backend draws; without one, the cache's own GL renderer does, and
+    // a failure at any stage falls back to that by itself (a backend
+    // that cannot be created, a shader pack that will not load, and a
+    // frame that returns false all leave canSkipInternal() false).
+    const std::string type = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View/Render")
+                ->GetASCII("Type", defaultType().c_str());
+    if (type != legacyType())
+        return 3;
+    return int(App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View")
+                ->GetInt("RenderCache", ViewParams::defaultRenderCache()));
+}
+
+std::vector<std::string> RenderParams::backendTypes()
+{
+    return Render::RendererFactory::types();
 }
 
 std::string RenderParams::preferredType()

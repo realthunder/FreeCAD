@@ -42,6 +42,7 @@
 #include <Gui/ViewParams.h>
 
 #include "DlgSettingsNavigation.h"
+#include <Gui/MiscParams.h>
 #include "ui_DlgSettingsNavigation.h"
 #include "../ui_MouseButtons.h"
 
@@ -110,11 +111,10 @@ void DlgSettingsNavigation::saveSettings()
         Qt::UserRole);
     hGrp->SetASCII("NewDocumentCameraOrientation", (const char*)camera.toByteArray());
     if (camera == QByteArray("Custom")) {
-        ParameterGrp::handle hCustom = hGrp->GetGroup("Custom");
-        hCustom->SetFloat("Q0", q0);
-        hCustom->SetFloat("Q1", q1);
-        hCustom->SetFloat("Q2", q2);
-        hCustom->SetFloat("Q3", q3);
+        MiscParams::setCustomViewQ0(q0);
+        MiscParams::setCustomViewQ1(q1);
+        MiscParams::setCustomViewQ2(q2);
+        MiscParams::setCustomViewQ3(q3);
     }
 }
 
@@ -137,21 +137,21 @@ void DlgSettingsNavigation::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View");
-    std::string model = hGrp->GetASCII("NavigationStyle", CADNavigationStyle::getClassTypeId().getName());
+    std::string model = hGrp->GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
     int index = ui->comboNavigationStyle->findData(QByteArray(model.c_str()));
     if (index > -1) ui->comboNavigationStyle->setCurrentIndex(index);
 
-    index = hGrp->GetInt("OrbitStyle", int(NavigationStyle::Trackball));
+    index = hGrp->GetInt("OrbitStyle", Gui::ViewParams::defaultOrbitStyle());
     index = Base::clamp(index, 0, ui->comboOrbitStyle->count()-1);
     ui->comboOrbitStyle->setCurrentIndex(index);
 
-    index = hGrp->GetInt("RotationMode", 1);
+    index = hGrp->GetInt("RotationMode", Gui::ViewParams::defaultRotationMode());
     ui->comboRotationMode->setCurrentIndex(index);
 
-    bool showNaviCube = hGrp->GetBool("ShowNaviCube", true);
+    bool showNaviCube = hGrp->GetBool("ShowNaviCube", Gui::ViewParams::defaultShowNaviCube());
     ui->groupBoxNaviCube->setChecked(showNaviCube);
 
-    bool showRotationCenter = hGrp->GetBool("ShowRotationCenter", true);
+    bool showRotationCenter = hGrp->GetBool("ShowRotationCenter", Gui::ViewParams::defaultShowRotationCenter());
     ui->groupBoxRotationCenter->setChecked(showRotationCenter);
 
     ui->comboNewDocView->addItem(tr("Isometric"), QByteArray("Isometric"));
@@ -164,15 +164,14 @@ void DlgSettingsNavigation::loadSettings()
     ui->comboNewDocView->addItem(tr("Rear"), QByteArray("Rear"));
     ui->comboNewDocView->addItem(tr("Bottom"), QByteArray("Bottom"));
     ui->comboNewDocView->addItem(tr("Custom"), QByteArray("Custom"));
-    std::string camera = hGrp->GetASCII("NewDocumentCameraOrientation", "Trimetric");
+    std::string camera = hGrp->GetASCII("NewDocumentCameraOrientation", Gui::ViewParams::defaultNewDocumentCameraOrientation().c_str());
     index = ui->comboNewDocView->findData(QByteArray(camera.c_str()));
     if (index > -1) ui->comboNewDocView->setCurrentIndex(index);
     if (camera == "Custom") {
-        ParameterGrp::handle hCustom = hGrp->GetGroup("Custom");
-        q0 = hCustom->GetFloat("Q0", q0);
-        q1 = hCustom->GetFloat("Q1", q1);
-        q2 = hCustom->GetFloat("Q2", q2);
-        q3 = hCustom->GetFloat("Q3", q3);
+        q0 = MiscParams::getCustomViewQ0();
+        q1 = MiscParams::getCustomViewQ1();
+        q2 = MiscParams::getCustomViewQ2();
+        q3 = MiscParams::getCustomViewQ3();
     }
 
     connect(ui->comboNewDocView, qOverload<int>(&QComboBox::currentIndexChanged),

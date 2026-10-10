@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Notifications.h>
 #include <Gui/Command.h>
@@ -212,7 +213,7 @@ private:
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools"
         );
-        auto index = hGrp->GetInt("OnViewParameterVisibility", 1);
+        auto index = hGrp->GetInt("OnViewParameterVisibility", Sketcher::SketcherParams::defaultOnViewParameterVisibility());
         return index != 0;
     };
 

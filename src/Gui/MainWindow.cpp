@@ -91,6 +91,10 @@
 #include <customtitlebarkit/MenuIntegration.h>
 
 #include "MainWindow.h"
+#include "MainWindowParams.h"
+#include <App/UnitsParams.h>
+#include "NotificationAreaParams.h"
+#include "GeneralParams.h"
 #include "InputHintWidget.h"
 #include "Action.h"
 #include "Assistant.h"
@@ -109,6 +113,7 @@
 #include "PropertyView.h"
 #include "PythonConsole.h"
 #include "ReportView.h"
+#include "ReportViewParams.h"
 #include "SelectionView.h"
 #include "Splashscreen.h"
 #include "ToolBarManager.h"
@@ -226,7 +231,7 @@ public:
     void OnChange(Base::Subject<const char*> &rCaller, const char * sReason) override
     {
         Q_UNUSED(rCaller)
-        if (strcmp(sReason, "UserSchema") == 0) {
+        if (strcmp(sReason, "UserSchema") == 0 || strcmp(sReason, "IgnoreProjectSchema") == 0) {
             unitChanged();
         }
     }
@@ -261,9 +266,10 @@ private:
     {
         ParameterGrp::handle hGrpu = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/Units");
-        bool ignore = hGrpu->GetBool("IgnoreProjectSchema", false);
+        bool ignore = hGrpu->GetBool("IgnoreProjectSchema",
+                                     App::UnitsParams::defaultIgnoreProjectSchema());
         App::Document* doc = App::GetApplication().getActiveDocument();
-        int userSchema = getWindowParameter()->GetInt("UserSchema", 0);
+        int userSchema = getWindowParameter()->GetInt("UserSchema", App::UnitsParams::defaultUserSchema());
         if ( doc != nullptr && ! ignore) {
             userSchema = doc->UnitSystem.getValue();
         }
@@ -335,6 +341,9 @@ struct MainWindowP
     bool _restoring = false;
     bool _closingAll = false;
     QTime _showNormal;
+    /// Set while the title bar is being switched on a window that was
+    /// maximized, see MainWindow::applyTitleBarParams().
+    bool titleBarRemaximize = false;
 
     /// The button the title bar's menu folds behind. Outlives every switch
     /// between the two title bars, so it is built once and handed back.
@@ -445,9 +454,7 @@ protected:
 
 MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
   : CustomTitleBarWindow(
-        App::GetApplication()
-                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow")
-                ->GetBool("CustomTitleBar", false)
+        MainWindowParams::getCustomTitleBar()
             ? Mode::Custom
             : Mode::Native,
         parent)
@@ -594,7 +601,7 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     // Everything in the status bar goes through addStatusBarItem(), this
     // window's own widgets included. The order band is upstream's, so a
     // workbench widget registered at 550-699 lands where its author meant it
-    // to: Preselection(0) and Progress(50) on the left, then Input Hints(100),
+    // to: Preselection(0) on the left, then Progress(50), Input Hints(100),
     // [workbench 550-699], Notifications(800) and Unit System(1000) on the
     // right.
     addStatusBarItem(d->actionLabel,
@@ -609,8 +616,15 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     QProgressBar* progressBar = Gui::SequencerBar::instance()->getProgressBar(statusBar());
     progressBar->setWindowTitle(tr("Progress bar"));
     progressBar->setObjectName(QStringLiteral("SB_ProgressBar"));
+    // The first of the right-hand, PERMANENT group, not the left slot that
+    // upstream's band gives it. It lands in the same place -- behind the
+    // preselection label, whose stretch takes the room before it -- but a
+    // left item is hidden by QStatusBar whenever a temporary message is up,
+    // and showStatus() puts one up for every warning and error. A recompute
+    // that warned hid the label, and a progress bar shown then had nothing
+    // before it: it sat at the left end, over the message.
     addStatusBarItem(progressBar,
-                     {"progressBar", QString(), StatusBarSlot::Left, 50, true, 0});
+                     {"progressBar", QString(), StatusBarSlot::Right, 50, true, 0});
     addStatusBarItem(d->hintLabel,
                      {"hintLabel",
                       //: A context menu action showing or hiding the input
@@ -634,9 +648,7 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     addStatusBarItem(new Dialog::SandboxIndicator(statusBar()),
                      {"SB_SandboxIndicator", QString(), StatusBarSlot::Right, 910, false, 0});
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/NotificationArea");
-
-    auto notificationAreaEnabled = hGrp->GetBool("NotificationAreaEnabled", true);
+    auto notificationAreaEnabled = NotificationAreaParams::getNotificationAreaEnabled();
 
     NotificationArea* notificationArea = new NotificationArea(statusBar());
     notificationArea->setObjectName(QStringLiteral("notificationArea"));
@@ -1381,7 +1393,7 @@ void MainWindow::activatePreviousWindow ()
 void MainWindow::activateWorkbench(const QString& name)
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    bool saveWB = hGrp->GetBool("SaveWBbyTab", false);
+    bool saveWB = hGrp->GetBool("SaveWBbyTab", Gui::ViewParams::defaultSaveWBbyTab());
     QMdiSubWindow* subWin = d->mdiArea->activeSubWindow();
     if (subWin && saveWB) {
         QString currWb = subWin->property("ownWB").toString();
@@ -1665,6 +1677,19 @@ void MainWindow::removeWindow(Gui::MDIView* view, bool close)
         }
     }
 
+    // A view embedded in a split view cell (Gui::ViewArea) has the cell
+    // for a parent, and deleting that -- which is what the rest of this
+    // function would do -- takes a tile out of the area behind its back:
+    // no collapse of the splitter left with one child, no other cell made
+    // active. The area knows how a view leaves it.
+    if (close) {
+        auto area = ViewArea::areaOf(view);
+        if (area && area->removeView(view)) {
+            updateActions();
+            return;
+        }
+    }
+
     QWidget* parent = view->parentWidget();
 
     // The call of 'd->mdiArea->removeSubWindow(parent)' causes the QMdiSubWindow
@@ -1785,7 +1810,7 @@ void MainWindow::onWindowActivated(QMdiSubWindow* w)
     }
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    bool saveWB = hGrp->GetBool("SaveWBbyTab", false);
+    bool saveWB = hGrp->GetBool("SaveWBbyTab", Gui::ViewParams::defaultSaveWBbyTab());
     if (saveWB) {
         QString currWb = w->property("ownWB").toString();
         if (! currWb.isEmpty()) {
@@ -1877,7 +1902,7 @@ void MainWindow::onDockWindowMenuAboutToShow()
 {
     auto menu = static_cast<QMenu*>(sender());
     menu->clear();
-    QString shortcutPrefix = QString::fromUtf8(d->hGrp->GetASCII("DockableWindowShortcut", "D, D").c_str());
+    QString shortcutPrefix = QString::fromUtf8(MainWindowParams::getDockableWindowShortcut().c_str());
     shortcutPrefix = shortcutPrefix.trimmed();
     if (!shortcutPrefix.isEmpty()) {
         if (!shortcutPrefix.endsWith(QLatin1Char(',')))
@@ -2108,9 +2133,7 @@ private:
      */
     static int clickGuardInterval()
     {
-        auto hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/MainWindow");
-        return static_cast<int>(hGrp->GetInt("TitleBarMenuClickGuard", 1000));  // NOLINT
+        return static_cast<int>(MainWindowParams::getTitleBarMenuClickGuard());  // NOLINT
     }
 
     static constexpr int logoSize = 24;
@@ -2168,7 +2191,7 @@ void MainWindow::setupTitleBarMenu()
 
 bool MainWindow::foldTitleBarMenu() const
 {
-    return d->hGrp->GetBool("FoldTitleBarMenu", true);
+    return MainWindowParams::getFoldTitleBarMenu();
 }
 
 void MainWindow::setFoldTitleBarMenu(bool enable)
@@ -2176,7 +2199,7 @@ void MainWindow::setFoldTitleBarMenu(bool enable)
     if (enable == foldTitleBarMenu()) {
         return;
     }
-    d->hGrp->SetBool("FoldTitleBarMenu", enable);
+    MainWindowParams::setFoldTitleBarMenu(enable);
     setupTitleBarMenu();
 }
 
@@ -2240,12 +2263,43 @@ bool MainWindow::activateMenuBar()
 
 bool MainWindow::titleBarToolBars() const
 {
-    return d->hGrp->GetBool("TitleBarToolBars", true);
+    return MainWindowParams::getTitleBarToolBars();
 }
+
+namespace
+{
+// How long a window is given to arrive in a state it was just asked into,
+// before the next step of a title bar switch is taken. See
+// MainWindow::applyTitleBarParams().
+constexpr int TitleBarSwitchSettle = 100;
+}  // namespace
 
 void MainWindow::applyTitleBarParams()
 {
-    const bool custom = d->hGrp->GetBool("CustomTitleBar", false);
+    const bool custom = MainWindowParams::getCustomTitleBar();
+
+#ifdef FC_OS_WIN32
+    // The frame of a maximized window is not changed in place. On Windows the
+    // switch recreates the window, and one recreated while maximized is left
+    // with two accounts of where its client area is: Windows has it on the
+    // work area, (0,0) 1920x1040, and Qt keeps it at (-8,8) 1936x1040.
+    // Sixteen pixels of title bar hang off the right edge with the window
+    // buttons, every widget answers the pointer 8px from where it is drawn --
+    // the folded menu does not open under it -- and the normal placement the
+    // window later returns to is above the top of the screen, further up
+    // with every switch. Nothing asked of the window afterwards reconciles
+    // the two short of leaving the maximized state, so it is left first: the
+    // switch runs on a window in the normal state, a turn of the event loop
+    // later so that Qt has heard where that is, and the window is maximized
+    // again once the new frame has settled. A theme or a preference pack is
+    // what usually gets here, with the window maximized more often than not.
+    if (custom != isCustomTitleBar() && isVisible() && isMaximized()) {
+        d->titleBarRemaximize = true;
+        showNormal();
+        d->titleBarTimer.start(TitleBarSwitchSettle);
+        return;
+    }
+#endif
     // Only ever asked of the title bar that exists: with the platform's there
     // is nowhere to put the toolbar, and false is also what puts it back.
     const bool inTitleBar = custom && titleBarToolBars();
@@ -2272,6 +2326,22 @@ void MainWindow::applyTitleBarParams()
     setCustomTitleBar(custom);
     if (toolBars && inTitleBar) {
         toolBars->setTitleBarToolBars(true);
+    }
+
+    // Std_ViewTitleBar asks through the parameter, and shows what came of it.
+    if (auto cmd = Application::Instance->commandManager().getCommandByName("Std_ViewTitleBar")) {
+        if (auto action = cmd->getAction()) {
+            action->setChecked(isCustomTitleBar(), true);
+        }
+    }
+
+    if (d->titleBarRemaximize) {
+        d->titleBarRemaximize = false;
+        QTimer::singleShot(TitleBarSwitchSettle, this, [this]() {
+            if (isVisible() && !isMinimized()) {
+                showMaximized();
+            }
+        });
     }
 }
 
@@ -2412,14 +2482,13 @@ void MainWindow::delayedStartup()
     Application::Instance->checkForDeprecatedSettings();
 
     // Create new document?
-    ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("Document");
-    if (hGrp->GetBool("CreateNewDoc", false)) {
+    if (App::DocumentParams::getCreateNewDoc()) {
         if (App::GetApplication().getDocuments().empty()){
             Application::Instance->commandManager().runCommandByName("Std_New");
         }
     }
 
-    if (hGrp->GetBool("RecoveryEnabled", true)) {
+    if (App::DocumentParams::getRecoveryEnabled()) {
         Application::Instance->checkForPreviousCrashes();
     }
 
@@ -2700,10 +2769,10 @@ void MainWindow::startSplasher()
         ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter().
             GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("General");
         // first search for an external image file
-        if (hGrp->GetBool("ShowSplasher", true)) {
+        if (GeneralParams::getShowSplasher()) {
             d->splashscreen = new SplashScreen(this->splashImage());
 
-            if (!hGrp->GetBool("ShowSplasherMessages", true)) {
+            if (!GeneralParams::getShowSplasherMessages()) {
                 d->splashscreen->setShowMessages(false);
             }
 
@@ -3746,12 +3815,35 @@ QMdiArea *MainWindow::getMdiArea() const
 
 // ----------------------------------------------------------
 
+namespace {
+// The one status bar observer's connection to the report view's settings
+// (kept here and not in the class, whose header would need the signal's).
+fastsignals::scoped_connection _statusBarColors;
+}
+
 StatusBarObserver::StatusBarObserver()
   : WindowParameter("OutputWindow")
 {
-    msg = QStringLiteral("#statusBar{color: #000000}"); // black
-    wrn = QStringLiteral("#statusBar{color: #ffaa00}"); // orange
-    err = QStringLiteral("#statusBar{color: #ff0000}"); // red
+    // The three colours are the report view's settings, read where their
+    // defaults are and followed when they change. A text colour of 0 is
+    // "the window's", which the status bar has always shown as black.
+    auto apply = [this](const char *name) {
+        auto format = QStringLiteral("#statusBar{color: %1}");
+        if (!name)
+            return;
+        if (strcmp(name, "colorText") == 0)
+            this->msg = format.arg(App::Color::fromPackedRGB<QColor>(
+                        ReportViewParams::getcolorText()).name());
+        else if (strcmp(name, "colorWarning") == 0)
+            this->wrn = format.arg(App::Color::fromPackedRGB<QColor>(
+                        ReportViewParams::getcolorWarning()).name());
+        else if (strcmp(name, "colorError") == 0)
+            this->err = format.arg(App::Color::fromPackedRGB<QColor>(
+                        ReportViewParams::getcolorError()).name());
+    };
+    for (const char *name : {"colorText", "colorWarning", "colorError"})
+        apply(name);
+    _statusBarColors = ReportViewParams::signalParamChanged().connect(apply);
     Base::Console().AttachObserver(this);
     getWindowParameter()->Attach(this);
     getWindowParameter()->NotifyAll();
@@ -3759,6 +3851,7 @@ StatusBarObserver::StatusBarObserver()
 
 StatusBarObserver::~StatusBarObserver()
 {
+    _statusBarColors.disconnect();
     getWindowParameter()->Detach(this);
     Base::Console().DetachObserver(this);
 }
@@ -3767,19 +3860,7 @@ void StatusBarObserver::OnChange(Base::Subject<const char*> &rCaller, const char
 {
     ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
     auto format = QStringLiteral("#statusBar{color: %1}");
-    if (strcmp(sReason, "colorText") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        this->msg = format.arg(App::Color::fromPackedRGB<QColor>(col).name());
-    }
-    else if (strcmp(sReason, "colorWarning") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        this->wrn = format.arg(App::Color::fromPackedRGB<QColor>(col).name());
-    }
-    else if (strcmp(sReason, "colorError") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        this->err = format.arg(App::Color::fromPackedRGB<QColor>(col).name());
-    }
-    else if (strcmp(sReason, "colorCritical") == 0) {
+    if (strcmp(sReason, "colorCritical") == 0) {
         unsigned long col = rclGrp.GetUnsigned( sReason );
         this->critical = format.arg(QColor((col >> 24) & 0xff,(col >> 16) & 0xff,(col >> 8) & 0xff).name());
     }

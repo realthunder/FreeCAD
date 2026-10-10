@@ -713,7 +713,7 @@ public:
         ns.pan(ns.viewer->getSoRenderManager()->getCamera());//set up panningplane
         this->ratio = ns.viewer->getSoRenderManager()->getViewportRegion().getViewportAspectRatio();
         enableTilt = !(App::GetApplication().GetParameterGroupByPath
-                ("User parameter:BaseApp/Preferences/View")->GetBool("DisableTouchTilt",true));
+                ("User parameter:BaseApp/Preferences/View")->GetBool("DisableTouchTilt", Gui::ViewParams::defaultDisableTouchTilt()));
     }
     virtual ~GestureState(){
         auto &ns = this->outermost_context().ns;
@@ -867,7 +867,7 @@ GestureNavigationStyle::GestureNavigationStyle()
       postponedEvents(*this)
 {
     this->logging = App::GetApplication().GetParameterGroupByPath
-                ("User parameter:BaseApp/Preferences/View")->GetBool("NavigationDebug");
+                ("User parameter:BaseApp/Preferences/View")->GetBool("NavigationDebug", Gui::ViewParams::defaultNavigationDebug());
     mouseMoveThreshold = QApplication::startDragDistance();
     naviMachine->initiate();
 
@@ -1025,12 +1025,12 @@ void GestureNavigationStyle::onRollGesture(int direction)
         if (logging)
             Base::Console().Log("Roll forward gesture\n");
         cmd = App::GetApplication().GetParameterGroupByPath
-            ("User parameter:BaseApp/Preferences/View")->GetASCII("GestureRollFwdCommand");
+            ("User parameter:BaseApp/Preferences/View")->GetASCII("GestureRollFwdCommand", Gui::ViewParams::defaultGestureRollFwdCommand().c_str());
     } else if (direction == -1) {
         if (logging)
             Base::Console().Log("Roll backward gesture\n");
         cmd = App::GetApplication().GetParameterGroupByPath
-            ("User parameter:BaseApp/Preferences/View")->GetASCII("GestureRollBackCommand");
+            ("User parameter:BaseApp/Preferences/View")->GetASCII("GestureRollBackCommand", Gui::ViewParams::defaultGestureRollBackCommand().c_str());
     }
     if (cmd.empty())
         return;

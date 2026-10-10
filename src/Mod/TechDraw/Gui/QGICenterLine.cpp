@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <cmath>
 
@@ -78,7 +80,7 @@ QColor QGICenterLine::getCenterColor()
 
 Qt::PenStyle QGICenterLine::getCenterStyle()
 {
-    Qt::PenStyle centerStyle = static_cast<Qt::PenStyle> (Preferences::getPreferenceGroup("Decorations")->GetInt("CenterLine", 2));
+    Qt::PenStyle centerStyle = static_cast<Qt::PenStyle> (Preferences::getPreferenceGroup("Decorations")->GetInt("CenterLine", TechDraw::TechDrawParams::defaultCenterLine()));
     return centerStyle;
 }
 

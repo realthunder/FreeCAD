@@ -35,7 +35,19 @@ vec3 fcCyclesDecode(vec3 c)
 
 void main()
 {
-	vec4 c = texture2D(s_cyclesImage, v_texcoord0);
+	// vs_fc_comp hands over the UV of a RENDER TARGET: fc_clipToUv turns v
+	// over wherever a target's first row is its top one, which is every
+	// backend but OpenGL. This image is not a target. It is uploaded,
+	// bottom row first (FrameImageConsumer), and an uploaded texture's
+	// first row is at v = 0 on every backend -- so on Direct3D, Vulkan and
+	// Metal the path tracer's picture came out upside down, which for a
+	// model with Z up reads as mirrored in the XY plane. The turn is
+	// taken back out here, under the very condition it was put in by.
+	vec2 uv = v_texcoord0;
+#if !BGFX_SHADER_LANGUAGE_GLSL
+	uv.y = 1.0 - uv.y;
+#endif
+	vec4 c = texture2D(s_cyclesImage, uv);
 	// Un-premultiply, transform, re-premultiply: the blend is
 	// one / one-minus-src-alpha either way.
 	if (u_cyclesBlit.x > 0.5) {

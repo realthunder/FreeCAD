@@ -116,6 +116,12 @@ void ViewProviderGeomHatch::onChanged(const App::Property* p)
 }
 
 //for feature properties
+void ViewProviderGeomHatch::finishRestoring()
+{
+    ViewProviderDrawingView::fixColorAlphaValues(this);
+    Gui::ViewProviderDocumentObject::finishRestoring();
+}
+
 void ViewProviderGeomHatch::updateData(const App::Property* prop)
 {
     if ( prop == &(getViewObject()->FilePattern) ||

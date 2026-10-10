@@ -49,6 +49,7 @@
 # include <gp_Ax3.hxx>
 # include <gp_Dir.hxx>
 # include <gp_Pln.hxx>
+# include <gp_Quaternion.hxx>
 # include <gp_Trsf.hxx>
 # include <Geom_Circle.hxx>
 # include <GeomAdaptor_Curve.hxx>
@@ -91,6 +92,7 @@ typedef boost::iterator_range<const char*> CharRange;
 #include "PartFeaturePy.h"
 #include "PartParams.h"
 #include "PartPyCXX.h"
+#include "ShapeCongruence.h"
 #include "TopoShapePy.h"
 #include "TopoShapeOpCode.h"
 
@@ -136,6 +138,20 @@ struct Feature::ShapeVersion {
     TopLoc_Location blobMotion;
     /// The persisted form, a dynamic `_BaseShape<N>` property, or null
     PropertyPartShape *materialized = nullptr;
+    /** How the live shape lies to this generation's, both before their
+     * placement, when the feature said so (Feature::setShapeMotion()): the
+     * generation is searched moved by it.  In memory only.
+     */
+    Base::Matrix4D motion;
+    bool moved = false;
+    /** The same when the feature did not say: whether the live shape IS
+     * this generation's, moved as a whole (Part::recoverShapeMotion()), and
+     * by what.  Asked once per live shape, the first time an element is not
+     * found where it was.
+     */
+    enum class Recovered { NotTried, None, Found };
+    mutable Recovered recovered = Recovered::NotTried;
+    mutable Base::Matrix4D recoveredMotion;
 
     /** The generation's shape.  A generation adopted from a restored
      * property is not parsed just to be listed: its shape is read from the
@@ -1460,6 +1476,7 @@ void Feature::onBeforeChange(const App::Property *prop) {
                 it = _shapeVersions.erase(it);
             else {
                 it->searched.clear();
+                it->recovered = ShapeVersion::Recovered::NotTried;
                 ++it;
             }
         }
@@ -1480,6 +1497,18 @@ void Feature::onBeforeChange(const App::Property *prop) {
             version.blob = propShape->_blob;
             version.blobPlan = propShape->_blobPlan;
             version.blobMotion = propShape->_blobMotion;
+            if (propShape == &Shape && _hasShapeMotion) {
+                // The shape moves as a whole, and what is retained of it
+                // lies that much further from the live one
+                for (auto &older : _shapeVersions) {
+                    if (older.prop != propShape)
+                        continue;
+                    older.motion = _shapeMotion * older.motion;
+                    older.moved = true;
+                }
+                version.motion = _shapeMotion;
+                version.moved = true;
+            }
             if (!version.shape.isNull()) {
                 std::vector<App::DocumentObject *> objs;
                 std::vector<std::string> subs;
@@ -1518,6 +1547,13 @@ void Feature::onBeforeChange(const App::Property *prop) {
         }
     }
     GeoFeature::onBeforeChange(prop);
+}
+
+void Feature::setShapeMotion(const Base::Matrix4D *motion)
+{
+    _hasShapeMotion = motion != nullptr;
+    if (motion)
+        _shapeMotion = *motion;
 }
 
 void Feature::adoptShapeVersions()
@@ -1805,8 +1841,39 @@ Feature::searchElementCache(const std::string &element,
             // the generation's own element map, an indexed name by position.
             TopoShape sub = version.geometry().getSubTopoShape(
                     element.c_str() + version.prefix.size(), true);
+            if (!sub.isNull() && version.moved) {
+                // Out of the placement the generation had, moved as the
+                // feature said its shape was, into the live placement
+                Base::Matrix4D mat = version.geometry().getTransform();
+                mat.inverseGauss();
+                mat = propShape->getShape().getTransform() * version.motion * mat;
+                sub = sub.makETransform(mat);
+            }
             if (!sub.isNull())
                 searchLiveShape(propShape, prefix, sub, names, options, tol, atol);
+            if (names.empty() && !sub.isNull() && !version.moved) {
+                // Not where it was, and the feature said nothing of a
+                // motion.  A shape that is its own generation carried off
+                // whole -- a binder of a binder that moved with its container
+                // is one -- still tells, by itself, where everything went.
+                if (version.recovered == ShapeVersion::Recovered::NotTried) {
+                    version.recovered = ShapeVersion::Recovered::None;
+                    gp_Trsf trsf;
+                    if (recoverShapeMotion(version.geometry().getShape(),
+                                           propShape->getShape().getShape(), trsf)
+                            && (trsf.TranslationPart().Modulus() > Precision::Confusion()
+                                || std::fabs(trsf.GetRotation().GetRotationAngle())
+                                        > Precision::Angular()))
+                    {
+                        version.recovered = ShapeVersion::Recovered::Found;
+                        version.recoveredMotion = TopoShape::convert(trsf);
+                    }
+                }
+                if (version.recovered == ShapeVersion::Recovered::Found)
+                    searchLiveShape(propShape, prefix,
+                                    sub.makETransform(version.recoveredMotion),
+                                    names, options, tol, atol);
+            }
         }
         // The newest generation that holds the element answers
         if (!names.empty())

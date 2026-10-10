@@ -9,6 +9,8 @@
 # Legs:
 #   blit           FC_BGFX_READBACK=0  -- BGFXView::blit, GL only
 #   readback       FC_BGFX_READBACK=2  -- pipelined readback composite
+#                  (+ FC_BGFX_READBACK_SYNC=0: unset, the session's
+#                  Render/ReadbackFrameMode would decide frame by frame)
 #   readback-sync  + FC_BGFX_READBACK_SYNC=1, the fully serialized form
 #                  docs/DeviceAdoption.md section 2 costed
 #
@@ -57,7 +59,7 @@ run_leg() {
     env_args=(FC_SWAP_INTERVAL=0 "COMP_COST_TYPE=$TYPE")
     case "$leg" in
         blit)          env_args+=(FC_BGFX_READBACK=0) ;;
-        readback)      env_args+=(FC_BGFX_READBACK=2) ;;
+        readback)      env_args+=(FC_BGFX_READBACK=2 FC_BGFX_READBACK_SYNC=0) ;;
         readback-sync) env_args+=(FC_BGFX_READBACK=2 FC_BGFX_READBACK_SYNC=1) ;;
         *) echo "unknown leg $leg" >&2; return 1 ;;
     esac

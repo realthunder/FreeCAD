@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <cassert>
 # include <limits>
@@ -475,14 +477,14 @@ void QGTracker::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
 
 QColor QGTracker::getTrackerColor()
 {
-    App::Color trackColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Tracker")->GetUnsigned("TrackerColor", 0xFF0000FF));
+    App::Color trackColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Tracker")->GetUnsigned("TrackerColor", TechDraw::TechDrawParams::defaultTrackerColor()));
     return PreferencesGui::getAccessibleQColor(trackColor.asValue<QColor>());
 }
 
 double QGTracker::getTrackerWeight()
 {
     double result = 1.0;
-    result = Preferences::getPreferenceGroup("Tracker")->GetFloat("TrackerWeight", 4.0);
+    result = Preferences::getPreferenceGroup("Tracker")->GetFloat("TrackerWeight", TechDraw::TechDrawParams::defaultTrackerWeight());
 
     return result;
 }

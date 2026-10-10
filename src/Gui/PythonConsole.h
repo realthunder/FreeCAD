@@ -115,6 +115,8 @@ public:
     ~PythonConsole() override;
 
     void OnChange( Base::Subject<const char*> &rCaller,const char* rcReason ) override;
+    /// Applies one of the console's own settings (PythonConsoleParams).
+    void applySetting(const char* name);
     void printStatement( const QString& cmd );
     QString readline( );
 

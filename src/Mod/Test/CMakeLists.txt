@@ -8,6 +8,7 @@ SET(Test_SRCS
     InputProperty.py
     ShapeStorage.py
     Metadata.py
+    ModuleSettings.py
     StringHasher.py
     Menu.py
     TestApp.py

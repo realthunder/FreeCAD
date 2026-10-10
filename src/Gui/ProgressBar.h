@@ -154,6 +154,11 @@ private:
 class ProgressBar : public QProgressBar
 {
     Q_OBJECT
+    /** Whether the user wants the bar at all. The sequencer decides when it is
+    * on screen; the status bar's item registry (MainWindow::addStatusBarItem)
+    * finds this property and drives it instead of calling setVisible().
+    */
+    Q_PROPERTY(bool userEnabled READ isUserEnabled WRITE setUserEnabled)
 
 public:
     /** Construction */
@@ -191,6 +196,11 @@ public Q_SLOTS:
 
 public:
     bool canAbort() const;
+
+    bool isUserEnabled() const;
+    void setUserEnabled(bool enabled);
+    /** Does not show the bar while the user has it disabled. */
+    void setVisible(bool visible) override;
 
 protected:
     void showEvent(QShowEvent*) override;

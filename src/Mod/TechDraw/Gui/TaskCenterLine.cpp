@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Base/UnitsApi.h>
@@ -525,7 +527,7 @@ QColor TaskCenterLine::getCenterColor()
 
 double TaskCenterLine::getExtendBy()
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetFloat("CosmoCLExtend", 3.0);
+    return Preferences::getPreferenceGroup("Decorations")->GetFloat("CosmoCLExtend", TechDraw::TechDrawParams::defaultCosmoCLExtend());
 }
 
 //******************************************************************************

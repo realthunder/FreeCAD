@@ -233,7 +233,7 @@ public:
         for param in params:
             cog.out(
                 f"""
-        signalParamChanged("{param.name}");"""
+        signalParamChanged("{param.param_name}");"""
             )
         cog.out(
             f"""
@@ -274,7 +274,7 @@ public:
         cog.out(
             f"""
         {param.name} = {param.getter('this')};
-        funcs["{param.name}"] = &{class_name}P::update{param.name};"""
+        funcs["{param.param_name}"] = &{class_name}P::update{param.name};"""
         )
 
     cog.out(
@@ -385,7 +385,7 @@ fastsignals::signal<void (const char*)> &
         cog.out(
             f"""
 {trace_comment()}
-void signalAll() {{
+void {class_name}::signalAll() {{
     instance()->signalAll();
 }}
 """
@@ -430,7 +430,7 @@ void {class_name}::set{param.name}(const {param.C_Type} &v) {{
             f"""
 {trace_comment()}
 void {class_name}::remove{param.name}() {{
-    {param.handle('instance()')}->Remove{param.Type}("{param.name}");
+    {param.handle('instance()')}->Remove{param.Type}("{param.param_name}");
 }}
 """
         )
@@ -746,6 +746,13 @@ def make_title(name):
 class Param:
     WidgetPrefix = ""
 
+    # Range of the spin box of a numeric setting shown without a proxy. A
+    # spin box starts out with Qt's range of 0 to 99 and clamps whatever it is
+    # given: the default, and then the stored value -- which OK in the
+    # preferences writes back, changed. So a setting with no range of its
+    # own gets the whole range of its type.
+    WidgetRange = None
+
     def __init__(self, name, default, doc="", title="",
                  on_change=False, proxy=None, subpath='',
                  param_name='', no_label=False, property_type=None):
@@ -828,6 +835,11 @@ class Param:
     {self.widget_name} = new {self.widget_type}(this);
     layoutRow->addWidget({self.widget_name});"""
         )
+        if not self.proxy and self.WidgetRange:
+            cog.out(
+                f"""
+    {self.widget_name}->setRange({self.WidgetRange[0]}, {self.WidgetRange[1]});"""
+            )
         if self.widget_setter:
             cog.out(
                 f"""
@@ -851,7 +863,7 @@ class Param:
     def _init_pref_widget(self):
         cog.out(
             f"""
-    {self.widget_name}->setEntryName("{self.name}");"""
+    {self.widget_name}->setEntryName("{self.param_name}");"""
         )
         if self.path.startswith(_ParamPrefix):
             cog.out(
@@ -1032,6 +1044,7 @@ class ParamFloat(Param):
     PropertyType = "App::PropertyFloat"
     WidgetType = "Gui::PrefDoubleSpinBox"
     WidgetSetter = "setValue"
+    WidgetRange = ("-1e9", "1e9")
 
 
 class ParamString(Param):
@@ -1048,11 +1061,11 @@ class ParamString(Param):
 
     @property
     def default(self):
-        return f'"{self._default}"'
+        return c_string(str(self._default))
 
     @property
     def registry_default(self):
-        return quote(str(self._default))
+        return c_string(str(self._default))
 
 
 class ParamQString(Param):
@@ -1087,6 +1100,7 @@ class ParamInt(Param):
     PropertyType = "App::PropertyInteger"
     WidgetType = "Gui::PrefSpinBox"
     WidgetSetter = "setValue"
+    WidgetRange = ("-2147483647", "2147483647")
 
 
 class ParamUInt(Param):
@@ -1096,6 +1110,7 @@ class ParamUInt(Param):
     PropertyType = "App::PropertyInteger"
     WidgetType = "Gui::PrefSpinBox"
     WidgetSetter = "setValue"
+    WidgetRange = ("0", "2147483647")
 
 
 class ParamHex(ParamUInt):
@@ -1352,6 +1367,13 @@ class ParamSpinBox(ParamProxy):
                 f"""
     {param.widget_name}->setDecimals({self.decimals});"""
             )
+        # The default again: it was set before the range, and a default
+        # outside Qt's own 0 to 99, or finer than two decimals, was clamped
+        # to that -- and then stored by OK in the preferences.
+        cog.out(
+            f"""
+    {param.widget_name}->{param.widget_setter}({param.widget_default_expr()});"""
+        )
 
     def registry_fields(self, param):
         return (super().registry_fields(param)
@@ -1443,3 +1465,27 @@ def declare_properties(properties):
 def define_properties(properties, class_name):
     for prop in properties:
         prop.define(class_name)
+
+
+# Kept at the end of the file: the generated sources name the line of this
+# file each of their parts comes from, and a line added above would rewrite
+# every one of them.
+def c_string(txt):
+    """A C++ string literal holding txt.
+
+    Quote and backslash are escaped; what is not ASCII becomes the octal
+    escapes of its UTF-8 bytes, three digits each, so that a digit following
+    them is not taken for part of the escape and the generated source stays
+    ASCII.
+    """
+    out = []
+    for ch in txt:
+        if ch in '\\"':
+            out.append("\\" + ch)
+        elif ch == "\n":
+            out.append("\\n")
+        elif ord(ch) < 128:
+            out.append(ch)
+        else:
+            out.extend("\\%03o" % byte for byte in ch.encode("utf-8"))
+    return '"' + "".join(out) + '"'

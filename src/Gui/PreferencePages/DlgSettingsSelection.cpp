@@ -135,14 +135,6 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     EnablePreselection->setEntryName("EnablePreselection");
     EnablePreselection->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:492)
-    layoutDViewSelection->addLayout(layoutRow);
-    HighlightColor = new Gui::PrefSpinBox(this);
-    layoutRow->addWidget(HighlightColor);
-    HighlightColor->setValue(Gui::ViewParams::defaultHighlightColor());
-    HighlightColor->setEntryName("HighlightColor");
-    HighlightColor->setParamGrpPath("View");
-
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
@@ -153,14 +145,6 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     EnableSelection->setChecked(Gui::ViewParams::defaultEnableSelection());
     EnableSelection->setEntryName("EnableSelection");
     EnableSelection->setParamGrpPath("View");
-
-    // Auto generated code (Tools/params_utils.py:492)
-    layoutDViewSelection->addLayout(layoutRow);
-    SelectionColor = new Gui::PrefSpinBox(this);
-    layoutRow->addWidget(SelectionColor);
-    SelectionColor->setValue(Gui::ViewParams::defaultSelectionColor());
-    SelectionColor->setEntryName("SelectionColor");
-    SelectionColor->setParamGrpPath("View");
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -174,11 +158,12 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     PickRadius->setValue(Gui::ViewParams::defaultPickRadius());
     PickRadius->setEntryName("PickRadius");
     PickRadius->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1345)
+    // Auto generated code (Tools/params_utils.py:1360)
     PickRadius->setMinimum(0.5);
     PickRadius->setMaximum(200.0);
     PickRadius->setSingleStep(1.0);
     PickRadius->setDecimals(1);
+    PickRadius->setValue(Gui::ViewParams::defaultPickRadius());
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -222,6 +207,7 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     layoutRow->addWidget(labelShowSelectionBoundingBoxThreshold);
     ShowSelectionBoundingBoxThreshold = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(ShowSelectionBoundingBoxThreshold);
+    ShowSelectionBoundingBoxThreshold->setRange(-2147483647, 2147483647);
     ShowSelectionBoundingBoxThreshold->setValue(Gui::ViewParams::defaultShowSelectionBoundingBoxThreshold());
     ShowSelectionBoundingBoxThreshold->setEntryName("ShowSelectionBoundingBoxThreshold");
     ShowSelectionBoundingBoxThreshold->setParamGrpPath("View");
@@ -260,11 +246,12 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     SelectionColorDifference->setValue(Gui::ViewParams::defaultSelectionColorDifference());
     SelectionColorDifference->setEntryName("SelectionColorDifference");
     SelectionColorDifference->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1345)
+    // Auto generated code (Tools/params_utils.py:1360)
     SelectionColorDifference->setMinimum(0);
     SelectionColorDifference->setMaximum(100);
     SelectionColorDifference->setSingleStep(1);
     SelectionColorDifference->setDecimals(1);
+    SelectionColorDifference->setValue(Gui::ViewParams::defaultSelectionColorDifference());
 
 
     // Auto generated code (Tools/params_utils.py:473)
@@ -286,7 +273,7 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     layoutRow->addWidget(PreselectionToolTipCorner);
     PreselectionToolTipCorner->setEntryName("PreselectionToolTipCorner");
     PreselectionToolTipCorner->setParamGrpPath("View");
-    for (int i=0; i<4; ++i) // Auto generated code (Tools/params_utils.py:1230)
+    for (int i=0; i<4; ++i) // Auto generated code (Tools/params_utils.py:1245)
         PreselectionToolTipCorner->addItem(QString());
     PreselectionToolTipCorner->setCurrentIndex(Gui::ViewParams::defaultPreselectionToolTipCorner());
 
@@ -302,10 +289,11 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     PreselectionToolTipOffsetX->setValue(Gui::ViewParams::defaultPreselectionToolTipOffsetX());
     PreselectionToolTipOffsetX->setEntryName("PreselectionToolTipOffsetX");
     PreselectionToolTipOffsetX->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1345)
+    // Auto generated code (Tools/params_utils.py:1360)
     PreselectionToolTipOffsetX->setMinimum(0);
     PreselectionToolTipOffsetX->setMaximum(4000);
     PreselectionToolTipOffsetX->setSingleStep(1);
+    PreselectionToolTipOffsetX->setValue(Gui::ViewParams::defaultPreselectionToolTipOffsetX());
 
     // Auto generated code (Tools/params_utils.py:492)
     layoutPreselectionToolTip->addLayout(layoutRow);
@@ -316,10 +304,11 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     PreselectionToolTipOffsetY->setValue(Gui::ViewParams::defaultPreselectionToolTipOffsetY());
     PreselectionToolTipOffsetY->setEntryName("PreselectionToolTipOffsetY");
     PreselectionToolTipOffsetY->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1345)
+    // Auto generated code (Tools/params_utils.py:1360)
     PreselectionToolTipOffsetY->setMinimum(0);
     PreselectionToolTipOffsetY->setMaximum(4000);
     PreselectionToolTipOffsetY->setSingleStep(1);
+    PreselectionToolTipOffsetY->setValue(Gui::ViewParams::defaultPreselectionToolTipOffsetY());
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -333,10 +322,11 @@ DlgSettingsSelection::DlgSettingsSelection(QWidget* parent)
     PreselectionToolTipFontSize->setValue(Gui::ViewParams::defaultPreselectionToolTipFontSize());
     PreselectionToolTipFontSize->setEntryName("PreselectionToolTipFontSize");
     PreselectionToolTipFontSize->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1345)
+    // Auto generated code (Tools/params_utils.py:1360)
     PreselectionToolTipFontSize->setMinimum(0);
     PreselectionToolTipFontSize->setMaximum(100);
     PreselectionToolTipFontSize->setSingleStep(1);
+    PreselectionToolTipFontSize->setValue(Gui::ViewParams::defaultPreselectionToolTipFontSize());
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
     // Auto generated code (Tools/params_utils.py:670)
@@ -359,9 +349,7 @@ void DlgSettingsSelection::saveSettings()
     RecordSelection->onSave();
     PreSelection->onSave();
     EnablePreselection->onSave();
-    HighlightColor->onSave();
     EnableSelection->onSave();
-    SelectionColor->onSave();
     PickRadius->onSave();
     ShowSelectionOnTop->onSave();
     ShowPreSelectedFaceOnTop->onSave();
@@ -386,9 +374,7 @@ void DlgSettingsSelection::loadSettings()
     RecordSelection->onRestore();
     PreSelection->onRestore();
     EnablePreselection->onRestore();
-    HighlightColor->onRestore();
     EnableSelection->onRestore();
-    SelectionColor->onRestore();
     PickRadius->onRestore();
     ShowSelectionOnTop->onRestore();
     ShowPreSelectedFaceOnTop->onRestore();
@@ -421,10 +407,8 @@ void DlgSettingsSelection::retranslateUi()
     groupDViewSelection->setTitle(QObject::tr("3D View Selection"));
     EnablePreselection->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docEnablePreselection()));
     EnablePreselection->setText(QObject::tr("Enable preselection"));
-    HighlightColor->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docHighlightColor()));
     EnableSelection->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docEnableSelection()));
     EnableSelection->setText(QObject::tr("Enable selection"));
-    SelectionColor->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docSelectionColor()));
     PickRadius->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docPickRadius()));
     labelPickRadius->setText(QObject::tr("Pick radius (px)"));
     labelPickRadius->setToolTip(PickRadius->toolTip());
@@ -448,7 +432,7 @@ void DlgSettingsSelection::retranslateUi()
     PreselectionToolTipCorner->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docPreselectionToolTipCorner()));
     labelPreselectionToolTipCorner->setText(QObject::tr("Corner"));
     labelPreselectionToolTipCorner->setToolTip(PreselectionToolTipCorner->toolTip());
-    // Auto generated code (Tools/params_utils.py:1255)
+    // Auto generated code (Tools/params_utils.py:1270)
     PreselectionToolTipCorner->setItemText(0, QObject::tr("Top Left"));
     PreselectionToolTipCorner->setItemText(1, QObject::tr("Top Right"));
     PreselectionToolTipCorner->setItemText(2, QObject::tr("Bottom Left"));

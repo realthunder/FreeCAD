@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <QCheckBox>
 #include <QGridLayout>
@@ -112,7 +114,7 @@ void TaskSketcherMessages::createSettingsButtonActions()
     // Auto update, which was the 'Manual Update' button's menu.
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
-    bool state = hGrp->GetBool("AutoRecompute", false);
+    bool state = Sketcher::SketcherParams::getAutoRecompute();
 
     sketchView->getSketchObject()->noRecomputes = !state;
 
@@ -129,7 +131,7 @@ void TaskSketcherMessages::createSettingsButtonActions()
     connect(checkbox, &QCheckBox::toggled, this, [this](bool checked) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        hGrp->SetBool("AutoRecompute", checked);
+        Sketcher::SketcherParams::setAutoRecompute(checked);
         sketchView->getSketchObject()->noRecomputes = !checked;
     });
 

@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #ifndef _PreComp_
 #include <QMessageBox>
 #include <QTextStream>
@@ -107,8 +109,8 @@ ViewProviderViewPart::ViewProviderViewPart()
     ADD_PROPERTY_TYPE(VertexScale, (Preferences::vertexScale()), group, App::Prop_None,
                       "Vertex dot size as a multiple of the visible line width");
 
-    double defScale = Preferences::getPreferenceGroup("Decorations")->GetFloat("CenterMarkScale", 0.50);
-    bool   defShowCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("ShowCenterMarks", false);
+    double defScale = Preferences::getPreferenceGroup("Decorations")->GetFloat("CenterMarkScale", TechDraw::TechDrawParams::defaultCenterMarkScale());
+    bool   defShowCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("ShowCenterMarks", TechDraw::TechDrawParams::defaultShowCenterMarks());
 
     //decorations
     ADD_PROPERTY_TYPE(HorizCenterLine ,(false), dgroup, App::Prop_None, "Show a horizontal centerline through view");
@@ -133,7 +135,10 @@ ViewProviderViewPart::ViewProviderViewPart()
 
     //properties that affect Section Line
     ADD_PROPERTY_TYPE(ShowSectionLine ,(true)    ,sgroup, App::Prop_None, "Show/hide section line if applicable");
-    ADD_PROPERTY_TYPE(SectionLineStyle, (PreferencesGui::sectionLineStyle()), sgroup, App::Prop_None,
+    // A line of the line standard, as upstream: the Annotation page's list.
+    // It was the pen style of the key "SectionLine", which no page stores,
+    // taken for a line number.
+    ADD_PROPERTY_TYPE(SectionLineStyle, (Preferences::SectionLineStyle()), sgroup, App::Prop_None,
                         "Set section line style if applicable");
     ADD_PROPERTY_TYPE(SectionLineColor, (prefSectionColor()), sgroup, App::Prop_None,
                         "Set section line color if applicable");
@@ -160,9 +165,9 @@ ViewProviderViewPart::ViewProviderViewPart()
     ADD_PROPERTY_TYPE(ShowAllEdges ,(false)    ,dgroup, App::Prop_None, "Temporarily show invisible lines");
 
     // Faces related properties
-    ADD_PROPERTY_TYPE(FaceColor, (Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", 0xFFFFFF)),
+    ADD_PROPERTY_TYPE(FaceColor, (Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", TechDraw::TechDrawParams::defaultFaceColor())),
                       fgroup, App::Prop_None, "Set color of faces");
-    ADD_PROPERTY_TYPE(FaceTransparency, (Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", false) ? 100 : 0),
+    ADD_PROPERTY_TYPE(FaceTransparency, (Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", TechDraw::TechDrawParams::defaultClearFace()) ? 100 : 0),
                       fgroup, App::Prop_None, "Set transparency of faces");
     FaceTransparency.setConstraints(&intPercent);
 }
@@ -459,13 +464,13 @@ App::Color ViewProviderViewPart::prefSectionColor()
 App::Color ViewProviderViewPart::prefHighlightColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("HighlightColor", 0x000000FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("HighlightColor", TechDraw::TechDrawParams::defaultHighlightColor()));
     return fcColor;
 }
 
 int ViewProviderViewPart::prefHighlightStyle()
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetInt("HighlightStyle", 2);
+    return Preferences::getPreferenceGroup("Decorations")->GetInt("HighlightStyle", TechDraw::TechDrawParams::defaultHighlightStyle());
 }
 
 // it can happen that Dimensions/Balloons/etc can lose their parent item if the

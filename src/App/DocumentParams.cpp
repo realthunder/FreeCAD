@@ -89,6 +89,18 @@ public:
         signalParamChanged("EnableMaterialEdit");
         signalParamChanged("MCPServerAutoStart");
         signalParamChanged("MCPServerPort");
+        signalParamChanged("AutoSaveEnabled");
+        signalParamChanged("AutoSaveTimeout");
+        signalParamChanged("AutoSaveCompressed");
+        signalParamChanged("SaveBinaryBrep");
+        signalParamChanged("RecoveryEnabled");
+        signalParamChanged("CreateNewDoc");
+        signalParamChanged("UsingUndo");
+        signalParamChanged("MaxUndoSize");
+        signalParamChanged("ChangeViewProviderTouchDocument");
+        signalParamChanged("JsonIndent");
+        signalParamChanged("PreferCompactFormat");
+        signalParamChanged("WarnCompactFormat");
 
     // Auto generated code (Tools/params_utils.py:241)
     }
@@ -135,6 +147,18 @@ public:
     bool EnableMaterialEdit;
     bool MCPServerAutoStart;
     long MCPServerPort;
+    bool AutoSaveEnabled;
+    long AutoSaveTimeout;
+    bool AutoSaveCompressed;
+    bool SaveBinaryBrep;
+    bool RecoveryEnabled;
+    bool CreateNewDoc;
+    bool UsingUndo;
+    long MaxUndoSize;
+    bool ChangeViewProviderTouchDocument;
+    long JsonIndent;
+    bool PreferCompactFormat;
+    bool WarnCompactFormat;
 
     // Auto generated code (Tools/params_utils.py:254)
     DocumentParamsP() {
@@ -151,7 +175,7 @@ public:
         funcs["prefLicenseType"] = &DocumentParamsP::updateprefLicenseType;
         prefLicenseUrl = this->handle->GetASCII("prefLicenseUrl", "");
         funcs["prefLicenseUrl"] = &DocumentParamsP::updateprefLicenseUrl;
-        CompressionLevel = this->handle->GetInt("CompressionLevel", 3);
+        CompressionLevel = this->handle->GetInt("CompressionLevel", 7);
         funcs["CompressionLevel"] = &DocumentParamsP::updateCompressionLevel;
         CheckExtension = this->handle->GetBool("CheckExtension", true);
         funcs["CheckExtension"] = &DocumentParamsP::updateCheckExtension;
@@ -185,7 +209,7 @@ public:
         funcs["BackupPolicy"] = &DocumentParamsP::updateBackupPolicy;
         CreateBackupFiles = this->handle->GetBool("CreateBackupFiles", true);
         funcs["CreateBackupFiles"] = &DocumentParamsP::updateCreateBackupFiles;
-        UseFCBakExtension = this->handle->GetBool("UseFCBakExtension", false);
+        UseFCBakExtension = this->handle->GetBool("UseFCBakExtension", true);
         funcs["UseFCBakExtension"] = &DocumentParamsP::updateUseFCBakExtension;
         SaveBackupDateFormat = this->handle->GetASCII("SaveBackupDateFormat", "%Y%m%d-%H%M%S");
         funcs["SaveBackupDateFormat"] = &DocumentParamsP::updateSaveBackupDateFormat;
@@ -203,7 +227,7 @@ public:
         funcs["WarnRecomputeOnRestore"] = &DocumentParamsP::updateWarnRecomputeOnRestore;
         NoPartialLoading = this->handle->GetBool("NoPartialLoading", false);
         funcs["NoPartialLoading"] = &DocumentParamsP::updateNoPartialLoading;
-        SaveThumbnail = this->handle->GetBool("SaveThumbnail", false);
+        SaveThumbnail = this->handle->GetBool("SaveThumbnail", true);
         funcs["SaveThumbnail"] = &DocumentParamsP::updateSaveThumbnail;
         ThumbnailNoBackground = this->handle->GetBool("ThumbnailNoBackground", false);
         funcs["ThumbnailNoBackground"] = &DocumentParamsP::updateThumbnailNoBackground;
@@ -211,7 +235,7 @@ public:
         funcs["AddThumbnailLogo"] = &DocumentParamsP::updateAddThumbnailLogo;
         ThumbnailSampleSize = this->handle->GetInt("ThumbnailSampleSize", 0);
         funcs["ThumbnailSampleSize"] = &DocumentParamsP::updateThumbnailSampleSize;
-        ThumbnailSize = this->handle->GetInt("ThumbnailSize", 128);
+        ThumbnailSize = this->handle->GetInt("ThumbnailSize", 256);
         funcs["ThumbnailSize"] = &DocumentParamsP::updateThumbnailSize;
         DuplicateLabels = this->handle->GetBool("DuplicateLabels", false);
         funcs["DuplicateLabels"] = &DocumentParamsP::updateDuplicateLabels;
@@ -227,6 +251,30 @@ public:
         funcs["MCPServerAutoStart"] = &DocumentParamsP::updateMCPServerAutoStart;
         MCPServerPort = this->handle->GetInt("MCPServerPort", 8765);
         funcs["MCPServerPort"] = &DocumentParamsP::updateMCPServerPort;
+        AutoSaveEnabled = this->handle->GetBool("AutoSaveEnabled", true);
+        funcs["AutoSaveEnabled"] = &DocumentParamsP::updateAutoSaveEnabled;
+        AutoSaveTimeout = this->handle->GetInt("AutoSaveTimeout", 15);
+        funcs["AutoSaveTimeout"] = &DocumentParamsP::updateAutoSaveTimeout;
+        AutoSaveCompressed = this->handle->GetBool("AutoSaveCompressed", true);
+        funcs["AutoSaveCompressed"] = &DocumentParamsP::updateAutoSaveCompressed;
+        SaveBinaryBrep = this->handle->GetBool("SaveBinaryBrep", true);
+        funcs["SaveBinaryBrep"] = &DocumentParamsP::updateSaveBinaryBrep;
+        RecoveryEnabled = this->handle->GetBool("RecoveryEnabled", true);
+        funcs["RecoveryEnabled"] = &DocumentParamsP::updateRecoveryEnabled;
+        CreateNewDoc = this->handle->GetBool("CreateNewDoc", false);
+        funcs["CreateNewDoc"] = &DocumentParamsP::updateCreateNewDoc;
+        UsingUndo = this->handle->GetBool("UsingUndo", true);
+        funcs["UsingUndo"] = &DocumentParamsP::updateUsingUndo;
+        MaxUndoSize = this->handle->GetInt("MaxUndoSize", 20);
+        funcs["MaxUndoSize"] = &DocumentParamsP::updateMaxUndoSize;
+        ChangeViewProviderTouchDocument = this->handle->GetBool("ChangeViewProviderTouchDocument", true);
+        funcs["ChangeViewProviderTouchDocument"] = &DocumentParamsP::updateChangeViewProviderTouchDocument;
+        JsonIndent = this->handle->GetInt("JsonIndent", 2);
+        funcs["JsonIndent"] = &DocumentParamsP::updateJsonIndent;
+        PreferCompactFormat = this->handle->GetBool("PreferCompactFormat", true);
+        funcs["PreferCompactFormat"] = &DocumentParamsP::updatePreferCompactFormat;
+        WarnCompactFormat = this->handle->GetBool("WarnCompactFormat", true);
+        funcs["WarnCompactFormat"] = &DocumentParamsP::updateWarnCompactFormat;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -266,7 +314,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCompressionLevel(DocumentParamsP *self) {
-        self->CompressionLevel = self->handle->GetInt("CompressionLevel", 3);
+        self->CompressionLevel = self->handle->GetInt("CompressionLevel", 7);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckExtension(DocumentParamsP *self) {
@@ -334,7 +382,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateUseFCBakExtension(DocumentParamsP *self) {
-        self->UseFCBakExtension = self->handle->GetBool("UseFCBakExtension", false);
+        self->UseFCBakExtension = self->handle->GetBool("UseFCBakExtension", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSaveBackupDateFormat(DocumentParamsP *self) {
@@ -370,7 +418,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSaveThumbnail(DocumentParamsP *self) {
-        self->SaveThumbnail = self->handle->GetBool("SaveThumbnail", false);
+        self->SaveThumbnail = self->handle->GetBool("SaveThumbnail", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateThumbnailNoBackground(DocumentParamsP *self) {
@@ -386,7 +434,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateThumbnailSize(DocumentParamsP *self) {
-        self->ThumbnailSize = self->handle->GetInt("ThumbnailSize", 128);
+        self->ThumbnailSize = self->handle->GetInt("ThumbnailSize", 256);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDuplicateLabels(DocumentParamsP *self) {
@@ -416,6 +464,54 @@ public:
     static void updateMCPServerPort(DocumentParamsP *self) {
         self->MCPServerPort = self->handle->GetInt("MCPServerPort", 8765);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoSaveEnabled(DocumentParamsP *self) {
+        self->AutoSaveEnabled = self->handle->GetBool("AutoSaveEnabled", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoSaveTimeout(DocumentParamsP *self) {
+        self->AutoSaveTimeout = self->handle->GetInt("AutoSaveTimeout", 15);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoSaveCompressed(DocumentParamsP *self) {
+        self->AutoSaveCompressed = self->handle->GetBool("AutoSaveCompressed", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSaveBinaryBrep(DocumentParamsP *self) {
+        self->SaveBinaryBrep = self->handle->GetBool("SaveBinaryBrep", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRecoveryEnabled(DocumentParamsP *self) {
+        self->RecoveryEnabled = self->handle->GetBool("RecoveryEnabled", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCreateNewDoc(DocumentParamsP *self) {
+        self->CreateNewDoc = self->handle->GetBool("CreateNewDoc", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUsingUndo(DocumentParamsP *self) {
+        self->UsingUndo = self->handle->GetBool("UsingUndo", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaxUndoSize(DocumentParamsP *self) {
+        self->MaxUndoSize = self->handle->GetInt("MaxUndoSize", 20);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateChangeViewProviderTouchDocument(DocumentParamsP *self) {
+        self->ChangeViewProviderTouchDocument = self->handle->GetBool("ChangeViewProviderTouchDocument", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateJsonIndent(DocumentParamsP *self) {
+        self->JsonIndent = self->handle->GetInt("JsonIndent", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePreferCompactFormat(DocumentParamsP *self) {
+        self->PreferCompactFormat = self->handle->GetBool("PreferCompactFormat", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateWarnCompactFormat(DocumentParamsP *self) {
+        self->WarnCompactFormat = self->handle->GetBool("WarnCompactFormat", true);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -429,35 +525,57 @@ DocumentParamsP *instance() {
 // Auto generated code (Tools/params_utils.py:352)
 static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "prefAuthor", "prefAuthor", App::ParamInfo::String, "")
-        .setTitle("pref Author"),
+        .setTitle("Author name")
+        .setDoc("Author name given to new documents as their creator. Also written as\n"
+"the last modifier on save when that option is on. Leave empty to stay\n"
+"anonymous."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "prefSetAuthorOnSave", "prefSetAuthorOnSave", App::ParamInfo::Bool, false)
-        .setTitle("pref Set Author On Save"),
+        .setTitle("Set author on save")
+        .setDoc("Write the author name from the preferences into a document's 'Last\n"
+"modified by' field each time it is saved."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "prefCompany", "prefCompany", App::ParamInfo::String, "")
-        .setTitle("pref Company"),
+        .setTitle("Company")
+        .setDoc("Company name given to new documents."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "prefLicenseType", "prefLicenseType", App::ParamInfo::Int, 0)
-        .setTitle("pref License Type"),
+        .setTitle("Default license")
+        .setDoc("License given to new documents, as a position in the license list.\n"
+"0 is All rights reserved, 1 to 12 the Creative Commons licenses,\n"
+"13 Public Domain, 14 FreeArt, 15 to 17 the CERN hardware licences;\n"
+"18 (Other) leaves the license empty."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "prefLicenseUrl", "prefLicenseUrl", App::ParamInfo::String, "")
-        .setTitle("pref License Url"),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CompressionLevel", "CompressionLevel", App::ParamInfo::Int, 3)
-        .setTitle("Compression Level"),
+        .setTitle("License URL")
+        .setDoc("Address of the license text given to new documents. Empty uses the\n"
+"address that belongs to the license chosen from the list."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CompressionLevel", "CompressionLevel", App::ParamInfo::Int, 7)
+        .setTitle("Compression Level")
+        .setDoc("How hard a document file is compressed when saved, from 0 (none,\n"
+"fastest) to 9 (smallest, slowest). Has no effect on a document saved\n"
+"as a directory."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CheckExtension", "CheckExtension", App::ParamInfo::Bool, true)
-        .setTitle("Check Extension"),
+        .setTitle("Check Extension")
+        .setDoc("Add .FCStd to the file name when a document is saved under a name\n"
+"without that extension, so that a save cannot overwrite an unrelated\n"
+"file by accident."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ForceXML", "ForceXML", App::ParamInfo::Int, 3)
-        .setTitle("Force XM L"),
+        .setTitle("Force XML")
+        .setDoc("How much object data new documents keep inside the XML when saved\n"
+"as a directory. 0 none, 1 lists, 2 also meshes, points and text\n"
+"shapes, 3 also binary shapes, 4 and up also included files."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SplitXML", "SplitXML", App::ParamInfo::Bool, true)
-        .setTitle("Split XM L"),
+        .setTitle("Split XML")
+        .setDoc("Give each object an XML file of its own in new documents saved as a\n"
+"directory, instead of one file for the whole document. Has no effect\n"
+"on a document saved as a single file."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "PreferBinary", "PreferBinary", App::ParamInfo::Bool, false)
-        .setTitle("Prefer Binary"),
+        .setTitle("Prefer Binary")
+        .setDoc("Save the object data of new documents in binary instead of text\n"
+"form. Files get smaller but compare poorly under version control.\n"
+"Each document carries its own copy of this choice."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "InlineListSize", "InlineListSize", App::ParamInfo::Int, 64)
         .setTitle("Inline List Size")
-        .setDoc("Largest list property, in bytes of values, still written inline\n"
-"in the XML instead of taking an archive entry of its own. An\n"
-"entry costs around 190 bytes of zip headers before any content,\n"
-"and one more thing for the reader to open, which a one-element\n"
-"colour list has no way of paying back. Written in the same form\n"
-"the reader has always used for lists that cannot be streamed, so\n"
-"the file stays readable by FreeCAD versions without this option.\n"
-"Set to 0 to give every list an entry, as before."),
+        .setDoc("Largest list property, in bytes, still written inside the document\n"
+"XML instead of as a separate entry of the file. Small lists are\n"
+"cheaper inline. 0 gives every list its own entry."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ArchiveRandomAccess", "ArchiveRandomAccess", App::ParamInfo::Bool, true)
         .setTitle("Archive Random Access")
         .setDoc("Restore a document archive through its zip central directory\n"
@@ -476,122 +594,128 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "create per entry."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DeferShapeLoad", "DeferShapeLoad", App::ParamInfo::Bool, true)
         .setTitle("Defer Shape Load")
-        .setDoc("Park shape archive entries during restore and read each one on\n"
-"first real use instead of before the document opens, so the\n"
-"window is up while shapes stream in with the progressive visual\n"
-"fill. Requires ArchiveRandomAccess. An entry not yet served is\n"
-"read when anything asks for the shape -- visual build, script,\n"
-"save -- so the value is never observably missing; the trade is\n"
-"that the document must not be rewritten externally while loads\n"
-"are pending. Off by default until gated on the large references."),
+        .setDoc("When opening a document, read each shape on first use instead of\n"
+"before the window comes up. Requires ArchiveRandomAccess. The file\n"
+"must not be rewritten by another program while shapes are still to be\n"
+"read. Off by default."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveMaterialCards", "SaveMaterialCards", App::ParamInfo::Bool, true)
         .setTitle("Save Material Cards")
-        .setDoc("Write every material card into the document, including the\n"
-"stock ones.\n"
-"\n"
-"A stock card used to be left out: the hash says which card it\n"
-"was, and any installation holding the same library can produce\n"
-"the content again. That holds only while the library does not\n"
-"move. It moved -- retuning the default appearance changed the\n"
-"Default card, and every document written before it then named a\n"
-"hash no installed card answers to, losing the material outright\n"
-"rather than degrading to the uuid. A shipped library is not a\n"
-"fixed point, so a document cannot be built on the assumption\n"
-"that it is.\n"
-"\n"
-"Carrying the content costs almost nothing now that identical\n"
-"cards are stored once per document: a model whose objects all\n"
-"share one card writes that card once, whatever the object\n"
-"count. Turn off to write only the hash of a stock card, which\n"
-"is smaller by that one card and readable only by an\n"
-"installation whose library still matches."),
+        .setDoc("Write every material card used into the document, including the\n"
+"stock ones, so the document does not depend on the installed material\n"
+"library. Off writes only a reference to a stock card, which is lost\n"
+"if the library changes."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DedupShapePCurves", "DedupShapePCurves", App::ParamInfo::Bool, true)
         .setTitle("Dedup Shape PCurves")
-        .setDoc("Store each 2D curve of a shape once, and leave out the ones\n"
-"reading the file back computes again anyway.\n"
-"\n"
-"Two things, because they are the same bargain. A pcurve computed\n"
-"twice used to be written twice, which on a real project is the\n"
-"largest single duplication inside a shape file; and a pcurve on a\n"
-"planar face need not be stored at all, since the kernel projects\n"
-"the 3D curve onto the plane when it finds none. Neither changes\n"
-"the geometry that comes back: a merged pcurve is the identical\n"
-"curve, and a dropped one is checked against the projection that\n"
-"will replace it before it is dropped.\n"
-"\n"
-"Applies to shapes written as ASCII BRep. Turn off to write what\n"
-"the kernel holds, entry for entry."),
+        .setDoc("Write each 2D curve of a shape once, and leave out those on planar\n"
+"faces, which are computed again on reading. The geometry read back is\n"
+"the same. Applies to shapes written as ASCII BRep."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DedupCongruentShapes", "DedupCongruentShapes", App::ParamInfo::Bool, true)
         .setTitle("Dedup Congruent Shapes")
-        .setDoc("Store one file for parts that are the same shape in different\n"
-"places, and record the motion between them instead of writing the\n"
-"geometry again.\n"
-"\n"
-"Content addressing already shares parts whose bytes match, which\n"
-"an exporter that bakes each placement into the coordinates\n"
-"defeats: the same part at twenty positions is twenty distinct\n"
-"contents. Two instances are only merged once the rigid motion\n"
-"between them has been recovered and checked sub-shape by\n"
-"sub-shape, so a mirrored instance or a near-miss is written out\n"
-"in full rather than merged."),
+        .setDoc("Store one shape file for parts that are the same shape in different\n"
+"places, and record the motion between them. Parts are merged only\n"
+"after the motion has been checked sub-shape by sub-shape."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DedupCrossFileGeometry", "DedupCrossFileGeometry", App::ParamInfo::Bool, false)
         .setTitle("Dedup Cross File Geometry")
-        .setDoc("Let a shape file name the surfaces and curves another shape file\n"
-"already holds instead of writing its own copy of them.\n"
-"\n"
-"Each shape file carries its own table of surfaces, 3D curves and\n"
-"2D curves, so a face two parts have in common is written once per\n"
-"part. On a real project those tables are most of the bytes and\n"
-"about half of what they hold repeats between files. An entry may\n"
-"instead name a file and a position in its table, and the reader\n"
-"then puts the entry it parsed there into this file.\n"
-"\n"
-"Off by default: it makes a shape file depend on another one for\n"
-"its geometry, not only for whole sub-shapes, so a file that goes\n"
-"missing costs more than it did. Applies to shapes written as\n"
-"ASCII BRep inside a document; an exported file names nothing."),
+        .setDoc("Let a shape file refer to surfaces and curves another shape file of\n"
+"the same document already holds instead of writing them again.\n"
+"Smaller files, but a shape file then depends on another for its\n"
+"geometry. Off by default."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoRemoveFile", "AutoRemoveFile", App::ParamInfo::Bool, true)
-        .setTitle("Auto Remove File"),
+        .setTitle("Auto Remove File")
+        .setDoc("Delete the files a document no longer uses from its directory when\n"
+"it is saved as a directory. Turn off to leave the files of removed\n"
+"objects in place."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoNameDynamicProperty", "AutoNameDynamicProperty", App::ParamInfo::Bool, false)
-        .setTitle("Auto Name Dynamic Property"),
+        .setTitle("Auto Name Dynamic Property")
+        .setDoc("Rename a property added to an object when its name is empty, not a\n"
+"valid name or already taken, instead of refusing to add it. A\n"
+"warning reports the name chosen."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "BackupPolicy", "BackupPolicy", App::ParamInfo::Bool, true)
-        .setTitle("Backup Policy"),
+        .setTitle("Backup Policy")
+        .setDoc("Save a document to a temporary file first and move it over the old\n"
+"file only once the write succeeded, keeping backups as configured.\n"
+"Turn off to write straight over the file, with no backup."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CreateBackupFiles", "CreateBackupFiles", App::ParamInfo::Bool, true)
-        .setTitle("Create Backup Files"),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UseFCBakExtension", "UseFCBakExtension", App::ParamInfo::Bool, false)
-        .setTitle("Use FC Bak Extension"),
+        .setTitle("Create Backup Files")
+        .setDoc("Keep the previous version of a document file as a backup each time\n"
+"it is saved. When off the old file is deleted once the new one is\n"
+"written."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UseFCBakExtension", "UseFCBakExtension", App::ParamInfo::Bool, true)
+        .setTitle("Use FC Bak Extension")
+        .setDoc("Name a backup after the document, with the date of the replaced\n"
+"file and the extension .FCBak. When off a backup is the document\n"
+"file name followed by a number, as in Part.FCStd1."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveBackupDateFormat", "SaveBackupDateFormat", App::ParamInfo::String, "%Y%m%d-%H%M%S")
-        .setTitle("Save Backup Date Format"),
+        .setTitle("Save Backup Date Format")
+        .setDoc("Date format used in the names of .FCBak backup files, in strftime\n"
+"notation. A dot in the format is written as a dash."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CountBackupFiles", "CountBackupFiles", App::ParamInfo::Int, 1)
-        .setTitle("Count Backup Files"),
+        .setTitle("Count Backup Files")
+        .setDoc("How many backup files are kept for one document. The oldest are\n"
+"deleted when a save would exceed the number. 0 keeps none."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "OptimizeRecompute", "OptimizeRecompute", App::ParamInfo::Bool, true)
-        .setTitle("Optimize Recompute"),
+        .setTitle("Optimize Recompute")
+        .setDoc("Recompute an object only when one of its properties really changed.\n"
+"Writing a property the value it already has then leaves the object\n"
+"untouched. Turn off to recompute on every write."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CanAbortRecompute", "CanAbortRecompute", App::ParamInfo::Bool, true)
-        .setTitle("Can Abort Recompute"),
+        .setTitle("Can Abort Recompute")
+        .setDoc("Show progress while a document recomputes and let Esc abort it.\n"
+"Costs a little recompute time."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UseHasher", "UseHasher", App::ParamInfo::Bool, true)
-        .setTitle("Use Hasher"),
+        .setTitle("Use Hasher")
+        .setDoc("Store the generated element names of new documents as short\n"
+"references into a string table of the document instead of in full.\n"
+"Each document carries its own copy of this choice."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ViewObjectTransaction", "ViewObjectTransaction", App::ParamInfo::Bool, false)
-        .setTitle("View Object Transaction"),
+        .setTitle("View Object Transaction")
+        .setDoc("Let a change to a view property alone, such as colour or visibility,\n"
+"create an undo step whatever command made it. When off only the\n"
+"commands that ask for it do."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "WarnRecomputeOnRestore", "WarnRecomputeOnRestore", App::ParamInfo::Bool, true)
-        .setTitle("Warn Recompute On Restore"),
+        .setTitle("Warn Recompute On Restore")
+        .setDoc("Ask to recompute after opening a document that needs it to be\n"
+"brought up to date with this version. When off the document opens\n"
+"without the question and is left as it is."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "NoPartialLoading", "NoPartialLoading", App::ParamInfo::Bool, false)
-        .setTitle("No Partial Loading"),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveThumbnail", "SaveThumbnail", App::ParamInfo::Bool, false)
-        .setTitle("Save Thumbnail"),
+        .setTitle("No Partial Loading")
+        .setDoc("Load every externally linked document in full. When off a document\n"
+"opened only because another links to it loads just the linked\n"
+"objects and what they depend on, and cannot be edited until\n"
+"reloaded."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveThumbnail", "SaveThumbnail", App::ParamInfo::Bool, true)
+        .setTitle("Save Thumbnail")
+        .setDoc("Save a preview picture of the 3D view into new documents each time\n"
+"they are saved. Each document carries its own copy of this choice."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ThumbnailNoBackground", "ThumbnailNoBackground", App::ParamInfo::Bool, false)
-        .setTitle("Thumbnail No Background"),
+        .setTitle("Thumbnail No Background")
+        .setDoc("Leave the view background out of the thumbnail saved with a\n"
+"document, so the picture has a transparent background."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AddThumbnailLogo", "AddThumbnailLogo", App::ParamInfo::Bool, true)
-        .setTitle("Add Thumbnail Logo"),
+        .setTitle("Add Thumbnail Logo")
+        .setDoc("Put the application icon in the bottom right corner of the thumbnail\n"
+"saved with a document."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ThumbnailSampleSize", "ThumbnailSampleSize", App::ParamInfo::Int, 0)
-        .setTitle("Thumbnail Sample Size"),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ThumbnailSize", "ThumbnailSize", App::ParamInfo::Int, 128)
-        .setTitle("Thumbnail Size"),
+        .setTitle("Thumbnail Sample Size")
+        .setDoc("Number of antialiasing samples used to render the thumbnail saved\n"
+"with a document. 0 renders without antialiasing."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ThumbnailSize", "ThumbnailSize", App::ParamInfo::Int, 256)
+        .setTitle("Thumbnail Size")
+        .setDoc("Width and height, in pixels, of the thumbnail saved with a document.\n"
+"Values outside 64 to 1024 are brought into that range."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DuplicateLabels", "DuplicateLabels", App::ParamInfo::Bool, false)
-        .setTitle("Duplicate Labels"),
+        .setTitle("Duplicate Labels")
+        .setDoc("Allow several objects of one document to carry the same label. When\n"
+"off a label already in use gets a number added to make it unique."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionOnRecompute", "TransactionOnRecompute", App::ParamInfo::Bool, false)
-        .setTitle("Transaction On Recompute"),
+        .setTitle("Transaction On Recompute")
+        .setDoc("Record a recompute started with the Refresh command as an undo step.\n"
+"When off, refreshing leaves the undo and redo history alone."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
-        .setTitle("Relative String ID"),
+        .setTitle("Relative String ID")
+        .setDoc("Write the ids in a document's string table as differences from the\n"
+"id before, which makes the saved file smaller. Turn off to write\n"
+"every id in full."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, true)
         .setTitle("Hash Indexed Name")
         .setDoc("Encode a mapped name's trailing index apart from its text, as upstream\n"
@@ -599,7 +723,10 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "mode it was saved in, and one saved before the mode was stored gets the\n"
 "one its string table was written in."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "EnableMaterialEdit", "EnableMaterialEdit", App::ParamInfo::Bool, true)
-        .setTitle("Enable Material Edit"),
+        .setTitle("Enable Material Edit")
+        .setDoc("Show appearance properties in the property view with an editor for\n"
+"their colours, shininess and transparency. When off they are not\n"
+"listed. Applies to objects created or loaded afterwards."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "MCPServerAutoStart", "MCPServerAutoStart", App::ParamInfo::Bool, false)
         .setTitle("M CP Server Auto Start")
         .setDoc("Start the MCP debug console server (freecad.mcp_console) when the\n"
@@ -610,6 +737,58 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "use the server takes the next free port after it, so the port it\n"
 "ends up on is reported in the console and in the Tools -> MCP\n"
 "Server tooltip."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveEnabled", "AutoSaveEnabled", App::ParamInfo::Bool, true)
+        .setTitle("Save auto-recovery information")
+        .setDoc("Save auto-recovery information of the open documents at regular\n"
+"intervals. Takes effect at once."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveTimeout", "AutoSaveTimeout", App::ParamInfo::Int, 15)
+        .setTitle("Auto-recovery interval")
+        .setDoc("Minutes between two saves of auto-recovery information. 1 to 60.\n"
+"Takes effect at once."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveCompressed", "AutoSaveCompressed", App::ParamInfo::Bool, true)
+        .setTitle("Compress auto-recovery files")
+        .setDoc("Write auto-recovery information as one compressed file per\n"
+"document instead of separate uncompressed files. Takes effect at\n"
+"the next save of it."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveBinaryBrep", "SaveBinaryBrep", App::ParamInfo::Bool, true)
+        .setTitle("Binary shapes in auto-recovery files")
+        .setDoc("Write shapes in binary BREP format into a compressed\n"
+"auto-recovery file. Read at each save of it."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RecoveryEnabled", "RecoveryEnabled", App::ParamInfo::Bool, true)
+        .setTitle("Run file recovery at startup")
+        .setDoc("Look at startup for documents a crashed session left behind and\n"
+"offer to recover them."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CreateNewDoc", "CreateNewDoc", App::ParamInfo::Bool, false)
+        .setTitle("Create new document at startup")
+        .setDoc("Create an empty document when the program starts with none\n"
+"open."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UsingUndo", "UsingUndo", App::ParamInfo::Bool, true)
+        .setTitle("Allow undo and redo")
+        .setDoc("Record undo and redo steps for documents. Applies to documents\n"
+"created or opened afterwards."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "MaxUndoSize", "MaxUndoSize", App::ParamInfo::Int, 20)
+        .setTitle("Maximum undo steps")
+        .setDoc("Largest number of undo steps kept for a document. Applies to\n"
+"documents created or opened afterwards."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ChangeViewProviderTouchDocument", "ChangeViewProviderTouchDocument", App::ParamInfo::Bool, true)
+        .setTitle("View changes modify the document")
+        .setDoc("Mark a document as modified when a view property of one of its\n"
+"objects changes. Applies to documents created or opened\n"
+"afterwards."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "JsonIndent", "JsonIndent", App::ParamInfo::Int, 2)
+        .setTitle("JSON indentation")
+        .setDoc("Indentation of the JSON text the properties of Python objects are\n"
+"saved as."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "PreferCompactFormat", "PreferCompactFormat", App::ParamInfo::Bool, true)
+        .setTitle("Last format chosen for a new file")
+        .setDoc("The compact format was chosen the last time a file was saved under\n"
+"a new name, and is what the next such save starts on. Stored by\n"
+"the Save As dialog."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "WarnCompactFormat", "WarnCompactFormat", App::ParamInfo::Bool, true)
+        .setTitle("Warn about the compact format")
+        .setDoc("The warning shown when a save comes out in the compact format is\n"
+"still to be shown. The program switches it off when the warning\n"
+"is dismissed for good."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -624,13 +803,16 @@ DocumentParams::signalParamChanged() {
 }
 
 // Auto generated code (Tools/params_utils.py:387)
-void signalAll() {
+void DocumentParams::signalAll() {
     instance()->signalAll();
 }
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docprefAuthor() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Author name given to new documents as their creator. Also written as\n"
+"the last modifier on save when that option is on. Leave empty to stay\n"
+"anonymous.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -657,7 +839,9 @@ void DocumentParams::removeprefAuthor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docprefSetAuthorOnSave() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write the author name from the preferences into a document's 'Last\n"
+"modified by' field each time it is saved.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -684,7 +868,8 @@ void DocumentParams::removeprefSetAuthorOnSave() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docprefCompany() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Company name given to new documents.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -711,7 +896,11 @@ void DocumentParams::removeprefCompany() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docprefLicenseType() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"License given to new documents, as a position in the license list.\n"
+"0 is All rights reserved, 1 to 12 the Creative Commons licenses,\n"
+"13 Public Domain, 14 FreeArt, 15 to 17 the CERN hardware licences;\n"
+"18 (Other) leaves the license empty.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -738,7 +927,9 @@ void DocumentParams::removeprefLicenseType() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docprefLicenseUrl() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Address of the license text given to new documents. Empty uses the\n"
+"address that belongs to the license chosen from the list.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -765,7 +956,10 @@ void DocumentParams::removeprefLicenseUrl() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docCompressionLevel() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"How hard a document file is compressed when saved, from 0 (none,\n"
+"fastest) to 9 (smallest, slowest). Has no effect on a document saved\n"
+"as a directory.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -775,7 +969,7 @@ const long & DocumentParams::getCompressionLevel() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & DocumentParams::defaultCompressionLevel() {
-    const static long def = 3;
+    const static long def = 7;
     return def;
 }
 
@@ -792,7 +986,10 @@ void DocumentParams::removeCompressionLevel() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docCheckExtension() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Add .FCStd to the file name when a document is saved under a name\n"
+"without that extension, so that a save cannot overwrite an unrelated\n"
+"file by accident.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -819,7 +1016,10 @@ void DocumentParams::removeCheckExtension() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docForceXML() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"How much object data new documents keep inside the XML when saved\n"
+"as a directory. 0 none, 1 lists, 2 also meshes, points and text\n"
+"shapes, 3 also binary shapes, 4 and up also included files.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -846,7 +1046,10 @@ void DocumentParams::removeForceXML() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docSplitXML() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Give each object an XML file of its own in new documents saved as a\n"
+"directory, instead of one file for the whole document. Has no effect\n"
+"on a document saved as a single file.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -873,7 +1076,10 @@ void DocumentParams::removeSplitXML() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docPreferBinary() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Save the object data of new documents in binary instead of text\n"
+"form. Files get smaller but compare poorly under version control.\n"
+"Each document carries its own copy of this choice.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -901,14 +1107,9 @@ void DocumentParams::removePreferBinary() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docInlineListSize() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Largest list property, in bytes of values, still written inline\n"
-"in the XML instead of taking an archive entry of its own. An\n"
-"entry costs around 190 bytes of zip headers before any content,\n"
-"and one more thing for the reader to open, which a one-element\n"
-"colour list has no way of paying back. Written in the same form\n"
-"the reader has always used for lists that cannot be streamed, so\n"
-"the file stays readable by FreeCAD versions without this option.\n"
-"Set to 0 to give every list an entry, as before.");
+"Largest list property, in bytes, still written inside the document\n"
+"XML instead of as a separate entry of the file. Small lists are\n"
+"cheaper inline. 0 gives every list its own entry.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1002,14 +1203,10 @@ void DocumentParams::removeArchiveBlobStore() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docDeferShapeLoad() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Park shape archive entries during restore and read each one on\n"
-"first real use instead of before the document opens, so the\n"
-"window is up while shapes stream in with the progressive visual\n"
-"fill. Requires ArchiveRandomAccess. An entry not yet served is\n"
-"read when anything asks for the shape -- visual build, script,\n"
-"save -- so the value is never observably missing; the trade is\n"
-"that the document must not be rewritten externally while loads\n"
-"are pending. Off by default until gated on the large references.");
+"When opening a document, read each shape on first use instead of\n"
+"before the window comes up. Requires ArchiveRandomAccess. The file\n"
+"must not be rewritten by another program while shapes are still to be\n"
+"read. Off by default.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1037,25 +1234,10 @@ void DocumentParams::removeDeferShapeLoad() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docSaveMaterialCards() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Write every material card into the document, including the\n"
-"stock ones.\n"
-"\n"
-"A stock card used to be left out: the hash says which card it\n"
-"was, and any installation holding the same library can produce\n"
-"the content again. That holds only while the library does not\n"
-"move. It moved -- retuning the default appearance changed the\n"
-"Default card, and every document written before it then named a\n"
-"hash no installed card answers to, losing the material outright\n"
-"rather than degrading to the uuid. A shipped library is not a\n"
-"fixed point, so a document cannot be built on the assumption\n"
-"that it is.\n"
-"\n"
-"Carrying the content costs almost nothing now that identical\n"
-"cards are stored once per document: a model whose objects all\n"
-"share one card writes that card once, whatever the object\n"
-"count. Turn off to write only the hash of a stock card, which\n"
-"is smaller by that one card and readable only by an\n"
-"installation whose library still matches.");
+"Write every material card used into the document, including the\n"
+"stock ones, so the document does not depend on the installed material\n"
+"library. Off writes only a reference to a stock card, which is lost\n"
+"if the library changes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1083,20 +1265,9 @@ void DocumentParams::removeSaveMaterialCards() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docDedupShapePCurves() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Store each 2D curve of a shape once, and leave out the ones\n"
-"reading the file back computes again anyway.\n"
-"\n"
-"Two things, because they are the same bargain. A pcurve computed\n"
-"twice used to be written twice, which on a real project is the\n"
-"largest single duplication inside a shape file; and a pcurve on a\n"
-"planar face need not be stored at all, since the kernel projects\n"
-"the 3D curve onto the plane when it finds none. Neither changes\n"
-"the geometry that comes back: a merged pcurve is the identical\n"
-"curve, and a dropped one is checked against the projection that\n"
-"will replace it before it is dropped.\n"
-"\n"
-"Applies to shapes written as ASCII BRep. Turn off to write what\n"
-"the kernel holds, entry for entry.");
+"Write each 2D curve of a shape once, and leave out those on planar\n"
+"faces, which are computed again on reading. The geometry read back is\n"
+"the same. Applies to shapes written as ASCII BRep.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1124,17 +1295,9 @@ void DocumentParams::removeDedupShapePCurves() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docDedupCongruentShapes() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Store one file for parts that are the same shape in different\n"
-"places, and record the motion between them instead of writing the\n"
-"geometry again.\n"
-"\n"
-"Content addressing already shares parts whose bytes match, which\n"
-"an exporter that bakes each placement into the coordinates\n"
-"defeats: the same part at twenty positions is twenty distinct\n"
-"contents. Two instances are only merged once the rigid motion\n"
-"between them has been recovered and checked sub-shape by\n"
-"sub-shape, so a mirrored instance or a near-miss is written out\n"
-"in full rather than merged.");
+"Store one shape file for parts that are the same shape in different\n"
+"places, and record the motion between them. Parts are merged only\n"
+"after the motion has been checked sub-shape by sub-shape.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1162,20 +1325,10 @@ void DocumentParams::removeDedupCongruentShapes() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docDedupCrossFileGeometry() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Let a shape file name the surfaces and curves another shape file\n"
-"already holds instead of writing its own copy of them.\n"
-"\n"
-"Each shape file carries its own table of surfaces, 3D curves and\n"
-"2D curves, so a face two parts have in common is written once per\n"
-"part. On a real project those tables are most of the bytes and\n"
-"about half of what they hold repeats between files. An entry may\n"
-"instead name a file and a position in its table, and the reader\n"
-"then puts the entry it parsed there into this file.\n"
-"\n"
-"Off by default: it makes a shape file depend on another one for\n"
-"its geometry, not only for whole sub-shapes, so a file that goes\n"
-"missing costs more than it did. Applies to shapes written as\n"
-"ASCII BRep inside a document; an exported file names nothing.");
+"Let a shape file refer to surfaces and curves another shape file of\n"
+"the same document already holds instead of writing them again.\n"
+"Smaller files, but a shape file then depends on another for its\n"
+"geometry. Off by default.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1202,7 +1355,10 @@ void DocumentParams::removeDedupCrossFileGeometry() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docAutoRemoveFile() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Delete the files a document no longer uses from its directory when\n"
+"it is saved as a directory. Turn off to leave the files of removed\n"
+"objects in place.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1229,7 +1385,10 @@ void DocumentParams::removeAutoRemoveFile() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docAutoNameDynamicProperty() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Rename a property added to an object when its name is empty, not a\n"
+"valid name or already taken, instead of refusing to add it. A\n"
+"warning reports the name chosen.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1256,7 +1415,10 @@ void DocumentParams::removeAutoNameDynamicProperty() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docBackupPolicy() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Save a document to a temporary file first and move it over the old\n"
+"file only once the write succeeded, keeping backups as configured.\n"
+"Turn off to write straight over the file, with no backup.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1283,7 +1445,10 @@ void DocumentParams::removeBackupPolicy() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docCreateBackupFiles() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Keep the previous version of a document file as a backup each time\n"
+"it is saved. When off the old file is deleted once the new one is\n"
+"written.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1310,7 +1475,10 @@ void DocumentParams::removeCreateBackupFiles() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docUseFCBakExtension() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Name a backup after the document, with the date of the replaced\n"
+"file and the extension .FCBak. When off a backup is the document\n"
+"file name followed by a number, as in Part.FCStd1.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1320,7 +1488,7 @@ const bool & DocumentParams::getUseFCBakExtension() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & DocumentParams::defaultUseFCBakExtension() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
@@ -1337,7 +1505,9 @@ void DocumentParams::removeUseFCBakExtension() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docSaveBackupDateFormat() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Date format used in the names of .FCBak backup files, in strftime\n"
+"notation. A dot in the format is written as a dash.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1364,7 +1534,9 @@ void DocumentParams::removeSaveBackupDateFormat() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docCountBackupFiles() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"How many backup files are kept for one document. The oldest are\n"
+"deleted when a save would exceed the number. 0 keeps none.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1391,7 +1563,10 @@ void DocumentParams::removeCountBackupFiles() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docOptimizeRecompute() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Recompute an object only when one of its properties really changed.\n"
+"Writing a property the value it already has then leaves the object\n"
+"untouched. Turn off to recompute on every write.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1418,7 +1593,9 @@ void DocumentParams::removeOptimizeRecompute() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docCanAbortRecompute() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Show progress while a document recomputes and let Esc abort it.\n"
+"Costs a little recompute time.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1445,7 +1622,10 @@ void DocumentParams::removeCanAbortRecompute() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docUseHasher() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Store the generated element names of new documents as short\n"
+"references into a string table of the document instead of in full.\n"
+"Each document carries its own copy of this choice.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1472,7 +1652,10 @@ void DocumentParams::removeUseHasher() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docViewObjectTransaction() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Let a change to a view property alone, such as colour or visibility,\n"
+"create an undo step whatever command made it. When off only the\n"
+"commands that ask for it do.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1499,7 +1682,10 @@ void DocumentParams::removeViewObjectTransaction() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docWarnRecomputeOnRestore() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Ask to recompute after opening a document that needs it to be\n"
+"brought up to date with this version. When off the document opens\n"
+"without the question and is left as it is.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1526,7 +1712,11 @@ void DocumentParams::removeWarnRecomputeOnRestore() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docNoPartialLoading() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Load every externally linked document in full. When off a document\n"
+"opened only because another links to it loads just the linked\n"
+"objects and what they depend on, and cannot be edited until\n"
+"reloaded.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1553,7 +1743,9 @@ void DocumentParams::removeNoPartialLoading() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docSaveThumbnail() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Save a preview picture of the 3D view into new documents each time\n"
+"they are saved. Each document carries its own copy of this choice.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1563,7 +1755,7 @@ const bool & DocumentParams::getSaveThumbnail() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & DocumentParams::defaultSaveThumbnail() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
@@ -1580,7 +1772,9 @@ void DocumentParams::removeSaveThumbnail() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docThumbnailNoBackground() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Leave the view background out of the thumbnail saved with a\n"
+"document, so the picture has a transparent background.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1607,7 +1801,9 @@ void DocumentParams::removeThumbnailNoBackground() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docAddThumbnailLogo() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Put the application icon in the bottom right corner of the thumbnail\n"
+"saved with a document.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1634,7 +1830,9 @@ void DocumentParams::removeAddThumbnailLogo() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docThumbnailSampleSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Number of antialiasing samples used to render the thumbnail saved\n"
+"with a document. 0 renders without antialiasing.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1661,7 +1859,9 @@ void DocumentParams::removeThumbnailSampleSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docThumbnailSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Width and height, in pixels, of the thumbnail saved with a document.\n"
+"Values outside 64 to 1024 are brought into that range.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1671,7 +1871,7 @@ const long & DocumentParams::getThumbnailSize() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & DocumentParams::defaultThumbnailSize() {
-    const static long def = 128;
+    const static long def = 256;
     return def;
 }
 
@@ -1688,7 +1888,9 @@ void DocumentParams::removeThumbnailSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docDuplicateLabels() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Allow several objects of one document to carry the same label. When\n"
+"off a label already in use gets a number added to make it unique.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1715,7 +1917,9 @@ void DocumentParams::removeDuplicateLabels() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docTransactionOnRecompute() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Record a recompute started with the Refresh command as an undo step.\n"
+"When off, refreshing leaves the undo and redo history alone.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1742,7 +1946,10 @@ void DocumentParams::removeTransactionOnRecompute() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docRelativeStringID() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write the ids in a document's string table as differences from the\n"
+"id before, which makes the saved file smaller. Turn off to write\n"
+"every id in full.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1800,7 +2007,10 @@ void DocumentParams::removeHashIndexedName() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docEnableMaterialEdit() {
-    return "";
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Show appearance properties in the property view with an editor for\n"
+"their colours, shininess and transparency. When off they are not\n"
+"listed. Applies to objects created or loaded afterwards.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1883,5 +2093,357 @@ void DocumentParams::setMCPServerPort(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeMCPServerPort() {
     instance()->handle->RemoveInt("MCPServerPort");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docAutoSaveEnabled() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Save auto-recovery information of the open documents at regular\n"
+"intervals. Takes effect at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getAutoSaveEnabled() {
+    return instance()->AutoSaveEnabled;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultAutoSaveEnabled() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setAutoSaveEnabled(const bool &v) {
+    instance()->handle->SetBool("AutoSaveEnabled",v);
+    instance()->AutoSaveEnabled = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeAutoSaveEnabled() {
+    instance()->handle->RemoveBool("AutoSaveEnabled");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docAutoSaveTimeout() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Minutes between two saves of auto-recovery information. 1 to 60.\n"
+"Takes effect at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getAutoSaveTimeout() {
+    return instance()->AutoSaveTimeout;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultAutoSaveTimeout() {
+    const static long def = 15;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setAutoSaveTimeout(const long &v) {
+    instance()->handle->SetInt("AutoSaveTimeout",v);
+    instance()->AutoSaveTimeout = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeAutoSaveTimeout() {
+    instance()->handle->RemoveInt("AutoSaveTimeout");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docAutoSaveCompressed() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write auto-recovery information as one compressed file per\n"
+"document instead of separate uncompressed files. Takes effect at\n"
+"the next save of it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getAutoSaveCompressed() {
+    return instance()->AutoSaveCompressed;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultAutoSaveCompressed() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setAutoSaveCompressed(const bool &v) {
+    instance()->handle->SetBool("AutoSaveCompressed",v);
+    instance()->AutoSaveCompressed = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeAutoSaveCompressed() {
+    instance()->handle->RemoveBool("AutoSaveCompressed");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docSaveBinaryBrep() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write shapes in binary BREP format into a compressed\n"
+"auto-recovery file. Read at each save of it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getSaveBinaryBrep() {
+    return instance()->SaveBinaryBrep;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultSaveBinaryBrep() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setSaveBinaryBrep(const bool &v) {
+    instance()->handle->SetBool("SaveBinaryBrep",v);
+    instance()->SaveBinaryBrep = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeSaveBinaryBrep() {
+    instance()->handle->RemoveBool("SaveBinaryBrep");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docRecoveryEnabled() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Look at startup for documents a crashed session left behind and\n"
+"offer to recover them.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getRecoveryEnabled() {
+    return instance()->RecoveryEnabled;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultRecoveryEnabled() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setRecoveryEnabled(const bool &v) {
+    instance()->handle->SetBool("RecoveryEnabled",v);
+    instance()->RecoveryEnabled = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeRecoveryEnabled() {
+    instance()->handle->RemoveBool("RecoveryEnabled");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docCreateNewDoc() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Create an empty document when the program starts with none\n"
+"open.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getCreateNewDoc() {
+    return instance()->CreateNewDoc;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultCreateNewDoc() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setCreateNewDoc(const bool &v) {
+    instance()->handle->SetBool("CreateNewDoc",v);
+    instance()->CreateNewDoc = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeCreateNewDoc() {
+    instance()->handle->RemoveBool("CreateNewDoc");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docUsingUndo() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Record undo and redo steps for documents. Applies to documents\n"
+"created or opened afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getUsingUndo() {
+    return instance()->UsingUndo;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultUsingUndo() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setUsingUndo(const bool &v) {
+    instance()->handle->SetBool("UsingUndo",v);
+    instance()->UsingUndo = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeUsingUndo() {
+    instance()->handle->RemoveBool("UsingUndo");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docMaxUndoSize() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Largest number of undo steps kept for a document. Applies to\n"
+"documents created or opened afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getMaxUndoSize() {
+    return instance()->MaxUndoSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultMaxUndoSize() {
+    const static long def = 20;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setMaxUndoSize(const long &v) {
+    instance()->handle->SetInt("MaxUndoSize",v);
+    instance()->MaxUndoSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeMaxUndoSize() {
+    instance()->handle->RemoveInt("MaxUndoSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docChangeViewProviderTouchDocument() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Mark a document as modified when a view property of one of its\n"
+"objects changes. Applies to documents created or opened\n"
+"afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getChangeViewProviderTouchDocument() {
+    return instance()->ChangeViewProviderTouchDocument;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultChangeViewProviderTouchDocument() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setChangeViewProviderTouchDocument(const bool &v) {
+    instance()->handle->SetBool("ChangeViewProviderTouchDocument",v);
+    instance()->ChangeViewProviderTouchDocument = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeChangeViewProviderTouchDocument() {
+    instance()->handle->RemoveBool("ChangeViewProviderTouchDocument");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docJsonIndent() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Indentation of the JSON text the properties of Python objects are\n"
+"saved as.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getJsonIndent() {
+    return instance()->JsonIndent;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultJsonIndent() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setJsonIndent(const long &v) {
+    instance()->handle->SetInt("JsonIndent",v);
+    instance()->JsonIndent = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeJsonIndent() {
+    instance()->handle->RemoveInt("JsonIndent");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docPreferCompactFormat() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The compact format was chosen the last time a file was saved under\n"
+"a new name, and is what the next such save starts on. Stored by\n"
+"the Save As dialog.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getPreferCompactFormat() {
+    return instance()->PreferCompactFormat;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultPreferCompactFormat() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setPreferCompactFormat(const bool &v) {
+    instance()->handle->SetBool("PreferCompactFormat",v);
+    instance()->PreferCompactFormat = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removePreferCompactFormat() {
+    instance()->handle->RemoveBool("PreferCompactFormat");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docWarnCompactFormat() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The warning shown when a save comes out in the compact format is\n"
+"still to be shown. The program switches it off when the warning\n"
+"is dismissed for good.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getWarnCompactFormat() {
+    return instance()->WarnCompactFormat;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultWarnCompactFormat() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setWarnCompactFormat(const bool &v) {
+    instance()->handle->SetBool("WarnCompactFormat",v);
+    instance()->WarnCompactFormat = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeWarnCompactFormat() {
+    instance()->handle->RemoveBool("WarnCompactFormat");
 }
 //[[[end]]]

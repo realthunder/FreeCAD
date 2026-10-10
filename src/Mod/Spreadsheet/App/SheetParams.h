@@ -73,6 +73,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter showAliasName
+    ///
+    /// Show the alias of a cell together with its value in the
+    /// spreadsheet, laid out by the alias format string.
     static const bool & getshowAliasName();
     static const bool & defaultshowAliasName();
     static void removeshowAliasName();
@@ -83,6 +86,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DisplayAliasFormatString
+    ///
+    /// How a cell with an alias is shown when aliases are displayed.
+    /// %V stands for the value and %A for the alias.
     static const std::string & getDisplayAliasFormatString();
     static const std::string & defaultDisplayAliasFormatString();
     static void removeDisplayAliasFormatString();
@@ -93,6 +99,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AliasedCellBackgroundColor
+    ///
+    /// Background colour of spreadsheet cells that have an alias, as a
+    /// colour name or #rrggbb.
     static const std::string & getAliasedCellBackgroundColor();
     static const std::string & defaultAliasedCellBackgroundColor();
     static void removeAliasedCellBackgroundColor();
@@ -103,6 +112,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AliasedCellForegroundColor
+    ///
+    /// Text colour of spreadsheet cells that have an alias, as a colour
+    /// name or #rrggbb. A style sheet can override it.
     static const std::string & getAliasedCellForegroundColor();
     static const std::string & defaultAliasedCellForegroundColor();
     static void removeAliasedCellForegroundColor();
@@ -113,6 +125,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LockedAliasedCellColor
+    ///
+    /// Background colour of spreadsheet cells whose alias is locked, as a
+    /// colour name or #rrggbb.
     static const std::string & getLockedAliasedCellColor();
     static const std::string & defaultLockedAliasedCellColor();
     static void removeLockedAliasedCellColor();
@@ -123,6 +138,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TextColor
+    ///
+    /// Text colour of spreadsheet cells that have no colour of their own,
+    /// as a colour name or #rrggbb.
     static const std::string & getTextColor();
     static const std::string & defaultTextColor();
     static void removeTextColor();
@@ -133,6 +151,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PositiveNumberColor
+    ///
+    /// Text colour of spreadsheet cells holding a number that is not
+    /// negative, as a colour name or #rrggbb. Empty uses the normal text
+    /// colour.
     static const std::string & getPositiveNumberColor();
     static const std::string & defaultPositiveNumberColor();
     static void removePositiveNumberColor();
@@ -143,6 +165,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NegativeNumberColor
+    ///
+    /// Text colour of spreadsheet cells holding a negative number, as a
+    /// colour name or #rrggbb. Empty uses the normal text colour.
     static const std::string & getNegativeNumberColor();
     static const std::string & defaultNegativeNumberColor();
     static void removeNegativeNumberColor();
@@ -153,6 +178,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter VerticalConfTable
+    ///
+    /// Start the configuration table dialog in vertical layout, with one
+    /// configuration per column, when a single column is selected.
+    /// Follows the Vertical checkbox of that dialog.
     static const bool & getVerticalConfTable();
     static const bool & defaultVerticalConfTable();
     static void removeVerticalConfTable();
@@ -163,11 +192,58 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DoubleBindConfTable
+    ///
+    /// Tick Double Bind when the configuration table dialog opens on a
+    /// single column selection. The top-left cell of the table then both
+    /// shows and sets the current configuration.
     static const bool & getDoubleBindConfTable();
     static const bool & defaultDoubleBindConfTable();
     static void removeDoubleBindConfTable();
     static void setDoubleBindConfTable(const bool &v);
     static const char *docDoubleBindConfTable();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportExportDelimiter
+    ///
+    /// Character that separates the fields when a spreadsheet is imported
+    /// from or exported to a text file; the words tab, comma and
+    /// semicolon are accepted too. Takes effect at the next import or
+    /// export.
+    static const std::string & getImportExportDelimiter();
+    static const std::string & defaultImportExportDelimiter();
+    static void removeImportExportDelimiter();
+    static void setImportExportDelimiter(const std::string &v);
+    static const char *docImportExportDelimiter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportExportQuoteCharacter
+    ///
+    /// Character that encloses text fields when a spreadsheet is imported
+    /// from or exported to a text file. It must be a single character.
+    /// Takes effect at the next import or export.
+    static const std::string & getImportExportQuoteCharacter();
+    static const std::string & defaultImportExportQuoteCharacter();
+    static void removeImportExportQuoteCharacter();
+    static void setImportExportQuoteCharacter(const std::string &v);
+    static const char *docImportExportQuoteCharacter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportExportEscapeCharacter
+    ///
+    /// Character that marks special characters when a spreadsheet is
+    /// imported from or exported to a text file. It must be a single
+    /// character. Takes effect at the next import or export.
+    static const std::string & getImportExportEscapeCharacter();
+    static const std::string & defaultImportExportEscapeCharacter();
+    static void removeImportExportEscapeCharacter();
+    static void setImportExportEscapeCharacter(const std::string &v);
+    static const char *docImportExportEscapeCharacter();
     //@}
 
 // Auto generated code (Tools/params_utils.py:179)

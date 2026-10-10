@@ -22,6 +22,7 @@
 
 #include "FCConfig.h"
 #include "DiligentRenderer.h"
+#include "GLErrorName.h"
 
 #ifndef FC_OS_WIN32
 # ifndef GL_GLEXT_PROTOTYPES
@@ -114,9 +115,8 @@ namespace
         GLenum error = glGetError();
         if (error == GL_NO_ERROR)
             return false;
-        unsigned clamped = qMin(unsigned(error - GL_INVALID_ENUM), 4U);
-        const char *errors[] = { "GL_INVALID_ENUM", "GL_INVALID_VALUE", "GL_INVALID_OPERATION", "Unknown" };
-        _RENDER_ERR(line, msg << " (" << errors[clamped] << ")");
+        _RENDER_ERR(line, msg << " (" << Render::glErrorName(error) << ", 0x"
+                                  << Qt::hex << unsigned(error) << Qt::dec << ")");
         return true;
     }
     #define checkGLError(msg) _checkGLError(__LINE__, msg)

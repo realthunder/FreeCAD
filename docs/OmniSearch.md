@@ -26,6 +26,29 @@ of the active view with `/` already typed and three suggestions:
 Pick one (Enter, Tab or click) or type the prefix; the space ends it. Text
 that does not start with `/` is an object query as typed.
 
+Below the three, while the text is still the lone `/` the box came up with,
+are the items last CONFIRMED in it, the newest first: up to ten, each once.
+Confirmed is carried out, not found -- a command run from the box, a
+parameter whose editor was opened, an object selected or a property whose
+editor was opened. A row looks as it does in its own list (a command with
+its icon, title and shortcut, greyed while it cannot run; a parameter with
+its value; an object or a property by the text it was asked for), and
+picking it carries the item out again: the command runs, the parameter's or
+the property's editor opens, the object is selected. As soon as anything
+more is typed the list is the query's own. The items are kept from one
+session to the next; one that cannot be found at the moment -- a command of
+a module that is not loaded, a query that names nothing in what is open --
+is left out of the list and comes back when it can be found. The desktop
+box only: the browser's has no such list.
+
+The space after the slash is optional for an object: a word that is not a
+keyword is an object query as it stands, so `/Box.Length` is `/ Box.Length`.
+The keywords are `cmd` and `param` (the browser viewer has `cmd` only). A
+keyword in full is the keyword -- `/cmd` shows that one mode, and an object
+called `cmd` is asked for with the space, `/ cmd`. The beginning of a keyword
+could be either, so both are listed: `/c` shows the `/cmd` mode and, after it,
+the objects `c` matches; picking an object row picks the object.
+
 In every popup, Up/Down and Shift+Tab move the highlight, and Tab or a click
 picks the highlighted row (the first one when none is); Enter picks it too
 except in the object popup, where Enter acts on the text as typed (below).
@@ -204,6 +227,19 @@ property editor. The member completer works the same way
 (`completeMember()`), except that picking a view row (`View1.`) re-runs
 the query to open the next level instead of committing.
 
+The recent items are `OmniSearch::recentItems()` and `addRecentItem()`
+(a mode and a key: a command's name, a parameter's full path, the box's
+text for an object), kept under `Preferences/OmniSearch/Recent` as `Item0`
+to `Item9` -- state, not a setting, and so not in the registry, as the
+recent files are not. The box notes one in the four places that carry
+something out (`onCommandChosen`, `onParamChosen`, `onObjectActivated` for
+a property, `selectObject`), and `OmniSearchEdit::fillChooser()` lists them
+when the text is `/` alone (`appendRecentRows()`, the rows copied from the
+command and parameter models so that they look the same), ABOVE the three
+modes: the row the box comes up on is the item confirmed last, so Return
+on a box just brought up carries that out again.
+`activateChooserRow()` carries a picked one out.
+
 Keys are handled on the popups, not on the edit: while a popup is up the
 key events go to it, and `QCompleter` forwards them to the edit's `event()`
 directly, past any filter installed on the edit. So `OmniSearchEdit` is an
@@ -246,7 +282,10 @@ allows transparency.
 `App::ParamRegistry` holds them all: `entries()`, `find(path, entry)`,
 `search(keywords)`, `getValue`/`setValue`/`reset`/`isSet` through the
 `ParameterGrp`, so the generated observer classes (which cache every value)
-see the change. The registry is populated at library load: `params_utils.py`
+see the change. A path and entry has ONE entry: the first description
+stands, whether two generated classes share a definition (Part's and
+PartGui's `PartParams`, for four tessellation settings) or a module
+registers from Python what a class describes. The registry is populated at library load: `params_utils.py`
 `define()` now emits, after the observer class,
 
 ```cpp
@@ -267,6 +306,53 @@ class name and `createParamEditor()` falls back to the type's editor. A
 custom proxy that *can* be described says so: `OpenViewParams.py`'s
 `ParamTargetCombo` registers as a `ComboBox` whose stored value is the item
 data.
+
+### 3.1 The way in from Python
+
+A module written in Python has no generated class, so nothing registered
+what its Python code reads. Two things let it in:
+
+- `FreeCAD.registerParam(path, entry, type, default, title=, doc=, ...)`
+  describes one setting at run time. It fills an `App::ParamSpec` -- a
+  `ParamInfo` that owns its strings -- and `ParamRegistry::add(spec)` keeps
+  a copy; the entry it makes is like any other. The default is a Python
+  value of the type (`True`, `3`, `0xCC333300`, `0.5`, `"text"`), not text.
+  It returns `False`, registering nothing, when the path and entry are
+  described already: the first description stands, a generated class's
+  included, because the entries handed out are held by pointer. It raises
+  on a type name it does not know, a default of the wrong Python type, and
+  a path that names no parameter set -- every list of settings reads a
+  value through that path. `FreeCAD.listParams(query='')` is the read
+  side: the descriptions as dictionaries.
+- `freecad.params` (`src/Ext/freecad/params.py`) loads a DEFINITION FILE in
+  the form the generated classes use -- `NameSpace`, `ClassName`,
+  `ParamPath`, `Params = [ParamBool(...), ...]` -- with the generator's own
+  classes: `Tools/params_utils.py` is installed beside it as
+  `freecad/params_utils.py` and imported with an empty module standing in
+  for `cog`. `register(module)` maps each entry to the keywords of
+  `registerParam`, what `Param.registry_entry()` writes for a C++ class. A
+  definition that meets an entry something else describes is noted in
+  `freecad.params.conflicts`, which `BaseTests.ParamRegistryTestCase` holds
+  empty, along with the rule that every setting has a title and at most 400
+  characters of documentation.
+
+A module imports its definition file from its `Init.py`, so its settings
+are listed whether or not its workbench was used -- unlike a C++ module's,
+which appear when its library loads. Registering describes; it reads and
+stores nothing, and the Python readers keep their own code and their own
+defaults, so a test of the module holds the two together
+(`Mod/Assembly/AssemblyTests/TestSettings.py` reads the sources for it).
+The first module through is Assembly: `Mod/Assembly/AssemblyPyParams.py`,
+the thirteen settings only its commands and dialogues read, beside the
+seven of `App/AssemblyParams.py`. A module that has a table of its settings
+already (Draft) calls `registerParam` per row instead of a second copy.
+Fem, CAM and Material have a definition file for their Python side
+(`FemPyParams.py`, `CAMPyParams.py`, `MaterialPyParams.py`); Help, OpenSCAD,
+ReverseEngineering and Tux one for all they have, the last two of which
+show that neither the reader nor the path need be the usual: the eleven of
+`ReverseEngineeringParams.py` are what the widgets of a C++ dialog store,
+and Tux's are under `User parameter:Tux`, listed as `/Tux/...`.
+`Mod/Test/ModuleSettings.py` holds the small modules' to their readers.
 
 Regeneration, after editing a `*Params.py` or the generator (cog is not
 wired into CMake; `pip install cogapp` once):
@@ -303,12 +389,18 @@ The line endings in this repository are frozen (`.gitattributes`), so check
 
 - `tests/src/App/ParamRegistry.cpp` (in `Tests_run`): the registrars ran,
   defaults format by type, keyword matching, search over path/name/doc, and
-  get/set/reset round trips through the parameter group.
+  get/set/reset round trips through the parameter group; a setting described
+  at run time, and what `add(spec)` refuses.
+- `BaseTests.ParamRegistryTestCase` (`FreeCADCmd -t BaseTests`): the way in
+  from Python -- `registerParam`, `listParams`, a definition file through
+  `freecad.params` -- and what the modules registered at start.
+  `tests/gui/python-settings-door.py` asks the omni search for them.
 - `tests/src/Gui/OmniSearch.cpp` (`OmniSearch_Tests_run`, a Qt test): the
   grammar, `resolveObject` over a document (name, label, property, pseudo
   property, misses, the `#` forms over one and two documents),
   `documentMembers` and `splitMemberQuery`, `searchParams`, the model and
-  filter, and `createParamEditor` for every proxy kind and every value type.
+  filter, `createParamEditor` for every proxy kind and every value type,
+  and the recent items (order, once each, ten at most, what is not kept).
   There is no `Gui::Application` in it, so `ViewObject` and `ActiveView`
   are only checked to resolve to nothing there.
 - `tests/src/Gui/OmniControl.cpp` (`OmniControl_Tests_run`, a Qt test):
@@ -320,6 +412,10 @@ The line endings in this repository are frozen (`.gitattributes`), so check
   for objects, labels, sub-object paths, properties, `#Name`, `#.`
   members and an empty document. Without a `Gui::Application` the
   command ops answer `NoGui` and views are absent, which is asserted.
+- `tests/gui/omni-search-recent-items.py`: the box itself -- a command, a
+  parameter and a property confirmed and listed the next time it comes up,
+  the newest first and once each, gone when more is typed, carried out
+  again when picked, left out when they name nothing.
 - Commands need a `Gui::Application`; they are exercised by hand: `/cmd
   draw` -> `Std_DrawStyle` with its arrow, `/cmd history` -> Enter runs
   `Std_CmdHistory` and it appears in the history.

@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <Gui/ViewParams.h>
+
 #ifndef _PreComp_
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoMarkerSet.h>
@@ -60,7 +62,7 @@ void ViewProviderDatumPoint::attach ( App::DocumentObject *obj ) {
     ViewProviderDatum::attach ( obj );
 
     int pointSize = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/View")->GetInt("MarkerSize", 9);
+            "User parameter:BaseApp/Preferences/View")->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
 #if 1
     // The advantage of using SoBrepPointSet

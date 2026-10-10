@@ -1,8 +1,10 @@
 // Split-view chrome (docs/SplitViews.md sec 9.4): a binary splitter
 // tree of DOM cells over the single canvas, mirroring the desktop
-// ViewArea gestures (ViewArea.cpp ViewAreaZone). The chrome owns the
+// ViewArea gestures (ViewArea.cpp ViewAreaZone, sec 21 and 22): a drag
+// is shown as frames and carried out at the release, and can be given
+// up. The chrome owns the
 // gestures -- corner action zones split and join, border handles
-// resize -- and pushes the resulting cell rects to the viewer through
+// resize and close -- and pushes the resulting cell rects to the viewer through
 // window.fcviewerSetLayout; the WASM side owns cameras, content and
 // input routing inside the cells (main.cpp fcviewer_set_layout).
 //
@@ -27,9 +29,39 @@ type Node = CellNode | SplitNode;
 
 /// Corner-zone size and the drag threshold, in CSS px -- ViewAreaZone
 /// parity (Size = 14, manhattan 12).
-const ZONE = 14;
 const THRESHOLD = 12;
+/// The floor of a split's ratio whatever the sizes: what a layout from
+/// the store, or a window that shrank, is held to.
 const MIN_RATIO = 0.05;
+/// The least a GESTURE makes a cell, in CSS px each way: the desktop's
+/// View/OpenView/MinimumCellSize at its default. `?mincell=N` in the
+/// page's address overrides it (0: no minimum) -- a phone held upright
+/// is narrower than two cells of 300.
+const MIN_CELL = (() => {
+  try {
+    const v = new URLSearchParams(location.search).get('mincell');
+    if (v !== null && v !== '' && Number.isFinite(Number(v)))
+      return Math.max(0, Number(v));
+  }
+  catch {}
+  return 300;
+})();
+/// How far past its limit a border is dragged before the drag means
+/// closing the cell it is pushed into (ViewAreaSplitterHandle parity).
+const CLOSE_SLACK = 12;
+
+const clampRatio = (r: number) =>
+  Math.min(1 - MIN_RATIO, Math.max(MIN_RATIO, r));
+
+/// What a drag under way will do, drawn over the cells it changes
+/// (ViewArea::DragFrame): a cell that stays at the size it will have,
+/// the cell a split makes, a cell that is closed (red, crossed out). A
+/// split that is refused has no frame: the cursor says so.
+type FrameKind = 'kept' | 'fresh' | 'going';
+interface Frame {
+  x: number; y: number; w: number; h: number;
+  kind: FrameKind;
+}
 
 interface CellRect {
   node: CellNode;
@@ -77,9 +109,12 @@ const fromSaved = (s: SavedNode | undefined): Node | null => {
 export function SplitOverlay() {
   const [root, setRoot] = createSignal<Node>(
     { cell: true, id: 1, page: false }, { equals: false });
-  // The join gesture's armed target, for the dim + arrow overlay.
-  const [joinMark, setJoinMark] = createSignal<{
-    target: CellNode; dir: 'h' | 'v'; after: boolean } | null>(null);
+  // The frames of the drag under way, and what it is ("split", "join",
+  // "resize", "close"; '' for none).
+  const [frames, setFrames] = createSignal<{ op: string; list: Frame[] }>(
+    { op: '', list: [] });
+  // The reason of a refused split, shown for a few seconds.
+  const [note, setNote] = createSignal('');
   const [size, setSize] = createSignal({ w: 0, h: 0 });
 
   const canvasSize = () => {
@@ -93,7 +128,11 @@ export function SplitOverlay() {
   setTimeout(onResize);
   onCleanup(() => window.removeEventListener('resize', onResize));
 
-  const layout = () => {
+  /// The cells and borders of the tree; with `over`, as they would be
+  /// were those splits' ratios the ones given -- what a border drag
+  /// shows before it changes anything. A ratio given this way is taken
+  /// as it is: a cell squeezed to nothing is how a close is shown.
+  const layout = (over?: Map<SplitNode, number>) => {
     const { w, h } = size();
     const cells: CellRect[] = [];
     const handles: HandleRect[] = [];
@@ -103,7 +142,9 @@ export function SplitOverlay() {
         cells.push({ node: n, x, y, w: cw, h: ch });
         return;
       }
-      const r = Math.min(1 - MIN_RATIO, Math.max(MIN_RATIO, n.ratio));
+      const given = over?.get(n);
+      const r = given === undefined ? clampRatio(n.ratio)
+                                    : Math.min(1, Math.max(0, given));
       if (n.dir === 'h') {
         const aw = cw * r;
         walk(n.a, x, y, aw, ch);
@@ -222,12 +263,13 @@ export function SplitOverlay() {
     return parentOf(n.a, of) ?? parentOf(n.b, of);
   };
 
-  /// Split `cell` along `dir`; the fresh cell goes right/below
-  /// (desktop parity: new splits always place the new cell after).
-  /// Returns the new split node so the drag can live-adjust its ratio.
-  const splitCell = (cell: CellNode, dir: 'h' | 'v'): SplitNode => {
+  /// Split `cell` along `dir`, the cell keeping `ratio` of its extent;
+  /// the fresh cell goes right/below (desktop parity: new splits
+  /// always place the new cell after).
+  const splitCell = (cell: CellNode, dir: 'h' | 'v',
+                     ratio = 0.5): SplitNode => {
     const fresh: CellNode = { cell: true, id: nextId++, page: cell.page };
-    const split: SplitNode = { cell: false, dir, ratio: 0.5,
+    const split: SplitNode = { cell: false, dir, ratio: clampRatio(ratio),
                                a: cell, b: fresh };
     const p = parentOf(root(), cell);
     if (!p) setRoot(split);
@@ -277,90 +319,197 @@ export function SplitOverlay() {
   };
 
   // ---- Gestures -----------------------------------------------------
-
-  interface Drag {
-    cell: CellNode;
-    rect: CellRect;
-    startX: number;
-    startY: number;
-    resize: SplitNode | null;    // set once a split happened
-  }
-  let drag: Drag | null = null;
+  //
+  // The desktop's rules (ViewArea.cpp, docs/SplitViews.md sec 21 and
+  // 22): nothing is split, joined, resized or closed while the button
+  // is down. A drag is shown as frames over the cells it will change
+  // and is carried out when the primary button is released; Escape,
+  // any other button, a second finger, or the page losing the pointer
+  // give it up.
 
   const cellRectOf = (cell: CellNode) =>
     layout().cells.find((c) => c.node === cell) ?? null;
 
-  // The drag listens on the WINDOW, not the pressed element: every
-  // tree change re-renders the cell divs, so the corner zone that
-  // took the press dies mid-gesture -- element pointer capture then
-  // silently drops the live resize and the pointerup, and the stale
-  // drag corrupts the next gesture.
+  const showFrames = (op: string, list: Frame[]) => setFrames({ op, list });
+
+  /// A split that cannot be: said the moment the cursor turns to the
+  /// forbidden one, at every such turn -- the desktop's wording
+  /// (ViewArea::reportRefusedSplit).
+  let noteTimer: number | undefined;
+  const refuse = (rect: CellRect, dir: 'h' | 'v') => {
+    const text = `A view of ${Math.round(rect.w)} x ${Math.round(rect.h)} `
+      + `is not split ${dir === 'h' ? 'side by side' : 'top and bottom'}: `
+      + `no view cell is made smaller than ${MIN_CELL} x ${MIN_CELL} `
+      + '(the minimum view cell size).';
+    console.error(text);
+    setNote(text);
+    window.clearTimeout(noteTimer);
+    noteTimer = window.setTimeout(() => setNote(''), 6000);
+  };
+
+  /// The cursor of a split that cannot be, wherever the pointer is: the
+  /// elements under it have cursors of their own, so it is a class on
+  /// the document that overrules them all.
+  const forbid = (on: boolean) =>
+    document.documentElement.classList.toggle('fc-split-forbidden', on);
+
+  /// One drag: `onMove` works out what the release would do and shows
+  /// it, `onCommit` does it. The listeners are on the WINDOW, not the
+  /// pressed element: the chrome re-renders under a drag, and an
+  /// element's own pointer capture dies with the element.
+  const beginDrag = (ev: PointerEvent,
+                     onMove: (mv: PointerEvent) => void,
+                     onCommit: () => void) => {
+    const id = ev.pointerId;
+    let done = false;
+    const finish = (commit: boolean) => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', abort, true);
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('keydown', key, true);
+      window.removeEventListener('blur', abort);
+      document.removeEventListener('visibilitychange', abort);
+      showFrames('', []);
+      forbid(false);
+      if (commit) onCommit();
+    };
+    const abort = () => finish(false);
+    const move = (mv: PointerEvent) => {
+      if (mv.pointerId !== id) return;
+      // Another button of the same mouse going down is not a
+      // pointerdown: it arrives as a move with more buttons held.
+      if ((mv.buttons & ~1) !== 0) {
+        // ... and the right one brings a context menu at its release,
+        // which is not what that click was for.
+        const eat = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
+        window.addEventListener('contextmenu', eat, true);
+        window.setTimeout(
+          () => window.removeEventListener('contextmenu', eat, true), 800);
+        finish(false);
+        return;
+      }
+      onMove(mv);
+    };
+    const up = (u: PointerEvent) => {
+      if (u.pointerId !== id) return;
+      finish(u.button === 0);
+    };
+    // A second finger (or another pointer of any kind) going down.
+    const down = (d: PointerEvent) => { if (d.pointerId !== id) finish(false); };
+    const key = (k: KeyboardEvent) => {
+      if (k.key !== 'Escape') return;
+      k.preventDefault();
+      k.stopPropagation();
+      finish(false);
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', abort, true);
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('keydown', key, true);
+    window.addEventListener('blur', abort);
+    document.addEventListener('visibilitychange', abort);
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+
+  /// A corner zone. Dragged INTO its cell it only ever creates: a split
+  /// along the dominant axis with the border under the cursor, refused
+  /// when a cell would go under the minimum. Dragged OUT into the
+  /// neighbor it arms a join, which closes that neighbor.
   const zoneDown = (cell: CellNode, ev: PointerEvent) => {
     if (ev.button !== 0) return;
     const rect = cellRectOf(cell);
     if (!rect) return;
-    drag = { cell, rect, startX: ev.clientX, startY: ev.clientY,
-             resize: null };
-    const move = (mv: PointerEvent) => zoneMove(mv);
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      zoneUp();
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    let split: { dir: 'h' | 'v'; at: number } | null = null;
+    let join: CellNode | null = null;
+    let refused = false;
+    /// The cursor follows whether the split under way can be; the turn
+    /// TO the forbidden one says why, each time.
+    const setRefused = (now: boolean, dir: 'h' | 'v') => {
+      if (now && !refused) refuse(rect, dir);
+      if (now !== refused) forbid(now);
+      refused = now;
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    ev.preventDefault();
-  };
-  const zoneMove = (ev: PointerEvent) => {
-    if (!drag) return;
-    // Once a split happened the rest of the drag adjusts the fresh
-    // border, wherever the cursor goes.
-    if (drag.resize) {
-      const s = drag.resize;
-      // The split's rect is the union of both sides = the pressed cell.
-      const base = drag.rect;
-      if (s.dir === 'h')
-        s.ratio = (ev.clientX - canvasLeft() - base.x) / base.w;
-      else
-        s.ratio = (ev.clientY - canvasTop() - base.y) / base.h;
-      s.ratio = Math.min(1 - MIN_RATIO, Math.max(MIN_RATIO, s.ratio));
-      changed();
-      return;
-    }
-    const px = ev.clientX - canvasLeft();
-    const py = ev.clientY - canvasTop();
-    const inside = px >= drag.rect.x && px < drag.rect.x + drag.rect.w
-        && py >= drag.rect.y && py < drag.rect.y + drag.rect.h;
-    const dx = ev.clientX - drag.startX;
-    const dy = ev.clientY - drag.startY;
-    if (inside) {
-      // Back inside always cancels an armed join, even right at the
-      // press point where the split threshold below is not met.
-      setJoinMark(null);
-      if (Math.abs(dx) + Math.abs(dy) < THRESHOLD) return;
-      // Inward drag: split along the dominant axis.
-      const dir: 'h' | 'v' = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
-      drag.resize = splitCell(drag.cell, dir);
-    }
-    else {
-      // Outward drag: arm a join that consumes the neighbor the
-      // cursor entered; dragging back disarms.
+    const onMove = (mv: PointerEvent) => {
+      split = null;
+      join = null;
+      const px = mv.clientX - canvasLeft();
+      const py = mv.clientY - canvasTop();
+      const inside = px >= rect.x && px < rect.x + rect.w
+          && py >= rect.y && py < rect.y + rect.h;
+      const dx = mv.clientX - startX;
+      const dy = mv.clientY - startY;
+      if (inside) {
+        // Back at the press point: nothing armed.
+        if (Math.abs(dx) + Math.abs(dy) < THRESHOLD) {
+          setRefused(false, 'h');
+          showFrames('', []);
+          return;
+        }
+        const dir: 'h' | 'v' = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
+        const along = dir === 'h' ? rect.w : rect.h;
+        const across = dir === 'h' ? rect.h : rect.w;
+        // Both halves, and the side the new cell inherits.
+        if (MIN_CELL > 0 && (along / 2 < MIN_CELL || across < MIN_CELL)) {
+          // No frame: the forbidden cursor, and the reason.
+          setRefused(true, dir);
+          showFrames('', []);
+          return;
+        }
+        setRefused(false, dir);
+        const least = MIN_CELL > 0 ? MIN_CELL : along * MIN_RATIO;
+        const at = Math.min(along - least, Math.max(
+          least, dir === 'h' ? px - rect.x : py - rect.y));
+        split = { dir, at };
+        showFrames('split', dir === 'h'
+          ? [{ x: rect.x, y: rect.y, w: at, h: rect.h, kind: 'kept' },
+             { x: rect.x + at, y: rect.y, w: rect.w - at, h: rect.h,
+               kind: 'fresh' }]
+          : [{ x: rect.x, y: rect.y, w: rect.w, h: at, kind: 'kept' },
+             { x: rect.x, y: rect.y + at, w: rect.w, h: rect.h - at,
+               kind: 'fresh' }]);
+        return;
+      }
+      // Outward: a join that consumes the neighbor the cursor entered;
+      // dragging back disarms.
+      setRefused(false, 'h');
       let dir: 'h' | 'v';
       let after: boolean;
-      if (px >= drag.rect.x + drag.rect.w) { dir = 'h'; after = true; }
-      else if (px < drag.rect.x) { dir = 'h'; after = false; }
-      else if (py >= drag.rect.y + drag.rect.h) { dir = 'v'; after = true; }
+      if (px >= rect.x + rect.w) { dir = 'h'; after = true; }
+      else if (px < rect.x) { dir = 'h'; after = false; }
+      else if (py >= rect.y + rect.h) { dir = 'v'; after = true; }
       else { dir = 'v'; after = false; }
-      const target = joinTargetFor(drag.cell, dir, after);
-      setJoinMark(target ? { target, dir, after } : null);
-    }
-  };
-  const zoneUp = () => {
-    if (!drag) return;
-    const mark = joinMark();
-    setJoinMark(null);
-    drag = null;
-    if (mark) closeCell(mark.target);
+      const target = joinTargetFor(cell, dir, after);
+      const going = target ? cellRectOf(target) : null;
+      if (!target || !going) {
+        showFrames('', []);
+        return;
+      }
+      join = target;
+      // The cell that stays, over the room of both, and the one that
+      // goes, red and crossed out.
+      const x0 = Math.min(rect.x, going.x);
+      const y0 = Math.min(rect.y, going.y);
+      const x1 = Math.max(rect.x + rect.w, going.x + going.w);
+      const y1 = Math.max(rect.y + rect.h, going.y + going.h);
+      showFrames('join', [
+        { x: x0, y: y0, w: x1 - x0, h: y1 - y0, kind: 'kept' },
+        { x: going.x, y: going.y, w: going.w, h: going.h, kind: 'going' }]);
+    };
+    const onCommit = () => {
+      // a refused split has said so already, when the cursor turned
+      if (join) closeCell(join);
+      else if (split)
+        splitCell(cell, split.dir,
+                  split.at / (split.dir === 'h' ? rect.w : rect.h));
+    };
+    beginDrag(ev, onMove, onCommit);
   };
 
   const canvasLeft = () => {
@@ -372,30 +521,134 @@ export function SplitOverlay() {
     return c ? c.getBoundingClientRect().top : 0;
   };
 
+  /// A border takes room from the cell next to it and from no other
+  /// (ViewAreaSplitterHandle, the desktop's rule): "when dragging the
+  /// splitter, do not move the other splitter in case the next view size
+  /// limit is reached. change it to view close action when size limit
+  /// reached". In a tree of ratios a border belongs to one split, and a
+  /// change of that split's ratio alone would scale everything on both
+  /// sides -- so the change is handed down each side to its NEAR end,
+  /// the far parts keeping the pixels they have.
+  ///
+  /// `n` is `extent` long along `dir` and is to become `extent + delta`,
+  /// the change taken at its near end (`nearIsA`: its first child is the
+  /// one at the border). Splits along `dir` get the ratio that leaves
+  /// their far child as it is; a split across it hands the same change
+  /// to both children.
+  const resizeNear = (n: Node, dir: 'h' | 'v', extent: number, delta: number,
+                      nearIsA: boolean, over: Map<SplitNode, number>) => {
+    if (n.cell) return;
+    if (n.dir !== dir) {
+      resizeNear(n.a, dir, extent, delta, nearIsA, over);
+      resizeNear(n.b, dir, extent, delta, nearIsA, over);
+      return;
+    }
+    const ea = extent * clampRatio(n.ratio);
+    const eb = extent - ea;
+    const to = extent + delta;
+    if (to <= 0) return;
+    over.set(n, nearIsA ? (ea + delta) / to : ea / to);
+    resizeNear(nearIsA ? n.a : n.b, dir, nearIsA ? ea : eb, delta,
+               nearIsA, over);
+  };
+  /// How much `n` can give at its near end: the cell there, down to the
+  /// minimum cell size.
+  const canGive = (n: Node, dir: 'h' | 'v', extent: number,
+                   nearIsA: boolean): number => {
+    if (n.cell)
+      return Math.max(0, extent - (MIN_CELL > 0 ? MIN_CELL : 24));
+    if (n.dir !== dir)
+      return Math.min(canGive(n.a, dir, extent, nearIsA),
+                      canGive(n.b, dir, extent, nearIsA));
+    const ea = extent * clampRatio(n.ratio);
+    return canGive(nearIsA ? n.a : n.b, dir, nearIsA ? ea : extent - ea,
+                   nearIsA);
+  };
+  /// The one cell at the near end of `n`, with its extent along `dir`;
+  /// null when a split across `dir` is in the way (several cells lie
+  /// along the border there, and a drag closes none of them).
+  const nearCell = (n: Node, dir: 'h' | 'v', extent: number,
+                    nearIsA: boolean): { cell: CellNode; extent: number } | null => {
+    if (n.cell) return { cell: n, extent };
+    if (n.dir !== dir) return null;
+    const ea = extent * clampRatio(n.ratio);
+    return nearCell(nearIsA ? n.a : n.b, dir, nearIsA ? ea : extent - ea,
+                    nearIsA);
+  };
+
+  /// A border. The two cells it moves between get a frame at the size
+  /// they will have; it stops where the one it is pushed into reaches
+  /// the minimum, and pushed well past that it closes that cell.
   const handleDown = (split: SplitNode, ev: PointerEvent) => {
     if (ev.button !== 0) return;
-    ev.preventDefault();
-    // Window listeners for the same reason as zoneDown: the handle
-    // div itself is recreated on every ratio change.
-    const move = (mv: PointerEvent) => {
-      // Recover the split's base rect from its children each move --
-      // an ancestor resize may have moved it.
+    let plan: Map<SplitNode, number> | null = null;
+    let close: CellNode | null = null;
+    /// The ratios with the border moved by `d` (a's side growing).
+    const moved = (total: number, now: number, d: number) => {
+      const over = new Map<SplitNode, number>();
+      over.set(split, (now + d) / total);
+      resizeNear(split.a, split.dir, now, d, false, over);
+      resizeNear(split.b, split.dir, total - now, -d, true, over);
+      return over;
+    };
+    const framesOf = (over: Map<SplitNode, number>, gone: CellNode | null) => {
+      const then = layout(over).cells;
+      const list: Frame[] = [];
+      for (const c of layout().cells) {
+        if (!contains(split, c.node) || c.node === gone) continue;
+        const t = then.find((k) => k.node === c.node);
+        if (!t) continue;
+        if (Math.abs(t.x - c.x) > 0.5 || Math.abs(t.y - c.y) > 0.5
+            || Math.abs(t.w - c.w) > 0.5 || Math.abs(t.h - c.h) > 0.5)
+          list.push({ x: t.x, y: t.y, w: t.w, h: t.h, kind: 'kept' });
+      }
+      return list;
+    };
+    const onMove = (mv: PointerEvent) => {
+      plan = null;
+      close = null;
       const un = unionRect(split);
       if (!un) return;
-      if (split.dir === 'h')
-        split.ratio = (mv.clientX - canvasLeft() - un.x) / un.w;
-      else
-        split.ratio = (mv.clientY - canvasTop() - un.y) / un.h;
-      split.ratio = Math.min(1 - MIN_RATIO,
-                             Math.max(MIN_RATIO, split.ratio));
-      changed();
+      const horiz = split.dir === 'h';
+      const total = horiz ? un.w : un.h;
+      if (total <= 0) return;
+      const pos = horiz ? mv.clientX - canvasLeft() - un.x
+                        : mv.clientY - canvasTop() - un.y;
+      const now = total * clampRatio(split.ratio);
+      const want = pos - now;
+      // what the side it is pushed into can give, at the border
+      const give = want >= 0 ? canGive(split.b, split.dir, total - now, true)
+                             : canGive(split.a, split.dir, now, false);
+      const d = want >= 0 ? Math.min(want, give) : -Math.min(-want, give);
+      if (Math.abs(want - d) > CLOSE_SLACK) {
+        const pushed = want >= 0 ? nearCell(split.b, split.dir, total - now, true)
+                                 : nearCell(split.a, split.dir, now, false);
+        const going = pushed ? cellRectOf(pushed.cell) : null;
+        if (pushed && going) {
+          // Shown, and done at the release, as that cell squeezed to
+          // nothing: what is across the border takes its room, and
+          // nothing else moves.
+          close = pushed.cell;
+          plan = moved(total, now, want >= 0 ? pushed.extent : -pushed.extent);
+          const list = framesOf(plan, pushed.cell);
+          list.push({ x: going.x, y: going.y, w: going.w, h: going.h,
+                      kind: 'going' });
+          showFrames('close', list);
+          return;
+        }
+      }
+      plan = moved(total, now, d);
+      const list = framesOf(plan, null);
+      showFrames(list.length ? 'resize' : '', list);
     };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
+    const onCommit = () => {
+      if (!plan) return;
+      for (const [node, ratio] of plan)
+        node.ratio = close ? ratio : clampRatio(ratio);
+      if (close) closeCell(close);
+      else changed();
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    beginDrag(ev, onMove, onCommit);
   };
 
   const unionRect = (split: SplitNode) => {
@@ -452,12 +705,28 @@ export function SplitOverlay() {
 
   const multi = () => !root().cell;
 
+  /// A kept frame's face leaves the room of a cell that goes to that
+  /// cell's own red frame: two faces one on the other are neither
+  /// colour. The going cell lies along one side of the kept frame.
+  const clipOf = (f: Frame): string | undefined => {
+    if (f.kind !== 'kept') return undefined;
+    const g = frames().list.find((o) => o.kind === 'going');
+    if (!g) return undefined;
+    const top = Math.max(0, g.y + g.h - f.y);
+    const left = Math.max(0, g.x + g.w - f.x);
+    const bottom = Math.max(0, f.y + f.h - g.y);
+    const right = Math.max(0, f.x + f.w - g.x);
+    const across = g.w >= f.w - 1;    // one above the other
+    if (across)
+      return g.y <= f.y + 1 ? `inset(${top}px 0 0 0)` : `inset(0 0 ${bottom}px 0)`;
+    return g.x <= f.x + 1 ? `inset(0 0 0 ${left}px)` : `inset(0 ${right}px 0 0)`;
+  };
+
   return (
-    <div class="fc-split-root">
+    <div class="fc-split-root" data-op={frames().op}>
       <For each={layout().cells}>
         {(c) => (
-          <div class="fc-split-cell" classList={{
-                 'fc-split-join': joinMark()?.target === c.node }}
+          <div class="fc-split-cell"
                style={{ left: `${c.x}px`, top: `${c.y}px`,
                         width: `${c.w}px`, height: `${c.h}px` }}>
             <div class="fc-split-zone fc-split-zone-tr"
@@ -489,17 +758,6 @@ export function SplitOverlay() {
                         onClick={() => closeCell(c.node)}>x</button>
               </div>
             )}
-            {joinMark()?.target === c.node && (
-              <svg class="fc-split-arrow" viewBox="0 0 24 24"
-                   style={{ transform: `rotate(${
-                     joinMark()!.dir === 'h'
-                       ? (joinMark()!.after ? 180 : 0)
-                       : (joinMark()!.after ? 270 : 90)}deg)` }}>
-                <path d="M20 12H6M12 5l-7 7 7 7" fill="none"
-                      stroke="currentColor" stroke-width="2.5"
-                      stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            )}
           </div>
         )}
       </For>
@@ -512,6 +770,27 @@ export function SplitOverlay() {
                onPointerDown={[handleDown, h.node]} />
         )}
       </For>
+      <For each={frames().list}>
+        {(f) => (
+          <div class={`fc-split-frame fc-split-frame-${f.kind}`}
+               data-kind={f.kind}
+               style={{ left: `${f.x}px`, top: `${f.y}px`,
+                        width: `${f.w}px`, height: `${f.h}px`,
+                        'clip-path': clipOf(f) }}>
+            {f.kind === 'fresh' && <div class="fc-split-plus" />}
+            {f.kind === 'going' && (
+              <svg class="fc-split-cross" viewBox="0 0 48 48">
+                <path d="M8 8L40 40M40 8L8 40" fill="none"
+                      stroke="#c82828" stroke-width="5"
+                      stroke-linecap="round" />
+              </svg>
+            )}
+          </div>
+        )}
+      </For>
+      <Show when={note() !== ''}>
+        <div class="fc-split-note" role="alert">{note()}</div>
+      </Show>
     </div>
   );
 }

@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <QGuiApplication>
+# include <QPointer>
 #endif
 
 #include <App/Application.h>
@@ -50,6 +51,10 @@ bool useViewArea()
 }
 
 bool inversionSuppressed = false;
+
+// The cell a view is being opened for (ViewPlacement::IntoCell), if any
+QPointer<ViewArea> intoArea;
+QPointer<ViewAreaCell> intoCell;
 
 // The escape hatch of docs/ViewPlacement.md sec 4.2. The PHYSICAL key
 // state at request time is what counts, not the modifiers carried by
@@ -165,6 +170,15 @@ bool placeInArea(ViewArea *area, MDIView *view, Target target,
     if (auto mc = area->maximizedCell())
         area->toggleMaximizeCell(mc);
 
+    // A cell with nothing in it -- its view went with the object it
+    // showed (ViewArea::removeView leaves the last cell standing) -- is
+    // filled before anything is replaced or split: whatever the target,
+    // a new cell beside an empty one is not what was asked for.
+    if (auto cell = area->lastUsedCell([](MDIView *child) { return !child; })) {
+        if (area->setCellView(cell, view))
+            return true;
+    }
+
     // The reuse step: strictly non-3D content replacing non-3D content
     // -- a 3D view's cell is never taken, and a new 3D view always
     // splits (ruled 2026-08-28). Nor is the cell of a view the caller
@@ -276,11 +290,28 @@ void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc)
     place(view, cat, doc, {});
 }
 
+ViewPlacement::IntoCell::IntoCell(ViewArea *area, ViewAreaCell *cell)
+{
+    intoArea = area;
+    intoCell = cell;
+}
+
+ViewPlacement::IntoCell::~IntoCell()
+{
+    intoArea.clear();
+    intoCell.clear();
+}
+
 void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc,
                           const std::function<bool(MDIView *)> &keep)
 {
     if (!view)
         return;
+    if (intoArea && intoCell) {
+        // Opened for a cell: that cell, whatever the policy would say
+        if (intoArea->setCellView(intoCell, view))
+            return;
+    }
     Target target = targetFor(cat);
     if (altInversion())
         target = invert(target);

@@ -570,25 +570,83 @@
   box-sizing: border-box;
 }
 
-/* The join gesture's "this one will be eaten" overlay. */
-.fc-split-cell.fc-split-join {
-  background: rgba(0, 0, 0, 0.35);
+/* The frames of a drag under way (splitview.tsx, the desktop's
+   OverlayDragFrame::paintFrame): the face in the accent at 0.3, inside a
+   white border 2 px wide, a thin dark line round it so that the border
+   shows on a white ground too. */
+.fc-split-root {
+  --fc-accent-rgb: 85, 123, 182;
 }
-.fc-split-arrow {
+.fc-split-frame {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.fc-split-frame-kept,
+.fc-split-frame-fresh {
+  background: rgba(var(--fc-accent-rgb), 0.3);
+  border: 1px solid rgba(0, 0, 0, 0.78);
+  box-shadow: inset 0 0 0 2px #fff;
+}
+/* The cell a split makes: the same frame, and a plus. */
+.fc-split-plus {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
-  color: rgba(255, 255, 255, 0.85);
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  background:
+    linear-gradient(#fff, #fff) center / 100% 3px no-repeat,
+    linear-gradient(#fff, #fff) center / 3px 100% no-repeat;
+  opacity: 0.86;
+}
+/* A cell that is closed -- a join's neighbor, a border's victim: red,
+   crossed out. (This was a refused split's look, and the closing cell had
+   a stop sign: "I feel this hints more like a close".) */
+.fc-split-frame-going {
+  background: rgba(200, 40, 40, 0.27);
+  border: 2px solid #c82828;
+}
+.fc-split-cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  transform: translate(-50%, -50%);
+}
+/* A split that cannot be -- a cell would go under the minimum size: no
+   frame, the forbidden cursor wherever the pointer is. */
+html.fc-split-forbidden,
+html.fc-split-forbidden * {
+  cursor: not-allowed !important;
+}
+/* The reason of a refusal, said when the cursor turns. */
+.fc-split-note {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: min(92%, 560px);
+  padding: 7px 12px;
+  font: 12px system-ui, sans-serif;
+  color: #fff;
+  background: rgba(150, 30, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  pointer-events: none;
 }
 
-/* Corner action zones: invisible until hovered, like Blender's. */
+/* Corner action zones: invisible until hovered, like Blender's. Shown,
+   they are on a ground of their own -- the accent in a white rim, the
+   grip stroke white -- which a few light strokes straight onto the scene
+   were not on a light view. */
 .fc-split-zone {
   position: absolute;
   width: 14px;
   height: 14px;
+  box-sizing: border-box;
   pointer-events: auto;
   touch-action: none;
   cursor: crosshair;
@@ -596,16 +654,15 @@
 }
 .fc-split-zone:hover {
   opacity: 1;
+  border: 1px solid #fff;
+  border-radius: 3px;
   background:
-    linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.5) 50%);
-  border-radius: 2px;
+    linear-gradient(135deg, transparent 42%, #fff 42%, #fff 58%,
+                    transparent 58%),
+    rgb(var(--fc-accent-rgb));
 }
 .fc-split-zone-tr { top: 0; right: 0; }
 .fc-split-zone-bl { bottom: 0; left: 0; }
-.fc-split-zone-bl:hover {
-  background:
-    linear-gradient(-45deg, transparent 50%, rgba(255, 255, 255, 0.5) 50%);
-}
 
 /* Border handles: a hairline that widens to the pointer. */
 .fc-split-handle {

@@ -79,6 +79,11 @@ public:
     void setFillOverride(bool b) { m_fillOverride = b; }
 
     bool hasHover() const { return m_hasHover; }
+    /// Drawn in the preselect or the select colours right now. Asked by
+    /// the 2D page feed (PageFeed::feedViewState): a page the backend
+    /// draws alone holds these items in their normal colours, from App
+    /// data, and lays the ones that are not over them.
+    bool isPretty() const { return m_pretty; }
 
     QPainterPath path() const;
     virtual void setPath(const QPainterPath &path);
@@ -137,6 +142,8 @@ protected:
 
     bool m_fillOverride;
     bool m_hasHover = false;
+    /// set by setPrettyPre/Sel, cleared by every setPrettyNormal
+    bool m_pretty = false;
 
     double m_strokeWidth = 0.0;
 

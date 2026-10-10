@@ -91,6 +91,9 @@ public:
     bool doubleClicked() override;
     void setupContextMenu(QMenu*, QObject*, const char*) override;
     bool onDelete(const std::vector<std::string>&) override;
+    /// The page is going, by any way -- a script, an undo, its document
+    /// closing -- and its view goes first.
+    void beforeDelete() override;
     void onChanged(const App::Property* prop) override;
     void updateData(const App::Property* prop) override;
 
@@ -120,7 +123,7 @@ public:
     void setGrid();
 
     QGSPage* getQGSPage(void) { return m_graphicsScene; }
-    QGVPage* getQGVPage(void) { return m_graphicsView; }
+    QGVPage* getQGVPage(void);
 
     ViewProviderPageExtension* getVPPExtension() const;
 
@@ -136,7 +139,8 @@ protected:
 private:
     QPointer<MDIViewPage> m_mdiView;
     std::string m_pageName;
-    QGVPage* m_graphicsView;
+    // A Qt child of m_mdiView, deleted with it whichever way that goes
+    QPointer<QGVPage> m_graphicsView;
     QGSPage* m_graphicsScene;
 };
 

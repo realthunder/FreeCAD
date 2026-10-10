@@ -177,7 +177,7 @@ void ViewProviderDatum::applySizeModel()
         pHighlight->replaceChild(index, wanted);
 
     float lcsSize = static_cast<float>(
-            ViewParams::getHandle()->GetFloat("LocalCoordinateSystemSize", 1.0));
+            ViewParams::getHandle()->GetFloat("LocalCoordinateSystemSize", Gui::ViewParams::defaultLocalCoordinateSystemSize()));
     pZoom->scaleFactor = static_cast<float>(ScreenUnit * lcsSize * temporaryScale);
 
     float fontRatio = 10.0f;

@@ -36,6 +36,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 #include <Standard_Version.hxx>
 #include <BRepAlgo_NormalProjection.hxx>
@@ -119,28 +121,30 @@ DrawViewPart::DrawViewPart(void)
                       "Projection Plane X Axis in R3. Rotates/Mirrors View");
     ADD_PROPERTY_TYPE(Perspective, (false), group, App::Prop_None,
                       "Perspective(true) or Orthographic(false) projection");
-    ADD_PROPERTY_TYPE(Focus, (Preferences::getPreferenceGroup("General")->GetFloat("FocusDistance", 100.0)),
+    ADD_PROPERTY_TYPE(Focus, (Preferences::getPreferenceGroup("General")->GetFloat("FocusDistance", TechDraw::TechDrawParams::defaultFocusDistance())),
                     group, App::Prop_None, "Perspective view focus distance");
 
     //properties that control HLR algo
-    ADD_PROPERTY_TYPE(CoarseView, (Preferences::getPreferenceGroup("General")->GetBool("CoarseView", false)),
+    ADD_PROPERTY_TYPE(CoarseView, (Preferences::coarseView()),
         sgroup, App::Prop_None, "Coarse View on/off");
-    ADD_PROPERTY_TYPE(SmoothVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothViz", true)),
+    ADD_PROPERTY_TYPE(SmoothVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothViz", TechDraw::TechDrawParams::defaultSmoothViz())),
         sgroup, App::Prop_None, "Show Visible Smooth lines");
-    ADD_PROPERTY_TYPE(SeamVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamViz", false)),
+    ADD_PROPERTY_TYPE(SeamVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamViz", TechDraw::TechDrawParams::defaultSeamViz())),
         sgroup, App::Prop_None,
                       "Show Visible Seam lines");
-    ADD_PROPERTY_TYPE(IsoVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoViz", false)),
+    ADD_PROPERTY_TYPE(IsoVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoViz", TechDraw::TechDrawParams::defaultIsoViz())),
         sgroup, App::Prop_None, "Show Visible Iso u, v lines");
-    ADD_PROPERTY_TYPE(HardHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("HardHid", false)),
+    ADD_PROPERTY_TYPE(HardHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("HardHid", TechDraw::TechDrawParams::defaultHardHid())),
         sgroup, App::Prop_None, "Show Hidden Hard lines");
-    ADD_PROPERTY_TYPE(SmoothHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothHid", false)),
+    ADD_PROPERTY_TYPE(SmoothHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothHid", TechDraw::TechDrawParams::defaultSmoothHid())),
         sgroup, App::Prop_None, "Show Hidden Smooth lines");
-    ADD_PROPERTY_TYPE(SeamHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamHid", false)),
+    ADD_PROPERTY_TYPE(SeamHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamHid", TechDraw::TechDrawParams::defaultSeamHid())),
         sgroup, App::Prop_None, "Show Hidden Seam lines");
-    ADD_PROPERTY_TYPE(IsoHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoHid", false)),
+    ADD_PROPERTY_TYPE(IsoHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoHid", TechDraw::TechDrawParams::defaultIsoHid())),
         sgroup, App::Prop_None, "Show Hidden Iso u, v lines");
-    ADD_PROPERTY_TYPE(IsoCount, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoCount", 0)),
+    // the HLR page stores the count with a spin box, an Int; this read a Bool, which is
+    // another entry of the group, so a new view had no iso lines whatever the page said
+    ADD_PROPERTY_TYPE(IsoCount, (Preferences::getPreferenceGroup("HLR")->GetInt("IsoCount", TechDraw::TechDrawParams::defaultIsoCount())),
         sgroup, App::Prop_None, "Number of iso parameters lines");
 
     ADD_PROPERTY_TYPE(ScrubCount, (Preferences::scrubCount()), sgroup, App::Prop_None,
@@ -1464,12 +1468,12 @@ const BaseGeomPtrVector DrawViewPart::getVisibleFaceEdges() const
 
 bool DrawViewPart::handleFaces()
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("HandleFaces", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("HandleFaces", TechDraw::TechDrawParams::defaultHandleFaces());
 }
 
 bool DrawViewPart::newFaceFinder(void)
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("NewFaceFinder", false);
+    return Preferences::getPreferenceGroup("General")->GetBool("NewFaceFinder", TechDraw::TechDrawParams::defaultNewFaceFinder());
 }
 
 //! remove features that are useless without this DVP

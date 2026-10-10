@@ -1004,27 +1004,30 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     res.drawstyleoverride = m.overrideflags.test(CoinMaterial::FLAG_DRAW_STYLE);
 
     // Depth-occluded parts of on-top lines/points are dimmed to this alpha
-    // (SoFCRenderer's RenderPassLinePattern pass). The selection highlight
-    // itself keeps full alpha there: GL's TransparencyOnTop dimming applies
-    // only when the pass has no RenderPassHighlight bit (applyMaterial
-    // ~564), i.e. never to the colored element draws of a partial
-    // selection nor to the whole-object lines of a full selection. The
-    // uncolored whole-on-top companions of a partial selection stay
-    // dimmed like GL's selsontop bucket — they are told apart by the
+    // (SoFCRenderer's RenderPassLinePattern pass). An ELEMENT picked by
+    // itself keeps full alpha there -- the colored element draws of a
+    // partial selection: a selected edge is meant to show through the
+    // model. The lines of a WHOLE object are dimmed where a face hides
+    // them, whichever highlight draws them: under the pointer, the
+    // uncolored whole-on-top companions of a partial selection (GL's
+    // selsontop bucket), and a fully selected object (GL's
+    // selsfullontop). The last was left solid until 2026-10-09, front
+    // or behind alike, so a selected object read as a wireframe with no
+    // depth while the same object under the pointer did not. The
+    // companions are told from the colored element draws by the
     // FLAG_TRANSPARENCY override buildHighlightCache stamps on
     // non-triangle whole-on-top companion materials (addWholeOnTop),
     // which the colored highlight materials never carry.
     if (res.ontop && res.type != Render::Material::Triangle) {
-        bool highlightline = false;
-        if (selId > 0 && !m.partialhighlight) {
-            if (selId & SoFCRenderer::SelIdPartial)
-                highlightline = !m.overrideflags.test(
-                        CoinMaterial::FLAG_TRANSPARENCY);
-            else if (selId & SoFCRenderer::SelIdFull)
-                highlightline = true;
+        bool elementline = selId > 0 && !m.partialhighlight
+            && (selId & SoFCRenderer::SelIdPartial)
+            && !m.overrideflags.test(CoinMaterial::FLAG_TRANSPARENCY);
+        if (!elementline) {
+            // TransparencyOnTop is a transparency and this is an alpha:
+            // 0 leaves the hidden part solid, as in applyMaterial.
+            float t = float(ViewParams::getTransparencyOnTop());
+            res.hiddenlinealpha = 1.0f - std::min(std::max(t, 0.0f), 1.0f);
         }
-        if (!highlightline)
-            res.hiddenlinealpha = float(ViewParams::getTransparencyOnTop());
     }
 
     // Selected/preselected face outline (GL: renderOutline under the

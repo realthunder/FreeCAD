@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include "PartDesignParams.h"
 #ifndef _PreComp_
 # include <Standard_Failure.hxx>
 #endif
@@ -56,7 +58,7 @@ FeatureAddSub::FeatureAddSub()
     //init Refine property
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
-    this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+    this->Refine.setValue(PartDesign::PartDesignParams::getRefineModel());
 
     ADD_PROPERTY_TYPE(FuzzyTolerance, (0.0), "Part Design", App::Prop_None, fuzzyToleranceDoc);
     FuzzyTolerance.setConstraints(&fuzzyToleranceRange);

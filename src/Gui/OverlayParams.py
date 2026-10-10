@@ -98,10 +98,18 @@ class ParamAnimationCurve(ParamProxy):
     {param.widget_name}->setCurrentIndex({param.namespace}::{param.class_name}::default{param.name}());''')
 
 Params = [
-    ParamInt('CornerNaviCube', 1, on_change=True),
-    ParamBool('DockOverlayAutoView', True, on_change=True, title="Auto hide in non 3D view"),
+    ParamInt('CornerNaviCube', 1, on_change=True,
+        doc = "Corner of the 3D view where the navigation cube is shown. 0 top left,\n"
+              "1 top right, 2 bottom left, 3 bottom right. Overlay dock panels\n"
+              "leave room for the cube in that corner."),
+    ParamBool('DockOverlayAutoView', True, on_change=True, title="Auto hide in non 3D view",
+        doc = "Hide overlay dock panels automatically while the active view is not\n"
+              "a 3D view. Transparent panels also turn opaque over a maximized\n"
+              "view that cannot be panned."),
     ParamInt('DockOverlayDelay', 200, "Overlay dock (re),layout delay.", title="Layout delay (ms)", proxy=ParamSpinBox(0, 5000, 100)),
-    ParamInt('DockOverlayRevealDelay', 2000),
+    ParamInt('DockOverlayRevealDelay', 2000,
+        doc = "Milliseconds an overlay dock panel stays fully shown after one of\n"
+              "its widgets is switched on or a widget is dropped into it."),
     ParamInt('DockOverlaySplitterHandleTimeout', 0, title="Splitter auto hide delay (ms)", proxy=ParamSpinBox(0, 99999, 100),
          doc="Overlay splitter handle auto hide delay. Set zero to disable auto hiding."),
     ParamBool('DockOverlayActivateOnHover', True, title="Activate on hover",

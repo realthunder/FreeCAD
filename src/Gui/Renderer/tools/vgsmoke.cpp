@@ -35,6 +35,7 @@
 // Exit code 0 iff every check passed. Dumps are PPM for eyeballing
 // (--page2d appends a stage letter to the dump name).
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -629,6 +630,66 @@ static int runPage2DScenario(Offscreen& target, const char* fontPath,
     render("even-odd hole fill");
     check("ring filled", probe(320, 360) == 'r');
     check("hole empty", probe(360, 360) == 'k');
+
+    // Stage i: no stroke is drawn narrower than a device pixel. Width 0
+    // is a hairline, a pixel wide in full colour at any zoom (a cosmetic
+    // pen: what a drawing's view frames are drawn with). A stroke that
+    // comes out narrower than a pixel is drawn a pixel wide and as much
+    // lighter as it is narrower -- vg alone fades it with the square of
+    // its width, and a quarter of a pixel came out at a sixteenth.
+    {
+        Page2D::Recorder rec;
+        rec.beginPath();
+        rec.moveTo(300.0f, 440.5f);
+        rec.lineTo(420.0f, 440.5f);
+        rec.stroke(0xf0f0f0ff, 0.0f);
+        page.setItem(7, Page2D::Kind::Edge, 0, std::move(rec));
+    }
+    {
+        Page2D::Recorder rec;
+        rec.beginPath();
+        rec.moveTo(300.0f, 450.5f);
+        rec.lineTo(420.0f, 450.5f);
+        rec.stroke(0xf0f0f0ff, 0.25f);
+        page.setItem(8, Page2D::Kind::Edge, 0, std::move(rec));
+    }
+    // how many rows of the column are drawn on, and how bright at most
+    auto thickness = [&](int x, int y) {
+        int n = 0;
+        for (int dy = -6; dy <= 6; ++dy)
+            n += target.isInk(x, y + dy) ? 1 : 0;
+        return n;
+    };
+    auto brightest = [&](int x, int y) {
+        int m = 0;
+        for (int dy = -2; dy <= 2; ++dy)
+            m = std::max(m, (int)target.pixel(x, y + dy)[1]);
+        return m;
+    };
+    render("hairline and thin stroke");
+    check("width 0 is drawn", brightest(360, 440) > 200);
+    check("width 0 is about a pixel",
+          thickness(360, 440) >= 1 && thickness(360, 440) <= 3);
+    {
+        const int b = brightest(360, 450);
+        printf("  (quarter-pixel stroke: brightest %d)\n", b);
+        check("a quarter pixel is a quarter as bright", b > 70 && b < 150);
+    }
+    // 4x: another band. The lines are on the pixel rows 162 and 202
+    // (their middles at 162.5 and 202.5, as they were on a row's
+    // middle above), x 0..480.
+    const uint32_t recordsBeforeCrossing = page.counters().itemRecords;
+    view.zoom = 4.0f;
+    view.panX = -1200.0f;
+    view.panY = -1599.5f;
+    render("hairline at 4x");
+    check("width 0 is still about a pixel at 4x",
+          brightest(240, 162) > 200 && thickness(240, 162) >= 1
+              && thickness(240, 162) <= 3);
+    check("a quarter pixel is a whole one at 4x",
+          brightest(240, 202) > 200 && thickness(240, 202) <= 3);
+    check("the crossing re-recorded the two, nothing else",
+          page.counters().itemRecords == recordsBeforeCrossing + 2);
 
     page.clear();
     Vg2D::instance().shutdown();

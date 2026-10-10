@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/Start/App/StartParams.h>
+
 #ifndef _PreComp_
 #include <algorithm>
 #include <QApplication>
@@ -311,12 +313,12 @@ QPushButton* createNewButton(const NewButton& newButton)
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Start");
     const auto cardSpacing = static_cast<int>(hGrp->GetInt("FileCardSpacing", 25));       // NOLINT
-    const auto newFileIconSize = static_cast<int>(hGrp->GetInt("NewFileIconSize", 48));   // NOLINT
-    const auto cardLabelWith = static_cast<int>(hGrp->GetInt("FileCardLabelWith", 180));  // NOLINT
+    const auto newFileIconSize = static_cast<int>(hGrp->GetInt("NewFileIconSize", Start::StartParams::defaultNewFileIconSize()));   // NOLINT
+    const auto cardLabelWith = static_cast<int>(hGrp->GetInt("FileCardLabelWith", Start::StartParams::defaultFileCardLabelWith()));  // NOLINT
     // How many lines a description may wrap to before it is elided. Two is
     // what the card's height budget (icon + spacing) has always allowed.
     const auto descriptionLines =
-        static_cast<int>(hGrp->GetInt("FileCardDescriptionLines", 2));  // NOLINT
+        static_cast<int>(hGrp->GetInt("FileCardDescriptionLines", Start::StartParams::defaultFileCardDescriptionLines()));  // NOLINT
 
     auto button = new CardButton();
     // Named so applyFileCardStyle() can find the six of them again when the
@@ -458,7 +460,7 @@ StartView::StartView(QWidget* parent)
     connect(_openFirstStart, &QPushButton::clicked, this, &StartView::openFirstStartClicked);
 
     _showOnStartupCheckBox = new QCheckBox();
-    bool showOnStartup = hGrp->GetBool("ShowOnStartup", true);
+    bool showOnStartup = hGrp->GetBool("ShowOnStartup", Start::StartParams::defaultShowOnStartup());
     _showOnStartupCheckBox->setCheckState(showOnStartup ? Qt::CheckState::Unchecked
                                                         : Qt::CheckState::Checked);
     connect(_showOnStartupCheckBox, &QCheckBox::toggled, this, &StartView::showOnStartupChanged);
@@ -534,7 +536,7 @@ void StartView::applyFileCardStyle() const
 {
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Start");
-    if (!hGrp->GetBool("FileCardUseStyleSheet", true)) {
+    if (!hGrp->GetBool("FileCardUseStyleSheet", Start::StartParams::defaultFileCardUseStyleSheet())) {
         return;
     }
 
@@ -557,21 +559,15 @@ QString StartView::fileCardStyle() const
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Start");
 
-    auto getUserColor = [&hGrp](QColor color, const char* parameter) {
-        uint32_t packed = App::Color::asPackedRGB<QColor>(color);
-        packed = hGrp->GetUnsigned(parameter, packed);
-        color = App::Color::fromPackedRGB<QColor>(packed);
-        return color;
+    auto getUserColor = [&hGrp](unsigned long preset, const char* parameter) {
+        return App::Color::fromPackedRGB<QColor>(static_cast<uint32_t>(hGrp->GetUnsigned(parameter, preset)));
     };
 
-    QColor background(221, 221, 221);  // NOLINT
-    background = getUserColor(background, "FileCardBackgroundColor");
-
-    QColor hovered(98, 160, 234);  // NOLINT
-    hovered = getUserColor(hovered, "FileCardBorderColor");
-
-    QColor pressed(38, 162, 105);  // NOLINT
-    pressed = getUserColor(pressed, "FileCardSelectionColor");
+    QColor background =
+        getUserColor(Start::StartParams::defaultFileCardBackgroundColor(), "FileCardBackgroundColor");
+    QColor hovered = getUserColor(Start::StartParams::defaultFileCardBorderColor(), "FileCardBorderColor");
+    QColor pressed =
+        getUserColor(Start::StartParams::defaultFileCardSelectionColor(), "FileCardSelectionColor");
 
     return QString::fromLatin1("QPushButton {"
                                " background-color: rgb(%1, %2, %3);"
@@ -710,7 +706,7 @@ void StartView::postStart(PostStartBehavior behavior) const
         "User parameter:BaseApp/Preferences/Mod/Start");
 
     if (behavior == PostStartBehavior::switchWorkbench) {
-        auto wb = hGrp->GetASCII("AutoloadModule", "");
+        auto wb = hGrp->GetASCII("AutoloadModule", Start::StartParams::defaultAutoloadModule().c_str());
         if (wb == "$LastModule") {
             wb = App::GetApplication()
                      .GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")
@@ -720,7 +716,7 @@ void StartView::postStart(PostStartBehavior behavior) const
             Gui::Application::Instance->activateWorkbench(wb.c_str());
         }
     }
-    auto closeStart = hGrp->GetBool("closeStart", false);
+    auto closeStart = hGrp->GetBool("closeStart", Start::StartParams::defaultcloseStart());
     if (closeStart) {
         this->window()->close();
     }
@@ -733,13 +729,11 @@ void StartView::fileCardSelected(const QModelIndex& index)
     const std::string path = Base::Tools::pythonLiteral(file);
     const QString extension = QFileInfo(file).suffix().toLower();
 
-    // Which module imports a given extension is a user preference, written by
-    // the import dialog as DefaultImport<ext>. Passing it on is what makes that
-    // choice stick; leaving it empty takes whichever module registered first.
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Mod/Start");
-    const std::string module = Base::Tools::pythonLiteral(QString::fromStdString(
-        hGrp->GetASCII(("DefaultImport" + extension.toStdString()).c_str(), "")));
+    // No module is named: whichever registered first for the extension takes
+    // the file, or the chooser asks (wantsImportChooser). A key per extension,
+    // DefaultImport<ext>, was read here as the old web start page read it;
+    // nothing ever wrote it, and upstream's Start has none.
+    const std::string module = Base::Tools::pythonLiteral(QString());
 
     std::string command;
     if (isImage(extension)) {

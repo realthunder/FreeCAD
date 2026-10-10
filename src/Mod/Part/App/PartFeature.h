@@ -282,6 +282,19 @@ protected:
     PropertyPartShape *shapePropertyOfElement(const char *element,
                                               const std::string **prefix = nullptr) const;
 
+    /** Say how the next value of Shape lies to the present one
+     *
+     * @param motion: the transformation that takes the present shape, as it
+     * is before its Placement, onto the one about to be set; null to say
+     * nothing again, which is what a change of Shape without it means
+     *
+     * For a feature that knows its shape is about to move as a whole -- a
+     * relative binder whose container moved. The generations retained at
+     * that change are searched moved the same way (searchElementCache()):
+     * a search by geometry finds nothing where the shape used to be.
+     */
+    void setShapeMotion(const Base::Matrix4D *motion);
+
     /** Keep or let go of every retained generation.
      *
      * Called after the element references into this feature have been
@@ -320,6 +333,9 @@ private:
     /// The retained generations, newest first (of every registered property)
     std::vector<ShapeVersion> _shapeVersions;
     std::vector<std::pair<std::string, PropertyPartShape*>> _elementCachePrefixMap;
+    /// setShapeMotion(), while it is said
+    Base::Matrix4D _shapeMotion;
+    bool _hasShapeMotion = false;
 };
 
 class FilletBase : public Part::Feature

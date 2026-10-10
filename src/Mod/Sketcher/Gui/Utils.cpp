@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <cfloat>
 #include <numbers>
@@ -120,8 +122,8 @@ bool SketcherGui::tryAutoRecompute(Sketcher::SketchObject* obj, bool& autoremove
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
-    bool autoRecompute = hGrp->GetBool("AutoRecompute", false);
-    bool autoRemoveRedundants = hGrp->GetBool("AutoRemoveRedundants", false);
+    bool autoRecompute = Sketcher::SketcherParams::getAutoRecompute();
+    bool autoRemoveRedundants = Sketcher::SketcherParams::getAutoRemoveRedundants();
 
     // We need to make sure the solver has right redundancy information before trying to remove the
     // redundants. for example if a non-driving constraint has been added.
@@ -694,7 +696,7 @@ bool SketcherGui::hideUnits()
                                              .GetGroup("BaseApp")
                                              ->GetGroup("Preferences")
                                              ->GetGroup("Mod/Sketcher");
-    return hGrp->GetBool("HideUnits", false);
+    return Sketcher::SketcherParams::getHideUnits();
 }
 
 bool SketcherGui::showCursorCoords()
@@ -704,7 +706,7 @@ bool SketcherGui::showCursorCoords()
                                              .GetGroup("BaseApp")
                                              ->GetGroup("Preferences")
                                              ->GetGroup("Mod/Sketcher");
-    return hGrp->GetBool("ShowCursorCoords", true);  // true for testing. set to false for prod.
+    return Sketcher::SketcherParams::getShowCursorCoords();  // true for testing. set to false for prod.
 }
 
 bool SketcherGui::useSystemDecimals()
@@ -714,7 +716,7 @@ bool SketcherGui::useSystemDecimals()
                                              .GetGroup("BaseApp")
                                              ->GetGroup("Preferences")
                                              ->GetGroup("Mod/Sketcher");
-    return hGrp->GetBool("UseSystemDecimals", true);
+    return Sketcher::SketcherParams::getUseSystemDecimals();
 }
 
 // convert value to display format %0.[digits]f. Units are displayed if

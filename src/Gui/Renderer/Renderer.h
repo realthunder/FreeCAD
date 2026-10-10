@@ -1197,6 +1197,12 @@ struct RenderStats {
     /// Pixels whose depth is in front of the far plane (< 0.999),
     /// i.e. covered by geometry; -1 when no depth was read.
     long long geometryPixels = -1;
+    /// Samples per pixel the captured view's scene targets were BUILT
+    /// with -- 4 for 4x MSAA, 0 or 1 for none. What was built, not what
+    /// was asked for: a backend that cannot build multisampled targets
+    /// falls back to none and keeps drawing, and this is where that
+    /// shows.
+    int msaaSamples = 0;
     /// Average color of the geometry pixels, 0-255 per channel;
     /// -1 when no geometry pixel exists.
     float avgColor[3] = {-1.0f, -1.0f, -1.0f};
@@ -3362,6 +3368,21 @@ public:
     /// (e.g. water caustics): the viewer keeps scheduling redraws while
     /// this returns true, so the animation advances without user input.
     virtual bool animating() const { return false; }
+
+    /// Whether the frames that follow may reach the screen pipelined
+    /// where the backend gets there through a read-back
+    /// (docs/DeviceAdoption.md section 10): such a frame shows the
+    /// newest copy that has landed, a frame or two old, and pays
+    /// nothing for the wait. Off, which is the default, each frame
+    /// waits for its own copy and what is on screen is what was drawn.
+    /// The host says it per frame (Render/ReadbackFrameMode); a capture
+    /// waits whatever this says.
+    virtual void setFramePipelined(bool on) { (void)on; }
+    /// Whether the last frame to reach the screen was a pipelined one,
+    /// so that the screen is behind the scene and stays there until
+    /// another frame is drawn. The host owes it one frame that waits
+    /// once the pipelined ones stop coming.
+    virtual bool frameTrails() const { return false; }
 
     /// Global hint whether the active backend supports GPU-instanced
     /// draws. Geometry producers (e.g. the Part tessellation) consult it

@@ -22,6 +22,10 @@
 
 #include "PreCompiled.h"
 
+#include "OverlayParams.h"
+
+#include "ViewParams.h"
+
 #ifndef _PreComp_
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbRotation.h>
@@ -160,21 +164,21 @@ Render::Background backgroundFromPreferences()
     };
 
     Render::Background bg;
-    if (hGrp->GetBool("Gradient", true))
+    if (hGrp->GetBool("Gradient", Gui::ViewParams::defaultGradient()))
         bg.type = Render::Background::LinearGradient;
-    else if (hGrp->GetBool("RadialGradient", false))
+    else if (hGrp->GetBool("RadialGradient", Gui::ViewParams::defaultRadialGradient()))
         bg.type = Render::Background::RadialGradient;
     else {
         bg.type = Render::Background::Flat;
-        bg.fromColor = opaque(hGrp->GetUnsigned("BackgroundColor", 3940932863UL));
+        bg.fromColor = opaque(hGrp->GetUnsigned("BackgroundColor", Gui::ViewParams::defaultBackgroundColor()));
         return bg;
     }
 
-    bg.fromColor = opaque(hGrp->GetUnsigned("BackgroundColor2", 859006463UL));
-    bg.toColor = opaque(hGrp->GetUnsigned("BackgroundColor3", 2880160255UL));
-    bg.hasMid = hGrp->GetBool("UseBackgroundColorMid", false);
+    bg.fromColor = opaque(hGrp->GetUnsigned("BackgroundColor2", Gui::ViewParams::defaultBackgroundColor2()));
+    bg.toColor = opaque(hGrp->GetUnsigned("BackgroundColor3", Gui::ViewParams::defaultBackgroundColor3()));
+    bg.hasMid = hGrp->GetBool("UseBackgroundColorMid", Gui::ViewParams::defaultUseBackgroundColorMid());
     if (bg.hasMid)
-        bg.midColor = opaque(hGrp->GetUnsigned("BackgroundColor4", 1869583359UL));
+        bg.midColor = opaque(hGrp->GetUnsigned("BackgroundColor4", Gui::ViewParams::defaultBackgroundColor4()));
     return bg;
 }
 /*!
@@ -214,11 +218,11 @@ void initNaviCubeProperties(App::PropertyContainer *props)
     if (auto show = Base::freecad_dynamic_cast<App::PropertyBool>(props->addDynamicProperty(
             "App::PropertyBool", "ShowNaviCube", "Base",
             "Show the navigation cube in the served view"))) {
-        show->setValue(hGrp->GetBool("ShowNaviCube", true));
+        show->setValue(hGrp->GetBool("ShowNaviCube", Gui::ViewParams::defaultShowNaviCube()));
     }
     static const App::PropertyFloatConstraint::Constraints range = {0.0, 1.0, 0.05};
     float x, y;
-    NaviCube::cornerPosition(NaviCube::Corner(hGrp->GetInt("CornerNaviCube", 1)), x, y);
+    NaviCube::cornerPosition(NaviCube::Corner(hGrp->GetInt("CornerNaviCube", Gui::OverlayParams::defaultCornerNaviCube())), x, y);
     const struct {
         const char *name;
         float value;
@@ -1713,8 +1717,8 @@ SceneServeSource::SceneServeSource(Document *doc)
     pimpl->doc = doc;
     pimpl->owner = this;
 
-    const std::string &type = RenderParams::getType();
-    if (type.empty() || type == "Default") {
+    const std::string type = RenderParams::engineType();
+    if (type.empty()) {
         Base::Console().Warning(
             "SceneServeSource: no render engine configured; nothing to "
             "publish through\n");

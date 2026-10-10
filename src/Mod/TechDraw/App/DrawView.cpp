@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 # include <cmath>
 # include <sstream>
@@ -260,6 +262,13 @@ QRectF DrawView::getRectAligned() const
     double top = Y.getValue() + 0.5 * getRect().height();
     double left = X.getValue() - 0.5 * getRect().width();
     return {left, top, getRect().width(), - getRect().height()};
+}
+
+void DrawView::Restore(Base::XMLReader& reader)
+{
+    RestoredEnumerations enumerations(*this);
+    App::DocumentObject::Restore(reader);
+    enumerations.repair();
 }
 
 void DrawView::onDocumentRestored()
@@ -623,7 +632,7 @@ void DrawView::setScaleAttribute()
 
 int DrawView::prefScaleType()
 {
-    return Preferences::getPreferenceGroup("General")->GetInt("DefaultScaleType", 0);
+    return Preferences::getPreferenceGroup("General")->GetInt("DefaultScaleType", TechDraw::TechDrawParams::defaultDefaultScaleType());
 }
 
 double DrawView::prefScale()
@@ -634,7 +643,7 @@ double DrawView::prefScale()
             return page->Scale.getValue();
         }
     }
-    return Preferences::getPreferenceGroup("General")->GetFloat("DefaultViewScale", 1.0);
+    return Preferences::getPreferenceGroup("General")->GetFloat("DefaultViewScale", TechDraw::TechDrawParams::defaultDefaultViewScale());
 }
 
 void DrawView::requestPaint()

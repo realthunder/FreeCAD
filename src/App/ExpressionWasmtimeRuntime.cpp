@@ -33,6 +33,7 @@
 #include <Base/FileInfo.h>
 
 #include "Application.h"
+#include "SandboxParams.h"
 #include "ExpressionImageRuntime.h"
 
 /* The wasmtime runtime: the wasm32-wasi image (src/App/ExpressionImage,
@@ -113,12 +114,10 @@ public:
         p.image = image;
         p.stdlib = stdlib;
         if (p.image.empty() || p.stdlib.empty()) {
-            auto hGrp = GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/Expression/Sandbox");
             if (p.image.empty())
-                p.image = hGrp->GetASCII("ImagePath", "");
+                p.image = SandboxParams::getImagePath();
             if (p.stdlib.empty())
-                p.stdlib = hGrp->GetASCII("StdlibPath", "");
+                p.stdlib = SandboxParams::getStdlibPath();
             if (p.image.empty())
                 p.image = envPath("FCX_IMAGE");
             if (p.stdlib.empty())

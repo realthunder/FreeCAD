@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "PartParams.h"
 #ifndef _PreComp_
 # include <BRepAlgoAPI_Fuse.hxx>
 # include <BRepCheck_Analyzer.hxx>
@@ -76,7 +78,7 @@ MultiFuse::MultiFuse()
     //init Refine property
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");
-    this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+    this->Refine.setValue(PartParams::getBooleanRefineModel());
 
 }
 
@@ -150,7 +152,7 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
 
             Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
                 .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");
-            if (hGrp->GetBool("CheckModel", false)) {
+            if (PartParams::getBooleanCheckModel()) {
                 BRepCheck_Analyzer aChecker(resShape);
                 if (! aChecker.IsValid() ) {
                     return new App::DocumentObjectExecReturn("Resulting shape is invalid");
@@ -227,7 +229,7 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
 
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");
-    if (hGrp->GetBool("CheckModel", false)) {
+    if (PartParams::getBooleanCheckModel()) {
         BRepCheck_Analyzer aChecker(res.getShape());
         if (! aChecker.IsValid() ) {
             return new App::DocumentObjectExecReturn("Resulting shape is invalid");

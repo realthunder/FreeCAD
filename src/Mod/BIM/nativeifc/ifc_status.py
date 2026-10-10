@@ -520,7 +520,7 @@ def get_lock_status():
     """Returns the status of the IFC lock button"""
 
     if not FreeCAD.GuiUp:
-        return PARAMS.GetBool("SingleDoc")
+        return PARAMS.GetBool("SingleDoc", False)
     from PySide import QtGui
 
     mw = FreeCADGui.getMainWindow()

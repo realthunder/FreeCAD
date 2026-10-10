@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "TechDrawParams.h"
 #ifndef _PreComp_
 # include <algorithm>
 # include <cstdlib>
@@ -1737,7 +1739,11 @@ std::string DrawViewDimension::recoverChangedEdge2d(int iReference)
 {
 //    Base::Console().Message("DVD::recoverChangedEdge2d(ref: %d)\n", iReference);
     double scale = getViewPart()->getScale();
-    Part::TopoShape savedGeometryItem = SavedGeometry.getValues().at(iReference);
+    std::vector<Part::TopoShape> savedAll = SavedGeometry.getValues();
+    if (iReference < 0 || iReference >= int(savedAll.size())) {
+        return {};
+    }
+    Part::TopoShape savedGeometryItem = savedAll.at(iReference);
     std::vector<TechDraw::BaseGeomPtr> gEdges = getViewPart()->getEdgeGeometry();
     int iEdge = 0;
     for (auto& edge : gEdges) {
@@ -1786,8 +1792,13 @@ std::string DrawViewDimension::recoverChangedVertex2d(int iReference)
 std::string DrawViewDimension::recoverChangedEdge3d(int iReference)
 {
 //    Base::Console().Message("DVD::recoverChangedEdge3d(%d)\n", iReference);
-    Part::TopoShape savedGeometryItem = SavedGeometry.getValues().at(iReference);
+    std::vector<Part::TopoShape> savedAll = SavedGeometry.getValues();
     ReferenceVector references = getEffectiveReferences();
+    if (iReference < 0 || iReference >= int(savedAll.size())
+        || iReference >= int(references.size())) {
+        return {};
+    }
+    Part::TopoShape savedGeometryItem = savedAll.at(iReference);
     App::DocumentObject* searchObject = references.at(iReference).getObject();
     Part::TopoShape shape = Part::Feature::getTopoShape(searchObject);
     App::GeoFeature* geoFeat = dynamic_cast<App::GeoFeature*>(searchObject);
@@ -1831,8 +1842,13 @@ std::vector<TopoShape> DrawViewDimension::getEdges(const TopoShape& inShape)
 std::string DrawViewDimension::recoverChangedVertex3d(int iReference)
 {
 //    Base::Console().Message("DVD::recoverChangedVertex3d(%d)\n", iReference);
-    Part::TopoShape savedGeometryItem = SavedGeometry.getValues().at(iReference);
+    std::vector<Part::TopoShape> savedAll = SavedGeometry.getValues();
     ReferenceVector references = getEffectiveReferences();
+    if (iReference < 0 || iReference >= int(savedAll.size())
+        || iReference >= int(references.size())) {
+        return {};
+    }
+    Part::TopoShape savedGeometryItem = savedAll.at(iReference);
     App::DocumentObject* searchObject = references.at(iReference).getObject();
     Part::TopoShape shape = Part::Feature::getTopoShape(searchObject);
     App::GeoFeature* geoFeat = dynamic_cast<App::GeoFeature*>(searchObject);
@@ -2070,7 +2086,7 @@ bool DrawViewDimension::hasOverUnderTolerance() const
 
 bool DrawViewDimension::showUnits() const
 {
-    return Preferences::getPreferenceGroup("Dimensions")->GetBool("ShowUnits", false);
+    return Preferences::getPreferenceGroup("Dimensions")->GetBool("ShowUnits", TechDraw::TechDrawParams::defaultShowUnits());
 }
 
 bool DrawViewDimension::useDecimals() const { return Preferences::useGlobalDecimals(); }
@@ -2081,7 +2097,7 @@ std::string DrawViewDimension::getPrefixForDimType() const
         return "R";
     }
     else if (Type.isValue("Diameter")) {
-        return std::string(Preferences::getPreferenceGroup("Dimensions")->GetASCII("DiameterSymbol", "\xe2\x8c\x80"));// Diameter symbol
+        return std::string(Preferences::getPreferenceGroup("Dimensions")->GetASCII("DiameterSymbol", TechDraw::TechDrawParams::defaultDiameterSymbol().c_str()));// Diameter symbol
     }
 
     return "";

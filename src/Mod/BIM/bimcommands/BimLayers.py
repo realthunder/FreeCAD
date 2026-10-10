@@ -351,7 +351,12 @@ class BIM_Layers:
         transparencyItem = QtGui.QStandardItem()
         transparencyItem.setData(0, QtCore.Qt.DisplayRole)
         linePrintColorItem = QtGui.QStandardItem()
-        linePrintColorItem.setData(self.getPref("DefaultPrintColor", 0), QtCore.Qt.UserRole)
+        # Draft's setting, in Mod/Draft: getPref() reads the View group, which has none
+        from draftutils import params, utils
+
+        linePrintColorItem.setData(
+            utils.get_rgba_tuple(params.get_param("DefaultPrintColor"))[:3], QtCore.Qt.UserRole
+        )
         if FreeCADGui.ActiveDocument.ActiveView.getActiveObject("NativeIFC"):
             nameItem.setIcon(self.ifcicon)
 

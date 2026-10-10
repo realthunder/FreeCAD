@@ -26,11 +26,16 @@
 #ifndef _PreComp_
 #include <fastsignals/signal.h>
 #include <fastsignals/signal.h>
+#include <QApplication>
+#include <QTimer>
 #endif
 
 #include <climits>
 
+#include <App/Application.h>
+#include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
@@ -40,6 +45,7 @@
 
 #include <Mod/TechDraw/App/DrawPage.h>
 #include <Mod/TechDraw/App/DrawView.h>
+#include <Mod/TechDraw/App/Preferences.h>
 
 #include "ViewProviderDrawingView.h"
 #include "ViewProviderDrawingViewExtension.h"
@@ -206,14 +212,103 @@ void ViewProviderDrawingView::startRestoring()
     Gui::ViewProviderDocumentObject::startRestoring();
 }
 
+//! convert old style transparency values in PropertyColor to new style alpha
+//! channel values (upstream's, with the fork's own test for who wrote the file).
+//!
+//! The fourth component of a colour was a transparency nothing in TechDraw
+//! looked at, and documents hold it as 0. It is an opacity since the colour
+//! conversion started carrying it (189e3b629a), so a dimension, a balloon or a
+//! hatch restored from such a document was drawn with no opacity at all: there,
+//! selectable, and invisible.
+void ViewProviderDrawingView::fixColorAlphaValues()
+{
+    fixColorAlphaValues(this);
+}
+
+void ViewProviderDrawingView::fixColorAlphaValues(Gui::ViewProviderDocumentObject* vp)
+{
+    if (!vp || !TechDraw::Preferences::fixColorAlphaOnLoad()) {
+        return;
+    }
+    // Upstream from 1.1 on writes the opacity it means, and such a file is
+    // left alone. The fork's files are not among them whatever their number
+    // says: its releases are dated ("2025.1020"), its dev builds say 0.22,
+    // and both wrote the old form.
+    if (App::DocumentObject* obj = vp->getObject()) {
+        if (App::Document* doc = obj->getDocument()) {
+            int major = 0;
+            int minor = 0;
+            const bool dated = sscanf(doc->getProgramVersion(), "%d.%d", &major, &minor) == 2
+                && major >= 2000;
+            if (!dated && (major > 1 || (major == 1 && minor >= 1))) {
+                return;
+            }
+        }
+    }
+
+    std::vector<App::Property*> allProperties;
+    vp->getPropertyList(allProperties);
+    for (App::Property* prop : allProperties) {
+        auto colorProp = Base::freecad_dynamic_cast<App::PropertyColor>(prop);
+        if (!colorProp) {
+            continue;
+        }
+        // As upstream: a colour with no opacity at all is taken for the old
+        // form, on the assumption that nobody draws an invisible dimension
+        // on purpose. The preference is the way out for whoever does.
+        App::Color color = colorProp->getValue();
+        if (color.a == 0.0F) {
+            color.a = 1.0F;
+            colorProp->setValue(color);
+        }
+    }
+}
+
 void ViewProviderDrawingView::finishRestoring()
 {
+    fixColorAlphaValues();
+
     if (Visibility.getValue()) {
         show();
     } else {
         hide();
     }
     Gui::ViewProviderDocumentObject::finishRestoring();
+
+    // A page can be on screen before this view provider exists. A
+    // progressive load builds the view providers in slices after the
+    // document has opened, and a page that comes back with the window
+    // layout is drawn in between: its item for this view found no view
+    // provider and drew nothing (QGIViewPart::drawViewPart), the
+    // backend's page layer drew the view by its fallback widths
+    // (PageFeed::Style), and whatever the view asked to have painted
+    // meanwhile had nobody listening -- that connection is made in
+    // attach(). Nothing asked again until a recompute did, so a document
+    // opened and not recomputed kept such a page, a different one at each
+    // open.
+    //
+    // Asked now that the view provider is whole -- but a turn of the event
+    // loop later. The slice that builds the view providers flags the
+    // document as restoring while it works, and a page item does not draw
+    // a view of a restoring document (QGIViewPart::draw); that is also why
+    // the show() above, which does ask the item to draw, drew nothing. By
+    // name: the view may be gone by then. Only where the page already has
+    // an item for the view; a load that builds its view providers before
+    // any page is shown asks nothing.
+    TechDraw::DrawView* view = getViewObject();
+    if (view && view->isAttachedToDocument() && getQView()) {
+        const std::string docName = view->getDocument()->getName();
+        const std::string viewName = view->getNameInDocument();
+        QTimer::singleShot(0, qApp, [docName, viewName]() {
+            App::Document* doc = App::GetApplication().getDocument(docName.c_str());
+            auto late = doc
+                ? dynamic_cast<TechDraw::DrawView*>(doc->getObject(viewName.c_str()))
+                : nullptr;
+            if (late) {
+                late->requestPaint();
+            }
+        });
+    }
 }
 
 void ViewProviderDrawingView::updateData(const App::Property* prop)

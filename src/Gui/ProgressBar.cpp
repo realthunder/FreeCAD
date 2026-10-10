@@ -42,6 +42,7 @@
 #include <Base/Parameter.h>
 
 #include "ProgressBar.h"
+#include "GeneralParams.h"
 #include "LiveViewInteraction.h"
 #include "MainWindow.h"
 #include "ProgressDialog.h"
@@ -81,7 +82,7 @@ static size_t progressDetailLevels()
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/General");
-    long levels = hGrp->GetInt("ProgressDetailLevels", 5);
+    long levels = GeneralParams::getProgressDetailLevels();
     return levels < 1 ? 1 : (size_t)levels;
 }
 
@@ -201,6 +202,7 @@ struct ProgressBarPrivate
     QString statusText;
     int minimumDuration;
     int observeEventFilter;
+    bool userEnabled = true;
 
     bool isModalDialog(QObject* o) const
     {
@@ -712,6 +714,34 @@ void ProgressBar::setMinimumDuration (int ms)
     }
 
     d->minimumDuration = ms;
+}
+
+bool ProgressBar::isUserEnabled() const
+{
+    return d->userEnabled;
+}
+
+void ProgressBar::setUserEnabled(bool enabled)
+{
+    if (d->userEnabled == enabled) {
+        return;
+    }
+    d->userEnabled = enabled;
+    if (!enabled) {
+        QProgressBar::setVisible(false);
+    }
+    else if (sequencer->isRunning() && !sequencer->wasCanceled()) {
+        QProgressBar::setVisible(true);
+    }
+}
+
+void ProgressBar::setVisible(bool visible)
+{
+    // every show() the sequencer fires lands here
+    if (visible && !d->userEnabled) {
+        return;
+    }
+    QProgressBar::setVisible(visible);
 }
 
 void ProgressBar::aboutToShow()

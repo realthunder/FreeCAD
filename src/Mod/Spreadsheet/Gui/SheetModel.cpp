@@ -63,6 +63,26 @@ SheetModel::SheetModel(Sheet* _sheet, QObject* parent)
         });
     // NOLINTEND
 
+    readColors();
+    // The colors were read once, here. A theme sets them, and one applied
+    // to a running session left an open sheet in the old ones: light text on
+    // a sheet that had turned light, until the view was opened again.
+    paramHandlers.addDelayedHandler(
+        "BaseApp/Preferences/Mod/Spreadsheet",
+        {"AliasedCellBackgroundColor", "AliasedCellForegroundColor", "LockedAliasedCellColor",
+         "TextColor", "PositiveNumberColor", "NegativeNumberColor"},
+        [this](ParameterGrp::handle) {
+            readColors();
+            if (rowCount() > 0 && columnCount() > 0) {
+                Q_EMIT dataChanged(index(0, 0),
+                                   index(rowCount() - 1, columnCount() - 1),
+                                   {Qt::ForegroundRole, Qt::BackgroundRole});
+            }
+        });
+}
+
+void SheetModel::readColors()
+{
     aliasBgColor = QColor(Base::Tools::fromStdString(SheetParams::getAliasedCellBackgroundColor()));
     lockedAliasColor = QColor(Base::Tools::fromStdString(SheetParams::getLockedAliasedCellColor()));
     setForegroundColor(QColor(Base::Tools::fromStdString(SheetParams::getTextColor())));

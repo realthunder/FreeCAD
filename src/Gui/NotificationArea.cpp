@@ -52,6 +52,7 @@
 #include "MDIView.h"
 #include "MainWindow.h"
 #include "MessageCollapse.h"
+#include "NotificationAreaParams.h"
 #include "NotificationBox.h"
 #include "ReportViewParams.h"
 
@@ -250,16 +251,13 @@ public:
 
 private:
     NotificationArea* notificationArea;
-    ParameterGrp::handle hGrp;
     bool attached = false;
 };
 
 NotificationAreaObserver::NotificationAreaObserver(NotificationArea* notificationarea)
     : notificationArea(notificationarea)
 {
-    hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/NotificationArea");
-    if (hGrp->GetBool("NotificationAreaEnabled", true)) {
+    if (NotificationAreaParams::getNotificationAreaEnabled()) {
         attached = true;
         Base::Console().AttachObserver(this);
     }
@@ -276,7 +274,7 @@ NotificationAreaObserver::~NotificationAreaObserver()
 
 void NotificationAreaObserver::toggle()
 {
-    if (hGrp->GetBool("NotificationAreaEnabled", true)) {
+    if (NotificationAreaParams::getNotificationAreaEnabled()) {
         if (!attached) {
             attached = true;
             Base::Console().AttachObserver(this);
@@ -898,105 +896,91 @@ private:
 NotificationArea::ParameterObserver::ParameterObserver(NotificationArea* notificationarea)
     : notificationArea(notificationarea)
 {
-    hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/NotificationArea");
-
+    // The settings are NotificationAreaParams': it has their defaults and
+    // says when one changed -- from the preferences, the omni search or a
+    // script alike.
     //NOLINTBEGIN
     parameterMap = {
         {"NotificationAreaEnabled",
-         [this](const std::string& string) {
-             auto enabled = hGrp->GetBool(string.c_str(), true);
-             notificationArea->setVisible(enabled);
+         [this]() {
+             notificationArea->setVisible(NotificationAreaParams::getNotificationAreaEnabled());
              notificationArea->pImp->observer->toggle();
          }},
         {"NonIntrusiveNotificationsEnabled",
-         [this](const std::string& string) {
-             auto enabled = hGrp->GetBool(string.c_str(), true);
-             notificationArea->pImp->notificationsDisabled = !enabled;
+         [this]() {
+             notificationArea->pImp->notificationsDisabled
+                 = !NotificationAreaParams::getNonIntrusiveNotificationsEnabled();
          }},
         {"NotificationTime",
-         [this](const std::string& string) {
-             auto time = hGrp->GetInt(string.c_str(), 20) * 1000;
+         [this]() {
+             auto time = NotificationAreaParams::getNotificationTime() * 1000;
              if (time < 0)
                  time = 0;
              notificationArea->pImp->notificationExpirationTime = static_cast<unsigned int>(time);
          }},
         {"MaxOpenNotifications",
-         [this](const std::string& string) {
-             auto limit = hGrp->GetInt(string.c_str(), 15);
+         [this]() {
+             auto limit = NotificationAreaParams::getMaxOpenNotifications();
              if (limit < 0)
                  limit = 0;
              notificationArea->pImp->maxOpenNotifications = static_cast<unsigned int>(limit);
          }},
         {"MaxWidgetMessages",
-         [this](const std::string& string) {
-             auto limit = hGrp->GetInt(string.c_str(), 1000);
+         [this]() {
+             auto limit = NotificationAreaParams::getMaxWidgetMessages();
              if (limit < 0)
                  limit = 0;
              notificationArea->pImp->maxWidgetMessages = static_cast<unsigned int>(limit);
          }},
         {"AutoRemoveUserNotifications",
-         [this](const std::string& string) {
-             auto enabled = hGrp->GetBool(string.c_str(), true);
-             notificationArea->pImp->autoRemoveUserNotifications = enabled;
+         [this]() {
+             notificationArea->pImp->autoRemoveUserNotifications
+                 = NotificationAreaParams::getAutoRemoveUserNotifications();
          }},
         {"NotificiationWidth",
-         [this](const std::string& string) {
-             auto width = hGrp->GetInt(string.c_str(), 800);
+         [this]() {
+             auto width = NotificationAreaParams::getNotificiationWidth();
              if (width < 300)
                  width = 300;
              notificationArea->pImp->notificationWidth = width;
          }},
         {"HideNonIntrusiveNotificationsWhenWindowDeactivated",
-         [this](const std::string& string) {
-             auto enabled = hGrp->GetBool(string.c_str(), true);
-             notificationArea->pImp->hideNonIntrusiveNotificationsWhenWindowDeactivated = enabled;
+         [this]() {
+             notificationArea->pImp->hideNonIntrusiveNotificationsWhenWindowDeactivated
+                 = NotificationAreaParams::getHideNonIntrusiveNotificationsWhenWindowDeactivated();
          }},
         {"PreventNonIntrusiveNotificationsWhenWindowNotActive",
-         [this](const std::string& string) {
-             auto enabled = hGrp->GetBool(string.c_str(), true);
-             notificationArea->pImp->preventNonIntrusiveNotificationsWhenWindowNotActive = enabled;
+         [this]() {
+             notificationArea->pImp->preventNonIntrusiveNotificationsWhenWindowNotActive
+                 = NotificationAreaParams::getPreventNonIntrusiveNotificationsWhenWindowNotActive();
          }},
         {"DeveloperErrorSubscriptionEnabled",
-         [this](const std::string& string) {
-             auto enabled = hGrp->GetBool(string.c_str(), false);
-             notificationArea->pImp->developerErrorSubscriptionEnabled = enabled;
+         [this]() {
+             notificationArea->pImp->developerErrorSubscriptionEnabled
+                 = NotificationAreaParams::getDeveloperErrorSubscriptionEnabled();
          }},
         {"DeveloperWarningSubscriptionEnabled",
-         [this](const std::string& string) {
-             auto enabled = hGrp->GetBool(string.c_str(), false);
-             notificationArea->pImp->developerWarningSubscriptionEnabled = enabled;
+         [this]() {
+             notificationArea->pImp->developerWarningSubscriptionEnabled
+                 = NotificationAreaParams::getDeveloperWarningSubscriptionEnabled();
          }},
     };
     //NOLINTEND
 
     for (auto& val : parameterMap) {
-        auto string = val.first;
-        auto update = val.second;
-
-        update(string);
+        val.second();
     }
 
-    hGrp->Attach(this);
+    connection = NotificationAreaParams::signalParamChanged().connect(
+        [this](const char* name) { onChange(name); });
 }
 
-NotificationArea::ParameterObserver::~ParameterObserver()
+void NotificationArea::ParameterObserver::onChange(const char* name)
 {
-    hGrp->Detach(this);
-}
-
-void NotificationArea::ParameterObserver::OnChange(Base::Subject<const char*>& rCaller,
-                                                   const char* sReason)
-{
-    (void)rCaller;
-
-    auto key = parameterMap.find(sReason);
+    auto key = parameterMap.find(name ? name : "");
 
     if (key != parameterMap.end()) {
-        auto string = key->first;
-        auto update = key->second;
-
-        update(string);
+        key->second();
     }
 }
 

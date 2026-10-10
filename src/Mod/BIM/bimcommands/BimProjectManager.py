@@ -629,7 +629,7 @@ class BIM_ProjectManager:
         )
         values["linewidth"] = str(
             FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").GetInt(
-                "DefautShapeLineWidth", 2
+                "DefaultShapeLineWidth", 2
             )
         )
         values["colFace"] = str(
@@ -749,7 +749,7 @@ class BIM_ProjectManager:
                 FreeCADGui.Snapper.setGrid()
             if "linewidth" in values:
                 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
-                    "DefautShapeLineWidth", int(values["linewidth"])
+                    "DefaultShapeLineWidth", int(values["linewidth"])
                 )
                 if hasattr(FreeCADGui, "draftToolBar"):
                     FreeCADGui.draftToolBar.widthButton.setValue(int(values["linewidth"]))

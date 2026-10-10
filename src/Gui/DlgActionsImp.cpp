@@ -40,6 +40,7 @@
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "FileDialog.h"
+#include "Macro.h"
 #include "Widgets.h"
 #include "ShortcutManager.h"
 #include "ui_DlgChooseIcon.h"
@@ -64,9 +65,7 @@ DlgCustomActionsImp::DlgCustomActionsImp( QWidget* parent )
     setupConnections();
 
     // search for all macros
-    std::string cMacroPath = App::GetApplication().
-        GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")
-        ->GetASCII("MacroPath",App::Application::getUserMacroDir().c_str());
+    std::string cMacroPath = MacroManager::macroDirectory();
 
     QDir d(QString::fromUtf8(cMacroPath.c_str()), QStringLiteral("*.FCMacro *.py"));
     for (unsigned int i=0; i<d.count(); i++ )

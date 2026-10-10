@@ -83,6 +83,8 @@ SET(Python_SRCS
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
 SET(Materials_SRCS
+    MaterialParams.cpp
+    MaterialParams.h
     ${Python_SRCS}
     AppMaterial.cpp
     FolderTree.h

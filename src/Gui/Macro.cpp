@@ -36,10 +36,12 @@
 #include <Base/Interpreter.h>
 
 #include "Macro.h"
+#include "MacroParams.h"
 #include "MainWindow.h"
 #include "PythonConsole.h"
 #include "PythonConsolePy.h"
 #include "PythonDebugger.h"
+#include "ReportViewParams.h"
 
 
 using namespace Gui;
@@ -204,26 +206,31 @@ bool MacroOutputOption::isAppCommand(int type)
 MacroManager::MacroManager()
   : pyDebugger(new PythonDebugger())
 {
-    // Attach to the Parametergroup regarding macros
-    this->params = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro");
-    this->params->Attach(this);
-    this->params->NotifyAll();
+    // The switches are MacroParams': it has their defaults and says when
+    // one changed.
+    this->connParam = MacroParams::signalParamChanged().connect(
+        [this](const char*) { applySettings(); });
+    applySettings();
 }
 
 MacroManager::~MacroManager()
 {
     delete pyDebugger;
-    this->params->Detach(this);
 }
 
-void MacroManager::OnChange(Base::Subject<const char*> &rCaller, const char * sReason)
+void MacroManager::applySettings()
 {
-    (void)rCaller;
-    (void)sReason;
-    option.recordGui         = this->params->GetBool("RecordGui", true);
-    option.guiAsComment      = this->params->GetBool("GuiAsComment", true);
-    option.scriptToPyConsole = this->params->GetBool("ScriptToPyConsole", true);
-    this->localEnv           = this->params->GetBool("LocalEnvironment", true);
+    option.recordGui         = MacroParams::getRecordGui();
+    option.guiAsComment      = MacroParams::getGuiAsComment();
+    option.scriptToPyConsole = MacroParams::getScriptToPyConsole();
+    this->localEnv           = MacroParams::getLocalEnvironment();
+}
+
+std::string MacroManager::macroDirectory()
+{
+    // A path that is stored empty is no path either.
+    const std::string& path = MacroParams::getMacroPath();
+    return path.empty() ? App::Application::getUserMacroDir() : path;
 }
 
 void MacroManager::open(MacroType eType, const char *sName)
@@ -380,10 +387,8 @@ void MacroManager::run(MacroType eType, const char *sName)
                                            sName ? sName : "");
 
     try {
-        ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter()
-            .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("OutputWindow");
-        PyObject* pyout = hGrp->GetBool("RedirectPythonOutput",true) ? new OutputStdout : nullptr;
-        PyObject* pyerr = hGrp->GetBool("RedirectPythonErrors",true) ? new OutputStderr : nullptr;
+        PyObject* pyout = ReportViewParams::getRedirectPythonOutput() ? new OutputStdout : nullptr;
+        PyObject* pyerr = ReportViewParams::getRedirectPythonErrors() ? new OutputStderr : nullptr;
         PythonRedirector std_out("stdout",pyout);
         PythonRedirector std_err("stderr",pyerr);
         //The given path name is expected to be Utf-8

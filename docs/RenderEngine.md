@@ -345,6 +345,29 @@ Two things about it are deliberate:
 - **Both terms darken.** The pass multiplies the finished 8-bit scene
   color and so cannot brighten past white; the ridge *highlight* other
   workbench renderers add is not available without an HDR scene target.
+- **A crease is smoothed by the pass itself.** The prepass holds one
+  normal a pixel and the pass runs after the scene is resolved, so no
+  multisampling reaches it: a pair of neighbours either straddles a hard
+  crease or does not, and the band it darkened was a whole number of
+  pixels wide everywhere -- a staircase along every slanted edge, plainest
+  in the Shaded draw style, where the crease is the only thing drawn
+  there. Each neighbour's normal is now read as the average over its
+  pixel (`fc_cavityNormal` in `fs_fc_cavity.sc`): where the pixel beside
+  it lies on another face, the two faces' planes -- a normal and a view
+  position each, both in the prepass -- say where their crease crosses
+  the screen to a fraction of a pixel, and the far face is weighed in by
+  the part of the pixel it covers. The term is then a difference of two
+  box-filtered normals. It needs the full-float prepass (a half-float
+  depth cannot place a crease within a pixel; the pass then reads the
+  normals as they are), it leaves smooth curvature exactly as it was (the
+  weighing fades out below a turn of a few degrees between two pixels),
+  and the baseline is a whole number of pixels: `Render_CavityRadius` is
+  rounded, since only a tap at a texel's centre has a position of its
+  own. `tests/gui/cavity-crease-is-smooth.py` measures it on the
+  multiplier itself, the frame with the pass divided by the frame
+  without: along a straight crease the middle of the darkening strayed
+  0.18 to 0.26 px rms from a line (a perfect staircase gives 0.29) and
+  strays 0.01 to 0.04 now, with the same darkening across it.
 
 ### Matcap shading
 
@@ -779,6 +802,38 @@ Accumulation is the other half: it amortizes samples over *time*, so N
 frames approximate N-times supersampling of the whole pipeline, at a
 constant per-frame cost instead of MSAA's cost in bandwidth and resolve.
 
+**A face's outline does its own.** The outline of a highlighted face is
+the outer half of a thick line along the face's boundary, the inner half
+cut away by a stencil mark of the face (`BGFXView::submitOutline`). The
+line's outer edge has analytic coverage like every line; the cut is one
+sample a pixel, and against the model's dark edge it showed as a
+staircase with or without MSAA ("jagged regardless whether msaa is used
+or not", docs/HandsOnQueue.md entry 25). Where the face's own fill is not
+drawn over it -- a face under the pointer, by default -- the outline is
+drawn feathered (`OutlineSpec::feather`): only the boundary's own edges
+(`GpuGeometry::ensurePartBoundary`; an interior triangle edge reaches
+past the boundary where it meets it), coverage that rises from nothing at
+the cut to whole one pixel out (`fc_flat_fs.sh`, an alpha ceiling of 2 or
+more), and lines that mark the stencil as they draw, so that neither a
+neighbouring line nor a corner cap blends over the fade. A selected face
+is filled as well; there the cut and the fill end on the same pixels and
+hide the model's edge between them, and a fade lets it through as dark
+dots -- so that outline is left cut.
+
+**What MSAA costs the scene depth.** A multisampled depth attachment
+cannot be resolved, and bgfx refuses a framebuffer whose multisampled
+depth is neither write-only nor sampled per sample. So the scene depth is
+readable as a texture only WITHOUT multisampling (`BGFXView::init`,
+`depthSampleable`); with it the depth is write-only, and a capture of
+such a view carries no depth -- `getRenderStats()` reports
+`geometryPixels` as -1 and `msaaSamples` as what the targets were built
+with. Built readable at every sample count (2026-09-07 to 2026-10-07),
+every view that asked for MSAA lost its framebuffer and took the
+fallback that exists for backends that cannot multisample at all: the
+session drew without MSAA from then on, on every backend, with one line
+on the console to say so. `tests/gui/msaa-reaches-the-view.py` asks the
+view how many samples it has.
+
 **Why it does not ghost.** It is not TAA in the usual sense and it is
 deliberately not the primary antialiasing (section 7 rules that out --
 edge-dominated content is what ordinary TAA smears worst). There is no
@@ -897,7 +952,9 @@ a converged view left and returned to reconverges bit-identically. A
 pre-fix/post-fix `scripts/render-verify.sh` diff is clean over all 15
 stages, which is what says both shaders are an identity at sample 0.
 
-**Cavity shading needed no change of its own.** It is not a stochastic
+**Cavity shading needed no change of its own.** (Written before the pass
+smoothed its creases itself -- "Cavity (curvature) shading" above,
+2026-10-09; the numbers here are from the pass as it was then.) It is not a stochastic
 estimator -- there is no noise to decorrelate -- but it is a
 screen-space crease detector, a two-tap normal difference over a
 one-texel baseline run once per pixel after the MSAA resolve, so its

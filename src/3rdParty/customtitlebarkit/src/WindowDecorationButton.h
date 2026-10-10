@@ -22,6 +22,20 @@ public:
     };
 
     explicit WindowDecorationButton(Role role, QWidget* parent = nullptr);
+
+protected:
+    /// LOCAL DIVERGENCE from FreeCAD/FreeCAD#26766: the glyph follows the
+    /// text colour. The kit ships each glyph twice, a dark stroke and a
+    /// light one, and upstream loads the dark one whatever the theme, so on
+    /// a dark title bar the three buttons all but vanish.
+    bool event(QEvent* e) override;
+
+private:
+    void updateIcon();
+
+    Role m_role;
+    /// Which glyph is loaded: 1 the light stroke, 0 the dark, -1 none yet.
+    int m_light = -1;
 };
 
 #endif  // WINDOWDECORATIONBUTTON_H

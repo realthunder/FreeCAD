@@ -54,6 +54,7 @@
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
+#include "RenderParams.h"
 #include "ViewProviderExtension.h"
 #include "ViewProviderLink.h"
 #include "ViewProviderPy.h"
@@ -161,7 +162,7 @@ ViewProvider::ViewProvider()
     sPixmap = "px";
     pcModeSwitch->whichChild = _iActualMode;
 
-    setRenderCacheMode(ViewParams::getRenderCache());
+    setRenderCacheMode(RenderParams::renderCache());
 }
 
 ViewProvider::~ViewProvider()

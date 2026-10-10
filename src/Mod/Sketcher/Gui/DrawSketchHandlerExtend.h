@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <numbers>
 #include <Gui/Notifications.h>
 #include <Gui/SelectionFilter.h>
@@ -299,7 +300,7 @@ public:
                 ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                     "User parameter:BaseApp/Preferences/Mod/Sketcher"
                 );
-                bool autoRecompute = hGrp->GetBool("AutoRecompute", false);
+                bool autoRecompute = Sketcher::SketcherParams::getAutoRecompute();
                 if (autoRecompute) {
                     Gui::Command::updateActive();
                 }
@@ -313,7 +314,7 @@ public:
                     );
                     SugConstr.clear();
                 }
-                bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
+                bool continuousMode = Sketcher::SketcherParams::getContinuousCreationMode();
 
                 if (continuousMode) {
                     // This code enables the continuous creation mode.

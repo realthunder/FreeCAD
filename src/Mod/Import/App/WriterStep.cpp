@@ -32,6 +32,7 @@
 #include "WriterStep.h"
 #include <Base/Exception.h>
 #include <App/Application.h>
+#include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/encodeFilename.h>
 #include <Mod/Part/App/Interface.h>
 
@@ -66,10 +67,10 @@ void WriterStep::write(Handle(TDocStd_Document) hDoc) const  // NOLINT
     // https://forum.freecad.org/viewtopic.php?f=8&t=52967
     makeHeader.SetAuthorValue(
         1,
-        new TCollection_HAsciiString(hGrp->GetASCII("Author", "Author").c_str()));
+        new TCollection_HAsciiString(hGrp->GetASCII("Author", Part::PartParams::defaultStepAuthor().c_str()).c_str()));
     makeHeader.SetOrganizationValue(
         1,
-        new TCollection_HAsciiString(hGrp->GetASCII("Company").c_str()));
+        new TCollection_HAsciiString(hGrp->GetASCII("Company", Part::PartParams::defaultStepCompany().c_str()).c_str()));
     makeHeader.SetOriginatingSystem(
         new TCollection_HAsciiString(App::Application::getExecutableName().c_str()));
     makeHeader.SetDescriptionValue(1, new TCollection_HAsciiString("FreeCAD Model"));

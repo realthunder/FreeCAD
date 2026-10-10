@@ -73,6 +73,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShapePropertyCopy
+    ///
+    /// Make a full geometric copy whenever a shape property is copied,
+    /// instead of sharing the shape. Uses much more memory on complex
+    /// models.
     static const bool & getShapePropertyCopy();
     static const bool & defaultShapePropertyCopy();
     static void removeShapePropertyCopy();
@@ -83,6 +87,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DisableShapeCache
+    ///
+    /// Do not keep the shapes computed for an object and its sub-objects
+    /// for reuse. They are rebuilt on every request, which is slower;
+    /// meant for troubleshooting.
     static const bool & getDisableShapeCache();
     static const bool & defaultDisableShapeCache();
     static void removeDisableShapeCache();
@@ -93,6 +101,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CommandOverride
+    ///
+    /// Run the PartDesign equivalent when a Part command is used with a
+    /// PartDesign body active or one of its features selected. 0 never,
+    /// 1 always, 2 ask each time.
     static const long & getCommandOverride();
     static const long & defaultCommandOverride();
     static void removeCommandOverride();
@@ -103,6 +115,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableWrapFeature
+    ///
+    /// Bring a non-PartDesign object that references features of the
+    /// active body into that body through a wrap feature. 0 never,
+    /// 1 always, 2 ask each time.
     static const long & getEnableWrapFeature();
     static const long & defaultEnableWrapFeature();
     static void removeEnableWrapFeature();
@@ -113,6 +129,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CopySubShape
+    ///
+    /// Copy the geometry when a placed sub-shape of an object is handed
+    /// to Python, instead of only moving it. Slower, but avoids kernel
+    /// errors on some transformed shapes.
     static const bool & getCopySubShape();
     static const bool & defaultCopySubShape();
     static void removeCopySubShape();
@@ -123,6 +143,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseBrepToolsOuterWire
+    ///
+    /// Find the outer wire of a face in Python (Face.OuterWire) with the
+    /// kernel's BRepTools. When off its ShapeAnalysis is used; the two
+    /// can differ on unusual faces.
     static const bool & getUseBrepToolsOuterWire();
     static const bool & defaultUseBrepToolsOuterWire();
     static void removeUseBrepToolsOuterWire();
@@ -133,6 +157,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseBaseObjectName
+    ///
+    /// Label a new body after the object selected as its base feature.
+    /// The question asked when the body is created has the same checkbox.
     static const bool & getUseBaseObjectName();
     static const bool & defaultUseBaseObjectName();
     static void removeUseBaseObjectName();
@@ -143,6 +170,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoGroupSolids
+    ///
+    /// Turn on Auto Group Solids in new bodies, which groups the features
+    /// of each solid under its latest feature.
     static const bool & getAutoGroupSolids();
     static const bool & defaultAutoGroupSolids();
     static void removeAutoGroupSolids();
@@ -153,6 +183,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SingleSolid
+    ///
+    /// Turn on Single Solid in new bodies, so that every feature must
+    /// result in one solid.
     static const bool & getSingleSolid();
     static const bool & defaultSingleSolid();
     static void removeSingleSolid();
@@ -163,6 +196,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UsePipeForExtrusionDraft
+    ///
+    /// Build the draft angle of new pads, pockets and Part extrusions
+    /// with a sweep instead of a loft. Each object keeps its own switch.
     static const bool & getUsePipeForExtrusionDraft();
     static const bool & defaultUsePipeForExtrusionDraft();
     static void removeUsePipeForExtrusionDraft();
@@ -173,6 +209,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LinearizeExtrusionDraft
+    ///
+    /// Turn flat spline faces into planes and straight spline edges into
+    /// lines in new lofts, sweeps and drafted extrusions, in Part and
+    /// PartDesign. Each object keeps its own switch.
     static const bool & getLinearizeExtrusionDraft();
     static const bool & defaultLinearizeExtrusionDraft();
     static void removeLinearizeExtrusionDraft();
@@ -183,6 +223,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoCorrectLink
+    ///
+    /// While a PartDesign feature is edited, replace a reference it is
+    /// given by a sub-shape binder imported into the body automatically.
     static const bool & getAutoCorrectLink();
     static const bool & defaultAutoCorrectLink();
     static void removeAutoCorrectLink();
@@ -193,6 +236,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RefineModel
+    ///
+    /// Turn on Refine in new sub-shape binders, which merges faces lying
+    /// on the same surface. Part booleans and PartDesign features have
+    /// their own settings.
     static const bool & getRefineModel();
     static const bool & defaultRefineModel();
     static void removeRefineModel();
@@ -203,6 +250,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AuxGroupUniqueLabel
+    ///
+    /// Give the Sketches, Datums and Misc groups of each body a unique
+    /// label such as Datums001. When off they can all carry the same
+    /// label.
     static const bool & getAuxGroupUniqueLabel();
     static const bool & defaultAuxGroupUniqueLabel();
     static void removeAuxGroupUniqueLabel();
@@ -213,6 +264,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SplitEllipsoid
+    ///
+    /// Turn on Split in new ellipsoids, which cuts the surface in the
+    /// middle to avoid errors in later boolean operations.
     static const bool & getSplitEllipsoid();
     static const bool & defaultSplitEllipsoid();
     static void removeSplitEllipsoid();
@@ -223,6 +277,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ParallelRunThreshold
+    ///
+    /// Run boolean operations on several processor threads. Any value
+    /// above 0 turns this on, 0 or less turns it off.
     static const long & getParallelRunThreshold();
     static const long & defaultParallelRunThreshold();
     static void removeParallelRunThreshold();
@@ -233,6 +290,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoValidateShape
+    ///
+    /// Turn on Validate Shape in new PartDesign features. An invalid
+    /// result then gets a warning icon in the tree. Can slow down complex
+    /// models.
     static const bool & getAutoValidateShape();
     static const bool & defaultAutoValidateShape();
     static void removeAutoValidateShape();
@@ -243,6 +304,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter FixShape
+    ///
+    /// Set Fix Shape to Enabled in new Part objects, so that a result
+    /// found invalid is repaired. When off new objects are left as they
+    /// are computed.
     static const bool & getFixShape();
     static const bool & defaultFixShape();
     static void removeFixShape();
@@ -269,13 +334,9 @@ public:
     //@{
     /// Accessor for parameter BorrowBelowFace
     ///
-    /// Which sub-shapes may be borrowed below a shell, as a sum
-    /// (docs/SharedShapeStorage.md sec 12.15): 0 none, which is what ships,
-    /// 1 a face inside a shell, 2 an edge inside a face or a wire, 4 a vertex
-    /// inside an edge. Each of those associations is keyed on the identity of
-    /// a geometry object -- a face's edges hold their 2D curve against the
-    /// surface the face carries -- so this is sound only where the geometry is
-    /// shared too, and it is off wherever DedupCrossFileGeometry is.
+    /// Which sub-shapes a shape file may borrow from another below the level
+    /// of a shell, as a sum: 1 a face in a shell, 2 an edge in a face or
+    /// wire, 4 a vertex in an edge. 0, the default, none.
     static const long & getBorrowBelowFace();
     static const long & defaultBorrowBelowFace();
     static void removeBorrowBelowFace();
@@ -286,6 +347,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LoftMaxDegree
+    ///
+    /// Maximum surface degree given to new PartDesign lofts. Kept between
+    /// 2 and the highest degree the kernel supports.
     static const unsigned long & getLoftMaxDegree();
     static const unsigned long & defaultLoftMaxDegree();
     static void removeLoftMaxDegree();
@@ -297,15 +361,9 @@ public:
     //@{
     /// Accessor for parameter WarnUnnamedInput
     ///
-    /// Report a shape operation whose input shapes carry no element map, so
-    /// the result cannot be named either. This is off by default because an
-    /// absent element map is frequently correct -- program generated and
-    /// imported geometry has none -- and because a genuine naming failure is
-    /// developer information that an end user cannot act on. Turn it on when
-    /// writing a workbench that builds shapes and wants its element names to
-    /// survive a recompute. 0 off, 1 report each operation once per document
-    /// recompute, 2 report every occurrence. Raising the Part module's log
-    /// level to LOG reports every occurrence too, without this preference.
+    /// Report shape operations whose inputs carry no element names, so the
+    /// result cannot be named either. For workbench developers. 0 off, 1 once
+    /// per operation and recompute, 2 every occurrence.
     static const long & getWarnUnnamedInput();
     static const long & defaultWarnUnnamedInput();
     static void removeWarnUnnamedInput();
@@ -316,6 +374,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumDeviation
+    ///
+    /// Lower limit of the tessellation deviation of shapes, in percent of
+    /// the object size. Objects asking for a finer mesh are drawn with
+    /// this value instead.
     static const double & getMinimumDeviation();
     static const double & defaultMinimumDeviation();
     static void removeMinimumDeviation();
@@ -326,6 +388,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshDeviation
+    ///
+    /// Accuracy of the mesh that shapes are drawn with, as the largest
+    /// deviation in percent of the object size. Lower is finer and
+    /// slower. Sets the Deviation of new objects; a change is applied to
+    /// all open objects.
     static const double & getMeshDeviation();
     static const double & defaultMeshDeviation();
     static void removeMeshDeviation();
@@ -336,6 +403,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshAngularDeflection
+    ///
+    /// Largest angle between neighbouring segments of the mesh that
+    /// shapes are drawn with, in degrees. Lower is smoother and slower.
+    /// Sets the Angular Deflection of new objects; a change is applied to
+    /// all open objects.
     static const double & getMeshAngularDeflection();
     static const double & defaultMeshAngularDeflection();
     static void removeMeshAngularDeflection();
@@ -346,11 +418,477 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumAngularDeflection
+    ///
+    /// Lower limit of the angular deflection used to mesh shapes, in
+    /// degrees. Objects asking for a smaller angle are drawn with this
+    /// value instead.
     static const double & getMinimumAngularDeflection();
     static const double & defaultMinimumAngularDeflection();
     static void removeMinimumAngularDeflection();
     static void setMinimumAngularDeflection(const double &v);
     static const char *docMinimumAngularDeflection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BooleanRefineModel
+    ///
+    /// New Part Boolean features get Refine switched on: faces that lie
+    /// on the same surface are merged after the operation. Read when a
+    /// feature is created.
+    static const bool & getBooleanRefineModel();
+    static const bool & defaultBooleanRefineModel();
+    static void removeBooleanRefineModel();
+    static void setBooleanRefineModel(const bool &v);
+    static const char *docBooleanRefineModel();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BooleanCheckModel
+    ///
+    /// Check the result of every Part Boolean operation for validity,
+    /// and fail the feature when it is not valid.
+    static const bool & getBooleanCheckModel();
+    static const bool & defaultBooleanCheckModel();
+    static void removeBooleanCheckModel();
+    static void setBooleanCheckModel(const bool &v);
+    static const char *docBooleanCheckModel();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BooleanFuzzy
+    ///
+    /// Factor of the tolerance a Boolean operation is given when it is
+    /// told to choose one itself: this times the size of the shapes times
+    /// the kernel's precision.
+    static const double & getBooleanFuzzy();
+    static const double & defaultBooleanFuzzy();
+    static void removeBooleanFuzzy();
+    static void setBooleanFuzzy(const double &v);
+    static const char *docBooleanFuzzy();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoElementMap
+    ///
+    /// Give a shape that arrives without element names -- read from a
+    /// file, set by a script -- names of its own. Read once, at the first
+    /// such shape of a session.
+    static const bool & getAutoElementMap();
+    static const bool & defaultAutoElementMap();
+    static void removeAutoElementMap();
+    static void setAutoElementMap(const bool &v);
+    static const char *docAutoElementMap();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ReadSurfaceCurveMode
+    ///
+    /// Which curve is kept when an entity of a STEP or IGES file has both
+    /// a 2D and a 3D one: 0 both, 3 the 3D curve and the 2D one is
+    /// rebuilt from it; for IGES also 2 prefer the 2D curve, -2 always
+    /// the 2D, -3 always the 3D. Read when Part is loaded.
+    static const long & getReadSurfaceCurveMode();
+    static const long & defaultReadSurfaceCurveMode();
+    static void removeReadSurfaceCurveMode();
+    static void setReadSurfaceCurveMode(const long &v);
+    static const char *docReadSurfaceCurveMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WriteSurfaceCurveMode
+    ///
+    /// Write the curves in the parameter space of surfaces (pcurves) into
+    /// STEP files: 0 off, which makes smaller files, 1 on. Stored by the
+    /// STEP export options.
+    static const long & getWriteSurfaceCurveMode();
+    static const long & defaultWriteSurfaceCurveMode();
+    static void removeWriteSurfaceCurveMode();
+    static void setWriteSurfaceCurveMode(const long &v);
+    static const char *docWriteSurfaceCurveMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesBrepMode
+    ///
+    /// Write solids and shells into IGES files as BRep entities (type
+    /// 186) instead of trimmed surfaces (type 144).
+    static const bool & getIgesBrepMode();
+    static const bool & defaultIgesBrepMode();
+    static void removeIgesBrepMode();
+    static void setIgesBrepMode(const bool &v);
+    static const char *docIgesBrepMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesUnit
+    ///
+    /// Unit of exported IGES files: 0 millimetre, 1 metre, 2 inch.
+    static const long & getIgesUnit();
+    static const long & defaultIgesUnit();
+    static void removeIgesUnit();
+    static void setIgesUnit(const long &v);
+    static const char *docIgesUnit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesCompany
+    ///
+    /// Company named in the header of exported IGES files.
+    static const std::string & getIgesCompany();
+    static const std::string & defaultIgesCompany();
+    static void removeIgesCompany();
+    static void setIgesCompany(const std::string &v);
+    static const char *docIgesCompany();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesAuthor
+    ///
+    /// Author named in the header of exported IGES files.
+    static const std::string & getIgesAuthor();
+    static const std::string & defaultIgesAuthor();
+    static void removeIgesAuthor();
+    static void setIgesAuthor(const std::string &v);
+    static const char *docIgesAuthor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesProduct
+    ///
+    /// Product named in the header of exported IGES files. Empty uses the
+    /// kernel's own. Read when Part is loaded.
+    static const std::string & getIgesProduct();
+    static const std::string & defaultIgesProduct();
+    static void removeIgesProduct();
+    static void setIgesProduct(const std::string &v);
+    static const char *docIgesProduct();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SkipBlankEntities
+    ///
+    /// Leave out the blank (hidden) entities of an IGES file that is
+    /// imported.
+    static const bool & getSkipBlankEntities();
+    static const bool & defaultSkipBlankEntities();
+    static void removeSkipBlankEntities();
+    static void setSkipBlankEntities(const bool &v);
+    static const char *docSkipBlankEntities();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepUnit
+    ///
+    /// Unit of exported STEP files: 0 millimetre, 1 metre, 2 inch.
+    static const long & getStepUnit();
+    static const long & defaultStepUnit();
+    static void removeStepUnit();
+    static void setStepUnit(const long &v);
+    static const char *docStepUnit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepScheme
+    ///
+    /// Application protocol of exported STEP files: AP203, AP214CD,
+    /// AP214DIS, AP214IS or AP242DIS. Empty uses the kernel's own.
+    static const std::string & getStepScheme();
+    static const std::string & defaultStepScheme();
+    static void removeStepScheme();
+    static void setStepScheme(const std::string &v);
+    static const char *docStepScheme();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepProduct
+    ///
+    /// Product name written into exported STEP files. Empty uses the
+    /// kernel's own. Read when Part is loaded.
+    static const std::string & getStepProduct();
+    static const std::string & defaultStepProduct();
+    static void removeStepProduct();
+    static void setStepProduct(const std::string &v);
+    static const char *docStepProduct();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepCompany
+    ///
+    /// Organisation named in the header of exported STEP files.
+    static const std::string & getStepCompany();
+    static const std::string & defaultStepCompany();
+    static void removeStepCompany();
+    static void setStepCompany(const std::string &v);
+    static const char *docStepCompany();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepAuthor
+    ///
+    /// Author named in the header of exported STEP files.
+    static const std::string & getStepAuthor();
+    static const std::string & defaultStepAuthor();
+    static void removeStepAuthor();
+    static void setStepAuthor(const std::string &v);
+    static const char *docStepAuthor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VisibleExportDialog
+    ///
+    /// Show the options dialog each time a STEP file is exported.
+    static const bool & getVisibleExportDialog();
+    static const bool & defaultVisibleExportDialog();
+    static void removeVisibleExportDialog();
+    static void setVisibleExportDialog(const bool &v);
+    static const char *docVisibleExportDialog();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExportHiddenObject
+    ///
+    /// Write objects that are hidden as well, marked invisible. Switch
+    /// off for programs that do not understand invisibility in a STEP
+    /// file.
+    static const bool & getExportHiddenObject();
+    static const bool & defaultExportHiddenObject();
+    static void removeExportHiddenObject();
+    static void setExportHiddenObject(const bool &v);
+    static const char *docExportHiddenObject();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportHiddenObject
+    ///
+    /// Read the objects a file marks invisible as well.
+    static const bool & getImportHiddenObject();
+    static const bool & defaultImportHiddenObject();
+    static void removeImportHiddenObject();
+    static void setImportHiddenObject(const bool &v);
+    static const char *docImportHiddenObject();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExportKeepPlacement
+    ///
+    /// Keep the placement when a single object is exported. Read back,
+    /// the placement is part of the shape's geometry and not a Placement
+    /// property.
+    static const bool & getExportKeepPlacement();
+    static const bool & defaultExportKeepPlacement();
+    static void removeExportKeepPlacement();
+    static void setExportKeepPlacement(const bool &v);
+    static const char *docExportKeepPlacement();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseAppPart
+    ///
+    /// Import the groups of an assembly as App::Part containers; off uses
+    /// App::LinkGroup.
+    static const bool & getUseAppPart();
+    static const bool & defaultUseAppPart();
+    static void removeUseAppPart();
+    static void setUseAppPart(const bool &v);
+    static const char *docUseAppPart();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseBaseName
+    ///
+    /// Name imported objects after what they are an instance of, not
+    /// after the instance. Useful for old STEP files whose instance names
+    /// are generated and mean nothing.
+    static const bool & getUseBaseName();
+    static const bool & defaultUseBaseName();
+    static void removeUseBaseName();
+    static void setUseBaseName(const bool &v);
+    static const char *docUseBaseName();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ReduceObjects
+    ///
+    /// Import repeated instances as Link arrays, which makes fewer
+    /// objects.
+    static const bool & getReduceObjects();
+    static const bool & defaultReduceObjects();
+    static void removeReduceObjects();
+    static void setReduceObjects(const bool &v);
+    static const char *docReduceObjects();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowProgress
+    ///
+    /// Show a progress bar while a file is imported.
+    static const bool & getShowProgress();
+    static const bool & defaultShowProgress();
+    static void removeShowProgress();
+    static void setShowProgress(const bool &v);
+    static const char *docShowProgress();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ProgressiveImport
+    ///
+    /// Create the imported objects step by step, so the model shows while
+    /// the import still runs. Single document mode only.
+    static const bool & getProgressiveImport();
+    static const bool & defaultProgressiveImport();
+    static void removeProgressiveImport();
+    static void setProgressiveImport(const bool &v);
+    static const char *docProgressiveImport();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StreamBatchStart
+    ///
+    /// Number of units -- roots, or the components of a single root --
+    /// the first batch of a progressive import transfers. At least 1.
+    static const long & getStreamBatchStart();
+    static const long & defaultStreamBatchStart();
+    static void removeStreamBatchStart();
+    static void setStreamBatchStart(const long &v);
+    static const char *docStreamBatchStart();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StreamBatchFactor
+    ///
+    /// Factor by which each batch of a progressive import is larger than
+    /// the one before; 1 keeps the size. Each batch repeats passes over
+    /// the whole file, hence the steep growth.
+    static const long & getStreamBatchFactor();
+    static const long & defaultStreamBatchFactor();
+    static void removeStreamBatchFactor();
+    static void setStreamBatchFactor(const long &v);
+    static const char *docStreamBatchFactor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportMode
+    ///
+    /// How an assembly file becomes documents: 0 a single document, 1 a
+    /// group per document, 2 a group per directory, 3 an object per
+    /// document, 4 an object per directory.
+    static const long & getImportMode();
+    static const long & defaultImportMode();
+    static void removeImportMode();
+    static void setImportMode(const long &v);
+    static const char *docImportMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GltfRebuildBRep
+    ///
+    /// Whether the meshes of a glTF file are rebuilt as BRep faces: 0
+    /// never, each mesh arrives as it was read with its triangles, UVs
+    /// and normals; 1 only where nothing would be lost; 2 always.
+    static const long & getGltfRebuildBRep();
+    static const long & defaultGltfRebuildBRep();
+    static void removeGltfRebuildBRep();
+    static void setGltfRebuildBRep(const long &v);
+    static const char *docGltfRebuildBRep();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ReadShapeCompoundMode
+    ///
+    /// The option 'Enable STEP Compound merge' of the STEP import: the
+    /// parts of a file are merged into one compound instead of imported
+    /// as objects of their own.
+    static const bool & getReadShapeCompoundMode();
+    static const bool & defaultReadShapeCompoundMode();
+    static void removeReadShapeCompoundMode();
+    static void setReadShapeCompoundMode(const bool &v);
+    static const char *docReadShapeCompoundMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MaximumPatternOccurrences
+    ///
+    /// The most occurrences a pattern or a link array may be given.
+    /// App's pattern code reads it once, when the first pattern is
+    /// made, so a change counts from the next start. On no page.
+    static const long & getMaximumPatternOccurrences();
+    static const long & defaultMaximumPatternOccurrences();
+    static void removeMaximumPatternOccurrences();
+    static void setMaximumPatternOccurrences(const long &v);
+    static const char *docMaximumPatternOccurrences();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridLinePattern
+    ///
+    /// Pattern the grid of a Part 2D object is drawn with when its grid
+    /// style is dashed: 16 bits, one for each pixel of a stretch of line.
+    /// The Sketcher has a setting of its own for its grid. On no page.
+    /// Takes effect when a grid is next built.
+    static const long & getGridLinePattern();
+    static const long & defaultGridLinePattern();
+    static void removeGridLinePattern();
+    static void setGridLinePattern(const long &v);
+    static const char *docGridLinePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WireJoinerObjectName
+    ///
+    /// For development: the name of the object whose wire joining is
+    /// traced. Empty, none is.
+    static const std::string & getWireJoinerObjectName();
+    static const std::string & defaultWireJoinerObjectName();
+    static void removeWireJoinerObjectName();
+    static void setWireJoinerObjectName(const std::string &v);
+    static const char *docWireJoinerObjectName();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WireJoinerIteration
+    ///
+    /// For development: the iteration from which the wire joiner shows
+    /// its intermediate shapes for the traced object; 0 for never.
+    static const long & getWireJoinerIteration();
+    static const long & defaultWireJoinerIteration();
+    static void removeWireJoinerIteration();
+    static void setWireJoinerIteration(const long &v);
+    static const char *docWireJoinerIteration();
     //@}
 
 // Auto generated code (Tools/params_utils.py:179)

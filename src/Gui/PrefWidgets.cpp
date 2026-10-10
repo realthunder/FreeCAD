@@ -50,6 +50,7 @@
 #include "ViewParams.h"
 
 #include "PrefWidgets.h"
+#include "GeneralParams.h"
 #include "FileDialog.h"
 #include "MainWindow.h"
 
@@ -61,7 +62,7 @@ using namespace Gui;
 PrefParam::PrefParam() {
   hGrp = App::GetApplication().GetParameterGroupByPath(
       "User parameter:BaseApp/Preferences/General");
-  _AutoSave = hGrp->GetBool("AutoApplyPreference", true);
+  _AutoSave = hGrp->GetBool("AutoApplyPreference", GeneralParams::defaultAutoApplyPreference());
   hGrp->Attach(this);
 }
 
@@ -71,7 +72,7 @@ PrefParam::~PrefParam() {
 
 void PrefParam::OnChange(Base::Subject<const char*> &, const char * sReason) {
   if (boost::equals(sReason, "AutoApplyPreference")) {
-    _AutoSave = hGrp->GetBool("AutoApplyPreference", true);
+    _AutoSave = hGrp->GetBool("AutoApplyPreference", GeneralParams::defaultAutoApplyPreference());
     for (auto entry : _entries)
       entry->setAutoSave(_AutoSave);
   }
@@ -90,8 +91,10 @@ bool PrefParam::AutoSave() {
 }
 
 void PrefParam::setAutoSave(bool enable) {
+  // stored, which is what tells every preference widget (OnChange): this
+  // read the key where it meant to write it, and did nothing
   if (enable != AutoSave())
-    instance()->hGrp->GetBool("AutoApplyPreference", enable);
+    instance()->hGrp->SetBool("AutoApplyPreference", enable);
 }
 
 PrefParam *PrefParam::instance() {
@@ -1047,7 +1050,11 @@ void PrefComboBox::savePreferences()
     getWindowParameter()->SetASCII(entryName(), currentData().toByteArray().constData());
     break;
   default:
-    getWindowParameter()->SetInt(entryName(), currentIndex());
+    // No current item -- an empty list, or an index that named none of
+    // it -- is nothing to store: -1 written here is read back later as an
+    // index by code that trusts it.
+    if (currentIndex() >= 0)
+      getWindowParameter()->SetInt(entryName(), currentIndex());
     break;
   }
 }
@@ -1365,7 +1372,9 @@ void PrefUnitSpinBox::restorePreferences()
     if (!m_Restored)
       m_Default = rawValue();
 
-    double fVal = (double)getWindowParameter()->GetFloat( entryName() ,m_Default.toUInt() );
+    // the default as it is: toUInt() made 4 of an arrow size of 3.5 and 0 of
+    // anything below a half, and OK then stored that
+    double fVal = (double)getWindowParameter()->GetFloat( entryName() ,m_Default.toDouble() );
     setValue(fVal);
 }
 

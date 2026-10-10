@@ -472,25 +472,38 @@ class TestHelix(unittest.TestCase):
         helix.AddSubType = "Subtractive"
         self.assertFalse(helix.Outside)
 
-        # A file from before AddSubType has Outside with a Subtractive type
+        # A file from before AddSubType has Outside with a Subtractive type.
+        # Upstream's has no _ProfileBasedVersion and means it; this fork's has
+        # one, and there the type already ruled and Outside was left over.
         helix.Outside = True
         folder = tempfile.mkdtemp()
         ours = os.path.join(folder, "ours.FCStd")
-        old = os.path.join(folder, "old.FCStd")
         self.Doc.saveAs(ours)
-        with zipfile.ZipFile(ours) as src, zipfile.ZipFile(old, "w") as dst:
-            for item in src.infolist():
-                data = src.read(item.filename)
-                if item.filename == "Document.xml":
-                    xml = data.decode("utf-8")
-                    start = xml.index('<Object name="SubtractiveHelix"', xml.index("<ObjectData"))
-                    end = xml.index("</Object>", start)
-                    part = re.sub(r'(<Property name="AddSubType"[^>]*>\s*<Integer value=")2"',
-                                  r'\g<1>1"', xml[start:end], count=1)
-                    self.assertNotEqual(part, xml[start:end])
-                    data = (xml[:start] + part + xml[end:]).encode("utf-8")
-                dst.writestr(item, data)
-        doc = FreeCAD.openDocument(old)
+
+        def rewritten(name, upstream):
+            path = os.path.join(folder, name)
+            with zipfile.ZipFile(ours) as src, zipfile.ZipFile(path, "w") as dst:
+                for item in src.infolist():
+                    data = src.read(item.filename)
+                    if item.filename == "Document.xml":
+                        xml = data.decode("utf-8")
+                        start = xml.index('<Object name="SubtractiveHelix"',
+                                          xml.index("<ObjectData"))
+                        end = xml.index("</Object>", start)
+                        part = re.sub(r'(<Property name="AddSubType"[^>]*>\s*<Integer value=")2"',
+                                      r'\g<1>1"', xml[start:end], count=1)
+                        self.assertNotEqual(part, xml[start:end])
+                        if upstream:
+                            fork = part
+                            part = re.sub(
+                                r'(<Property name="_ProfileBasedVersion"[^>]*>\s*<Integer value=")\d+"',
+                                r'\g<1>0"', part, count=1)
+                            self.assertNotEqual(part, fork)
+                        data = (xml[:start] + part + xml[end:]).encode("utf-8")
+                    dst.writestr(item, data)
+            return path
+
+        doc = FreeCAD.openDocument(rewritten("upstream.FCStd", True))
         try:
             restored = doc.getObject("SubtractiveHelix")
             self.assertTrue(restored.Outside)
@@ -498,6 +511,16 @@ class TestHelix(unittest.TestCase):
             restored.touch()
             doc.recompute()
             self.assertAlmostEqual(restored.Shape.Volume, common, places=3)
+        finally:
+            FreeCAD.closeDocument(doc.Name)
+
+        doc = FreeCAD.openDocument(rewritten("fork.FCStd", False))
+        try:
+            restored = doc.getObject("SubtractiveHelix")
+            self.assertEqual(restored.AddSubType, "Subtractive")
+            restored.touch()
+            doc.recompute()
+            self.assertAlmostEqual(restored.Shape.Volume, cut, places=3)
         finally:
             FreeCAD.closeDocument(doc.Name)
 

@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include "ViewParams.h"
+
 #ifndef _PreComp_
 # include <Inventor/nodes/SoAsciiText.h>
 # include <Inventor/nodes/SoCoordinate3.h>
@@ -69,7 +71,7 @@ void ViewProviderPoint::attach ( App::DocumentObject *obj ) {
     // draws a single pixel, which is not pickable in practice.
     static const double radius = App::GetApplication()
             .GetParameterGroupByPath ("User parameter:BaseApp/Preferences/View")
-            ->GetFloat ("DatumPointSize", 2.5);
+            ->GetFloat ("DatumPointSize", Gui::ViewParams::defaultDatumPointSize());
     auto sphere = new SoSphere ();
     sphere->radius.setValue ( static_cast<float>(radius) );
     sep->addChild ( sphere );

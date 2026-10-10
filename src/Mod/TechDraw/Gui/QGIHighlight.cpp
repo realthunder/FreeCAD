@@ -78,6 +78,10 @@ void QGIHighlight::onDragFinished()
     auto detail = getFeatureAs<DrawViewDetail>();
     if (!detail)
         return;
+    // The mouse moved between press and release and the highlight did not:
+    // nothing to store, and no recompute for a click.
+    if (pos().isNull())
+        return;
     auto anchor = detail->AnchorPoint.getValue();
     Base::Vector3d delta = Rez::appX(DrawUtil::toVector3d(pos())) / qgivp->getViewObject()->getScale();
     anchor += DrawUtil::invertY(delta);
@@ -253,12 +257,6 @@ void QGIHighlight::setFont(QFont f, double fsize)
 QColor QGIHighlight::getHighlightColor()
 {
     return PreferencesGui::sectionLineQColor();
-}
-
-//obs??
-Qt::PenStyle QGIHighlight::getHighlightStyle()
-{
-    return PreferencesGui::sectionLineStyle();
 }
 
 int QGIHighlight::getHoleStyle()

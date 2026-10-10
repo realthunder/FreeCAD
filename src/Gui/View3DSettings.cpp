@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "OverlayParams.h"
+
 #ifndef _PreComp_
 # include <Inventor/fields/SoSFColor.h>
 # include <Inventor/nodes/SoDirectionalLight.h>
@@ -131,14 +133,14 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"EnablePreselection") == 0) {
         const ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
-        SoFCEnableHighlightAction cAct(rclGrp.GetBool("EnablePreselection", true));
+        SoFCEnableHighlightAction cAct(rclGrp.GetBool("EnablePreselection", Gui::ViewParams::defaultEnablePreselection()));
         for (auto _viewer : _viewers) {
             cAct.apply(_viewer->getSceneGraph());
         }
     }
     else if (strcmp(Reason,"EnableSelection") == 0) {
         const ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
-        SoFCEnableSelectionAction cAct(rclGrp.GetBool("EnableSelection", true));
+        SoFCEnableSelectionAction cAct(rclGrp.GetBool("EnableSelection", Gui::ViewParams::defaultEnableSelection()));
         for (auto _viewer : _viewers) {
             cAct.apply(_viewer->getSceneGraph());
         }
@@ -170,7 +172,7 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     else if (strcmp(Reason,"NavigationStyle") == 0) {
         if (!ignoreNavigationStyle) {
             // check whether the simple or the full mouse model is used
-            std::string model = rGrp.GetASCII("NavigationStyle",CADNavigationStyle::getClassTypeId().getName());
+            std::string model = rGrp.GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
             Base::Type type = Base::Type::fromName(model.c_str());
             for (auto _viewer : _viewers) {
                 _viewer->setNavigationType(type);
@@ -178,43 +180,43 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
         }
     }
     else if (strcmp(Reason,"OrbitStyle") == 0) {
-        int style = rGrp.GetInt("OrbitStyle",1);
+        int style = rGrp.GetInt("OrbitStyle", Gui::ViewParams::defaultOrbitStyle());
         for (auto _viewer : _viewers) {
             _viewer->navigationStyle()->setOrbitStyle(NavigationStyle::OrbitStyle(style));
         }
     }
     else if (strcmp(Reason,"Sensitivity") == 0) {
-        float val = rGrp.GetFloat("Sensitivity",2.0f);
+        float val = rGrp.GetFloat("Sensitivity", Gui::ViewParams::defaultSensitivity());
         for (auto _viewer : _viewers) {
             _viewer->navigationStyle()->setSensitivity(val);
         }
     }
     else if (strcmp(Reason,"ResetCursorPosition") == 0) {
-        bool on = rGrp.GetBool("ResetCursorPosition",false);
+        bool on = rGrp.GetBool("ResetCursorPosition", Gui::ViewParams::defaultResetCursorPosition());
         for (auto _viewer : _viewers) {
             _viewer->navigationStyle()->setResetCursorPosition(on);
         }
     }
     else if (strcmp(Reason,"InvertZoom") == 0) {
-        bool on = rGrp.GetBool("InvertZoom", true);
+        bool on = rGrp.GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
         for (auto _viewer : _viewers) {
             _viewer->navigationStyle()->setZoomInverted(on);
         }
     }
     else if (strcmp(Reason,"ZoomAtCursor") == 0) {
-        bool on = rGrp.GetBool("ZoomAtCursor", true);
+        bool on = rGrp.GetBool("ZoomAtCursor", Gui::ViewParams::defaultZoomAtCursor());
         for (auto _viewer : _viewers) {
             _viewer->navigationStyle()->setZoomAtCursor(on);
         }
     }
     else if (strcmp(Reason,"ZoomStep") == 0) {
-        float val = rGrp.GetFloat("ZoomStep", 0.0f);
+        float val = rGrp.GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
         for (auto _viewer : _viewers) {
             _viewer->navigationStyle()->setZoomStep(val);
         }
     }
     else if (strcmp(Reason,"RotationMode") == 0) {
-        long mode = rGrp.GetInt("RotationMode", 1);
+        long mode = rGrp.GetInt("RotationMode", Gui::ViewParams::defaultRotationMode());
         for (auto _viewer : _viewers) {
             if (mode == 0) {
                 _viewer->navigationStyle()->setRotationCenterMode(NavigationStyle::RotationCenterMode::WindowCenter);
@@ -231,40 +233,40 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"EyeDistance") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->getSoRenderManager()->setStereoOffset(rGrp.GetFloat("EyeDistance", 5.0));
+            _viewer->getSoRenderManager()->setStereoOffset(rGrp.GetFloat("EyeDistance", Gui::ViewParams::defaultEyeDistance()));
         }
     }
     else if (strcmp(Reason,"CornerCoordSystem") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setFeedbackVisibility(rGrp.GetBool("CornerCoordSystem", true));
+            _viewer->setFeedbackVisibility(rGrp.GetBool("CornerCoordSystem", Gui::ViewParams::defaultCornerCoordSystem()));
         }
     }
     else if (strcmp(Reason,"CornerCoordSystemSize") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setFeedbackSize(rGrp.GetInt("CornerCoordSystemSize", 10));
+            _viewer->setFeedbackSize(rGrp.GetInt("CornerCoordSystemSize", Gui::ViewParams::defaultCornerCoordSystemSize()));
         }
     }
     else if (strcmp(Reason,"ShowAxisCross") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setAxisCross(rGrp.GetBool("ShowAxisCross", false));
+            _viewer->setAxisCross(rGrp.GetBool("ShowAxisCross", Gui::ViewParams::defaultShowAxisCross()));
         }
     }
     else if (strcmp(Reason,"UseNavigationAnimations") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setAnimationEnabled(rGrp.GetBool("UseNavigationAnimations", true));
+            _viewer->setAnimationEnabled(rGrp.GetBool("UseNavigationAnimations", Gui::ViewParams::defaultUseNavigationAnimations()));
         }
     }
     else if (strcmp(Reason,"UseSpinningAnimations") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setSpinningAnimationEnabled(rGrp.GetBool("UseSpinningAnimations", false));
+            _viewer->setSpinningAnimationEnabled(rGrp.GetBool("UseSpinningAnimations", Gui::ViewParams::defaultUseSpinningAnimations()));
         }
     }
     else if (strcmp(Reason,"Gradient") == 0 || strcmp(Reason,"RadialGradient") == 0) {
         View3DInventorViewer::Background background = View3DInventorViewer::Background::NoGradient;
-        if (rGrp.GetBool("Gradient", true)) {
+        if (rGrp.GetBool("Gradient", Gui::ViewParams::defaultGradient())) {
             background = View3DInventorViewer::Background::LinearGradient;
         }
-        else if (rGrp.GetBool("RadialGradient", false)) {
+        else if (rGrp.GetBool("RadialGradient", Gui::ViewParams::defaultRadialGradient())) {
             background = View3DInventorViewer::Background::RadialGradient;
         }
         for (auto _viewer : _viewers) {
@@ -273,16 +275,16 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"ShowFPS") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setEnabledFPSCounter(rGrp.GetBool("ShowFPS", false));
+            _viewer->setEnabledFPSCounter(rGrp.GetBool("ShowFPS", Gui::ViewParams::defaultShowFPS()));
         }
     }
     else if (strcmp(Reason,"ShowNaviCube") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setEnabledNaviCube(rGrp.GetBool("ShowNaviCube", true));
+            _viewer->setEnabledNaviCube(rGrp.GetBool("ShowNaviCube", Gui::ViewParams::defaultShowNaviCube()));
         }
     }
     else if (strcmp(Reason,"CornerNaviCube") == 0) {
-        int corner = hGrp->GetInt("CornerNaviCube", 1);
+        int corner = hGrp->GetInt("CornerNaviCube", Gui::OverlayParams::defaultCornerNaviCube());
         for (auto _viewer : _viewers) {
             _viewer->setNaviCubeCorner(corner);
         }
@@ -290,7 +292,7 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     else if (strcmp(Reason,"UseVBO") == 0) {
         if (!ignoreVBO) {
             for (auto _viewer : _viewers) {
-                _viewer->setEnabledVBO(rGrp.GetBool("UseVBO", false));
+                _viewer->setEnabledVBO(rGrp.GetBool("UseVBO", Gui::ViewParams::defaultUseVBO()));
             }
         }
     }
@@ -321,14 +323,18 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
             // only writes when the value is not already 3) then had the
             // engine warmed up at startup and every 3D view told to use
             // nothing.
-            int mode = int(rGrp.GetInt("RenderCache",
-                                       ViewParams::defaultRenderCache()));
+            // And what the program goes by, not the key alone: with the
+            // render engine the mode is 3 whatever the key holds, and a
+            // change of the render type arrives here as a change of the
+            // mode (RenderParams::renderCache(), which reads both keys
+            // raw, for the reason above).
+            int mode = RenderParams::renderCache();
             // The renderer backend is only used in render cache mode 3;
             // any other mode keeps the plain GL pipeline. Changes of the
             // renderer type itself are applied by
             // RenderParams::onRenderParamChanged.
             std::string type = mode == 3 ?
-                RenderParams::getType() : std::string();
+                RenderParams::engineType() : std::string();
             for (auto _viewer : _viewers) {
                 _viewer->setRenderCache(mode);
                 _viewer->setRendererType(type);
@@ -337,7 +343,7 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"Orthographic") == 0) {
         // check whether a perspective or orthogrphic camera should be set
-        if (rGrp.GetBool("Orthographic", true)) {
+        if (rGrp.GetBool("Orthographic", Gui::ViewParams::defaultOrthographic())) {
             for (auto _viewer : _viewers) {
                 _viewer->setCameraType(SoOrthographicCamera::getClassTypeId());
             }
@@ -392,12 +398,12 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason, "PickRadius") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setPickRadius(rGrp.GetFloat("PickRadius", 5.0f));
+            _viewer->setPickRadius(rGrp.GetFloat("PickRadius", Gui::ViewParams::defaultPickRadius()));
         }
     }
     else if (strcmp(Reason, "TransparentObjectRenderType") == 0) {
         if (!ignoreTransparent) {
-            long renderType = rGrp.GetInt("TransparentObjectRenderType", 0);
+            long renderType = rGrp.GetInt("TransparentObjectRenderType", Gui::ViewParams::defaultTransparentObjectRenderType());
             if (renderType == 0) {
                 for (auto _viewer : _viewers) {
                     _viewer->getSoRenderManager()->getGLRenderAction()
@@ -413,11 +419,18 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
             }
         }
     }
-    else {
-        unsigned long col1 = rGrp.GetUnsigned("BackgroundColor",3940932863UL);
-        unsigned long col2 = rGrp.GetUnsigned("BackgroundColor2",859006463UL); // default color (dark blue)
-        unsigned long col3 = rGrp.GetUnsigned("BackgroundColor3",2880160255UL); // default color (blue/grey)
-        unsigned long col4 = rGrp.GetUnsigned("BackgroundColor4",1869583359UL); // default color (blue/grey)
+    // Named, where this used to be the "else" of the whole chain: a change
+    // of any key of the group this function does not know re-applied the
+    // background colours to every view.
+    else if (strcmp(Reason, "BackgroundColor") == 0
+             || strcmp(Reason, "BackgroundColor2") == 0
+             || strcmp(Reason, "BackgroundColor3") == 0
+             || strcmp(Reason, "BackgroundColor4") == 0
+             || strcmp(Reason, "UseBackgroundColorMid") == 0) {
+        unsigned long col1 = rGrp.GetUnsigned("BackgroundColor", Gui::ViewParams::defaultBackgroundColor());
+        unsigned long col2 = rGrp.GetUnsigned("BackgroundColor2", Gui::ViewParams::defaultBackgroundColor2()); // default color (dark blue)
+        unsigned long col3 = rGrp.GetUnsigned("BackgroundColor3", Gui::ViewParams::defaultBackgroundColor3()); // default color (blue/grey)
+        unsigned long col4 = rGrp.GetUnsigned("BackgroundColor4", Gui::ViewParams::defaultBackgroundColor4()); // default color (blue/grey)
         float r1,g1,b1,r2,g2,b2,r3,g3,b3,r4,g4,b4;
         r1 = ((col1 >> 24) & 0xff) / 255.0; g1 = ((col1 >> 16) & 0xff) / 255.0; b1 = ((col1 >> 8) & 0xff) / 255.0;
         r2 = ((col2 >> 24) & 0xff) / 255.0; g2 = ((col2 >> 16) & 0xff) / 255.0; b2 = ((col2 >> 8) & 0xff) / 255.0;
@@ -425,7 +438,7 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
         r4 = ((col4 >> 24) & 0xff) / 255.0; g4 = ((col4 >> 16) & 0xff) / 255.0; b4 = ((col4 >> 8) & 0xff) / 255.0;
         for (auto _viewer : _viewers) {
             _viewer->setBackgroundColor(QColor::fromRgbF(r1, g1, b1));
-            if (!rGrp.GetBool("UseBackgroundColorMid",false)) {
+            if (!rGrp.GetBool("UseBackgroundColorMid", Gui::ViewParams::defaultUseBackgroundColorMid())) {
                 _viewer->setGradientBackgroundColor(SbColor(r2, g2, b2),
                                                     SbColor(r3, g3, b3));
             }
@@ -484,7 +497,7 @@ void NaviCubeSettings::parameterChanged(const char* Name)
         return;
     NaviCube* nc = _viewer->getNaviCube();
     if (strcmp(Name, "CornerNaviCube") == 0) {
-        nc->setCorner(static_cast<NaviCube::Corner>(hGrp->GetInt("CornerNaviCube", 1)));
+        nc->setCorner(static_cast<NaviCube::Corner>(hGrp->GetInt("CornerNaviCube", Gui::OverlayParams::defaultCornerNaviCube())));
     }
     else if (strcmp(Name, "OffsetX") == 0 || strcmp(Name, "OffsetY") == 0) {
         nc->setOffset(hGrp->GetInt("OffsetX", 0), hGrp->GetInt("OffsetY", 0));

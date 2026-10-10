@@ -436,12 +436,36 @@ on any backend.
   application -- Coin needs it, which on macOS is also what caps it at GL 2.1.
   GL 1.1 is the one thing guaranteed to be there. `glPushAttrib` carries the
   whole state block back for Coin, which traverses next.
-- **Pipelined by default.** A frame that arrives before its copy has landed
-  redraws the previous image rather than waiting, so the screen trails the scene
-  by a frame or two. That lag is as much this route's cost as the milliseconds
-  are, which is why the report counts stale frames beside the times.
-  `FC_BGFX_READBACK_SYNC=1` spins frames until the copy lands, which is the
-  fully serialized form section 2 costed.
+- **Pipelined only inside a run of frames** (2026-10-07; it was pipelined
+  always). A pipelined frame that arrives before its copy has landed redraws
+  the previous image rather than waiting, so the screen trails the scene by a
+  frame or two. That lag is as much this route's cost as the milliseconds
+  are, which is why the report counts stale frames beside the times -- and
+  when the frames stop it does not go away: nothing draws the frame that
+  would show the last copy, so a hover highlight came with the NEXT redraw
+  and a resized view kept its old picture (docs/HandsOnQueue.md entries 9
+  and 10). So a frame waits for its copy -- `syncReadback` spins frames until
+  it lands, the fully serialized form section 2 costed -- unless the host
+  said it is one of a run (`Renderer::setFramePipelined`). The setting is
+  `Render/ReadbackFrameMode`: `Wait`, `Pipelined while animating` (the
+  default: a camera animation, a spin, the backend's own animated content),
+  `Pipelined`. After a pipelined frame the host owes one frame that waits
+  (`Renderer::frameTrails`, `Gui::ReadbackFramePacer`: a 50 ms timer every
+  further frame puts off), which is what makes `Pipelined` safe to choose.
+  The pacer sits in `View3DInventorViewer::renderScene`. The shared canvas of
+  a split view (`ViewAreaCanvas::paintGL`, `View/UnifiedCanvas`) is not a
+  second place for it: it draws each cell with `captureWidth` set, the
+  sizing channel, so its frames are captures to this code and have always
+  waited -- the setting does not reach it, and a probe of it shows no
+  trailing picture before or after. `FC_BGFX_READBACK_SYNC` holds one form
+  for a benchmark leg whatever the setting: 1 every frame waits, 0 none
+  does and nothing settles.
+  What the wait costs on Direct3D 11 is flat, 0.2 to 0.7 ms a frame from a
+  box to a 14 ms frame (docs/HandsOnQueue.md entry 9), because bgfx reads
+  the copy there with a blocking map inside the next frame boundary
+  whichever form is used: waiting adds two nearly empty boundaries and no
+  GPU synchronisation that was not already paid. Not measured on the other
+  read-back backends.
 - **Except for a capture, which is always serialized** (2026-09-27).
   `renderOffscreen()` is read once, straight after its frame, and nothing
   redraws it later, so a pipelined capture is the PREVIOUS request's frame.
@@ -449,7 +473,7 @@ on any backend.
   icon came out wearing the one before it and the first was blank -- the
   grab already rendered twice, for the feed's own one-frame lag, and the
   composite's lag came on top. OpenGL, whose composite is the direct blit,
-  never showed it. `syncReadback` now spins whenever `captureWidth` is set.
+  never showed it. A frame with `captureWidth` set always waits.
 - **Colour only.** `blit` also transfers depth; this does not. At render cache 3
   Coin emits no per-frame geometry (section 8), so nothing is currently depth
   testing against the frame -- but that is a measured fact about one scene

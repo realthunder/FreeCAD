@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <Inventor/events/SoKeyboardEvent.h>
 
 #include <Base/Exception.h>
@@ -665,7 +666,7 @@ protected:
             "User parameter:BaseApp/Preferences/Mod/Sketcher"
         );
 
-        continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
+        continuousMode = Sketcher::SketcherParams::getContinuousCreationMode();
     }
 
     /** @brief Default button pressing implementation, which redraws and moves to the next machine

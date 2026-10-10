@@ -21,6 +21,10 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <cmath>
 
@@ -42,6 +46,7 @@
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Document.h>
+#include <Gui/MainWindow.h>
 #include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/NavigationStyle.h>
 #include <Gui/Selection.h>
@@ -49,15 +54,21 @@
 #include <Gui/View3DInventorViewer.h>
 
 #include <Mod/TechDraw/App/DrawPage.h>
+#include <Mod/TechDraw/App/DrawViewClip.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawSVGTemplate.h>
 
+#include <unordered_map>
+#include <vector>
+
+#include <QGraphicsSvgItem>
 #include <QImage>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QOpenGLTextureBlitter>
 #include <QOpenGLWidget>
 #include <QPaintEngine>
+#include <QStyleOptionGraphicsItem>
 
 #include <Gui/Renderer/Page2D.h>
 #include <Gui/Renderer/Renderer.h>
@@ -66,6 +77,9 @@
 #include "MDIViewPage.h"
 #include "PageFeed.h"
 #include "PreferencesGui.h"
+#include "QGISVGTemplate.h"
+#include "QGIView.h"
+#include "QGIViewClip.h"
 #include "QGSPage.h"
 #include "QGVNavStyleBlender.h"
 #include "QGVNavStyleCAD.h"
@@ -129,6 +143,8 @@ class QGVPage::Private: public ParameterGrp::ObserverType
 public:
     /// handle to the viewer parameter group
     ParameterGrp::handle hGrp;
+    /// TechDraw's own General group, for the page renderer switch
+    ParameterGrp::handle hGrpGeneral;
     QGVPage* page;
     explicit Private(QGVPage* page) : page(page)
     {
@@ -136,33 +152,53 @@ public:
         hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/View");
         hGrp->Attach(this);
+        hGrpGeneral = Preferences::getPreferenceGroup("General");
+        hGrpGeneral->Attach(this);
     }
     void init()
     {
-        page->m_atCursor = hGrp->GetBool("ZoomAtCursor", true);
-        page->m_invertZoom = hGrp->GetBool("InvertZoom", false);
-        page->m_zoomIncrement = hGrp->GetFloat("ZoomStep", 0.02);
+        page->m_atCursor = hGrp->GetBool("ZoomAtCursor", Gui::ViewParams::defaultZoomAtCursor());
+        page->m_invertZoom = hGrp->GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
+        page->m_zoomIncrement = hGrp->GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
 
-        page->m_reversePan = Preferences::getPreferenceGroup("General")->GetInt("KbPan", 1);
-        page->m_reverseScroll = Preferences::getPreferenceGroup("General")->GetInt("KbScroll", 1);
+        page->m_reversePan = Preferences::getPreferenceGroup("General")->GetInt("KbPan", TechDraw::TechDrawParams::defaultKbPan());
+        page->m_reverseScroll = Preferences::getPreferenceGroup("General")->GetInt("KbScroll", TechDraw::TechDrawParams::defaultKbScroll());
     }
     /// Observer message from the ParameterGrp
     void OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::MessageType Reason) override
     {
         const ParameterGrp& rGrp = static_cast<ParameterGrp&>(rCaller);
-        if (strcmp(Reason, "NavigationStyle") == 0) {
+        if (strcmp(Reason, "PageRendererVg") == 0
+            || strcmp(Reason, "PageRendererVgComposite") == 0
+            || strcmp(Reason, "PageRendererVgVerify") == 0) {
+            // Which renderer draws the page is decided in the
+            // background's paint, and the background is cached: without
+            // this the switch waits for whatever next invalidates it.
+            page->m_vgWarmupTried = false;
+            page->resetCachedContent();
+            page->viewport()->update();
+        }
+        else if (strcmp(Reason, "PageRendererVgRoundLineWidth") == 0) {
+            // every line of every view is another width now: all of them
+            // are fed again at the next paint
+            for (const auto& v : page->m_vgViews)
+                page->m_vgDirty.insert(v.first);
+            page->resetCachedContent();
+            page->viewport()->update();
+        }
+        else if (strcmp(Reason, "NavigationStyle") == 0) {
             std::string model =
-                rGrp.GetASCII("NavigationStyle", CADNavigationStyle::getClassTypeId().getName());
+                rGrp.GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
             page->setNavigationStyle(model);
         }
         else if (strcmp(Reason, "InvertZoom") == 0) {
-            page->m_invertZoom = rGrp.GetBool("InvertZoom", true);
+            page->m_invertZoom = rGrp.GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
         }
         else if (strcmp(Reason, "ZoomStep") == 0) {
-            page->m_zoomIncrement = rGrp.GetFloat("ZoomStep", 0.0f);
+            page->m_zoomIncrement = rGrp.GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
         }
         else if (strcmp(Reason, "ZoomAtCursor") == 0) {
-            page->m_atCursor = rGrp.GetBool("ZoomAtCursor", true);
+            page->m_atCursor = rGrp.GetBool("ZoomAtCursor", Gui::ViewParams::defaultZoomAtCursor());
             if (page->m_atCursor) {
                 page->setResizeAnchor(QGVPage::AnchorUnderMouse);
                 page->setTransformationAnchor(QGVPage::AnchorUnderMouse);
@@ -178,6 +214,7 @@ public:
         hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/View");
         hGrp->Detach(this);
+        hGrpGeneral->Detach(this);
     }
 };
 
@@ -333,6 +370,12 @@ void QGVPage::cancelBalloonPlacing()
 
 void QGVPage::drawBackground(QPainter* painter, const QRectF&)
 {
+    // Settled anew by every paint: whether the backend's layer is the
+    // page's picture this time (drawItems asks).
+    m_vgDrawn = false;
+    m_vgItemsCovered = 0;
+    m_vgItemsPainted = 0;
+
     //Note: Background is not part of scene()
     if (!drawBkg)
         return;
@@ -348,6 +391,14 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
 
     painter->save();
     painter->resetTransform();
+    // The sheet's outline, said rather than inherited. The cached
+    // background is painted into a pixmap, whose painter starts with a
+    // black pen and no antialiasing; with the cache off (the backend's
+    // page layer needs it off) this is the viewport's painter, whose
+    // pen is the palette's text colour and which antialiases -- a dark
+    // theme then drew the outline in light grey, a pixel off.
+    painter->setRenderHint(QPainter::Antialiasing, false);
+    painter->setPen(QPen(Qt::black, 0));
 
     painter->setBrush(*bkgBrush);
     painter->drawRect(
@@ -373,13 +424,184 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
 
     painter->restore();
 
-    // The vg 2D page engine preview (milestone M2): draw the page's
-    // geometry through Render::Page2D underneath the scene items.
-    // Runtime-gated; this is the verification tier of the new page
-    // renderer, not yet its interactive integration.
+    // The page drawn by the backend: Render::Page2D draws the views
+    // and the template, and the scene items of what it drew are not
+    // painted after it (drawItems) -- they stay for the mouse.
+    // Runtime-gated.
     if (TechDraw::Preferences::getPreferenceGroup("General")
-            ->GetBool("PageRendererVg", false)) {
+            ->GetBool("PageRendererVg", TechDraw::TechDrawParams::defaultPageRendererVg())) {
         drawVgPreview(painter);
+    }
+    else if (m_vgPage) {
+        // Switched off in a running session: hand the page back to Qt
+        // the way the constructor set it up (queued -- this is the
+        // viewport's own paint event).
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                if (m_vgPage
+                    && !TechDraw::Preferences::getPreferenceGroup("General")
+                            ->GetBool("PageRendererVg", TechDraw::TechDrawParams::defaultPageRendererVg())) {
+                    leaveVgPreview();
+                }
+            },
+            Qt::QueuedConnection);
+    }
+}
+
+void QGVPage::setVgViewport(bool gl)
+{
+    auto glvp = qobject_cast<QOpenGLWidget*>(viewport());
+    if (gl == (glvp != nullptr))
+        return;
+    if (glvp && m_vgBlitter) {
+        // The blitter's GL program lives in the outgoing viewport's
+        // context and goes with it.
+        glvp->makeCurrent();
+        delete m_vgBlitter;
+        m_vgBlitter = nullptr;
+        glvp->doneCurrent();
+    }
+    setRenderer(gl ? OpenGL : Native);
+}
+
+void QGVPage::leaveVgPreview()
+{
+    setVgViewport(false);
+    m_vgViews.clear();
+    m_vgDirty.clear();
+    m_vgState.clear();
+    m_vgCovered.clear();
+    m_vgTemplateCovered = false;
+    m_vgDrawn = false;
+    QObject::disconnect(m_vgSceneConnection);
+    m_vgPageStructure = 0;
+    m_vgTemplateStamp = 0;
+    m_vgPage.reset();
+    m_vgWarmupTried = false;
+    m_vgCompositeLogged = false;
+    // every item is Qt's to paint again, the way Qt does it by itself
+    setOptimizationFlag(QGraphicsView::IndirectPainting, false);
+    setCacheMode(QGraphicsView::CacheBackground);
+    viewport()->update();
+}
+
+void QGVPage::vgSceneChanged(const QList<QRectF>& region)
+{
+    if (!m_vgPage)
+        return;
+    m_vgResolve = true;
+    bool any = false;
+    for (auto& v : m_vgViews) {
+        if (v.second.fedVisible < 0 || m_vgState.count(v.first))
+            continue;
+        for (const QRectF& rect : region) {
+            // a rectangle with no area is still somewhere: the bounds
+            // of a horizontal line
+            if (v.second.extent.intersects(rect.adjusted(-1, -1, 1, 1))) {
+                m_vgState.insert(v.first);
+                any = true;
+                break;
+            }
+        }
+    }
+    if (any)
+        viewport()->update();
+}
+
+void QGVPage::drawItems(QPainter* painter, int numItems, QGraphicsItem* items[],
+                        const QStyleOptionGraphicsItem options[])
+{
+    // The layer did not reach the page this time (no device, a frame
+    // that failed, the first paint after the switch): the Qt items are
+    // the page then, all of them.
+    //
+    // PageRendererVgVerify paints them all over the layer as well, which
+    // is how the layer was first looked at: where the two pictures
+    // differ, the page shows both.
+    if (!m_vgDrawn
+        || TechDraw::Preferences::getPreferenceGroup("General")
+               ->GetBool("PageRendererVgVerify", TechDraw::TechDrawParams::defaultPageRendererVgVerify())) {
+        m_vgItemsPainted = numItems;
+        QGraphicsView::drawItems(painter, numItems, items, options);
+        return;
+    }
+
+    // What the layer holds is not painted a second time: the items of
+    // a view it was fed, and the template's picture. The rest is Qt's
+    // as before -- a clip group and what is in it, the fields of the
+    // template, a tracker, a view the layer has not been fed yet.
+    //
+    // A top-level item with nothing of the layer's under it goes to
+    // Qt whole, children, clipping and all. Under one that is the
+    // layer's, an item that is not is painted by itself.
+    const QTransform viewTransform = painter->worldTransform();
+    std::unordered_map<const QGraphicsItem*, bool> mixedTop;
+    std::unordered_map<const QGraphicsItem*, bool> coveredUnder;
+    std::vector<QGraphicsItem*> whole;
+    std::vector<QStyleOptionGraphicsItem> wholeOptions;
+
+    auto underCoveredView = [this, &coveredUnder](const QGraphicsItem* parent) {
+        auto memo = coveredUnder.find(parent);
+        if (memo != coveredUnder.end())
+            return memo->second;
+        bool covered = false;
+        for (const QGraphicsItem* p = parent; p; p = p->parentItem()) {
+            if (dynamic_cast<const QGIView*>(p)) {
+                covered = m_vgCovered.count(p) > 0;
+                break;
+            }
+        }
+        coveredUnder.emplace(parent, covered);
+        return covered;
+    };
+
+    for (int i = 0; i < numItems; ++i) {
+        QGraphicsItem* item = items[i];
+        const QGraphicsItem* top = item->topLevelItem();
+        auto memo = mixedTop.find(top);
+        if (memo == mixedTop.end()) {
+            const bool mixed = m_vgCovered.count(top) > 0
+                || (m_vgTemplateCovered
+                    && dynamic_cast<const QGISVGTemplate*>(top));
+            memo = mixedTop.emplace(top, mixed).first;
+        }
+        if (!memo->second) {
+            whole.push_back(item);
+            wholeOptions.push_back(options[i]);
+            ++m_vgItemsPainted;
+            continue;
+        }
+        bool covered = false;
+        if (m_vgCovered.count(item)) {
+            covered = true;
+        }
+        else if (item == top) {
+            covered = false;  // the template's group
+        }
+        else if (m_vgCovered.count(top)) {
+            covered = underCoveredView(item->parentItem());
+        }
+        else {
+            // under the template: its picture, not its fields
+            covered = item->parentItem() == top
+                && dynamic_cast<const QGraphicsSvgItem*>(item);
+        }
+        if (covered) {
+            ++m_vgItemsCovered;
+            continue;
+        }
+        ++m_vgItemsPainted;
+        painter->save();
+        painter->setWorldTransform(item->deviceTransform(viewTransform));
+        painter->setOpacity(item->effectiveOpacity());
+        item->paint(painter, &options[i], viewport());
+        painter->restore();
+    }
+    if (!whole.empty()) {
+        painter->setWorldTransform(viewTransform);
+        QGraphicsView::drawItems(painter, (int)whole.size(), whole.data(),
+                                 wholeOptions.data());
     }
 }
 
@@ -391,13 +613,25 @@ void QGVPage::drawVgPreview(QPainter* painter)
 
     // The view runs with CacheBackground, which would freeze this
     // layer at its first paint; drop the cache while the preview is
-    // active (queued -- this runs inside a paint event).
-    if (cacheMode() != QGraphicsView::CacheNone) {
+    // active (queued -- this runs inside a paint event). With it, the
+    // view takes the painting of the items into its own hands
+    // (drawItems is only asked with IndirectPainting), and listens to
+    // the scene for what changes in it.
+    if (cacheMode() != QGraphicsView::CacheNone
+        || !(optimizationFlags() & QGraphicsView::IndirectPainting)
+        || !m_vgSceneConnection) {
         QMetaObject::invokeMethod(
             this,
             [this]() {
+                if (!m_vgPage)
+                    return;
                 setCacheMode(QGraphicsView::CacheNone);
                 resetCachedContent();
+                setOptimizationFlag(QGraphicsView::IndirectPainting, true);
+                if (!m_vgSceneConnection && m_scene)
+                    m_vgSceneConnection =
+                        connect(m_scene, &QGraphicsScene::changed, this,
+                                &QGVPage::vgSceneChanged);
                 viewport()->update();
             },
             Qt::QueuedConnection);
@@ -413,10 +647,21 @@ void QGVPage::drawVgPreview(QPainter* painter)
     // common case, an edited view, arrives through signalGuiPaint --
     // fired on the GUI thread when HLR lands, when faces land and on
     // repaint-worthy property changes -- and damages only that view.
+    // A clip group and the views in it are not the layer's: their X/Y
+    // are relative to the group and the layer does not clip. They are
+    // left to Qt whole, so being put into a group or taken out of one
+    // is a change of structure too.
+    auto clipped = [](App::DocumentObject* obj) {
+        if (obj->isDerivedFrom<TechDraw::DrawViewClip>())
+            return true;
+        auto dv = dynamic_cast<TechDraw::DrawView*>(obj);
+        return dv && dv->isInClip();
+    };
     size_t structure = 0;
     for (App::DocumentObject* obj : page->getAllViews()) {
         if (const char* name = obj->getNameInDocument())
-            structure = structure * 31 + std::hash<std::string> {}(name);
+            structure = (structure * 31 + std::hash<std::string> {}(name)) * 2
+                + (clipped(obj) ? 1 : 0);
     }
     if (structure != m_vgPageStructure) {
         m_vgPageStructure = structure;
@@ -424,10 +669,11 @@ void QGVPage::drawVgPreview(QPainter* painter)
         m_vgTemplateStamp = 0;
         m_vgViews.clear();
         m_vgDirty.clear();
+        m_vgState.clear();
         uint32_t layer = 1; // layer 0 is the template's
         for (App::DocumentObject* obj : page->getAllViews()) {
             auto dv = dynamic_cast<TechDraw::DrawView*>(obj);
-            if (dv && dv->getNameInDocument()) {
+            if (dv && dv->getNameInDocument() && !clipped(obj)) {
                 std::string name = dv->getNameInDocument();
                 VgViewTrack& track = m_vgViews[name];
                 track.layer = layer;
@@ -440,13 +686,14 @@ void QGVPage::drawVgPreview(QPainter* painter)
             }
             ++layer;
         }
+        m_vgResolve = true;
     }
     else {
         // X/Y moves purge their touch on the App side and signal
         // nothing -- and a Visibility toggle signals nothing either;
         // catch both by comparing against what was last fed.
         for (auto& v : m_vgViews) {
-            if (m_vgDirty.count(v.first))
+            if (m_vgDirty.count(v.first) || v.second.clipped)
                 continue;
             auto dv = dynamic_cast<TechDraw::DrawView*>(
                 page->getDocument()->getObject(v.first.c_str()));
@@ -455,10 +702,53 @@ void QGVPage::drawVgPreview(QPainter* painter)
             auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
                 Gui::Application::Instance->getViewProvider(dv));
             const int8_t visNow = !vpd || vpd->isShow() ? 1 : 0;
-            if ((float)dv->X.getValue() != v.second.fedX
-                || (float)dv->Y.getValue() != v.second.fedY
+            double pageX = 0.0, pageY = 0.0;
+            PageFeed::pagePosition(dv, pageX, pageY);
+            if ((float)pageX != v.second.fedX
+                || (float)pageY != v.second.fedY
                 || visNow != v.second.fedVisible)
                 m_vgDirty.insert(v.first);
+            else if (v.second.qgiv
+                     && v.second.qgiv->scenePos() != v.second.fedScenePos)
+                // carried along by the view it sits on: what was read
+                // off its Qt items is where they were
+                m_vgState.insert(v.first);
+        }
+    }
+    // The Qt item of each view, looked for when the scene may have a
+    // new one: after a change of structure, and after any change of
+    // the scene while one is missing (not made yet, or gone -- a page
+    // redrawn makes new ones; some views never have one). One pass
+    // over the scene for all of them. A view whose item turns up is
+    // read again: nothing of it was, or what was came from an item
+    // that is gone.
+    if (m_vgResolve && m_scene) {
+        m_vgResolve = false;
+        bool missing = false;
+        for (auto& v : m_vgViews)
+            missing = missing || !v.second.qgiv;
+        if (missing) {
+            std::map<std::string, QGIView*> found;
+            for (QGIView* qv : m_scene->getViews())
+                found.emplace(qv->getViewNameAsString(), qv);
+            for (auto& v : m_vgViews) {
+                if (v.second.qgiv)
+                    continue;
+                auto it = found.find(v.first);
+                if (it == found.end())
+                    continue;
+                v.second.qgiv = it->second;
+                v.second.clipped = false;
+                for (QGraphicsItem* p = it->second->parentItem(); p;
+                     p = p->parentItem()) {
+                    if (dynamic_cast<QGIViewClip*>(p)) {
+                        v.second.clipped = true;
+                        break;
+                    }
+                }
+                if (v.second.fedVisible >= 0)
+                    m_vgState.insert(v.first);
+            }
         }
     }
 
@@ -471,34 +761,63 @@ void QGVPage::drawVgPreview(QPainter* painter)
         dirty.swap(m_vgDirty);
         for (const std::string& name : dirty) {
             auto it = m_vgViews.find(name);
-            if (it == m_vgViews.end())
+            if (it == m_vgViews.end() || it->second.clipped)
                 continue;
             auto dv = dynamic_cast<TechDraw::DrawView*>(
                 page->getDocument()->getObject(name.c_str()));
             if (!dv)
                 continue;
-            QGIView* qgiv = m_scene ? m_scene->findQViewForDocObj(dv)
-                                    : nullptr;
+            QGIView* qgiv = it->second.qgiv;
             if (auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(dv)) {
                 PageFeed::feedViewPart(dvp, *m_vgPage, PageFeed::Style(),
-                                       it->second.layer);
-                if (qgiv)
-                    PageFeed::feedViewDecorations(qgiv, *m_vgPage,
-                                                  it->second.layer);
+                                       it->second.layer, 0.0f);
             }
-            else if (qgiv) {
-                // The annotation tier: the capture converts the QGI
-                // subtree the Qt tier has already laid out by the time
-                // this paint runs.
-                PageFeed::feedViewCapture(qgiv, *m_vgPage,
-                                          it->second.layer);
+            // What is read off the Qt items: all of an annotation (the
+            // capture converts the QGI subtree the Qt tier has already
+            // laid out by the time this paint runs); of a part view,
+            // its decorations and frame and what is preselected or
+            // selected in it.
+            if (qgiv) {
+                PageFeed::feedViewState(qgiv, *m_vgPage, it->second.layer,
+                                        0.0f);
+                it->second.fedScenePos = qgiv->scenePos();
+                it->second.extent = PageFeed::sceneExtent(qgiv);
             }
-            it->second.fedX = (float)dv->X.getValue();
-            it->second.fedY = (float)dv->Y.getValue();
+            m_vgState.erase(name);
+            ++m_vgViewFeeds;
+            double pageX = 0.0, pageY = 0.0;
+            PageFeed::pagePosition(dv, pageX, pageY);
+            it->second.fedX = (float)pageX;
+            it->second.fedY = (float)pageY;
             auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
                 Gui::Application::Instance->getViewProvider(dv));
             it->second.fedVisible = !vpd || vpd->isShow() ? 1 : 0;
         }
+    }
+
+    // The views whose Qt items changed and nothing else: their state.
+    if (!m_vgState.empty()) {
+        std::set<std::string> state;
+        state.swap(m_vgState);
+        for (const std::string& name : state) {
+            auto it = m_vgViews.find(name);
+            if (it == m_vgViews.end() || !it->second.qgiv
+                || it->second.clipped || it->second.fedVisible < 0)
+                continue;
+            QGIView* qgiv = it->second.qgiv;
+            PageFeed::feedViewState(qgiv, *m_vgPage, it->second.layer, 0.0f);
+            it->second.fedScenePos = qgiv->scenePos();
+            it->second.extent = PageFeed::sceneExtent(qgiv);
+            ++m_vgViewFeeds;
+        }
+    }
+
+    // What drawItems leaves unpainted: the Qt items of the views the
+    // layer holds now.
+    m_vgCovered.clear();
+    for (auto& v : m_vgViews) {
+        if (v.second.fedVisible >= 0 && v.second.qgiv)
+            m_vgCovered.insert(v.second.qgiv.data());
     }
 
     // The template: rasterized SVG, re-fed when its content changes
@@ -519,8 +838,9 @@ void QGVPage::drawVgPreview(QPainter* painter)
         }
         if (stamp != m_vgTemplateStamp) {
             m_vgTemplateStamp = stamp;
-            PageFeed::feedTemplate(page, *m_vgPage, band);
+            PageFeed::feedTemplate(page, *m_vgPage, band, /*everyBand*/ true);
         }
+        m_vgTemplateCovered = PageFeed::hasTemplate(*m_vgPage);
     }
 
     // Map the QGraphicsView transform onto the page view: uniform
@@ -539,33 +859,51 @@ void QGVPage::drawVgPreview(QPainter* painter)
     // paint, a Vulkan device, no device at all and warmup refused).
     const bool wantComposite =
         TechDraw::Preferences::getPreferenceGroup("General")
-            ->GetBool("PageRendererVgComposite", true);
+            ->GetBool("PageRendererVgComposite", TechDraw::TechDrawParams::defaultPageRendererVgComposite());
+    // Whether it CAN engage is settled before the viewport is touched.
+    // The backend's device is one per process, so where the session
+    // runs on anything but OpenGL (Direct3D 11 is the Windows default)
+    // the answer is no for good, and the page keeps its raster
+    // viewport and takes the readback path below: a GL viewport would
+    // buy nothing there and costs the Qt items their quality. It used
+    // to be asked the other way round -- GL viewport first, then a
+    // warm-up from inside its first paint -- and on a Direct3D session
+    // that warm-up left the painter without a GL context, which Qt
+    // dereferenced.
+    bool canComposite =
+        wantComposite && Render::RendererFactory::deviceSharesQtGL();
+    if (wantComposite && !canComposite && !m_vgWarmupTried) {
+        // Once per page host -- a refusal will not change.
+        m_vgWarmupTried = true;
+        // Only a session with no device at all is warmed up, on GL,
+        // which is what sharing needs. The main window's own warm-up
+        // surface supplies the format, as it does at startup: the
+        // backend keeps a view keyed by the widget it is handed, and
+        // this viewport does not outlive the page.
+        auto warm = Render::RendererFactory::drawDevice()
+            ? nullptr
+            : Gui::getMainWindow()->findChild<QOpenGLWidget*>(
+                  QStringLiteral("GLSurfaceWarmup"));
+        if (warm && Render::RendererFactory::warmup("bgfx - OpenGL", warm))
+            canComposite = Render::RendererFactory::deviceSharesQtGL();
+    }
     auto glvp = qobject_cast<QOpenGLWidget*>(viewport());
-    if (wantComposite && !glvp) {
-        // Switch the viewport to GL for the next paint; this one is
-        // the old viewport's own paint event, so it cannot be
-        // destroyed from here.
+    if (canComposite != (glvp != nullptr)) {
+        // Switch the viewport for the next paint -- to GL, or back
+        // when the composite was switched off; this one is the old
+        // viewport's own paint event, so it cannot be destroyed from
+        // here.
         QMetaObject::invokeMethod(
             this,
-            [this]() {
-                if (!qobject_cast<QOpenGLWidget*>(viewport())) {
-                    setRenderer(OpenGL);
-                    setCacheMode(QGraphicsView::CacheNone);
-                    viewport()->update();
-                }
+            [this, canComposite]() {
+                setVgViewport(canComposite);
+                setCacheMode(QGraphicsView::CacheNone);
+                viewport()->update();
             },
             Qt::QueuedConnection);
     }
-    if (wantComposite && glvp
+    if (canComposite && glvp
         && painter->paintEngine()->type() == QPaintEngine::OpenGL2) {
-        if (!Render::RendererFactory::deviceSharesQtGL()
-            && !m_vgWarmupTried) {
-            // Bring the device up exactly as the first 3D view would;
-            // the desktop bgfx backend is GL, which is what sharing
-            // needs. Once per page host -- a refusal will not change.
-            m_vgWarmupTried = true;
-            Render::RendererFactory::warmup("bgfx - OpenGL", glvp);
-        }
         if (Render::RendererFactory::deviceSharesQtGL()) {
             const qreal dpr = glvp->devicePixelRatioF();
             Render::Page2D::View pv = view;
@@ -609,6 +947,7 @@ void QGVPage::drawVgPreview(QPainter* painter)
                     QOpenGLTextureBlitter::OriginBottomLeft);
                 m_vgBlitter->release();
                 f->glDisable(GL_BLEND);
+                m_vgDrawn = true;
             }
             painter->endNativePainting();
             if (tex && !m_vgCompositeLogged) {
@@ -624,19 +963,32 @@ void QGVPage::drawVgPreview(QPainter* painter)
         }
     }
 
+    // The readback path: what a session whose device is not OpenGL
+    // gets on every paint. The same layer the compositor blits -- device
+    // pixels, transparent where the page draws nothing, so the sheet
+    // and the backdrop painted above stay.
+    const qreal dpr = viewport()->devicePixelRatioF();
+    view.zoom *= (float)dpr;
+    view.panX *= (float)dpr;
+    view.panY *= (float)dpr;
+    view.devicePixelRatio = (float)dpr;
     m_vgPage->setView(view);
-    const int width = viewport()->width();
-    const int height = viewport()->height();
+    const int width = (int)std::lround(viewport()->width() * dpr);
+    const int height = (int)std::lround(viewport()->height() * dpr);
     std::vector<uint8_t> rgba;
-    if (!m_vgPage->renderOffscreen((uint16_t)width, (uint16_t)height, rgba))
+    if (!m_vgPage->renderOffscreen((uint16_t)width, (uint16_t)height, rgba,
+                                   true)) {
         return;
+    }
 
     QImage image(rgba.data(), width, height, width * 4,
-                 QImage::Format_RGBA8888);
+                 QImage::Format_RGBA8888_Premultiplied);
+    image.setDevicePixelRatio(dpr);
     painter->save();
     painter->resetTransform();
     painter->drawImage(0, 0, image);
     painter->restore();
+    m_vgDrawn = true;
 }
 
 void QGVPage::setRenderer(RendererType type)
@@ -794,7 +1146,7 @@ TechDraw::DrawPage* QGVPage::getDrawPage() { return m_vpPage->getDrawPage(); }
 QColor QGVPage::getBackgroundColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Background", 0x707070FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Background", TechDraw::TechDrawParams::defaultBackground()));
     return fcColor.asValue<QColor>();
 }
 
@@ -914,7 +1266,7 @@ std::string QGVPage::getNavStyleParameter()
     ParameterGrp::handle hGrp =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     std::string model =
-        hGrp->GetASCII("NavigationStyle", NavigationStyle::getClassTypeId().getName());
+        hGrp->GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
     return model;
 }
 

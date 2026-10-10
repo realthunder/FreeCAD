@@ -118,13 +118,23 @@ LinkParamsP *instance() {
 // Auto generated code (Tools/params_utils.py:352)
 static const App::ParamRegistry::Registrar _LinkParamsRegistrar({
     App::ParamInfo("App", "LinkParams", "User parameter:BaseApp/Preferences/Link", "HideScaleVector", "HideScaleVector", App::ParamInfo::Bool, true)
-        .setTitle("Hide Scale Vector"),
+        .setTitle("Hide Scale Vector")
+        .setDoc("Hide the per-axis ScaleVector property of links in the property\n"
+"view, leaving the single Scale value. Applies to links created\n"
+"afterwards."),
     App::ParamInfo("App", "LinkParams", "User parameter:BaseApp/Preferences/Link", "CreateInPlace", "CreateInPlace", App::ParamInfo::Bool, true)
-        .setTitle("Create In Place"),
+        .setTitle("Create In Place")
+        .setDoc("Place a new link where the selected object appears in the 3D view,\n"
+"counting the placements of its parents. When off the link is left\n"
+"with no placement of its own."),
     App::ParamInfo("App", "LinkParams", "User parameter:BaseApp/Preferences/Link", "CreateInContainer", "CreateInContainer", App::ParamInfo::Bool, true)
-        .setTitle("Create In Container"),
+        .setTitle("Create In Container")
+        .setDoc("Create new links inside the active container, such as the active\n"
+"part, instead of at the top level of the document."),
     App::ParamInfo("App", "LinkParams", "User parameter:BaseApp/Preferences/Link", "ActiveContainerKey", "ActiveContainerKey", App::ParamInfo::String, "")
-        .setTitle("Active Container Key"),
+        .setTitle("Active Container Key")
+        .setDoc("Name of the active object slot searched for the container that new\n"
+"links are created in. Empty uses the active part."),
     App::ParamInfo("App", "LinkParams", "User parameter:BaseApp/Preferences/Link", "CopyOnChangeApplyToAll", "CopyOnChangeApplyToAll", App::ParamInfo::Bool, true)
         .setTitle("Copy On Change Apply To All")
         .setDoc("Stores the last user choice of whether to apply CopyOnChange setup to all link\n"
@@ -143,7 +153,10 @@ ParameterGrp::handle LinkParams::getHandle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *LinkParams::docHideScaleVector() {
-    return "";
+    return QT_TRANSLATE_NOOP("LinkParams",
+"Hide the per-axis ScaleVector property of links in the property\n"
+"view, leaving the single Scale value. Applies to links created\n"
+"afterwards.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -170,7 +183,10 @@ void LinkParams::removeHideScaleVector() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *LinkParams::docCreateInPlace() {
-    return "";
+    return QT_TRANSLATE_NOOP("LinkParams",
+"Place a new link where the selected object appears in the 3D view,\n"
+"counting the placements of its parents. When off the link is left\n"
+"with no placement of its own.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -197,7 +213,9 @@ void LinkParams::removeCreateInPlace() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *LinkParams::docCreateInContainer() {
-    return "";
+    return QT_TRANSLATE_NOOP("LinkParams",
+"Create new links inside the active container, such as the active\n"
+"part, instead of at the top level of the document.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -224,7 +242,9 @@ void LinkParams::removeCreateInContainer() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *LinkParams::docActiveContainerKey() {
-    return "";
+    return QT_TRANSLATE_NOOP("LinkParams",
+"Name of the active object slot searched for the container that new\n"
+"links are created in. Empty uses the active part.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

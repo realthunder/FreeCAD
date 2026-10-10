@@ -63,6 +63,7 @@ SET(Draft_tests
     drafttests/test_dwg.py
     drafttests/test_dxf.py
     drafttests/test_grid_settings.py
+    drafttests/test_params_registry.py
     drafttests/test_import.py
     drafttests/test_import_gui.py
     drafttests/test_import_tools.py
@@ -85,6 +86,7 @@ SET(Draft_utilities
     draftutils/init_tools.py
     draftutils/messages.py
     draftutils/params.py
+    draftutils/params_registry.py
     draftutils/todo.py
     draftutils/translate.py
     draftutils/units.py

@@ -24,6 +24,10 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
@@ -36,6 +40,7 @@
 #include "DocumentPy.h"
 #include "DocumentObserverPython.h"
 #include "DocumentObjectPy.h"
+#include "ParamRegistry.h"
 
 
 //using Base::GetConsole;
@@ -47,6 +52,8 @@ using namespace App;
 // Python stuff
 
 static PyObject *getProgressPy(PyObject *self, PyObject *args);
+static PyObject *registerParamPy(PyObject *self, PyObject *args, PyObject *kwd);
+static PyObject *listParamsPy(PyObject *self, PyObject *args);
 
 // Application methods structure
 PyMethodDef Application::Methods[] = {
@@ -200,6 +207,37 @@ PyMethodDef Application::Methods[] = {
      "  roots   -- number of root sequences running in parallel\n"
      "  lead    -- index into sequences of the root the bar names, or None\n"
      "An empty 'sequences' list means nothing is running."},
+    {"registerParam", reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( registerParamPy )), METH_VARARGS|METH_KEYWORDS,
+     "registerParam(path, entry, type, default, title='', doc='', name='',\n"
+     "              namespace='', context='', proxy='', onChange=False,\n"
+     "              minimum=0.0, maximum=0.0, step=0.0, decimals=0,\n"
+     "              transparency=False, items=None, translateItems=True) -> bool\n"
+     "Describe a setting to the registry the omni search lists settings from,\n"
+     "for a setting that no generated C++ class describes. The modules written\n"
+     "in Python do this through a definition file, see freecad.params.\n"
+     "  path    -- the group, 'User parameter:BaseApp/Preferences/Mod/Foo'\n"
+     "  entry   -- the name the value is stored under\n"
+     "  type    -- 'Bool', 'Int', 'UInt', 'Hex' (a packed colour), 'Float'\n"
+     "             or 'String'\n"
+     "  default -- what a reader takes while nothing is stored: a bool, an\n"
+     "             int, a float or a str, by type\n"
+     "  title, doc -- the short name and the documentation shown\n"
+     "  name, namespace, context -- the name it is listed under (the entry\n"
+     "             when empty), the module, and the translation context\n"
+     "  proxy   -- the editor: 'ComboBox' with items, 'SpinBox' with\n"
+     "             minimum, maximum, step and decimals, 'Color' with\n"
+     "             transparency, 'File', 'LinePattern', 'ShortcutEdit'\n"
+     "  items   -- of a ComboBox: each a text, or (text, tooltip), or\n"
+     "             (text, tooltip, data) when the stored value is the data\n"
+     "             string instead of the index\n"
+     "Registering changes nothing stored. False when the path and entry are\n"
+     "described already: the first description stands."},
+    {"listParams", (PyCFunction) listParamsPy, METH_VARARGS,
+     "listParams(query='') -> list of dict\n"
+     "The settings the registry describes, those of the generated C++ classes\n"
+     "of the libraries loaded so far and those registered from Python, in the\n"
+     "order they were registered. With a query, those whose path, name, title\n"
+     "or documentation contain every word of it, whatever the case."},
    {nullptr, nullptr, 0, nullptr} /* Sentinel */
 };
 
@@ -742,9 +780,14 @@ PyObject* Application::sGetUserMacroPath(PyObject * /*self*/, PyObject *args)
 
     std::string macroDir = Application::getUserMacroDir();
     if (Base::asBoolean(actual)) {
-        macroDir = App::GetApplication().
+        // The setting is Gui's MacroParams, which App cannot ask. A path
+        // that is stored empty is no path, as it is there.
+        std::string path = App::GetApplication().
             GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")
             ->GetASCII("MacroPath",macroDir.c_str());
+        if (!path.empty()) {
+            macroDir = path;
+        }
     }
 
     Py::String user_macro_dir(macroDir,"utf-8");
@@ -1081,6 +1124,216 @@ static PyObject *getProgressPy(PyObject * /*self*/, PyObject *args)
         else
             result.setItem("lead", Py::None());
         return Py::new_reference_to(result);
+    } PY_CATCH
+}
+
+// The way into App::ParamRegistry from Python: a module written in Python
+// has no generated class whose registrar would describe its settings.
+// File-local for the reason getProgressPy is.
+static const std::array<const char *, 6> paramTypeNames {
+    "Bool", "Int", "UInt", "Hex", "Float", "String"
+};
+
+// The default as text ParamRegistry::add() parses, from the Python value a
+// reader would pass as its own default. An empty result with an exception
+// set when the value is not of the type.
+static bool paramDefaultFromPy(ParamInfo::Type type, PyObject *value, std::string &res)
+{
+    switch (type) {
+    case ParamInfo::Bool:
+        if (!PyBool_Check(value))
+            break;
+        res = value == Py_True ? "true" : "false";
+        return true;
+    case ParamInfo::Int:
+    case ParamInfo::UInt:
+    case ParamInfo::Hex: {
+        if (!PyLong_Check(value) || PyBool_Check(value))
+            break;
+        Py::String text(PyObject_Str(value), true);
+        res = text.as_std_string("utf-8");
+        if (type != ParamInfo::Int && res[0] == '-') {
+            PyErr_SetString(PyExc_ValueError, "the default of an unsigned setting is negative");
+            return false;
+        }
+        return true;
+    }
+    case ParamInfo::Float: {
+        if (!PyFloat_Check(value) && (!PyLong_Check(value) || PyBool_Check(value)))
+            break;
+        double v = PyFloat_AsDouble(value);
+        if (v == -1.0 && PyErr_Occurred())
+            return false;
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%.17g", v);
+        res = buf;
+        return true;
+    }
+    case ParamInfo::String:
+        if (!PyUnicode_Check(value))
+            break;
+        res = Py::String(value).as_std_string("utf-8");
+        return true;
+    }
+    PyErr_Format(PyExc_TypeError, "the default of a %s setting cannot be a %s",
+                 paramTypeNames[type], Py_TYPE(value)->tp_name);
+    return false;
+}
+
+static PyObject *registerParamPy(PyObject * /*self*/, PyObject *args, PyObject *kwd)
+{
+    const char *path = nullptr;
+    const char *entry = nullptr;
+    const char *type = nullptr;
+    PyObject *def = nullptr;
+    const char *title = "";
+    const char *doc = "";
+    const char *name = "";
+    const char *nameSpace = "";
+    const char *context = "";
+    const char *proxy = "";
+    PyObject *onChange = Py_False;
+    double minimum = 0.0;
+    double maximum = 0.0;
+    double step = 0.0;
+    int decimals = 0;
+    PyObject *transparency = Py_False;
+    PyObject *items = Py_None;
+    PyObject *translateItems = Py_True;
+    static const std::array<const char *, 19> kwlist {
+        "path", "entry", "type", "default", "title", "doc", "name", "namespace",
+        "context", "proxy", "onChange", "minimum", "maximum", "step", "decimals",
+        "transparency", "items", "translateItems", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwd, "sssO|ssssssO!dddiO!OO!", kwlist,
+                &path, &entry, &type, &def, &title, &doc, &name, &nameSpace,
+                &context, &proxy, &PyBool_Type, &onChange, &minimum, &maximum, &step,
+                &decimals, &PyBool_Type, &transparency, &items,
+                &PyBool_Type, &translateItems)) {
+        return nullptr;
+    }
+
+    PY_TRY {
+        ParamSpec spec;
+        auto it = std::find_if(paramTypeNames.begin(), paramTypeNames.end(),
+                               [type](const char *n) { return std::strcmp(n, type) == 0; });
+        if (it == paramTypeNames.end()) {
+            PyErr_Format(PyExc_ValueError, "unknown setting type '%s'", type);
+            return nullptr;
+        }
+        spec.type = static_cast<ParamInfo::Type>(it - paramTypeNames.begin());
+        if (!paramDefaultFromPy(spec.type, def, spec.defaultValue))
+            return nullptr;
+
+        // The registry reads a value through the group of the path, and so
+        // does every list of settings: a path that names no parameter set
+        // would fail there, for all of them, not here.
+        spec.path = path;
+        spec.entry = entry;
+        auto colon = spec.path.find(':');
+        if (spec.entry.empty() || colon == std::string::npos || colon + 1 == spec.path.size()
+            || !GetApplication().GetParameterSet(spec.path.substr(0, colon).c_str())) {
+            PyErr_Format(PyExc_ValueError,
+                         "'%s', '%s' is not a group of a parameter set and an entry", path, entry);
+            return nullptr;
+        }
+
+        spec.title = title;
+        spec.doc = doc;
+        spec.name = name;
+        spec.nameSpace = nameSpace;
+        spec.className = context;
+        spec.proxy = proxy;
+        spec.onChange = PyObject_IsTrue(onChange) != 0;
+        spec.minimum = minimum;
+        spec.maximum = maximum;
+        spec.step = step;
+        spec.decimals = decimals;
+        spec.transparency = PyObject_IsTrue(transparency) != 0;
+        spec.translateItems = PyObject_IsTrue(translateItems) != 0;
+
+        if (items != Py_None) {
+            std::size_t withData = 0;
+            Py::Sequence seq(items);
+            for (Py::Sequence::iterator i = seq.begin(); i != seq.end(); ++i) {
+                Py::Object item(*i);
+                ParamSpec::Item res;
+                if (item.isString()) {
+                    res.text = Py::String(item).as_std_string("utf-8");
+                }
+                else {
+                    Py::Sequence parts(item);
+                    if (parts.size() < 1 || parts.size() > 3) {
+                        PyErr_SetString(PyExc_ValueError,
+                                        "an item is a text, (text, tooltip) or (text, tooltip, data)");
+                        return nullptr;
+                    }
+                    res.text = Py::String(parts[0]).as_std_string("utf-8");
+                    Py::Object tooltip = parts.size() > 1 ? Py::Object(parts[1]) : Py::None();
+                    Py::Object data = parts.size() > 2 ? Py::Object(parts[2]) : Py::None();
+                    if (!tooltip.isNone())
+                        res.tooltip = Py::String(tooltip).as_std_string("utf-8");
+                    if (!data.isNone()) {
+                        res.data = Py::String(data).as_std_string("utf-8");
+                        ++withData;
+                    }
+                }
+                spec.items.push_back(std::move(res));
+            }
+            if (withData && withData != spec.items.size()) {
+                PyErr_SetString(PyExc_ValueError,
+                                "either every item carries the value it stores, or none does");
+                return nullptr;
+            }
+            spec.comboDataIsString = withData != 0;
+        }
+
+        return Py::new_reference_to(Py::Boolean(ParamRegistry::instance().add(spec) != nullptr));
+    } PY_CATCH
+}
+
+static PyObject *listParamsPy(PyObject * /*self*/, PyObject *args)
+{
+    const char *query = "";
+    if (!PyArg_ParseTuple(args, "|s", &query))
+        return nullptr;
+    PY_TRY {
+        Py::List res;
+        auto &reg = ParamRegistry::instance();
+        for (const ParamInfo *info : reg.search(ParamRegistry::splitKeywords(query))) {
+            Py::Dict row;
+            row.setItem("path", Py::String(info->path));
+            row.setItem("entry", Py::String(info->entry));
+            row.setItem("displayPath", Py::String(info->displayPath()));
+            row.setItem("name", Py::String(info->name));
+            row.setItem("namespace", Py::String(info->nameSpace));
+            row.setItem("context", Py::String(info->className));
+            row.setItem("type", Py::String(paramTypeNames[info->type]));
+            row.setItem("default", Py::String(info->defaultValue));
+            row.setItem("title", Py::String(info->title));
+            row.setItem("doc", Py::String(info->doc));
+            row.setItem("onChange", Py::Boolean(info->onChange));
+            row.setItem("proxy", Py::String(info->proxy));
+            row.setItem("minimum", Py::Float(info->minimum));
+            row.setItem("maximum", Py::Float(info->maximum));
+            row.setItem("step", Py::Float(info->step));
+            row.setItem("decimals", Py::Long(info->decimals));
+            row.setItem("transparency", Py::Boolean(info->transparency));
+            row.setItem("translateItems", Py::Boolean(info->translateItems));
+            Py::List items;
+            for (const auto &item : info->items) {
+                Py::Tuple entry(3);
+                entry.setItem(0, Py::String(item.text));
+                entry.setItem(1, Py::String(item.tooltip));
+                if (info->comboDataIsString && item.data)
+                    entry.setItem(2, Py::String(item.data));
+                else
+                    entry.setItem(2, Py::None());
+                items.append(entry);
+            }
+            row.setItem("items", items);
+            res.append(row);
+        }
+        return Py::new_reference_to(res);
     } PY_CATCH
 }
 

@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <cmath>
 # include <QPainter>
@@ -47,7 +49,7 @@ PATPathMaker::PATPathMaker(QGraphicsItem* parent, double lineWidth, double fillS
     m_fillScale(fillScale),
     m_lineWidth(lineWidth)
 {
-    m_maxSeg = Preferences::getPreferenceGroup("PAT")->GetInt("MaxSeg", 10000l);
+    m_maxSeg = Preferences::getPreferenceGroup("PAT")->GetInt("MaxSeg", TechDraw::TechDrawParams::defaultMaxSeg());
 }
 
 

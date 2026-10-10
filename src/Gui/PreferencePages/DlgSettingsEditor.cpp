@@ -32,6 +32,7 @@
 
 #include "DlgSettingsEditor.h"
 #include "ui_DlgSettingsEditor.h"
+#include "EditorParams.h"
 
 
 using namespace Gui;
@@ -42,6 +43,7 @@ namespace Dialog {
 struct DlgSettingsEditorP
 {
     QVector<QPair<QString, unsigned int> > colormap; // Color map
+    QVector<unsigned int> defaults; // what each colour is while not stored
 };
 } // namespace Dialog
 } // namespace Gui
@@ -104,14 +106,6 @@ DlgSettingsEditor::DlgSettingsEditor( QWidget* parent )
     d->colormap.push_back(QPair<QString, unsigned int>
         (QStringLiteral(QT_TR_NOOP("Text")), lText));
 
-    unsigned int lBookmarks = App::Color::asPackedRGB<QColor>(QColor(Qt::cyan));
-    d->colormap.push_back(QPair<QString, unsigned int>
-        (QStringLiteral(QT_TR_NOOP("Bookmark")), lBookmarks));
-
-    unsigned int lBreakpnts = App::Color::asPackedRGB<QColor>(QColor(Qt::red));
-    d->colormap.push_back(QPair<QString, unsigned int>
-        (QStringLiteral(QT_TR_NOOP("Breakpoint")), lBreakpnts));
-
     unsigned int lKeywords = App::Color::asPackedRGB<QColor>(QColor(Qt::blue));
     d->colormap.push_back(QPair<QString, unsigned int>
         (QStringLiteral(QT_TR_NOOP("Keyword")), lKeywords));
@@ -131,10 +125,6 @@ DlgSettingsEditor::DlgSettingsEditor( QWidget* parent )
     unsigned int lStrings = App::Color::asPackedRGB<QColor>(QColor(Qt::red));
     d->colormap.push_back(QPair<QString, unsigned int>
         (QStringLiteral(QT_TR_NOOP("String")), lStrings));
-
-    unsigned int lCharacter = App::Color::asPackedRGB<QColor>(QColor(Qt::red));
-    d->colormap.push_back(QPair<QString, unsigned int>
-        (QStringLiteral(QT_TR_NOOP("Character")), lCharacter));
 
     unsigned int lClass = App::Color::asPackedRGB<QColor>(QColor(255, 170, 0));
     d->colormap.push_back(QPair<QString, unsigned int>
@@ -164,6 +154,12 @@ DlgSettingsEditor::DlgSettingsEditor( QWidget* parent )
     unsigned int lBackground = (col.red() << 24) | (col.green() << 16) | (col.blue() << 8);
     d->colormap.push_back(QPair<QString, unsigned int>
         (QStringLiteral(QT_TR_NOOP("Background")), lBackground));
+
+    // Bookmark, Breakpoint and Character used to be listed too: no editor
+    // has such a colour, the highlighter dropped them.
+    for (const auto& entry : d->colormap) {
+        d->defaults.push_back(entry.second);
+    }
 
     QStringList labels; labels << tr("Items");
     ui->displayItems->setHeaderLabels(labels);
@@ -246,21 +242,33 @@ void DlgSettingsEditor::saveSettings()
 {
     ui->EnableLineNumber->onSave();
     ui->EnableBlockCursor->onSave();
-    ui->EnableFolding->onSave();
     ui->tabSize->onSave();
     ui->indentSize->onSave();
-    ui->radioTabs->onSave();
+    // One key says tabs or spaces: Spaces. "Keep tabs" used to store a key
+    // of its own, Tabs, and the hidden folding box EnableFolding; nothing
+    // has ever read either.
     ui->radioSpaces->onSave();
 
     // Saves the color map
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("Editor");
-    for (QVector<QPair<QString, unsigned int> >::ConstIterator it = d->colormap.cbegin(); it != d->colormap.cend(); ++it) {
-        auto col = static_cast<unsigned long>((*it).second);
-        hGrp->SetUnsigned((*it).first.toUtf8(), col);
+    // A colour is stored when it is no longer the one in effect. Storing
+    // all of them at every OK fixed the text colour, which is the
+    // palette's while it is not stored, to that of the theme of the day.
+    for (int i = 0; i < d->colormap.size(); ++i) {
+        const QByteArray key = d->colormap[i].first.toUtf8();
+        auto col = static_cast<unsigned long>(d->colormap[i].second);
+        if (col != hGrp->GetUnsigned(key, d->defaults[i])) {
+            hGrp->SetUnsigned(key, col);
+        }
     }
 
     hGrp->SetInt( "FontSize", ui->fontSize->value() );
-    hGrp->SetASCII( "Font", ui->fontFamily->currentText().toUtf8() );
+    // The family is stored once one is chosen, not at every OK.
+    const QString family = ui->fontFamily->currentText();
+    if (!hGrp->GetASCII("Font", "").empty()
+        || family != editorFont(EditorParams::defaultFont(), 10).family()) {
+        hGrp->SetASCII("Font", family.toUtf8());
+    }
 
     setEditorTabWidth(ui->tabSize->value());
 }
@@ -269,11 +277,10 @@ void DlgSettingsEditor::loadSettings()
 {
     ui->EnableLineNumber->onRestore();
     ui->EnableBlockCursor->onRestore();
-    ui->EnableFolding->onRestore();
     ui->tabSize->onRestore();
     ui->indentSize->onRestore();
-    ui->radioTabs->onRestore();
     ui->radioSpaces->onRestore();
+    ui->radioTabs->setChecked(!ui->radioSpaces->isChecked());
 
     setEditorTabWidth(ui->tabSize->value());
 
@@ -311,10 +318,14 @@ void DlgSettingsEditor::loadSettings()
 
     // fill up font styles
     //
-    ui->fontSize->setValue(10);
-    ui->fontSize->setValue(hGrp->GetInt("FontSize", ui->fontSize->value()));
+    ui->fontSize->setValue(static_cast<int>(EditorParams::getFontSize()));
 
-    QByteArray defaultMonospaceFont = getMonospaceFont().family().toUtf8();
+    // The font shown for a setting that is not stored is the one the
+    // editors use for it, EditorParams' default. It used to be looked for
+    // under a generic family name no list of fonts has, so the box showed
+    // its first entry and OK stored that font.
+    QByteArray defaultMonospaceFont
+        = editorFont(EditorParams::defaultFont(), 10).family().toUtf8();
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QStringList familyNames = QFontDatabase().families(QFontDatabase::Any);
@@ -337,9 +348,14 @@ void DlgSettingsEditor::loadSettings()
         }
     }
 #endif
+    // The font in use is in the list whatever the font database says of it.
+    const QString currentFamily = QString::fromUtf8(hGrp->GetASCII("Font", defaultMonospaceFont).c_str());
+    if (!fixedFamilyNames.contains(currentFamily)) {
+        fixedFamilyNames.prepend(currentFamily);
+    }
+    ui->fontFamily->clear();
     ui->fontFamily->addItems(fixedFamilyNames);
-    int index = fixedFamilyNames.indexOf(
-        QString::fromUtf8(hGrp->GetASCII("Font", defaultMonospaceFont).c_str()));
+    int index = fixedFamilyNames.indexOf(currentFamily);
     if (index < 0)
         index = 0;
     ui->fontFamily->setCurrentIndex(index);

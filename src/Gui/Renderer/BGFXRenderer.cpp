@@ -758,6 +758,16 @@ bool BGFXRenderer::animating() const
     return pimpl->animatedFrame && pimpl->localAudience();
 }
 
+void BGFXRenderer::setFramePipelined(bool on)
+{
+    pimpl->framePipelined = on;
+}
+
+bool BGFXRenderer::frameTrails() const
+{
+    return pimpl->frameTrailing;
+}
+
 bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
                             float &xmax, float &ymax, float &zmax)
 {
@@ -1572,6 +1582,23 @@ bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
     auto it = _BGFXLib.typeMap.find(type);
     if (it == _BGFXLib.typeMap.end() || !widget)
         return false;
+    // Whatever GL context the caller holds is the caller's again on
+    // every way out. prepare() and the frame below make the device's
+    // own context current and then release it, which is nothing at
+    // startup, where no context is current -- and a null current
+    // context for a host that warms up from inside its paint: a
+    // TechDraw page did, and the QPainter it was drawing with then
+    // dereferenced it (docs/TechDrawPortAndSection.md sec 36).
+    struct RestoreContext {
+        QOpenGLContext *context = QOpenGLContext::currentContext();
+        QSurface *surface = context ? context->surface() : nullptr;
+        ~RestoreContext()
+        {
+            if (context && surface
+                    && QOpenGLContext::currentContext() != context)
+                context->makeCurrent(surface);
+        }
+    } restoreContext;
     QElapsedTimer clock;
     clock.start();
     // Everything one-time lives in prepare(): the GL context bgfx draws

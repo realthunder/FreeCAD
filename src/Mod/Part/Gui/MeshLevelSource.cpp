@@ -1142,7 +1142,7 @@ int PartGui::coarseTessellationLevel(App::Document *doc)
     // false have neither, and a coarse build there would simply stay
     // coarse forever.
     if (!sceneServed(doc)) {
-        if (Gui::ViewParams::getRenderCache() != 3)
+        if (Gui::RenderParams::renderCache() != 3)
             return -1;
         auto *view3d = qobject_cast<Gui::View3DInventor *>(
             Gui::Application::Instance->activeView());

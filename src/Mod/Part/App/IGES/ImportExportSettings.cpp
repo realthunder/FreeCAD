@@ -26,6 +26,7 @@
 #endif
 
 #include "ImportExportSettings.h"
+#include <Mod/Part/App/PartParams.h>
 #include <App/Application.h>
 
 
@@ -39,7 +40,7 @@ ImportExportSettings::ImportExportSettings()
 
 bool ImportExportSettings::getSkipBlankEntities() const
 {
-    return pGroup->GetBool("SkipBlankEntities", true);
+    return pGroup->GetBool("SkipBlankEntities", PartParams::defaultSkipBlankEntities());
 }
 
 void ImportExportSettings::setSkipBlankEntities(bool on) const
@@ -49,8 +50,7 @@ void ImportExportSettings::setSkipBlankEntities(bool on) const
 
 bool ImportExportSettings::getBRepMode() const
 {
-    int value = Part::Interface::writeIgesBrepMode();
-    return pGroup->GetBool("BrepMode", value > 0);
+    return pGroup->GetBool("BrepMode", PartParams::defaultIgesBrepMode());
 }
 
 void ImportExportSettings::setBRepMode(bool on) const
@@ -61,7 +61,7 @@ void ImportExportSettings::setBRepMode(bool on) const
 
 Interface::Unit ImportExportSettings::getUnit() const
 {
-    return static_cast<Interface::Unit>(pGroup->GetInt("Unit", 0));
+    return static_cast<Interface::Unit>(pGroup->GetInt("Unit", PartParams::defaultIgesUnit()));
 }
 
 void ImportExportSettings::setUnit(Interface::Unit unit)
@@ -72,7 +72,7 @@ void ImportExportSettings::setUnit(Interface::Unit unit)
 
 std::string ImportExportSettings::getCompany() const
 {
-    return pGroup->GetASCII("Company", Part::Interface::writeIgesHeaderCompany());
+    return pGroup->GetASCII("Company", PartParams::defaultIgesCompany().c_str());
 }
 
 void ImportExportSettings::setCompany(const char* name)
@@ -83,7 +83,7 @@ void ImportExportSettings::setCompany(const char* name)
 
 std::string ImportExportSettings::getAuthor() const
 {
-    return pGroup->GetASCII("Author", Part::Interface::writeIgesHeaderAuthor());
+    return pGroup->GetASCII("Author", PartParams::defaultIgesAuthor().c_str());
 }
 
 void ImportExportSettings::setAuthor(const char* name)

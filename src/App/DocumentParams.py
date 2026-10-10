@@ -37,25 +37,63 @@ ClassDoc = 'Convenient class to obtain App::Document related parameters'
 Signal = True
 
 Params = [
-    ParamString('prefAuthor', ""),
-    ParamBool('prefSetAuthorOnSave', False),
-    ParamString('prefCompany', ""),
-    ParamInt('prefLicenseType', 0),
-    ParamString('prefLicenseUrl', ""),
-    ParamInt('CompressionLevel', 3),
-    ParamBool('CheckExtension', True),
-    ParamInt('ForceXML', 3),
-    ParamBool('SplitXML', True),
-    ParamBool('PreferBinary', False),
+    ParamString('prefAuthor', "",
+        title = 'Author name',
+        doc = "Author name given to new documents as their creator. Also written as\n"
+              "the last modifier on save when that option is on. Leave empty to stay\n"
+              "anonymous."),
+    ParamBool('prefSetAuthorOnSave', False,
+        title = 'Set author on save',
+        doc = "Write the author name from the preferences into a document's 'Last\n"
+              "modified by' field each time it is saved."),
+    ParamString('prefCompany', "",
+        title = 'Company',
+        doc = "Company name given to new documents."),
+    ParamInt('prefLicenseType', 0,
+        title = 'Default license',
+        doc = "License given to new documents, as a position in the license list.\n"
+              "0 is All rights reserved, 1 to 12 the Creative Commons licenses,\n"
+              "13 Public Domain, 14 FreeArt, 15 to 17 the CERN hardware licences;\n"
+              "18 (Other) leaves the license empty."),
+    ParamString('prefLicenseUrl', "",
+        title = 'License URL',
+        doc = "Address of the license text given to new documents. Empty uses the\n"
+              "address that belongs to the license chosen from the list."),
+    ParamInt('CompressionLevel', 7,
+        doc = "How hard a document file is compressed when saved, from 0 (none,\n"
+              "fastest) to 9 (smallest, slowest). Has no effect on a document saved\n"
+              "as a directory."),
+    ParamBool('CheckExtension', True,
+        doc = "Add .FCStd to the file name when a document is saved under a name\n"
+              "without that extension, so that a save cannot overwrite an unrelated\n"
+              "file by accident."),
+    ParamInt('ForceXML', 3,
+        title = 'Force XML',
+        doc = "How much object data new documents keep inside the XML when saved\n"
+              "as a directory. 0 none, 1 lists, 2 also meshes, points and text\n"
+              "shapes, 3 also binary shapes, 4 and up also included files."),
+    ParamBool('SplitXML', True,
+        title = 'Split XML',
+        doc = "Give each object an XML file of its own in new documents saved as a\n"
+              "directory, instead of one file for the whole document. Has no effect\n"
+              "on a document saved as a single file."),
+    ParamBool('PreferBinary', False,
+        doc = "Save the object data of new documents in binary instead of text\n"
+              "form. Files get smaller but compare poorly under version control.\n"
+              "Each document carries its own copy of this choice."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Largest list property, in bytes of values, still written inline
+    # in the XML instead of taking an archive entry of its own. An
+    # entry costs around 190 bytes of zip headers before any content,
+    # and one more thing for the reader to open, which a one-element
+    # colour list has no way of paying back. Written in the same form
+    # the reader has always used for lists that cannot be streamed, so
+    # the file stays readable by FreeCAD versions without this option.
+    # Set to 0 to give every list an entry, as before.
     ParamInt('InlineListSize', 64,
-        doc='Largest list property, in bytes of values, still written inline\n'
-            'in the XML instead of taking an archive entry of its own. An\n'
-            'entry costs around 190 bytes of zip headers before any content,\n'
-            'and one more thing for the reader to open, which a one-element\n'
-            'colour list has no way of paying back. Written in the same form\n'
-            'the reader has always used for lists that cannot be streamed, so\n'
-            'the file stays readable by FreeCAD versions without this option.\n'
-            'Set to 0 to give every list an entry, as before.'),
+        doc="Largest list property, in bytes, still written inside the document\n"
+            "XML instead of as a separate entry of the file. Small lists are\n"
+            "cheaper inline. 0 gives every list its own entry."),
     ParamBool('ArchiveRandomAccess', True,
         doc='Restore a document archive through its zip central directory\n'
             'instead of one forward-only stream. Entries are then opened\n'
@@ -70,104 +108,184 @@ Params = [
             'ArchiveRandomAccess. Turn off to write every included file out\n'
             'during the restore, which on a monitored filesystem costs a file\n'
             'create per entry.'),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Park shape archive entries during restore and read each one on
+    # first real use instead of before the document opens, so the
+    # window is up while shapes stream in with the progressive visual
+    # fill. Requires ArchiveRandomAccess. An entry not yet served is
+    # read when anything asks for the shape -- visual build, script,
+    # save -- so the value is never observably missing; the trade is
+    # that the document must not be rewritten externally while loads
+    # are pending. Off by default until gated on the large references.
     ParamBool('DeferShapeLoad', True,
-        doc='Park shape archive entries during restore and read each one on\n'
-            'first real use instead of before the document opens, so the\n'
-            'window is up while shapes stream in with the progressive visual\n'
-            'fill. Requires ArchiveRandomAccess. An entry not yet served is\n'
-            'read when anything asks for the shape -- visual build, script,\n'
-            'save -- so the value is never observably missing; the trade is\n'
-            'that the document must not be rewritten externally while loads\n'
-            'are pending. Off by default until gated on the large references.'),
+        doc="When opening a document, read each shape on first use instead of\n"
+            "before the window comes up. Requires ArchiveRandomAccess. The file\n"
+            "must not be rewritten by another program while shapes are still to be\n"
+            "read. Off by default."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Write every material card into the document, including the
+    # stock ones.
+    #
+    # A stock card used to be left out: the hash says which card it
+    # was, and any installation holding the same library can produce
+    # the content again. That holds only while the library does not
+    # move. It moved -- retuning the default appearance changed the
+    # Default card, and every document written before it then named a
+    # hash no installed card answers to, losing the material outright
+    # rather than degrading to the uuid. A shipped library is not a
+    # fixed point, so a document cannot be built on the assumption
+    # that it is.
+    #
+    # Carrying the content costs almost nothing now that identical
+    # cards are stored once per document: a model whose objects all
+    # share one card writes that card once, whatever the object
+    # count. Turn off to write only the hash of a stock card, which
+    # is smaller by that one card and readable only by an
+    # installation whose library still matches.
     ParamBool('SaveMaterialCards', True,
-        doc='Write every material card into the document, including the\n'
-            'stock ones.\n'
-            '\n'
-            'A stock card used to be left out: the hash says which card it\n'
-            'was, and any installation holding the same library can produce\n'
-            'the content again. That holds only while the library does not\n'
-            'move. It moved -- retuning the default appearance changed the\n'
-            'Default card, and every document written before it then named a\n'
-            'hash no installed card answers to, losing the material outright\n'
-            'rather than degrading to the uuid. A shipped library is not a\n'
-            'fixed point, so a document cannot be built on the assumption\n'
-            'that it is.\n'
-            '\n'
-            'Carrying the content costs almost nothing now that identical\n'
-            'cards are stored once per document: a model whose objects all\n'
-            'share one card writes that card once, whatever the object\n'
-            'count. Turn off to write only the hash of a stock card, which\n'
-            'is smaller by that one card and readable only by an\n'
-            'installation whose library still matches.'),
+        doc="Write every material card used into the document, including the\n"
+            "stock ones, so the document does not depend on the installed material\n"
+            "library. Off writes only a reference to a stock card, which is lost\n"
+            "if the library changes."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Store each 2D curve of a shape once, and leave out the ones
+    # reading the file back computes again anyway.
+    #
+    # Two things, because they are the same bargain. A pcurve computed
+    # twice used to be written twice, which on a real project is the
+    # largest single duplication inside a shape file; and a pcurve on a
+    # planar face need not be stored at all, since the kernel projects
+    # the 3D curve onto the plane when it finds none. Neither changes
+    # the geometry that comes back: a merged pcurve is the identical
+    # curve, and a dropped one is checked against the projection that
+    # will replace it before it is dropped.
+    #
+    # Applies to shapes written as ASCII BRep. Turn off to write what
+    # the kernel holds, entry for entry.
     ParamBool('DedupShapePCurves', True,
-        doc='Store each 2D curve of a shape once, and leave out the ones\n'
-            'reading the file back computes again anyway.\n'
-            '\n'
-            'Two things, because they are the same bargain. A pcurve computed\n'
-            'twice used to be written twice, which on a real project is the\n'
-            'largest single duplication inside a shape file; and a pcurve on a\n'
-            'planar face need not be stored at all, since the kernel projects\n'
-            'the 3D curve onto the plane when it finds none. Neither changes\n'
-            'the geometry that comes back: a merged pcurve is the identical\n'
-            'curve, and a dropped one is checked against the projection that\n'
-            'will replace it before it is dropped.\n'
-            '\n'
-            'Applies to shapes written as ASCII BRep. Turn off to write what\n'
-            'the kernel holds, entry for entry.'),
+        doc="Write each 2D curve of a shape once, and leave out those on planar\n"
+            "faces, which are computed again on reading. The geometry read back is\n"
+            "the same. Applies to shapes written as ASCII BRep."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Store one file for parts that are the same shape in different
+    # places, and record the motion between them instead of writing the
+    # geometry again.
+    #
+    # Content addressing already shares parts whose bytes match, which
+    # an exporter that bakes each placement into the coordinates
+    # defeats: the same part at twenty positions is twenty distinct
+    # contents. Two instances are only merged once the rigid motion
+    # between them has been recovered and checked sub-shape by
+    # sub-shape, so a mirrored instance or a near-miss is written out
+    # in full rather than merged.
     ParamBool('DedupCongruentShapes', True,
-        doc='Store one file for parts that are the same shape in different\n'
-            'places, and record the motion between them instead of writing the\n'
-            'geometry again.\n'
-            '\n'
-            'Content addressing already shares parts whose bytes match, which\n'
-            'an exporter that bakes each placement into the coordinates\n'
-            'defeats: the same part at twenty positions is twenty distinct\n'
-            'contents. Two instances are only merged once the rigid motion\n'
-            'between them has been recovered and checked sub-shape by\n'
-            'sub-shape, so a mirrored instance or a near-miss is written out\n'
-            'in full rather than merged.'),
+        doc="Store one shape file for parts that are the same shape in different\n"
+            "places, and record the motion between them. Parts are merged only\n"
+            "after the motion has been checked sub-shape by sub-shape."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Let a shape file name the surfaces and curves another shape file
+    # already holds instead of writing its own copy of them.
+    #
+    # Each shape file carries its own table of surfaces, 3D curves and
+    # 2D curves, so a face two parts have in common is written once per
+    # part. On a real project those tables are most of the bytes and
+    # about half of what they hold repeats between files. An entry may
+    # instead name a file and a position in its table, and the reader
+    # then puts the entry it parsed there into this file.
+    #
+    # Off by default: it makes a shape file depend on another one for
+    # its geometry, not only for whole sub-shapes, so a file that goes
+    # missing costs more than it did. Applies to shapes written as
+    # ASCII BRep inside a document; an exported file names nothing.
     ParamBool('DedupCrossFileGeometry', False,
-        doc='Let a shape file name the surfaces and curves another shape file\n'
-            'already holds instead of writing its own copy of them.\n'
-            '\n'
-            'Each shape file carries its own table of surfaces, 3D curves and\n'
-            '2D curves, so a face two parts have in common is written once per\n'
-            'part. On a real project those tables are most of the bytes and\n'
-            'about half of what they hold repeats between files. An entry may\n'
-            'instead name a file and a position in its table, and the reader\n'
-            'then puts the entry it parsed there into this file.\n'
-            '\n'
-            'Off by default: it makes a shape file depend on another one for\n'
-            'its geometry, not only for whole sub-shapes, so a file that goes\n'
-            'missing costs more than it did. Applies to shapes written as\n'
-            'ASCII BRep inside a document; an exported file names nothing.'),
-    ParamBool('AutoRemoveFile', True),
-    ParamBool('AutoNameDynamicProperty', False),
-    ParamBool('BackupPolicy', True),
-    ParamBool('CreateBackupFiles', True),
-    ParamBool('UseFCBakExtension', False),
-    ParamString('SaveBackupDateFormat', "%Y%m%d-%H%M%S"),
-    ParamInt('CountBackupFiles', 1),
-    ParamBool('OptimizeRecompute', True),
-    ParamBool('CanAbortRecompute', True),
-    ParamBool('UseHasher', True),
-    ParamBool('ViewObjectTransaction', False),
-    ParamBool('WarnRecomputeOnRestore', True),
-    ParamBool('NoPartialLoading', False),
-    ParamBool('SaveThumbnail', False),
-    ParamBool('ThumbnailNoBackground', False),
-    ParamBool('AddThumbnailLogo', True),
-    ParamInt('ThumbnailSampleSize', 0),
-    ParamInt('ThumbnailSize', 128),
-    ParamBool('DuplicateLabels', False),
-    ParamBool('TransactionOnRecompute', False),
-    ParamBool('RelativeStringID', True),
+        doc="Let a shape file refer to surfaces and curves another shape file of\n"
+            "the same document already holds instead of writing them again.\n"
+            "Smaller files, but a shape file then depends on another for its\n"
+            "geometry. Off by default."),
+    ParamBool('AutoRemoveFile', True,
+        doc = "Delete the files a document no longer uses from its directory when\n"
+              "it is saved as a directory. Turn off to leave the files of removed\n"
+              "objects in place."),
+    ParamBool('AutoNameDynamicProperty', False,
+        doc = "Rename a property added to an object when its name is empty, not a\n"
+              "valid name or already taken, instead of refusing to add it. A\n"
+              "warning reports the name chosen."),
+    ParamBool('BackupPolicy', True,
+        doc = "Save a document to a temporary file first and move it over the old\n"
+              "file only once the write succeeded, keeping backups as configured.\n"
+              "Turn off to write straight over the file, with no backup."),
+    ParamBool('CreateBackupFiles', True,
+        doc = "Keep the previous version of a document file as a backup each time\n"
+              "it is saved. When off the old file is deleted once the new one is\n"
+              "written."),
+    ParamBool('UseFCBakExtension', True,
+        doc = "Name a backup after the document, with the date of the replaced\n"
+              "file and the extension .FCBak. When off a backup is the document\n"
+              "file name followed by a number, as in Part.FCStd1."),
+    ParamString('SaveBackupDateFormat', "%Y%m%d-%H%M%S",
+        doc = "Date format used in the names of .FCBak backup files, in strftime\n"
+              "notation. A dot in the format is written as a dash."),
+    ParamInt('CountBackupFiles', 1,
+        doc = "How many backup files are kept for one document. The oldest are\n"
+              "deleted when a save would exceed the number. 0 keeps none."),
+    ParamBool('OptimizeRecompute', True,
+        doc = "Recompute an object only when one of its properties really changed.\n"
+              "Writing a property the value it already has then leaves the object\n"
+              "untouched. Turn off to recompute on every write."),
+    ParamBool('CanAbortRecompute', True,
+        doc = "Show progress while a document recomputes and let Esc abort it.\n"
+              "Costs a little recompute time."),
+    ParamBool('UseHasher', True,
+        doc = "Store the generated element names of new documents as short\n"
+              "references into a string table of the document instead of in full.\n"
+              "Each document carries its own copy of this choice."),
+    ParamBool('ViewObjectTransaction', False,
+        doc = "Let a change to a view property alone, such as colour or visibility,\n"
+              "create an undo step whatever command made it. When off only the\n"
+              "commands that ask for it do."),
+    ParamBool('WarnRecomputeOnRestore', True,
+        doc = "Ask to recompute after opening a document that needs it to be\n"
+              "brought up to date with this version. When off the document opens\n"
+              "without the question and is left as it is."),
+    ParamBool('NoPartialLoading', False,
+        doc = "Load every externally linked document in full. When off a document\n"
+              "opened only because another links to it loads just the linked\n"
+              "objects and what they depend on, and cannot be edited until\n"
+              "reloaded."),
+    ParamBool('SaveThumbnail', True,
+        doc = "Save a preview picture of the 3D view into new documents each time\n"
+              "they are saved. Each document carries its own copy of this choice."),
+    ParamBool('ThumbnailNoBackground', False,
+        doc = "Leave the view background out of the thumbnail saved with a\n"
+              "document, so the picture has a transparent background."),
+    ParamBool('AddThumbnailLogo', True,
+        doc = "Put the application icon in the bottom right corner of the thumbnail\n"
+              "saved with a document."),
+    ParamInt('ThumbnailSampleSize', 0,
+        doc = "Number of antialiasing samples used to render the thumbnail saved\n"
+              "with a document. 0 renders without antialiasing."),
+    ParamInt('ThumbnailSize', 256,
+        doc = "Width and height, in pixels, of the thumbnail saved with a document.\n"
+              "Values outside 64 to 1024 are brought into that range."),
+    ParamBool('DuplicateLabels', False,
+        doc = "Allow several objects of one document to carry the same label. When\n"
+              "off a label already in use gets a number added to make it unique."),
+    ParamBool('TransactionOnRecompute', False,
+        doc = "Record a recompute started with the Refresh command as an undo step.\n"
+              "When off, refreshing leaves the undo and redo history alone."),
+    ParamBool('RelativeStringID', True,
+        doc = "Write the ids in a document's string table as differences from the\n"
+              "id before, which makes the saved file smaller. Turn off to write\n"
+              "every id in full."),
     ParamBool('HashIndexedName', True,
         doc='Encode a mapped name\'s trailing index apart from its text, as upstream\n'
             'FreeCAD does. Sets the mode of new documents only: a document keeps the\n'
             'mode it was saved in, and one saved before the mode was stored gets the\n'
             'one its string table was written in.'),
-    ParamBool('EnableMaterialEdit', True),
+    ParamBool('EnableMaterialEdit', True,
+        doc = "Show appearance properties in the property view with an editor for\n"
+              "their colours, shininess and transparency. When off they are not\n"
+              "listed. Applies to objects created or loaded afterwards."),
     ParamBool('MCPServerAutoStart', False,
         doc='Start the MCP debug console server (freecad.mcp_console) when the\n'
             'application starts. Toggled by the Tools -> MCP Server menu action.'),
@@ -176,6 +294,58 @@ Params = [
             'use the server takes the next free port after it, so the port it\n'
             'ends up on is reported in the console and in the Tools -> MCP\n'
             'Server tooltip.'),
+    ParamBool('AutoSaveEnabled', True,
+        title = 'Save auto-recovery information',
+        doc = "Save auto-recovery information of the open documents at regular\n"
+              "intervals. Takes effect at once."),
+    ParamInt('AutoSaveTimeout', 15,
+        title = 'Auto-recovery interval',
+        doc = "Minutes between two saves of auto-recovery information. 1 to 60.\n"
+              "Takes effect at once."),
+    ParamBool('AutoSaveCompressed', True,
+        title = 'Compress auto-recovery files',
+        doc = "Write auto-recovery information as one compressed file per\n"
+              "document instead of separate uncompressed files. Takes effect at\n"
+              "the next save of it."),
+    ParamBool('SaveBinaryBrep', True,
+        title = 'Binary shapes in auto-recovery files',
+        doc = "Write shapes in binary BREP format into a compressed\n"
+              "auto-recovery file. Read at each save of it."),
+    ParamBool('RecoveryEnabled', True,
+        title = 'Run file recovery at startup',
+        doc = "Look at startup for documents a crashed session left behind and\n"
+              "offer to recover them."),
+    ParamBool('CreateNewDoc', False,
+        title = 'Create new document at startup',
+        doc = "Create an empty document when the program starts with none\n"
+              "open."),
+    ParamBool('UsingUndo', True,
+        title = 'Allow undo and redo',
+        doc = "Record undo and redo steps for documents. Applies to documents\n"
+              "created or opened afterwards."),
+    ParamInt('MaxUndoSize', 20,
+        title = 'Maximum undo steps',
+        doc = "Largest number of undo steps kept for a document. Applies to\n"
+              "documents created or opened afterwards."),
+    ParamBool('ChangeViewProviderTouchDocument', True,
+        title = 'View changes modify the document',
+        doc = "Mark a document as modified when a view property of one of its\n"
+              "objects changes. Applies to documents created or opened\n"
+              "afterwards."),
+    ParamInt('JsonIndent', 2,
+        title = 'JSON indentation',
+        doc = "Indentation of the JSON text the properties of Python objects are\n"
+              "saved as."),
+    ParamBool('PreferCompactFormat', True,
+        title = 'Last format chosen for a new file',
+        doc = "The compact format was chosen the last time a file was saved under\n"
+              "a new name, and is what the next such save starts on. Stored by\n"
+              "the Save As dialog."),
+    ParamBool('WarnCompactFormat', True,
+        title = 'Warn about the compact format',
+        doc = "The warning shown when a save comes out in the compact format is\n"
+              "still to be shown. The program switches it off when the warning\n"
+              "is dismissed for good."),
 ]
 
 def declare():

@@ -92,6 +92,7 @@
 #include "SelectionView.h"
 #include "SoAxisCrossKit.h"
 #include "ShadingOptions.h"
+#include "DisplayOptions.h"
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCUnifiedSelection.h"
 #include "TaskRenderSettings.h"
@@ -105,6 +106,7 @@
 #include "ViewArea.h"
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
+#include "ViewPlacement.h"
 #include "ViewProviderMeasureDistance.h"
 #include "ViewProviderGeometryObject.h"
 #include "WaitCursor.h"
@@ -790,6 +792,14 @@ public:
     /// the tick does not invoke the command back.
     void syncChecked(const char *mode);
 
+    /// One icon on the button, whatever style the view is in: the menu
+    /// under it sets more than the style now, and the style shows in its
+    /// combo box (docs/HandsOnQueue.md entry 63). The button's tooltip
+    /// still names the active style.
+    void setActionIcon(Action *action, const QIcon &) override {
+        GroupCommand::setActionIcon(action, BitmapFactory().iconFromTheme(getPixmap()));
+    }
+
     virtual Action * createAction() {
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
@@ -818,9 +828,18 @@ public:
         // is built by ActionGroup::addTo -- for the tool button and for
         // the menu bar, and again whenever the toolbar is rebuilt -- so
         // the section is installed on first show of each one.
+        //
+        // Two more ride with it (Gui/DisplayOptions.h): the styles
+        // themselves as one combo box at the top, in place of their rows,
+        // with the anti-aliasing beside it; and the lights of the view
+        // below the shading. In that order: the first hides what is in the
+        // menu when it runs, which has to be the rows and nothing else.
         if (auto group = qobject_cast<Gui::ActionGroup*>(action)) {
-            QObject::connect(group, &Gui::ActionGroup::aboutToShow,
-                             ShadingOptionsWidget::install);
+            QObject::connect(group, &Gui::ActionGroup::aboutToShow, [](QMenu *menu) {
+                DrawStyleOptionsWidget::install(menu);
+                ShadingOptionsWidget::install(menu);
+                LightOptionsWidget::install(menu);
+            });
         }
         return action;
     }
@@ -834,6 +853,7 @@ StdCmdDrawStyle::StdCmdDrawStyle()
     sToolTipText  = QT_TR_NOOP("Change the display style and shading of the objects");
     sStatusTip    = QT_TR_NOOP("Change the display style and shading of the objects");
     sWhatsThis    = "Std_DrawStyle";
+    sPixmap       = "Std_DrawStyle";
     eType         = 0;
     bCanLog       = false;
     // One override mode per viewer, so the list is a pick-one: this is
@@ -1686,7 +1706,9 @@ void StdCmdViewHome::activated(int iMsg)
     Q_UNUSED(iMsg);
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    std::string default_view = hGrp->GetASCII("NewDocumentCameraOrientation","Top");
+    // Top while no orientation is stored, as upstream: a new document
+    // opens Trimetric then, and Home is not the same view.
+    std::string default_view = hGrp->GetASCII("NewDocumentCameraOrientation", "Top");
     doCommand(Command::Gui,"Gui.activeDocument().activeView().viewDefaultOrientation('%s',0)",default_view.c_str());
     doCommand(Command::Gui,"Gui.SendMsgToActiveView(\"ViewFit\")");
 }
@@ -2920,15 +2942,19 @@ void StdCmdViewCellShowObject::activated(int iMsg)
         if (!area)
             return;
     }
-    auto cell = area->cellOf(area->activeSubView());
+    // The cell of the active VIEW. The area's own active cell is the one
+    // last clicked into or filled; a view activated another way -- the
+    // tree's sync view, a script -- does not move it, and the object then
+    // went into that stale cell, closing what was shown there.
+    auto cell = area->cellOf(active);
+    if (!cell)
+        cell = area->cellOf(area->activeSubView());
     if (!cell)
         return;
 
-    MDIView *view = vp->getMDIView();
-    if (!view) {
-        vp->show();
-        view = vp->getMDIView();
-    }
+    // Opened for the active cell (see ViewAreaCell::showCellMenu)
+    ViewPlacement::IntoCell here(area, cell);
+    MDIView *view = vp->getOrCreateMDIView();
     if (!view || view == active)
         return;
     area->setCellView(cell, view);
@@ -5619,9 +5645,9 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdDockOverlay());
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    if(hGrp->GetASCII("GestureRollFwdCommand").empty())
+    if(hGrp->GetASCII("GestureRollFwdCommand", Gui::ViewParams::defaultGestureRollFwdCommand().c_str()).empty())
         hGrp->SetASCII("GestureRollFwdCommand","Std_SelForward");
-    if(hGrp->GetASCII("GestureRollBackCommand").empty())
+    if(hGrp->GetASCII("GestureRollBackCommand", Gui::ViewParams::defaultGestureRollBackCommand().c_str()).empty())
         hGrp->SetASCII("GestureRollBackCommand","Std_SelBack");
     // NOLINTEND
 }

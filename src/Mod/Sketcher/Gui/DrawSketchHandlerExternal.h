@@ -23,6 +23,7 @@
 #ifndef SKETCHERGUI_DrawSketchHandlerExternal_H
 #define SKETCHERGUI_DrawSketchHandlerExternal_H
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <array>
 
 #include <App/Datums.h>
@@ -361,7 +362,7 @@ public:
     void setupTransparentPick()
     {
         Base::StateLocker guard(_busy);
-        bool enabled = hGrp->GetBool("SketchAutoTransparentPick", false);
+        bool enabled = hGrp->GetBool("SketchAutoTransparentPick", Sketcher::SketcherParams::defaultSketchAutoTransparentPick());
         if (!_activated || !enabled) {
             if (restoreHighlightPick) {
                 restoreHighlightPick = false;

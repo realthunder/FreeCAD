@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <cassert>
 
@@ -73,6 +75,7 @@ QColor QGICMark::getCMarkColor()
 }
 
 void QGICMark::setPrettyNormal() {
+    m_pretty = false;
     m_colCurrent = getCMarkColor();
     update();
 }
@@ -101,6 +104,6 @@ QPainterPath QGICMark::shape() const
 
  double QGICMark::getMarkFuzz() const
 {
-    return Preferences::getPreferenceGroup("General")->GetFloat("MarkFuzz", 5.0);
+    return Preferences::getPreferenceGroup("General")->GetFloat("MarkFuzz", TechDraw::TechDrawParams::defaultMarkFuzz());
 }
 

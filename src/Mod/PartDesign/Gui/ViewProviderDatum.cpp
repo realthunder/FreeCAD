@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/PartDesignParams.h>
+
 #ifndef _PreComp_
 # include <QApplication>
 # include <QMessageBox>
@@ -64,6 +66,7 @@
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Gui/ViewProviderOriginGroupExtension.h>
 #include <Mod/Part/App/DatumFeature.h>
+#include <Mod/Part/Gui/PartParams.h>
 
 #include "ViewProviderDatum.h"
 #include "TaskDatumParameters.h"
@@ -90,10 +93,10 @@ ViewProviderDatum::ViewProviderDatum()
     DisplayMode.setStatus(App::Property::Hidden, true);
 
     // set default color for datums (golden yellow with 60% transparency)
-    // The parameter is stored in 'PartDesign' for historical reason
+    // One setting for datums and binders, Part's (PartGuiParams.py)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath (
             "User parameter:BaseApp/Preferences/Mod/PartDesign");
-    unsigned long shcol = hGrp->GetUnsigned ( "DefaultDatumColor", 0xFFD70066 );
+    unsigned long shcol = PartGui::PartParams::getDefaultDatumColor();
 
     App::Color col ( (uint32_t) shcol );
     ShapeColor.setValue ( col );

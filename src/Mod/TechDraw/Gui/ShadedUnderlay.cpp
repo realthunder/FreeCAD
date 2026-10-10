@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 #include <cmath>
 
@@ -372,7 +374,7 @@ struct DerivedColorResolver
 int maxResolverFaces()
 {
     return int(TechDraw::Preferences::getPreferenceGroup("General")
-                   ->GetInt("ShadedUnderlayMaxFaces", 5000));
+                   ->GetInt("ShadedUnderlayMaxFaces", TechDraw::TechDrawParams::defaultShadedUnderlayMaxFaces()));
 }
 
 // Solids only: the cut input is solids (doSectionCut explores
@@ -866,7 +868,7 @@ bool findBackendRenderer(const std::vector<App::DocumentObject*>& sources,
                          Gui::View3DInventorViewer*& viewer)
 {
     if (!TechDraw::Preferences::getPreferenceGroup("General")
-             ->GetBool("ShadedUnderlayBackend", true))
+             ->GetBool("ShadedUnderlayBackend", TechDraw::TechDrawParams::defaultShadedUnderlayBackend()))
         return false;
     if (sources.empty())
         return false;

@@ -51,6 +51,7 @@
 #include <Gui/ViewProviderDocumentObject.h>
 
 #include "Widgets.h"
+#include <Gui/MiscParams.h>
 #include "DAGModel.h"
 
 
@@ -108,10 +109,8 @@ Model::Model(QObject *parentIn, const Gui::Document &documentIn) : QGraphicsScen
   graphDirty = false;
   currentPrehighlight = nullptr;
 
-  ParameterGrp::handle group = App::GetApplication().GetUserParameter().
-          GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("DAGView");
-    selectionMode = static_cast<SelectionMode>(group->GetInt("SelectionMode", 0));
-    group->SetInt("SelectionMode", static_cast<int>(selectionMode)); //ensure entry exists.
+    selectionMode = static_cast<SelectionMode>(MiscParams::getDAGViewSelectionMode());
+    MiscParams::setDAGViewSelectionMode(static_cast<int>(selectionMode)); //ensure entry exists.
 
   QIcon temp(Gui::BitmapFactory().iconFromTheme("dagViewVisible"));
   visiblePixmapEnabled = temp.pixmap(iconSize, iconSize, QIcon::Normal, QIcon::On);
@@ -178,12 +177,9 @@ void Model::setupFilters()
 
 void Model::setupViewConstants()
 {
-  ParameterGrp::handle group = App::GetApplication().GetUserParameter().
-          GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("DAGView");
-
   //get font point size.
-  int fontPointSize = group->GetInt("FontPointSize", 0);
-  group->SetInt("FontPointSize", fontPointSize); //ensure entry exists.
+  int fontPointSize = MiscParams::getDAGViewFontPointSize();
+  MiscParams::setDAGViewFontPointSize(fontPointSize); //ensure entry exists.
   if (fontPointSize != 0)
   {
     QFont tempFont(this->font());
@@ -192,10 +188,10 @@ void Model::setupViewConstants()
   }
 
   //get direction
-  direction = group->GetFloat("Direction", 1.0);
+  direction = MiscParams::getDAGViewDirection();
   if (direction != -1.0 && direction != 1.0)
     direction = 1.0;
-  group->SetFloat("Direction", direction); //ensure entry exists.
+  MiscParams::setDAGViewDirection(direction); //ensure entry exists.
 
   QFontMetrics fontMetric(this->font());
   fontHeight = fontMetric.height();

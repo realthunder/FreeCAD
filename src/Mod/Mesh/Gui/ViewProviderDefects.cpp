@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <Inventor/nodes/SoBaseColor.h>
 #include <Inventor/nodes/SoCoordinate3.h>
@@ -138,7 +140,7 @@ void ViewProviderMeshOrientation::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 
@@ -211,7 +213,7 @@ void ViewProviderMeshNonManifolds::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 
@@ -285,7 +287,7 @@ void ViewProviderMeshNonManifoldPoints::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     pointsep->addChild(markcol);
     pointsep->addChild(marker);
 
@@ -356,7 +358,7 @@ void ViewProviderMeshDuplicatedFaces::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 
@@ -427,7 +429,7 @@ void ViewProviderMeshDuplicatedPoints::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     pointsep->addChild(markcol);
     pointsep->addChild(marker);
 
@@ -491,7 +493,7 @@ void ViewProviderMeshDegenerations::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 
@@ -610,7 +612,7 @@ void ViewProviderMeshIndices::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 
@@ -683,7 +685,7 @@ void ViewProviderMeshSelfIntersections::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 
@@ -773,7 +775,7 @@ void ViewProviderMeshFolds::attach(App::DocumentObject* pcFeat)
         "PLUS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 7));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 

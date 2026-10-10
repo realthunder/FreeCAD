@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include "MaterialParams.h"
 #include <random>
 
 #include <QDirIterator>
@@ -522,10 +523,10 @@ MaterialManagerLocal::getConfiguredLibraries()
 
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/Resources");
-    bool useBuiltInMaterials = param->GetBool("UseBuiltInMaterials", true);
-    bool useMatFromModules = param->GetBool("UseMaterialsFromWorkbenches", true);
-    bool useMatFromConfigDir = param->GetBool("UseMaterialsFromConfigDir", true);
-    bool useMatFromCustomDir = param->GetBool("UseMaterialsFromCustomDir", true);
+    bool useBuiltInMaterials = param->GetBool("UseBuiltInMaterials", Materials::MaterialParams::defaultUseBuiltInMaterials());
+    bool useMatFromModules = param->GetBool("UseMaterialsFromWorkbenches", Materials::MaterialParams::defaultUseMaterialsFromWorkbenches());
+    bool useMatFromConfigDir = param->GetBool("UseMaterialsFromConfigDir", Materials::MaterialParams::defaultUseMaterialsFromConfigDir());
+    bool useMatFromCustomDir = param->GetBool("UseMaterialsFromCustomDir", Materials::MaterialParams::defaultUseMaterialsFromCustomDir());
 
     if (useBuiltInMaterials) {
         QString resourceDir = QString::fromStdString(App::Application::getResourceDir()
@@ -585,7 +586,7 @@ MaterialManagerLocal::getConfiguredLibraries()
     }
 
     if (useMatFromCustomDir) {
-        QString resourceDir = QString::fromStdString(param->GetASCII("CustomMaterialsDir", ""));
+        QString resourceDir = QString::fromStdString(param->GetASCII("CustomMaterialsDir", Materials::MaterialParams::defaultCustomMaterialsDir().c_str()));
         if (!resourceDir.isEmpty()) {
             QDir materialDir(resourceDir);
             if (materialDir.exists()) {

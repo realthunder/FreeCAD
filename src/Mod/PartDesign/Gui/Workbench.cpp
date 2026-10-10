@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/PartDesignParams.h>
+
 #include <App/Document.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
@@ -476,7 +478,7 @@ void Workbench::activated()
     _switchToDocument(App::GetApplication().getActiveDocument());
 
     addTaskWatcher(Watcher);
-    if(App::GetApplication().GetUserParameter().GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign")->GetBool("SwitchToTask", true))
+    if(PartDesign::PartDesignParams::getSwitchToTask())
         Gui::Control().showTaskView();
 
     //NOLINTBEGIN

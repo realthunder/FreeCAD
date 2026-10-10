@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/Start/App/StartParams.h>
+
 #ifndef _PreComp_
 #include <QFile>
 #include <QFileIconProvider>
@@ -59,7 +61,7 @@ QColor FileCardDelegate::getBorderColor() const
 {
     QColor color(98, 160, 234);  // NOLINT
     uint32_t packed = App::Color::asPackedRGB<QColor>(color);
-    packed = _parameterGroup->GetUnsigned("FileThumbnailBorderColor", packed);
+    packed = _parameterGroup->GetUnsigned("FileThumbnailBorderColor", Start::StartParams::defaultFileThumbnailBorderColor());
     color = App::Color::fromPackedRGB<QColor>(packed);
     return color;
 }
@@ -68,7 +70,7 @@ QColor FileCardDelegate::getBackgroundColor() const
 {
     QColor color(221, 221, 221);  // NOLINT
     uint32_t packed = App::Color::asPackedRGB<QColor>(color);
-    packed = _parameterGroup->GetUnsigned("FileThumbnailBackgroundColor", packed);
+    packed = _parameterGroup->GetUnsigned("FileThumbnailBackgroundColor", Start::StartParams::defaultFileThumbnailBackgroundColor());
     color = App::Color::fromPackedRGB<QColor>(packed);
     return color;
 }
@@ -77,7 +79,7 @@ QColor FileCardDelegate::getSelectionColor() const
 {
     QColor color(38, 162, 105);  // NOLINT
     uint32_t packed = App::Color::asPackedRGB<QColor>(color);
-    packed = _parameterGroup->GetUnsigned("FileThumbnailSelectionColor", packed);
+    packed = _parameterGroup->GetUnsigned("FileThumbnailSelectionColor", Start::StartParams::defaultFileThumbnailSelectionColor());
     color = App::Color::fromPackedRGB<QColor>(packed);
     return color;
 }
@@ -87,7 +89,7 @@ void FileCardDelegate::paint(QPainter* painter,
                              const QModelIndex& index) const
 {
     auto thumbnailSize =
-        static_cast<int>(_parameterGroup->GetInt("FileThumbnailIconsSize", 128));  // NOLINT
+        static_cast<int>(_parameterGroup->GetInt("FileThumbnailIconsSize", Start::StartParams::defaultFileThumbnailIconsSize()));  // NOLINT
     auto cardWidth = thumbnailSize;
     auto baseName = index.data(static_cast<int>(DisplayedFilesModelRoles::baseName)).toString();
     auto size = index.data(static_cast<int>(DisplayedFilesModelRoles::size)).toString();
@@ -186,7 +188,7 @@ QSize FileCardDelegate::sizeHint(const QStyleOptionViewItem& option, const QMode
 {
     Q_UNUSED(option)
     Q_UNUSED(index)
-    auto thumbnailSize = _parameterGroup->GetInt("FileThumbnailIconsSize", 128);  // NOLINT
+    auto thumbnailSize = _parameterGroup->GetInt("FileThumbnailIconsSize", Start::StartParams::defaultFileThumbnailIconsSize());  // NOLINT
     auto cardMargin = _widget->layout()->contentsMargins();
     auto cardWidth = thumbnailSize + cardMargin.left() + cardMargin.right();
     auto spacing = _widget->layout()->spacing();
@@ -214,7 +216,7 @@ QPixmap pixmapToSizedQImage(const QImage& pixmap, int size)
 QPixmap FileCardDelegate::generateThumbnail(const QString& path) const
 {
     auto thumbnailSize =
-        static_cast<int>(_parameterGroup->GetInt("FileThumbnailIconsSize", 128));  // NOLINT
+        static_cast<int>(_parameterGroup->GetInt("FileThumbnailIconsSize", Start::StartParams::defaultFileThumbnailIconsSize()));  // NOLINT
     if (path.endsWith(QLatin1String(".fcstd"), Qt::CaseSensitivity::CaseInsensitive)) {
         QImageReader reader(QLatin1String(":/icons/freecad-doc.svg"));
         reader.setScaledSize({thumbnailSize, thumbnailSize});

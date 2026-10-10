@@ -1,0 +1,178 @@
+"""The settings of the Sketcher's own group are listed, and a new sketch still takes them.
+
+Ninety keys of Preferences/Mod/Sketcher and its sub-groups are behind
+Sketcher::SketcherParams (docs/HandsOnQueue.md entry 24). Of the group
+itself: the continue modes, the dialog after a dimension, what a new sketch
+starts with (internal faces, arc fitting, B-splines of external geometry,
+the history level), the constraint list's switches, and how dimensions and
+cursor coordinates are written. Of the sub-groups: the edit view and the
+grid (General), the line styles (View), the dimension tools, the tool bar
+choices, snapping. And 27 keys the Sketcher keeps in Preferences/View:
+its label font, a few sizes, and the colours of a sketch in and out of
+edit. SolverAdvanced is not done yet. The Sketcher's pages are held to
+the definitions by preferences-ok-keeps-defaults.py, which named three of
+them: "Use system decimals" is on to the program and was shown off by the
+Display page, and OK stored off; the internal face colour was one step
+more opaque on the Appearance page than the program draws it; and the
+page showed external geometry in another colour (204,51,115) than the
+program draws it in (204,51,153), and OK stored the page's.
+
+Claims:
+
+  - "/param geometry creation continue mode" lists the continue mode of
+    the geometry tools, and "/param hide base length units" the units
+    switch;
+  - a sketch made with "generate internal faces" stored off has
+    MakeInternals off, one made without the key has it on;
+  - a sketch made with the external B-spline degree stored as 3 has that
+    degree, one made without the key has 5;
+  - "/param snap to grid" lists the snap switch of the sub-group Snap, and
+    "/param grid transparency" the grid's of the sub-group General;
+  - a sketch made with "show grid" stored off shows none, one made without
+    the key shows it;
+  - a sketch made with the Grid page's spacing stored as 25 mm has a grid
+    of 25 mm (the page stores the number GridSize; a new sketch read the
+    text Hist0, which nothing writes any more, and stayed at 10 mm);
+  - "/param external geometry colour" lists the colour, in the 3D view's
+    group where the Sketcher keeps it.
+
+Scored against the tree before the change: see the commit message.
+"""
+import os
+import time
+import traceback
+
+import FreeCAD
+import FreeCADGui
+from PySide import QtCore, QtGui, QtWidgets
+
+OUT = os.environ["GT_OUT"]
+RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
+PREFS = "User parameter:BaseApp/Preferences/"
+Qt = QtCore.Qt
+
+
+def note(msg):
+    with open(RESULT, "a") as f:
+        f.write(str(msg) + "\n")
+        f.flush()
+
+
+def check(name, cond, detail=""):
+    note(("PASS " if cond else "FAIL ") + name + (" | " + str(detail) if detail else ""))
+    return cond
+
+
+def settle(seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        QtCore.QCoreApplication.processEvents()
+        time.sleep(0.005)
+
+
+def param_rows(query):
+    FreeCADGui.runCommand("Std_OmniSearch")
+    settle(0.6)
+    edit = None
+    for w in QtWidgets.QApplication.allWidgets():
+        if w.objectName() == "OmniSearchEdit" and w.isVisible():
+            edit = w
+    if edit is None:
+        return []
+    text = "/param " + query
+    edit.setText(text)
+    edit.setCursorPosition(len(text))
+    edit.textEdited.emit(text)
+    settle(0.8)
+    rows = []
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        if not isinstance(w, QtWidgets.QAbstractItemView) or w.model() is None:
+            continue
+        found = [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
+        # The list is not shown while another application is in front, which a
+        # test cannot prevent on a desktop in use; its rows are there all the same.
+        if w.isVisible() or any(r.startswith("Preferences/") for r in found):
+            rows += found
+    QtWidgets.QApplication.sendEvent(edit, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
+    settle(0.5)
+    return rows
+
+
+def run():
+    group = FreeCAD.ParamGet(PREFS + "Mod/Sketcher")
+    general = FreeCAD.ParamGet(PREFS + "Mod/Sketcher/General")
+    doc = None
+    try:
+        import Sketcher  # noqa: F401  the module registers its settings when it is loaded
+        import SketcherGui  # noqa: F401
+        settle(0.5)
+
+        rows = param_rows("geometry creation continue mode")
+        check("the omni search lists the geometry tools' continue mode",
+              any(r.endswith("Mod/Sketcher/ContinuousCreationMode") for r in rows), rows[:6])
+        rows = param_rows("hide base length units")
+        check("and the units switch", any(r.endswith("Mod/Sketcher/HideUnits") for r in rows), rows[:6])
+
+        doc = FreeCAD.newDocument("Entry24Sketcher")
+        settle(0.5)
+        group.SetBool("MakeInternals", False)
+        settle(0.2)
+        off = doc.addObject("Sketcher::SketchObject", "SketchPlain").MakeInternals
+        group.RemBool("MakeInternals")
+        settle(0.2)
+        on = doc.addObject("Sketcher::SketchObject", "SketchFaces").MakeInternals
+        check("a sketch made with internal faces stored off has them off, one made without the key has them on",
+              off is False and on is True, (off, on))
+
+        group.SetInt("ExternalBSplineMaxDegree", 3)
+        settle(0.2)
+        three = doc.addObject("Sketcher::SketchObject", "SketchDegree3").ExternalBSplineMaxDegree
+        group.RemInt("ExternalBSplineMaxDegree")
+        settle(0.2)
+        five = doc.addObject("Sketcher::SketchObject", "SketchDegree5").ExternalBSplineMaxDegree
+        check("a sketch made with the external B-spline degree stored as 3 has 3, one made without the key 5",
+              three == 3 and five == 5, (three, five))
+
+        rows = param_rows("snap to grid")
+        check("the omni search lists the snap to grid switch",
+              any(r.endswith("Mod/Sketcher/Snap/SnapToGrid") for r in rows), rows[:6])
+        rows = param_rows("grid transparency")
+        check("and the grid's transparency", any(r.endswith("Mod/Sketcher/General/GridTransparency") for r in rows),
+              rows[:6])
+
+        general.SetBool("ShowGrid", False)
+        settle(0.2)
+        hidden = doc.addObject("Sketcher::SketchObject", "SketchNoGrid").ViewObject.ShowGrid
+        general.RemBool("ShowGrid")
+        settle(0.2)
+        shown = doc.addObject("Sketcher::SketchObject", "SketchGrid").ViewObject.ShowGrid
+        check("a sketch made with the grid stored off shows none, one made without the key shows it",
+              hidden is False and shown is True, (hidden, shown))
+
+        spacing = FreeCAD.ParamGet(PREFS + "Mod/Sketcher/General/GridSize")
+        spacing.SetFloat("GridSize", 25.0)
+        settle(0.2)
+        wide = doc.addObject("Sketcher::SketchObject", "SketchGrid25").ViewObject.GridSize.Value
+        spacing.RemFloat("GridSize")
+        settle(0.2)
+        usual = doc.addObject("Sketcher::SketchObject", "SketchGrid10").ViewObject.GridSize.Value
+        check("a sketch made with the page's grid spacing stored as 25 has 25, one made without the key 10",
+              abs(wide - 25.0) < 1e-9 and abs(usual - 10.0) < 1e-9, (wide, usual))
+
+        rows = param_rows("external geometry colour")
+        check("the omni search lists the external geometry colour, kept in the 3D view's group",
+              any(r.endswith("Preferences/View/ExternalColor") for r in rows), rows[:6])
+    except Exception:
+        note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
+    finally:
+        FreeCAD.ParamGet(PREFS + "Mod/Sketcher/General/GridSize").RemFloat("GridSize")
+        general.RemBool("ShowGrid")
+        group.RemBool("MakeInternals")
+        group.RemInt("ExternalBSplineMaxDegree")
+        if doc is not None:
+            FreeCAD.closeDocument(doc.Name)
+        note("DONE")
+        QtCore.QTimer.singleShot(0, FreeCADGui.getMainWindow().close)
+
+
+QtCore.QTimer.singleShot(1500, run)

@@ -31,6 +31,8 @@ namespace Gui {
 
 class Document;
 class MDIView;
+class ViewArea;
+class ViewAreaCell;
 
 /** Placement policy for freshly created views (docs/ViewPlacement.md).
  *
@@ -80,6 +82,26 @@ GuiExport void placeTab(MDIView *view, Gui::Document *doc);
  * second time would only undo it.
  */
 GuiExport void reveal(MDIView *view, Gui::Document *doc, bool alreadyOpen);
+
+/** Scoped: a view placed while this lives goes into \a cell.
+ *
+ * A view opened FOR a cell -- its menu's content selector, "show the
+ * selected object here" -- is made by its view provider, which places it
+ * by the general policy: a new split, or the last non-3D cell, whose
+ * view it closes. The caller then finds the view hosted elsewhere and
+ * cannot have it. With this, place() puts the view into the cell asked,
+ * replacing what is there, and falls back to the policy only if the
+ * sitting view refuses to close.
+ */
+class GuiExport IntoCell
+{
+public:
+    IntoCell(ViewArea *area, ViewAreaCell *cell);
+    ~IntoCell();
+
+    IntoCell(const IntoCell &) = delete;
+    IntoCell &operator=(const IntoCell &) = delete;
+};
 
 /** Scoped suppression of the Alt inversion.
  *

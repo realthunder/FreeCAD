@@ -70,10 +70,10 @@ Fast, but result is a collection of short straight lines.</string>
            <string>Use Polygon Approximation</string>
           </property>
           <property name="prefEntry" stdset="0">
-           <cstring>UsePolygon</cstring>
+           <cstring>CoarseView</cstring>
           </property>
           <property name="prefPath" stdset="0">
-           <cstring>Mod/TechDraw/HLR</cstring>
+           <cstring>Mod/TechDraw/General</cstring>
           </property>
          </widget>
         </item>

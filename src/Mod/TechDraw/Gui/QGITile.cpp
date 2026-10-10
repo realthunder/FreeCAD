@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <QGraphicsItem>
 #endif
@@ -332,13 +334,13 @@ bool QGITile::getAltWeld()
 //TODO: this is Pen, not Brush. sb Brush to colour background
 QColor QGITile::getTileColor() const
 {
-    App::Color fcColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Colors")->GetUnsigned("TileColor", 0x000000FF));
+    App::Color fcColor = App::Color((uint32_t) TechDraw::TechDrawParams::getTileColor());
     return PreferencesGui::getAccessibleQColor( fcColor.asValue<QColor>());
 }
 
 double QGITile::getSymbolWidth() const
 {
-    double w = Preferences::getPreferenceGroup("Dimensions")->GetFloat("SymbolSize", 64);
+    double w = Preferences::getPreferenceGroup("Dimensions")->GetFloat("SymbolSize", TechDraw::TechDrawParams::defaultSymbolSize());
 //     symbols are only nominally 64x64. they actually have a "border" of 4 - 0.5*stroke(0.5)
 //     so we'll say effectively 62x62? 60 x 60
 //    double w = 64.0;
@@ -350,7 +352,7 @@ double QGITile::getSymbolWidth() const
 
 double QGITile::getSymbolHeight() const
 {
-    double h = Preferences::getPreferenceGroup("Dimensions")->GetFloat("SymbolSize", 64);
+    double h = Preferences::getPreferenceGroup("Dimensions")->GetFloat("SymbolSize", TechDraw::TechDrawParams::defaultSymbolSize());
     double fudge = 4.0;
     h = h - fudge;
 //    double h = 60.0;
@@ -361,7 +363,7 @@ double QGITile::getSymbolHeight() const
 //make symbols larger or smaller than standard
 double QGITile::getSymbolFactor() const
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetFloat("SymbolFactor", 1.25);
+    return Preferences::getPreferenceGroup("Decorations")->GetFloat("SymbolFactor", TechDraw::TechDrawParams::defaultSymbolFactor());
 }
 
 double QGITile::prefFontSize() const

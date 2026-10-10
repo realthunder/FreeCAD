@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <numbers>
 #include <QApplication>
 
@@ -437,7 +438,7 @@ public:
                 ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                     "User parameter:BaseApp/Preferences/Mod/Sketcher"
                 );
-                bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
+                bool continuousMode = Sketcher::SketcherParams::getContinuousCreationMode();
 
                 if (continuousMode) {
                     // This code enables the continuous creation mode.
@@ -678,7 +679,7 @@ public:
                 ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                     "User parameter:BaseApp/Preferences/Mod/Sketcher"
                 );
-                bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
+                bool continuousMode = Sketcher::SketcherParams::getContinuousCreationMode();
 
                 if (continuousMode) {
                     // This code enables the continuous creation mode.
@@ -793,7 +794,7 @@ public:
             "User parameter:BaseApp/Preferences/Mod/Sketcher"
         );
 
-        bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
+        bool continuousMode = Sketcher::SketcherParams::getContinuousCreationMode();
 
         if (firstsegment) {
             // user when right-clicking with no segment in really wants to exit

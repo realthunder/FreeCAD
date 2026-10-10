@@ -32,6 +32,7 @@
 #include <Base/Parameter.h>
 
 #include "PythonEditor.h"
+#include "EditorParams.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Macro.h"
@@ -168,9 +169,8 @@ void PythonEditor::keyPressEvent(QKeyEvent* e)
      */
     if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return) {
         bool shiftPressed = e->modifiers() & Qt::ShiftModifier;
-        ParameterGrp::handle hPrefGrp = getWindowParameter();
-        int indent = hPrefGrp->GetInt( "IndentSize", 4 );
-        bool space = hPrefGrp->GetBool( "Spaces", true );
+        int indent = static_cast<int>(EditorParams::getIndentSize());
+        bool space = EditorParams::getSpaces();
         QString ch = space ? QStringLiteral(" ")
                            : QStringLiteral("\t");
 

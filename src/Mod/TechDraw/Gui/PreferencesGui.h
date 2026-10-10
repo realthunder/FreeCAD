@@ -65,7 +65,6 @@ static double      dimArrowSize();
 
 static double      edgeFuzz();
 
-static Qt::PenStyle  sectionLineStyle();
 static bool          sectionLineMarks();
 
 static QString     weldingDirectory();

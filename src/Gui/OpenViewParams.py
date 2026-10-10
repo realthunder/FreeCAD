@@ -31,7 +31,7 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.abspath(__file__))), 'Tools'))
 import params_utils
 
-from params_utils import ParamString, ParamProxy
+from params_utils import ParamInt, ParamString, ParamProxy, ParamSpinBox
 
 NameSpace = 'Gui'
 ClassName = 'OpenViewParams'
@@ -147,6 +147,14 @@ Params = [
         ],
         hint="Hold Alt while opening to invert tab/split for that one view."),
         doc="Which way a cell is divided when a view opens in a split"),
+
+    ParamInt('MinimumCellSize', 300, title="Minimum view cell size",
+        proxy=ParamSpinBox(0, 2000, 10),
+        doc="The least width and height, in pixels, of a cell of a split view.\n"
+            "A split that would leave a cell smaller than this -- either half of\n"
+            "the cell divided -- is not made, and says so in the report view; a\n"
+            "view opening by itself goes to a tab instead. A border dragged\n"
+            "stops there too, up to 400 by 300. 0 for no limit."),
 ]
 
 

@@ -13,8 +13,10 @@
 #include <App/ParamRegistry.h>
 #include <App/PropertyStandard.h>
 
+#include "Gui/Application.h"
 #include "Gui/OmniSearch.h"
 #include "Gui/PrefWidgets.h"
+#include "Gui/ThemeParams.h"
 #include <src/App/InitApplication.h>
 
 using namespace Gui::OmniSearch;
@@ -57,9 +59,43 @@ private Q_SLOTS:
         Input in = parseInput(QStringLiteral("/"));
         QCOMPARE(in.mode, Mode::Chooser);
         QCOMPARE(in.offset, 0);
+        QVERIFY(!in.withObjects);
 
+        // The beginning of a keyword is the chooser, and as likely the
+        // beginning of an object's name: both are listed
         in = parseInput(QStringLiteral("/cm"));
         QCOMPARE(in.mode, Mode::Chooser);
+        QVERIFY(in.withObjects);
+        QCOMPARE(in.objectQuery, QStringLiteral("cm"));
+        in = parseInput(QStringLiteral("/P"));
+        QCOMPARE(in.mode, Mode::Chooser);
+        QVERIFY(in.withObjects);
+        QCOMPARE(in.objectQuery, QStringLiteral("P"));
+
+        // A keyword in full is the keyword
+        for (const char *full : {"/cmd", "/param"}) {
+            in = parseInput(QString::fromLatin1(full));
+            QCOMPARE(in.mode, Mode::Chooser);
+            QVERIFY(!in.withObjects);
+        }
+
+        // Anything else after the slash is an object query, no space needed
+        in = parseInput(QStringLiteral("/Box.Length"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("Box.Length"));
+        QCOMPARE(in.offset, 1);
+        in = parseInput(QStringLiteral("/cmdx"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("cmdx"));
+        in = parseInput(QStringLiteral("/c d"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("c d"));
+
+        // ... and the space is how to ask for an object named like a keyword
+        in = parseInput(QStringLiteral("/ cmd"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("cmd"));
+        QCOMPARE(in.offset, 2);
 
         in = parseInput(QStringLiteral("/ Box"));
         QCOMPARE(in.mode, Mode::Object);
@@ -240,6 +276,42 @@ private Q_SLOTS:
         QVERIFY(searchParams(QString()).size() == ParamRegistry::instance().entries().size());
     }
 
+    // The accent colours' defaults are written twice: in ThemeParams, which
+    // the omni search and the Theme page show, and as constants of
+    // Gui::Application, which the style sheet substitution and the Start
+    // page use. They used to be four different answers.
+    void test_accentDefaultsAreOne()  // NOLINT
+    {
+        QCOMPARE(Gui::ThemeParams::defaultThemeAccentColor1(), Gui::Application::DefaultAccentColor1);
+        QCOMPARE(Gui::ThemeParams::defaultThemeAccentColor2(), Gui::Application::DefaultAccentColor2);
+        QCOMPARE(Gui::ThemeParams::defaultThemeAccentColor3(), Gui::Application::DefaultAccentColor3);
+    }
+
+    // As ParamRegistryTest.everySettingIsDocumentedBriefly, with the Gui
+    // classes registered: every setting says what it is, in a few lines.
+    void test_everySettingIsDocumentedBriefly()  // NOLINT
+    {
+        const std::size_t maxLength = 400;
+        QStringList undocumented;
+        QStringList tooLong;
+        for (const ParamInfo* info : ParamRegistry::instance().entries()) {
+            const std::string doc = info->doc ? info->doc : "";
+            if (doc.empty()) {
+                undocumented << QString::fromStdString(info->fullName());
+            }
+            else if (doc.size() > maxLength) {
+                tooLong << QStringLiteral("%1 (%2)")
+                               .arg(QString::fromStdString(info->fullName()))
+                               .arg(doc.size());
+            }
+        }
+        QVERIFY2(undocumented.isEmpty(),
+                 qPrintable(QStringLiteral("no documentation: ") + undocumented.join(QStringLiteral(", "))));
+        QVERIFY2(tooLong.isEmpty(),
+                 qPrintable(QStringLiteral("over %1 characters: ").arg(maxLength)
+                            + tooLong.join(QStringLiteral(", "))));
+    }
+
     void test_paramListModelAndFilter()  // NOLINT
     {
         Gui::ParamListModel model;
@@ -355,6 +427,59 @@ private Q_SLOTS:
         le->onSave();
         QVERIFY(reg.getValue(s) == "xyz");
         reg.reset(s);
+    }
+
+    // The items last confirmed in the box: the newest first, each once, ten
+    // at most, and kept in the user parameters.
+    void test_recentItems()  // NOLINT
+    {
+        auto group = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/OmniSearch/Recent");
+        group->Clear();
+        QVERIFY(recentItems().empty());
+
+        addRecentItem(Mode::Command, QStringLiteral("Std_New"));
+        addRecentItem(Mode::Param, QStringLiteral("User parameter:BaseApp/Preferences/View/X"));
+        addRecentItem(Mode::Object, QStringLiteral("/GroupA.Label"));
+        auto items = recentItems();
+        QCOMPARE(int(items.size()), 3);
+        QCOMPARE(items[0].mode, Mode::Object);
+        QCOMPARE(items[0].key, QStringLiteral("/GroupA.Label"));
+        QCOMPARE(items[1].mode, Mode::Param);
+        QCOMPARE(items[2].mode, Mode::Command);
+        QCOMPARE(items[2].key, QStringLiteral("Std_New"));
+
+        // confirmed again: to the front, and there once
+        addRecentItem(Mode::Command, QStringLiteral("Std_New"));
+        items = recentItems();
+        QCOMPARE(int(items.size()), 3);
+        QCOMPARE(items[0].key, QStringLiteral("Std_New"));
+        QCOMPARE(items[1].key, QStringLiteral("/GroupA.Label"));
+
+        // the same key in another mode is another item
+        addRecentItem(Mode::Object, QStringLiteral("Std_New"));
+        QCOMPARE(int(recentItems().size()), 4);
+
+        // nothing to keep
+        addRecentItem(Mode::Chooser, QStringLiteral("/"));
+        addRecentItem(Mode::Command, QString());
+        addRecentItem(Mode::Command, QStringLiteral("  "));
+        QCOMPARE(int(recentItems().size()), 4);
+
+        // ten at most: the oldest goes
+        for (int i = 0; i < MaxRecentItems + 3; ++i)
+            addRecentItem(Mode::Command, QStringLiteral("Cmd%1").arg(i));
+        items = recentItems();
+        QCOMPARE(int(items.size()), MaxRecentItems);
+        QCOMPARE(items.front().key, QStringLiteral("Cmd%1").arg(MaxRecentItems + 2));
+        QCOMPARE(items.back().key, QStringLiteral("Cmd3"));
+        QCOMPARE(int(group->GetASCIIs().size()), MaxRecentItems);
+
+        // what is stored and is no item is passed over
+        group->SetASCII("Item0", "nonsense");
+        group->SetASCII("Item1", "what:ever");
+        QCOMPARE(int(recentItems().size()), MaxRecentItems - 2);
+        group->Clear();
     }
 
 private:

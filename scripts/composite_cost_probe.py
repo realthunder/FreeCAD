@@ -29,6 +29,9 @@ runs for a fixed time and exits.
   FC_BGFX_READBACK=2   readback always -- the comparable leg on GL
   FC_BGFX_READBACK_SYNC=1  spin frames until the copy lands, which is
                        the fully serialized form section 2 costed
+  FC_BGFX_READBACK_SYNC=0  never wait: the pipelined form. Unset, the
+                       session's Render/ReadbackFrameMode decides frame
+                       by frame, which is not a leg
 
 !! Launch with FC_SWAP_INTERVAL=0. Vblank-locked, every leg costs
 16.7 ms by definition and the whole difference sits in the swap wait.
@@ -233,7 +236,7 @@ def main():
     size_view()
     say("readback mode %s, sync %s"
         % (os.environ.get("FC_BGFX_READBACK", "(default 1)"),
-           os.environ.get("FC_BGFX_READBACK_SYNC", "0")))
+           os.environ.get("FC_BGFX_READBACK_SYNC", "(the setting)")))
     global _spinner
     _spinner = Spinner(view, SECS)
 

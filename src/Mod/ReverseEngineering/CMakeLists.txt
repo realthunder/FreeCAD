@@ -6,6 +6,7 @@ endif(BUILD_GUI)
 
 set(Reen_Scripts
     Init.py
+    ReverseEngineeringParams.py
 )
 
 if(BUILD_GUI)

@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Gui/ViewParams.h>
+
 #include <Gui/Window.h>
 
 #include "DlgSettingsMeshView.h"
@@ -65,7 +67,7 @@ void DlgSettingsMeshView::loadSettings()
 {
     Base::Reference<ParameterGrp> hGrp = Gui::WindowParameter::getDefaultParameter();
     hGrp = hGrp->GetGroup("View");
-    if (!hGrp->GetBool("EnablePreselection", true) && !hGrp->GetBool("EnableSelection", true)) {
+    if (!hGrp->GetBool("EnablePreselection", Gui::ViewParams::defaultEnablePreselection()) && !hGrp->GetBool("EnableSelection", Gui::ViewParams::defaultEnableSelection())) {
         ui->checkboxBoundbox->setDisabled(true);
     }
     ui->checkboxRendering->onRestore();

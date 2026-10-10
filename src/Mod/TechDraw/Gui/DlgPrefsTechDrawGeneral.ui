@@ -438,7 +438,7 @@ for ProjectionGroups</string>
            <string>Standard to be used to draw section lines.  This affects the position of arrows and symbol.</string>
           </property>
           <property name="currentIndex">
-           <number>0</number>
+           <number>1</number>
           </property>
           <property name="prefEntry" stdset="0">
            <cstring>SectionLineStandard</cstring>

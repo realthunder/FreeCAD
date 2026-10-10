@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include <Mod/Material/App/MaterialParams.h>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
 #include <QKeyEvent>
@@ -219,7 +220,7 @@ int MaterialTreeWidget::iconExtent()
     auto treeParam = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/TreeWidget");
     return qBound(MinIconExtent,
-                  int(treeParam->GetInt("IconSize", DefaultIconExtent)),
+                  int(treeParam->GetInt("IconSize", Materials::MaterialParams::defaultSelectorIconSize())),
                   MaxIconExtent);
 }
 
@@ -767,7 +768,7 @@ void MaterialTreeWidget::getRecents()
 
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/Recent");
-    _recentMax = static_cast<int>(param->GetInt("RecentMax", defaultRecents));
+    _recentMax = static_cast<int>(param->GetInt("RecentMax", Materials::MaterialParams::defaultRecentMax()));
     auto count = param->GetInt("Recent", 0);
     for (int i = 0; static_cast<long>(i) < count; i++) {
         QString key = QStringLiteral("MRU%1").arg(i);

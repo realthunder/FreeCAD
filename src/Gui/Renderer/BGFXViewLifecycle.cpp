@@ -912,7 +912,22 @@ void BGFXView::init(bool keepShared)
     // coverage having removed the reason it used to be mandatory. With
     // MSAA on it adds a resolve texture, which is the honest price of a
     // capture that works on every backend.
-    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags, true);
+    //
+    // ! Except that it does not exist: a MULTISAMPLED depth attachment
+    // cannot be resolved, and bgfx refuses the framebuffer outright
+    // unless such a texture is write-only or sampled per sample
+    // ("Frame buffer depth MSAA texture cannot be resolved"). Built
+    // sampleable always, every view asked for MSAA lost its
+    // framebuffer, took the fallback below, and the session ran
+    // without multisampling from then on -- on every backend, from
+    // 2026-09-07 until somebody switched anti-aliasing on and looked.
+    // So: sampleable without MSAA, which is the default and the case
+    // the paragraph above is about, and write-only with it. A capture
+    // of a multisampled view then has no depth to encode, and says so
+    // (BGFXFrame, captureHasDepth) instead of reading one.
+    depthSampleable = samples <= 1;
+    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags,
+                              depthSampleable);
     bgfx::Attachment attachment[2];
     // No mip chain on these render targets; the default resolve flag
     // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.
@@ -950,9 +965,15 @@ void BGFXView::init(bool keepShared)
     if (targetsFailed && msaaSamples > 1
             && !_BGFXLib.msaaTargetsUnavailable) {
         _BGFXLib.msaaTargetsUnavailable = true;
+        // Which of the three was refused is the whole diagnosis, and
+        // nothing else reports it: a release bgfx says nothing.
         std::printf("bgfx: %dx MSAA scene targets could not be created on "
-                    "this backend -- rebuilding without multisampling\n",
-                    msaaSamples);
+                    "this backend (colour %s, depth %s, framebuffer %s) -- "
+                    "rebuilding without multisampling\n",
+                    msaaSamples,
+                    bgfx::isValid(bgfxColor) ? "made" : "REFUSED",
+                    bgfx::isValid(bgfxDepth) ? "made" : "REFUSED",
+                    bgfx::isValid(bgfxFbo) ? "made" : "REFUSED");
         init(false);
         return;
     }
@@ -1397,6 +1418,8 @@ void BGFXView::init(bool keepShared)
         // its own config in render().
         ensureProgram(m_progCavity, "vs_fc_comp", "fs_fc_cavity");
         ensureUniform(u_cavityParams, "u_cavityParams",
+                      bgfx::UniformType::Vec4);
+        ensureUniform(u_cavityParams2, "u_cavityParams2",
                       bgfx::UniformType::Vec4);
         ensureUniform(s_texNormalZ, "s_texNormalZ",
                       bgfx::UniformType::Sampler);
@@ -1902,21 +1925,10 @@ int readbackMode()
     return mode;
 }
 
-/// FC_BGFX_READBACK_SYNC: spin frames until the copy lands, turning the
-/// pipelined route into the fully serialized one section 2 measured.
-/// Benchmark only -- it costs the frames it spins.
-bool readbackSync()
-{
-    static const bool on = [] {
-        const char *v = getenv("FC_BGFX_READBACK_SYNC");
-        return v && *v && *v != '0';
-    }();
-    return on;
-}
-
-/// A ceiling on that spin. bgfx normally fills a readback two frames
-/// out; if it has not by here, something is wrong and a frame shown
-/// late beats an application that stops.
+/// A ceiling on the spin that waits for a copy (syncReadback). bgfx
+/// normally fills a readback two frames out; if it has not by here,
+/// something is wrong and a frame shown late beats an application that
+/// stops.
 const int kReadbackSyncMaxFrames = 8;
 
 /// FC_BGFX_READBACK_VERIFY: how often to replace the frame with a
@@ -2146,15 +2158,33 @@ void BGFXView::noteReadbackFrame(uint32_t frameNum)
             slot.queuedFrame = frameNum;
 }
 
-uint32_t BGFXView::syncReadback(uint32_t frameNum, bool capture)
+int BGFXView::readbackSyncForced()
 {
-    // A capture cannot trail. The screen redraws the previous image and
-    // catches up a frame later; renderOffscreen() is read once, right
-    // after this frame, so a pipelined capture IS the previous frame.
-    // On Direct3D 11 -- the Windows default, where the composite is
-    // always the readback -- every material icon came out one request
-    // late, the first blank, even through the grab's own second render.
-    if (!capture && !readbackSync())
+    static const int forced = [] {
+        const char *v = getenv("FC_BGFX_READBACK_SYNC");
+        if (!v || !*v)
+            return -1;
+        return *v != '0' ? 1 : 0;
+    }();
+    return forced;
+}
+
+uint32_t BGFXView::syncReadback(uint32_t frameNum, bool wait)
+{
+    // A capture cannot trail, and the caller always asks it to wait.
+    // The screen redraws the previous image and catches up a frame
+    // later; renderOffscreen() is read once, right after this frame, so
+    // a pipelined capture IS the previous frame. On Direct3D 11 -- the
+    // Windows default, where the composite is always the readback --
+    // every material icon came out one request late, the first blank,
+    // even through the grab's own second render.
+    //
+    // The screen trails the same way when nothing draws the frame that
+    // would catch it up: a highlight that came with the mouse's last
+    // move, a view that has just taken a new size. So an on-screen
+    // frame waits too unless the host said it is one of a run
+    // (Renderer::setFramePipelined).
+    if (!wait)
         return frameNum;
     uint32_t want = 0;
     for (const auto &slot : readbackSlots)
@@ -2276,10 +2306,10 @@ void BGFXView::blitReadback(uint32_t frameNum, int dstX, int dstY,
     // and uploading it would put the frame backwards.
     //
     // A frame that finds nothing landed redraws the previous image
-    // rather than waiting. The route is pipelined, so what is on screen
-    // trails the scene by a frame or two, and that lag is as much its
-    // cost as the milliseconds are. FC_BGFX_READBACK_SYNC removes it,
-    // at the price section 2 quotes.
+    // rather than waiting. That is the pipelined form: what is on
+    // screen trails the scene by a frame or two, and that lag is as
+    // much its cost as the milliseconds are. A frame that waited
+    // (syncReadback) finds its own copy here and trails nothing.
     int fresh = -1;
     for (int i = 0; i < int(readbackSlots.size()); ++i) {
         ReadbackSlot &slot = readbackSlots[size_t(i)];

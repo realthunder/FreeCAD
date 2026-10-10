@@ -41,6 +41,8 @@
 #include <Base/ServiceProvider.h>
 #include <Base/Tools.h>
 #include <Gui/Document.h>
+
+#include <Gui/MiscParams.h>
 #include <Gui/Inventor/Draggers/GizmoStyleParameters.h>
 #include <Gui/Inventor/So3DAnnotation.h>
 #include <Gui/Inventor/SoToggleSwitch.h>
@@ -64,19 +66,11 @@ enum class DefaultDragBehavior
     Fine = 1,
 };
 
-Base::Reference<ParameterGrp> getGizmoParameterGroup()
-{
-    static Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Gui/Gizmos"
-    );
-
-    return hGrp;
-}
 
 int getCoarseLinearSnapMultiplier()
 {
     int multiplier = static_cast<int>(
-        getGizmoParameterGroup()->GetInt("CoarseLinearSnapMultiplier", 5)
+        MiscParams::getCoarseLinearSnapMultiplier()
     );
     return std::max(1, multiplier);
 }
@@ -84,7 +78,7 @@ int getCoarseLinearSnapMultiplier()
 int getCoarseRotationSnapMultiplier()
 {
     int multiplier = static_cast<int>(
-        getGizmoParameterGroup()->GetInt("CoarseRotationSnapMultiplier", 5)
+        MiscParams::getCoarseRotationSnapMultiplier()
     );
     return std::max(1, multiplier);
 }
@@ -134,7 +128,7 @@ void Gizmo::setDraggerPlacement(const Base::Vector3d& pos, const Base::Vector3d&
 
 bool Gizmo::isDelayedUpdateEnabled()
 {
-    return getGizmoParameterGroup()->GetBool("DelayedGizmoUpdate", false);
+    return MiscParams::getDelayedGizmoUpdate();
 }
 
 double Gizmo::getMultFactor()
@@ -890,21 +884,17 @@ void GizmoContainer::cameraPositionChangeCallback(void* data, SoSensor*)
 
 bool GizmoContainer::isEnabled()
 {
-    static auto hGrp = getGizmoParameterGroup();
-
-    return hGrp->GetBool("EnableGizmos", true);
+    return MiscParams::getEnableGizmos();
 }
 
 bool GizmoContainer::isCoarseSnapEnabled()
 {
-    return getGizmoParameterGroup()->GetBool("EnableCoarseSnap", true);
+    return MiscParams::getEnableCoarseSnap();
 }
 
 Qt::KeyboardModifier GizmoContainer::getFineSnapModifier()
 {
-    auto modifier = static_cast<Qt::KeyboardModifier>(
-        getGizmoParameterGroup()->GetInt("FineSnapModifier", static_cast<long>(Qt::ShiftModifier))
-    );
+    auto modifier = static_cast<Qt::KeyboardModifier>(MiscParams::getFineSnapModifier());
     if (modifier == Qt::ControlModifier) {
         return modifier;
     }
@@ -921,10 +911,7 @@ InputHint::UserInput GizmoContainer::getFineSnapKey()
 
 bool GizmoContainer::isCoarseByDefault()
 {
-    return getGizmoParameterGroup()->GetInt(
-               "DefaultCoarseDragBehavior",
-               static_cast<int>(DefaultDragBehavior::Coarse)
-           )
+    return MiscParams::getDefaultCoarseDragBehavior()
         == static_cast<int>(DefaultDragBehavior::Coarse);
 }
 

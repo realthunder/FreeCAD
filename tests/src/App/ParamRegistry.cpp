@@ -119,6 +119,23 @@ TEST_F(ParamRegistryTest, searchRunsOverPathNameAndDoc)
     EXPECT_TRUE(reg.search({"no-such-keyword-anywhere"}).empty());
 }
 
+// A setting's documentation is what the omni search lists beside it, and its
+// tool tip. Every setting has some, and none of it is a page: what belongs
+// in a design document stays out of here (or above the setting, as a comment
+// in its definition file). The Gui test asks the same of the Gui classes.
+TEST_F(ParamRegistryTest, everySettingIsDocumentedBriefly)
+{
+    constexpr std::size_t maxLength = 400;
+    const auto& entries = ParamRegistry::instance().entries();
+    ASSERT_FALSE(entries.empty());
+    for (const ParamInfo* info : entries) {
+        const std::string doc = info->doc ? info->doc : "";
+        EXPECT_FALSE(doc.empty()) << info->fullName() << " has no documentation";
+        EXPECT_LE(doc.size(), maxLength)
+            << info->fullName() << ": " << doc.size() << " characters of documentation";
+    }
+}
+
 TEST_F(ParamRegistryTest, valuesRoundTripThroughTheParameterGroup)
 {
     auto& reg = ParamRegistry::instance();
@@ -159,4 +176,162 @@ TEST_F(ParamRegistryTest, valuesRoundTripThroughTheParameterGroup)
     EXPECT_EQ(reg.getValue(hex), "0x1234ABCD");
     reg.reset(hex);
     EXPECT_EQ(reg.getValue(hex), "0x000000FF");
+}
+
+// Two generated classes can describe the same setting (Part's and PartGui's
+// PartParams share four definitions). It is listed once: the first stands.
+TEST_F(ParamRegistryTest, aSettingIsDescribedOnce)
+{
+    auto& reg = ParamRegistry::instance();
+    const std::size_t before = reg.entries().size();
+    std::vector<ParamInfo> first;
+    first.emplace_back("T",
+                       "First",
+                       DocumentPath,
+                       "OmniTestTwice",
+                       "OmniTestTwice",
+                       ParamInfo::Int,
+                       1);
+    first.back().setDoc("Described by the registry's own test.");
+    std::vector<ParamInfo> second;
+    second.emplace_back("T",
+                        "Second",
+                        DocumentPath,
+                        "OmniTestTwice",
+                        "OmniTestTwice",
+                        ParamInfo::Int,
+                        2);
+    second.back().setDoc("Described by the registry's own test.");
+    second.emplace_back("T",
+                        "Second",
+                        DocumentPath,
+                        "OmniTestOnce",
+                        "OmniTestOnce",
+                        ParamInfo::Int,
+                        3);
+    second.back().setDoc("Described by the registry's own test.");
+    ParamRegistry::Registrar a(std::move(first));
+    ParamRegistry::Registrar b(std::move(second));
+
+    EXPECT_EQ(reg.entries().size(), before + 2);
+    const ParamInfo* twice = reg.find(DocumentPath, "OmniTestTwice");
+    ASSERT_NE(twice, nullptr);
+    EXPECT_STREQ(twice->className, "First");
+    EXPECT_EQ(twice->defaultValue, "1");
+    EXPECT_EQ(reg.search({"OmniTestTwice"}).size(), 1u);
+    ASSERT_NE(reg.find(DocumentPath, "OmniTestOnce"), nullptr);
+}
+
+TEST(ParamRegistryValues, normalizeValue)
+{
+    std::string res;
+    EXPECT_TRUE(ParamRegistry::normalizeValue(ParamInfo::Bool, "YES", res));
+    EXPECT_EQ(res, "true");
+    EXPECT_TRUE(ParamRegistry::normalizeValue(ParamInfo::Bool, "0", res));
+    EXPECT_EQ(res, "false");
+    EXPECT_FALSE(ParamRegistry::normalizeValue(ParamInfo::Bool, "", res));
+    EXPECT_TRUE(ParamRegistry::normalizeValue(ParamInfo::Int, "-0x10", res));
+    EXPECT_EQ(res, "-16");
+    EXPECT_FALSE(ParamRegistry::normalizeValue(ParamInfo::Int, "3.5", res));
+    EXPECT_TRUE(ParamRegistry::normalizeValue(ParamInfo::UInt, "42", res));
+    EXPECT_EQ(res, "42");
+    EXPECT_TRUE(ParamRegistry::normalizeValue(ParamInfo::Hex, "3425907456", res));
+    EXPECT_EQ(res, "0xCC333300");
+    EXPECT_FALSE(ParamRegistry::normalizeValue(ParamInfo::Hex, "red", res));
+    EXPECT_TRUE(ParamRegistry::normalizeValue(ParamInfo::Float, "2.50", res));
+    EXPECT_EQ(res, "2.5");
+    EXPECT_FALSE(ParamRegistry::normalizeValue(ParamInfo::Float, "", res));
+    EXPECT_TRUE(ParamRegistry::normalizeValue(ParamInfo::String, "", res));
+    EXPECT_EQ(res, "");
+}
+
+// A setting described at run time -- what a module written in Python does
+// through FreeCAD.registerParam() -- is an entry like any other, and the
+// registry keeps the strings the description came with.
+TEST_F(ParamRegistryTest, aSettingDescribedAtRunTime)
+{
+    auto& reg = ParamRegistry::instance();
+    const std::size_t before = reg.entries().size();
+    const ParamInfo* info = nullptr;
+    {
+        App::ParamSpec spec;
+        spec.nameSpace = "Test";
+        spec.className = "RunTimeParams";
+        spec.path = DocumentPath;
+        spec.entry = "OmniTestRunTimeChoice";
+        spec.type = ParamInfo::Int;
+        spec.defaultValue = "0x1";
+        spec.title = "A run time choice";
+        spec.doc = "Described by the registry's own test.";
+        spec.proxy = "ComboBox";
+        spec.items = {{"Ask", "", ""}, {"Always", "Every time", ""}, {"Never", "", ""}};
+        info = reg.add(spec);
+        ASSERT_NE(info, nullptr);
+
+        // the first description stands
+        spec.title = "Another";
+        EXPECT_EQ(reg.add(spec), nullptr);
+    }
+    EXPECT_EQ(reg.entries().size(), before + 1);
+    EXPECT_EQ(reg.entries().back(), info);
+    EXPECT_EQ(reg.find(DocumentPath, "OmniTestRunTimeChoice"), info);
+
+    EXPECT_EQ(info->fullName(), "Test::RunTimeParams::OmniTestRunTimeChoice");
+    EXPECT_EQ(info->displayPath(), "Preferences/Document/OmniTestRunTimeChoice");
+    EXPECT_STREQ(info->title, "A run time choice");
+    EXPECT_EQ(info->type, ParamInfo::Int);
+    EXPECT_EQ(info->defaultValue, "1");
+    EXPECT_STREQ(info->proxy, "ComboBox");
+    ASSERT_EQ(info->items.size(), 3u);
+    EXPECT_STREQ(info->items[1].text, "Always");
+    EXPECT_STREQ(info->items[1].tooltip, "Every time");
+    EXPECT_EQ(info->items[1].data, nullptr);
+    EXPECT_FALSE(info->comboDataIsString);
+
+    auto hits = reg.search({"runtimeparams::", "run", "choice"});
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], info);
+
+    EXPECT_EQ(reg.getValue(*info), "1");
+    EXPECT_TRUE(reg.setValue(*info, "2"));
+    EXPECT_EQ(reg.getValue(*info), "2");
+    reg.reset(*info);
+    EXPECT_FALSE(reg.isSet(*info));
+
+    // not over a generated class's entry, not without a place, and not with
+    // a default that is no value of the type
+    App::ParamSpec bad;
+    bad.path = DocumentPath;
+    bad.entry = "CheckExtension";
+    bad.defaultValue = "true";
+    bad.doc = "x";
+    EXPECT_EQ(reg.add(bad), nullptr);
+    bad.entry = "";
+    EXPECT_EQ(reg.add(bad), nullptr);
+    bad.entry = "OmniTestRunTimeBad";
+    bad.path = "";
+    EXPECT_EQ(reg.add(bad), nullptr);
+    bad.path = DocumentPath;
+    bad.defaultValue = "maybe";
+    EXPECT_EQ(reg.add(bad), nullptr);
+    EXPECT_EQ(reg.entries().size(), before + 1);
+
+    // a choice stored as text
+    App::ParamSpec text;
+    text.path = DocumentPath;
+    text.entry = "OmniTestRunTimeText";
+    text.name = "RunTimeText";
+    text.type = ParamInfo::String;
+    text.defaultValue = "b";
+    text.doc = "Described by the registry's own test.";
+    text.proxy = "ComboBox";
+    text.comboDataIsString = true;
+    text.items = {{"First", "", "a"}, {"Second", "", "b"}};
+    const ParamInfo* choice = reg.add(text);
+    ASSERT_NE(choice, nullptr);
+    EXPECT_STREQ(choice->name, "RunTimeText");
+    EXPECT_STREQ(choice->entry, "OmniTestRunTimeText");
+    EXPECT_TRUE(choice->comboDataIsString);
+    EXPECT_STREQ(choice->items[1].data, "b");
+    EXPECT_EQ(reg.getValue(*choice), "b");
 }

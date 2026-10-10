@@ -61,7 +61,7 @@ namespace OmniSearch {
 enum class Mode {
     /// "/" typed, no mode chosen yet
     Chooser,
-    /// "/ query": documents, objects, sub-objects and properties
+    /// "/query" or "/ query": documents, objects, sub-objects and properties
     Object,
     /// "/cmd query": registered commands
     Command,
@@ -75,18 +75,69 @@ struct Input {
     QString query;
     /// Where query starts in the full text, for splicing completions back
     int offset = 0;
+    /** Chooser only: the text after the slash is the beginning of a mode
+     * keyword ("/c", "/par"), which is as likely the beginning of an
+     * object's name. The chooser then lists the objects that match
+     * objectQuery after the modes that do.
+     */
+    bool withObjects = false;
+    QString objectQuery;
 };
 
 /// The prefix that selects a mode, "/ ", "/cmd " or "/param "
 GuiExport const char *modePrefix(Mode mode);
 
+/// The words that select a mode after the slash: "cmd", "param"
+GuiExport const std::vector<const char*> &modeKeywords();
+
 /** Split the box's text into mode and query.
  *
- * Text starting with a full prefix is that mode. A lone "/" or a
- * partial prefix ("/cm") is the chooser. Text that does not start with
- * "/" is an object query as typed.
+ * Text starting with a full prefix ("/cmd ", "/param ", "/ ") is that
+ * mode. After the slash, a word that is no keyword is an object query
+ * with no space needed ("/Box"); the space is how to ask for an object
+ * whose name is a keyword ("/ cmd"). A keyword in full ("/cmd") is the
+ * keyword and the chooser shows it; the beginning of one ("/c", "/par")
+ * is the chooser with withObjects set, modes and objects together. A
+ * lone "/" is the chooser. Text that does not start with "/" is an
+ * object query as typed.
  */
 GuiExport Input parseInput(const QString &text);
+
+/** One of the items last confirmed in the omni search.
+ *
+ * Confirmed is carried out, not found: a command run, a parameter's editor
+ * opened, an object selected or a property's editor opened. What is kept
+ * is what brings the item back: a command's name, a parameter's full
+ * path, and for an object or a property the box's text ("/Box.Length"),
+ * which is resolved again against whatever is open then.
+ */
+struct RecentItem {
+    /// Mode::Object, Mode::Command or Mode::Param
+    Mode mode = Mode::Object;
+    QString key;
+
+    bool operator==(const RecentItem &other) const
+    {
+        return mode == other.mode && key == other.key;
+    }
+};
+
+/// How many confirmed items are kept
+constexpr int MaxRecentItems = 10;
+
+/** The items last confirmed, the newest first, each once.
+ *
+ * Kept in the user parameters (Preferences/OmniSearch/Recent), so from one
+ * session to the next. State, not a setting: it is not in the parameter
+ * registry, as the recent files are not.
+ */
+GuiExport std::vector<RecentItem> recentItems();
+
+/** Note an item as confirmed: it goes to the front of recentItems(), and
+ * the copy of it further down, if there is one, goes. Nothing is noted for
+ * Mode::Chooser or an empty key.
+ */
+GuiExport void addRecentItem(Mode mode, const QString &key);
 
 /// What an object query resolved to
 struct ObjectMatch {
@@ -253,7 +304,7 @@ class GuiExport ParamListModel : public QAbstractListModel
 public:
     explicit ParamListModel(QObject *parent = nullptr);
 
-    /// Re-read the registry, after a library loaded more parameters
+    /// Re-read the registry if a library has added parameters since
     void refresh();
 
     const App::ParamInfo *info(const QModelIndex &index) const;

@@ -92,6 +92,8 @@ private:
     QLabel *labelSplitDirection = nullptr;
     Gui::PrefComboBox *SplitDirection = nullptr;
     QLabel *hintSplitDirection = nullptr;
+    QLabel *labelMinimumCellSize = nullptr;
+    Gui::PrefSpinBox *MinimumCellSize = nullptr;
 
     // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupTreeview = nullptr;

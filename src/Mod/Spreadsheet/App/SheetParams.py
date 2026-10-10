@@ -39,16 +39,56 @@ ParamPath = 'User parameter:BaseApp/Preferences/Mod/Spreadsheet'
 ClassDoc = 'Convenient class to obtain spreadsheet related parameters'
 
 Params = [
-    ParamBool('showAliasName', False),
-    ParamString('DisplayAliasFormatString', '%V = %A'),
-    ParamString('AliasedCellBackgroundColor', '#feff9e'),
-    ParamString('AliasedCellForegroundColor', '#242424'),
-    ParamString('LockedAliasedCellColor', '#9effff'),
-    ParamString('TextColor', '#000000'),
-    ParamString('PositiveNumberColor', ''),
-    ParamString('NegativeNumberColor', ''),
-    ParamBool('VerticalConfTable', False),
-    ParamBool('DoubleBindConfTable', False),
+    ParamBool('showAliasName', False,
+        title = 'Show alias name',
+        doc = "Show the alias of a cell together with its value in the\n"
+              "spreadsheet, laid out by the alias format string."),
+    ParamString('DisplayAliasFormatString', '%V = %A',
+        doc = "How a cell with an alias is shown when aliases are displayed.\n"
+              "%V stands for the value and %A for the alias."),
+    ParamString('AliasedCellBackgroundColor', '#feff9e',
+        doc = "Background colour of spreadsheet cells that have an alias, as a\n"
+              "colour name or #rrggbb."),
+    ParamString('AliasedCellForegroundColor', '#242424',
+        doc = "Text colour of spreadsheet cells that have an alias, as a colour\n"
+              "name or #rrggbb. A style sheet can override it."),
+    ParamString('LockedAliasedCellColor', '#9effff',
+        doc = "Background colour of spreadsheet cells whose alias is locked, as a\n"
+              "colour name or #rrggbb."),
+    ParamString('TextColor', '#000000',
+        doc = "Text colour of spreadsheet cells that have no colour of their own,\n"
+              "as a colour name or #rrggbb."),
+    ParamString('PositiveNumberColor', '',
+        doc = "Text colour of spreadsheet cells holding a number that is not\n"
+              "negative, as a colour name or #rrggbb. Empty uses the normal text\n"
+              "colour."),
+    ParamString('NegativeNumberColor', '',
+        doc = "Text colour of spreadsheet cells holding a negative number, as a\n"
+              "colour name or #rrggbb. Empty uses the normal text colour."),
+    ParamBool('VerticalConfTable', False,
+        doc = "Start the configuration table dialog in vertical layout, with one\n"
+              "configuration per column, when a single column is selected.\n"
+              "Follows the Vertical checkbox of that dialog."),
+    ParamBool('DoubleBindConfTable', False,
+        doc = "Tick Double Bind when the configuration table dialog opens on a\n"
+              "single column selection. The top-left cell of the table then both\n"
+              "shows and sets the current configuration."),
+    ParamString('ImportExportDelimiter', 'tab',
+        title = "Delimiter character",
+        doc = "Character that separates the fields when a spreadsheet is imported\n"
+              "from or exported to a text file; the words tab, comma and\n"
+              "semicolon are accepted too. Takes effect at the next import or\n"
+              "export."),
+    ParamString('ImportExportQuoteCharacter', '"',
+        title = "Quote character",
+        doc = "Character that encloses text fields when a spreadsheet is imported\n"
+              "from or exported to a text file. It must be a single character.\n"
+              "Takes effect at the next import or export."),
+    ParamString('ImportExportEscapeCharacter', '\\',
+        title = "Escape character",
+        doc = "Character that marks special characters when a spreadsheet is\n"
+              "imported from or exported to a text file. It must be a single\n"
+              "character. Takes effect at the next import or export."),
 ]
 
 def declare():

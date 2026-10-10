@@ -188,11 +188,23 @@ void BGFXView::submitCavity(float valley, float ridge, float radius)
     // and it left broad curvature invisible -- and, on a high-DPI
     // display, ever more so, because the feature is the same size in
     // millimetres while the pixel gets smaller.
-    const float r = radius > 0.0f ? radius : 1.0f;
+    //
+    // A whole number of texels: the prepass is point-sampled, so a
+    // neighbour at half a texel lands on the border between two and
+    // takes either, and the pass reads each neighbour's own position to
+    // place a crease within its pixel (fs_fc_cavity.sc), which only a
+    // tap at a texel's centre has.
+    const float r = std::max(1.0f, std::round(radius));
     float params[4] = {valley, ridge,
                        r / float(width), r / float(height)};
+    // One texel, for the neighbours of a neighbour; and whether the
+    // prepass depth is fine enough to place a crease by (a half-float
+    // one is not: see aoNormalZFp16).
+    float params2[4] = {1.0f / float(width), 1.0f / float(height),
+                        aoNormalZFp16 ? 0.0f : 1.0f, 0.0f};
     bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
     bgfx::setUniform(u_cavityParams, params);
+    bgfx::setUniform(u_cavityParams2, params2);
     // dst *= src, alpha untouched: the darkening rides on top of
     // whatever the opaque passes left, and the background multiplies
     // by white.

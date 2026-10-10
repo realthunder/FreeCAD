@@ -28,6 +28,8 @@
 #include "DlgSettingsFemInOutVtkImp.h"
 #include "ui_DlgSettingsFemInOutVtk.h"
 
+#include <Mod/Fem/App/FemParams.h>
+
 
 using namespace FemGui;
 
@@ -53,8 +55,9 @@ void DlgSettingsFemInOutVtkImp::loadSettings()
 {
     ui->comboBoxVtkImportObject->onRestore();
 
+    // populateExportLevel() selects what is stored. onSave() stood here, so
+    // opening the page stored the level.
     populateExportLevel();
-    ui->cb_export_level->onSave();
 }
 
 /**
@@ -84,7 +87,7 @@ void DlgSettingsFemInOutVtkImp::populateExportLevel() const
 
     // set default index
     auto hGrp = ui->cb_export_level->getWindowParameter();
-    std::string current = hGrp->GetASCII(ui->cb_export_level->entryName(), "Highest");
+    std::string current = hGrp->GetASCII(ui->cb_export_level->entryName(), Fem::FemParams::defaultMeshExportLevel().c_str());
     int index = ui->cb_export_level->findData(QByteArray::fromStdString(current));
     ui->cb_export_level->setCurrentIndex(index);
 }

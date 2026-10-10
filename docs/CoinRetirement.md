@@ -415,6 +415,62 @@ passed; `docs/RenderDebug.md` section 5.1 records what they were. For
 menu behaviour the user is the only oracle; say that instead of
 reporting a pass.
 
+**The menu since 2026-10-09** (docs/HandsOnQueue.md entry 63,
+`Gui/DisplayOptions.h`). Three sections, built when the menu is about to
+show, in this order:
+- `DrawStyleOptionsWidget`, at the top: the draw styles as ONE combo box,
+  each entry with its style's icon, and the anti-aliasing of the 3D views
+  as another. The styles' own rows are still in the menu, hidden: they are
+  the commands' actions, which the `V,1` to `V,9` shortcuts need (above),
+  and picking an entry of the combo runs the style's command. A combo in
+  a widget row keeps the rule: the menu stays up while styles are tried.
+- `ShadingOptionsWidget`, as before.
+- `LightOptionsWidget`: what the Light Sources preference page held --
+  headlight, fill light and ambient light, a switch, a colour and an
+  intensity each -- which is gone from the preferences. A change is the
+  ACTIVE VIEW's: it is written into the view's `Light_*` properties
+  (`View3DInventorViewer::setLightSetting`), which a view keeps with its
+  document. "Apply all" gives every other open 3D view the lights of the
+  active one, once (`applyLightSettingsToAllViews`); nothing ties the
+  views together after it. (It was a check box "All views" on a setting
+  `View/SyncLightSettings` for a day; both are gone.) Nothing there writes
+  the preferences but "Save as default" (`saveLightSettings`).
+  "Direction" raises a handle in the view to turn the headlight with
+  (`setLightManipulator`): Coin's light dragger
+  (`SoFCDirectionalLightDragger`), as the light of the retired Shadow style
+  had it, and the button again or Escape takes it down. What made that one
+  usable is kept, by other means:
+  - it is drawn over the model, which at the middle of a view it
+    otherwise sits inside. For Coin that is the `SoAnnotation` it hangs
+    under, in the aux root. For a backend it is a scene-camera overlay of
+    its own (`lightManipCapture`, `OverlayLightManip`), which is drawn
+    over the finished scene with a fresh depth buffer -- and it has to be
+    fed: the shadow light's handle was left to Coin to draw on top (sec 4,
+    stage 1b), and where the backend does not draw into Coin's GL context
+    (Direct3D, the Windows default) nothing Coin draws is seen at all;
+  - the shadow light made the model unpickable while its handle was up.
+    Here the handle is asked FIRST, by an `SoHandleEventAction` of its own
+    over the camera and the handle alone (`Private::lightManipEvent`,
+    before the navigation in `processSoEvent`): an event it takes reaches
+    neither the navigation nor the scene, and every other one goes on as
+    ever, so the camera turns and the model is picked with the handle up.
+  The handle stands in the world and the headlight is fixed to the eye
+  (its direction is kept relative to the camera): the handle is turned
+  after the camera before each frame (`syncLightDragger`). It is sized
+  there too, a fixed part of the view: `SoFCDirectionalLightDragger`
+  sizes itself by the view volume of the action that traverses it, and the
+  backend's capture has no camera in its state (`autoScale` off). Its
+  arrow is orange, a copy of the stock one with a material of its own; the
+  stock grey is lost on a grey model.
+The two rows that must dismiss the menu -- "Direction", since the view
+is under it, and a colour, since a dialog under a menu's grab gets no
+input -- do it by the synthetic press outside the popup that the warning
+above asks for (`dismiss()` in `DisplayOptions.cpp`).
+`tests/gui/display-style-menu.py` drives the sections through the menu's
+own `aboutToShow`; it pops nothing up, so of the menu's BEHAVIOUR as a
+popup -- staying up, the dismissals, the colour dialog after one -- it
+says nothing.
+
 ### 3.6 Stage 1c: the workbench scene graphs
 
 `wb_audit_probe.py` -- the rest of the first bullet of 3.2. Eleven cases,
@@ -1148,6 +1204,24 @@ survive into it -- the type is resolved against
 `RendererFactory::types()`, falling back to `Default` when nothing is
 registered (a build without `BUILD_BGFX`), so it never asks for a
 backend nobody can create.
+
+**Changed 2026-10-09** (`docs/HandsOnQueue.md` entry 50, the reporter's
+decision). The type is no longer written at startup; it is read for what
+it MEANS wherever a backend is made (`RenderParams::engineType()`):
+- `Default`, or nothing stored: the render engine on the platform's
+  backend. It used to mean no backend, with the real one written over it
+  at startup -- so a session whose parameters were cleared ("Reset all"
+  in the preferences) had no engine until the next start;
+- `Legacy`: the old Coin rendering, without the engine. This one is a
+  setting and is kept from session to session;
+- a backend by name: that backend if this build has it, the platform's
+  if not.
+With the engine the program draws by render cache 3 whatever
+`View/RenderCache` holds: the setting is left as it is and not looked at
+(`RenderParams::renderCache()` is what everything asks). Under `Legacy`
+the setting means what it says again, default 3. So an A/B comparison of
+cache modes now sets the type to `Legacy` first. `selectRenderPath()` is
+gone: nothing is written at startup.
 
 Runtime changes work exactly as before: setting either parameter from
 the console or a script re-selects the path for that session, which is

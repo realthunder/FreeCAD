@@ -148,8 +148,14 @@ public:
   void autoSave(bool enable, O *o, SignalT signal, int delay=100) {
     if (m_Conn) {
       QObject::disconnect(m_Conn);
-      if (!enable)
-          return;
+    }
+    // Off is off for a widget that was never connected too. The return
+    // used to be inside the test above, so a widget MADE while
+    // preferences are not applied at once -- every widget of a dialog
+    // opened in such a session -- connected all the same and stored each
+    // change as it was made.
+    if (!enable) {
+      return;
     }
     if (delay) {
       if (!m_Timer) {

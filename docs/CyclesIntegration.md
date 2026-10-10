@@ -588,6 +588,18 @@ highlight route, no depth prepass, no incremental scene update.
   `hostLinearColor()` -- the section 6.1 rule, applied. One pass in
   the consumer's scene run: after the opaque geometry and the outline,
   before the transparent bucket.
+  ! The triangle's texture coordinate is a RENDER TARGET's:
+  `vs_fc_comp` takes it from `fc_clipToUv`, which turns v over on every
+  backend but OpenGL, where a target's first row is its top one. The
+  frame is not a target -- it is uploaded, bottom row first, and an
+  uploaded texture's first row is at v = 0 everywhere. So on Direct3D
+  (the Windows default since 2026-09-10), Vulkan and Metal the path
+  tracer's picture was drawn upside down, the host's own lines over it
+  the right way up; for a model with Z up that reads as "mirrored by xy
+  plane" (docs/HandsOnQueue.md entry 65). `fs_fc_cycles_blit` takes the
+  turn back out under the same `BGFX_SHADER_LANGUAGE_GLSL` test. It was
+  never seen on Linux or in the browser, which are OpenGL.
+  `tests/gui/cycles-view-right-way-up.py`.
 - **The throttle.** `drawFrame()` calls `Session::draw()` (the
   driver's `draw()` does nothing -- the frame was consumed already)
   purely so the session counts a draw, because `ready_to_reset()` is

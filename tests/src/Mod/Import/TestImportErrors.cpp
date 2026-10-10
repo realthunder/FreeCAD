@@ -92,6 +92,42 @@ TEST_F(ImportErrorsTest, dxfWriterThrowsOnAFileItCannotOpen)
     Base::FileInfo(file).deleteFile();
 }
 
+// Not an error raised but an option not taken: the writer was pointed at
+// Preferences/Mod/Import for its options, where nothing stores them, so what
+// the DXF preference page says about the export (Mod/Draft) never reached it.
+// An ellipse is written as an ELLIPSE, and as a polyline with "Treat ellipses
+// and splines as polylines" on.
+TEST_F(ImportErrorsTest, writeDXFShapeTakesTheOptionsOfTheDxfPage)
+{
+    try {
+        Base::Interpreter().runString(
+            "_ie_p = FreeCAD.ParamGet('User parameter:BaseApp/Preferences/Mod/Draft')\n"
+            "_ie_had = 'DiscretizeEllipses' in _ie_p.GetBools()\n"
+            "_ie_old = _ie_p.GetBool('DiscretizeEllipses', False)\n"
+            "def _ie_kinds(flag):\n"
+            "    _ie_p.SetBool('DiscretizeEllipses', flag)\n"
+            "    name = os.path.join(_ie_tmp, 'ellipse%d.dxf' % flag)\n"
+            "    shape = Part.Ellipse(FreeCAD.Vector(0, 0, 0), 20, 10).toShape()\n"
+            "    Import.writeDXFShape([shape], name)\n"
+            "    with open(name, errors='replace') as f:\n"
+            "        lines = [line.strip() for line in f]\n"
+            "    return set(lines[i + 1] for i in range(len(lines) - 1) if lines[i] == '0')\n"
+            "try:\n"
+            "    _ie_off, _ie_on = _ie_kinds(False), _ie_kinds(True)\n"
+            "finally:\n"
+            "    if _ie_had:\n"
+            "        _ie_p.SetBool('DiscretizeEllipses', _ie_old)\n"
+            "    else:\n"
+            "        _ie_p.RemBool('DiscretizeEllipses')\n"
+            "assert 'ELLIPSE' in _ie_off, sorted(_ie_off)\n"
+            "assert 'ELLIPSE' not in _ie_on, sorted(_ie_on)\n"
+            "assert 'LWPOLYLINE' in _ie_on or 'POLYLINE' in _ie_on, sorted(_ie_on)\n");
+    }
+    catch (const Base::Exception& e) {
+        ADD_FAILURE() << e.what();
+    }
+}
+
 TEST_F(ImportErrorsTest, writeDXFShapeToNoDirectoryIsIOError)
 {
     expectRaises("Import.writeDXFShape([Part.makeBox(1, 1, 1)],"

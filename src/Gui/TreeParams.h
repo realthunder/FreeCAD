@@ -71,6 +71,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SyncSelection
+    ///
+    /// Expand the tree view to show the item of an object when it is
+    /// selected in the 3D view, and scroll to it. When off, the item is
+    /// selected without expanding its parents.
     static const bool & getSyncSelection();
     static const bool & defaultSyncSelection();
     static void removeSyncSelection();
@@ -82,6 +86,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CheckBoxesSelection
+    ///
+    /// Show a checkbox on every object in the tree view. Ticking the box
+    /// selects the object and clearing it deselects the object.
     static const bool & getCheckBoxesSelection();
     static const bool & defaultCheckBoxesSelection();
     static void removeCheckBoxesSelection();
@@ -93,6 +100,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SyncView
+    ///
+    /// Switch to the 3D view that shows an object when its item is selected
+    /// in the tree view.
     static const bool & getSyncView();
     static const bool & defaultSyncView();
     static void removeSyncView();
@@ -103,6 +113,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreSelection
+    ///
+    /// Preselect an object in the 3D view while the mouse rests on its item
+    /// in the tree view.
     static const bool & getPreSelection();
     static const bool & defaultPreSelection();
     static void removePreSelection();
@@ -113,6 +126,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SyncPlacement
+    ///
+    /// Adjust the placement of an object dragged and dropped in the tree
+    /// view into another coordinate system, so that it stays where it was
+    /// in space.
     static const bool & getSyncPlacement();
     static const bool & defaultSyncPlacement();
     static void removeSyncPlacement();
@@ -123,6 +140,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RecordSelection
+    ///
+    /// Record every selection, so that the selection back and forward
+    /// buttons can step through earlier selections.
     static const bool & getRecordSelection();
     static const bool & defaultRecordSelection();
     static void removeRecordSelection();
@@ -133,6 +153,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DocumentMode
+    ///
+    /// How open documents are listed in the tree view. 0 shows only the
+    /// active document, 1 shows all documents, 2 shows all and expands the
+    /// active one while collapsing the others.
     static const long & getDocumentMode();
     static const long & defaultDocumentMode();
     static void removeDocumentMode();
@@ -144,6 +168,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter StatusTimeout
+    ///
+    /// Milliseconds the tree view waits before it refreshes its items after
+    /// objects change. Changes within that time are handled in one pass.
     static const long & getStatusTimeout();
     static const long & defaultStatusTimeout();
     static void removeStatusTimeout();
@@ -154,6 +181,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionTimeout
+    ///
+    /// Milliseconds the tree view waits before it follows a change of the
+    /// selection. Changes within that time are handled in one pass.
     static const long & getSelectionTimeout();
     static const long & defaultSelectionTimeout();
     static void removeSelectionTimeout();
@@ -164,6 +194,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreSelectionTimeout
+    ///
+    /// Milliseconds the mouse must rest on a tree view item before its
+    /// object is preselected in the 3D view. Applies when nothing was
+    /// preselected from the tree within PreSelectionDelay.
     static const long & getPreSelectionTimeout();
     static const long & defaultPreSelectionTimeout();
     static void removePreSelectionTimeout();
@@ -174,6 +208,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreSelectionDelay
+    ///
+    /// Milliseconds after a preselection from the tree view during which
+    /// moving to another item preselects it at once. After that the mouse
+    /// has to rest for PreSelectionTimeout again.
     static const long & getPreSelectionDelay();
     static const long & defaultPreSelectionDelay();
     static void removePreSelectionDelay();
@@ -184,6 +222,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreSelectionMinDelay
+    ///
+    /// Shortest time in milliseconds between two preselections from the
+    /// tree view. Moving across items faster than this waits before the
+    /// next one is preselected. 0 sets no limit.
     static const long & getPreSelectionMinDelay();
     static const long & defaultPreSelectionMinDelay();
     static void removePreSelectionMinDelay();
@@ -194,6 +236,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RecomputeOnDrop
+    ///
+    /// Recompute the document after objects are dragged and dropped in the
+    /// tree view.
     static const bool & getRecomputeOnDrop();
     static const bool & defaultRecomputeOnDrop();
     static void removeRecomputeOnDrop();
@@ -204,6 +249,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter KeepRootOrder
+    ///
+    /// Keep the top level objects of the tree view in the order they were
+    /// created. An object that returns to the top level goes back to its
+    /// place instead of to the end.
     static const bool & getKeepRootOrder();
     static const bool & defaultKeepRootOrder();
     static void removeKeepRootOrder();
@@ -214,6 +263,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeActiveAutoExpand
+    ///
+    /// Expand the tree view item of an object when it becomes the active
+    /// one, such as the active body or part. Objects that ask for it are
+    /// collapsed again when they stop being active.
     static const bool & getTreeActiveAutoExpand();
     static const bool & defaultTreeActiveAutoExpand();
     static void removeTreeActiveAutoExpand();
@@ -224,6 +277,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeActiveColor
+    ///
+    /// Background colour of the tree view item of an active object, such
+    /// as the active body or part.
     static const unsigned long & getTreeActiveColor();
     static const unsigned long & defaultTreeActiveColor();
     static void removeTreeActiveColor();
@@ -235,6 +291,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeEditColor
+    ///
+    /// Background colour of the tree view item of the object being edited.
     static const unsigned long & getTreeEditColor();
     static const unsigned long & defaultTreeEditColor();
     static void removeTreeEditColor();
@@ -246,6 +304,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectingGroupColor
+    ///
+    /// Background colour of the tree view item marked with 'Toggle
+    /// selecting group'. A pick in the 3D view inside that group selects
+    /// its child object as a whole.
     static const unsigned long & getSelectingGroupColor();
     static const unsigned long & defaultSelectingGroupColor();
     static void removeSelectingGroupColor();
@@ -257,6 +319,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeActiveBold
+    ///
+    /// Show the label of an active object, such as the active body or part,
+    /// in bold in the tree view.
     static const bool & getTreeActiveBold();
     static const bool & defaultTreeActiveBold();
     static void removeTreeActiveBold();
@@ -268,6 +333,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeActiveItalic
+    ///
+    /// Show the label of an active object, such as the active body or part,
+    /// in italics in the tree view.
     static const bool & getTreeActiveItalic();
     static const bool & defaultTreeActiveItalic();
     static void removeTreeActiveItalic();
@@ -279,6 +347,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeActiveUnderlined
+    ///
+    /// Underline the label of an active object, such as the active body or
+    /// part, in the tree view.
     static const bool & getTreeActiveUnderlined();
     static const bool & defaultTreeActiveUnderlined();
     static void removeTreeActiveUnderlined();
@@ -290,6 +361,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeActiveOverlined
+    ///
+    /// Draw a line over the label of an active object, such as the active
+    /// body or part, in the tree view.
     static const bool & getTreeActiveOverlined();
     static const bool & defaultTreeActiveOverlined();
     static void removeTreeActiveOverlined();
@@ -301,6 +375,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter Indentation
+    ///
+    /// Width in pixels by which each level of the tree view is indented. 0
+    /// uses the default of the style. Applies to tree views created
+    /// afterwards.
     static const long & getIndentation();
     static const long & defaultIndentation();
     static void removeIndentation();
@@ -312,6 +390,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LabelExpression
+    ///
+    /// Edit an object's label in the tree view with an editor that accepts
+    /// an expression, so that the label can be bound to one.
     static const bool & getLabelExpression();
     static const bool & defaultLabelExpression();
     static void removeLabelExpression();
@@ -322,6 +403,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter IconSize
+    ///
+    /// Size in pixels of the icons in the tree view, which also sets the
+    /// row height. 0 uses the system default size.
     static const long & getIconSize();
     static const long & defaultIconSize();
     static void removeIconSize();
@@ -333,6 +417,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter FontSize
+    ///
+    /// Point size of the label font in the tree view. 0 uses the
+    /// application font size.
     static const long & getFontSize();
     static const long & defaultFontSize();
     static void removeFontSize();
@@ -344,6 +431,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ItemSpacing
+    ///
+    /// Extra height in pixels added to every row of the tree view.
     static const long & getItemSpacing();
     static const long & defaultItemSpacing();
     static void removeItemSpacing();
@@ -431,6 +520,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ColumnSize1
+    ///
+    /// Width in pixels of the first tree view column, remembered when the
+    /// column is resized by hand. Used only with resizable columns. 0
+    /// leaves the width alone.
     static const long & getColumnSize1();
     static const long & defaultColumnSize1();
     static void removeColumnSize1();
@@ -441,6 +534,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ColumnSize2
+    ///
+    /// Width in pixels of the second tree view column, remembered when the
+    /// column is resized by hand. Used only with resizable columns. 0
+    /// leaves the width alone.
     static const long & getColumnSize2();
     static const long & defaultColumnSize2();
     static void removeColumnSize2();
@@ -451,6 +548,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TreeToolTipIcon
+    ///
+    /// Show the icon of the object in the tool tip of its tree view item.
     static const bool & getTreeToolTipIcon();
     static const bool & defaultTreeToolTipIcon();
     static void removeTreeToolTipIcon();

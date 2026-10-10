@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include <Mod/Material/App/MaterialParams.h>
 #include <App/Application.h>
 
 #include "Exceptions.h"
@@ -37,22 +38,22 @@ MaterialFilterOptions::MaterialFilterOptions()
 {
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/Editor");
-    _includeFavorites = param->GetBool("ShowFavorites", true);
-    _includeRecent = param->GetBool("ShowRecent", true);
-    _includeFolders = param->GetBool("ShowEmptyFolders", false);
-    _includeLibraries = param->GetBool("ShowEmptyLibraries", true);
-    _includeLegacy = param->GetBool("ShowLegacy", false);
+    _includeFavorites = param->GetBool("ShowFavorites", MaterialParams::defaultEditorShowFavorites());
+    _includeRecent = param->GetBool("ShowRecent", MaterialParams::defaultEditorShowRecent());
+    _includeFolders = param->GetBool("ShowEmptyFolders", MaterialParams::defaultEditorShowEmptyFolders());
+    _includeLibraries = param->GetBool("ShowEmptyLibraries", MaterialParams::defaultEditorShowEmptyLibraries());
+    _includeLegacy = param->GetBool("ShowLegacy", MaterialParams::defaultEditorShowLegacy());
 }
 
 MaterialFilterTreeWidgetOptions::MaterialFilterTreeWidgetOptions()
 {
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/TreeWidget");
-    _includeFavorites = param->GetBool("ShowFavorites", true);
-    _includeRecent = param->GetBool("ShowRecent", true);
-    _includeFolders = param->GetBool("ShowEmptyFolders", false);
-    _includeLibraries = param->GetBool("ShowEmptyLibraries", true);
-    _includeLegacy = param->GetBool("ShowLegacy", false);
+    _includeFavorites = param->GetBool("ShowFavorites", MaterialParams::defaultSelectorShowFavorites());
+    _includeRecent = param->GetBool("ShowRecent", MaterialParams::defaultSelectorShowRecent());
+    _includeFolders = param->GetBool("ShowEmptyFolders", MaterialParams::defaultSelectorShowEmptyFolders());
+    _includeLibraries = param->GetBool("ShowEmptyLibraries", MaterialParams::defaultSelectorShowEmptyLibraries());
+    _includeLegacy = param->GetBool("ShowLegacy", MaterialParams::defaultSelectorShowLegacy());
 }
 
 //===

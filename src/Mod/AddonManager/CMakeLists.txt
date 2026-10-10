@@ -60,6 +60,8 @@ SET(AddonManager_SRCS
     first_run.ui
     Init.py
     InitGui.py
+    addonmanager_params_registry.py
+    addonmanager_preferences_defaults.json
     install_to_toolbar.py
     loading.html
     manage_python_dependencies.py
@@ -95,6 +97,7 @@ SET(AddonManagerTestsApp_SRCS
     AddonManagerTest/app/test_macro_parser.py
     AddonManagerTest/app/test_metadata.py
     AddonManagerTest/app/test_utilities.py
+    AddonManagerTest/app/test_params_registry.py
     AddonManagerTest/app/test_uninstaller.py
 )
 

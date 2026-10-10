@@ -21,6 +21,7 @@
  *                                                                          *
  ***************************************************************************/
 
+#include "AssemblyParams.h"
 #include <boost/core/ignore_unused.hpp>
 #include <cmath>
 #include <numbers>
@@ -145,7 +146,7 @@ App::DocumentObjectExecReturn* AssemblyObject::execute()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Assembly"
     );
-    if (hGrp->GetBool("SolveOnRecompute", true)) {
+    if (hGrp->GetBool("SolveOnRecompute", Assembly::AssemblyParams::defaultSolveOnRecompute())) {
         solve(false);
     }
     return ret;
@@ -657,7 +658,7 @@ std::shared_ptr<ASMTAssembly> AssemblyObject::makeMbdAssembly()
         "User parameter:BaseApp/Preferences/Mod/Assembly"
     );
 
-    assembly->setDebug(hPgr->GetBool("LogSolverDebug", false));
+    assembly->setDebug(hPgr->GetBool("LogSolverDebug", Assembly::AssemblyParams::defaultLogSolverDebug()));
     return assembly;
 }
 

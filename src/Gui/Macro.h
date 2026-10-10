@@ -24,12 +24,14 @@
 #ifndef GUI_MACRO_H
 #define GUI_MACRO_H
 
+#include <string>
 #include <tuple>
 #include <QString>
 #include <QStringList>
 #include <QPointer>
 #include <Base/Observer.h>
 #include <Base/Parameter.h>
+#include <fastsignals/signal.h>
 
 
 namespace Gui {
@@ -100,11 +102,11 @@ public:
  * a macro file (so far).
  * \author Jürgen Riegel
  */
-class GuiExport MacroManager : public Base::Observer<const char*>
+class GuiExport MacroManager
 {
 protected:
     MacroManager();
-    ~MacroManager() override;
+    virtual ~MacroManager();
 
 public:
 
@@ -154,8 +156,9 @@ public:
     /// Get the Python debugger
     PythonDebugger* debugger() const;
     PythonConsole* getPythonConsole() const;
-    /** Observes its parameter group. */
-    void OnChange(Base::Subject<const char*> &rCaller, const char * sReason) override;
+    /** The directory of the user's macros: the MacroPath setting, or the
+     * Macro directory of the user's application data while it is not set. */
+    static std::string macroDirectory();
 
     /// Return the added lines regardless of recording or not
     long getLines() const {
@@ -163,6 +166,8 @@ public:
     }
 
 private:
+    /// Takes the recording and running switches from MacroParams.
+    void applySettings();
     void processPendingLines();
     void makeComment(QStringList& lines) const;
     void addToOutput(LineType type, const char* line);
@@ -174,7 +179,7 @@ private:
     bool localEnv{true};
     mutable QPointer<PythonConsole> pyConsole;       // link to the python console
     PythonDebugger* pyDebugger;
-    Base::Reference<ParameterGrp> params;  // link to the Macro parameter group
+    fastsignals::scoped_connection connParam;  // MacroParams saying a setting changed
 
     friend struct ApplicationP;
 };

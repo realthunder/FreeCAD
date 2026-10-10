@@ -28,7 +28,11 @@ using namespace Render;
 namespace {
 
 const uint32_t kPageMagic = 0x46435044; // 'FCPD'
-const uint32_t kPageVersion = 1;
+// 2: the DashedPolyline op (dashes worked out at the zoom drawn at). A reader
+// of version 1 would stop at it and draw the rest of the item not at all.
+// 3: the FillImage op (a path filled with an image laid side by side: a
+// hatch), which a reader of version 2 would stop at in the same way.
+const uint32_t kPageVersion = 3;
 
 // The payload's own little writer/cursor. Deliberately not SceneDump's
 // (that one is file-scope there); the shared part -- the item list --

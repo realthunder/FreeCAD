@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <climits>
 # include <cctype>
 # include <cstdlib>
@@ -73,6 +74,91 @@ const char *OmniSearch::modePrefix(Mode mode)
     return "/";
 }
 
+const std::vector<const char*> &OmniSearch::modeKeywords()
+{
+    static const std::vector<const char*> keywords{"cmd", "param"};
+    return keywords;
+}
+
+namespace {
+
+ParameterGrp::handle recentGroup()
+{
+    return App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/OmniSearch/Recent");
+}
+
+// One stored item: the mode's word, a colon, the key
+const char *recentWord(OmniSearch::Mode mode)
+{
+    switch (mode) {
+    case OmniSearch::Mode::Object:
+        return "obj";
+    case OmniSearch::Mode::Command:
+        return "cmd";
+    case OmniSearch::Mode::Param:
+        return "param";
+    case OmniSearch::Mode::Chooser:
+        break;
+    }
+    return nullptr;
+}
+
+} // anonymous namespace
+
+std::vector<OmniSearch::RecentItem> OmniSearch::recentItems()
+{
+    std::vector<RecentItem> items;
+    auto group = recentGroup();
+    for (int i = 0; i < MaxRecentItems; ++i) {
+        const std::string stored =
+            group->GetASCII(("Item" + std::to_string(i)).c_str(), "");
+        const auto colon = stored.find(':');
+        if (colon == std::string::npos || colon + 1 >= stored.size())
+            continue;
+        RecentItem item;
+        item.key = QString::fromUtf8(stored.c_str() + colon + 1);
+        const std::string word = stored.substr(0, colon);
+        bool known = false;
+        for (Mode mode : {Mode::Object, Mode::Command, Mode::Param}) {
+            if (word == recentWord(mode)) {
+                item.mode = mode;
+                known = true;
+            }
+        }
+        if (known && std::find(items.begin(), items.end(), item) == items.end())
+            items.push_back(item);
+    }
+    return items;
+}
+
+void OmniSearch::addRecentItem(Mode mode, const QString &key)
+{
+    const char *word = recentWord(mode);
+    if (!word || key.trimmed().isEmpty())
+        return;
+    RecentItem added;
+    added.mode = mode;
+    added.key = key;
+    std::vector<RecentItem> items = recentItems();
+    items.erase(std::remove(items.begin(), items.end(), added), items.end());
+    items.insert(items.begin(), added);
+    if (static_cast<int>(items.size()) > MaxRecentItems)
+        items.resize(MaxRecentItems);
+    auto group = recentGroup();
+    for (int i = 0; i < MaxRecentItems; ++i) {
+        const std::string name = "Item" + std::to_string(i);
+        if (i < static_cast<int>(items.size())) {
+            group->SetASCII(name.c_str(),
+                            (std::string(recentWord(items[i].mode)) + ":"
+                             + items[i].key.toUtf8().constData()).c_str());
+        }
+        else {
+            group->RemoveASCII(name.c_str());
+        }
+    }
+}
+
 OmniSearch::Input OmniSearch::parseInput(const QString &text)
 {
     Input res;
@@ -91,9 +177,30 @@ OmniSearch::Input OmniSearch::parseInput(const QString &text)
             return res;
         }
     }
-    res.mode = Mode::Chooser;
-    res.query = text;
-    res.offset = 0;
+    // No full prefix. What follows the slash is a keyword, the beginning
+    // of one, or the name of something.
+    const QString word = text.mid(1);
+    bool keyword = word.isEmpty();
+    for (const char *name : modeKeywords()) {
+        const QString key = QString::fromLatin1(name);
+        if (!word.isEmpty() && key.startsWith(word, Qt::CaseInsensitive)) {
+            keyword = true;
+            // short of the whole keyword it may as well be an object's name
+            if (word.size() < key.size()) {
+                res.withObjects = true;
+                res.objectQuery = word;
+            }
+        }
+    }
+    if (keyword) {
+        res.mode = Mode::Chooser;
+        res.query = text;
+        res.offset = 0;
+        return res;
+    }
+    res.mode = Mode::Object;
+    res.query = word;
+    res.offset = 1;
     return res;
 }
 
@@ -680,8 +787,13 @@ ParamListModel::ParamListModel(QObject *parent)
 
 void ParamListModel::refresh()
 {
+    // The registry only grows, so its size says whether there is anything new.
+    // Called at every key stroke of a "/param" query: nothing to do is the rule.
+    const auto &now = ParamRegistry::instance().entries();
+    if (now.size() == entries.size())
+        return;
     beginResetModel();
-    entries = ParamRegistry::instance().entries();
+    entries = now;
     endResetModel();
 }
 

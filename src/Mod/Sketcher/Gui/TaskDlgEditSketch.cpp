@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/Sketcher/App/SketcherParams.h>
+
 #include <Gui/Command.h>
 
 #include "TaskDlgEditSketch.h"
@@ -55,12 +57,12 @@ TaskDlgEditSketch::TaskDlgEditSketch(ViewProviderSketch* sketchView)
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
-    setEscapeButtonEnabled(hGrp->GetBool("LeaveSketchWithEscape", true));
+    setEscapeButtonEnabled(Sketcher::SketcherParams::getLeaveSketchWithEscape());
 
     Content.push_back(ToolSettings);
     Content.push_back(Messages);
 
-    if (hGrp->GetBool("ShowSolverAdvancedWidget", false)) {
+    if (Sketcher::SketcherParams::getShowSolverAdvancedWidget()) {
         Content.push_back(SolverAdvanced);
     }
 

@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <QApplication>
 #include <QComboBox>
@@ -35,6 +37,7 @@
 
 #include "GeneralSettingsWidget.h"
 #include <App/Application.h>
+#include <App/UnitsParams.h>
 #include <Base/Parameter.h>
 #include <Base/UnitsApi.h>
 #include <Gui/Language/Translator.h>
@@ -182,9 +185,7 @@ void GeneralSettingsWidget::onUnitSystemChanged(int index)
         return;  // happens when clearing the combo box in retranslateUi()
     }
     Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(index));
-    ParameterGrp::handle hGrp =
-        App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Units");
-    hGrp->SetInt("UserSchema", index);
+    App::UnitsParams::setUserSchema(index);
 }
 
 void GeneralSettingsWidget::onNavigationStyleChanged(int index)
@@ -212,9 +213,7 @@ void GeneralSettingsWidget::retranslateUi()
     _unitSystemLabel->setText(createLabelText(tr("Unit System")));
 
     _unitSystemComboBox->clear();
-    ParameterGrp::handle hGrpUnits =
-        App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Units");
-    auto userSchema = hGrpUnits->GetInt("UserSchema", 0);
+    auto userSchema = App::UnitsParams::getUserSchema();
     int num = static_cast<int>(Base::UnitSystem::NumUnitSystemTypes);
     for (int i = 0; i < num; i++) {
         QString item = QString::fromStdString(Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i)));
@@ -227,7 +226,7 @@ void GeneralSettingsWidget::retranslateUi()
     ParameterGrp::handle hGrpNav =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     auto navStyleName =
-        hGrpNav->GetASCII("NavigationStyle", Gui::CADNavigationStyle::getClassTypeId().getName());
+        hGrpNav->GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
     std::map<Base::Type, std::string> styles = Gui::UserNavigationStyle::getUserFriendlyNames();
     for (const auto& style : styles) {
         QByteArray data(style.first.getName());

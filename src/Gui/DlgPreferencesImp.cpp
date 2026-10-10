@@ -51,6 +51,7 @@
 #include <Base/Tools.h>
 
 #include "DlgPreferencesImp.h"
+#include "GeneralParams.h"
 #include "ui_DlgPreferences.h"
 
 #include "Action.h"
@@ -138,8 +139,19 @@ DlgPreferencesImp::DlgPreferencesImp(QWidget* parent, Qt::WindowFlags fl)
     hBackup = manager.get();
     App::GetApplication().GetUserParameter().copyTo(hBackup);
     connParam = App::GetApplication().GetUserParameter().signalParamChanged.connect(
-        [this](ParameterGrp*, ParameterGrp::ParamType, const char*, const char*) {
-            this->paramTouched = true;
+        [this](ParameterGrp* param, ParameterGrp::ParamType, const char*, const char*) {
+            // Only a SETTING written is a change Cancel offers to revert.
+            // The program keeps its own state in the same parameters -- the
+            // dock windows store their layout when the main window first
+            // loses the focus, which is when this dialog opens -- and
+            // taking that for a change made Cancel ask whether to revert
+            // on a dialog nothing was changed in.
+            for (auto group = param; group; group = group->Parent()) {
+                if (strcmp(group->GetGroupName(), "Preferences") == 0) {
+                    this->paramTouched = true;
+                    return;
+                }
+            }
         });
 }
 
@@ -579,14 +591,28 @@ void DlgPreferencesImp::restoreDefaults()
             action->push(tr("Reset"));
 
         // keep this parameter
-        bool saveParameter = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
-                              GetBool("SaveUserParameter", true);
+        bool saveParameter = GeneralParams::getSaveUserParameter();
+        // ... and the flag of the Start workbench's migration of 2024
+        // (StartMigrator.py). It is not a setting but a record that the
+        // profile has been through it. Without it the next start runs the
+        // migration again, on a profile that has nothing of the old
+        // workbench in it, and the migration reads the startup workbench
+        // the reset has just put back -- PartDesign, not "StartWorkbench"
+        // -- as the user's choice not to see the Start page: it stored
+        // ShowOnStartup false.
+        const char *startPath = "User parameter:BaseApp/Preferences/Mod/Start";
+        bool startMigrated = App::GetApplication().GetParameterGroupByPath(startPath)->
+                              GetBool("Migration2024Complete", false);
 
         ParameterManager* mgr = App::GetApplication().GetParameterSet("User parameter");
         mgr->Clear(true);
 
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
                               SetBool("SaveUserParameter", saveParameter);
+        if (startMigrated) {
+            App::GetApplication().GetParameterGroupByPath(startPath)->
+                                  SetBool("Migration2024Complete", true);
+        }
 
         paramTouched = false;
         reject();
@@ -700,9 +726,7 @@ void DlgPreferencesImp::applyChanges()
         }
     }
 
-    bool saveParameter = App::GetApplication()
-                             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")
-                             ->GetBool("SaveUserParameter", true);
+    bool saveParameter = GeneralParams::getSaveUserParameter();
     
     if (saveParameter) {
         ParameterManager* parmgr = App::GetApplication().GetParameterSet("User parameter");

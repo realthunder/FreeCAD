@@ -19,6 +19,18 @@ target_include_directories(ClipConvention_tests_run PRIVATE
 target_link_libraries(ClipConvention_tests_run gtest_main)
 add_test(NAME ClipConvention_tests_run COMMAND ClipConvention_tests_run)
 
+# The name of a glGetError() code. The table the renderer's check used was
+# one entry short for half the codes, and logging such an error read past
+# it. Header only, no GL: links neither the renderer nor Gui.
+add_executable(GLErrorName_tests_run
+               ${CMAKE_CURRENT_SOURCE_DIR}/GLErrorName.cpp)
+target_include_directories(GLErrorName_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src)
+target_link_libraries(GLErrorName_tests_run gtest_main)
+add_test(NAME GLErrorName_tests_run COMMAND GLErrorName_tests_run)
+
 # Qt tests
 setup_qt_test(QuantitySpinBox)
 
@@ -300,6 +312,23 @@ if(TARGET FreeCADRenderer)
     add_executable(SceneDump_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/SceneDump.cpp)
     target_link_libraries(SceneDump_tests_run gtest_main FreeCADRenderer)
     add_test(NAME SceneDump_tests_run COMMAND SceneDump_tests_run)
+
+    # The dashes of a 2D page: worked out for the zoom drawn at, by Qt's rules.
+    add_executable(Page2DDash_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Page2DDash.cpp)
+    target_link_libraries(Page2DDash_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME Page2DDash_tests_run COMMAND Page2DDash_tests_run)
+
+    # The pictures of a 2D page: the coarser copies one is drawn from when it
+    # comes out smaller than it is, and a hatch as one tile laid side by side.
+    add_executable(Page2DImage_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Page2DImage.cpp)
+    target_link_libraries(Page2DImage_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME Page2DImage_tests_run COMMAND Page2DImage_tests_run)
+
+    # An item of a 2D page left out of the drawing while its highlight is
+    # laid over it: the host's own state, not the page's content.
+    add_executable(Page2DHidden_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Page2DHidden.cpp)
+    target_link_libraries(Page2DHidden_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME Page2DHidden_tests_run COMMAND Page2DHidden_tests_run)
 
     # The raster MaterialX generator. It reads the shipped data
     # library, and a bare test binary has no one to seed the renderer's

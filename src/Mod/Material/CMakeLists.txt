@@ -11,6 +11,7 @@ SET(MaterialScripts_Files
     InitGui.py
     importFCMat.py
     MaterialEditor.py
+    MaterialPyParams.py
     TestMaterialsApp.py
     TestMaterialsGui.py
     Templatematerial.yml

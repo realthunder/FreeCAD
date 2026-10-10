@@ -51,6 +51,7 @@
 #include <Gui/View3DInventorViewer.h>
 
 #include "ViewProvider2DObject.h"
+#include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/Gui/PartParams.h>
 
 
@@ -152,8 +153,7 @@ SoSeparator* ViewProvider2DObjectGrid::createGrid()
     parent->addChild(mycolor);
 
     if (GridStyle.getValue() == 0) {
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
-        int pattern = hGrp->GetInt("GridLinePattern", 0x0f0f);
+        int pattern = static_cast<int>(Part::PartParams::getGridLinePattern());
         SoDrawStyle* DefaultStyle = new SoDrawStyle;
         DefaultStyle->lineWidth = 1;
         DefaultStyle->linePattern = pattern;

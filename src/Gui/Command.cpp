@@ -1396,7 +1396,9 @@ Action * GroupCommand::createAction(void) {
 
     int idx = _defaultAction;
     if (_hParam) {
-        _hParam->GetInt(_hEntry.c_str(), _defaultAction);
+        // the stored choice is the one shown: its value used to be read
+        // here and dropped
+        idx = _hParam->GetInt(_hEntry.c_str(), _defaultAction);
     }
 
     int i=-1;
@@ -1516,9 +1518,7 @@ void MacroCommand::activated(int iMsg)
     if (!systemMacro) {
         std::string cMacroPath;
 
-        cMacroPath = App::GetApplication().GetParameterGroupByPath
-                             ("User parameter:BaseApp/Preferences/Macro")->GetASCII("MacroPath",
-                                     App::Application::getUserMacroDir().c_str());
+        cMacroPath = MacroManager::macroDirectory();
 
         d = QDir(QString::fromUtf8(cMacroPath.c_str()));
     }

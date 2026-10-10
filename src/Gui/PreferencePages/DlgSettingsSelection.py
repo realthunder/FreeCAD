@@ -42,15 +42,10 @@ ClassDoc = 'Preference dialog for various tree and 3D view selection related set
 _ViewParams = { param.name : param for param in ViewParams.Params }
 _TreeParams = { param.name : param for param in TreeParams.Params }
 
-_ViewParams['EnablePreselection'] = [_ViewParams[name] for name in (
-    'EnablePreselection',
-    'HighlightColor',
-)]
-
-_ViewParams['EnableSelection'] = [_ViewParams[name] for name in (
-    'EnableSelection',
-    'SelectionColor',
-)]
+# The two highlight colours are not shown here: the Colors page has them, and
+# of two pages storing one key the page saved last would take the other's
+# change back. (They used to sit beside these two check boxes as spin boxes,
+# which showed 99 for a colour and stored it under a key nothing reads.)
 
 _ViewParams['PreselectionToolTipOffsetX'] = [_ViewParams[name] for name in (
     'PreselectionToolTipOffsetX',

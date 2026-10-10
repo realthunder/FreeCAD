@@ -27,6 +27,7 @@
 
 #include <App/Application.h>
 #include <Base/Parameter.h>
+#include <Mod/CAM/App/CAMParams.h>
 #include <Gui/Renderer/DrawSurface.h>
 
 #include "Dummy3DViewer.h"
@@ -564,7 +565,7 @@ bool DlgCAMSimulator::forceLegacyGLPref()
     static ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/CAM"
     );
-    return hGrp->GetBool("ForceLegacyGLRender", false);
+    return hGrp->GetBool("ForceLegacyGLRender", Path::CAMParams::defaultForceLegacyGLRender());
 }
 
 bool DlgCAMSimulator::useLegacyGL()

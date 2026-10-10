@@ -370,13 +370,14 @@ Action * StdCmdTitleBar::createAction()
 
 void StdCmdTitleBar::activated(int iMsg)
 {
-    getMainWindow()->setCustomTitleBar(iMsg != 0);
-
-    // The window refuses the swap if the platform backend cannot do it, so
-    // report what actually happened rather than what was asked for.
-    if (auto action = getAction()) {
-        action->setChecked(getMainWindow()->isCustomTitleBar(), true);
-    }
+    // Asked through the parameter, like a theme asks: MainWindow answers it a
+    // turn of the event loop later, moves the toolbars with the title bar,
+    // takes a maximized window out of that state for the switch, and sets
+    // this action to what came of it -- the window refuses the swap if the
+    // platform backend cannot do it.
+    App::GetApplication()
+        .GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow")
+        ->SetBool("CustomTitleBar", iMsg != 0);
 }
 
 bool StdCmdTitleBar::isActive()

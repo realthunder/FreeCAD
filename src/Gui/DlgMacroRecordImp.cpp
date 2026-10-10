@@ -33,6 +33,7 @@
 #include "Application.h"
 #include "FileDialog.h"
 #include "Macro.h"
+#include "MacroParams.h"
 #include "MainWindow.h"
 
 
@@ -56,8 +57,7 @@ DlgMacroRecordImp::DlgMacroRecordImp( QWidget* parent, Qt::WindowFlags fl )
     setupConnections();
 
     // get the macro home path
-    this->macroPath = QString::fromUtf8(getWindowParameter()->GetASCII("MacroPath",
-        App::Application::getUserMacroDir().c_str()).c_str());
+    this->macroPath = QString::fromUtf8(MacroManager::macroDirectory().c_str());
     this->macroPath = QDir::toNativeSeparators(QDir(this->macroPath).path() + QDir::separator());
 
     // set the edit fields
@@ -174,7 +174,7 @@ void DlgMacroRecordImp::onButtonChooseDirClicked()
     if (!newDir.isEmpty()) {
         macroPath = QDir::toNativeSeparators(newDir + QDir::separator());
         ui->lineEditMacroPath->setText(macroPath);
-        getWindowParameter()->SetASCII("MacroPath",macroPath.toUtf8());
+        MacroParams::setMacroPath(macroPath.toUtf8().constData());
     }
 }
 

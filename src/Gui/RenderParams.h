@@ -72,8 +72,11 @@ public:
     //@{
     /// Accessor for parameter Type
     ///
-    /// Type of the experimental render engine backend. 'Default' keeps
-    /// the plain GL pipeline. Only effective with render cache mode 3.
+    /// What draws a 3D view. 'Default': the render engine, on this
+    /// platform's backend. 'Legacy': the old Coin rendering, without the
+    /// engine. A backend can also be named, as 'bgfx - Direct3D11'. With
+    /// the engine the render cache is always 3, whatever its own setting
+    /// says; under 'Legacy' that setting is what counts.
     static const std::string & getType();
     static const std::string & defaultType();
     static void removeType();
@@ -85,28 +88,11 @@ public:
     //@{
     /// Accessor for parameter OutputTransform
     ///
-    /// Whether the engine is colour managed.
-    /// 
-    /// The shading is linear -- mixes, the GGX lobe, the image based
-    /// lighting product are all arithmetic on light, and they are only
-    /// correct on linear numbers. A colour someone picked is not: it
-    /// is a display number, which makes it sRGB encoded. And a display
-    /// reads the byte it is handed as sRGB too.
-    /// 
-    /// 'sRGB' honours both ends. Authored colours -- materials, the
-    /// lights, the background, the base colour and emissive textures --
-    /// are decoded to linear as they enter, and the finished frame is
-    /// encoded once at the last write before it is shown. An UNSHADED
-    /// authored colour therefore survives the round trip exactly, and
-    /// so does a fully lit surface; what changes is the shading in
-    /// between, which is the part that was wrong.
-    /// 
-    /// 'Off' is the older pipeline, which did neither: it fed display
-    /// numbers to the linear shading and wrote the linear result out
-    /// raw. The two errors partly cancel -- a fully lit surface comes
-    /// out right -- but everything in falloff and shadow renders about
-    /// a gamma too dark. Documents written before this existed are
-    /// drawn that way, which is how they were authored.
+    /// Colour management of the engine. 'sRGB' decodes authored colours to
+    /// linear for shading and encodes the finished frame for the display,
+    /// which is the correct pipeline. 'Off' is the older one, which shades
+    /// display numbers and renders falloff and shadow too dark; documents
+    /// written before this setting existed use it.
     static const long & getOutputTransform();
     static const long & defaultOutputTransform();
     static void removeOutputTransform();
@@ -118,26 +104,10 @@ public:
     //@{
     /// Accessor for parameter Exposure
     ///
-    /// How much light the frame is developed with, as a plain
-    /// multiplier on the linear image before it is encoded for the
-    /// screen. One leaves it alone.
-    /// 
-    /// It exists because a colour managed scene is lit in real
-    /// reflectances, and a mid grey reflects about 18 per cent of what
-    /// falls on it rather than the 45 per cent its number reads as. A
-    /// scene whose lights were set before that was true is lit about
-    /// two to three times too dimly, and this is the control that
-    /// answers it without touching a single light.
-    /// 
-    /// Raising it does not clip. Anything the multiplier pushes past
-    /// the top of the range rolls off smoothly instead, and the roll
-    /// off is exactly nothing below the knee -- so at an exposure of
-    /// one the frame is bit for bit what it would have been without
-    /// this stage at all.
-    /// 
-    /// Only meaningful while the output colour transform is on: with
-    /// it off the engine is not working in light, and a multiplier
-    /// there would scale display numbers rather than exposure.
+    /// Brightness multiplier applied to the finished image before it is
+    /// encoded for the screen. 1 leaves it alone. Bright areas roll off
+    /// smoothly instead of clipping. Only used while the output colour
+    /// transform is on.
     static const double & getExposure();
     static const double & defaultExposure();
     static void removeExposure();
@@ -149,24 +119,10 @@ public:
     //@{
     /// Accessor for parameter MaxViewIds
     ///
-    /// How many backend view ids the render engine may hand out, which
-    /// is what decides how many 3D views can draw on it at once: each
-    /// view takes a block for its pass sequence (about 13 ids for a
-    /// plain viewer, docs/RenderEngine.md #3.1), and a view that finds
-    /// no block left falls back to plain GL rather than failing. So the
-    /// default is roughly 64 viewers, and 0 asks for the build's own
-    /// ceiling instead, which is four times that.
-    /// 
-    /// It is worth having a limit below the ceiling because the backend
-    /// copies its whole view table once a frame and sizes its per-view
-    /// pools from this number, so ids nobody opens are still paid for
-    /// in every frame. Measured on a desktop GPU that cost is invisible
-    /// against a 16ms frame at this width - but at the ceiling, with
-    /// render stage timing on, it is not: the per-view GPU timer pools
-    /// take a 59fps session to 19. Raise it for many-viewer work, not
-    /// as a matter of course.
-    /// 
-    /// Read once, when the backend starts: a change needs a restart.
+    /// How many view ids the render backend may hand out, which limits how
+    /// many 3D views can draw with it at once (about 13 ids per view; a view
+    /// that finds none left falls back to plain GL). 0 asks for the build's
+    /// maximum. Read when the backend starts: a change needs a restart.
     static const long & getMaxViewIds();
     static const long & defaultMaxViewIds();
     static void removeMaxViewIds();
@@ -176,27 +132,26 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ReadbackFrameMode
+    ///
+    /// How a frame reaches the screen on Direct3D, Vulkan and Metal. 'Wait'
+    /// shows every frame as soon as it is drawn. 'Pipelined' shows it a frame
+    /// or two late and is faster. 'Pipelined while animating' waits except
+    /// while the view redraws by itself. Not used with OpenGL.
+    static const long & getReadbackFrameMode();
+    static const long & defaultReadbackFrameMode();
+    static void removeReadbackFrameMode();
+    static void setReadbackFrameMode(const long &v);
+    static const char *docReadbackFrameMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter BackgroundReleaseDelay
     ///
-    /// Milliseconds a 3D view may sit in the background before it gives
-    /// its render targets back, or 0 to let a hidden view keep them.
-    /// 
-    /// Targets are what a view mostly costs: 287MB was measured for one
-    /// 1644x653 view with every effect on, and until now it held them
-    /// whether or not anyone could see it -- so a session with several
-    /// documents open paid for all of their views to look at one. This
-    /// gives that back for the views nobody is looking at. What the view
-    /// keeps is everything a resize keeps: its programs, its uniforms
-    /// and its uploaded scene, so coming back is the resize path and not
-    /// a reload.
-    /// 
-    /// The delay is what stops it firing on a click through the tabs.
-    /// Coming back costs the one frame that rebuilds the targets (~68ms
-    /// on the view measured above) and gives a byte-identical picture --
-    /// the trade is a hitch on return against the memory in between,
-    /// never a difference in the image. Lower it to release sooner on a
-    /// machine short of VRAM; raise it if switching back and forth
-    /// hitches.
+    /// Milliseconds a 3D view may stay in the background before it gives its
+    /// render targets back to free GPU memory. Returning to the view costs
+    /// one frame to rebuild them, with the same picture. 0 never releases.
     static const long & getBackgroundReleaseDelay();
     static const long & defaultBackgroundReleaseDelay();
     static void removeBackgroundReleaseDelay();
@@ -208,40 +163,11 @@ public:
     //@{
     /// Accessor for parameter CoarseTessellation
     ///
-    /// Ladder level shapes are tessellated at under coarse-first
-    /// (docs/SceneStreaming.md #7): the display mesh is built at this
-    /// rung of the fidelity ladder and the exact tessellation is
-    /// declared unbuilt, generated on demand when a camera asks for it.
-    /// 0 is the coarsest rung, each level halves the error; -1 always
-    /// tessellates exact up front (pre-ladder behavior).
-    /// 
-    /// Consulted whenever something can deliver the exact rung on
-    /// demand, which is a scene stream server (its viewers ask) OR a
-    /// desktop view in render cache mode 3 whose backend drives mesh
-    /// levels (its own level plan asks when the camera settles) - see
-    /// PartGui::coarseTessellationLevel. Plain Coin display has neither
-    /// and keeps the exact tessellation, because a coarse build there
-    /// would stay coarse forever. This is not a serving-only feature,
-    /// and it does engage for geometry built while a document loads.
-    /// 
-    /// What a serving process lacks is not this setting but the local
-    /// level plan, which is disabled there - its rungs refine only where
-    /// a connected viewer's camera asks, so with no viewer attached they
-    /// stay coarse, while a desktop view refines its own. That, not the
-    /// setting, is why the two publish different geometry for one
-    /// document (measured on a 40-object scene: 8310 vertices serving,
-    /// 25595 on the desktop). Desktop refinement is tolerance-limited,
-    /// so what it settles at is a property of the framing.
-    /// 
-    /// A level whose rung is already finer than a shape's exact
-    /// tessellation coarsens nothing, so on small shapes the low levels
-    /// do nothing visible - the default 2 is a no-op on a scene of small
-    /// ellipsoids that level 0 visibly coarsens.
-    /// 
-    /// The FC_COARSE_TESSELLATION environment variable overrides this for
-    /// a whole process and returns before the gate is evaluated, so it
-    /// forces coarse-first on where the gate would have refused. Takes
-    /// effect when a shape (re)tessellates.
+    /// Ladder level a shape is first tessellated at: 0 is the coarsest, each
+    /// level halves the error, and the exact mesh is built on demand when a
+    /// camera needs it. -1 always tessellates exact up front. Used by a view
+    /// in render cache mode 3 and by a scene stream server; takes effect when
+    /// a shape is tessellated again.
     static const long & getCoarseTessellation();
     static const long & defaultCoarseTessellation();
     static void removeCoarseTessellation();
@@ -270,13 +196,10 @@ public:
     //@{
     /// Accessor for parameter CoarseDeferAtLeisure
     ///
-    /// A shape drawn as a bounding-box stand-in (CoarseDeferFaces) gets
-    /// its coarse tessellation also where the camera does not see it, at
-    /// leisure: behind everything asked for in view, and landed once the
-    /// load has built its visuals (docs/DocumentLoad.md sec 18.13). Its
-    /// picture is then there when the camera turns. Off, such a shape
-    /// stays a box until the camera turns to it, and costs no mesh
-    /// until then. Takes effect when a shape (re)tessellates.
+    /// A shape drawn as a bounding box (CoarseDeferFaces) gets its mesh in the
+    /// background also where the camera does not see it, so its picture is
+    /// there when the camera turns. Off, it stays a box until the camera turns
+    /// to it. Takes effect when a shape is tessellated again.
     static const bool & getCoarseDeferAtLeisure();
     static const bool & defaultCoarseDeferAtLeisure();
     static void removeCoarseDeferAtLeisure();
@@ -288,34 +211,11 @@ public:
     //@{
     /// Accessor for parameter PreMeshOnLoad
     ///
-    /// Tessellate a restored document's parked shapes on worker
-    /// threads, before the drain that displays them builds any of them
-    /// (docs/DocumentLoad.md sec 18).
-    /// A load's visual build is mostly tessellation -- measured on a
-    /// 17058-solid assembly, 16.0s of the drain's 25.3s -- and it runs
-    /// one shape at a time on the GUI thread, which is where the display
-    /// nodes are. OCCT's own parallelism does not answer that: BRepMesh
-    /// splits ONE shape over its faces, and a model made of thousands of
-    /// small parts gives it nothing to split. Measured over such a build
-    /// the process held 2.04 cores of 28 -- and turning that parallelism
-    /// off costs 4.8s of a 22s mesh term, so it does help, it just
-    /// cannot scale.
-    /// Meshing DIFFERENT shapes at once scales: 7171 shapes took 3.8s of
-    /// wall time against 16.0s serial, the drain's build fell from 25.3s
-    /// to 13.5s, and the settled frame arrived about 12s sooner -- with
-    /// the frame pixel-identical and every triangle count unchanged.
-    /// Only shapes whose ask can be reproduced exactly are pre-meshed.
-    /// The claim carries the GEOMETRY bounding box the ask derives from,
-    /// because BRepBndLib prefers a resident triangulation and enlarges
-    /// the box by its deflection -- measuring again after the pre-mesh
-    /// would ask for something coarser than what is resident, and a
-    /// finer resident mesh is refused by default, so the call would
-    /// re-tessellate exactly what was just built. Roots sharing a face
-    /// or an edge with another root, instancing candidates and the
-    /// oversized shapes that take a stand-in are left alone, and a build
-    /// whose shape is still being meshed parks itself rather than read
-    /// a triangulation mid-write.
-    /// 
+    /// Tessellate the shapes of a document being opened on worker threads,
+    /// before they are built for display one by one on the GUI thread. Opens
+    /// a document of many small parts sooner, with the same result. Shapes
+    /// that share faces or edges with another, and instancing candidates, are
+    /// left to the normal path.
     static const bool & getPreMeshOnLoad();
     static const bool & defaultPreMeshOnLoad();
     static void removePreMeshOnLoad();
@@ -327,31 +227,10 @@ public:
     //@{
     /// Accessor for parameter MeshSkipRedundant
     ///
-    /// Ask the shape whether it is already tessellated the way this
-    /// rebuild wants it, and skip the tessellation call outright when it
-    /// is (docs/SceneStreaming.md #13e).
-    /// A visual rebuild always called BRepMesh_IncrementalMesh, on the
-    /// assumption that a mesh already resident makes the call nearly
-    /// free. Measured, it does not: half the calls of a mass descent --
-    /// 2462 of 4942 -- changed no triangle at all and still cost about
-    /// 19ms each, 27% of the whole descent's rebuild time, because
-    /// reaching the conclusion means building OCCT's internal mesh model
-    /// of the shape first.
-    /// The check asks the same question that model would have answered,
-    /// off the triangulations already hanging on the faces: OCCT's own
-    /// consistency rule (BRepMesh_ModelPreProcessor), per face, plus the
-    /// 3D polygon of every free edge. It is all-or-nothing per shape and
-    /// deliberately the stricter test -- one face that would be
-    /// re-tessellated, one triangulation with an index out of range, and
-    /// the call runs exactly as before, because the fallback is the real
-    /// thing and there is nothing to gain by guessing.
-    /// A resident mesh FINER than the ask is not adequate. That is not
-    /// an oversight: the descent asks for a coarser mesh on purpose, to
-    /// give memory back, and OCCT would coarsen it. Skipping there would
-    /// quietly hold the memory the plan asked for.
-    /// Off, the call is made unconditionally, as it always was. With the
-    /// level plan narrating, the off arm also reports how often the
-    /// check and the call agreed, which is what says the check is safe.
+    /// Check whether a shape is already tessellated the way a rebuild wants
+    /// it, and skip the tessellation call when it is. The check is strict: a
+    /// single face that would be re-tessellated and the call runs as before.
+    /// Off makes the call every time.
     static const bool & getMeshSkipRedundant();
     static const bool & defaultMeshSkipRedundant();
     static void removeMeshSkipRedundant();
@@ -363,40 +242,10 @@ public:
     //@{
     /// Accessor for parameter MeshSkipFinerResident
     ///
-    /// Count a resident mesh FINER than the rebuild asked for as
-    /// adequate, instead of re-tessellating to coarsen it
-    /// (docs/SceneStreaming.md #13e). Only consulted when redundant
-    /// tessellation is being skipped at all.
-    /// Strictly, finer is not adequate: the descent asks coarse on
-    /// purpose to hand memory back, and OCCT coarsens the mesh when
-    /// asked with quality decrease allowed. That is why the check
-    /// refuses it by default -- accepting it would be the feature
-    /// quietly holding the memory the level plan asked for.
-    /// Measured on the descent, though, that is what the refusal is
-    /// actually costing and it is nearly all of it: 2599 of the 2765
-    /// refused calls had a resident mesh exactly twice as fine as the
-    /// ask -- the previous ladder rung, one dynamic scale step back --
-    /// and every one of them changed no triangle when the call was
-    /// made anyway. The faces were already at their floor; a face of
-    /// two triangles does not coarsen.
-    /// So this trades a coarsening that mostly achieves nothing for the
-    /// ~19ms it costs to find that out. What it risks is the minority
-    /// where the coarsening WOULD have removed triangles, which is
-    /// memory the plan then has to recover some other way -- through
-    /// the refine pool's own coarser rung, where it was always meant to
-    /// come from.
-    /// OFF BY DEFAULT, and the reason is that risk, measured. Audited
-    /// with every call still made so the check can be scored against
-    /// what the call actually did, this rule predicted 3381 calls
-    /// redundant and 753 of them -- 22%, better than one in five --
-    /// rebuilt anyway. Those are real coarsenings it would have
-    /// skipped, and real memory the plan would not get back. The
-    /// strict rule's own score on the same instrument is 1 in 7403.
-    /// /!\ Never read that count from a run with the skip ON: a call
-    /// that is skipped is never made, so nothing can say whether it
-    /// would have rebuilt, and the wrong-verdict column can only
-    /// count calls the check refused. A zero there is guaranteed by
-    /// construction rather than earned.
+    /// With redundant tessellation skipped, also count a mesh finer than the
+    /// one asked for as good enough, instead of re-tessellating to coarsen it.
+    /// Saves time on a descent, but can keep memory the level plan asked to
+    /// have back, which is why it is off by default.
     static const bool & getMeshSkipFinerResident();
     static const bool & defaultMeshSkipFinerResident();
     static void removeMeshSkipFinerResident();
@@ -408,33 +257,10 @@ public:
     //@{
     /// Accessor for parameter MeshSkipInvariant
     ///
-    /// Skip a tessellation call on a shape whose mesh provably cannot
-    /// depend on the deflection asked: every face planar, every edge
-    /// curve a straight line (docs/SceneStreaming.md #13e). A plane
-    /// deviates from its triangulation by zero and a straight edge
-    /// discretizes to its two endpoints at ANY deflection, so the call
-    /// would rebuild the identical mesh -- there is no ask, coarser or
-    /// finer, at which such a shape tessellates differently.
-    /// This is the geometric statement behind the measured descent
-    /// waste: most mechanical parts hit their floor immediately, and a
-    /// mass descent then pays ~19-38ms per object per step (56-60% of
-    /// all drop-phase mesh time on the rack model) for BRepMesh to
-    /// rebuild what cannot change. The empirical exhaustion proof the
-    /// ladder keeps (scaleSpent) cannot be used for a skip -- audited
-    /// twice, 14-20% of proved shapes resume coarsening at some later
-    /// ask, and those rebuilds reclaim real memory. The geometric rule
-    /// is immune to that leak: the shapes that resume are exactly the
-    /// curved ones it refuses to claim, and an all-linear mesh cannot
-    /// shrink, so no reclaim is ever forgone.
-    /// The classification walks surface and curve TYPES once per shape
-    /// and is cached; conservative on both counts (a trimmed or offset
-    /// plane, a straight b-spline, count as curved). The skip is also
-    /// refused while any face is missing its triangulation -- building
-    /// that is exactly the call's job.
-    /// With the level plan narrating and this OFF, the rule is still
-    /// evaluated and scored against every call it would have skipped --
-    /// read its WRONG column from that arm only; a run with the skip on
-    /// cannot score calls it never made.
+    /// Skip a tessellation call on a shape whose mesh cannot depend on the
+    /// deflection asked for: every face planar and every edge a straight
+    /// line. Such a shape gives the same mesh at any coarseness, so the call
+    /// would only rebuild what is there.
     static const bool & getMeshSkipInvariant();
     static const bool & defaultMeshSkipInvariant();
     static void removeMeshSkipInvariant();
@@ -446,13 +272,9 @@ public:
     //@{
     /// Accessor for parameter ProgressiveLoad
     ///
-    /// Build the visual representation of a restored document after
-    /// the load instead of inline inside it. Opening a large document
-    /// otherwise tessellates every shape on the main thread while
-    /// nothing paints - the visual build is the largest single stage of
-    /// a load. Deferred, the window comes up first and the parts appear
-    /// in bounded slices with the view painting between them. Read as
-    /// each restored shape asks for its visual.
+    /// Build the display of a document after it has opened instead of during
+    /// the load. The window comes up first and the parts appear in slices,
+    /// with the view painting in between.
     static const bool & getProgressiveLoad();
     static const bool & defaultProgressiveLoad();
     static void removeProgressiveLoad();
@@ -464,13 +286,9 @@ public:
     //@{
     /// Accessor for parameter ProgressiveLoadBudgetMS
     ///
-    /// How long one slice of deferred visual building may run before
-    /// returning to the event loop, when Progressive document load is
-    /// on. Larger finishes the document sooner, smaller keeps the window
-    /// more responsive while it fills in. Each slice is paid for with a
-    /// repaint of a large scene, which is why slices this long are worth
-    /// it - much smaller and the fill is paced by redraws rather than by
-    /// the building. Read at each slice.
+    /// With ProgressiveLoad: milliseconds one slice of building the display
+    /// may run before the window is updated. Larger finishes sooner, smaller
+    /// keeps the window more responsive.
     static const long & getProgressiveLoadBudgetMS();
     static const long & defaultProgressiveLoadBudgetMS();
     static void removeProgressiveLoadBudgetMS();
@@ -499,16 +317,10 @@ public:
     //@{
     /// Accessor for parameter LevelMemoryFloorMB
     ///
-    /// Available system memory below which an exact re-tessellation
-    /// will not start (docs/SceneStreaming.md #13): the desktop refine
-    /// worker checks the system's own estimate of allocatable memory
-    /// before each exact build, and dropping under this floor counts as
-    /// a memory-ceiling observation - the same as a caught allocation
-    /// failure - after which the level plans also demote exact meshes
-    /// the camera would not miss back to their resident coarse rung.
-    /// 0 sizes the floor automatically (at least 512 MB, or 1/16 of
-    /// physical memory if that is more). Read when the first refine is
-    /// queued.
+    /// Free system memory, in megabytes, below which no exact
+    /// re-tessellation is started; from then on exact meshes the camera does
+    /// not need are given up as well. 0 chooses automatically (512 MB, or a
+    /// sixteenth of physical memory if that is more).
     static const long & getLevelMemoryFloorMB();
     static const long & defaultLevelMemoryFloorMB();
     static void removeLevelMemoryFloorMB();
@@ -520,18 +332,10 @@ public:
     //@{
     /// Accessor for parameter LevelDebug
     ///
-    /// Narrate what each mesh-level plan decides (docs/SceneStreaming.md
-    /// #13): the GPU budget it decided against and the bytes in use, how
-    /// many displayed sources stand at their coarse and exact rungs, and
-    /// how many refines, demotes and downgrades the plan asked for.
-    /// Reported on the plan's own cadence - a camera pause - because it
-    /// is a decision, not a per-frame cost.
-    /// Needed to tell a ladder that will not descend apart from one that
-    /// never ran: on the desktop OpenGL backend the automatic GPU budget
-    /// is 0 (bgfx's GL renderer reports no limit), so the downgrade half
-    /// of the plan never executed at all and nothing said so.
-    /// The FC_LEVEL_DEBUG environment variable also turns it on. Read
-    /// once, at the first plan.
+    /// Diagnostic. Logs what each mesh level plan decides: the GPU budget and
+    /// the memory in use, how many objects are coarse or exact, and how many
+    /// refines and downgrades it ordered. The FC_LEVEL_DEBUG environment
+    /// variable turns it on too. Read at the first plan.
     static const bool & getLevelDebug();
     static const bool & defaultLevelDebug();
     static void removeLevelDebug();
@@ -543,16 +347,9 @@ public:
     //@{
     /// Accessor for parameter LevelCeilingSimulateMB
     ///
-    /// Pretend the system ran out of memory for exact re-tessellation
-    /// (docs/SceneStreaming.md #13), so the CPU-side half of the level
-    /// plan can be exercised on a machine that has memory to spare.
-    /// Non-zero raises the floor that the refine worker compares
-    /// available memory against, so builds are refused and a memory
-    /// ceiling is observed - after which the plans start demoting exact
-    /// meshes the camera would not miss back to their coarse rung.
-    /// A simulation knob, not a tuning one: LevelMemoryFloorMB is the
-    /// real floor, and this overrides it upward only.
-    /// Read when a refine is dequeued, so it takes effect live.
+    /// Testing aid. Pretend the system has less free memory than this many
+    /// megabytes, so the low-memory behaviour of the level plan can be tried
+    /// on a machine with memory to spare. 0 turns it off.
     static const long & getLevelCeilingSimulateMB();
     static const long & defaultLevelCeilingSimulateMB();
     static void removeLevelCeilingSimulateMB();
@@ -564,15 +361,11 @@ public:
     //@{
     /// Accessor for parameter GpuMemoryBudgetMB
     ///
-    /// GPU geometry budget of the desktop mesh-level plan
-    /// (docs/SceneStreaming.md #13): while the uploaded geometry exceeds
-    /// it, a camera pause downgrades the *displayed* mesh of objects the
-    /// camera would not miss - off screen, or coarse within half the
-    /// Level tolerance - back to their coarse rung. Their exact meshes
-    /// stay in CPU RAM, so zooming back in re-activates them instantly,
-    /// with no re-tessellation. 0 means automatic: the graphics API's
-    /// own reported GPU memory limit where it states one (Direct3D and
-    /// Vulkan do; OpenGL reports nothing, and then no budget applies).
+    /// GPU memory, in megabytes, the displayed geometry may use. Over it,
+    /// objects the camera would not miss are shown with their coarse mesh;
+    /// the exact one stays in main memory and returns at once on zooming in.
+    /// 0 uses the limit the graphics API reports (OpenGL reports none, and
+    /// then no budget applies).
     static const long & getGpuMemoryBudgetMB();
     static const long & defaultGpuMemoryBudgetMB();
     static void removeGpuMemoryBudgetMB();
@@ -584,17 +377,10 @@ public:
     //@{
     /// Accessor for parameter LevelTolerance
     ///
-    /// Screen-space error, in pixels, a coarse tessellation may
-    /// commit before the exact one is built (docs/SceneStreaming.md
-    /// #13): on a coarse-first desktop view (render cache mode 3 with
-    /// a backend that drives the level plan), a camera pause re-plans
-    /// the scene and only objects whose coarse mesh errs by more than
-    /// this many pixels on screen re-tessellate exactly - off-screen
-    /// and distant objects stay at the cheap coarse mesh until the
-    /// camera makes them matter. 0 or less refines everything
-    /// immediately; larger keeps more of the scene coarse. The
-    /// streamed viewer's own tolerance is its lodpx URL parameter
-    /// (same meaning, same default).
+    /// Error in pixels on screen a coarse mesh may show before the exact one
+    /// is built. When the camera stops, only objects that exceed it are
+    /// refined. 0 or less refines everything at once; larger keeps more of
+    /// the scene coarse.
     static const double & getLevelTolerance();
     static const double & defaultLevelTolerance();
     static void removeLevelTolerance();
@@ -606,24 +392,10 @@ public:
     //@{
     /// Accessor for parameter LevelPressureRelease
     ///
-    /// How much of the raised refine tolerance the plan keeps each
-    /// time it comes in under the GPU budget (docs/SceneStreaming.md
-    /// #13c.3). While the budget is exceeded the plan accepts visible
-    /// error to fit the scene, and it must not hand that error straight
-    /// back the moment one plan fits: measured on a 5455-object model at
-    /// a 64MB budget, clearing it in one step took the tolerance from
-    /// 51 pixels to 2, asked 946 objects to re-tessellate at once, broke
-    /// the budget again and cycled -- 43 plans in 611 seconds with no
-    /// steady state at any point.
-    /// So quality comes back in steps: each plan that fits keeps this
-    /// fraction of the standing tolerance, and a step that puts the
-    /// scene back over budget is remembered as a floor the release never
-    /// passes again, so the ladder settles at the coarsest tolerance
-    /// that actually fits instead of oscillating around it. The floor is
-    /// forgotten when the camera moves or the budget changes, which is
-    /// when what a rung costs on screen changes.
-    /// Smaller gives quality back faster and risks the cycle; larger is
-    /// gentler and slower. 0 or less restores the immediate snap.
+    /// After the scene has been coarsened to fit the GPU budget: the fraction
+    /// of the raised tolerance kept each time a plan fits again, so quality
+    /// returns in steps instead of all at once and over the budget again.
+    /// Smaller returns quality faster. 0 or less returns it in one step.
     static const double & getLevelPressureRelease();
     static const double & defaultLevelPressureRelease();
     static void removeLevelPressureRelease();
@@ -635,19 +407,10 @@ public:
     //@{
     /// Accessor for parameter ClimbHardLimit
     ///
-    /// Whether the GPU budget is an absolute ceiling for the level
-    /// plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a
-    /// plan whose allocator-exact uploaded total stands at or above
-    /// the budget admits NO refine and cancels every climb still in
-    /// flight -- the existing de-want pass aborts them -- and below
-    /// the ceiling climbs are admitted in small batches (Climb
-    /// admission batch) so the total approaches the ceiling in
-    /// verified steps instead of overshooting it in one plan. Judged
-    /// against the uploaded TOTAL, not the two-frame live census: the
-    /// census alternates under churn and is what let climbs land
-    /// over budget. A crossing is bounded by one batch's bytes;
-    /// per-climb pre-sizing needs rung-keyed GPU cache entries and is
-    /// future work. Off restores unadmitted climbing.
+    /// Treat the GPU memory budget as a hard ceiling for refinement: at or
+    /// above it no object is refined and refinements under way are
+    /// cancelled; below it they are admitted in small batches
+    /// (ClimbAdmitBatch). Off refines without this check.
     static const bool & getClimbHardLimit();
     static const bool & defaultClimbHardLimit();
     static void removeClimbHardLimit();
@@ -677,16 +440,9 @@ public:
     //@{
     /// Accessor for parameter LevelLandBudgetMS
     ///
-    /// How long one event-loop turn may spend landing finished
-    /// worker jobs (climb refines and descent coarsenings alike).
-    /// Landings arrive as queued events, and Qt delivers every
-    /// pending one in a single sweep -- a batch of 64 landings ran
-    /// back-to-back for measured 1-2.7s stretches in which no paint,
-    /// timer or input event was served. The pump runs landings until
-    /// this budget is spent, then yields the loop and reschedules;
-    /// a single landing larger than the budget still lands whole
-    /// (items are not sliceable). Small keeps the UI responsive
-    /// under a landing storm; large lands a converging scene sooner.
+    /// Milliseconds one turn of the event loop may spend installing finished
+    /// mesh level changes before it returns to painting and input. Smaller
+    /// keeps the window more responsive, larger finishes sooner.
     static const long & getLevelLandBudgetMS();
     static const long & defaultLevelLandBudgetMS();
     static void removeLevelLandBudgetMS();
@@ -698,24 +454,9 @@ public:
     //@{
     /// Accessor for parameter MeshSkipLanded
     ///
-    /// Whether the rebuild half of a landing skips its OCCT mesh
-    /// call. A worker landing (climb, scale-descent, stand-in
-    /// resolution) or a demote/downgrade installs or re-activates the
-    /// very triangulation the following rebuild displays, and on
-    /// every such path the resident rung is never coarser than the
-    /// ask -- BRepMesh there can only validate: measured 18.3s of a
-    /// 92s budget drop (991 validated-only calls, 0.1-0.8s each on
-    /// large compounds), plus ~1s per landing of a giant re-FAILING
-    /// the faces the worker's mesher had already failed. Keyed on
-    /// the path of the one rebuild the landing just prepared, never
-    /// on the shape's descent history (the exhaustion-proof leak
-    /// that killed the spent-keyed skip does not reach a per-rebuild
-    /// claim). Audited at 94 percent exact no-ops; the rest are
-    /// BRepMesh re-meshing a few faces within ~5 percent of the
-    /// triangle count in either direction -- perturbation of a rung
-    /// the ladder chose to display, not reclaim forgone. The level
-    /// debug flag scores the claim either way; read the 'landed
-    /// rule' audit line before trusting a change here.
+    /// Skip the tessellation call in the rebuild that follows a mesh level
+    /// change, where the mesh just installed is the one to display and the
+    /// call could only confirm it.
     static const bool & getMeshSkipLanded();
     static const bool & defaultMeshSkipLanded();
     static void removeMeshSkipLanded();
@@ -727,23 +468,10 @@ public:
     //@{
     /// Accessor for parameter VisualFillOnPool
     ///
-    /// Whether the display-array fill of a big landing rebuild runs
-    /// on the refine worker pool instead of the GUI thread. After the
-    /// mesh call was skipped on landings (Skip mesh call on landing
-    /// rebuilds), the traversal that copies the resident
-    /// triangulations into the Coin arrays became the per-item floor
-    /// of the landing pump: 0.3-0.65s per 15-21k-face compound,
-    /// unsliceable, against a 200ms interactivity gate. With this on,
-    /// the rebuild captures handles to the resident triangulations
-    /// and edge polygons (the only state another thread may swap
-    /// under it -- the topology itself is immutable at runtime),
-    /// fills detached arrays on a worker, and lands them back through
-    /// the landing pump as plain array writes. The landing is
-    /// guarded by the shape identity and a per-object generation
-    /// count, so a rebuild that ran for any other reason in between
-    /// simply wins. Only rebuilds inside the landing pump with at
-    /// least 'Minimum faces for a pooled fill' faces take this path;
-    /// everything else fills inline exactly as before.
+    /// Fill the display arrays of a large object on a worker thread instead
+    /// of the GUI thread, after a mesh level change. Keeps the window
+    /// responsive while big objects change level. Applies to objects with at
+    /// least VisualFillMinFaces faces.
     static const bool & getVisualFillOnPool();
     static const bool & defaultVisualFillOnPool();
     static void removeVisualFillOnPool();
@@ -773,19 +501,10 @@ public:
     //@{
     /// Accessor for parameter WorkerVertexCache
     ///
-    /// Whether a scene publish adopts the vertex-cache content the
-    /// fill worker emitted at landing instead of re-capturing the
-    /// shape by traversal (docs/WorkerVertexCache.md). The capture
-    /// walks every triangle through a hash-dedup a second time to
-    /// rebuild exactly the arrays the fill already computed; with
-    /// this on, the worker emits those arrays next to the display
-    /// arrays and the publish installs them directly. Uniform-color
-    /// shapes only -- per-face colors, textures and marker sets fall
-    /// back to the traversal capture, as does any shape whose nodes
-    /// were touched after the landing registered the content. 0 is
-    /// off, 1 adopts, 2 adopts nothing but runs the traversal capture
-    /// and compares it against the worker's content, logging any
-    /// disagreement -- slow, for checking the emission, not for use.
+    /// Use the vertex arrays a worker thread already computed for a rebuilt
+    /// shape instead of capturing them again from the scene. 0 off, 1 on,
+    /// 2 does both and logs any difference (slow, for checking). Shapes with
+    /// one colour only.
     static const long & getWorkerVertexCache();
     static const long & defaultWorkerVertexCache();
     static void removeWorkerVertexCache();
@@ -797,22 +516,10 @@ public:
     //@{
     /// Accessor for parameter CaptureBudgetMS
     ///
-    /// How long one scene publish may spend re-capturing changed
-    /// shapes into vertex caches before the rest are deferred. The
-    /// capture walks a changed shape's primitives one triangle at a
-    /// time, and during a descent storm every landed batch pays that
-    /// on the next paint: mid-paint stack samples put the capture at
-    /// about half of 250-850ms publish frames. Once this budget is
-    /// spent, each remaining changed shape keeps its previous vertex
-    /// cache for this frame (a shape captured for the first time
-    /// stays out of the frame entirely -- progressive appearance,
-    /// same as a live import), the caches on its path are left
-    /// unclosed for reuse, and another publish is scheduled; captured
-    /// shapes turn valid and prune, so successive frames always make
-    /// progress. The display is at worst a few frames stale in a
-    /// scene that is churning anyway; a single changed object never
-    /// comes near the budget. 0 captures everything in one frame,
-    /// as before this parameter existed.
+    /// Milliseconds one scene update may spend capturing changed shapes
+    /// before the rest wait for the next frame. Keeps frames short while many
+    /// objects change at once; a waiting shape shows its previous state for
+    /// a frame or two. 0 captures everything in one frame.
     static const long & getCaptureBudgetMS();
     static const long & defaultCaptureBudgetMS();
     static void removeCaptureBudgetMS();
@@ -824,17 +531,9 @@ public:
     //@{
     /// Accessor for parameter LevelSlowBuildMS
     ///
-    /// A visual rebuild whose own cost passes this many
-    /// milliseconds reports its time split (traversal, mesh,
-    /// prologue, instancing, highlight) on one line naming the
-    /// object, under the level debug flag. The aggregate split says
-    /// where a mass descent's time goes; the landing pump's worst
-    /// turn is a single object's whole rebuild, and only a per-build
-    /// line says what that object spent it on. The same threshold
-    /// arms the slow-dispatch line in GUIApplication::notify, which
-    /// names the receiver of any single event-loop dispatch this
-    /// slow -- the net that catches a stall no timer above
-    /// bracketed. 0 turns both lines off.
+    /// Diagnostic, with LevelDebug: a display rebuild, or a single event,
+    /// that takes longer than this many milliseconds is logged with where the
+    /// time went. 0 turns it off.
     static const long & getLevelSlowBuildMS();
     static const long & defaultLevelSlowBuildMS();
     static void removeLevelSlowBuildMS();
@@ -846,15 +545,9 @@ public:
     //@{
     /// Accessor for parameter DescentOrderBatch
     ///
-    /// How many descents (demotes/downgrades) one plan pass may
-    /// order, free tier and priced tier together; 0 removes the cap.
-    /// Each order enqueues a worker job -- the coarsening itself runs
-    /// on the refine pool -- but the enqueue snapshots the object's
-    /// display arrays on the GUI thread, so an unbounded pass (the
-    /// measured 1500-order plans) is itself a stall. Deferred
-    /// candidates keep their hooks and the replan after the batch
-    /// lands re-finds them, so nothing is refused, only paced -- the
-    /// climb admission batch's mirror.
+    /// How many downgrades one plan may order at a time. The rest are found
+    /// again by the next plan, so nothing is lost, only paced. 0 removes the
+    /// limit.
     static const long & getDescentOrderBatch();
     static const long & defaultDescentOrderBatch();
     static void removeDescentOrderBatch();
@@ -866,24 +559,10 @@ public:
     //@{
     /// Accessor for parameter DowngradeLedger
     ///
-    /// Whether the GPU downgrade sweep carries its own unlanded
-    /// orders as credit against the next plan's deficit
-    /// (docs/SceneStreaming.md #13c.4). A downgrade frees exactly the
-    /// bytes it prices, but not WHEN the plan next looks: the swap
-    /// uploads the coarse rung immediately while the fine buffers
-    /// leave the live meter only after the collection window -- on a
-    /// heavy scene, seconds -- so a plan sampling mid-transition reads
-    /// old+new at once, computes a larger deficit than the one just
-    /// covered, and walks other sources further down. Measured on a
-    /// 5455-object model at 64MB with the camera inside the assembly:
-    /// single plans requesting 1500+ downgrades, live tripling during
-    /// the storm, and the whole registry drained to its bottom rung
-    /// while the settled memory was under budget all along.
-    /// With the ledger, promised bytes hold the sweep until they are
-    /// observed landing or written off a few frames after the ordered
-    /// worker jobs have all drained (an order's bytes cannot land
-    /// before its descent job does); off restores the storming
-    /// behaviour for comparison.
+    /// Count the GPU memory that downgrades already ordered will free as
+    /// credit against the next plan's shortfall. Without it a plan made while
+    /// those are still in flight orders them again, and far more than needed.
+    /// Off is the older behaviour, kept for comparison.
     static const bool & getDowngradeLedger();
     static const bool & defaultDowngradeLedger();
     static void removeDowngradeLedger();
@@ -895,14 +574,8 @@ public:
     //@{
     /// Accessor for parameter LevelCount
     ///
-    /// How many rungs the fidelity ladder declares
-    /// (docs/SceneStreaming.md #13). Rung n is tessellated at a
-    /// deflection of the shape diagonal over 8<<n, so rung 0 is the
-    /// coarsest and each further rung halves the error; this bounds
-    /// what Coarse tessellation level may select and how far a source
-    /// may climb. Raising it adds finer rungs, not coarser ones -- to
-    /// go below rung 0 the plan scales an object's error instead, see
-    /// Level scale.
+    /// Number of levels of the mesh ladder. Level 0 is the coarsest and each
+    /// further level halves the error, so raising this adds finer levels.
     static const long & getLevelCount();
     static const long & defaultLevelCount();
     static void removeLevelCount();
@@ -914,19 +587,10 @@ public:
     //@{
     /// Accessor for parameter LevelScale
     ///
-    /// What the level plan multiplies an object's error by when it
-    /// must free memory and every ordinary descent is exhausted
-    /// (docs/SceneStreaming.md #13). Rung 0 is not the floor: under a
-    /// budget the plan keeps picking objects -- individually, cheapest
-    /// visible error first, never the whole scene at once -- and
-    /// re-tessellates each one this much coarser again, until the
-    /// model fits. An object whose scaled error reaches Level scale
-    /// box error is replaced by its bounding box, which is the real
-    /// floor: coarsening a deflection cannot drop a planar face below
-    /// the two triangles it always has, and on a measured STEP
-    /// assembly a 4x coarser tessellation removed only 19% of the
-    /// primitives. 1 or less turns dynamic scaling off, and then a
-    /// budget under what rung 0 costs cannot be honoured.
+    /// Factor by which an object is tessellated coarser again when GPU
+    /// memory is still short at the coarsest ladder level. Applied object by
+    /// object, least visible error first, until the scene fits. 1 or less
+    /// turns this off.
     static const double & getLevelScale();
     static const double & defaultLevelScale();
     static void removeLevelScale();
@@ -938,25 +602,9 @@ public:
     //@{
     /// Accessor for parameter LevelBudgetDeadband
     ///
-    /// The rest band above the GPU memory budget, as a fraction of
-    /// it, inside which the level plan orders NO downgrades. The sweep
-    /// triggers only past budget*(1+this) and still corrects back to
-    /// the budget itself, so the band is hysteresis, not a higher
-    /// budget.
-    /// Without it an equilibrium that lands ON the budget line has
-    /// nowhere to rest: the plan orders 2-3 downgrades, the release
-    /// staircase re-wants the quality back, and the ladder dithers
-    /// 0.2-0.4MB across the line for as long as the process lives --
-    /// measured on the rack model as the difference between a run
-    /// that settles in ~250s and one that churns its whole 600s
-    /// window. Climbs already stop AT the budget (Climb hard limit),
-    /// so inside the band neither direction acts and the plans go
-    /// genuinely quiet; pressure counts as standing there, which
-    /// keeps the raised tolerance and the edge gate latched exactly
-    /// as they were while the equilibrium was reached.
-    /// The band tolerates standing that fraction over the stated
-    /// budget (about 2MB at 64MB). 0 restores the bare line and with
-    /// it the dither.
+    /// Band above the GPU memory budget, as a fraction of it, inside which no
+    /// downgrades are ordered. Keeps a scene that settles at the budget from
+    /// going back and forth across it. 0 removes the band.
     static const double & getLevelBudgetDeadband();
     static const double & defaultLevelBudgetDeadband();
     static void removeLevelBudgetDeadband();
@@ -968,17 +616,10 @@ public:
     //@{
     /// Accessor for parameter PerViewShownEvictWatermark
     ///
-    /// The memory level, as a fraction of the GPU memory budget, above
-    /// which the level plan evicts RELEASED per-view-shown objects:
-    /// hidden objects some view showed on its own and none shows any
-    /// more, which the shared capture keeps for a quick show again.
-    /// Nothing on screen needs them, so they go first -- below the
-    /// budget, before any sweep that costs visible quality -- the big
-    /// and the long released before the recent, until the use is back
-    /// at the watermark. Under an observed CPU memory ceiling they go
-    /// first too, against the CPU shortfall. No GPU budget (GL states
-    /// none) means no GPU trigger. 1 or more waits for the budget
-    /// itself.
+    /// GPU memory use, as a fraction of the budget, above which objects that
+    /// one view had shown on its own and no view shows any more are freed.
+    /// They go first, before anything that costs visible quality. 1 or more
+    /// waits for the budget itself.
     static const double & getPerViewShownEvictWatermark();
     static const double & defaultPerViewShownEvictWatermark();
     static void removePerViewShownEvictWatermark();
@@ -990,13 +631,9 @@ public:
     //@{
     /// Accessor for parameter LevelScaleBoxError
     ///
-    /// The scaled error at which an object stops being tessellated
-    /// at all and is drawn as its bounding box (12 triangles whatever
-    /// its face count), expressed relative to the shape diagonal. This
-    /// is where the ladder stops paying for topology it can no longer
-    /// resolve: past roughly a quarter of the diagonal a re-tessellated
-    /// shape and its box commit similar error, and only the box
-    /// actually removes the faces. 0 or less never substitutes a box.
+    /// Error, relative to its diagonal, at which an object is no longer
+    /// tessellated and is drawn as its bounding box. 0 or less never uses a
+    /// box.
     static const double & getLevelScaleBoxError();
     static const double & defaultLevelScaleBoxError();
     static void removeLevelScaleBoxError();
@@ -1008,26 +645,10 @@ public:
     //@{
     /// Accessor for parameter SimplifyExhausted
     ///
-    /// When re-tessellating an object coarser stops removing
-    /// geometry, decimate the mesh it already has instead of dropping
-    /// straight to its bounding box (docs/SceneStreaming.md #13c).
-    /// The descent coarsens an object by asking OCCT for a larger
-    /// deflection, and that saturates: a planar face is two triangles
-    /// at any deflection, so a shape of flat faces answers the same
-    /// mesh however coarse the ask. Past that point the only thing
-    /// that removes geometry is a representation with fewer faces.
-    /// Vertex clustering is the rung between the two: it keeps the
-    /// object's shape, where the bounding box does not.
-    /// Rewrites the display nodes only. Nothing re-tessellates and the
-    /// OCCT triangulation is untouched, so the way back is one ordinary
-    /// rebuild, and each further step down clusters on a coarser grid.
-    /// Face and edge numbering survive: a face that decimates away to
-    /// nothing keeps its (empty) slot, because those tables are read by
-    /// element number.
-    /// What it gives up is exactness of the decimated rung -- section
-    /// caps through it can be rough, since clustering does not preserve
-    /// watertightness, and the hidden-line seam filter is dropped
-    /// because a welded edge may fold a seam and a non-seam together.
+    /// When tessellating an object coarser no longer removes triangles,
+    /// decimate the mesh it has instead of going straight to its bounding
+    /// box. Display only: the shape and its exact mesh are untouched. Section
+    /// caps through a decimated object can be rough.
     static const bool & getSimplifyExhausted();
     static const bool & defaultSimplifyExhausted();
     static void removeSimplifyExhausted();
@@ -1039,19 +660,9 @@ public:
     //@{
     /// Accessor for parameter SimplifyMergeParts
     ///
-    /// Let the decimator weld vertices across face boundaries
-    /// instead of clustering each face on its own grid.
-    /// Off, no output triangle spans two faces, so a modelled crease
-    /// stays a crease and each face keeps at least the triangles its
-    /// own cells produce. That floor is the catch: this rung is reached
-    /// precisely when a shape is mostly flat faces, and per-face
-    /// clustering cannot take a two-triangle face below two triangles.
-    /// On, positions and attributes cluster once over the whole mesh,
-    /// which is what actually removes geometry there -- at the cost of
-    /// shading round creases the model really has.
-    /// Face identity survives either way: a triangle still belongs to
-    /// the face it came from, so per-face colour and selection keep
-    /// working. Only the geometry is shared.
+    /// Let decimation merge vertices across face boundaries. Removes far
+    /// more triangles on shapes made of flat faces, but rounds real creases.
+    /// Per-face colour and selection keep working either way.
     static const bool & getSimplifyMergeParts();
     static const bool & defaultSimplifyMergeParts();
     static void removeSimplifyMergeParts();
@@ -1063,15 +674,9 @@ public:
     //@{
     /// Accessor for parameter SimplifyMinReduction
     ///
-    /// How much of an object's triangle count a decimation pass has
-    /// to remove for the result to be kept, as a percentage.
-    /// Below it the pass is refused and the descent takes its next step
-    /// instead, which is the bounding box. A rung that removes almost
-    /// nothing is worse than not having one: it costs a node rewrite
-    /// and still holds the memory that made the plan ask.
-    /// This is also what stops the descent looping. Each step clusters
-    /// on a coarser grid, so a mesh that has run out of things to merge
-    /// keeps answering no and the object moves on to the box.
+    /// Percentage of an object's triangles a decimation has to remove for the
+    /// result to be kept. Below it the decimation is dropped and the object
+    /// goes on to its bounding box.
     static const double & getSimplifyMinReduction();
     static const double & defaultSimplifyMinReduction();
     static void removeSimplifyMinReduction();
@@ -1083,28 +688,11 @@ public:
     //@{
     /// Accessor for parameter ShapeVertices
     ///
-    /// Let the vertex points that sit on the ends of a shape's edges
-    /// draw under the element contract (docs/SceneStreaming.md #13b):
-    /// an attached point set draws only while its object's line set is
-    /// shown and memory allows, is the FIRST class dropped under
-    /// pressure and the LAST taken back. Off suppresses attached point
-    /// sets outright, memory or not.
-    /// A point is not cheap: it costs the GPU a 32-byte sprite instance
-    /// record plus its index, roughly nine times what it occupies in
-    /// the heap, which is why a CPU-currency measurement made them look
-    /// negligible.
-    /// All or nothing per point set, and only ATTACHED sets are ever
-    /// gated: one floating vertex -- one no edge touches, and every
-    /// point of a point cloud -- and the whole set ranks with the
-    /// faces, because nothing else would show it. Objects are in
-    /// practice all floating or none, so a per-vertex subset would buy
-    /// nothing and cost an index permutation.
-    /// It never applies in the Points display mode, where the vertices
-    /// are what the mode exists to show.
-    /// Picking, pre-selection and selection highlighting are unaffected:
-    /// the point geometry stays published and resident, the highlight
-    /// draws render on top as always, and only the base-pass submission
-    /// is skipped.
+    /// Draw the vertex points at the ends of a shape's edges. They are the
+    /// first thing dropped when GPU memory is short and the last to return.
+    /// Off never draws them. Free vertices and point clouds are always drawn,
+    /// as is everything in Points mode; picking and highlighting are
+    /// unaffected.
     static const bool & getShapeVertices();
     static const bool & defaultShapeVertices();
     static void removeShapeVertices();
@@ -1116,28 +704,11 @@ public:
     //@{
     /// Accessor for parameter PressureDropEdges
     ///
-    /// Let the pressure stages of the element contract
-    /// (docs/SceneStreaming.md #13b) stop drawing the edges that bound
-    /// faces. Under the contract an attached line set draws only while
-    /// its object's face set is shown and memory allows; pressure
-    /// spends the classes points -> lines -> faces and takes them back
-    /// in reverse, and this is the switch on the lines stage. Off
-    /// exempts line sets from the pressure stages (a loading document
-    /// still drops them).
-    /// Edge geometry is the GPU's most expensive geometry per unit of
-    /// screen information: a segment is 8 bytes of index in the heap
-    /// and those 8 bytes plus a 64-byte quad-expansion instance record
-    /// on the GPU.
-    /// All or nothing per edge set, attached sets only: one floating
-    /// edge -- a wire, a sketch, a datum line, any edge no face uses --
-    /// and the whole set ranks with the faces, because it is the
-    /// object, and dropping it would show nothing at all.
-    /// It never applies in the Wireframe display mode, where the edges
-    /// are what the mode exists to show.
-    /// A display gate, not a residency change -- nothing is demoted and
-    /// nothing re-tessellates, so entering and leaving it costs one
-    /// frame, which is why it is spent before any rung is given up.
-    /// Picking, highlighting and on-top rendering are unaffected.
+    /// Allow the edges that bound faces to stop being drawn when GPU memory
+    /// is short, after the vertices and before any face quality is given up.
+    /// Wires, sketches and other edges no face uses are never dropped, and
+    /// nothing is dropped in Wireframe mode. Picking and highlighting are
+    /// unaffected.
     static const bool & getPressureDropEdges();
     static const bool & defaultPressureDropEdges();
     static void removePressureDropEdges();
@@ -1149,14 +720,8 @@ public:
     //@{
     /// Accessor for parameter ElementGateStagger
     ///
-    /// How many frames the element contract's pressure latch waits
-    /// between stages (docs/SceneStreaming.md #13b), both escalating
-    /// (points dropped, then lines if the budget is still exceeded) and
-    /// releasing (lines back, then points, once the ladder has given
-    /// back all raised error). The wait is what lets the buffer
-    /// collector's census answer whether the cheaper stage was enough
-    /// before the next one is spent, and what keeps the release from
-    /// re-opening into the memory the collector just freed.
+    /// Frames to wait between the steps that drop vertices and then edges
+    /// when GPU memory is short, and between the steps that bring them back.
     static const long & getElementGateStagger();
     static const long & defaultElementGateStagger();
     static void removeElementGateStagger();
@@ -1168,26 +733,9 @@ public:
     //@{
     /// Accessor for parameter TinyElementCutoff
     ///
-    /// MEASUREMENT INSTRUMENT, 0 = off. Suppress every line and
-    /// point draw issuing this many primitives or fewer, regardless of
-    /// the element contract -- floating sets included, which is the
-    /// point: the contract deliberately never gates those, and they
-    /// are what a far-field cut is left drawing
-    /// (docs/FarFieldProxies.md 11.1i).
-    /// 
-    /// It exists to price the DRAW axis, which this engine has only
-    /// ever measured in the opposite regime. docs/DrawSubmission.md
-    /// dismissed draw count on a frame averaging ~1540 primitives per
-    /// draw, where the GPU is geometry-bound and a draw is free; the
-    /// far-field residue is ~12 primitives per draw, where a draw is
-    /// nearly all overhead. Setting this to ~24 on MiSTer removes
-    /// about 2% of the primitives and about 44% of the draws, so any
-    /// frame-time difference is attributable to draw count and not to
-    /// geometry.
-    /// 
-    /// Not a display feature: it makes real edges vanish, and picking,
-    /// highlighting and on-top draws are exempt so the scene stays
-    /// usable while it is on.
+    /// Measuring tool, 0 = off. Stops drawing every line and point set of
+    /// this many primitives or fewer, to see what the number of draw calls
+    /// costs. Real edges disappear while it is on; not a display setting.
     static const long & getTinyElementCutoff();
     static const long & defaultTinyElementCutoff();
     static void removeTinyElementCutoff();
@@ -1199,46 +747,10 @@ public:
     //@{
     /// Accessor for parameter LoadDropElements
     ///
-    /// Stop drawing edges AND vertices for as long as a document is
-    /// still arriving (docs/SceneStreaming.md #13b), and let the two
-    /// standing gates above decide again the moment it has finished.
-    /// A load is when the tier can least afford those two classes and
-    /// can least use them: the faces are arriving coarse-first and
-    /// being replaced under the camera, nobody inspects a vertex of a
-    /// model that is still half there, and every byte not uploaded to
-    /// an edge instance buffer now is one the arriving geometry gets
-    /// instead.
-    /// RE-MEASURED 2026-08-15, and the earlier reading no longer
-    /// holds. It used to suppress NOTHING on a .FCStd open: the load
-    /// parked every visual build and published in one step at the
-    /// end, so the renderer held an empty scene throughout -- 0
-    /// drawables across 17.8s on a 5455-object model. The publish is
-    /// incremental now, so the same open feeds the scene while the
-    /// drain runs and the gate has real work: on the same model it
-    /// climbs from 1123 to 5909 point and line draws suppressed, out
-    /// of 11818 eligible in a 17727-drawable scene, and both edges
-    /// are logged -- ON with an empty scene, OFF as the drain ends.
-    /// It overrides both gates while it lasts -- vertices drop even
-    /// with ShapeVertices on, edges drop with no pressure yet declared
-    /// -- but it is subject to the same all-or-nothing classification
-    /// and the same display-mode exemptions: a wire, a sketch, a datum
-    /// line or a point cloud draws throughout, because nothing else on
-    /// screen would show it, and neither class is dropped in the mode
-    /// that exists to show it.
-    /// Independent of this gate, the contract's dependency rule already
-    /// holds back an attached point or line set whose companion the
-    /// publish's capture budget deferred: an adopted vertex cache never
-    /// draws frames ahead of the face set it decorates, load gate or
-    /// not.
-    /// Costs one frame to leave, like the pressure gate, so what it
-    /// holds back comes straight back when the load lets go.
-    /// Applies only where coarse-first is on (CoarseTessellation 0 or
-    /// above): with everything tessellated exact up front there is no
-    /// progressive arrival for this to make room for.
-    /// A load here means a document restoring, a progressive import
-    /// filling one, or the deferred view-provider drain that follows a
-    /// restore -- geometry is still being built into the view in all
-    /// three.
+    /// Stop drawing face edges and edge vertices while a document is still
+    /// loading, and draw them again once it has arrived. Wires, sketches,
+    /// datum lines and point clouds are always drawn. Applies only with
+    /// coarse-first tessellation (CoarseTessellation 0 or above).
     static const bool & getLoadDropElements();
     static const bool & defaultLoadDropElements();
     static void removeLoadDropElements();
@@ -1250,26 +762,11 @@ public:
     //@{
     /// Accessor for parameter ElementTakeInSets
     ///
-    /// How many edge and point sets that are not on the GPU yet one
-    /// frame may take in (docs/DocumentLoad.md sec 18.17). The rest is
-    /// held back and comes in the frames after, which the view asks
-    /// for; a frame holding some back is not a finished picture, and a
-    /// capture waits for the one that is. 0 = no bound of this kind.
-    /// A load holds every such set back while it fills in
-    /// (LoadDropElements) and those whose faces were exact by then all
-    /// came back in the one frame after it: 14600 sets on a
-    /// 17000-object assembly, 8.7 s in a single call into the driver
-    /// and the thread away for 12 s. A camera fitted to an assembly it
-    /// showed a corner of does the same, and a document opened whole.
-    /// What a set costs is the buffer made for it and not its size --
-    /// 0.6 ms a set on Mesa's D3D12 driver under WSL, those 14600 being
-    /// 11 MB together -- which is why the bound is a count. At 1000 the
-    /// same load has no stretch longer than the 3.3 s its other frames
-    /// take, and the last edge is in 13 s later than it was.
-    /// Applies to the sets the element contract counts as attached --
-    /// the edges and vertices of a shape that has faces -- and never to
-    /// an on-top or highlight draw, nor to a wire, a sketch or a point
-    /// cloud, which are the object.
+    /// How many edge and point sets not on the GPU yet one frame may take in;
+    /// the rest comes in the frames after. 0 = no bound. Keeps the frame after
+    /// a load, or a camera fitted to a large assembly, from uploading every
+    /// set in one long call. Never holds back a wire, a sketch, a point cloud
+    /// or a highlight.
     static const long & getElementTakeInSets();
     static const long & defaultElementTakeInSets();
     static void removeElementTakeInSets();
@@ -1298,14 +795,10 @@ public:
     //@{
     /// Accessor for parameter EffectResolution
     ///
-    /// Resolution scale (0.25-1.0) of the expensive screen-space effect
-    /// passes -- the planar/ground reflection scene re-render, the water
-    /// body depth prepass and screen-space ambient occlusion -- relative to
-    /// the main view resolution. Lowering it trades effect sharpness for
-    /// speed on large windows, where those per-pixel passes dominate the
-    /// frame; the main geometry, edges, text and overlays stay full
-    /// resolution. 1.0 renders the effects at full resolution. The
-    /// volumetric light shafts already render at half resolution.
+    /// Resolution of the costly screen-space passes (ground reflection,
+    /// water depth, ambient occlusion) relative to the view, 0.25 to 1.
+    /// Lower is faster and softer; geometry, edges and text stay at full
+    /// resolution.
     static const double & getEffectResolution();
     static const double & defaultEffectResolution();
     static void removeEffectResolution();
@@ -1317,36 +810,11 @@ public:
     //@{
     /// Accessor for parameter TemporalAccum
     ///
-    /// Keep refining the image while the camera holds still.
-    /// 
-    /// Multisampling antialiases the geometry it rasterizes and nothing
-    /// else: every sample inside one triangle is shaded once, so a
-    /// specular highlight crawling across a curved surface, a normal or
-    /// texture detail below the pixel, and every screen-space pass
-    /// computed after the resolve -- ambient occlusion, outlines,
-    /// section caps, the light shafts -- are left exactly as aliased or
-    /// as noisy as they were drawn. More coverage samples cannot help
-    /// any of them.
-    /// 
-    /// This spends time instead. Once the camera stops, each further
-    /// frame offsets the projection by a fraction of a pixel and
-    /// averages into what is already on screen, so the whole pipeline
-    /// converges toward what supersampling it would have given -- and
-    /// it costs nothing at all while anything is moving.
-    /// 
-    /// There is no reprojection and no history rejection, because
-    /// nothing moved: the accumulation is thrown away outright on any
-    /// camera, scene or highlight change, so a drag or an orbit returns
-    /// to the ordinary multisampled frame immediately with no ghosting,
-    /// smearing or trailing on thin edges. It is a refinement on top of
-    /// multisampling, not a replacement for it -- leave the antialiasing
-    /// preference where it is.
-    /// 
-    /// The cost is idle GPU time: a parked view keeps drawing until it
-    /// has converged (TemporalAccumSamples), then stops and asks for
-    /// nothing more. On a laptop or a tablet that is battery, which is
-    /// why this is off by default and why it does not travel in a saved
-    /// document.
+    /// Keep refining the image while the camera holds still: each further
+    /// frame is shifted by a fraction of a pixel and averaged in, which
+    /// smooths what multisampling cannot (highlights, ambient occlusion,
+    /// outlines). Discarded on any change, so nothing ghosts. Costs GPU time
+    /// while idle, until TemporalAccumSamples frames have been added.
     static const bool & getTemporalAccum();
     static const bool & defaultTemporalAccum();
     static void removeTemporalAccum();
@@ -1358,20 +826,9 @@ public:
     //@{
     /// Accessor for parameter TemporalAccumSamples
     ///
-    /// How many jittered samples the idle accumulation converges over
-    /// before the view goes quiet (2-256, TemporalAccum only).
-    /// 
-    /// The sequence is a Halton (2,3) pair over the pixel, so it fills
-    /// the pixel evenly at every count rather than clumping, and it is
-    /// indexed by sample number -- frame N of an accumulation is the
-    /// same frame N every time, which is what keeps a rendered
-    /// comparison reproducible.
-    /// 
-    /// Most of the visible gain arrives in the first handful of
-    /// samples, since the error of an average falls with the square
-    /// root of the count: 32 halves the residual noise of 8, and 128
-    /// halves it again for four times the work. Raise it for a still
-    /// worth waiting on, lower it to reach the quiet state sooner.
+    /// How many frames idle accumulation adds up before the view goes quiet,
+    /// 2 to 256. Most of the gain comes in the first few; more gives a
+    /// cleaner still image and takes longer.
     static const long & getTemporalAccumSamples();
     static const long & defaultTemporalAccumSamples();
     static void removeTemporalAccumSamples();
@@ -1383,28 +840,10 @@ public:
     //@{
     /// Accessor for parameter Occlusion
     ///
-    /// Skip drawing what the depth buffer proves could not have
-    /// reached the screen (docs/FarFieldProxies.md §12). Bounding boxes
-    /// of the spatial index's nodes are tested against the depth the
-    /// occluders leave behind -- by default in a software depth buffer
-    /// on the CPU (Render_OcclusionSoftware), which answers within the
-    /// frame that asked -- and a node that puts no pixel through has
-    /// its whole subtree skipped, one test standing for thousands of
-    /// draws.
-    /// 
-    /// Exact, not approximate: only geometry that could not have been
-    /// seen is removed, so the image is unchanged and what is saved is
-    /// the draw call, which measures ~1.2-1.5us of CPU submission plus
-    /// ~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on
-    /// assemblies that hide themselves -- an enclosed chassis, a
-    /// populated rack, any interior -- and does nothing for a model
-    /// that is mostly silhouette. Expect roughly a fifth of the draws
-    /// from a camera inside a large assembly (§10.3); the far larger
-    /// figure from outside a closed model is a bound, not a promise.
-    /// 
-    /// Casters and reflections are judged separately: geometry hidden
-    /// from the eye still casts its shadow and still appears in the
-    /// ground reflection.
+    /// Skip drawing objects that are completely hidden behind others. The
+    /// image does not change; what is saved is the draw calls. Helps on
+    /// assemblies that hide their own insides, does little for a model that
+    /// is mostly outline. Shadows and reflections of hidden objects are kept.
     static const bool & getOcclusion();
     static const bool & defaultOcclusion();
     static void removeOcclusion();
@@ -1465,13 +904,9 @@ public:
     //@{
     /// Accessor for parameter OcclusionMaxHidden
     ///
-    /// How many frames a hidden node may go without an answer before
-    /// it is drawn again. A hidden node is re-tested continuously and
-    /// the answer is its only way back, so if answers stop arriving --
-    /// no query handles left, a dropped batch -- this is what returns
-    /// the geometry instead of leaving it missing. Answers that keep
-    /// confirming the node is hidden keep it hidden indefinitely, so
-    /// this never flickers a node the tests are still reaching.
+    /// With GPU occlusion queries: frames a hidden object may go without a
+    /// new answer before it is drawn again. A safeguard for when answers
+    /// stop arriving.
     static const long & getOcclusionMaxHidden();
     static const long & defaultOcclusionMaxHidden();
     static void removeOcclusionMaxHidden();
@@ -1483,16 +918,10 @@ public:
     //@{
     /// Accessor for parameter OcclusionDepthPad
     ///
-    /// How far a test box is pushed towards the viewer before it is
-    /// tested, in steps of the 24-bit depth buffer. A test box has to
-    /// be a conservative bound, and at the last bit of the depth buffer
-    /// it is not: a small part lying flush on a large panel quantizes
-    /// to the same stored depth as the panel, LEQUAL loses the tie
-    /// whichever way the rasterizer rounds, and the node reports itself
-    /// hidden while in plain view. Measured that way, the components on
-    /// a board disappeared while the board stayed. Too large costs
-    /// frame time by testing visible what could have been skipped; too
-    /// small deletes geometry, so err high.
+    /// With GPU occlusion queries: how far a test box is moved towards the
+    /// viewer, in depth buffer steps, so that a part lying flat on a larger
+    /// one is not judged hidden. Too small hides visible parts, too large
+    /// hides less; err high.
     static const long & getOcclusionDepthPad();
     static const long & defaultOcclusionDepthPad();
     static void removeOcclusionDepthPad();
@@ -1504,27 +933,9 @@ public:
     //@{
     /// Accessor for parameter OcclusionConfirm
     ///
-    /// How many consecutive answers of 'no pixels' a node must give
-    /// before its geometry is actually skipped. 1 acts on every
-    /// answer, and is what an occlusion test naively does.
-    /// 
-    /// A test is issued against one frame's depth and read against a
-    /// later one -- it does not block, because stalling for it would
-    /// cost the frame time the culling exists to save -- so while an
-    /// answer is in flight, other geometry is culled and the occluders
-    /// move underneath it. Acted on singly, a node tested while an
-    /// occluder was still drawn gets skipped after that occluder has
-    /// gone; the hole it leaves tests visible; it comes back; and it
-    /// oscillates, which is a picture that flickers rather than one
-    /// that is merely wrong.
-    /// 
-    /// Confirmations DILUTE that oscillation; measured, they do not
-    /// remove it (docs/FarFieldProxies.md #12.7): the false answers
-    /// arrive in runs, so tripling the confirmations bought a factor
-    /// of two, and the residual damage tracks how often nodes are
-    /// re-tested, which this setting cannot reach. The query path is
-    /// therefore not image-stable at any value here; occlusion on the
-    /// CPU (the default oracle) does not read this setting at all.
+    /// With GPU occlusion queries: how many answers of 'hidden' in a row an
+    /// object needs before it is skipped. More reduces flicker and does not
+    /// remove it. Not used when occlusion runs on the CPU, the default.
     static const long & getOcclusionConfirm();
     static const long & defaultOcclusionConfirm();
     static void removeOcclusionConfirm();
@@ -1536,28 +947,10 @@ public:
     //@{
     /// Accessor for parameter OcclusionSoftware
     ///
-    /// Answer the occlusion question with a software depth buffer on
-    /// the CPU instead of hardware occlusion queries
-    /// (docs/FarFieldProxies.md #12.12). The default, because it is
-    /// the one oracle whose picture holds still.
-    /// 
-    /// A hardware query cannot be asked at the moment its answer would
-    /// be right. It is issued against one frame's depth and read a
-    /// frame or two later, so a node is tested after the pass that drew
-    /// its own geometry and is asked to win a depth comparison against
-    /// itself -- measured as boxes returning no samples at all while
-    /// their contents were plainly on screen. The confirmations,
-    /// lifetimes and padding beside this setting all exist to contain
-    /// that, and none of them reach it.
-    /// 
-    /// On the CPU, occluders are rasterized and nodes tested against
-    /// the same buffer in one pass, so a node is asked before its own
-    /// geometry joins the buffer and the answer arrives in the frame
-    /// that asked. There is no latency to age, no verdict to confirm
-    /// and no query pool to run out of. It costs CPU time in a frame
-    /// that is already CPU-bound, which is the trade to measure, and it
-    /// behaves identically in the browser, where hardware queries do
-    /// not.
+    /// Decide what is hidden with a depth buffer drawn on the CPU instead of
+    /// GPU occlusion queries. The default: its answers belong to the frame
+    /// that asked, where a GPU query answers a frame or two late and can
+    /// flicker. Costs some CPU time per frame.
     static const bool & getOcclusionSoftware();
     static const bool & defaultOcclusionSoftware();
     static void removeOcclusionSoftware();
@@ -1602,16 +995,8 @@ public:
     //@{
     /// Accessor for parameter OcclusionThreads
     ///
-    /// How many worker threads the CPU occlusion buffer may rasterize
-    /// its occluders on. 0 picks automatically, leaving the submitting
-    /// thread and one other alone -- this runs in the middle of a
-    /// frame, not on an idle machine.
-    /// 
-    /// Each worker rasterizes its own slice of the occluder list into
-    /// its own buffer and the buffers are merged afterwards, so there
-    /// is no locking. The merge is slightly lossy -- two two-layer
-    /// blocks cannot combine into one without loss -- so a higher
-    /// worker count can hide marginally less. Never more.
+    /// Worker threads the CPU occlusion buffer may draw its occluders on.
+    /// 0 chooses automatically.
     static const long & getOcclusionThreads();
     static const long & defaultOcclusionThreads();
     static void removeOcclusionThreads();
@@ -1623,23 +1008,9 @@ public:
     //@{
     /// Accessor for parameter OcclusionSimd
     ///
-    /// Let the CPU occlusion buffer discard triangles four at a time
-    /// with SIMD before its exact rasterizer looks at them
-    /// (docs/FarFieldProxies.md #12.14).
-    /// 
-    /// Two thirds of the triangles offered to the buffer cover no pixel
-    /// at all -- a full-detail CAD tessellation is mostly triangles
-    /// smaller than the pixel grid -- and every one of them is paid for
-    /// in full before being thrown away. The pre-pass transforms and
-    /// projects four at once in single precision and drops the ones that
-    /// land on no pixel centre.
-    /// 
-    /// It cannot make the buffer claim a surface that is not there:
-    /// everything it does not discard is handed to the same exact path
-    /// as before, recomputed from the original vertices, and a triangle
-    /// it drops in error is occlusion lost rather than geometry deleted.
-    /// Turn it off to measure what it saves, not to work around a
-    /// suspected fault.
+    /// With CPU occlusion, discard triangles too small to cover a pixel four
+    /// at a time before the exact rasterizer sees them. Faster, and it cannot
+    /// hide anything visible. Turn off only to measure what it saves.
     static const bool & getOcclusionSimd();
     static const bool & defaultOcclusionSimd();
     static void removeOcclusionSimd();
@@ -1651,15 +1022,9 @@ public:
     //@{
     /// Accessor for parameter OcclusionResolution
     ///
-    /// Resolution of the CPU occlusion buffer, as a divisor of the
-    /// viewport. 1 matches the viewport.
-    /// 
-    /// Above 1 this can remove geometry that was visible, which is the
-    /// one failure this mechanism exists to avoid: a coarse pixel is
-    /// marked covered when an occluder reaches its centre, but it
-    /// stands for several real pixels, and the ones the occluder missed
-    /// are claimed with it. Reduce it only to measure what it costs, not
-    /// as a setting.
+    /// Resolution of the CPU occlusion buffer, as a divisor of the view size.
+    /// 1 matches the view. Above 1 it can hide visible geometry; change it
+    /// only to measure.
     static const long & getOcclusionResolution();
     static const long & defaultOcclusionResolution();
     static void removeOcclusionResolution();
@@ -1671,29 +1036,9 @@ public:
     //@{
     /// Accessor for parameter OcclusionPerInstance
     ///
-    /// Test each object against the CPU occlusion buffer, not just the
-    /// group it was partitioned into
-    /// (docs/FarFieldProxies.md #12.17). Only used when occlusion runs
-    /// on the CPU.
-    /// 
-    /// The cull walk tests boxes of groups, and a group is skipped only
-    /// when all of it is hidden -- so one visible object keeps its
-    /// hidden neighbours on screen. Measured, that is what limits the
-    /// culling rather than the quality of the depth buffer: after a
-    /// cull, 91% of what is still drawn reaches no pixel, and making
-    /// the occluders ten times better barely moved it.
-    /// 
-    /// The extra tests are read-only against a buffer that is already
-    /// finished, so they run on the same worker threads the occluders
-    /// used and add no state, no latency and nothing the backend has to
-    /// support.
-    /// 
-    /// On by default: measured on the benchmark it hides 17% more for
-    /// 0.4ms, against 3% for 3.4ms from making the occluders ten times
-    /// better, and it over-culls nothing. It can only ever be more
-    /// correct than testing the group -- a draw is skipped when its own
-    /// box is covered rather than when its neighbours' collectively
-    /// are.
+    /// With CPU occlusion, test each object on its own and not only the group
+    /// it was sorted into, so one visible object no longer keeps its hidden
+    /// neighbours drawn. Hides more for little cost; on by default.
     static const bool & getOcclusionPerInstance();
     static const bool & defaultOcclusionPerInstance();
     static void removeOcclusionPerInstance();
@@ -1705,20 +1050,10 @@ public:
     //@{
     /// Accessor for parameter OcclusionDemoteStreak
     ///
-    /// How many consecutive frames every draw of an object must have
-    /// been culled before the level plan's downgrade sweep may treat
-    /// it as free -- give its GPU upload back without charging the
-    /// camera any visible error. 0 never does. Only used when
-    /// occlusion runs on the CPU, whose verdicts are exact per frame.
-    /// 
-    /// This is occlusion acting as a MEMORY mechanism: an enclosed
-    /// assembly's interior is inside the view frustum, so without a
-    /// hidden verdict the plan prices its downgrade as visible error
-    /// and pays for it in quality somewhere that actually shows. What
-    /// the sweep drops stays resident in CPU RAM; the way back is an
-    /// ordinary refine, so a verdict the camera later overturns costs
-    /// one upload. The streak is the hysteresis that keeps a drifting
-    /// camera from paying that upload per flap.
+    /// With CPU occlusion: how many frames in a row an object must have been
+    /// completely hidden before its GPU memory may be given back at no
+    /// quality cost. It stays in main memory and returns when seen again.
+    /// 0 never does this.
     static const long & getOcclusionDemoteStreak();
     static const long & defaultOcclusionDemoteStreak();
     static void removeOcclusionDemoteStreak();
@@ -1730,23 +1065,10 @@ public:
     //@{
     /// Accessor for parameter OcclusionCoarse
     ///
-    /// Rasterize the CPU occlusion buffer's occluders from coarse
-    /// hulls instead of from their meshes
-    /// (docs/FarFieldProxies.md #12.16). Only used when occlusion runs
-    /// on the CPU.
-    /// 
-    /// An occluder does not need the mesh, it needs the surface, and a
-    /// hull carries that at a fraction of the triangles. What the
-    /// triangle budget above buys is what this changes: measured, 1285
-    /// of 1322 candidate occluders never entered the buffer because 37
-    /// full-detail draws spent the whole allowance, and the buffer then
-    /// hid 45% of what was there to hide.
-    /// 
-    /// The hulls are built by vertex clustering from the meshes the
-    /// renderer already holds -- no shape, no tessellator -- a few per
-    /// frame, and cached. A hull recedes by its own measured error
-    /// before it is rasterized, so it cannot claim to be nearer than
-    /// the surface it stands for.
+    /// With CPU occlusion, draw the occluders from simplified hulls instead
+    /// of their full meshes, so many more of them fit the triangle budget and
+    /// more gets hidden. A hull is moved back by its own error, so it cannot
+    /// hide what is visible.
     static const bool & getOcclusionCoarse();
     static const bool & defaultOcclusionCoarse();
     static void removeOcclusionCoarse();
@@ -1804,17 +1126,9 @@ public:
     //@{
     /// Accessor for parameter OcclusionCoarseBias
     ///
-    /// How far an occluder hull recedes from the camera before it is
-    /// rasterized, as a percentage of its own measured displacement.
-    /// 
-    /// Every point of a hull lies within that displacement of a point of
-    /// the mesh it was built from, so at 100 the hull cannot be nearer
-    /// than the surface it stands for -- which is what makes an
-    /// approximate occluder admissible at all. Below 100 it hides more
-    /// and may hide geometry that was visible; above 100 it hides
-    /// progressively less for nothing. 0 rasterizes the hull where it
-    /// sits, which is the measurement that says whether the bias is
-    /// needed.
+    /// With coarse occluders: how far a hull is moved away from the camera,
+    /// as a percentage of its own error. 100 guarantees it hides nothing
+    /// visible; less hides more and may hide visible parts.
     static const long & getOcclusionCoarseBias();
     static const long & defaultOcclusionCoarseBias();
     static void removeOcclusionCoarseBias();
@@ -1841,16 +1155,10 @@ public:
     //@{
     /// Accessor for parameter OcclusionBenefitProbe
     ///
-    /// Measure whether the culling pays for itself on THIS scene and
-    /// camera (docs/FarFieldProxies.md 12.13): alternate stretches of
-    /// frames with the whole occlusion block on and off, compare median
-    /// frame cost, and print the verdict with the culling readout
-    /// (Render_LevelDebug cadence). The probe is an intervention -- its
-    /// off arm draws everything and pauses the hidden-streak demote
-    /// feed for those frames -- so it is a measuring instrument, not a
-    /// mode to leave on. The verdict gates nothing yet; it is the
-    /// number the wire-or-delete decision for CullBenefitEstimator
-    /// reads.
+    /// Diagnostic. Measures whether occlusion culling pays for itself on this
+    /// scene and camera, by turning it on and off for stretches of frames and
+    /// comparing their cost. It disturbs the frames it measures; not for
+    /// normal use.
     static const bool & getOcclusionBenefitProbe();
     static const bool & defaultOcclusionBenefitProbe();
     static void removeOcclusionBenefitProbe();
@@ -1963,13 +1271,8 @@ public:
     //@{
     /// Accessor for parameter AOResolution
     ///
-    /// Resolution scale (0.25-1.0) of the ambient occlusion resolve
-    /// targets relative to the main view resolution, independent of the
-    /// shared Effect resolution. Ambient occlusion is resolution-sensitive
-    /// (contact and crevice detail), so it has its own control; the shared
-    /// Effect resolution drives only the costlier reflection re-render.
-    /// 1.0 renders the occlusion at full resolution; lower trades AO
-    /// sharpness for speed.
+    /// Resolution of ambient occlusion relative to the view, 0.25 to 1,
+    /// independent of EffectResolution. Lower is faster and less sharp.
     static const double & getAOResolution();
     static const double & defaultAOResolution();
     static void removeAOResolution();
@@ -1981,22 +1284,10 @@ public:
     //@{
     /// Accessor for parameter Cavity
     ///
-    /// Enable screen space cavity (curvature) shading of the
-    /// experimental render engine (render cache mode 3 with a selected
-    /// renderer type). Darkens concave creases and convex ridges found
-    /// in the geometry prepass normals, which makes surface shape and
-    /// small features read without relying on the lighting.
-    /// 
-    /// Best paired with the Shaded draw style, the one that draws no
-    /// edges: there the darkened crease is the only thing stating where
-    /// a face ends, so cavity does the job the edge lines do elsewhere,
-    /// without the wireframe over every tessellated curve. In a style
-    /// that already draws edges (Flat Lines) the two land on the same
-    /// pixels and cavity mostly restates them.
-    /// 
-    /// Independent of ambient occlusion: cavity is a local curvature
-    /// term, occlusion is a visibility integral over a world-space
-    /// radius (contact darkening). They compose.
+    /// Darken creases and ridges of the geometry in screen space, so the
+    /// shape reads without relying on the lighting. Works best with the
+    /// Shaded draw style, where no edges are drawn. Independent of ambient
+    /// occlusion. Needs render cache mode 3 with a renderer selected.
     static const bool & getCavity();
     static const bool & defaultCavity();
     static void removeCavity();
@@ -2008,20 +1299,9 @@ public:
     //@{
     /// Accessor for parameter CavityRadius
     ///
-    /// Baseline the cavity curvature is measured over, in pixels.
-    /// 
-    /// This decides which features the pass can see at all. The term
-    /// reads how far the surface normal turns between the two
-    /// neighbours, so at the default of 1 it sees only what turns
-    /// within a single pixel: hard creases, crisply, which is what
-    /// stands in for the edge lines the Shaded draw style does not
-    /// draw. Widening it brings broad curvature (fillets, blends, a
-    /// sculpted face) in, at the cost of spreading a hard crease into a
-    /// band of this width.
-    /// 
-    /// Being in pixels it is resolution-relative: the same value covers
-    /// less of the model on a high-DPI display, so a large model on a
-    /// dense screen may want more than 1.
+    /// Distance in pixels over which cavity shading measures curvature. 1
+    /// sees only hard creases, sharply. Larger values bring in fillets and
+    /// broad curvature and widen the creases to a band of that width.
     static const double & getCavityRadius();
     static const double & defaultCavityRadius();
     static void removeCavityRadius();
@@ -2064,14 +1344,10 @@ public:
     //@{
     /// Accessor for parameter Matcap
     ///
-    /// Enable matcap shading of the experimental render engine
-    /// (render cache mode 3 with a selected renderer type). Replaces
-    /// the scene's lighting with a fixed studio attached to the camera,
-    /// looked up by each fragment's view space normal: the shading of a
-    /// surface then depends only on which way it faces the viewer, so
-    /// form reads identically wherever the scene light happens to be.
-    /// The classic inspection shading -- pair it with Cavity for edge
-    /// definition. Overrides physically based shading while on.
+    /// Shade surfaces by the direction they face the viewer, with a fixed
+    /// studio lighting attached to the camera, so shape reads the same
+    /// wherever the scene light is. Overrides physically based shading.
+    /// Needs render cache mode 3 with a renderer selected.
     static const bool & getMatcap();
     static const bool & defaultMatcap();
     static void removeMatcap();
@@ -2083,16 +1359,11 @@ public:
     //@{
     /// Accessor for parameter MatcapPreset
     ///
-    /// Which matcap to shade with. The presets are computed in the
-    /// shader rather than sampled from images, so they cost no assets
-    /// and stay sharp at any resolution. Studio = soft key light with a
-    /// rim; Clay = matte, no highlight, the most neutral read of form;
-    /// Metal = banded sweep with a hard edge, exaggerates curvature;
-    /// Pearl = warm/cool dual tone, shows shallow undulation;
-    /// Zebra = black and white stripes, the surface as a mirror in a
-    /// room of parallel light strips: the stripes step where two faces
-    /// meet at an angle, meet with a kink where they are tangent, and
-    /// run through where the curvature is continuous as well.
+    /// Which matcap to shade with, computed in the shader. Studio: soft key
+    /// light with a rim. Clay: matte, the most neutral read of form. Metal:
+    /// banded, exaggerates curvature. Pearl: warm and cool, shows shallow
+    /// undulation. Zebra: black and white stripes that step at an angle, kink
+    /// at a tangent seam and run through where curvature is continuous.
     static const long & getMatcapPreset();
     static const long & defaultMatcapPreset();
     static void removeMatcapPreset();
@@ -2179,16 +1450,10 @@ public:
     //@{
     /// Accessor for parameter PBRFromSpecular
     ///
-    /// Read an ordinary Phong appearance's specular COLOUR as
-    /// physically based material data, where nothing states a
-    /// metalness of its own. The metallic/roughness model has no
-    /// specular slot -- its reflectance follows from the base colour
-    /// and the metalness -- so a classic Gold, whose gold-ness lives
-    /// entirely in that colour, otherwise shades as yellow-brown
-    /// plastic, and the presets built from a black diffuse and a
-    /// bright specular (Steel, Satin, Metalized) shade as nearly
-    /// black. Anything authored stands: a stated metalness, a PBR
-    /// appearance, a metallic-roughness map.
+    /// Read the specular colour of a classic appearance as metalness when
+    /// the material states none, so that presets such as Gold or Steel look
+    /// like metal under physically based shading. A stated metalness is
+    /// never changed.
     static const bool & getPBRFromSpecular();
     static const bool & defaultPBRFromSpecular();
     static void removePBRFromSpecular();
@@ -2200,31 +1465,10 @@ public:
     //@{
     /// Accessor for parameter ShininessMapping
     ///
-    /// How a classic Phong appearance's SHININESS becomes a
-    /// roughness, where the material states no roughness of its own.
-    /// 
-    /// Either way the conversion itself is the standard match of the
-    /// GGX lobe width to a Phong exponent n, roughness =
-    /// (2 / (n + 2)) ^ 1/4. What differs is what shininess MEANS.
-    /// 
-    /// 'GL exponent' reads it the way fixed-function GL did, as the
-    /// exponent scaled onto 0..128. That is faithful, but 128 is the
-    /// sharpest exponent GL could state, and it converts to a
-    /// roughness of 0.35 -- so on this reading a fully shiny Phong
-    /// material is satin, and the lower half of the roughness range
-    /// cannot be reached from shininess at all.
-    /// 
-    /// 'Full range' reads shininess as what the Appearance dialog
-    /// presents, a 0 to 100% appearance control, and maps it onto the
-    /// whole exponent range instead: n = 128 * s / (1 - s). Matte at
-    /// zero and a mirror at one, and over the low shininess values
-    /// real materials use it agrees with the GL reading to within a
-    /// few percent (FreeCAD's default 0.2 gives 0.49 rather than
-    /// 0.52, the Gold preset 0.66 rather than 0.67).
-    /// 
-    /// Neither reading touches anything authored: a stated roughness,
-    /// a PBR appearance, a metallic-roughness map and the per-object
-    /// Render_Roughness override all stand.
+    /// How the shininess of a classic appearance becomes a roughness when the
+    /// material states none. 'GL exponent' reads it as the OpenGL exponent,
+    /// where the shiniest material is still satin. 'Full range' reads it as
+    /// 0 to 100%, matte to mirror. A stated roughness is never changed.
     static const long & getShininessMapping();
     static const long & defaultShininessMapping();
     static void removeShininessMapping();
@@ -2236,38 +1480,10 @@ public:
     //@{
     /// Accessor for parameter PBREnvPreset
     ///
-    /// Which built-in environment lights the scene, where no
-    /// environment image is set. They are computed rather than
-    /// sampled from a file, so they cost no assets and work on every
-    /// tier including the browser.
-    /// 
-    /// What separates them is contrast and structure, not brightness:
-    /// all five integrate to the same mean radiance, so the exposure
-    /// that suits one suits the others. That matters because a
-    /// surround with no bright sources and no edges cannot put a
-    /// highlight on anything that reads as a light, and a smooth
-    /// surface reflecting it shows the same flat grey at every
-    /// roughness -- which is what made physically based shading look
-    /// like painted plastic.
-    /// 
-    /// Interior = a room with one window and a ceiling
-    /// panel, walls close enough to bounce. One hard key against a
-    /// dark surround, which is what gives the crispest highlight and
-    /// the strongest read of form. Studio = four soft boxes on a dark
-    /// surround, the product-shot rig, gentler and more even than
-    /// Interior. Gradient (the default) = the smooth three-band dome
-    /// this engine used before the others existed; the flattest and
-    /// the most even, which is why it is where a view starts -- it
-    /// stays out of the way of the model being worked on, and it is
-    /// the one to pick to have an older document's look back.
-    /// Overcast = a bright sky weighted to the zenith over dark
-    /// ground, soft and neutral. Sunset = a low warm sun with a deep
-    /// sky, the strongest colour separation, and the only one that
-    /// tints the whole frame. Light tent = a box of white panels,
-    /// bright BELOW the horizon as well as above it and seamed all
-    /// the way round; the one to pick when the SIDES of a subject
-    /// matter, since every other environment here puts a floor under
-    /// it and a standing wall reflects the floor.
+    /// Built-in environment that lights the scene when no environment image
+    /// is set: Gradient (the default, the most even), Interior, Studio,
+    /// Overcast, Sunset or Light tent. They differ in contrast and structure,
+    /// not in brightness, so one exposure suits them all.
     static const long & getPBREnvPreset();
     static const long & defaultPBREnvPreset();
     static void removePBREnvPreset();
@@ -2291,45 +1507,11 @@ public:
     //@{
     /// Accessor for parameter PBREnvImage
     ///
-    /// Image file used as the image based lighting environment,
-    /// replacing the built-in procedural studio environment. A 2:1
-    /// image is read as equirectangular (lat-long), anything squarer
-    /// as a sphere map — the same convention as the Texture mapping
-    /// dialog's Environment mode, so the same file works in both.
-    /// 
-    /// A Radiance picture (.hdr, .pic) is read as real radiance and
-    /// is the format worth using: a sky is thousands of times
-    /// brighter than the wall beneath it, and an ordinary 8-bit image
-    /// cannot hold that ratio, which is what makes one light a model
-    /// like a picture rather than like a place. An HDR environment
-    /// needs the output colour transform on, since it is the exposure
-    /// that decides how its range lands on the screen.
-    /// 
-    /// What to load, in short:
-    /// 
-    ///  - A Radiance .hdr or .pic. OpenEXR is NOT read: anything
-    ///    that is not Radiance goes through Qt, which has no EXR
-    ///    plugin, so an .exr loads nothing and the procedural
-    ///    environment stays on.
-    ///  - 2:1 proportions, so it is taken as a lat-long panorama
-    ///    and not as a mirror ball. Up is +Z, and the middle of
-    ///    the image faces +X.
-    ///  - 1K or 2K is plenty. The picture is held as 32-bit float
-    ///    RGB (2K is about 25 MB, 8K about 400 MB) and is baked
-    ///    into a 128 pixel per face cubemap, so a larger one
-    ///    costs memory without showing more.
-    ///  - Free CC0 panoramas: polyhaven.com/hdris.
-    /// 
-    /// How sharp it is DRAWN behind the model is a separate
-    /// question, and the answer is Render_PBREnvBlur: the background
-    /// pass draws that cubemap through a lens aperture, the way a
-    /// real backdrop is out of focus, and at zero the aperture is
-    /// shut and it is drawn as baked. The lighting and the
-    /// reflections read the sharp environment whatever the blur
-    /// says.
-    /// 
-    /// Empty falls back to that dialog's current image, then to the
-    /// procedural environment.
+    /// Image file used as the lighting environment instead of the built-in
+    /// one. A 2:1 image is read as a lat-long panorama, anything squarer as a
+    /// sphere map. Radiance files (.hdr, .pic) keep their real brightness and
+    /// are the format to use; OpenEXR is not read. 1K or 2K is plenty. Empty
+    /// uses the Texture mapping dialog's image, then the built-in environment.
     static const std::string & getPBREnvImage();
     static const std::string & defaultPBREnvImage();
     static void removePBREnvImage();
@@ -2341,16 +1523,9 @@ public:
     //@{
     /// Accessor for parameter PBREnvEmbed
     ///
-    /// Store a copy of the environment image inside the document,
-    /// so it travels with the file instead of depending on the
-    /// original path. The copy lives in the view's
-    /// Render_PBREnvImageData property and takes precedence over the
-    /// image path while set.
-    /// 
-    /// On by default: a document whose lighting depends on a file
-    /// somewhere on one machine opens lit differently everywhere
-    /// else, and the path is the part of the setting least likely
-    /// to survive the trip.
+    /// Store a copy of the environment image in the document, so the lighting
+    /// travels with the file instead of depending on a path on one machine.
+    /// The copy takes precedence over the path.
     static const bool & getPBREnvEmbed();
     static const bool & defaultPBREnvEmbed();
     static void removePBREnvEmbed();
@@ -2362,16 +1537,9 @@ public:
     //@{
     /// Accessor for parameter PBREnvBackground
     ///
-    /// Show the image based lighting environment itself as the view
-    /// background while physically based shading is active, so
-    /// reflective surfaces visibly mirror their surroundings.
-    /// 
-    /// On by default, because a reflective object standing in front of
-    /// a flat gradient reads as fake for a reason that is not the
-    /// object's fault: the reflection has no visible source, so there
-    /// is nothing in the frame for the eye to reconcile it against.
-    /// Affects nothing outside physically based shading -- the
-    /// Classic and Matcap models keep the background gradient.
+    /// Show the lighting environment as the view background while physically
+    /// based shading is active, so reflections have a visible source. Other
+    /// shading models keep the background gradient.
     static const bool & getPBREnvBackground();
     static const bool & defaultPBREnvBackground();
     static void removePBREnvBackground();
@@ -2383,37 +1551,9 @@ public:
     //@{
     /// Accessor for parameter PBREnvBlur
     ///
-    /// How far out of focus the environment background is, 0 to 1.
-    /// Zero is sharp -- the resolution it was baked at; one opens the
-    /// aperture to 45 degrees, and in between it doubles every eighth
-    /// of the range. Only the BACKGROUND is affected -- the lighting
-    /// and the reflections read the whole environment whatever this
-    /// says.
-    /// 
-    /// It is a defocus, not a smudge: the environment is convolved
-    /// with the disc of directions an aperture subtends, in linear
-    /// radiance, so a small bright source spreads into an even bokeh
-    /// disc that keeps its energy rather than being averaged away.
-    /// 
-    /// A backdrop wants some of this. A real one is out of focus, and
-    /// softening also lets a small bright source bleed into a wide
-    /// gentle falloff instead of sitting in the frame as a hard
-    /// rectangle. Too much of it and there is nothing left for a
-    /// reflection to be reconciled against, which is the whole reason
-    /// the background is drawn at all. Blender's viewport shading
-    /// carries the same control for the same reasons, and defaults it
-    /// higher than this does.
-    /// 
-    /// Both shading models honour it, and at zero the two show the
-    /// same backdrop: they bake the environment at the same angular
-    /// resolution. The external path tracer gets there differently,
-    /// since the world it samples IS the light and softening it
-    /// would relight the scene -- so a second bake of the same
-    /// environment through the same aperture is mixed in on CAMERA
-    /// rays alone, and the lighting, reflections and refractions keep
-    /// the sharp world. One consequence of that rule: a camera ray
-    /// stays a camera ray through a transparent surface, so a
-    /// see-through pass-through shows the soft backdrop as well.
+    /// How far out of focus the environment is drawn as the background, 0 to
+    /// 1. 0 is as sharp as it was baked. Only the background is affected:
+    /// lighting and reflections always read the sharp environment.
     static const double & getPBREnvBlur();
     static const double & defaultPBREnvBlur();
     static void removePBREnvBlur();
@@ -2691,13 +1831,9 @@ public:
     //@{
     /// Accessor for parameter WaterRippleType
     ///
-    /// The ambient ripple pattern on the water surface - the motion
-    /// the surface has of its own accord. 0 = waves: the default sum
-    /// of directional wind waves. 1 = rain: circular rings expanding
-    /// from randomly placed, randomly timed drop impacts, as on a pond
-    /// in rainfall. 2 = none: a still surface, which leaves only what
-    /// the scene disturbs - fountain splash rings and the impact rings
-    /// of particles striking the water still show.
+    /// Ripples the water surface has by itself: 0 wind waves, 1 rain rings,
+    /// 2 none. Rings from fountains and from particles striking the water
+    /// show in every case.
     static const long & getWaterRippleType();
     static const long & defaultWaterRippleType();
     static void removeWaterRippleType();
@@ -2825,23 +1961,10 @@ public:
     //@{
     /// Accessor for parameter Light
     ///
-    /// Let the render engine supply its own directional or spot scene
-    /// light, described by the Light* settings below, instead of taking
-    /// one out of the Coin traversal.
-    /// 
-    /// Everything the engine keys off a light -- shadows, volumetric
-    /// shafts, the sun disc, ground reflection -- today has exactly one
-    /// source: the Shadow display style, which is what puts an
-    /// SoShadowDirectionalLight or SoSpotLight in the scene graph at all
-    /// (the viewer headlight is a plain SoDirectionalLight, which the
-    /// engine rejects by type). That makes a draw style the owner of the
-    /// lighting, and it is why the style cannot simply be retired
-    /// (docs/CoinRetirement.md 3.4).
-    /// 
-    /// Off by default, and while off nothing changes. A light found in
-    /// the traversal still wins when one is there, so the Shadow style
-    /// keeps behaving exactly as before; these settings supply a light
-    /// when it does not.
+    /// Let the render engine use a scene light of its own, described by the
+    /// Light settings below, for shadows, light shafts and ground reflection.
+    /// Without it the only such light is the one the Shadow display style
+    /// adds. A light found in the scene still takes precedence.
     static const bool & getLight();
     static const bool & defaultLight();
     static void removeLight();
@@ -2864,6 +1987,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LightDirectionX
+    ///
+    /// X component of the direction the render engine's own scene light
+    /// shines along, in world coordinates. A direction of zero length
+    /// falls back to (-1, -1, -1).
     static const double & getLightDirectionX();
     static const double & defaultLightDirectionX();
     static void removeLightDirectionX();
@@ -2874,6 +2001,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LightDirectionY
+    ///
+    /// Y component of the direction the render engine's own scene light
+    /// shines along, in world coordinates. A direction of zero length
+    /// falls back to (-1, -1, -1).
     static const double & getLightDirectionY();
     static const double & defaultLightDirectionY();
     static void removeLightDirectionY();
@@ -2884,6 +2015,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LightDirectionZ
+    ///
+    /// Z component of the direction the render engine's own scene light
+    /// shines along, in world coordinates. A direction of zero length
+    /// falls back to (-1, -1, -1).
     static const double & getLightDirectionZ();
     static const double & defaultLightDirectionZ();
     static void removeLightDirectionZ();
@@ -2920,6 +2055,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LightPositionX
+    ///
+    /// X coordinate of the render engine's own scene light when it is a
+    /// spot light, in world coordinates. A directional light ignores it.
     static const double & getLightPositionX();
     static const double & defaultLightPositionX();
     static void removeLightPositionX();
@@ -2930,6 +2068,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LightPositionY
+    ///
+    /// Y coordinate of the render engine's own scene light when it is a
+    /// spot light, in world coordinates. A directional light ignores it.
     static const double & getLightPositionY();
     static const double & defaultLightPositionY();
     static void removeLightPositionY();
@@ -2940,6 +2081,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LightPositionZ
+    ///
+    /// Z coordinate of the render engine's own scene light when it is a
+    /// spot light, in world coordinates. A directional light ignores it.
     static const double & getLightPositionZ();
     static const double & defaultLightPositionZ();
     static void removeLightPositionZ();
@@ -3033,13 +2177,9 @@ public:
     //@{
     /// Accessor for parameter CyclesDevice
     ///
-    /// Compute device type the External shading model path traces
-    /// on, as Gui.cyclesDevices() names them: 'CPU' always works, and
-    /// 'CUDA', 'OPTIX' or 'HIP' when this machine has the GPU and the
-    /// driver for it. Seeds the per-view Cycles_Device property, which
-    /// offers only the devices the machine actually has -- a document
-    /// saved elsewhere falls back to the first local device when its
-    /// choice does not exist here.
+    /// Device the path tracer runs on: 'CPU' always works; 'CUDA', 'OPTIX' or
+    /// 'HIP' when the machine has the GPU and driver. A document saved with a
+    /// device this machine lacks uses the first one available.
     static const std::string & getCyclesDevice();
     static const std::string & defaultCyclesDevice();
     static void removeCyclesDevice();
@@ -3108,16 +2248,9 @@ public:
     //@{
     /// Accessor for parameter CyclesMaxStreams
     ///
-    /// How many path-traced sessions this process serves at once
-    /// (docs/CyclesIntegration.md sec 7.1). A browser viewer that asks
-    /// for a path-traced view gets a Cycles session of its own -- one
-    /// per traced cell, per connection, across every served document --
-    /// and each holds a device context and the scene on that device.
-    /// A start made when this many are already running is refused with
-    /// 'TooManyStreams'; the viewer says so and stays on its raster
-    /// view. 0 or less means no cap, which is what the desktop views
-    /// and the offline render have always had: this counts served
-    /// streams only.
+    /// How many path-traced views this process serves to browser viewers at
+    /// once. A request past the limit is refused and that viewer stays on its
+    /// raster view. 0 or less means no limit. Desktop views are not counted.
     static const long & getCyclesMaxStreams();
     static const long & defaultCyclesMaxStreams();
     static void removeCyclesMaxStreams();
@@ -3129,17 +2262,10 @@ public:
     //@{
     /// Accessor for parameter DebugViewMode
     ///
-    /// Render debugging buffer visualization (docs/RenderDebug.md).
-    /// Routes an intermediate render target to the screen instead of the
-    /// shaded scene: 1 = linearized scene depth, 2 = view-space normals,
-    /// 3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow
-    /// map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =
-    /// shadow-moment filtering-precision probe, 8 = UV / texcoord,
-    /// 9 = the planar reflection target, 10 = the particle impact map
-    /// (green where a hit is recorded, brightness its age, red where
-    /// nothing has ever struck).
-    /// 0 renders normally. The on-top, highlight and overlay passes
-    /// still draw on top so the view stays navigable.
+    /// Diagnostic. Shows an intermediate buffer instead of the shaded scene:
+    /// 1 depth, 2 normals, 3 ambient occlusion, 4 shadow, 5 shadow map
+    /// coverage, 6 overdraw, 7 shadow precision, 8 texture coordinates,
+    /// 9 reflection target, 10 particle impact map. 0 renders normally.
     static const long & getDebugViewMode();
     static const long & defaultDebugViewMode();
     static void removeDebugViewMode();
@@ -3184,18 +2310,9 @@ public:
     //@{
     /// Accessor for parameter DebugTiming
     ///
-    /// Log where the time of a rendered frame goes, by pipeline
-    /// stage: the Coin traversal, the flattening of the vertex caches,
-    /// the draw-entry build, the translation to the backend, the
-    /// backend's own bookkeeping and the draw itself. One summary line
-    /// per second, so a long operation shows how each stage grows with
-    /// the scene rather than one average (docs/IncrementalPublish.md).
-    /// Those stages end at submission, so a second line reports what
-    /// happens after it: the frame's cost on the CPU issuing draw
-    /// commands against its cost on the GPU drawing them, and the same
-    /// pair per draw call (docs/FarFieldProxies.md §10.1). Which of the
-    /// two a scene is bound by is what decides whether a culling scheme
-    /// has to remove the draw or may leave it to the GPU to reject.
+    /// Diagnostic. Logs once a second where the time of a rendered frame
+    /// goes, by pipeline stage, and what the frame costs on the CPU against
+    /// the GPU.
     static const bool & getDebugTiming();
     static const bool & defaultDebugTiming();
     static void removeDebugTiming();
@@ -3225,13 +2342,9 @@ public:
     //@{
     /// Accessor for parameter DebugCoverage
     ///
-    /// Log how much of the screen each drawn object actually covers,
-    /// as a histogram over its projected size in pixels. A camera that
-    /// sees a whole assembly draws most of it at a few pixels, and every
-    /// one of those parts still costs a full object; the histogram says
-    /// how much of the model is in that state, which is what decides
-    /// whether aggregating distant parts is worth building
-    /// (docs/FarFieldProxies.md §9).
+    /// Diagnostic. Logs how much of the screen each drawn object covers,
+    /// as a histogram over its size in pixels. Shows how much of a model is
+    /// drawn only a few pixels large.
     static const bool & getDebugCoverage();
     static const bool & defaultDebugCoverage();
     static void removeDebugCoverage();
@@ -3243,15 +2356,9 @@ public:
     //@{
     /// Accessor for parameter DebugProxyCut
     ///
-    /// Log what a far-field cut would cost this camera, without
-    /// generating anything: the drawn instances are partitioned into the
-    /// spatial index of docs/FarFieldProxies.md §3, a frontier is chosen
-    /// by projected error at several tolerances, and the draws that cut
-    /// would issue -- one per (cell, material) proxy plus whatever stays
-    /// exact -- are reported against the draws issued today. This is the
-    /// number that says whether generating proxies is worth building
-    /// (§11.1). Also reports the distributions that size the partition:
-    /// instances and material buckets per cell, per level.
+    /// Diagnostic. Logs how many draw calls replacing distant parts by
+    /// far-field proxies would save for the current camera, without building
+    /// any.
     static const bool & getDebugProxyCut();
     static const bool & defaultDebugProxyCut();
     static void removeDebugProxyCut();
@@ -3263,18 +2370,9 @@ public:
     //@{
     /// Accessor for parameter DebugOcclusion
     ///
-    /// Measure how much of what the frame draws could not have
-    /// reached the screen (docs/FarFieldProxies.md §10.1). Bounding
-    /// boxes of the spatial index's nodes are re-rasterized against the
-    /// finished depth buffer under hardware occlusion queries, writing
-    /// neither colour nor depth, and every instance is attributed to the
-    /// highest node that rejects it -- so a hidden subtree is counted
-    /// once, not at every level it is hidden at. Boxes bound their
-    /// contents loosely and the frustum's own rejections are reported
-    /// separately, so the hidden share it prints is a floor rather than
-    /// an estimate. A GPU offers 256 queries at a time, so a large model
-    /// takes several frames to walk and a line is printed per completed
-    /// walk, never for a partial one.
+    /// Diagnostic. Measures how much of what a frame draws is hidden behind
+    /// something else, using GPU occlusion queries. A large model takes
+    /// several frames per report.
     static const bool & getDebugOcclusion();
     static const bool & defaultDebugOcclusion();
     static void removeDebugOcclusion();
@@ -3286,19 +2384,9 @@ public:
     //@{
     /// Accessor for parameter DebugProxyGen
     ///
-    /// Generate real proxies for a sample of the nodes a far-field
-    /// cut stops on, and report what they cost and what they commit
-    /// (docs/FarFieldProxies.md §11.1c). The cut estimate above selects
-    /// by a node's projected *extent* because no proxy exists yet to
-    /// have an error; this one merges each (cell, material) group and
-    /// decimates it, so the error it commits can be measured as a
-    /// fraction of that extent -- which is the ratio that says whether
-    /// the estimate reads as its 16px row or its 64px row. Reports
-    /// alongside it the triangle cost against what instancing already
-    /// achieves (§7.1) and how much surface area survives, since
-    /// clustering deletes geometry smaller than a cell rather than
-    /// shrinking it. Expensive: it builds meshes. Samples a bounded
-    /// number of nodes and reports how many it skipped.
+    /// Diagnostic. Builds real far-field proxies for a sample of nodes and
+    /// reports their triangle cost and the error they introduce. Expensive:
+    /// it builds meshes.
     static const bool & getDebugProxyGen();
     static const bool & defaultDebugProxyGen();
     static void removeDebugProxyGen();
@@ -3310,20 +2398,10 @@ public:
     //@{
     /// Accessor for parameter DebugCullAudit
     ///
-    /// Check what the occlusion culling skipped against what the
-    /// geometry actually put on screen (docs/FarFieldProxies.md §12.9).
-    /// Every other measurement of the culling compares two pictures and
-    /// reports how many pixels differ, which says that something is
-    /// wrong without saying what: this re-rasterizes the scene with the
-    /// cull mask ignored and each draw writing its own identity instead
-    /// of a colour, so the ids that own a pixel are an exact answer to
-    /// which draws reach the screen. Their intersection with the mask is
-    /// a list of proven over-culls -- each one a named draw with a pixel
-    /// count -- and the ids that own nothing while being drawn are the
-    /// converse: the headroom the culling has not taken. Reads the image
-    /// back to the CPU once a second, so it costs a full-resolution
-    /// transfer on the frames it reports and nothing while off. Needs a
-    /// backend with texture readback, which WebGL2 is not.
+    /// Diagnostic. Checks what occlusion culling skipped against what really
+    /// reaches the screen, by drawing every object once more with its
+    /// identity as its colour, and reports objects culled by mistake. Reads
+    /// the image back once a second. Not available on WebGL2.
     static const bool & getDebugCullAudit();
     static const bool & defaultDebugCullAudit();
     static void removeDebugCullAudit();
@@ -3335,24 +2413,10 @@ public:
     //@{
     /// Accessor for parameter DebugCullBounds
     ///
-    /// Measure whether a tighter occludee volume would cull more
-    /// (docs/FarFieldProxies.md §12.19). After per-instance testing, 90%
-    /// of the draws a frame still submits reach no pixel while each was
-    /// tested and answered visible -- so the geometry is hidden and the
-    /// box around it is not. This re-asks every still-drawn row three
-    /// ways against the same occluder buffer: with the world box that
-    /// ships, with the mesh's own box through the model matrix (an
-    /// oriented box, where the shipping one is the axis-aligned box
-    /// around it), and with every triangle asked separately -- which is
-    /// far too slow to ship and is here as the ceiling, since nothing
-    /// asked about the occludee can beat asking about its geometry. The
-    /// verdicts are counted against the cull audit's id image, never
-    /// acted on, so an arm that would have deleted something visible
-    /// reports itself instead of being believed.
-    /// Needs the cull audit on (it supplies the image) and the software
-    /// occluder pass, which owns the buffer being asked. Runs on the
-    /// audit's frame only, and costs far more than a frame: it is a
-    /// measurement, not a mode to leave on.
+    /// Diagnostic. Measures whether tighter bounds around objects would let
+    /// occlusion culling hide more, by asking again about every object still
+    /// drawn in three ways. Reports only, changes nothing on screen. Needs
+    /// the cull audit and CPU occlusion, and is far too slow to leave on.
     static const bool & getDebugCullBounds();
     static const bool & defaultDebugCullBounds();
     static void removeDebugCullBounds();
@@ -3371,25 +2435,52 @@ public:
     /// Called once at Gui::Application startup.
     static void migrate();
 
-    /// Decide the render path this session draws with, overriding
-    /// whatever the configuration carries: render cache 3 and the
-    /// render engine's backend. Called once at Gui::Application startup,
-    /// before anything reads either.
-    ///
-    /// The path is a development switch rather than a setting. A stored
-    /// choice is ignored -- a machine that once wrote one keeps it out
-    /// of every later session, and a backend that no longer exists in
-    /// this build cannot leave a view pointing at it -- while a change
-    /// made at runtime (console, script) works exactly as before, for
-    /// as long as that session lasts.
-    static void selectRenderPath();
-    /** The backend type to use, without stating it as a preference
+    /// What the Type setting says of whether the render engine draws:
+    /// "Legacy" is the old Coin rendering without it, and anything else
+    /// -- "Default", nothing stored, a backend by name -- is the engine.
+    static const char *legacyType() { return "Legacy"; }
+    static bool usesEngine();
+    /** The backend a 3D view is to be drawn with, as the factory names it
      *
-     * What selectRenderPath() would settle on: the engine's own backend
-     * where this build registered one, whatever else registered if not,
-     * and "Default" -- meaning plain GL -- where nothing did. Separate
-     * from getType() because a caller may need the engine for a reason
-     * of its own without touching what the user chose for their views.
+     * The Type setting read for what it MEANS: empty under "Legacy" (no
+     * backend: Coin draws); under "Default", or with nothing stored, the
+     * platform's backend (preferredType()); a backend named outright if
+     * this build has it, and the platform's if it has not -- a name from
+     * another build cannot leave a view pointing at nothing. Empty also
+     * where no backend is registered at all.
+     *
+     * Every place that creates a backend asks this, never getType():
+     * "Default" used to mean no backend, a choice made once at startup
+     * wrote the real one over it, and a session whose parameters were
+     * cleared ("Reset all" in the preferences) was left without the
+     * engine until the next start.
+     */
+    static std::string engineType();
+
+    /** The render cache mode the program draws by
+     *
+     * 3 with the engine, whatever View/RenderCache holds -- the setting
+     * is left as it is and not looked at; under "Legacy" the setting,
+     * which then means what it says (0 auto, 1 distributed, 2
+     * centralized, 3 the render cache with its own GL renderer).
+     *
+     * Everything that asks which path draws asks this, never
+     * ViewParams::getRenderCache(). Read from the parameters themselves,
+     * not from the cached getters: it is asked from inside the change
+     * notifications of both keys, where a cached value may still be the
+     * old one.
+     */
+    static int renderCache();
+    /// The backends this build has, by the names the Type setting takes
+    /// besides "Default" and "Legacy": what the preferences page lists.
+    static std::vector<std::string> backendTypes();
+    /** The platform's backend, without stating it as a preference
+     *
+     * What "Default" resolves to: the engine's own backend where this
+     * build registered one, whatever else registered if not, and
+     * "Default" -- which no factory creates -- where nothing did.
+     * Separate from engineType() because a caller may need the engine
+     * for a reason of its own whatever the user chose for their views.
      */
     static std::string preferredType();
 

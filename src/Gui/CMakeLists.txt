@@ -352,7 +352,6 @@ SET(Gui_UIC_SRCS
     PreferencePages/DlgSettingsEditor.ui
     PreferencePages/DlgSettingsGeneral.ui
     DlgSettingsImage.ui
-    PreferencePages/DlgSettingsLightSources.ui
     PreferencePages/DlgSettingsMacro.ui
     PreferencePages/DlgSettingsNavigation.ui
     PreferencePages/DlgSettingsNotificationArea.ui
@@ -671,7 +670,6 @@ SET(Dialog_Settings_CPP_SRCS
     PreferencePages/DlgSettingsEditor.cpp
     PreferencePages/DlgSettingsGeneral.cpp
     DlgSettingsImageImp.cpp
-    PreferencePages/DlgSettingsLightSources.cpp
     PreferencePages/DlgSettingsMacroImp.cpp
     PreferencePages/DlgSettingsNavigation.cpp
     PreferencePages/DlgSettingsNotificationArea.cpp
@@ -697,7 +695,6 @@ SET(Dialog_Settings_HPP_SRCS
     PreferencePages/DlgSettingsEditor.h
     PreferencePages/DlgSettingsGeneral.h
     DlgSettingsImageImp.h
-    PreferencePages/DlgSettingsLightSources.h
     PreferencePages/DlgSettingsMacroImp.h
     PreferencePages/DlgSettingsNavigation.h
     PreferencePages/DlgSettingsNotificationArea.h
@@ -725,7 +722,6 @@ SET(Dialog_Settings_SRCS
     PreferencePages/DlgSettingsEditor.ui
     PreferencePages/DlgSettingsGeneral.ui
     DlgSettingsImage.ui
-    PreferencePages/DlgSettingsLightSources.ui
     PreferencePages/DlgSettingsMacro.ui
     PreferencePages/DlgSettingsNavigation.ui
     PreferencePages/DlgSettingsNotificationArea.ui
@@ -958,6 +954,7 @@ SET(View3D_CPP_SRCS
     TouchpadNavigationStyle.cpp
     GestureNavigationStyle.cpp
     ShadingOptions.cpp
+    DisplayOptions.cpp
     SplitView3DInventor.cpp
     View.cpp
     ViewArea.cpp
@@ -994,6 +991,7 @@ SET(View3D_SRCS
     NavigationStyle.h
     GestureNavigationStyle.h
     ShadingOptions.h
+    DisplayOptions.h
     SplitView3DInventor.h
     View.h
     ViewArea.h
@@ -1346,7 +1344,18 @@ SET(Params_CPP_SRCS
     OpenViewParams.cpp
     RenderParams.cpp
     ExprParams.cpp
+    GeneralParams.cpp
+    MainWindowParams.cpp
+    NotificationAreaParams.cpp
+    DialogParams.cpp
+    MacroParams.cpp
+    PythonConsoleParams.cpp
+    EditorParams.cpp
+    NaviCubeParams.cpp
+    SpaceballParams.cpp
+    MiscParams.cpp
     ReportViewParams.cpp
+    ThemeParams.cpp
     OverlayParams.cpp
     TreeParams.cpp
     OverlayParams.cpp
@@ -1359,7 +1368,18 @@ SET(Params_HPP_SRCS
     OpenViewParams.h
     RenderParams.h
     ExprParams.h
+    GeneralParams.h
+    MainWindowParams.h
+    NotificationAreaParams.h
+    DialogParams.h
+    MacroParams.h
+    PythonConsoleParams.h
+    EditorParams.h
+    NaviCubeParams.h
+    SpaceballParams.h
+    MiscParams.h
     ReportViewParams.h
+    ThemeParams.h
     OverlayParams.h
     TreeParams.h
     OverlayParams.h
@@ -1538,6 +1558,7 @@ SET(FreeCADGui_SRCS
     LiveViewInteraction.h
     RenderTiming.h
     TurnBudget.h
+    ReadbackFramePacer.h
     WaitCursor.h
     ManualAlignment.h
     TransactionObject.h
@@ -1626,7 +1647,7 @@ if (FREECAD_USE_PCH)
 endif(FREECAD_USE_PCH)
 
 if (FREECAD_USE_QT_FILEDIALOG)
-    set_source_files_properties(FileDialog.cpp PROPERTIES COMPILE_FLAGS -DUSE_QT_FILEDIALOG)
+    set_source_files_properties(FileDialog.cpp DialogParams.cpp PROPERTIES COMPILE_FLAGS -DUSE_QT_FILEDIALOG)
 endif()
 
 if (FREECAD_FORCE_USE_QT_FILEDIALOG)

@@ -320,9 +320,11 @@ bool PageServe::publishNow()
                 continue;
             auto dv = dynamic_cast<TechDraw::DrawView*>(
                 page->getDocument()->getObject(v.first.c_str()));
-            if (dv
-                && ((float)dv->X.getValue() != v.second.fedX
-                    || (float)dv->Y.getValue() != v.second.fedY))
+            if (!dv)
+                continue;
+            double pageX = 0.0, pageY = 0.0;
+            PageFeed::pagePosition(dv, pageX, pageY);
+            if ((float)pageX != v.second.fedX || (float)pageY != v.second.fedY)
                 d->dirty.insert(v.first);
         }
     }
@@ -350,8 +352,10 @@ bool PageServe::publishNow()
                 PageFeed::feedViewCapture(qgiv, d->page2d,
                                           it->second.layer);
             }
-            it->second.fedX = (float)dv->X.getValue();
-            it->second.fedY = (float)dv->Y.getValue();
+            double pageX = 0.0, pageY = 0.0;
+            PageFeed::pagePosition(dv, pageX, pageY);
+            it->second.fedX = (float)pageX;
+            it->second.fedY = (float)pageY;
         }
     }
 

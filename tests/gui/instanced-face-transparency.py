@@ -129,10 +129,15 @@ def run():
     comp = build(doc)
     vp = comp.ViewObject
     inst = count_groups(vp)
+    # another render cache mode is a setting only under the render type
+    # "Legacy": with the render engine it is put back to 3
+    kind = RENDER.GetString("Type", "Default")
+    RENDER.SetString("Type", "Legacy")
     FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("RenderCache", 0)
     wait(2)
     flat = count_groups(vp)
     FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("RenderCache", 3)
+    RENDER.SetString("Type", kind)
     wait(2)
     check("the compound is built instanced", inst > flat,
           "groups: instanced %d, flat %d" % (inst, flat))

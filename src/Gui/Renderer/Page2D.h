@@ -93,6 +93,22 @@ public:
         void circle(float cx, float cy, float r);
         void ellipse(float cx, float cy, float rx, float ry);
         void polyline(const float* xy, uint32_t numPoints);
+        /// Append a polyline cut into dashes to the current path, the
+        /// way Qt draws a dashed pen; follow with stroke(). \a pattern
+        /// is the pen's: dash, gap, dash, ... in multiples of \a unit,
+        /// the pen's width in page units; \a offset is where in the
+        /// pattern the line starts, in the same multiples. The dashes
+        /// are worked out when the page is drawn, for the zoom it is
+        /// drawn at (Page2D::dashRuns):
+        ///  - the unit is never under one device pixel, so a line too
+        ///    thin for its own dashes keeps dashes that can be told
+        ///    apart, and unit 0 is a cosmetic pen: dashes in device
+        ///    pixels at any zoom;
+        ///  - with \a cap (a round or square cap) every dash is longer
+        ///    by half the unit at each end, as the caps make it.
+        void dashedPolyline(const float* xy, uint32_t numPoints,
+                            const float* pattern, uint32_t numDashes,
+                            float unit, float offset = 0.0f, bool cap = false);
 
         /// Fill the current path. Convex fills tessellate cheaper; a
         /// concave fill goes through libtess2 with the given rule.
@@ -100,6 +116,11 @@ public:
         void fillConcave(uint32_t rgba, bool evenOdd = false);
         void fillLinearGradient(float sx, float sy, float ex, float ey,
                                 uint32_t rgbaStart, uint32_t rgbaEnd);
+        /// Stroke the current path, width in page units. Never drawn
+        /// narrower than one device pixel: a width that comes out
+        /// narrower is drawn a pixel wide and as much lighter, and
+        /// width 0 is a hairline -- one device pixel at any zoom, in
+        /// full colour (a cosmetic pen).
         void stroke(uint32_t rgba, float width);
 
         /// UTF-8 text anchored at x/y. The font is a Vg2D registry
@@ -128,6 +149,17 @@ public:
         /// item redraws by itself once the image arrives.
         void image(ImageId id, float x, float y, float w, float h);
 
+        /// Fill the current path with a registered image laid side by
+        /// side: one copy over the page rect [x, y, w, h], turned by
+        /// \a angle about x/y (radians, positive clockwise on the y-down
+        /// page), and the rest of the plane tiled from it. Register the
+        /// image with repeat, or its edge pixels smear past the first
+        /// copy. This is what a hatch is drawn with: one small tile for
+        /// a face of any size, sharp far into the zoom, where a picture
+        /// of the whole face would have to grow with the face.
+        void fillImage(ImageId id, float x, float y, float w, float h,
+                       float angle = 0.0f, bool evenOdd = false);
+
         bool empty() const { return ops.empty(); }
         const std::vector<uint8_t>& bytes() const { return ops; }
 
@@ -152,6 +184,16 @@ public:
                  std::vector<uint8_t>&& ops);
     void removeItem(ItemId id);
     bool hasItem(ItemId id) const;
+    /// Leave an item out of the drawing, or draw it again, without
+    /// touching its content or its place in the order: what a host does
+    /// with a line while the same line in another colour is laid over
+    /// it (a highlight), so that none of it shows through the soft edge
+    /// of the one on top. The host's own state of ITS page: it is not
+    /// journaled (takeChanges), so a mirror of the page draws the item;
+    /// and defining the item again (setItem) shows it. False for an id
+    /// that is not there.
+    bool setItemHidden(ItemId id, bool hidden);
+    bool itemHidden(ItemId id) const;
     void clear();
 
     /// Wire support (sec 24). The page journals which items and images
@@ -200,8 +242,17 @@ public:
     /// resizes recreate it (and the referencing items re-record on the
     /// next render). repeat tiles the image outside [0,1) UV; the
     /// default clamps its edge pixels.
+    ///
+    /// With \a coarse the page keeps the coarser copies of the picture
+    /// too (coarserImages) and draws from the one whose pixels are the
+    /// size of the screen's: a picture drawn smaller than it is would
+    /// otherwise be read one pixel in several, and anything fine in it
+    /// -- the lines of a hatch -- is dropped or kept at full strength
+    /// by chance. A third more memory. A producer that makes its picture
+    /// again for every zoom band has no use for them and passes false.
     void setImage(ImageId id, uint16_t width, uint16_t height,
-                  const uint8_t* rgba, bool repeat = false);
+                  const uint8_t* rgba, bool repeat = false,
+                  bool coarse = true);
     void removeImage(ImageId id);
     bool hasImage(ImageId id) const;
 
@@ -227,6 +278,40 @@ public:
     /// The band scale the current view quantizes to (exposed for tests).
     static float bandScale(float zoom);
 
+    /// The dashes a dashedPolyline op draws when replayed at the band
+    /// scale \a band with \a pixel the width of a device pixel in
+    /// band-scaled units: one list of x, y pairs per dash, in page
+    /// coordinates. \a thin, when given, says whether the unit was taken
+    /// from the pixel -- such an item is recorded again when the band
+    /// changes. A pattern with no length gives the whole line.
+    ///
+    /// The rules are Qt's, measured against the Qt-painted page
+    /// (docs/TechDrawPortAndSection.md): a pen at least a pixel wide
+    /// counts its pattern in its own width and its caps lengthen each
+    /// dash by half a width at each end; a thinner or cosmetic pen
+    /// counts in device pixels, without caps. Within a band the page is
+    /// still scaled by up to sqrt(2) either way, and pixel-counted
+    /// dashes with it -- as a hairline's width is. \a trim pulls in
+    /// every dash end that is not an end of the line: the replay asks
+    /// for half a pixel, what vg's anti-aliasing draws past a butt end.
+    static std::vector<std::vector<float>> dashRuns(
+        const float* xy, uint32_t numPoints, const float* pattern,
+        uint32_t numDashes, float unit, float offset, bool cap, float band,
+        float pixel, bool* thin = nullptr, float trim = 0.0f);
+
+    /// The coarser copies of a straight-alpha RGBA8 picture, largest
+    /// first: each half the size of the one before it, rounded down,
+    /// to 1 x 1. A pixel is the mean of the pixels it covers -- two
+    /// across where the size halves evenly, two and a bit where it was
+    /// odd -- and its colour is the mean weighted by alpha, so what is
+    /// transparent lends no colour to what is not. Where everything
+    /// covered is transparent the colours are averaged as they are: a
+    /// producer can leave the colour of its ink in the empty pixels and
+    /// have it survive, which keeps a dark seam off the ink's edge when
+    /// the picture is drawn enlarged.
+    static std::vector<std::vector<uint8_t>> coarserImages(
+        const uint8_t* rgba, uint16_t width, uint16_t height);
+
     /// Register a font file under the registry name text ops refer to.
     /// Legal any time -- before any GPU context exists, and again after
     /// one is torn down; the bytes are retained and the font follows
@@ -249,8 +334,15 @@ public:
     /// Fails when bgfx cannot come up -- or was brought up by someone
     /// else in a state we cannot verify; test hosts run without the 3D
     /// renderer active.
+    ///
+    ///  transparent clears to transparent black instead of opaque
+    /// white: the pixels are then a layer with premultiplied alpha for
+    /// a host that paints its own sheet and backdrop underneath -- what
+    /// renderToTexture hands the GL compositor, for the hosts that
+    /// cannot share a texture with the device.
     bool renderOffscreen(uint16_t width, uint16_t height,
-                         std::vector<uint8_t>& rgba);
+                         std::vector<uint8_t>& rgba,
+                         bool transparent = false);
 
     /// The interactive desktop compositor: render the page into a
     /// persistent page-owned color target (transparent background,

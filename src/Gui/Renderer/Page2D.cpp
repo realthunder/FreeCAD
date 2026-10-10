@@ -20,6 +20,7 @@
  ****************************************************************************/
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -55,7 +56,11 @@ struct PageImage
     uint16_t width = 0;
     uint16_t height = 0;
     bool repeat = false;
+    bool coarse = true;       // the texture carries the coarser copies
     uint16_t handle = 0xffff; // vg::ImageHandle index, 0xffff = none
+    // The bgfx texture the vg image wraps, 0xffff = none. The page
+    // makes it itself: one made by vg has no coarser levels.
+    uint16_t texture = 0xffff;
     uint32_t version = 0;     // bumped by setImage
     uint32_t uploaded = 0;    // version the current handle carries
 };
@@ -77,11 +82,20 @@ struct Page2D::Private
         std::vector<uint8_t> ops;
         uint16_t list = kNoList;
         bool recorded = false;
+        // left out of the drawing by the host (setItemHidden)
+        bool hidden = false;
         // Image ops bake the vg image handle into the recorded command
         // list; when any registry handle is recreated (imageEpoch
         // moves), an item that references images re-records.
         bool usesImages = false;
         uint32_t imageEpoch = 0;
+        // Strokes narrower than a device pixel are recorded as they
+        // come out at the band they were recorded for (see Op::Stroke
+        // in the replay); an item that has one, or would have one at
+        // another band, re-records when the band changes.
+        bool thinStrokes = false;
+        float thinnestStroke = 0.0f; // page units; FLT_MAX with no stroke
+        float recordedBand = 0.0f;
     };
 
     std::map<ImageId, PageImage> images;
@@ -155,13 +169,21 @@ struct Page2D::Private
     void releaseImage(PageImage& img)
     {
 #ifdef HAVE_BGFX
-        if (img.handle != kNoImage && Vg2D::instance().initialized()
+        if (Vg2D::instance().initialized()
             && vgGeneration == Vg2D::instance().generation()) {
-            vg::ImageHandle handle {img.handle};
-            vg::destroyImage(Vg2D::instance().context(), handle);
+            if (img.handle != kNoImage) {
+                vg::ImageHandle handle {img.handle};
+                vg::destroyImage(Vg2D::instance().context(), handle);
+            }
+            // vg does not own a texture it was handed
+            if (img.texture != kNoImage) {
+                bgfx::TextureHandle texture {img.texture};
+                bgfx::destroy(texture);
+            }
         }
 #endif
         img.handle = kNoImage;
+        img.texture = kNoImage;
         img.uploaded = 0;
     }
 };
@@ -192,6 +214,8 @@ enum class Op : uint8_t {
     PushTransform,
     PopTransform,
     Image,
+    DashedPolyline, // appended: the codes above are what version 1 pages hold
+    FillImage,      // appended: version 3
 };
 
 void putBytes(std::vector<uint8_t>& out, const void* p, size_t n)
@@ -292,6 +316,10 @@ size_t opFixedSize(Op op)
         return 0;
     case Op::Image:
         return 24;
+    case Op::DashedPolyline:
+        return 14; // points, dashes, unit, offset, cap
+    case Op::FillImage:
+        return 29; // id, x, y, w, h, angle, rule
     }
     return SIZE_MAX; // unknown opcode: newer writer, stop
 }
@@ -390,6 +418,142 @@ void Page2D::Recorder::polyline(const float* xy, uint32_t numPoints)
     putBytes(ops, xy, sizeof(float) * 2 * numPoints);
 }
 
+void Page2D::Recorder::dashedPolyline(const float* xy, uint32_t numPoints,
+                                      const float* pattern, uint32_t numDashes,
+                                      float unit, float offset, bool cap)
+{
+    if (!xy || numPoints < 2)
+        return;
+    if (!pattern || numDashes == 0 || numDashes > 255) {
+        // no pattern to cut it by: the line itself
+        polyline(xy, numPoints);
+        return;
+    }
+    putOp(ops, Op::DashedPolyline);
+    putU32(ops, numPoints);
+    ops.push_back((uint8_t)numDashes);
+    putF(ops, unit);
+    putF(ops, offset);
+    ops.push_back(cap ? 1 : 0);
+    putBytes(ops, xy, sizeof(float) * 2 * numPoints);
+    putBytes(ops, pattern, sizeof(float) * numDashes);
+}
+
+std::vector<std::vector<float>> Page2D::dashRuns(
+    const float* xy, uint32_t numPoints, const float* pattern,
+    uint32_t numDashes, float unit, float offset, bool cap, float band,
+    float pixel, bool* thinOut, float trim)
+{
+    std::vector<std::vector<float>> runs;
+    if (thinOut)
+        *thinOut = false;
+    if (!xy || numPoints < 2)
+        return runs;
+    if (!(band > 0.0f))
+        band = 1.0f;
+    // Just over a pixel, as for a stroke's width (Op::Stroke).
+    const bool thin = !(unit > 0.0f) || unit * band < pixel * 1.01f;
+    if (thinOut)
+        *thinOut = thin;
+    const float u = thin ? pixel / band : unit;
+    const float half = (cap && !thin) ? 0.5f * u : 0.0f;
+
+    // arc length along the line
+    std::vector<float> at(numPoints, 0.0f);
+    for (uint32_t i = 1; i < numPoints; ++i) {
+        at[i] = at[i - 1] + std::hypot(xy[2 * i] - xy[2 * i - 2],
+                                       xy[2 * i + 1] - xy[2 * i - 1]);
+    }
+    const float length = at[numPoints - 1];
+    if (!(length > 0.0f))
+        return runs;
+
+    // One full turn of the pattern, on and off by turns: a pattern of
+    // odd length changes sides every time round, so two of them make it.
+    std::vector<float> turn;
+    float period = 0.0f;
+    if (pattern) {
+        for (uint32_t rep = 0; rep < ((numDashes & 1) ? 2u : 1u); ++rep) {
+            for (uint32_t i = 0; i < numDashes; ++i) {
+                const float len = pattern[i] > 0.0f ? pattern[i] * u : 0.0f;
+                turn.push_back(len);
+                period += len;
+            }
+        }
+    }
+    // The stretches drawn, as [from, to] in arc length. No pattern to
+    // speak of, or more dashes than anybody could see: the whole line.
+    std::vector<std::pair<float, float>> on;
+    if (!(period > 1.0e-4f) || length / period * (float)turn.size() > 200000.0f) {
+        on.emplace_back(0.0f, length);
+    }
+    else {
+        // where in the pattern the line starts
+        float into = std::fmod(offset * u, period);
+        if (into < 0.0f)
+            into += period;
+        size_t k = 0;
+        for (size_t guard = 0; guard < 2 * turn.size() && into >= turn[k]; ++guard) {
+            into -= turn[k];
+            k = (k + 1) % turn.size();
+        }
+        float s = 0.0f;
+        while (s < length) {
+            const float end = s + (turn[k] - into);
+            if ((k & 1) == 0) {
+                const float from = std::max(0.0f, s - half);
+                const float to = std::min(length, end + half);
+                if (!on.empty() && from <= on.back().second)
+                    on.back().second = std::max(on.back().second, to);
+                else if (to > from || half > 0.0f)
+                    on.emplace_back(from, to);
+            }
+            // a turn of zero-length entries only cannot happen (period > 0)
+            s = end;
+            into = 0.0f;
+            k = (k + 1) % turn.size();
+        }
+    }
+
+    // A dash's end that is not the line's is pulled in by `trim`: the
+    // anti-aliased butt end of a vg stroke is drawn past the point it is
+    // given by about half a pixel's worth of ink, twice per gap, which
+    // closes a gap of two pixels. Never by more than a quarter of the
+    // dash, or a dot would be trimmed away.
+    if (trim > 0.0f) {
+        for (auto& stretch : on) {
+            const float by = std::min(trim, 0.25f * (stretch.second - stretch.first));
+            if (stretch.first > 0.0f)
+                stretch.first += by;
+            if (stretch.second < length)
+                stretch.second -= by;
+        }
+    }
+
+    auto point = [&](float s, uint32_t seg, std::vector<float>& out) {
+        const float span = at[seg + 1] - at[seg];
+        const float t = span > 0.0f ? (s - at[seg]) / span : 0.0f;
+        out.push_back(xy[2 * seg] + (xy[2 * seg + 2] - xy[2 * seg]) * t);
+        out.push_back(xy[2 * seg + 1] + (xy[2 * seg + 3] - xy[2 * seg + 1]) * t);
+    };
+    uint32_t seg = 0;
+    for (const auto& stretch : on) {
+        std::vector<float> run;
+        while (seg + 2 < numPoints && at[seg + 1] <= stretch.first)
+            ++seg;
+        point(stretch.first, seg, run);
+        uint32_t j = seg;
+        while (j + 2 < numPoints && at[j + 1] < stretch.second) {
+            ++j;
+            run.push_back(xy[2 * j]);
+            run.push_back(xy[2 * j + 1]);
+        }
+        point(stretch.second, j, run);
+        runs.push_back(std::move(run));
+    }
+    return runs;
+}
+
 void Page2D::Recorder::fillConvex(uint32_t rgba)
 {
     putOp(ops, Op::FillConvex);
@@ -480,6 +644,98 @@ void Page2D::Recorder::image(ImageId id, float x, float y, float w, float h)
     putF(ops, h);
 }
 
+void Page2D::Recorder::fillImage(ImageId id, float x, float y, float w, float h,
+                                 float angle, bool evenOdd)
+{
+    putOp(ops, Op::FillImage);
+    putBytes(ops, &id, sizeof(id));
+    putF(ops, x);
+    putF(ops, y);
+    putF(ops, w);
+    putF(ops, h);
+    putF(ops, angle);
+    putU8(ops, evenOdd ? 1 : 0);
+}
+
+std::vector<std::vector<uint8_t>> Page2D::coarserImages(const uint8_t* rgba,
+                                                        uint16_t width,
+                                                        uint16_t height)
+{
+    std::vector<std::vector<uint8_t>> levels;
+    if (!rgba || !width || !height)
+        return levels;
+    // What one pixel of the smaller level takes of the larger along one
+    // axis: its first pixel and up to three weights. Half an even size
+    // is two pixels each; half an odd size n = 2k + 1 is 2 + 1/k each,
+    // the weights k - i, k, i + 1 of pixels 2i, 2i + 1, 2i + 2.
+    struct Taps
+    {
+        uint32_t first = 0;
+        uint32_t count = 1;
+        uint32_t weight[3] = {1, 0, 0};
+    };
+    auto tapsOf = [](uint32_t n, uint32_t half, uint32_t i) {
+        Taps t;
+        if (n == 1)
+            return t;
+        t.first = 2 * i;
+        if (n % 2 == 0) {
+            t.count = 2;
+            t.weight[0] = t.weight[1] = 1;
+            return t;
+        }
+        t.count = 3;
+        t.weight[0] = half - i;
+        t.weight[1] = half;
+        t.weight[2] = i + 1;
+        return t;
+    };
+    const uint8_t* src = rgba;
+    uint32_t sw = width, sh = height;
+    while (sw > 1 || sh > 1) {
+        const uint32_t dw = std::max<uint32_t>(1, sw / 2);
+        const uint32_t dh = std::max<uint32_t>(1, sh / 2);
+        std::vector<uint8_t> dst((size_t)dw * dh * 4);
+        std::vector<Taps> across(dw);
+        for (uint32_t x = 0; x < dw; ++x)
+            across[x] = tapsOf(sw, dw, x);
+        for (uint32_t y = 0; y < dh; ++y) {
+            const Taps down = tapsOf(sh, dh, y);
+            for (uint32_t x = 0; x < dw; ++x) {
+                const Taps& tx = across[x];
+                uint64_t total = 0, alpha = 0;
+                uint64_t lit[3] = {0, 0, 0};   // colour times alpha
+                uint64_t plain[3] = {0, 0, 0}; // colour as it is
+                for (uint32_t j = 0; j < down.count; ++j) {
+                    const uint8_t* row =
+                        src + ((size_t)(down.first + j) * sw + tx.first) * 4;
+                    for (uint32_t i = 0; i < tx.count; ++i, row += 4) {
+                        const uint64_t w = (uint64_t)down.weight[j] * tx.weight[i];
+                        total += w;
+                        alpha += w * row[3];
+                        for (int c = 0; c < 3; ++c) {
+                            lit[c] += w * row[3] * row[c];
+                            plain[c] += w * row[c];
+                        }
+                    }
+                }
+                uint8_t* out = dst.data() + ((size_t)y * dw + x) * 4;
+                for (int c = 0; c < 3; ++c) {
+                    out[c] = alpha
+                        ? (uint8_t)((lit[c] + alpha / 2) / alpha)
+                        : (uint8_t)((plain[c] + total / 2) / total);
+                }
+                out[3] = (uint8_t)((alpha + total / 2) / total);
+            }
+        }
+        levels.push_back(std::move(dst));
+        src = levels.back().data();
+        sw = dw;
+        sh = dh;
+    }
+    return levels;
+}
+
 #ifdef HAVE_BGFX
 
 static vg::Color decodeColor(uint32_t rgba)
@@ -496,6 +752,13 @@ struct ReplayEnv
 {
     const std::map<Page2D::ImageId, PageImage>* images = nullptr;
     bool usedImages = false;
+    // The scale the strokes come out at (the band scale: the vg state
+    // scale of this recording) and the width of one device pixel in
+    // those units.
+    float band = 1.0f;
+    float pixel = 1.0f;
+    bool thinStrokes = false;
+    float thinnestStroke = FLT_MAX;
 };
 
 // Replay one op buffer into the currently recording vg command list.
@@ -596,6 +859,35 @@ static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth,
         case Op::Stroke: {
             vg::Color c = decodeColor(r.u32());
             float w = r.f();
+            // A stroke is never narrower than a device pixel.
+            //  - Width 0 is a hairline: one device pixel at any zoom,
+            //    in full colour -- Qt's cosmetic pen, which is what a
+            //    view's frame is drawn with.
+            //  - A stroke that comes out narrower than a pixel is
+            //    drawn a pixel wide and as much lighter as it is
+            //    narrower: the coverage it would have. vg by itself
+            //    fades it with the SQUARE of its width, and the thin
+            //    lines of a drawing (dimension lines at a sheet's
+            //    width on screen are a third of a pixel) all but
+            //    disappeared.
+            // Both depend on the band, so the item says it has such
+            // strokes and is recorded again when the band changes.
+            // Just over a pixel, or vg takes it for thin and fades it.
+            const float onePixel = env.pixel * 1.01f;
+            const float scaled = w * env.band;
+            if (w > 0.0f && w < env.thinnestStroke)
+                env.thinnestStroke = w;
+            if (!(w > 0.0f)) {
+                env.thinnestStroke = 0.0f;
+                env.thinStrokes = true;
+                w = onePixel / env.band;
+            }
+            else if (scaled < onePixel) {
+                env.thinStrokes = true;
+                c = vg::colorSetAlpha(
+                    c, (uint8_t)(vg::colorGetAlpha(c) * (scaled / onePixel)));
+                w = onePixel / env.band;
+            }
             vg::strokePath(ctx, c, w, vg::StrokeFlags::ButtRoundAA);
             break;
         }
@@ -686,6 +978,63 @@ static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth,
                          vg::FillFlags::ConvexAA);
             break;
         }
+        case Op::FillImage: {
+            uint64_t id = r.u64();
+            float x = r.f(), y = r.f(), w = r.f(), h = r.f();
+            float angle = r.f();
+            const bool evenOdd = r.u8() != 0;
+            env.usedImages = true;
+            if (!env.images || !(w > 0.0f) || !(h > 0.0f))
+                break;
+            auto it = env.images->find(id);
+            if (it == env.images->end() || it->second.handle == 0xffff)
+                break;
+            vg::ImageHandle img {it->second.handle};
+            vg::ImagePatternHandle pattern =
+                vg::createImagePattern(ctx, x, y, w, h, angle, img);
+            if (!vg::isValid(pattern))
+                break;
+            vg::fillPath(ctx, pattern, vg::color4ub(255, 255, 255, 255),
+                         evenOdd ? vg::FillFlags::ConcaveEvenOddAA
+                                 : vg::FillFlags::ConcaveNonZeroAA);
+            break;
+        }
+        case Op::DashedPolyline: {
+            const uint32_t n = r.u32();
+            const uint32_t count = r.u8();
+            const float unit = r.f();
+            const float offset = r.f();
+            const bool cap = r.u8() != 0;
+            if (n < 2 || !r.fits(sizeof(float) * (2 * (size_t)n + count)))
+                return;
+            // Copied out of the byte-packed buffer, as for a polyline.
+            std::vector<float> xy(2 * (size_t)n);
+            memcpy(xy.data(), r.p, sizeof(float) * 2 * n);
+            r.p += sizeof(float) * 2 * n;
+            std::vector<float> pattern(count);
+            if (count)
+                memcpy(pattern.data(), r.p, sizeof(float) * count);
+            r.p += sizeof(float) * count;
+            // The dashes are for this band: counted in the pen's width
+            // while that is a pixel or more, in pixels below it. Like a
+            // thin stroke, the item says so and is recorded again when
+            // the band changes.
+            bool thin = false;
+            const auto runs = Page2D::dashRuns(xy.data(), n, pattern.data(), count, unit,
+                                               offset, cap, env.band, env.pixel, &thin,
+                                               0.5f * env.pixel / env.band);
+            if (thin)
+                env.thinStrokes = true;
+            else if (unit < env.thinnestStroke)
+                env.thinnestStroke = unit;
+            for (const auto& run : runs) {
+                if (run.size() < 4)
+                    continue;
+                vg::moveTo(ctx, run[0], run[1]);
+                vg::polyline(ctx, run.data() + 2, (uint32_t)(run.size() / 2 - 1));
+            }
+            break;
+        }
         default:
             // Unknown op: the buffer is from a newer writer; stop rather
             // than misparse the rest.
@@ -736,6 +1085,8 @@ void Page2D::setItem(ItemId id, Kind kind, uint32_t layer,
     // Damage: keep the command list, re-record it from the new ops at
     // the next render.
     item.recorded = false;
+    // what was hidden was the content this replaces
+    item.hidden = false;
     if (d->drawOrder.empty() || d->items.size() != d->drawOrder.size())
         d->orderDirty = true;
     d->wireItems.insert(id);
@@ -759,6 +1110,21 @@ bool Page2D::hasItem(ItemId id) const
     return d->items.count(id) != 0;
 }
 
+bool Page2D::setItemHidden(ItemId id, bool hidden)
+{
+    auto it = d->items.find(id);
+    if (it == d->items.end())
+        return false;
+    it->second.hidden = hidden;
+    return true;
+}
+
+bool Page2D::itemHidden(ItemId id) const
+{
+    auto it = d->items.find(id);
+    return it != d->items.end() && it->second.hidden;
+}
+
 void Page2D::clear()
 {
     for (auto& v : d->items)
@@ -780,23 +1146,25 @@ void Page2D::clear()
 }
 
 void Page2D::setImage(ImageId id, uint16_t width, uint16_t height,
-                      const uint8_t* rgba, bool repeat)
+                      const uint8_t* rgba, bool repeat, bool coarse)
 {
     if (!width || !height || !rgba) {
         removeImage(id);
         return;
     }
     PageImage& img = d->images[id];
-    // A size or sampler change needs a new texture; releasing the
-    // handle here makes the upload pass create one (and the epoch move
+    // A size or sampler change needs a new texture, and so does one
+    // that gains or loses its coarser levels; releasing the handle
+    // here makes the upload pass create one (and the epoch move
     // re-records the items that baked the old handle).
     if (img.handle != Private::kNoImage
         && (img.width != width || img.height != height
-            || img.repeat != repeat))
+            || img.repeat != repeat || img.coarse != coarse))
         d->releaseImage(img);
     img.width = width;
     img.height = height;
     img.repeat = repeat;
+    img.coarse = coarse;
     img.pixels.assign(rgba, rgba + (size_t)width * height * 4);
     ++img.version;
     d->wireImages.insert(id);
@@ -1065,6 +1433,29 @@ bool Page2D::opsBounds(const std::vector<uint8_t>& ops, float box[4])
             rectBox(x, y, x + w, y + h);
             break;
         }
+        case Op::FillImage:
+            // the path it fills is what bounds it; the rect is one tile
+            r.u64();
+            for (int i = 0; i < 5; ++i)
+                r.f();
+            r.u8();
+            break;
+        case Op::DashedPolyline: {
+            const uint32_t n = r.u32();
+            const uint32_t count = r.u8();
+            r.f();
+            r.f();
+            r.u8();
+            if (!r.fits(sizeof(float) * (2 * (size_t)n + count)))
+                return any;
+            for (uint32_t i = 0; i < n; ++i) {
+                float x = r.f(), y = r.f();
+                point(x, y);
+            }
+            for (uint32_t i = 0; i < count; ++i)
+                r.f();
+            break;
+        }
         }
     }
     if (any) {
@@ -1102,6 +1493,7 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
         }
         for (auto& v : d->images) {
             v.second.handle = Private::kNoImage;
+            v.second.texture = Private::kNoImage;
             v.second.uploaded = 0;
         }
         d->vgGeneration = vg2d.generation();
@@ -1111,25 +1503,50 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
     // its retained pixels. Same-size damage updates the texture in
     // place (recorded command lists stay valid); a new or recreated
     // handle moves the epoch so referencing items re-record below.
+    //
+    // The texture is the page's own, handed to vg: vg makes a texture
+    // of one level, and a picture drawn smaller than it is has then
+    // nothing coarser to be read from. With its coarser copies as mip
+    // levels the sampler reads the level whose pixels are nearest the
+    // screen's in size (bilinear within it, the nearest level: a
+    // picture drawn at about its own size reads exactly as before).
     for (auto& v : d->images) {
         PageImage& img = v.second;
         if (img.uploaded == img.version && img.handle != Private::kNoImage)
             continue;
-        if (img.handle != Private::kNoImage) {
-            vg::ImageHandle handle {img.handle};
-            vg::updateImage(ctx, handle, 0, 0, img.width, img.height,
-                            img.pixels.data());
-        }
-        else {
+        if (img.handle == Private::kNoImage) {
+            bgfx::TextureHandle texture = bgfx::createTexture2D(
+                img.width, img.height, img.coarse, 1,
+                bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_NONE);
+            if (!bgfx::isValid(texture))
+                continue;
             uint32_t flags = vg::ImageFlags::Filter_Bilinear;
             if (!img.repeat)
                 flags |= vg::ImageFlags::Clamp_UV;
-            vg::ImageHandle handle = vg::createImage(
-                ctx, img.width, img.height, flags, img.pixels.data());
-            if (!vg::isValid(handle))
+            vg::ImageHandle handle = vg::createImage(ctx, flags, texture);
+            if (!vg::isValid(handle)) {
+                bgfx::destroy(texture);
                 continue; // out of image slots; retried next render
+            }
             img.handle = handle.idx;
+            img.texture = texture.idx;
             ++d->imageEpoch;
+        }
+        bgfx::TextureHandle texture {img.texture};
+        bgfx::updateTexture2D(
+            texture, 0, 0, 0, 0, img.width, img.height,
+            bgfx::copy(img.pixels.data(), (uint32_t)img.pixels.size()));
+        if (img.coarse) {
+            uint8_t mip = 1;
+            uint16_t w = img.width, h = img.height;
+            for (const std::vector<uint8_t>& level :
+                 coarserImages(img.pixels.data(), img.width, img.height)) {
+                w = std::max<uint16_t>(1, w / 2);
+                h = std::max<uint16_t>(1, h / 2);
+                bgfx::updateTexture2D(
+                    texture, 0, mip++, 0, 0, w, h,
+                    bgfx::copy(level.data(), (uint32_t)level.size()));
+            }
         }
         img.uploaded = img.version;
         ++stats.imageUploads;
@@ -1160,15 +1577,29 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
         d->orderDirty = false;
     }
 
+    // In the order submitted. A bgfx view sorts its draws by program
+    // unless told otherwise, and vg has one program for text, one for
+    // plain fills and strokes and one for images: every image -- a
+    // hatch, a symbol, a bitmap -- came out over all the line work of
+    // the page, whatever layer and kind it was fed on, and text under
+    // every fill.
+    bgfx::setViewMode(viewId, bgfx::ViewMode::Sequential);
     vg::begin(ctx, viewId, width, height, pageView.devicePixelRatio);
     vg::transformScale(ctx, band, band);
+    // one device pixel, in the units vg measures a stroke's width in
+    // once the state scale is applied (its fringe width)
+    const float pixel = 1.0f
+        / (pageView.devicePixelRatio > 0.0f ? pageView.devicePixelRatio : 1.0f);
     for (Private::Item* item : d->drawOrder) {
         // Placeholder items (a feed keeps ids contiguous by storing
         // empty content for skipped geometry) cost nothing here.
-        if (item->ops.empty())
+        if (item->ops.empty() || item->hidden)
             continue;
         if (item->recorded && item->usesImages
             && item->imageEpoch != d->imageEpoch)
+            item->recorded = false;
+        if (item->recorded && item->recordedBand != band
+            && (item->thinStrokes || item->thinnestStroke * band < pixel * 1.01f))
             item->recorded = false;
         vg::CommandListHandle list {item->list};
         if (!item->recorded) {
@@ -1188,11 +1619,16 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
             vg::beginCommandList(ctx, list);
             ReplayEnv env;
             env.images = &d->images;
+            env.band = band;
+            env.pixel = pixel;
             replayOps(ctx, item->ops, env);
             vg::endCommandList(ctx);
             item->recorded = true;
             item->usesImages = env.usedImages;
             item->imageEpoch = d->imageEpoch;
+            item->thinStrokes = env.thinStrokes;
+            item->thinnestStroke = env.thinnestStroke;
+            item->recordedBand = band;
             ++stats.itemRecords;
         }
         vg::submitCommandList(ctx, list);
@@ -1224,7 +1660,7 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
 static bool _offscreenDeviceUp = false;
 
 bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
-                             std::vector<uint8_t>& rgba)
+                             std::vector<uint8_t>& rgba, bool transparent)
 {
     if (!width || !height)
         return false;
@@ -1297,7 +1733,7 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
     bgfx::setViewRect(viewId, 0, 0, width, height);
     bgfx::setViewClear(viewId,
                        BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH | BGFX_CLEAR_STENCIL,
-                       0xffffffff, 1.0f, 0);
+                       transparent ? 0x00000000 : 0xffffffff, 1.0f, 0);
 
     bool ok = render(viewId, width, height);
     bgfx::touch(viewId);
@@ -1449,7 +1885,7 @@ bool Page2D::render(uint16_t, uint16_t, uint16_t)
     return false;
 }
 
-bool Page2D::renderOffscreen(uint16_t, uint16_t, std::vector<uint8_t>&)
+bool Page2D::renderOffscreen(uint16_t, uint16_t, std::vector<uint8_t>&, bool)
 {
     return false;
 }

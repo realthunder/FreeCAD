@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include "MaterialParams.h"
 #include <QDirIterator>
 #include <QMutexLocker>
 
@@ -52,7 +53,7 @@ ModelManager::ModelManager()
 {
     _hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/ExternalInterface");
-    _useExternal = _hGrp->GetBool("UseExternal", false);
+    _useExternal = _hGrp->GetBool("UseExternal", Materials::MaterialParams::defaultUseExternal());
     _hGrp->Attach(this);
 }
 
@@ -94,7 +95,7 @@ void ModelManager::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::Me
     const ParameterGrp& rGrp = static_cast<ParameterGrp&>(rCaller);
     if (strcmp(Reason, "UseExternal") == 0) {
         Base::Console().log("Use external changed\n");
-        _useExternal = rGrp.GetBool("UseExternal", false);
+        _useExternal = rGrp.GetBool("UseExternal", Materials::MaterialParams::defaultUseExternal());
         // _dbManager->refresh();
     }
 }

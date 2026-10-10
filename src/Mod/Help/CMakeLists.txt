@@ -3,7 +3,9 @@ IF (BUILD_GUI)
 ENDIF (BUILD_GUI)
 
 SET(Help_SRCS
+    Init.py
     InitGui.py
+    HelpParams.py
     default.css
     Help.py
     dlgPreferencesHelp.ui

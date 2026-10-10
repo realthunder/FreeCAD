@@ -27,6 +27,8 @@
 #include "DlgPrefsTechDrawHLRImp.h"
 #include "ui_DlgPrefsTechDrawHLR.h"
 
+#include <Mod/TechDraw/App/Preferences.h>
+
 
 using namespace TechDrawGui;
 
@@ -63,6 +65,8 @@ void DlgPrefsTechDrawHLRImp::loadSettings()
 
     ui->pcbSmoothViz->onRestore();
     ui->pcbHardViz->onRestore();
+    // what the page stored as HLR/UsePolygon before it stored the key that is read
+    ui->pcbPolygon->setChecked(TechDraw::Preferences::coarseView());
     ui->pcbPolygon->onRestore();
     ui->pcbIsoViz->onRestore();
     ui->pcbSmoothHid->onRestore();

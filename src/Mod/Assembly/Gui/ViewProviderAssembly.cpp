@@ -22,6 +22,7 @@
  ***************************************************************************/
 
 
+#include <Mod/Assembly/App/AssemblyParams.h>
 #include <boost/core/ignore_unused.hpp>
 #include <QMessageBox>
 #include <QTimer>
@@ -169,7 +170,7 @@ bool ViewProviderAssembly::doubleClicked()
                 .GetGroup("BaseApp")
                 ->GetGroup("Preferences")
                 ->GetGroup("Mod/Assembly")
-                ->GetBool("SwitchToWB", true)) {
+                ->GetBool("SwitchToWB", Assembly::AssemblyParams::defaultSwitchToWB())) {
             Gui::Command::assureWorkbench("AssemblyWorkbench");
         }
 
@@ -454,7 +455,7 @@ bool ViewProviderAssembly::keyPressed(bool pressed, int key)
                 "User parameter:BaseApp/Preferences/Mod/Assembly"
             );
 
-            return !hPgr->GetBool("LeaveEditWithEscape", true);
+            return !hPgr->GetBool("LeaveEditWithEscape", Assembly::AssemblyParams::defaultLeaveEditWithEscape());
         }
     }
 
@@ -615,7 +616,7 @@ bool ViewProviderAssembly::tryMouseMove(const SbVec2s& cursorPos, Gui::ViewerCon
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Assembly"
         );
-        bool solveOnMove = hGrp->GetBool("SolveOnMove", true);
+        bool solveOnMove = hGrp->GetBool("SolveOnMove", Assembly::AssemblyParams::defaultSolveOnMove());
         if (solveOnMove && dragMode != DragMode::TranslationNoSolve) {
             assemblyPart->doDragStep();
         }
@@ -1103,7 +1104,7 @@ void ViewProviderAssembly::tryInitMove(const SbVec2s& cursorPos, Gui::ViewerCont
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Assembly"
     );
-    bool solveOnMove = hGrp->GetBool("SolveOnMove", true);
+    bool solveOnMove = hGrp->GetBool("SolveOnMove", Assembly::AssemblyParams::defaultSolveOnMove());
     if (solveOnMove && dragMode != DragMode::TranslationNoSolve) {
         objectMasses.clear();
         for (auto& movingObj : docsToMove) {
@@ -1149,7 +1150,7 @@ void ViewProviderAssembly::endMove()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Assembly"
     );
-    bool solveOnMove = hGrp->GetBool("SolveOnMove", true);
+    bool solveOnMove = hGrp->GetBool("SolveOnMove", Assembly::AssemblyParams::defaultSolveOnMove());
     if (solveOnMove) {
         assemblyPart->postDrag();
         assemblyPart->setObjMasses({});
@@ -1599,10 +1600,15 @@ void ViewProviderAssembly::highlightJointElements(App::DocumentObject* joint)
 {
     clearJointElementHighlight();
 
-    SbColor defaultHighlightColor(0.8f, 0.1f, 0.1f);
-    uint32_t defaultPacked = defaultHighlightColor.getPackedValue();
-    ParameterGrp::handle hGrp = Gui::WindowParameter::getDefaultParameter()->GetGroup("View");
-    uint32_t packedColor = hGrp->GetUnsigned("HighlightColor", defaultPacked);
+    // Assembly's own colour once one is set. 0, which is what the setting is
+    // while it is not, is upstream's rule: the 3D view's preselection colour
+    // when that is stored, and this red when it is not.
+    uint32_t packedColor = static_cast<uint32_t>(Assembly::AssemblyParams::getJointHighlightColor());
+    if (packedColor == 0) {
+        SbColor defaultHighlightColor(0.8f, 0.1f, 0.1f);
+        ParameterGrp::handle hGrp = Gui::WindowParameter::getDefaultParameter()->GetGroup("View");
+        packedColor = hGrp->GetUnsigned("HighlightColor", defaultHighlightColor.getPackedValue());
+    }
     App::Color highlightColor(packedColor);
 
     std::set<std::string> processedElements;

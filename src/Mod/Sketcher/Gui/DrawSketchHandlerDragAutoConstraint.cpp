@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <algorithm>
 #include <cmath>
 #include <exception>
@@ -60,7 +61,7 @@ int getDragAutoConstraintDelay()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General"
     );
-    const auto delay = hGrp->GetInt("DragAutoConstraintDelay", DefaultDragAutoConstraintDelay);
+    const auto delay = hGrp->GetInt("DragAutoConstraintDelay", Sketcher::SketcherParams::defaultDragAutoConstraintDelay());
     return static_cast<int>(std::clamp(delay, 0L, static_cast<long>(MaximumDragAutoConstraintDelay)));
 }
 }  // namespace

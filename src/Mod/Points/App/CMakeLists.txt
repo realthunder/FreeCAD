@@ -28,6 +28,8 @@ list(APPEND Points_LIBS
 generate_from_xml(PointsPy)
 
 SET(Points_SRCS
+    PointsParams.cpp
+    PointsParams.h
     AppPoints.cpp
     AppPointsPy.cpp
     Points.cpp

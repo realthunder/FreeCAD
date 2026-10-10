@@ -1757,7 +1757,7 @@ namespace {
 float getBoundBoxFontSize()
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    return hGrp->GetFloat("BoundingBoxFontSize", 10.0);
+    return hGrp->GetFloat("BoundingBoxFontSize", Gui::ViewParams::defaultBoundingBoxFontSize());
 }
 }
 

@@ -26,6 +26,38 @@
 
 #include "DlgPrefsTechDrawColorsImp.h"
 #include "ui_DlgPrefsTechDrawColors.h"
+#include "PreferencesGui.h"
+
+#include <QSignalBlocker>
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
+namespace
+{
+
+// The preselection and the selection colour follow the 3D view's while they
+// are not set (0): the button shows the view's then, and OK stores nothing
+// until another colour is chosen, or TechDraw would stop following.
+void restoreFollowing(Gui::PrefColorButton* button, const QColor& views)
+{
+    button->setColor(views);
+    button->onRestore();
+    if (button->getWindowParameter()->GetUnsigned(button->entryName(), 0) == 0) {
+        QSignalBlocker block(button);
+        button->setColor(views);
+    }
+}
+
+void saveFollowing(Gui::PrefColorButton* button, const QColor& views)
+{
+    if (button->getWindowParameter()->GetUnsigned(button->entryName(), 0) == 0
+        && button->color() == views) {
+        return;
+    }
+    button->onSave();
+}
+
+}  // namespace
 
 
 using namespace TechDrawGui;
@@ -47,9 +79,9 @@ void DlgPrefsTechDrawColorsImp::saveSettings()
     ui->pcbDimColor->onSave();
     ui->pcb_Hatch->onSave();
     ui->pcb_Background->onSave();
-    ui->pcb_PreSelect->onSave();
+    saveFollowing(ui->pcb_PreSelect, PreferencesGui::preselectQColor());
     ui->pcb_Hidden->onSave();
-    ui->pcb_Select->onSave();
+    saveFollowing(ui->pcb_Select, PreferencesGui::selectQColor());
     ui->pcb_Normal->onSave();
     ui->pcb_Surface->onSave();
     ui->pcb_GeomHatch->onSave();
@@ -73,9 +105,9 @@ void DlgPrefsTechDrawColorsImp::loadSettings()
     ui->pcbDimColor->onRestore();
     ui->pcb_Hatch->onRestore();
     ui->pcb_Background->onRestore();
-    ui->pcb_PreSelect->onRestore();
+    restoreFollowing(ui->pcb_PreSelect, PreferencesGui::preselectQColor());
     ui->pcb_Hidden->onRestore();
-    ui->pcb_Select->onRestore();
+    restoreFollowing(ui->pcb_Select, PreferencesGui::selectQColor());
     ui->pcb_Normal->onRestore();
     ui->pcb_Surface->onRestore();
     ui->pcb_GeomHatch->onRestore();
@@ -84,6 +116,8 @@ void DlgPrefsTechDrawColorsImp::loadSettings()
     ui->pcbSectionLine->onRestore();
     ui->pcbCenterColor->onRestore();
     ui->pcbVertexColor->onRestore();
+    // what the page stored as Markups/Color before it stored the key that is read
+    ui->pcbMarkup->setColor(PreferencesGui::leaderQColor());
     ui->pcbMarkup->onRestore();
     ui->pcbHighlight->onRestore();
     ui->pcb_Grid->onRestore();

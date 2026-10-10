@@ -71,6 +71,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HideScaleVector
+    ///
+    /// Hide the per-axis ScaleVector property of links in the property
+    /// view, leaving the single Scale value. Applies to links created
+    /// afterwards.
     static const bool & getHideScaleVector();
     static const bool & defaultHideScaleVector();
     static void removeHideScaleVector();
@@ -81,6 +85,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CreateInPlace
+    ///
+    /// Place a new link where the selected object appears in the 3D view,
+    /// counting the placements of its parents. When off the link is left
+    /// with no placement of its own.
     static const bool & getCreateInPlace();
     static const bool & defaultCreateInPlace();
     static void removeCreateInPlace();
@@ -91,6 +99,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CreateInContainer
+    ///
+    /// Create new links inside the active container, such as the active
+    /// part, instead of at the top level of the document.
     static const bool & getCreateInContainer();
     static const bool & defaultCreateInContainer();
     static void removeCreateInContainer();
@@ -101,6 +112,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ActiveContainerKey
+    ///
+    /// Name of the active object slot searched for the container that new
+    /// links are created in. Empty uses the active part.
     static const std::string & getActiveContainerKey();
     static const std::string & defaultActiveContainerKey();
     static void removeActiveContainerKey();

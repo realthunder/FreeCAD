@@ -32,6 +32,8 @@
 # include <TopoDS_Face.hxx>
 # include <BRepAdaptor_Curve.hxx>
 # include <BRepAdaptor_Surface.hxx>
+# include <BRep_Tool.hxx>
+# include <Geom2d_Curve.hxx>
 # include <Geom_Curve.hxx>
 # include <Geom_Line.hxx>
 # include <Geom_Plane.hxx>
@@ -71,6 +73,178 @@ Draft::Draft()
     ADD_PROPERTY_TYPE(NeutralPlane,(nullptr),"Draft",(App::PropertyType)(App::Prop_None),"NeutralPlane");
     ADD_PROPERTY_TYPE(PullDirection,(nullptr),"Draft",(App::PropertyType)(App::Prop_None),"PullDirection");
     ADD_PROPERTY(Reversed,(0));
+    ADD_PROPERTY_TYPE(_NeutralEdge,(nullptr),"Draft",
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_Output),
+            "The edge a guessed neutral plane is taken from");
+    ADD_PROPERTY_TYPE(_NeutralSense,(0),"Draft",
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_Output),
+            "The side of that edge the guessed plane faces");
+}
+
+namespace
+{
+// The plane a draft is neutral about when none is given, from one edge of the
+// drafted face. False for an edge that offers none.
+bool neutralPlaneFromEdge(const TopoDS_Face &face, const TopoDS_Edge &edge, gp_Pln &plane)
+{
+    // Note: What happens if the edge is the degenerated edge of a cone?
+    // But in that case the draft is not possible anyway!
+    BRepAdaptor_Curve c(edge);
+    gp_Pnt p1 = c.Value(c.FirstParameter());
+    gp_Pnt p2 = c.Value(c.LastParameter());
+
+    if (c.IsClosed()) {
+        // Edge is a circle or a circular arc (other types are not allowed for drafting)
+        if (c.GetType() != GeomAbs_Circle)
+            return false;
+        plane = gp_Pln(p1, c.Circle().Axis().Direction());
+        return true;
+    }
+
+    // Edge is linear
+    // Find midpoint of edge and create auxiliary plane through midpoint normal to edge
+    gp_Pnt pm = c.Value((c.FirstParameter() + c.LastParameter()) / 2.0);
+    Handle(Geom_Plane) aux = new Geom_Plane(pm, gp_Dir(p2.X() - p1.X(), p2.Y() - p1.Y(), p2.Z() - p1.Z()));
+    // Intersect plane with face. Is there no easier way?
+    BRepAdaptor_Surface adapt(face, Standard_False);
+    Handle(Geom_Surface) sf = adapt.Surface().Surface();
+    GeomAPI_IntSS intersector(aux, sf, Precision::Confusion());
+    if (!intersector.IsDone() || intersector.NbLines() < 1)
+        return false;
+    Handle(Geom_Curve) icurve = intersector.Line(1);
+    if (!icurve->IsKind(STANDARD_TYPE(Geom_Line)))
+        return false;
+    // TODO: How to extract the line from icurve without creating an edge first?
+    TopoDS_Edge line = BRepBuilderAPI_MakeEdge(icurve);
+    BRepAdaptor_Curve lc(line);
+    plane = gp_Pln(pm, lc.Line().Direction());
+    return true;
+}
+
+// Which way a direction at an edge of a face points, told by the face and not
+// by how the shape is written down: 1 into the face from the edge, or with the
+// face's outward normal if the direction is across the face rather than along
+// it; -1 the other way; 0 where that cannot be told. The edge has to carry
+// the orientation it has IN the face.
+int senseAtEdge(const TopoDS_Face &face, const TopoDS_Edge &edge, const gp_Dir &dir)
+{
+    double first = 0.0, last = 0.0;
+    Handle(Geom2d_Curve) pcurve = BRep_Tool::CurveOnSurface(edge, face, first, last);
+    if (pcurve.IsNull())
+        return 0;
+    const double mid = (first + last) / 2.0;
+    BRepAdaptor_Curve c(edge);
+    gp_Pnt pm;
+    gp_Vec tangent;
+    c.D1(mid, pm, tangent);
+    if (edge.Orientation() == TopAbs_REVERSED)
+        tangent.Reverse();
+    gp_Pnt2d uv = pcurve->Value(mid);
+    BRepAdaptor_Surface surface(face, Standard_False);
+    gp_Pnt ps;
+    gp_Vec du, dv;
+    surface.D1(uv.X(), uv.Y(), ps, du, dv);
+    gp_Vec normal = du.Crossed(dv);
+    if (face.Orientation() == TopAbs_REVERSED)
+        normal.Reverse();
+    if (normal.Magnitude() < Precision::Confusion()
+            || tangent.Magnitude() < Precision::Confusion())
+        return 0;
+    normal.Normalize();
+    tangent.Normalize();
+    // to the left of the edge as the wire runs, seen from outside: the face
+    const gp_Vec inward = normal.Crossed(tangent);
+    const gp_Vec d(dir);
+    const double along = d.Dot(inward);
+    const double across = d.Dot(normal);
+    const double pick = fabs(along) >= fabs(across) ? along : across;
+    if (fabs(pick) < Precision::Angular())
+        return 0;
+    return pick > 0 ? 1 : -1;
+}
+}  // namespace
+
+bool Draft::guessNeutralPlane(const Part::TopoShape &baseShape,
+                              const Part::TopoShape &faceShape,
+                              gp_Pln &plane)
+{
+    const TopoDS_Face face = TopoDS::Face(faceShape.getShape());
+    TopTools_IndexedMapOfShape mapOfEdges;
+    TopExp::MapShapes(face, TopAbs_EDGE, mapOfEdges);
+
+    // What the guess says for one edge, with the pull direction on the side
+    // that was written down, or written down now if none was.
+    auto planeAt = [&](const TopoDS_Edge &edge, bool record) {
+        if (!neutralPlaneFromEdge(face, edge, plane))
+            return false;
+        int sense = senseAtEdge(face, edge, plane.Axis().Direction());
+        int wanted = record ? 0 : static_cast<int>(_NeutralSense.getValue());
+        if (sense != 0 && wanted != 0 && sense != wanted) {
+            plane = gp_Pln(plane.Location(), plane.Axis().Direction().Reversed());
+            sense = wanted;
+        }
+        if ((record || wanted == 0) && _NeutralSense.getValue() != sense)
+            _NeutralSense.setValue(sense);
+        return true;
+    };
+
+    // The edge an earlier guess settled on, for as long as the face has it.
+    App::DocumentObject *base = Base.getValue();
+    if (base && _NeutralEdge.getValue() == base && !_NeutralEdge.getSubValues().empty()) {
+        const auto &subs = _NeutralEdge.getSubValues();
+        const auto &shadows = _NeutralEdge.getShadowSubs();
+        const std::string &ref = (!shadows.empty() && !shadows.front().first.empty())
+            ? shadows.front().first : subs.front();
+        Part::TopoShape edge;
+        try {
+            edge = baseShape.getSubTopoShape(ref.c_str(), true);
+        }
+        catch (...) {
+        }
+        // as the face has it, for the orientation
+        const int found = (!edge.isNull() && edge.shapeType() == TopAbs_EDGE)
+            ? mapOfEdges.FindIndex(edge.getShape()) : 0;
+        if (found > 0 && planeAt(TopoDS::Edge(mapOfEdges(found)), false))
+            return true;
+    }
+
+    for (int i = 1; i <= mapOfEdges.Extent(); i++) {
+        const TopoDS_Edge &edge = TopoDS::Edge(mapOfEdges(i));
+        if (!planeAt(edge, true))
+            continue;
+        FC_LOG("guess draft neutral plane using Edge" << i);
+        int index = baseShape.findShape(edge);
+        if (base && index > 0) {
+            std::vector<std::string> sub {"Edge" + std::to_string(index)};
+            if (_NeutralEdge.getValue() != base || _NeutralEdge.getSubValues() != sub)
+                _NeutralEdge.setValue(base, std::move(sub));
+        }
+        return true;
+    }
+    return false;
+}
+
+void Draft::onDocumentRestored()
+{
+    // A file from before _NeutralEdge: the base's shape is still the one the
+    // file stored, with its edges in the order the guess was made in, so this
+    // is the last moment the edge it took can be told.
+    if (!NeutralPlane.getValue() && Base.getValue()
+            && (!_NeutralEdge.getValue() || _NeutralSense.getValue() == 0)) {
+        try {
+            Part::TopoShape baseShape = getBaseShape();
+            baseShape.setTransform(Base::Matrix4D());
+            auto faces = getFaces(baseShape);
+            gp_Pln plane;
+            if (!faces.empty())
+                guessNeutralPlane(baseShape, faces[0], plane);
+        }
+        catch (Base::Exception &) {
+        }
+        catch (Standard_Failure &) {
+        }
+    }
+    DressUp::onDocumentRestored();
 }
 
 void Draft::handleChangedPropertyType(Base::XMLReader &reader,
@@ -165,52 +339,7 @@ App::DocumentObjectExecReturn *Draft::execute()
     App::DocumentObject* refPlane = NeutralPlane.getValue();
     if (!refPlane) {
         // Try to guess a neutral plane from the first selected face
-        // Get edges of first selected face
-        TopoDS_Shape face = TopoDS::Face(faces[0].getShape());
-        TopTools_IndexedMapOfShape mapOfEdges;
-        TopExp::MapShapes(face, TopAbs_EDGE, mapOfEdges);
-        bool found = false;
-
-        for (int i = 1; i <= mapOfEdges.Extent(); i++) {
-            // Note: What happens if mapOfEdges(i) is the degenerated edge of a cone?
-            // But in that case the draft is not possible anyway!
-            BRepAdaptor_Curve c(TopoDS::Edge(mapOfEdges(i)));
-            gp_Pnt p1 = c.Value(c.FirstParameter());
-            gp_Pnt p2 = c.Value(c.LastParameter());
-
-            if (c.IsClosed()) {
-                // Edge is a circle or a circular arc (other types are not allowed for drafting)
-                if (c.GetType() == GeomAbs_Circle) {
-                    neutralPlane = gp_Pln(p1, c.Circle().Axis().Direction());
-                    found = true;
-                    FC_LOG("guess draft neutral plane using Edge" << i);
-                    break;
-                }
-            } else {
-                // Edge is linear
-                // Find midpoint of edge and create auxiliary plane through midpoint normal to edge
-                gp_Pnt pm = c.Value((c.FirstParameter() + c.LastParameter()) / 2.0);
-                Handle(Geom_Plane) aux = new Geom_Plane(pm, gp_Dir(p2.X() - p1.X(), p2.Y() - p1.Y(), p2.Z() - p1.Z()));
-                // Intersect plane with face. Is there no easier way?
-                BRepAdaptor_Surface adapt(TopoDS::Face(face), Standard_False);
-                Handle(Geom_Surface) sf = adapt.Surface().Surface();
-                GeomAPI_IntSS intersector(aux, sf, Precision::Confusion());
-                if (!intersector.IsDone() || intersector.NbLines() < 1)
-                    continue;
-                Handle(Geom_Curve) icurve = intersector.Line(1);
-                if (!icurve->IsKind(STANDARD_TYPE(Geom_Line)))
-                    continue;
-                // TODO: How to extract the line from icurve without creating an edge first?
-                TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(icurve);
-                BRepAdaptor_Curve c(edge);
-                neutralPlane = gp_Pln(pm, c.Line().Direction());
-                found = true;
-                FC_LOG("guess draft neutral plane using Edge" << i);
-                break;
-            }
-        }
-
-        if (!found)
+        if (!guessNeutralPlane(baseShape, faces[0], neutralPlane))
             THROWM(Base::RuntimeError, "No neutral plane specified and none can be guessed")
     } else {
         if (refPlane->isDerivedFrom<PartDesign::Plane>()) {

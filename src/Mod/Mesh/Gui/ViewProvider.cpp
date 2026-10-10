@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <cstdlib>
 #include <QAction>
@@ -1710,7 +1712,7 @@ void ViewProviderMesh::faceInfoCallback(void* ud, SoEventCallback* n)
             // See comment below
             ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/View");
-            hGrp->SetBool("ShowNaviCube", hGrp->GetBool("ShowNaviCube", true));
+            hGrp->SetBool("ShowNaviCube", hGrp->GetBool("ShowNaviCube", Gui::ViewParams::defaultShowNaviCube()));
         }
     }
     else if (mbe->getButton() == SoMouseButtonEvent::BUTTON1
@@ -1936,7 +1938,7 @@ void ViewProviderMesh::fillHole(Mesh::FacetIndex uFacet)
     // get parameter from user settings
     Base::Reference<ParameterGrp> hGrp =
         Gui::WindowParameter::getDefaultParameter()->GetGroup("Mod/Mesh");
-    int level = (int)hGrp->GetInt("FillHoleLevel", 2);
+    int level = (int)hGrp->GetInt("FillHoleLevel", Mesh::MeshParams::defaultFillHoleLevel());
 
     // get the boundary to the picked facet
     std::list<Mesh::PointIndex> aBorder;
@@ -2509,7 +2511,7 @@ void ViewProviderIndexedFaceSet::attach(App::DocumentObject* pcFeat)
     // read the threshold from the preferences
     Base::Reference<ParameterGrp> hGrp =
         Gui::WindowParameter::getDefaultParameter()->GetGroup("Mod/Mesh");
-    int size = hGrp->GetInt("RenderTriangleLimit", -1);
+    int size = hGrp->GetInt("RenderTriangleLimit", Mesh::MeshParams::defaultRenderTriangleLimit());
     if (size > 0) {
         static_cast<SoFCIndexedFaceSet*>(pcMeshFaces)->renderTriangleLimit =
             (unsigned int)(pow(10.0f, size));
@@ -2601,7 +2603,7 @@ void ViewProviderMeshObject::attach(App::DocumentObject* pcFeat)
     // read the threshold from the preferences
     Base::Reference<ParameterGrp> hGrp =
         Gui::WindowParameter::getDefaultParameter()->GetGroup("Mod/Mesh");
-    int size = hGrp->GetInt("RenderTriangleLimit", -1);
+    int size = hGrp->GetInt("RenderTriangleLimit", Mesh::MeshParams::defaultRenderTriangleLimit());
     if (size > 0) {
         pcMeshShape->renderTriangleLimit = (unsigned int)(pow(10.0f, size));
     }

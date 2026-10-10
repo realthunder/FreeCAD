@@ -56,11 +56,45 @@ class IndicatorButton(QtGui.QPushButton):
             retranslateUi()
             onTooltip()
             self.adjustSize()
+        elif event.type() in (QtCore.QEvent.PaletteChange, QtCore.QEvent.StyleChange):
+            # a theme was applied: the status bar may have changed sides
+            if rePopulateIcons():
+                setCurrent()
         return super(IndicatorButton, self).changeEvent(event)
 
     def onChange(self, paramGrp, param):
         if param == "NavigationStyle":
             setCurrent()
+
+
+iconKind = "dark"
+
+
+def rePopulateIcons():
+    """Give the styles the icons that read on the status bar: the light
+    strokes where its text is light. True if they changed.
+
+    The icons come in two sets, named for their own colour, and only the
+    dark one was ever loaded, so on a dark status bar the indicator was a
+    dark mouse on a dark bar. Not every style has a light icon; one that
+    does not keeps its dark one."""
+    global iconKind
+    try:
+        text = indicator.palette().color(indicator.foregroundRole())
+    except NameError:
+        return False
+    kind = "light" if text.lightness() > 127 else "dark"
+    if kind == iconKind:
+        return False
+    iconKind = kind
+    for action in gStyle.actions():
+        name = action.objectName().replace("Indicator_", "")
+        path = ":/icons/" + name + "_" + kind + ".svg"
+        if not QtCore.QFile.exists(path):
+            path = ":/icons/" + name + "_dark.svg"
+        if QtCore.QFile.exists(path):
+            action.setIcon(QtGui.QIcon(path))
+    return True
 
 
 def retranslateUi():
@@ -851,6 +885,9 @@ statusBar.addPermanentWidget(indicator)
 statusBar.addPermanentWidget(label)
 label.show()
 
+# polished, the palette is the style sheet's
+indicator.ensurePolished()
+rePopulateIcons()
 setCurrent()
 
 gStyle.triggered.connect(onMenu)

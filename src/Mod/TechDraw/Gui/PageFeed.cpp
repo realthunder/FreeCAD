@@ -20,6 +20,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 #include <algorithm>
 #include <cmath>
@@ -48,6 +50,7 @@
 #include <QPainterPath>
 #include <QPen>
 #include <QPixmap>
+#include <QStyleOptionGraphicsItem>
 #include <QSvgRenderer>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -64,6 +67,8 @@
 #include <Mod/TechDraw/App/DrawGeomHatch.h>
 #include <Mod/TechDraw/App/DrawHatch.h>
 #include <Mod/TechDraw/App/DrawPage.h>
+#include <Mod/TechDraw/App/DrawProjGroup.h>
+#include <Mod/TechDraw/App/DrawProjGroupItem.h>
 #include <Mod/TechDraw/App/DrawSVGTemplate.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
@@ -75,10 +80,16 @@
 
 #include "PageFeed.h"
 #include "PreferencesGui.h"
+#include "QGCustomSvg.h"
 #include "QGIDecoration.h"
+#include "QGIEdge.h"
+#include "QGIFace.h"
 #include "QGIMatting.h"
 #include "QGIPrimPath.h"
+#include "QGIVertex.h"
 #include "QGIView.h"
+#include "QGIViewDimension.h"
+#include "QGMText.h"
 #include "QGSPage.h"
 #include "Rez.h"
 #include "ViewProviderGeomHatch.h"
@@ -171,45 +182,34 @@ uint32_t packColor(const QColor& c)
         | ((uint32_t)c.blue() << 8) | (uint32_t)c.alpha();
 }
 
-// Walk a polyline alternating pen-down/pen-up runs of the given lengths
-// (page units), phase starting pen-down at the path start like Qt.
-void emitDashedPolyline(Page2D::Recorder& rec, const std::vector<Pt>& pts,
-                        float ox, float oy, const std::vector<float>& dashes)
+// A pen's dashes, as the page layer wants them: the pattern in multiples
+// of the unit, not in page units. The lengths are worked out when the page
+// is drawn (Render::Page2D::dashedPolyline), because Qt's depend on the
+// zoom: a pen narrower than a device pixel counts its pattern in pixels.
+struct DashSpec
 {
-    if (pts.size() < 2 || dashes.empty())
+    std::vector<float> pattern;  // dash, gap, dash, ... in units
+    float unit = 0.0f;           // page units; 0 = device pixels (cosmetic)
+    float offset = 0.0f;         // into the pattern at the start, in units
+    bool cap = false;            // round or square caps lengthen the dashes
+    bool empty() const { return pattern.empty(); }
+};
+
+// A polyline cut into the dashes of the spec, into the current path.
+void emitDashedPolyline(Page2D::Recorder& rec, const std::vector<Pt>& pts,
+                        float ox, float oy, const DashSpec& dash)
+{
+    if (pts.size() < 2 || dash.empty())
         return;
-    size_t di = 0;
-    float remain = dashes[0];
-    bool down = true;
-    float cx = ox + pts[0].x, cy = oy + pts[0].y;
-    rec.moveTo(cx, cy);
-    for (size_t i = 1; i < pts.size(); ++i) {
-        const float ex = ox + pts[i].x, ey = oy + pts[i].y;
-        float segLen = std::hypot(ex - cx, ey - cy);
-        while (segLen > 0.0f) {
-            if (remain <= segLen) {
-                const float t = remain / segLen;
-                cx += (ex - cx) * t;
-                cy += (ey - cy) * t;
-                segLen -= remain;
-                if (down)
-                    rec.lineTo(cx, cy);
-                down = !down;
-                if (down)
-                    rec.moveTo(cx, cy);
-                di = (di + 1) % dashes.size();
-                remain = dashes[di];
-            }
-            else {
-                remain -= segLen;
-                if (down)
-                    rec.lineTo(ex, ey);
-                cx = ex;
-                cy = ey;
-                segLen = 0.0f;
-            }
-        }
+    std::vector<float> xy;
+    xy.reserve(pts.size() * 2);
+    for (const Pt& p : pts) {
+        xy.push_back(ox + p.x);
+        xy.push_back(oy + p.y);
     }
+    rec.dashedPolyline(xy.data(), (uint32_t)pts.size(), dash.pattern.data(),
+                       (uint32_t)dash.pattern.size(), dash.unit, dash.offset,
+                       dash.cap);
 }
 
 // The edge-class show/hide matrix (QGIViewPart::showThisEdge).
@@ -234,9 +234,69 @@ struct EdgeStroke
 {
     uint32_t color = 0x000000ff;
     float width = 6.0f;         // Rez
-    std::vector<float> dashes;  // Rez; empty = solid
+    DashSpec dash;              // empty = solid
     bool show = true;
 };
+
+// The width an edge is drawn at, given the width asked for in scene (Rez)
+// units: that width, fractions and all, and a line asked for at no width
+// as a hairline (\a hairline is what that is fed as).
+//
+// Not what the Qt page draws. An edge, a centre mark and whatever else is
+// a QGIPrimPath hands its width to QPen::setWidth(int)
+// (QGIPrimPath::setTools): there it is cut to a whole number of scene
+// units, a tenth of a millimetre each, so a line asked for at 0.35 mm is
+// 0.3 mm wide, and one under a unit is Qt's cosmetic pen. For a while the
+// page was fed that width too (docs/HandsOnQueue.md entry 61); the word
+// since is "change techdraw bgfx rendering to support fractional line
+// width, but make sure the highlight shows the same width". The second
+// half is the reason entry 61 came up at all: what is laid over an edge
+// that is preselected or selected is captured off the Qt item
+// (feedViewState), and with the item's pen for its width the highlight is
+// the thinner of the two. A captured QGIPrimPath is therefore given the
+// width it was ASKED for, as here (capturePrimPath).
+//
+// The dashes go with the width (dashUnit): a pattern is so many line
+// widths long, and the line's width is the one asked for.
+//
+// And Qt's cut can be had back: the setting PageRendererVgRoundLineWidth
+// ("Add a techdraw setting for backend rendering line width rounding")
+// rounds a width down to whole scene units here as QPen::setWidth(int)
+// does there, one under a unit a hairline, the dashes counted in what is
+// left. Off, which is the default, a line is as wide as was asked. The
+// one function says it for an edge, for a captured item and for the
+// dashes of both, so that a line and its highlight cannot differ.
+double drawnWidth(double asked)
+{
+    if (!(asked > 0.0))
+        return 0.0;
+    if (TechDraw::TechDrawParams::getPageRendererVgRoundLineWidth()) {
+        const double whole = std::floor(asked);
+        return whole >= 1.0 ? whole : 0.0;
+    }
+    return asked;
+}
+
+float primPathWidth(double asked, float hairline)
+{
+    const double drawn = drawnWidth(asked);
+    return drawn > 0.0 ? (float)drawn : hairline;
+}
+
+// What a dash pattern is counted in, given the width asked for: the width
+// the line is drawn at, as the stroke's is -- a line standard says a dash
+// is so many line widths long. A line of no width is a hairline, whose
+// pattern is counted in device pixels (0), as Qt counts a cosmetic pen's.
+//
+// Not Qt's count either: its pen is the width cut to a whole number of
+// scene units, so its 0.35 mm hidden line counts its dashes in 0.3 mm and
+// has seven where this has six. For a while the dashes were left Qt's
+// while the widths were not (wholeUnits, 2649caa38f); the reporter, asked:
+// "Do the new dash".
+float dashUnit(double asked)
+{
+    return (float)drawnWidth(asked);
+}
 
 // Per-edge appearance, mirroring QGIViewPart::drawAllEdges: cosmetic
 // edge / centerline formats, GeomFormat overrides, the hidden-line pen
@@ -246,7 +306,7 @@ struct EdgeStroke
 EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
                              ViewProviderViewPart* vp,
                              const TechDraw::BaseGeomPtr& geom, int iEdge,
-                             const PageFeed::Style& style)
+                             const PageFeed::Style& style, float hairline)
 {
     // Loads the ISO/ANSI line descriptions from disk once.
     static TechDraw::LineGenerator lineGen;
@@ -256,7 +316,9 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
     es.color = vp ? packColor(PreferencesGui::getAccessibleQColor(
                         PreferencesGui::normalQColor()))
                   : style.edgeColor;
-    es.width = vp ? (float)Rez::guiX(lineWidthMm) : style.edgeWidth;
+    // The width asked for, in scene units; what is drawn is worked out
+    // of it at the end (primPathWidth).
+    double asked = vp ? Rez::guiX(lineWidthMm) : style.edgeWidth;
     QPen pen(Qt::SolidLine);
     bool formatVisible = true;
 
@@ -287,7 +349,7 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
                 .asValue<QColor>());
         pen = lineGen.getBestPen(format->getLineNumber(),
                                  (Qt::PenStyle)format->m_style, weight);
-        es.width = (float)Rez::guiX(weight);
+        asked = Rez::guiX(weight);
         formatVisible = format->m_visible;
     }
 
@@ -295,25 +357,30 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
         if (vp) {
             pen = lineGen.getLinePen(TechDraw::Preferences::HiddenLineStyle(),
                                      lineWidthMm);
-            es.width = (float)Rez::guiX(vp->hiddenWidthScaled());
+            asked = Rez::guiX(vp->hiddenWidthScaled());
         }
         else {
             es.color = style.hiddenColor;
-            es.width = style.hiddenWidth;
+            asked = style.hiddenWidth;
         }
     }
 
     if (geom->getClassOfEdge() == TechDraw::ecUVISO && vp) {
         pen = QPen(Qt::SolidLine);
-        es.width = (float)Rez::guiX(vp->isoWidthScaled());
+        asked = Rez::guiX(vp->isoWidthScaled());
     }
 
     es.show = showEdgeClass(dvp, geom)
         && (formatVisible || (vp && vp->ShowAllEdges.getValue()));
+    es.width = primPathWidth(asked, hairline);
 
-    if (pen.style() != Qt::SolidLine && es.width > 0.0f) {
+    if (pen.style() != Qt::SolidLine) {
         for (qreal d : pen.dashPattern())
-            es.dashes.push_back((float)d * es.width);
+            es.dash.pattern.push_back((float)d);
+        // counted in the stroke's own width (dashUnit)
+        es.dash.unit = dashUnit(asked);
+        es.dash.offset = (float)pen.dashOffset();
+        es.dash.cap = pen.capStyle() != Qt::FlatCap;
     }
     return es;
 }
@@ -338,15 +405,42 @@ bool emitEdge(Page2D::Recorder& rec, const TechDraw::BaseGeomPtr& geom,
         // Native vg arc: re-flattened per zoom band like circles, and
         // (M3) ~22 bytes on the wire instead of a point list. vg's arc
         // angles are clockwise-from-x-axis in the same y-down space the
-        // geometry lives in; (start, end, cw) and its reversed twin
-        // denote the same circle segment, so getReversed() is moot for
-        // a stroke.
+        // geometry lives in; an arc and its reversed twin denote the
+        // same circle segment, so getReversed() is moot for a stroke.
+        //
+        // The angles are taken from the arc's own points, as the Qt
+        // tier draws it (PathBuilder: end points, large-arc and sweep
+        // flags). aoc->startAngle and endAngle are the curve's
+        // PARAMETERS, measured from the circle's own X axis, and a
+        // projected circle keeps whatever axis its source had: fed as
+        // they are, an arc came out on the right circle and the wrong
+        // part of it -- the trimmed arcs of a detail view swept across
+        // the whole page.
         auto aoc = std::static_pointer_cast<AOC>(geom);
+        const float cx = ox + (float)Rez::guiX(aoc->center.x);
+        const float cy = oy + (float)Rez::guiX(aoc->center.y);
+        const float radius = (float)Rez::guiX(aoc->radius);
+        auto angle = [&aoc](const Base::Vector3d& p) {
+            return std::atan2(p.y - aoc->center.y, p.x - aoc->center.x);
+        };
+        const double twoPi = 2.0 * M_PI;
+        // how far clockwise (towards +y, the way vg counts) from a to b
+        auto turn = [twoPi](double a, double b) {
+            const double d = std::fmod(b - a, twoPi);
+            return d < 0.0 ? d + twoPi : d;
+        };
+        const double a0 = angle(aoc->startPnt);
+        const double a1 = angle(aoc->endPnt);
         rec.beginPath();
-        rec.arc(ox + (float)Rez::guiX(aoc->center.x),
-                oy + (float)Rez::guiX(aoc->center.y),
-                (float)Rez::guiX(aoc->radius), (float)aoc->startAngle,
-                (float)aoc->endAngle, aoc->cw);
+        if ((aoc->startPnt - aoc->endPnt).Length() < 1.0e-7 * aoc->radius) {
+            // a closed arc: the two ends say nothing of a direction
+            rec.circle(cx, cy, radius);
+            return true;
+        }
+        // Clockwise if that way round meets the middle before the end.
+        const bool clockwise =
+            turn(a0, angle(aoc->midPnt)) < turn(a0, a1);
+        rec.arc(cx, cy, radius, (float)a0, (float)a1, clockwise);
         return true;
     }
     case BEZIER: {
@@ -410,7 +504,7 @@ bool emitEdge(Page2D::Recorder& rec, const TechDraw::BaseGeomPtr& geom,
 
 // A face's wires as closed view-local contours, stitched with the same
 // nearest-endpoint heuristic the Qt path builder uses. Shared by the
-// even-odd fill, the section-edge stroke and the hatch rasterizer.
+// even-odd fill, the section-edge stroke and the hatch fill.
 std::vector<std::vector<Pt>> faceContours(const TechDraw::FacePtr& face,
                                           float deflection)
 {
@@ -516,15 +610,31 @@ float avgScale(const QTransform& t)
     return det > 0.0 ? (float)std::sqrt(det) : 1.0f;
 }
 
+// What a pen of width 0 is captured as: PageFeed::PageHairline unless
+// the host asked otherwise for the capture under way (HairlineScope).
+// The capture runs on the GUI thread only.
+float captureHairline = PageFeed::PageHairline;
+
+struct HairlineScope
+{
+    explicit HairlineScope(float hairline) : saved(captureHairline)
+    {
+        captureHairline = hairline;
+    }
+    ~HairlineScope() { captureHairline = saved; }
+    float saved;
+};
+
 // A pen's stroke width in page units. Width 0 is Qt's cosmetic
-// hairline, drawn one device pixel at any zoom -- a concept a retained
-// page has no analog for; the ISO 0.35mm standard line reads the same
-// at page scale (balloon leaders and bubbles arrive this way).
+// hairline, drawn one device pixel at any zoom (a view's frame, balloon
+// leaders and bubbles arrive this way). The page draws a stroke of
+// width 0 that way too; a consumer that does not is given a page
+// width that reads the same at page scale, the ISO 0.35mm line.
 float penWidth(const QPen& pen, const QTransform& t)
 {
-    const double w =
-        pen.widthF() > 0.0 ? pen.widthF() : Rez::guiX(0.35);
-    return (float)w * avgScale(t);
+    if (!(pen.widthF() > 0.0))
+        return captureHairline;
+    return (float)pen.widthF() * avgScale(t);
 }
 
 // Replay a QPainterPath's elements into the recorder, mapped to page
@@ -563,20 +673,25 @@ void capturePainterPath(Page2D::Recorder& rec, const QPainterPath& path,
     }
 }
 
-// Qt dash patterns are specified in pen-width units.
-std::vector<float> penDashes(const QPen& pen, const QTransform& t)
+// The dashes of a pen taken off a Qt item. Qt counts a pattern in pen
+// widths, and a cosmetic pen's in device pixels: unit 0 says so, and the
+// page layer counts in pixels at whatever zoom it draws at.
+DashSpec penDashes(const QPen& pen, const QTransform& t)
 {
-    std::vector<float> dashes;
+    DashSpec dash;
     if (pen.style() == Qt::SolidLine || pen.style() == Qt::NoPen)
-        return dashes;
-    const float w = penWidth(pen, t);
+        return dash;
     for (qreal d : pen.dashPattern())
-        dashes.push_back((float)d * w);
-    return dashes;
+        dash.pattern.push_back((float)d);
+    if (pen.widthF() > 0.0 && !pen.isCosmetic())
+        dash.unit = (float)pen.widthF() * avgScale(t);
+    dash.offset = (float)pen.dashOffset();
+    dash.cap = pen.capStyle() != Qt::FlatCap;
+    return dash;
 }
 
 void captureDashedPath(Page2D::Recorder& rec, const QPainterPath& path,
-                       const QTransform& t, const std::vector<float>& dashes)
+                       const QTransform& t, const DashSpec& dashes)
 {
     rec.beginPath();
     for (const QPolygonF& poly : path.toSubpathPolygons(t)) {
@@ -588,8 +703,13 @@ void captureDashedPath(Page2D::Recorder& rec, const QPainterPath& path,
     }
 }
 
+// \a asked, where it is given (not negative), is the stroke's width in the
+// item's own units in place of the pen's: what a QGIPrimPath was asked
+// for, which its pen holds cut to a whole number (primPathWidth). The
+// pen's dash pattern is counted in it too.
 void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
-                    const QTransform& t, const QPen& pen, const QBrush& brush)
+                    const QTransform& t, const QPen& pen, const QBrush& brush,
+                    double asked = -1.0)
 {
     if (path.isEmpty())
         return;
@@ -598,7 +718,14 @@ void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
     if (!fill && !stroke)
         return;
 
-    const std::vector<float> dashes = penDashes(pen, t);
+    DashSpec dashes = penDashes(pen, t);
+    // the pattern of a QGIPrimPath's pen is counted in the width the
+    // item was asked for, as its stroke is, not in the pen's cut one
+    // (rounded, where it is to be, in the item's own units as Qt's pen
+    // is: the item's transform comes after)
+    const double drawn = asked < 0.0 ? 0.0 : drawnWidth(asked) * avgScale(t);
+    if (asked >= 0.0 && !dashes.empty())
+        dashes.unit = (float)drawn;
     if (fill || dashes.empty())
         capturePainterPath(rec, path, t);
     if (fill)
@@ -607,17 +734,24 @@ void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
     if (stroke) {
         if (!dashes.empty())
             captureDashedPath(rec, path, t, dashes);
-        rec.stroke(packColor(pen.color()), penWidth(pen, t));
+        rec.stroke(packColor(pen.color()),
+                   asked < 0.0 ? penWidth(pen, t)
+                               : drawn > 0.0 ? (float)drawn : captureHairline);
     }
 }
 
 // TechDraw's own path items (edges, dimension lines, arrows, section
 // marks, ...) derive from QGIPrimPath, which draws from its own
-// pen/brush members on a plain QGraphicsItem.
+// pen/brush members on a plain QGraphicsItem. Its pen has the width cut
+// to a whole number of scene units; the item still knows what it was
+// asked for, and that is what is drawn -- so a dimension line, a section
+// line and a leader have their fractional widths, and the highlight laid
+// over an edge is as wide as the edge feedViewPart drew (primPathWidth).
 void capturePrimPath(Page2D::Recorder& rec, QGIPrimPath* item)
 {
     emitStyledPath(rec, item->path(), item->sceneTransform(),
-                   item->currentPen(), item->currentBrush());
+                   item->currentPen(), item->currentBrush(),
+                   std::max(0.0, item->getWidth()));
 }
 
 void captureShapeItem(Page2D::Recorder& rec, QAbstractGraphicsShapeItem* item)
@@ -653,7 +787,7 @@ void captureLineItem(Page2D::Recorder& rec, QGraphicsLineItem* item)
     const QPointF p1 = t.map(item->line().p1());
     const QPointF p2 = t.map(item->line().p2());
     rec.beginPath();
-    const std::vector<float> dashes = penDashes(pen, t);
+    const DashSpec dashes = penDashes(pen, t);
     if (dashes.empty()) {
         rec.moveTo((float)p1.x(), (float)p1.y());
         rec.lineTo((float)p2.x(), (float)p2.y());
@@ -843,6 +977,34 @@ void captureSvgItem(Page2D::Recorder& rec, QGraphicsSvgItem* item,
     emitCapturedImage(rec, id, local, item->sceneTransform());
 }
 
+// A rectangle an item's own paint() draws round itself, in the pen it
+// would use: the dashed frame of a preselected or selected symbol, the
+// box of a framed dimension value, the box of a leader's text.
+void captureFrameRect(Page2D::Recorder& rec, const QGraphicsItem* item,
+                      const QRectF& rect, const QPen& pen)
+{
+    QPainterPath path;
+    path.addRect(rect);
+    emitStyledPath(rec, path, item->sceneTransform(), pen,
+                   QBrush(Qt::NoBrush));
+}
+
+// Some items settle what their children are drawn with in their own
+// paint(): a dimension and a balloon set their line widths there, a
+// center line and a break line their pens. On a page the backend draws
+// alone no item is painted, so what paint() would have settled is
+// settled here, before the children are read -- by running that paint()
+// on a painter nobody looks at. Groups only: a group draws nothing of
+// its own (the selection rectangle a QGraphicsItemGroup would add is
+// not in an option with no state).
+void settleInPaint(QGraphicsItem* group)
+{
+    static QImage scratch(1, 1, QImage::Format_ARGB32_Premultiplied);
+    QPainter painter(&scratch);
+    QStyleOptionGraphicsItem option;
+    group->paint(&painter, &option, nullptr);
+}
+
 void capturePixmapItem(Page2D::Recorder& rec, QGraphicsPixmapItem* item,
                        CaptureImages* imgs)
 {
@@ -904,18 +1066,42 @@ void captureItemTree(QGraphicsItem* item, Page2D::Recorder& rec,
             typeid(*item).name(), r.x(), r.y(), r.width(), r.height(),
             rec.bytes().size());
     }
-    if (auto text = dynamic_cast<QGraphicsTextItem*>(item))
+    if (dynamic_cast<QGraphicsItemGroup*>(item))
+        settleInPaint(item);
+    if (auto text = dynamic_cast<QGraphicsTextItem*>(item)) {
+        // the box comes first, as QGMText::paint has it
+        auto boxed = dynamic_cast<QGMText*>(item);
+        if (boxed && boxed->showBox())
+            captureFrameRect(rec, item,
+                             item->boundingRect().adjusted(1, 1, -1, -1),
+                             QPen());
         captureTextItem(rec, text);
+    }
     else if (auto prim = dynamic_cast<QGIPrimPath*>(item))
         capturePrimPath(rec, prim);
     else if (auto shape = dynamic_cast<QAbstractGraphicsShapeItem*>(item))
         captureShapeItem(rec, shape);
     else if (auto line = dynamic_cast<QGraphicsLineItem*>(item))
         captureLineItem(rec, line);
-    else if (auto svg = dynamic_cast<QGraphicsSvgItem*>(item))
+    else if (auto svg = dynamic_cast<QGraphicsSvgItem*>(item)) {
+        auto framed = dynamic_cast<QGCustomSvg*>(item);
+        if (framed && framed->framePen().style() != Qt::NoPen)
+            captureFrameRect(rec, item, item->boundingRect(),
+                             framed->framePen());
         captureSvgItem(rec, svg, imgs);
+    }
     else if (auto pix = dynamic_cast<QGraphicsPixmapItem*>(item))
         capturePixmapItem(rec, pix, imgs);
+    else if (auto datum = dynamic_cast<QGIDatumLabel*>(item)) {
+        // the frame of a theoretically exact dimension; the value
+        // itself is a child text item
+        if (datum->isFramed()) {
+            QPen pen;
+            pen.setWidthF(datum->getLineWidth());
+            pen.setColor(datum->getDimText()->defaultTextColor());
+            captureFrameRect(rec, item, item->boundingRect(), pen);
+        }
+    }
     QList<QGraphicsItem*> children = item->childItems();
     std::stable_sort(children.begin(), children.end(),
                      [](const QGraphicsItem* a, const QGraphicsItem* b) {
@@ -1123,21 +1309,38 @@ struct HatchFill
     std::string file;          // resolved pattern file (SvgIncluded)
     QColor color = Qt::black;  // svg stroke recolor
     double scale = 1.0;
-    double rotation = 0.0;     // degrees, about the face center
+    double rotation = 0.0;     // the property: degrees about the face
+                               // center, counter-clockwise on the page
     Base::Vector3d offset;     // tile-grid shift, scene units
 };
 
-// Rasterize a tiled hatch fill clipped to the face outline into the
-// image registry and emit it over the face bbox. Mirrors QGIFace:
-// SvgFill is an array of 64x64*scale tiles rotated about the face
-// center and shifted by the offset, recolored by replacing the
-// pattern's stroke color; BitmapFill is a texture brush of the
-// (pre-rotated) pixmap anchored at the view origin. Returns false --
-// without touching the image slot -- when nothing could be rasterized,
-// so the caller can fall back to the plain fill.
-bool emitHatchRaster(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
-                     const std::vector<std::vector<Pt>>& contours, float ox,
-                     float oy, const HatchFill& fill)
+// The pixels of one svg hatch tile: what the Qt tier's QGCustomSvg
+// draws 64 * scale page units across, here at four pixels to the svg's
+// unit whatever the scale -- a pattern line one unit wide is four pixels
+// of it, and the page layer keeps the coarser copies it draws from when
+// the page is zoomed out.
+const int HatchTilePixels = 256;
+
+// Fill the face outline with a hatch: ONE tile registered as an image
+// and laid side by side across the face by the page layer
+// (Page2D::Recorder::fillImage), where this used to rasterize the whole
+// face at a pixel to the tenth of a millimetre -- a picture that was
+// read one pixel in five at the zoom a page opens at, so that most of a
+// pattern's lines were dropped and the rest drawn at full strength, and
+// that went soft as soon as the page was zoomed in.
+//
+// Placed as QGIFace places its tiles. SvgFill: an array of 64 * scale
+// tiles centred on the face -- so whether a tile's edge or its middle is
+// on the centre depends on how many it takes to cover the face
+// (QGIFace::buildSvgHatch) -- shifted by the offset, the whole array
+// turned about the face centre; recolored by replacing the pattern's
+// stroke color. BitmapFill: a texture brush of the (pre-rotated) pixmap
+// anchored at the view origin. Returns false -- without touching the
+// image slot -- when nothing could be made of the file, so the caller
+// can fall back to the plain fill.
+bool emitHatchFill(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
+                   const std::vector<std::vector<Pt>>& contours, float ox,
+                   float oy, const HatchFill& fill)
 {
     if (contours.empty() || fill.file.empty())
         return false;
@@ -1160,8 +1363,6 @@ bool emitHatchRaster(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
         return false;
     QByteArray bytes = f.readAll();
 
-    QSvgRenderer renderer;
-    QPixmap pix;
     if (fill.svg) {
         // Recolor exactly like QGIFace::loadSvgHatch: the pattern
         // declares its stroke either as a style property or as an
@@ -1171,73 +1372,96 @@ bool emitHatchRaster(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
                                       : QByteArrayLiteral("stroke=\"");
         bytes.replace(prefix + QByteArrayLiteral("#000000"),
                       prefix + fill.color.name().toUtf8());
+        QSvgRenderer renderer;
         if (!renderer.load(bytes) || !renderer.isValid())
             return false;
-    }
-    else {
-        if (!pix.loadFromData(bytes) || pix.isNull())
-            return false;
-        if (fill.rotation != 0.0) {
-            QTransform rotator;
-            rotator.rotate(fill.rotation);
-            pix = pix.transformed(rotator);
-        }
-    }
-
-    // Page units are Rez: 1:1 is ~254 dpi on page, capped so a huge
-    // face cannot allocate an unbounded texture.
-    const double k = std::min(1.0, 2048.0 / std::max(w, h));
-    const int ipw = std::max(1, (int)std::lround(w * k));
-    const int iph = std::max(1, (int)std::lround(h * k));
-    QImage image(ipw, iph, QImage::Format_RGBA8888);
-    image.fill(Qt::transparent);
-    {
-        QPainter painter(&image);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.scale(k, k);
-        painter.translate(-minX, -minY);
-        QPainterPath clip;
-        clip.setFillRule(Qt::OddEvenFill);
-        for (const std::vector<Pt>& contour : contours) {
-            clip.moveTo(contour[0].x, contour[0].y);
-            for (size_t i = 1; i < contour.size(); ++i)
-                clip.lineTo(contour[i].x, contour[i].y);
-            clip.closeSubpath();
-        }
-        painter.setClipPath(clip);
-        if (fill.svg) {
-            const double tile = 64.0 * (fill.scale > 0.0 ? fill.scale : 1.0);
-            const double cx = minX + w / 2.0, cy = minY + h / 2.0;
-            painter.translate(cx, cy);
-            painter.rotate(fill.rotation);
-            // Tile outward from the face center (the Qt tile array is
-            // centered on the face too); the radius covers the bbox at
-            // any rotation. Same runaway cap as the Qt tier.
-            const double radius = std::hypot(w, h) / 2.0;
-            const int n = (int)std::ceil(radius / tile) + 1;
-            long tiles = 0;
-            for (int ix = -n; ix < n && tiles <= 10000; ++ix) {
-                for (int iy = -n; iy < n && tiles <= 10000; ++iy, ++tiles) {
-                    renderer.render(&painter,
-                                    QRectF(ix * tile + fill.offset.x,
-                                           iy * tile + fill.offset.y, tile,
-                                           tile));
-                }
+        QImage image(HatchTilePixels, HatchTilePixels, QImage::Format_RGBA8888);
+        // The ink's colour in the pixels the pattern leaves empty, at
+        // no opacity: a line's edge is then blended with its own colour
+        // where the tile is drawn enlarged, not with black.
+        image.fill(QColor(fill.color.red(), fill.color.green(),
+                          fill.color.blue(), 0));
+        {
+            // The Qt tier's tiles are not clipped to their 64 units: a
+            // line that ends on a tile's edge has its square end half
+            // outside, and that half is what fills the notch the next
+            // tile's line leaves. So the tile is painted with its eight
+            // neighbours around it, each leaving in it what it lets
+            // stick out -- without them every seam shows as a pinch.
+            QPainter painter(&image);
+            painter.setRenderHint(QPainter::Antialiasing);
+            const double t = HatchTilePixels;
+            for (int ix = -1; ix <= 1; ++ix) {
+                for (int iy = -1; iy <= 1; ++iy)
+                    renderer.render(&painter, QRectF(ix * t, iy * t, t, t));
             }
         }
-        else {
-            painter.fillPath(clip, QBrush(pix));
-        }
+        out.setImage(imageId, (uint16_t)image.width(),
+                     (uint16_t)image.height(), image.constBits(),
+                     /*repeat*/ true);
+
+        const double tile = 64.0 * (fill.scale > 0.0 ? fill.scale : 1.0);
+        const double span = std::ceil(
+            TechDraw::Preferences::svgHatchFactor() * std::max(w, h) / tile)
+            * tile;
+        // The first tile's corner from the face centre, before the
+        // turn. Half a unit short each way: QGCustomRect::centerAt
+        // centres the array by its bounding rect, which has the rect
+        // item's pen of 1 around it.
+        const double lx = -span / 2.0 - 0.5 + fill.offset.x;
+        const double ly = -span / 2.0 - 0.5 + fill.offset.y;
+        // QGIFace::setHatchRotation turns the array by MINUS the
+        // property: a positive HatchRotation is counter-clockwise on the
+        // page. (The raster this replaces turned it the other way.)
+        const double angle = -fill.rotation * M_PI / 180.0;
+        const double cs = std::cos(angle), sn = std::sin(angle);
+        const double cx = minX + w / 2.0, cy = minY + h / 2.0;
+        if (!emitFacePath(rec, contours, ox, oy))
+            return false;
+        rec.fillImage(imageId, (float)(ox + cx + cs * lx - sn * ly),
+                      (float)(oy + cy + sn * lx + cs * ly), (float)tile,
+                      (float)tile, (float)angle, /*evenOdd*/ true);
+        return true;
     }
-    out.setImage(imageId, (uint16_t)ipw, (uint16_t)iph, image.constBits());
-    rec.image(imageId, ox + minX, oy + minY, w, h);
+
+    QImage image;
+    if (!image.loadFromData(bytes) || image.isNull())
+        return false;
+    if (fill.rotation != 0.0) {
+        // minus, as above: QGIFace::textureFromBitmap turns the pixmap
+        // by what setHatchRotation stored
+        QTransform rotator;
+        rotator.rotate(-fill.rotation);
+        image = image.transformed(rotator);
+    }
+    // A pixel of the bitmap is a page unit, as in the brush; a texture
+    // has a largest size, so a huge bitmap is stored smaller and drawn
+    // over the same page units.
+    const float tileW = (float)image.width(), tileH = (float)image.height();
+    const int longest = std::max(image.width(), image.height());
+    if (longest > 4096) {
+        image = image.scaled(std::max(1, image.width() * 4096 / longest),
+                             std::max(1, image.height() * 4096 / longest),
+                             Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+    if (image.isNull())
+        return false;
+    // constBits() rows may be padded to four bytes in other formats;
+    // RGBA8888 rows are tight.
+    out.setImage(imageId, (uint16_t)image.width(), (uint16_t)image.height(),
+                 image.constBits(), /*repeat*/ true);
+    if (!emitFacePath(rec, contours, ox, oy))
+        return false;
+    rec.fillImage(imageId, ox, oy, tileW, tileH, 0.0f, /*evenOdd*/ true);
     return true;
 }
 
 } // namespace
 
 void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
-                            const Style& style, uint32_t layer)
+                            const Style& style, uint32_t layer,
+                            float hairline)
 {
     if (!dvp)
         return;
@@ -1246,8 +1470,10 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         return;
     // The scene position of the view: page coordinates are y-up mm,
     // the page (and Qt scene) y-down Rez units.
-    const float ox = (float)Rez::guiX(dvp->X.getValue());
-    const float oy = (float)-Rez::guiX(dvp->Y.getValue());
+    double pageX = 0.0, pageY = 0.0;
+    pagePosition(dvp, pageX, pageY);
+    const float ox = (float)Rez::guiX(pageX);
+    const float oy = (float)-Rez::guiX(pageY);
 
     // Every index gets a setItem even when its geometry is skipped (an
     // empty recorder draws nothing): id presence then stays contiguous
@@ -1261,7 +1487,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             if (!out.hasItem(id))
                 break;
             out.removeItem(id);
-            // A face item may own a raster hatch image under its id.
+            // A face item may own a hatch tile image under its id.
             if (out.hasImage(id))
                 out.removeImage(id);
         }
@@ -1342,8 +1568,8 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         }
     }
 
-    // Faces: the fill -- or a rasterized SVG/bitmap hatch (DrawHatch)
-    // in its place -- then any PAT geometric hatch as a Decoration
+    // Faces: the fill, an SVG/bitmap hatch (DrawHatch) laid over it as
+    // a tiled image, then any PAT geometric hatch as a Decoration
     // item riding the same index (drawn between fills and edges by
     // Kind order), dashed per its PAT spec.
     std::vector<TechDraw::DrawGeomHatch*> geomHatches = dvp->getGeomHatches();
@@ -1380,7 +1606,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                 hf.rotation = hvp->HatchRotation.getValue();
                 hf.offset = hvp->HatchOffset.getValue();
             }
-            rasterized = emitHatchRaster(out, rec, fid, contours, ox, oy, hf);
+            rasterized = emitHatchFill(out, rec, fid, contours, ox, oy, hf);
         }
         if (!rasterized && out.hasImage(fid))
             out.removeImage(fid);
@@ -1433,8 +1659,11 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             ? packColor(PreferencesGui::getAccessibleQColor(
                   PreferencesGui::normalQColor()))
             : style.edgeColor;
-        const float sectionEdgeWidth =
-            vp ? (float)Rez::guiX(vp->lineWidthScaled()) : style.edgeWidth;
+        // the outline of a cut face is an edge of the Qt page like any
+        // other: the width asked for
+        const float sectionEdgeWidth = primPathWidth(
+            vp ? Rez::guiX(vp->lineWidthScaled()) : style.edgeWidth,
+            hairline);
         for (const TechDraw::FacePtr& face : dvs->getTDFaceGeometry()) {
             const std::vector<std::vector<Pt>> contours =
                 faceContours(face, style.deflection);
@@ -1465,7 +1694,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                     hf.rotation = dvs->HatchRotation.getValue();
                     hf.offset = dvs->HatchOffset.getValue();
                     rasterized =
-                        emitHatchRaster(out, rec, sid, contours, ox, oy, hf);
+                        emitHatchFill(out, rec, sid, contours, ox, oy, hf);
                 }
                 else if (dvs->CutSurfaceDisplay.isValue("PatHatch")) {
                     const double weightMm = svp->WeightPattern.getValue();
@@ -1488,8 +1717,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             }
             if (!rasterized && out.hasImage(sid))
                 out.removeImage(sid);
-            if (sectionEdges && sectionEdgeWidth > 0.0f
-                && emitFacePath(rec, contours, ox, oy))
+            if (sectionEdges && emitFacePath(rec, contours, ox, oy))
                 rec.stroke(sectionEdgeColor, sectionEdgeWidth);
             if (out.hasItem(sid))
                 out.removeItem(sid);
@@ -1506,9 +1734,10 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     int iEdge = 0;
     for (const TechDraw::BaseGeomPtr& geom : dvp->getEdgeGeometry()) {
         Page2D::Recorder rec;
-        EdgeStroke es = resolveEdgeStroke(dvp, vp, geom, iEdge, style);
-        if (es.show && es.width > 0.0f) {
-            if (es.dashes.empty()) {
+        EdgeStroke es =
+            resolveEdgeStroke(dvp, vp, geom, iEdge, style, hairline);
+        if (es.show) {
+            if (es.dash.empty()) {
                 if (emitEdge(rec, geom, ox, oy, style.deflection))
                     rec.stroke(es.color, es.width);
             }
@@ -1519,7 +1748,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                 discretize(geom, style.deflection, pts);
                 if (pts.size() >= 2) {
                     rec.beginPath();
-                    emitDashedPolyline(rec, pts, ox, oy, es.dashes);
+                    emitDashedPolyline(rec, pts, ox, oy, es.dash);
                     rec.stroke(es.color, es.width);
                 }
             }
@@ -1532,13 +1761,20 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     sweep('e', index);
 
     // Vertex dots and arc center marks (QGIViewPart::drawAllVertexes):
-    // radius LineWidth * VertexScale, never in CoarseView or with
+    // LineWidth * VertexScale across, never in CoarseView or with
     // frames off; center marks are crosses, gated by ArcCenterMarks.
+    // Across, not out from the centre: QGIVertex::setRadius draws an
+    // ellipse as WIDE as its argument, so what the Qt tier calls the
+    // radius is the dot's diameter.
     const double vertexScale =
         vp ? vp->VertexScale.getValue() : TechDraw::Preferences::vertexScale();
     const double lineWidthMm = vp ? vp->lineWidthScaled() : 0.42;
     const bool showVerts = !dvp->CoarseView.getValue() && frames;
-    const bool showCenters = vp && vp->ArcCenterMarks.getValue();
+    // QGIViewPart::showCenterMarks: with frames off, only if they print
+    const bool showCenters = vp && vp->ArcCenterMarks.getValue()
+        && (frames
+            || TechDraw::Preferences::getPreferenceGroup("Decorations")
+                   ->GetBool("PrintCenterMarks", TechDraw::TechDrawParams::defaultPrintCenterMarks()));
     const uint32_t vertexColor = vp
         ? packColor(PreferencesGui::getAccessibleQColor(
               PreferencesGui::vertexQColor()))
@@ -1550,21 +1786,26 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         const float vy = oy + (float)Rez::guiX(vert->y());
         if (vert->isCenter()) {
             if (showCenters) {
-                const float half = (float)Rez::guiX(
-                    lineWidthMm * vertexScale * vp->CenterScale.getValue()
-                    / 2.0);
+                // QGICMark: each arm is as long as the size it is given
+                // (the cross is twice that across), in the centre mark
+                // colour, which is a preference of its own.
+                const float arm = (float)Rez::guiX(
+                    lineWidthMm * vertexScale * vp->CenterScale.getValue());
                 rec.beginPath();
-                rec.moveTo(vx - half, vy);
-                rec.lineTo(vx + half, vy);
-                rec.moveTo(vx, vy - half);
-                rec.lineTo(vx, vy + half);
-                rec.stroke(vertexColor, (float)Rez::guiX(lineWidthMm * 0.5));
+                rec.moveTo(vx - arm, vy);
+                rec.lineTo(vx + arm, vy);
+                rec.moveTo(vx, vy - arm);
+                rec.lineTo(vx, vy + arm);
+                // QGICMark is a QGIPrimPath too: half the line's width
+                rec.stroke(packColor(PreferencesGui::centerQColor()),
+                           primPathWidth(Rez::guiX(lineWidthMm) * 0.5,
+                                         hairline));
             }
         }
         else if (showVerts && !vert->isReference()) {
             rec.beginPath();
             rec.circle(vx, vy,
-                       vp ? (float)Rez::guiX(lineWidthMm * vertexScale)
+                       vp ? (float)Rez::guiX(lineWidthMm * vertexScale) / 2.0f
                           : style.vertexRadius);
             rec.fillConvex(vertexColor);
         }
@@ -1575,10 +1816,25 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     sweep('v', index);
 }
 
-void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer)
+void PageFeed::pagePosition(const TechDraw::DrawView* view, double& x,
+                            double& y)
+{
+    x = view->X.getValue();
+    y = view->Y.getValue();
+    if (auto item = dynamic_cast<const TechDraw::DrawProjGroupItem*>(view)) {
+        if (TechDraw::DrawProjGroup* group = item->getPGroup()) {
+            x += group->X.getValue();
+            y += group->Y.getValue();
+        }
+    }
+}
+
+void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer,
+                               float hairline)
 {
     if (!qgiv)
         return;
+    HairlineScope scope(hairline);
     TechDraw::DrawView* feature = qgiv->getViewObject();
     const char* name = feature ? feature->getNameInDocument() : nullptr;
     if (!name)
@@ -1609,10 +1865,12 @@ void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer)
                 std::move(rec));
 }
 
-void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
+void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer,
+                                   float hairline)
 {
     if (!qgiv)
         return;
+    HairlineScope scope(hairline);
     TechDraw::DrawView* feature = qgiv->getViewObject();
     const char* name = feature ? feature->getNameInDocument() : nullptr;
     if (!name)
@@ -1624,9 +1882,21 @@ void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
     imgs.name = name;
     imgs.tag = 'j';
     if (qgiv->isVisible()) {
-        for (QGraphicsItem* child : qgiv->childItems()) {
-            if (dynamic_cast<QGIDecoration*>(child))
-                captureItemTree(child, rec, qgiv, &imgs);
+        // Everything that is not fed from App data or under an id of
+        // its own: the decorations, and the frame, label, caption and
+        // lock every view has (the lock is a child of the frame).
+        // Nested views are left out by the walker.
+        QList<QGraphicsItem*> children = qgiv->childItems();
+        std::stable_sort(children.begin(), children.end(),
+                         [](const QGraphicsItem* a, const QGraphicsItem* b) {
+                             return a->zValue() < b->zValue();
+                         });
+        for (QGraphicsItem* child : children) {
+            if (dynamic_cast<QGIPrimPath*>(child)          // feedViewPart
+                || dynamic_cast<QGIMatting*>(child)        // below
+                || dynamic_cast<QGraphicsPixmapItem*>(child)) // the underlay
+                continue;
+            captureItemTree(child, rec, qgiv, &imgs);
         }
     }
     purgeCapturedImages(out, imgs);
@@ -1651,8 +1921,96 @@ void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
                 std::move(mrec));
 }
 
+void PageFeed::feedViewState(QGIView* qgiv, Page2D& out, uint32_t layer,
+                             float hairline)
+{
+    if (!qgiv)
+        return;
+    HairlineScope scope(hairline);
+    TechDraw::DrawView* feature = qgiv->getViewObject();
+    const char* name = feature ? feature->getNameInDocument() : nullptr;
+    if (!name)
+        return;
+    if (!dynamic_cast<TechDraw::DrawViewPart*>(feature)) {
+        // all of it is a capture, and a capture reads the colours of now
+        feedViewCapture(qgiv, out, layer, hairline);
+        return;
+    }
+    feedViewDecorations(qgiv, out, layer, hairline);
+
+    // The geometry feedViewPart drew from App data is in its normal
+    // colours. What is preselected or selected is laid over it, read
+    // off the Qt items: a face as the last of the faces -- over the
+    // fills and the shaded underlay, under the hatch lines and the
+    // edges, which is as far as the Qt tier raises it
+    // (QGIFace::raiseForHighlight) -- an edge over the
+    // edges, a vertex over the vertices.
+    Page2D::Recorder faces, edges, vertices;
+    if (qgiv->isVisible()) {
+        for (QGraphicsItem* child : qgiv->childItems()) {
+            auto prim = dynamic_cast<QGIPrimPath*>(child);
+            if (!prim)
+                continue;
+            const bool lit = prim->isPretty() && child->isVisible();
+            // An edge that is lit is laid over the edges, and the one
+            // feedViewPart drew is left out of the drawing meanwhile:
+            // the two are the same line at the same width, and where
+            // the upper one's edge is soft the lower one's colour would
+            // come through it, a dark rim to the highlight.
+            if (auto edge = dynamic_cast<QGIEdge*>(child)) {
+                if (edge->getProjIndex() >= 0)
+                    out.setItemHidden(
+                        itemId(name, 'e', (uint32_t)edge->getProjIndex()), lit);
+            }
+            if (!lit)
+                continue;
+            if (dynamic_cast<QGIFace*>(child))
+                capturePrimPath(faces, prim);
+            else if (dynamic_cast<QGIVertex*>(child))
+                capturePrimPath(vertices, prim);
+            else
+                capturePrimPath(edges, prim);
+        }
+    }
+    // Removed and set again, not replaced: an item replaced keeps its
+    // place in the draw order of its kind, and geometry fed since then
+    // would be drawn over it.
+    auto lay = [&](char tag, Page2D::Kind kind, Page2D::Recorder& rec) {
+        const Page2D::ItemId id = itemId(name, tag, 0);
+        if (out.hasItem(id))
+            out.removeItem(id);
+        if (!rec.empty())
+            out.setItem(id, kind, layer, std::move(rec));
+    };
+    lay('F', Page2D::Kind::Face, faces);
+    lay('E', Page2D::Kind::Edge, edges);
+    lay('V', Page2D::Kind::Vertex, vertices);
+}
+
+namespace {
+
+void uniteExtent(const QGraphicsItem* item, const QGraphicsItem* root,
+                 QRectF& extent)
+{
+    if (item != root && dynamic_cast<const QGIView*>(item))
+        return;
+    extent |= item->sceneBoundingRect();
+    for (const QGraphicsItem* child : item->childItems())
+        uniteExtent(child, root, extent);
+}
+
+} // namespace
+
+QRectF PageFeed::sceneExtent(QGIView* qgiv)
+{
+    QRectF extent;
+    if (qgiv)
+        uniteExtent(qgiv, qgiv, extent);
+    return extent;
+}
+
 void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
-                            float rasterScale)
+                            float rasterScale, bool everyBand)
 {
     if (!page)
         return;
@@ -1709,12 +2067,21 @@ void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
         // the SVG's default size onto the page.
         renderer.render(&painter, QRectF(0, 0, pw, ph));
     }
-    out.setImage(image, (uint16_t)pw, (uint16_t)ph, raster.constBits());
+    // A host that feeds the sheet again at every band never draws it
+    // much smaller than it is, and would pay for the coarser copies of
+    // a picture this size at each band it crosses.
+    out.setImage(image, (uint16_t)pw, (uint16_t)ph, raster.constBits(),
+                 /*repeat*/ false, /*coarse*/ !everyBand);
 
     // Page coordinates: the sheet spans x in [0, W], y in [-H, 0].
     Page2D::Recorder rec;
     rec.image(image, 0.0f, (float)-sheetH, (float)sheetW, (float)sheetH);
     out.setItem(item, Page2D::Kind::Face, 0, std::move(rec));
+}
+
+bool PageFeed::hasTemplate(const Page2D& out)
+{
+    return out.hasImage(itemId("__page_template", 'i', 0));
 }
 
 void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out)

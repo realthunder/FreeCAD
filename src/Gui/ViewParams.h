@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:651)
+// Auto generated code (Gui/ViewParams.py:1086)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -94,6 +94,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseNewSelection
+    ///
+    /// Highlight selection and preselection through the selection root of
+    /// the 3D view, which allows picking sub-elements and objects inside
+    /// links. When off, only objects that ask for it are handled that way.
     static const bool & getUseNewSelection();
     static const bool & defaultUseNewSelection();
     static void removeUseNewSelection();
@@ -104,6 +108,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseSelectionRoot
+    ///
+    /// Give the visual copy a link makes of its linked object a selection
+    /// root of its own, so that each link is highlighted separately. When
+    /// off, a plain group without render caching is used.
     static const bool & getUseSelectionRoot();
     static const bool & defaultUseSelectionRoot();
     static void removeUseSelectionRoot();
@@ -141,9 +149,9 @@ public:
     ///
     /// Which render path draws a 3D view: 0 auto, 1 distributed,
     /// 2 centralized Coin caching, 3 the render cache that feeds the
-    /// render engine. NOT a user setting -- the path is chosen at
-    /// startup (RenderParams::selectRenderPath), which overrides
-    /// whatever a config carries. Set it at runtime to compare paths.
+    /// render engine. Looked at only under the render type 'Legacy'
+    /// (View/Render/Type): with the render engine the program draws
+    /// by 3 whatever this holds. Not on a preferences page.
     static const long & getRenderCache();
     static const long & defaultRenderCache();
     static void removeRenderCache();
@@ -173,6 +181,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RandomColor
+    ///
+    /// Give every new object a random shape colour instead of the default
+    /// shape colour.
     static const bool & getRandomColor();
     static const bool & defaultRandomColor();
     static void removeRandomColor();
@@ -183,6 +194,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter BoundingBoxColor
+    ///
+    /// Colour of the bounding box drawn for an object that has its bounding
+    /// box display turned on.
     static const unsigned long & getBoundingBoxColor();
     static const unsigned long & defaultBoundingBoxColor();
     static void removeBoundingBoxColor();
@@ -193,11 +207,27 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AnnotationTextColor
+    ///
+    /// Default text colour of new annotation objects.
     static const unsigned long & getAnnotationTextColor();
     static const unsigned long & defaultAnnotationTextColor();
     static void removeAnnotationTextColor();
     static void setAnnotationTextColor(const unsigned long &v);
     static const char *docAnnotationTextColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CursorCrosshairColor
+    ///
+    /// Colour of the crosshair the drawing tools of the Sketcher put in
+    /// place of the mouse pointer. The Sketcher's Appearance page shows
+    /// it. Takes effect at the next tool started.
+    static const unsigned long & getCursorCrosshairColor();
+    static const unsigned long & defaultCursorCrosshairColor();
+    static void removeCursorCrosshairColor();
+    static void setCursorCrosshairColor(const unsigned long &v);
+    static const char *docCursorCrosshairColor();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -227,6 +257,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MarkerSize
+    ///
+    /// Size in pixels of the point markers drawn in the 3D view, such as
+    /// sketch vertices and the end points of a measurement.
     static const long & getMarkerSize();
     static const long & defaultMarkerSize();
     static void removeMarkerSize();
@@ -237,6 +270,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultLinkColor
+    ///
+    /// Default colour of the material of a new link, which is used when the
+    /// link overrides the material of its linked object.
     static const unsigned long & getDefaultLinkColor();
     static const unsigned long & defaultDefaultLinkColor();
     static void removeDefaultLinkColor();
@@ -247,6 +283,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeLineColor
+    ///
+    /// Default line colour of new shapes.
     static const unsigned long & getDefaultShapeLineColor();
     static const unsigned long & defaultDefaultShapeLineColor();
     static void removeDefaultShapeLineColor();
@@ -257,6 +295,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeVertexColor
+    ///
+    /// Default vertex colour of new shapes.
     static const unsigned long & getDefaultShapeVertexColor();
     static const unsigned long & defaultDefaultShapeVertexColor();
     static void removeDefaultShapeVertexColor();
@@ -267,6 +307,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeColor
+    ///
+    /// Default face colour of new shapes. Not used while random colours are
+    /// turned on.
     static const unsigned long & getDefaultShapeColor();
     static const unsigned long & defaultDefaultShapeColor();
     static void removeDefaultShapeColor();
@@ -277,6 +320,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeTransparency
+    ///
+    /// Default transparency of new shapes in percent. 0 is opaque, 100 is
+    /// fully transparent.
     static const long & getDefaultShapeTransparency();
     static const long & defaultDefaultShapeTransparency();
     static void removeDefaultShapeTransparency();
@@ -287,6 +333,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeLineWidth
+    ///
+    /// Default line width of new shapes, in pixels.
     static const long & getDefaultShapeLineWidth();
     static const long & defaultDefaultShapeLineWidth();
     static void removeDefaultShapeLineWidth();
@@ -297,6 +345,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapePointSize
+    ///
+    /// Default vertex size of new shapes, in pixels.
     static const long & getDefaultShapePointSize();
     static const long & defaultDefaultShapePointSize();
     static void removeDefaultShapePointSize();
@@ -307,6 +357,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CoinCycleCheck
+    ///
+    /// Check the 3D scene for an object that contains itself while the
+    /// scene is traversed. A cycle is reported and skipped instead of being
+    /// followed without end.
     static const bool & getCoinCycleCheck();
     static const bool & defaultCoinCycleCheck();
     static void removeCoinCycleCheck();
@@ -317,6 +371,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnablePropertyViewForInactiveDocument
+    ///
+    /// Keep the property view usable when the selected objects belong to a
+    /// document other than the active one. When off, the property view is
+    /// disabled for such a selection.
     static const bool & getEnablePropertyViewForInactiveDocument();
     static const bool & defaultEnablePropertyViewForInactiveDocument();
     static void removeEnablePropertyViewForInactiveDocument();
@@ -351,6 +409,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UpdateSelectionVisual
+    ///
+    /// Bring back the selection highlight of a selected object when it is
+    /// shown again after being hidden.
     static const bool & getUpdateSelectionVisual();
     static const bool & defaultUpdateSelectionVisual();
     static void removeUpdateSelectionVisual();
@@ -361,6 +422,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LinkChildrenDirect
+    ///
+    /// Show the children of a group with its own coordinate system, such as
+    /// a part or body, through a link view. A link to the group then shows
+    /// the children's visuals directly.
     static const bool & getLinkChildrenDirect();
     static const bool & defaultLinkChildrenDirect();
     static void removeLinkChildrenDirect();
@@ -604,6 +669,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionTransparency
+    ///
+    /// Transparency given to a selected face so that what lies behind it
+    /// stays visible, used when picking through objects and when the
+    /// highlight is drawn on top. 0 is opaque, 1 is invisible.
     static const double & getSelectionTransparency();
     static const double & defaultSelectionTransparency();
     static void removeSelectionTransparency();
@@ -614,6 +683,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionLinePattern
+    ///
+    /// Dash pattern of the hidden part of a selected line that is shown on
+    /// top of the scene, as a 16 bit mask. 0 draws it solid.
     static const long & getSelectionLinePattern();
     static const long & defaultSelectionLinePattern();
     static void removeSelectionLinePattern();
@@ -624,6 +696,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionLinePatternScale
+    ///
+    /// Number of times each bit of the dash pattern of a selected hidden
+    /// line is repeated. Larger values give longer dashes. 1 or less uses
+    /// the pattern as it is.
     static const long & getSelectionLinePatternScale();
     static const long & defaultSelectionLinePatternScale();
     static void removeSelectionLinePatternScale();
@@ -646,6 +722,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionBBoxLineWidth
+    ///
+    /// Line width in pixels of the bounding box drawn around a selected
+    /// object when selection is shown by bounding box.
     static const double & getSelectionBBoxLineWidth();
     static const double & defaultSelectionBBoxLineWidth();
     static void removeSelectionBBoxLineWidth();
@@ -668,6 +747,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreSelectionDelay
+    ///
+    /// Shortest time in seconds between two preselection picks in the 3D
+    /// view while the mouse moves. 0 picks on every mouse move.
     static const double & getPreSelectionDelay();
     static const double & defaultPreSelectionDelay();
     static void removePreSelectionDelay();
@@ -678,6 +760,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PickBackFaceDelay
+    ///
+    /// Number of mouse wheel steps, with Shift and Ctrl held, that it takes
+    /// to move the pick one object further behind or back toward the
+    /// front.
     static const long & getPickBackFaceDelay();
     static const long & defaultPickBackFaceDelay();
     static void removePickBackFaceDelay();
@@ -688,6 +774,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseNewRayPick
+    ///
+    /// Stop a single pick in the 3D view at the nearest hit instead of
+    /// collecting everything along the pick ray. Off is the older and
+    /// slower way.
     static const bool & getUseNewRayPick();
     static const bool & defaultUseNewRayPick();
     static void removeUseNewRayPick();
@@ -698,6 +788,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ViewSelectionExtendFactor
+    ///
+    /// Scale applied to the bounding box of the selection when testing
+    /// whether it is already in view, before the view is extended to
+    /// include it. Currently has no effect.
     static const double & getViewSelectionExtendFactor();
     static const double & defaultViewSelectionExtendFactor();
     static void removeViewSelectionExtendFactor();
@@ -720,6 +814,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseBoundingBoxCache
+    ///
+    /// Remember the bounding boxes of objects instead of computing them
+    /// again on every request.
     static const bool & getUseBoundingBoxCache();
     static const bool & defaultUseBoundingBoxCache();
     static void removeUseBoundingBoxCache();
@@ -755,6 +852,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NewDocumentCameraScale
+    ///
+    /// Camera zoom of a new document, as the diameter of the sphere that
+    /// fits on the screen. A quarter of it is the default size of a new
+    /// coordinate system.
     static const double & getNewDocumentCameraScale();
     static const double & defaultNewDocumentCameraScale();
     static void removeNewDocumentCameraScale();
@@ -765,6 +866,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MaxOnTopSelections
+    ///
+    /// Largest number of selected objects that are drawn on top of the
+    /// scene. A larger selection is highlighted in place, and the tree view
+    /// does not expand to show its items.
     static const long & getMaxOnTopSelections();
     static const long & defaultMaxOnTopSelections();
     static void removeMaxOnTopSelections();
@@ -775,6 +880,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MaxViewSelections
+    ///
+    /// Largest number of selected objects taken into account when the view
+    /// is fitted or aligned to the selection.
     static const long & getMaxViewSelections();
     static const long & defaultMaxViewSelections();
     static void removeMaxViewSelections();
@@ -785,6 +893,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MaxSelectionNotification
+    ///
+    /// Number of pending add and remove selection notices after which they
+    /// are replaced by one notice that the whole selection changed. 0 sets
+    /// no limit.
     static const long & getMaxSelectionNotification();
     static const long & defaultMaxSelectionNotification();
     static void removeMaxSelectionNotification();
@@ -923,6 +1035,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineFaceColor
+    ///
+    /// Colour all faces are drawn in by the hidden line display style when
+    /// it overrides the face colour.
     static const unsigned long & getHiddenLineFaceColor();
     static const unsigned long & defaultHiddenLineFaceColor();
     static void removeHiddenLineFaceColor();
@@ -945,6 +1060,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineColor
+    ///
+    /// Colour all lines and outlines are drawn in by the hidden line
+    /// display style when it overrides the line colour.
     static const unsigned long & getHiddenLineColor();
     static const unsigned long & defaultHiddenLineColor();
     static void removeHiddenLineColor();
@@ -967,6 +1085,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineBackground
+    ///
+    /// Background colour of a 3D view in the hidden line display style,
+    /// used when overriding the background is turned on.
     static const unsigned long & getHiddenLineBackground();
     static const unsigned long & defaultHiddenLineBackground();
     static void removeHiddenLineBackground();
@@ -977,6 +1098,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineOverrideBackground
+    ///
+    /// Replace the background of a 3D view with the hidden line background
+    /// colour while the hidden line display style is active.
     static const bool & getHiddenLineOverrideBackground();
     static const bool & defaultHiddenLineOverrideBackground();
     static void removeHiddenLineOverrideBackground();
@@ -1035,6 +1159,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineOutlineWidth
+    ///
+    /// Width in pixels of the outlines drawn by the hidden line display
+    /// style. 0 uses the default width.
     static const double & getHiddenLineOutlineWidth();
     static const double & defaultHiddenLineOutlineWidth();
     static void removeHiddenLineOutlineWidth();
@@ -1045,6 +1172,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineWidth
+    ///
+    /// Width in pixels of the lines of all objects in the hidden line
+    /// display style. A value below 1 keeps each object's own line width.
     static const double & getHiddenLineWidth();
     static const double & defaultHiddenLineWidth();
     static void removeHiddenLineWidth();
@@ -1055,6 +1185,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLinePointSize
+    ///
+    /// Size in pixels of the vertices of all objects in the hidden line
+    /// display style. A value below 1 keeps each object's own point size.
     static const double & getHiddenLinePointSize();
     static const double & defaultHiddenLinePointSize();
     static void removeHiddenLinePointSize();
@@ -1101,6 +1234,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter StatusMessageTimeout
+    ///
+    /// Milliseconds a message stays in the status bar when the command
+    /// showing it gives no time of its own. 0 keeps it until the next
+    /// message.
     static const long & getStatusMessageTimeout();
     static const long & defaultStatusMessageTimeout();
     static void removeStatusMessageTimeout();
@@ -1159,6 +1296,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightIntensity
+    ///
+    /// Brightness of the light that casts the shadow.
     static const double & getShadowLightIntensity();
     static const double & defaultShadowLightIntensity();
     static void removeShadowLightIntensity();
@@ -1169,6 +1308,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightDirectionX
+    ///
+    /// X component of the direction of the light that casts the shadow.
     static const double & getShadowLightDirectionX();
     static const double & defaultShadowLightDirectionX();
     static void removeShadowLightDirectionX();
@@ -1179,6 +1320,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightDirectionY
+    ///
+    /// Y component of the direction of the light that casts the shadow.
     static const double & getShadowLightDirectionY();
     static const double & defaultShadowLightDirectionY();
     static void removeShadowLightDirectionY();
@@ -1189,6 +1332,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightDirectionZ
+    ///
+    /// Z component of the direction of the light that casts the shadow.
     static const double & getShadowLightDirectionZ();
     static const double & defaultShadowLightDirectionZ();
     static void removeShadowLightDirectionZ();
@@ -1199,6 +1344,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightColor
+    ///
+    /// Colour of the light that casts the shadow.
     static const unsigned long & getShadowLightColor();
     static const unsigned long & defaultShadowLightColor();
     static void removeShadowLightColor();
@@ -1248,6 +1395,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowGroundColor
+    ///
+    /// Colour of the ground that receives the shadow.
     static const unsigned long & getShadowGroundColor();
     static const unsigned long & defaultShadowGroundColor();
     static void removeShadowGroundColor();
@@ -1258,6 +1407,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowGroundBumpMap
+    ///
+    /// Image file used as a bump map that gives the shadow ground a surface
+    /// relief. Empty for a flat ground.
     static const std::string & getShadowGroundBumpMap();
     static const std::string & defaultShadowGroundBumpMap();
     static void removeShadowGroundBumpMap();
@@ -1268,6 +1420,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowGroundTexture
+    ///
+    /// Image file drawn as a texture on the ground that receives the
+    /// shadow. Empty for a ground of plain colour.
     static const std::string & getShadowGroundTexture();
     static const std::string & defaultShadowGroundTexture();
     static void removeShadowGroundTexture();
@@ -1311,18 +1466,10 @@ public:
     //@{
     /// Accessor for parameter ShadowGroundTransparency
     ///
-    /// How much of the shadow receiver plane is drawn beside the shadow
-    /// itself.
-    /// 
-    /// 1 (the default) is the receiver a view of a part usually wants: the
-    /// ground carries the shadow and nothing else, so there is no plane in
-    /// the frame and no horizon behind the model -- only the shadow, at a
-    /// fixed 0.8 opacity where it is fully dark. Anything below 1 draws a
-    /// solid ground of that transparency and shades it, which is what a
-    /// presentation image of a whole scene wants.
-    /// 
-    /// A ground reflection needs a surface to blend onto, so it keeps the
-    /// solid ground whatever this says.
+    /// Transparency of the ground that receives the shadow. 1 (the default)
+    /// draws the shadow only, with no ground plane; lower values draw a
+    /// shaded ground of that transparency. A ground reflection always draws
+    /// the ground.
     static const double & getShadowGroundTransparency();
     static const double & defaultShadowGroundTransparency();
     static void removeShadowGroundTransparency();
@@ -1346,6 +1493,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowExtraRedraw
+    ///
+    /// Redraw the 3D view once more after a change while shadows are shown,
+    /// so that the shadow catches up with the scene. Currently has no
+    /// effect.
     static const bool & getShadowExtraRedraw();
     static const bool & defaultShadowExtraRedraw();
     static void removeShadowExtraRedraw();
@@ -1507,6 +1658,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PropertyViewTimer
+    ///
+    /// Milliseconds the property view waits before it refreshes after the
+    /// selection or a property changes.
     static const unsigned long & getPropertyViewTimer();
     static const unsigned long & defaultPropertyViewTimer();
     static void removePropertyViewTimer();
@@ -1953,6 +2107,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TransformOnTop
+    ///
+    /// Show an object on top of the scene while it is moved with the
+    /// transform dragger. Currently has no effect.
     static const bool & getTransformOnTop();
     static const bool & defaultTransformOnTop();
     static void removeTransformOnTop();
@@ -2039,13 +2196,9 @@ public:
     //@{
     /// Accessor for parameter RenderCacheKeepMax
     ///
-    /// Largest vertex cache map, in entries, that an object keeps after
-    /// its parent has copied it up. A parent flattens its children into
-    /// one map and then drops theirs, so the next frame re-derives the
-    /// map of every object in the scene however little moved; keeping the
-    /// small ones costs a few entries of memory each and is what stops
-    /// that. The large ones are the copies of whole subtrees, which is the
-    /// memory this bounds. Set zero to keep none.
+    /// Largest render cache, in entries, an object keeps after its parent has
+    /// merged it. Keeping the small ones avoids rebuilding them every frame.
+    /// 0 keeps none.
     static const long & getRenderCacheKeepMax();
     static const long & defaultRenderCacheKeepMax();
     static void removeRenderCacheKeepMax();
@@ -2057,16 +2210,10 @@ public:
     //@{
     /// Accessor for parameter RenderCacheIncremental
     ///
-    /// Splice a rebuilt object's flattened vertex cache map from the map
-    /// of the publish before it, instead of merging every child again. A
-    /// container holding thousands of objects re-derives all of them on
-    /// every publish however few moved, and the merge is priced per child
-    /// rather than per entry. It costs memory, because the map of the
-    /// previous publish has to survive the traversal that replaces it:
-    /// on a 17800-object assembly, 49MB against 45% off the flatten.
-    /// 0 rebuilds (the old behaviour), 1 splices, 2 splices and also
-    /// rebuilds wholesale to compare the two, logging any disagreement
-    /// -- slow, for checking the splice, not for use.
+    /// Update a container's render cache from its previous one instead of
+    /// merging all its children again. Faster on large assemblies, at the
+    /// cost of some memory. 0 off, 1 on, 2 does both and logs any difference
+    /// (slow, for checking).
     static const long & getRenderCacheIncremental();
     static const long & defaultRenderCacheIncremental();
     static void removeRenderCacheIncremental();
@@ -2078,16 +2225,9 @@ public:
     //@{
     /// Accessor for parameter RenderCacheMeshReuse
     ///
-    /// Reuse the mesh a vertex cache was translated into for the backend,
-    /// instead of translating it again on every publish. A vertex cache is
-    /// built once and never changed afterwards -- a shape whose geometry
-    /// moves gets a new cache -- so the translation is the same work every
-    /// time, and on a large assembly it is the largest single cost of a
-    /// publish. Meshes are held only for as long as some draw list still
-    /// refers to them. 0 translates every publish (the old behaviour), 1
-    /// reuses, 2 reuses and also translates afresh to compare the two,
-    /// logging any disagreement -- slow, for checking the reuse, not for
-    /// use.
+    /// Reuse the mesh a render cache was converted to for the render backend
+    /// instead of converting it at every update. 0 off, 1 on, 2 does both and
+    /// logs any difference (slow, for checking).
     static const long & getRenderCacheMeshReuse();
     static const long & defaultRenderCacheMeshReuse();
     static void removeRenderCacheMeshReuse();
@@ -2114,15 +2254,10 @@ public:
     //@{
     /// Accessor for parameter LiveImportRedrawBudget
     ///
-    /// Percentage of the time the 3D view may spend redrawing while a
-    /// progressive import is filling the document. Each new object makes
-    /// the next frame rebuild the render cache of the whole scene, so on a
-    /// large import a single frame costs far more than the objects drawn
-    /// in it; keeping frames to a share of the time is what bounds that
-    /// cost. The resulting wait scales with the measured frame cost, is
-    /// never shorter than LiveImportRedrawInterval nor longer than ten
-    /// times it, and mouse input renders immediately regardless. Set zero
-    /// to budget nothing and use the plain interval.
+    /// Percentage of time the 3D view may spend redrawing while a progressive
+    /// import fills the document. The wait between frames is never shorter
+    /// than LiveImportRedrawInterval nor longer than ten times it. 0 uses the
+    /// plain interval.
     static const long & getLiveImportRedrawBudget();
     static const long & defaultLiveImportRedrawBudget();
     static void removeLiveImportRedrawBudget();
@@ -2134,15 +2269,9 @@ public:
     //@{
     /// Accessor for parameter LiveImportPumpInterval
     ///
-    /// Minimum interval in milliseconds between two turns of the event
-    /// loop while a live import fills the document. The import holds the
-    /// main thread, so the view only sees input and paints where the
-    /// import hands the loop a slice, and on its own the progress bar
-    /// does that on a 200 ms update throttle -- a slideshow to someone
-    /// orbiting the model. Offering the loop a turn costs nothing when
-    /// nothing is queued, and what a frame costs is bounded by
-    /// LiveImportRedrawBudget rather than by how often a turn is
-    /// offered. Set zero to pump at every offer.
+    /// Minimum milliseconds between two chances for the window to process
+    /// input and repaint while a live import fills the document. 0 offers one
+    /// at every opportunity.
     static const long & getLiveImportPumpInterval();
     static const long & defaultLiveImportPumpInterval();
     static void removeLiveImportPumpInterval();
@@ -2153,6 +2282,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetFactor
+    ///
+    /// Slope scaled depth offset that pulls selection and preselection
+    /// highlights toward the viewer, so that the faces under them do not
+    /// hide them. Preselection gets twice the offset.
     static const double & getRenderHighlightPolygonOffsetFactor();
     static const double & defaultRenderHighlightPolygonOffsetFactor();
     static void removeRenderHighlightPolygonOffsetFactor();
@@ -2163,6 +2296,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetUnits
+    ///
+    /// Constant depth offset, in depth buffer units, that pulls selection
+    /// and preselection highlights toward the viewer, so that the faces
+    /// under them do not hide them. Preselection gets twice the offset.
     static const double & getRenderHighlightPolygonOffsetUnits();
     static const double & defaultRenderHighlightPolygonOffsetUnits();
     static void removeRenderHighlightPolygonOffsetUnits();
@@ -2187,6 +2324,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultFontSize
+    ///
+    /// Point size of the application font. 0 uses the system default.
+    /// Sizes from 1 to 7 are raised to 8.
     static const long & getDefaultFontSize();
     static const long & defaultDefaultFontSize();
     static void removeDefaultFontSize();
@@ -2198,6 +2338,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableTaskPanelKeyTranslate
+    ///
+    /// Let the Up and Down arrow keys move the keyboard focus through the
+    /// task panel, the way Shift+Tab and Tab do.
     static const bool & getEnableTaskPanelKeyTranslate();
     static const bool & defaultEnableTaskPanelKeyTranslate();
     static void removeEnableTaskPanelKeyTranslate();
@@ -2209,6 +2352,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableMenuBarCheckBox
+    ///
+    /// Show the entries of the toolbar and dock window menus of the menu
+    /// bar as checkboxes, the way the right-click menu of the main window
+    /// shows them. Off by default on macOS.
     static const bool & getEnableMenuBarCheckBox();
     static const bool & defaultEnableMenuBarCheckBox();
     static void removeEnableMenuBarCheckBox();
@@ -2219,6 +2366,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableBacklight
+    ///
+    /// Turn on the backlight of the 3D view, a second light that shines on
+    /// the faces turned away from the viewer.
     static const bool & getEnableBacklight();
     static const bool & defaultEnableBacklight();
     static void removeEnableBacklight();
@@ -2229,6 +2379,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter BacklightColor
+    ///
+    /// Colour of the backlight, the light that shines on the faces turned
+    /// away from the viewer.
     static const unsigned long & getBacklightColor();
     static const unsigned long & defaultBacklightColor();
     static void removeBacklightColor();
@@ -2305,6 +2458,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ToolTipDisable
+    ///
+    /// Turn off the tool tips of the application. Tips shown as an overlay
+    /// in the 3D view, such as the preselection tip, still appear.
     static const bool & getToolTipDisable();
     static const bool & defaultToolTipDisable();
     static void removeToolTipDisable();
@@ -2315,6 +2471,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AxisXColor
+    ///
+    /// Colour of the X axis of the transform dragger and of other axis
+    /// markers in the 3D view.
     static const unsigned long & getAxisXColor();
     static const unsigned long & defaultAxisXColor();
     static void removeAxisXColor();
@@ -2325,6 +2484,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AxisYColor
+    ///
+    /// Colour of the Y axis of the transform dragger and of other axis
+    /// markers in the 3D view.
     static const unsigned long & getAxisYColor();
     static const unsigned long & defaultAxisYColor();
     static void removeAxisYColor();
@@ -2335,6 +2497,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AxisZColor
+    ///
+    /// Colour of the Z axis of the transform dragger and of other axis
+    /// markers in the 3D view.
     static const unsigned long & getAxisZColor();
     static const unsigned long & defaultAxisZColor();
     static void removeAxisZColor();
@@ -2405,7 +2570,918 @@ public:
     static const char *docDatumTemporaryScaleFactor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:657)
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EyeDistance
+    ///
+    /// Offset between the left and the right eye image of a stereo 3D
+    /// view. 0.1 to 1000. Applies at once to all open 3D views.
+    static const double & getEyeDistance();
+    static const double & defaultEyeDistance();
+    static void removeEyeDistance();
+    static void setEyeDistance(const double &v);
+    static const char *docEyeDistance();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CornerCoordSystem
+    ///
+    /// Show the small coordinate system in the corner of every 3D view.
+    /// Applies at once.
+    static const bool & getCornerCoordSystem();
+    static const bool & defaultCornerCoordSystem();
+    static void removeCornerCoordSystem();
+    static void setCornerCoordSystem(const bool &v);
+    static const char *docCornerCoordSystem();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CornerCoordSystemSize
+    ///
+    /// Size of the coordinate system in the corner of the 3D views, 2 to
+    /// 100. Applies at once.
+    static const long & getCornerCoordSystemSize();
+    static const long & defaultCornerCoordSystemSize();
+    static void removeCornerCoordSystemSize();
+    static void setCornerCoordSystemSize(const long &v);
+    static const char *docCornerCoordSystemSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowAxisCross
+    ///
+    /// Show the axis cross at the origin of the 3D views. Applies at once
+    /// to the open views and to new ones.
+    static const bool & getShowAxisCross();
+    static const bool & defaultShowAxisCross();
+    static void removeShowAxisCross();
+    static void setShowAxisCross(const bool &v);
+    static const char *docShowAxisCross();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowFPS
+    ///
+    /// Show a frames per second counter in the 3D views. Applies at once.
+    static const bool & getShowFPS();
+    static const bool & defaultShowFPS();
+    static void removeShowFPS();
+    static void setShowFPS(const bool &v);
+    static const char *docShowFPS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseVBO
+    ///
+    /// Let Coin draw with vertex buffer objects. Applies at once to the
+    /// open 3D views except split views; the driver override that goes
+    /// with it is set at startup only.
+    static const bool & getUseVBO();
+    static const bool & defaultUseVBO();
+    static void removeUseVBO();
+    static void setUseVBO(const bool &v);
+    static const char *docUseVBO();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Orthographic
+    ///
+    /// Use an orthographic camera in the 3D views; the opposite of
+    /// Perspective.
+    static const bool & getOrthographic();
+    static const bool & defaultOrthographic();
+    static void removeOrthographic();
+    static void setOrthographic(const bool &v);
+    static const char *docOrthographic();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Perspective
+    ///
+    /// Use a perspective camera in the 3D views. Read when a view is
+    /// created; with ApplyCameraTypeToAll on, a change switches the open
+    /// views too.
+    static const bool & getPerspective();
+    static const bool & defaultPerspective();
+    static void removePerspective();
+    static void setPerspective(const bool &v);
+    static const char *docPerspective();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ApplyCameraTypeToAll
+    ///
+    /// When the camera type setting changes, switch every open 3D view
+    /// to it as well.
+    static const bool & getApplyCameraTypeToAll();
+    static const bool & defaultApplyCameraTypeToAll();
+    static void removeApplyCameraTypeToAll();
+    static void setApplyCameraTypeToAll(const bool &v);
+    static const char *docApplyCameraTypeToAll();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AntiAliasing
+    ///
+    /// Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA
+    /// 2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a
+    /// face that no edge runs along is a staircase. A change is taken
+    /// by the open views at once.
+    static const long & getAntiAliasing();
+    static const long & defaultAntiAliasing();
+    static void removeAntiAliasing();
+    static void setAntiAliasing(const long &v);
+    static const char *docAntiAliasing();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransparentObjectRenderType
+    ///
+    /// How Coin draws transparent objects: 0 in one pass, 1 with the back
+    /// faces of non-solid objects in a pass of their own. Applies at once
+    /// to the open 3D views except split views.
+    static const long & getTransparentObjectRenderType();
+    static const long & defaultTransparentObjectRenderType();
+    static void removeTransparentObjectRenderType();
+    static void setTransparentObjectRenderType(const long &v);
+    static const char *docTransparentObjectRenderType();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InternalTextureFormat
+    ///
+    /// Pixel format of the offscreen buffer a 3D view is drawn into:
+    /// Default, GL_RGB, GL_RGBA, GL_RGB8, GL_RGBA8, GL_RGB10,
+    /// GL_RGB10_A2, GL_RGB16, GL_RGBA16, GL_RGB32F or GL_RGBA32F. Read
+    /// each time a buffer is created.
+    static const std::string & getInternalTextureFormat();
+    static const std::string & defaultInternalTextureFormat();
+    static void removeInternalTextureFormat();
+    static void setInternalTextureFormat(const std::string &v);
+    static const char *docInternalTextureFormat();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Gradient
+    ///
+    /// Fill the background of the 3D views with a linear gradient from
+    /// BackgroundColor2 (top) to BackgroundColor3 (bottom). Wins over
+    /// RadialGradient. Applies at once.
+    static const bool & getGradient();
+    static const bool & defaultGradient();
+    static void removeGradient();
+    static void setGradient(const bool &v);
+    static const char *docGradient();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RadialGradient
+    ///
+    /// Fill the background of the 3D views with a radial gradient; used
+    /// when Gradient is off. With both off the plain BackgroundColor is
+    /// used. Applies at once.
+    static const bool & getRadialGradient();
+    static const bool & defaultRadialGradient();
+    static void removeRadialGradient();
+    static void setRadialGradient(const bool &v);
+    static const char *docRadialGradient();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Simple
+    ///
+    /// The 'Simple color' choice of the Colors page. The views use a
+    /// plain background whenever Gradient and RadialGradient are both
+    /// off, whatever this says.
+    static const bool & getSimple();
+    static const bool & defaultSimple();
+    static void removeSimple();
+    static void setSimple(const bool &v);
+    static const char *docSimple();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BackgroundColor
+    ///
+    /// Colour of the 3D view background when no gradient is used.
+    /// Applies at once.
+    static const unsigned long & getBackgroundColor();
+    static const unsigned long & defaultBackgroundColor();
+    static void removeBackgroundColor();
+    static void setBackgroundColor(const unsigned long &v);
+    static const char *docBackgroundColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BackgroundColor2
+    ///
+    /// First colour of the background gradient of the 3D views: the top
+    /// of a linear one, the centre of a radial one. Applies at once.
+    static const unsigned long & getBackgroundColor2();
+    static const unsigned long & defaultBackgroundColor2();
+    static void removeBackgroundColor2();
+    static void setBackgroundColor2(const unsigned long &v);
+    static const char *docBackgroundColor2();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BackgroundColor3
+    ///
+    /// Last colour of the background gradient of the 3D views: the
+    /// bottom of a linear one, the rim of a radial one. Applies at once.
+    static const unsigned long & getBackgroundColor3();
+    static const unsigned long & defaultBackgroundColor3();
+    static void removeBackgroundColor3();
+    static void setBackgroundColor3(const unsigned long &v);
+    static const char *docBackgroundColor3();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BackgroundColor4
+    ///
+    /// Middle colour of the background gradient of the 3D views; used
+    /// only with UseBackgroundColorMid on. Applies at once.
+    static const unsigned long & getBackgroundColor4();
+    static const unsigned long & defaultBackgroundColor4();
+    static void removeBackgroundColor4();
+    static void setBackgroundColor4(const unsigned long &v);
+    static const char *docBackgroundColor4();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseBackgroundColorMid
+    ///
+    /// Give the background gradient of the 3D views a third, middle
+    /// colour (BackgroundColor4). Applies at once.
+    static const bool & getUseBackgroundColorMid();
+    static const bool & defaultUseBackgroundColorMid();
+    static void removeUseBackgroundColorMid();
+    static void setUseBackgroundColorMid(const bool &v);
+    static const char *docUseBackgroundColorMid();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EnableHeadlight
+    ///
+    /// Light the 3D views with the headlight, which follows the camera.
+    /// Applies at once to every view with no light setting of its own.
+    static const bool & getEnableHeadlight();
+    static const bool & defaultEnableHeadlight();
+    static void removeEnableHeadlight();
+    static void setEnableHeadlight(const bool &v);
+    static const char *docEnableHeadlight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightColor
+    ///
+    /// Colour of the headlight of the 3D views. Applies at once.
+    static const unsigned long & getHeadlightColor();
+    static const unsigned long & defaultHeadlightColor();
+    static void removeHeadlightColor();
+    static void setHeadlightColor(const unsigned long &v);
+    static const char *docHeadlightColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightIntensity
+    ///
+    /// Intensity of the headlight of the 3D views in percent, 0 to 100.
+    /// Applies at once.
+    static const long & getHeadlightIntensity();
+    static const long & defaultHeadlightIntensity();
+    static void removeHeadlightIntensity();
+    static void setHeadlightIntensity(const long &v);
+    static const char *docHeadlightIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightDirection
+    ///
+    /// Direction of the headlight relative to the camera, as (x,y,z).
+    /// Empty keeps the built-in direction. Turned in a 3D view from the
+    /// Display style menu (Direction), and stored here by its Save as
+    /// default. Applies at once.
+    static const std::string & getHeadlightDirection();
+    static const std::string & defaultHeadlightDirection();
+    static void removeHeadlightDirection();
+    static void setHeadlightDirection(const std::string &v);
+    static const char *docHeadlightDirection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BacklightDirection
+    ///
+    /// Direction of the backlight relative to the camera, as (x,y,z).
+    /// Empty keeps the built-in direction. Applies at once.
+    static const std::string & getBacklightDirection();
+    static const std::string & defaultBacklightDirection();
+    static void removeBacklightDirection();
+    static void setBacklightDirection(const std::string &v);
+    static const char *docBacklightDirection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EnableFillLight
+    ///
+    /// Light the 3D views with an extra fill light from the side.
+    /// Applies at once.
+    static const bool & getEnableFillLight();
+    static const bool & defaultEnableFillLight();
+    static void removeEnableFillLight();
+    static void setEnableFillLight(const bool &v);
+    static const char *docEnableFillLight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FillLightColor
+    ///
+    /// Colour of the fill light of the 3D views. Applies at once.
+    static const unsigned long & getFillLightColor();
+    static const unsigned long & defaultFillLightColor();
+    static void removeFillLightColor();
+    static void setFillLightColor(const unsigned long &v);
+    static const char *docFillLightColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FillLightIntensity
+    ///
+    /// Intensity of the fill light of the 3D views in percent, 0 to 100.
+    /// Applies at once.
+    static const long & getFillLightIntensity();
+    static const long & defaultFillLightIntensity();
+    static void removeFillLightIntensity();
+    static void setFillLightIntensity(const long &v);
+    static const char *docFillLightIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FillLightDirection
+    ///
+    /// Direction of the fill light relative to the camera, as (x,y,z).
+    /// Empty keeps the built-in direction. Applies at once.
+    static const std::string & getFillLightDirection();
+    static const std::string & defaultFillLightDirection();
+    static void removeFillLightDirection();
+    static void setFillLightDirection(const std::string &v);
+    static const char *docFillLightDirection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AmbientLightColor
+    ///
+    /// Colour of the ambient light of the 3D views. Applies at once.
+    static const unsigned long & getAmbientLightColor();
+    static const unsigned long & defaultAmbientLightColor();
+    static void removeAmbientLightColor();
+    static void setAmbientLightColor(const unsigned long &v);
+    static const char *docAmbientLightColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AmbientLightIntensity
+    ///
+    /// Intensity of the ambient light of the 3D views in percent, 0 to
+    /// 100. Applies at once.
+    static const long & getAmbientLightIntensity();
+    static const long & defaultAmbientLightIntensity();
+    static void removeAmbientLightIntensity();
+    static void setAmbientLightIntensity(const long &v);
+    static const char *docAmbientLightIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NavigationStyle
+    ///
+    /// Mouse navigation style of the 3D views, as a class name such as
+    /// Gui::CADNavigationStyle. Applies at once to all open 3D views;
+    /// TechDraw pages follow it as well.
+    static const std::string & getNavigationStyle();
+    static const std::string & defaultNavigationStyle();
+    static void removeNavigationStyle();
+    static void setNavigationStyle(const std::string &v);
+    static const char *docNavigationStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SameStyleForAllViews
+    ///
+    /// A navigation style picked from a 3D view's context menu becomes
+    /// the NavigationStyle setting, so that every view follows. When off
+    /// it changes that view only.
+    static const bool & getSameStyleForAllViews();
+    static const bool & defaultSameStyleForAllViews();
+    static void removeSameStyleForAllViews();
+    static void setSameStyleForAllViews(const bool &v);
+    static const char *docSameStyleForAllViews();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OrbitStyle
+    ///
+    /// How dragging rotates the 3D view: 0 turntable, 1 trackball, 2 free
+    /// turntable. Applies at once.
+    static const long & getOrbitStyle();
+    static const long & defaultOrbitStyle();
+    static void removeOrbitStyle();
+    static void setOrbitStyle(const long &v);
+    static const char *docOrbitStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RotationMode
+    ///
+    /// Centre of rotation in the 3D views: 0 the window centre, 1 the
+    /// point under the cursor, 2 the centre of the objects. Applies at
+    /// once.
+    static const long & getRotationMode();
+    static const long & defaultRotationMode();
+    static void removeRotationMode();
+    static void setRotationMode(const long &v);
+    static const char *docRotationMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Sensitivity
+    ///
+    /// A value above 1 multiplies the angle of a mouse rotation of the 3D
+    /// view. Applies at once.
+    static const double & getSensitivity();
+    static const double & defaultSensitivity();
+    static void removeSensitivity();
+    static void setSensitivity(const double &v);
+    static const char *docSensitivity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ResetCursorPosition
+    ///
+    /// Move the mouse cursor to the rotation centre when a rotation of
+    /// the 3D view starts. Applies at once.
+    static const bool & getResetCursorPosition();
+    static const bool & defaultResetCursorPosition();
+    static void removeResetCursorPosition();
+    static void setResetCursorPosition(const bool &v);
+    static const char *docResetCursorPosition();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InvertZoom
+    ///
+    /// Invert the direction of zooming with the mouse wheel. The 3D
+    /// views and TechDraw pages follow at once; the dependency graph
+    /// reads it when it is opened.
+    static const bool & getInvertZoom();
+    static const bool & defaultInvertZoom();
+    static void removeInvertZoom();
+    static void setInvertZoom(const bool &v);
+    static const char *docInvertZoom();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ZoomAtCursor
+    ///
+    /// Zoom towards the point under the mouse cursor instead of the
+    /// centre of the view. Applies at once.
+    static const bool & getZoomAtCursor();
+    static const bool & defaultZoomAtCursor();
+    static void removeZoomAtCursor();
+    static void setZoomAtCursor(const bool &v);
+    static const char *docZoomAtCursor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ZoomStep
+    ///
+    /// Zoom factor of one step of the mouse wheel, 0.01 to 1. Applies at
+    /// once to the 3D views and TechDraw pages.
+    static const double & getZoomStep();
+    static const double & defaultZoomStep();
+    static void removeZoomStep();
+    static void setZoomStep(const double &v);
+    static const char *docZoomStep();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseNavigationAnimations
+    ///
+    /// Animate camera moves such as switching to a standard view.
+    /// Applies at once.
+    static const bool & getUseNavigationAnimations();
+    static const bool & defaultUseNavigationAnimations();
+    static void removeUseNavigationAnimations();
+    static void setUseNavigationAnimations(const bool &v);
+    static const char *docUseNavigationAnimations();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseSpinningAnimations
+    ///
+    /// Let the model keep spinning when the mouse button is released
+    /// during a rotation. Applies at once.
+    static const bool & getUseSpinningAnimations();
+    static const bool & defaultUseSpinningAnimations();
+    static void removeUseSpinningAnimations();
+    static void setUseSpinningAnimations(const bool &v);
+    static const char *docUseSpinningAnimations();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AnimationDuration
+    ///
+    /// Duration of an animated camera move in milliseconds, 100 to
+    /// 10000. Read each time an animation starts.
+    static const long & getAnimationDuration();
+    static const long & defaultAnimationDuration();
+    static void removeAnimationDuration();
+    static void setAnimationDuration(const long &v);
+    static const char *docAnimationDuration();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter stopAnimatingIfDeactivated
+    ///
+    /// Milliseconds after which a spinning 3D view stops once it is
+    /// hidden or minimized. A negative value never stops it.
+    static const long & getstopAnimatingIfDeactivated();
+    static const long & defaultstopAnimatingIfDeactivated();
+    static void removestopAnimatingIfDeactivated();
+    static void setstopAnimatingIfDeactivated(const long &v);
+    static const char *docstopAnimatingIfDeactivated();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowRotationCenter
+    ///
+    /// Show a marker at the centre of rotation while a 3D view is
+    /// rotated. Read at each rotation.
+    static const bool & getShowRotationCenter();
+    static const bool & defaultShowRotationCenter();
+    static void removeShowRotationCenter();
+    static void setShowRotationCenter(const bool &v);
+    static const char *docShowRotationCenter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RotationCenterSize
+    ///
+    /// Size of the rotation centre marker, 1 to 100. Read when the marker
+    /// is next created.
+    static const double & getRotationCenterSize();
+    static const double & defaultRotationCenterSize();
+    static void removeRotationCenterSize();
+    static void setRotationCenterSize(const double &v);
+    static const char *docRotationCenterSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RotationCenterColor
+    ///
+    /// Colour and opacity of the rotation centre marker: red and mostly
+    /// see-through unless set. Read when the marker is next created.
+    static const unsigned long & getRotationCenterColor();
+    static const unsigned long & defaultRotationCenterColor();
+    static void removeRotationCenterColor();
+    static void setRotationCenterColor(const unsigned long &v);
+    static const char *docRotationCenterColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NewDocumentCameraOrientation
+    ///
+    /// Camera orientation of a new document: Isometric, Dimetric,
+    /// Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once
+    /// set, the Home view takes it too; until then Home is Top. Read at
+    /// each use.
+    static const std::string & getNewDocumentCameraOrientation();
+    static const std::string & defaultNewDocumentCameraOrientation();
+    static void removeNewDocumentCameraOrientation();
+    static void setNewDocumentCameraOrientation(const std::string &v);
+    static const char *docNewDocumentCameraOrientation();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoFitToView
+    ///
+    /// Fit the 3D view to the model after a file is opened or imported.
+    static const bool & getAutoFitToView();
+    static const bool & defaultAutoFitToView();
+    static void removeAutoFitToView();
+    static void setAutoFitToView(const bool &v);
+    static const char *docAutoFitToView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowNaviCube
+    ///
+    /// Show the navigation cube in the 3D views. Applies at once.
+    static const bool & getShowNaviCube();
+    static const bool & defaultShowNaviCube();
+    static void removeShowNaviCube();
+    static void setShowNaviCube(const bool &v);
+    static const char *docShowNaviCube();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DisableTouchTilt
+    ///
+    /// Gesture navigation: ignore the rotation part of a two-finger
+    /// gesture on a touchscreen. Read at the start of each gesture.
+    static const bool & getDisableTouchTilt();
+    static const bool & defaultDisableTouchTilt();
+    static void removeDisableTouchTilt();
+    static void setDisableTouchTilt(const bool &v);
+    static const char *docDisableTouchTilt();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NavigationDebug
+    ///
+    /// Gesture navigation: write its state changes to the log. Read when
+    /// the Gesture style is created.
+    static const bool & getNavigationDebug();
+    static const bool & defaultNavigationDebug();
+    static void removeNavigationDebug();
+    static void setNavigationDebug(const bool &v);
+    static const char *docNavigationDebug();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GestureRollFwdCommand
+    ///
+    /// Gesture navigation: command run by the forward roll gesture.
+    static const std::string & getGestureRollFwdCommand();
+    static const std::string & defaultGestureRollFwdCommand();
+    static void removeGestureRollFwdCommand();
+    static void setGestureRollFwdCommand(const std::string &v);
+    static const char *docGestureRollFwdCommand();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GestureRollBackCommand
+    ///
+    /// Gesture navigation: command run by the backward roll gesture.
+    static const std::string & getGestureRollBackCommand();
+    static const std::string & defaultGestureRollBackCommand();
+    static void removeGestureRollBackCommand();
+    static void setGestureRollBackCommand(const std::string &v);
+    static const char *docGestureRollBackCommand();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SaveWBbyTab
+    ///
+    /// Remember the active workbench separately for each view tab and
+    /// switch back to it when the tab is activated.
+    static const bool & getSaveWBbyTab();
+    static const bool & defaultSaveWBbyTab();
+    static void removeSaveWBbyTab();
+    static void setSaveWBbyTab(const bool &v);
+    static const char *docSaveWBbyTab();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CbLabelColor
+    ///
+    /// Colour of the value labels of a colour bar in the 3D view. Read
+    /// when the labels are next rebuilt.
+    static const unsigned long & getCbLabelColor();
+    static const unsigned long & defaultCbLabelColor();
+    static void removeCbLabelColor();
+    static void setCbLabelColor(const unsigned long &v);
+    static const char *docCbLabelColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CbLabelTextSize
+    ///
+    /// Text size of the value labels of a colour bar in the 3D view, 4 to
+    /// 36. Read when the labels are next rebuilt.
+    static const long & getCbLabelTextSize();
+    static const long & defaultCbLabelTextSize();
+    static void removeCbLabelTextSize();
+    static void setCbLabelTextSize(const long &v);
+    static const char *docCbLabelTextSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BoundingBoxFontSize
+    ///
+    /// Font size of the dimension labels on an object's bounding box, 2
+    /// to 64. Read when a bounding box is first shown for an object.
+    static const double & getBoundingBoxFontSize();
+    static const double & defaultBoundingBoxFontSize();
+    static void removeBoundingBoxFontSize();
+    static void setBoundingBoxFontSize(const double &v);
+    static const char *docBoundingBoxFontSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumPointSize
+    ///
+    /// Radius of the sphere drawn for a datum point.
+    static const double & getDatumPointSize();
+    static const double & defaultDatumPointSize();
+    static void removeDatumPointSize();
+    static void setDatumPointSize(const double &v);
+    static const char *docDatumPointSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LocalCoordinateSystemSize
+    ///
+    /// Scale factor of datum objects -- origin axes, planes, points --
+    /// when they are drawn at a fixed size on screen.
+    static const double & getLocalCoordinateSystemSize();
+    static const double & defaultLocalCoordinateSystemSize();
+    static void removeLocalCoordinateSystemSize();
+    static void setLocalCoordinateSystemSize(const double &v);
+    static const char *docLocalCoordinateSystemSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DefaultShapeShininess
+    ///
+    /// Shininess of the appearance given to new objects, in percent.
+    /// Read each time a default appearance is made.
+    static const long & getDefaultShapeShininess();
+    static const long & defaultDefaultShapeShininess();
+    static void removeDefaultShapeShininess();
+    static void setDefaultShapeShininess(const long &v);
+    static const char *docDefaultShapeShininess();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsVisible
+    ///
+    /// The measurements made with the measure tools are shown in the 3D
+    /// views. Stored by the command that toggles them; the views follow
+    /// at once.
+    static const bool & getDimensionsVisible();
+    static const bool & defaultDimensionsVisible();
+    static void removeDimensionsVisible();
+    static void setDimensionsVisible(const bool &v);
+    static const char *docDimensionsVisible();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Dimensions3dVisible
+    ///
+    /// The direct, 3D, lines of the measurements are shown. Stored by
+    /// the command that toggles them; the views follow at once.
+    static const bool & getDimensions3dVisible();
+    static const bool & defaultDimensions3dVisible();
+    static void removeDimensions3dVisible();
+    static void setDimensions3dVisible(const bool &v);
+    static const char *docDimensions3dVisible();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsDeltaVisible
+    ///
+    /// The lines of the measurements along the three axes are shown.
+    /// Stored by the command that toggles them; the views follow at
+    /// once.
+    static const bool & getDimensionsDeltaVisible();
+    static const bool & defaultDimensionsDeltaVisible();
+    static void removeDimensionsDeltaVisible();
+    static void setDimensionsDeltaVisible(const bool &v);
+    static const char *docDimensionsDeltaVisible();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SavePicture
+    ///
+    /// How the Save picture dialog last made its picture:
+    /// FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or
+    /// empty for the dialog's own way. Stored when a method is chosen in
+    /// the dialog's options, and used for every picture saved.
+    static const std::string & getSavePicture();
+    static const std::string & defaultSavePicture();
+    static void removeSavePicture();
+    static void setSavePicture(const std::string &v);
+    static const char *docSavePicture();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationX
+    ///
+    /// First component of the rotation the dragger of the Light
+    /// sources page was left with. The view itself uses the headlight
+    /// direction, which the page stores with it.
+    static const double & getHeadlightRotationX();
+    static const double & defaultHeadlightRotationX();
+    static void removeHeadlightRotationX();
+    static void setHeadlightRotationX(const double &v);
+    static const char *docHeadlightRotationX();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationY
+    ///
+    /// Second component of the rotation of the dragger of the Light
+    /// sources page.
+    static const double & getHeadlightRotationY();
+    static const double & defaultHeadlightRotationY();
+    static void removeHeadlightRotationY();
+    static void setHeadlightRotationY(const double &v);
+    static const char *docHeadlightRotationY();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationZ
+    ///
+    /// Third component of the rotation of the dragger of the Light
+    /// sources page.
+    static const double & getHeadlightRotationZ();
+    static const double & defaultHeadlightRotationZ();
+    static void removeHeadlightRotationZ();
+    static void setHeadlightRotationZ(const double &v);
+    static const char *docHeadlightRotationZ();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationW
+    ///
+    /// Fourth component of the rotation of the dragger of the Light
+    /// sources page.
+    static const double & getHeadlightRotationW();
+    static const double & defaultHeadlightRotationW();
+    static void removeHeadlightRotationW();
+    static void setHeadlightRotationW(const double &v);
+    static const char *docHeadlightRotationW();
+    //@}
+
+    // Auto generated code (Gui/ViewParams.py:1092)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2436,7 +3512,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:670)
+// Auto generated code (Gui/ViewParams.py:1105)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

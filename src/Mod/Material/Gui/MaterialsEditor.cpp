@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include <Mod/Material/App/MaterialParams.h>
 #include <QColorDialog>
 #include <QDesktopServices>
 #include <QDir>
@@ -260,7 +261,7 @@ void MaterialsEditor::getRecents()
 
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/Recent");
-    _recentMax = param->GetInt("RecentMax", 5);
+    _recentMax = param->GetInt("RecentMax", Materials::MaterialParams::defaultRecentMax());
     int count = param->GetInt("Recent", 0);
     for (int i = 0; static_cast<long>(i) < count; i++) {
         QString key = QStringLiteral("MRU%1").arg(i);

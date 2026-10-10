@@ -459,6 +459,14 @@ void ViewProviderDocumentObject::setModeSwitch() {
         callExtension(&ViewProviderExtension::extensionModeSwitchChange);
 }
 
+MDIView *ViewProviderDocumentObject::getOrCreateMDIView()
+{
+    if (MDIView *view = getMDIView())
+        return view;
+    show();
+    return getMDIView();
+}
+
 void ViewProviderDocumentObject::show()
 {
     ViewProvider::show();

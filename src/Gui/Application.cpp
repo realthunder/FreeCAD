@@ -68,6 +68,7 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <App/DocumentParams.h>
+#include <App/UnitsParams.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
@@ -87,6 +88,7 @@
 #include <Quarter/Quarter.h>
 
 #include "Application.h"
+#include "GeneralParams.h"
 #include "AutoSaver.h"
 #include "AxisOriginPy.h"
 #include "BitmapFactory.h"
@@ -112,6 +114,8 @@
 #include "LiveViewInteraction.h"
 #include "DlgDocumentPermissions.h"
 #include "MainWindow.h"
+#include "MainWindowParams.h"
+#include "MiscParams.h"
 #include "Macro.h"
 #include "MDIViewWithCamera.h"
 #include "PreferencePackManager.h"
@@ -279,6 +283,15 @@ struct ApplicationP
     /// The parameter source fed from the active theme's YAML file;
     /// setStyleSheet() re-points it whenever the theme changes
     StyleParameters::YamlParameterSource* themeParametersSource = nullptr;
+    /// What setStyleSheet() applied last, to tell a repeat from a change
+    struct {
+        bool valid = false;
+        QString file;
+        bool tiled = false;
+        QString iconSet;
+        QString sheet;
+        QPalette palette;
+    } appliedStyle;
     /// List of all registered views
     std::list<Gui::BaseView*> passive;
     bool isClosing{false};
@@ -500,6 +513,34 @@ Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
     if (GUIenabled) {
+        // The unit settings are followed when they change, wherever that
+        // was done -- the preferences, the status bar, the omni search or
+        // a script. The unit system in force is what activating the active
+        // document would make it: the document's own when it is a saved
+        // one and documents are not told to follow the preference, the
+        // preference otherwise. The number of decimals and the inch
+        // fraction are put in force by App; what is on screen is redrawn.
+        static fastsignals::scoped_connection unitsChanged
+            = App::UnitsParams::signalParamChanged().connect([](const char* name) {
+                  if (!name) {
+                      return;
+                  }
+                  if (strcmp(name, "UserSchema") == 0 || strcmp(name, "IgnoreProjectSchema") == 0) {
+                      const App::Document* doc = App::GetApplication().getActiveDocument();
+                      const bool ownSystem = doc && doc->FileName.getValue()[0] != '\0'
+                          && !App::UnitsParams::getIgnoreProjectSchema();
+                      const long schema = ownSystem ? doc->UnitSystem.getValue()
+                                                    : App::UnitsParams::getUserSchema();
+                      Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(schema));
+                  }
+                  else if (strcmp(name, "Decimals") != 0 && strcmp(name, "FracInch") != 0) {
+                      return;
+                  }
+                  if (Application::Instance) {
+                      Application::Instance->onUpdate();
+                  }
+              });
+
         // the sandbox guest's FreeCADGui reaches the host through the
         // gui.* bridge ops (docs/Sandbox.md 7.9)
         SandboxGui::registerOps();
@@ -566,7 +607,7 @@ Application::Application(bool GUIenabled)
         // so we can try to override the workaround by setting COIN_VBO
         ParameterGrp::handle hViewGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/View");
-        if (hViewGrp->GetBool("UseVBO",false)) {
+        if (hViewGrp->GetBool("UseVBO", Gui::ViewParams::defaultUseVBO())) {
             (void)coin_setenv("COIN_VBO", "-1", true);
         }
 
@@ -812,7 +853,7 @@ void Application::open(const char* FileName, const char* Module)
                 if (sendHasMsgToActiveView("ViewFit")) {
                     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
                         ("User parameter:BaseApp/Preferences/View");
-                    if (hGrp->GetBool("AutoFitToView", true))
+                    if (hGrp->GetBool("AutoFitToView", Gui::ViewParams::defaultAutoFitToView()))
                         Command::doCommand(Command::Gui, "Gui.SendMsgToActiveView(\"ViewFit\")");
                 }
             }
@@ -930,7 +971,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
 
                     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
                         ("User parameter:BaseApp/Preferences/View");
-                    if (hGrp->GetBool("AutoFitToView", true)) {
+                    if (hGrp->GetBool("AutoFitToView", Gui::ViewParams::defaultAutoFitToView())) {
                         MDIView* view = doc->getActiveView();
                         if (view) {
                             const char* ret = nullptr;
@@ -945,7 +986,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
             QString filename = QString::fromUtf8(File.filePath().c_str());
             auto parameterGroup = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/General");
-            bool addToRecent = parameterGroup->GetBool("RecentIncludesImported", true);
+            bool addToRecent = GeneralParams::getRecentIncludesImported();
             parameterGroup->SetBool("RecentIncludesImported",
                                     addToRecent);// Make sure it gets added to the parameter list
             if (addToRecent) {
@@ -1013,7 +1054,7 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
 
             auto parameterGroup = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/General");
-            bool addToRecent = parameterGroup->GetBool("RecentIncludesExported", false);
+            bool addToRecent = GeneralParams::getRecentIncludesExported();
             parameterGroup->SetBool("RecentIncludesExported",
                                     addToRecent);// Make sure it gets added to the parameter list
             if (addToRecent) {
@@ -1188,16 +1229,14 @@ void Application::slotActiveDocument(const App::Document& Doc)
         }
 
         // Update the application to show the unit change
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
-            ("User parameter:BaseApp/Preferences/Units");
-        if( Doc.FileName.getValue()[0] != '\0' &&  ! hGrp->GetBool("IgnoreProjectSchema")) {
+        if( Doc.FileName.getValue()[0] != '\0' &&  ! App::UnitsParams::getIgnoreProjectSchema()) {
             int userSchema = Doc.UnitSystem.getValue();
             Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(userSchema));
             getMainWindow()->setUserSchema(userSchema);
             Application::Instance->onUpdate();
         }else{// set up Unit system default
-			Base::UnitsApi::setSchema((Base::UnitSystem)hGrp->GetInt("UserSchema",0));
-			Base::UnitsApi::setDecimals(hGrp->GetInt("Decimals", Base::UnitsApi::getDecimals()));
+            Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(App::UnitsParams::getUserSchema()));
+            Base::UnitsApi::setDecimals(static_cast<int>(App::UnitsParams::getDecimals()));
         }
         signalActiveDocument(*doc->second);
         updateActions();
@@ -2460,9 +2499,6 @@ void Application::initApplication()
         // Preferences/View/Render before anything reads them.
         RenderParams::migrate();
         ViewParams::migrate();
-        // Which render path this session draws with, decided here rather
-        // than read from the configuration.
-        RenderParams::selectRenderPath();
         new Base::ScriptProducer( "FreeCADGuiInit", FreeCADGuiInit );
         init_resources();
         setCategoryFilterRules();
@@ -2719,7 +2755,7 @@ void preAppSetup()
 
         ParameterGrp::handle hGen = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/General");
-        if (underWsl && hGen->GetBool("PreferXcbOnWsl", true)) {
+        if (underWsl && GeneralParams::getPreferXcbOnWsl()) {
             qputenv("QT_QPA_PLATFORM", "xcb");
             Base::Console().Log("Init: WSL detected, using the xcb platform "
                                 "plugin (PreferXcbOnWsl)\n");
@@ -2730,7 +2766,7 @@ void preAppSetup()
     // Automatic scaling for legacy apps (disable once all parts of GUI are aware of HiDpi)
     ParameterGrp::handle hDPI =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/HighDPI");
-    bool disableDpiScaling = hDPI->GetBool("DisableDpiScaling", false);
+    bool disableDpiScaling = MiscParams::getDisableDpiScaling();
     if (disableDpiScaling) {
 #ifdef FC_OS_WIN32
         SetProcessDPIAware(); // call before the main event loop
@@ -2757,7 +2793,7 @@ void preAppSetup()
     // Use software rendering for OpenGL
     ParameterGrp::handle hOpenGL =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/OpenGL");
-    bool useSoftwareOpenGL = hOpenGL->GetBool("UseSoftwareOpenGL", false);
+    bool useSoftwareOpenGL = MiscParams::getUseSoftwareOpenGL();
     if (useSoftwareOpenGL) {
         QApplication::setAttribute(Qt::AA_UseSoftwareOpenGL);
     }
@@ -2898,7 +2934,7 @@ void postMainWindowSetup(MainWindow &mw)
     // allow to disable version number
     ParameterGrp::handle hGen =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General");
-    bool showVersion = hGen->GetBool("ShowVersionInTitle", true);
+    bool showVersion = GeneralParams::getShowVersionInTitle();
 
     if (showVersion) {
         // set main window title with FreeCAD Version
@@ -2917,12 +2953,24 @@ void postMainWindowSetup(MainWindow &mw)
     QObject::connect(qApp, SIGNAL(messageReceived(const QList<QByteArray> &)),
                      &mw, SLOT(processMessages(const QList<QByteArray> &)));
 
-    ParameterGrp::handle hDocGrp = WindowParameter::getDefaultParameter()->GetGroup("Document");
-    int timeout = hDocGrp->GetInt("AutoSaveTimeout", 15); // 15 min
-    if (!hDocGrp->GetBool("AutoSaveEnabled", true))
-        timeout = 0;
-    AutoSaver::instance()->setTimeout(timeout * 60000);
-    AutoSaver::instance()->setCompressed(hDocGrp->GetBool("AutoSaveCompressed", true));
+    // Auto recovery follows its settings when they change, wherever that
+    // is done. It used to be set up here, and again by OK on the Document
+    // page; a change made any other way waited for the next start.
+    auto applyAutoSave = []() {
+        int timeout = static_cast<int>(App::DocumentParams::getAutoSaveTimeout());  // minutes
+        if (!App::DocumentParams::getAutoSaveEnabled()) {
+            timeout = 0;
+        }
+        AutoSaver::instance()->setTimeout(timeout * 60000);
+        AutoSaver::instance()->setCompressed(App::DocumentParams::getAutoSaveCompressed());
+    };
+    applyAutoSave();
+    static fastsignals::scoped_connection autoSaveChanged
+        = App::DocumentParams::signalParamChanged().connect([applyAutoSave](const char* name) {
+              if (name && strncmp(name, "AutoSave", 8) == 0) {
+                  applyAutoSave();
+              }
+          });
 
     // set toolbar icon size
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("General");
@@ -2930,13 +2978,13 @@ void postMainWindowSetup(MainWindow &mw)
     mw.setIconSize(QSize(size,size));
 
     // filter wheel events for combo boxes
-    if (hGrp->GetBool("ComboBoxWheelEventFilter", false)) {
+    if (GeneralParams::getComboBoxWheelEventFilter()) {
         WheelEventFilter* filter = new WheelEventFilter(qApp);
         qApp->installEventFilter(filter);
     }
     
     // For values different to 1 and 2 use the OS locale settings
-    auto localeFormat = hGrp->GetInt("UseLocaleFormatting", 0);
+    auto localeFormat = GeneralParams::getUseLocaleFormatting();
     if (localeFormat == 1) {
         Translator::instance()->setLocale(
             hGrp->GetASCII("Language", Translator::instance()->activeLanguage().c_str()));
@@ -2946,7 +2994,7 @@ void postMainWindowSetup(MainWindow &mw)
     }
 
     // set text cursor blinking state
-    int blinkTime = hGrp->GetBool("EnableCursorBlinking", true) ? -1 : 0;
+    int blinkTime = GeneralParams::getEnableCursorBlinking() ? -1 : 0;
     qApp->setCursorFlashTime(blinkTime);
 
     {
@@ -3098,8 +3146,8 @@ void postMainWindowSetup(MainWindow &mw)
     // screen is a second nobody is waiting through. Only when a backend
     // is configured -- render cache 3 with a real type -- so a session
     // that will never use one pays nothing.
-    if (ViewParams::getRenderCache() == 3) {
-        const std::string rtype = RenderParams::getType();
+    if (RenderParams::renderCache() == 3) {
+        const std::string rtype = RenderParams::engineType();
         // The widget MainWindow keeps to settle the window's surface
         // type is exactly what this needs: a QOpenGLWidget whose format
         // the backend's own context can be built from.
@@ -3278,9 +3326,7 @@ void postMainWindowSetup(MainWindow &mw)
     // Now run the background autoload, for workbenches that should be loaded at startup, but not
     // displayed to the user immediately
     std::string autoloadCSV =
-        App::GetApplication()
-            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")
-            ->GetASCII("BackgroundAutoloadModules", "");
+        GeneralParams::getBackgroundAutoloadModules();
 
     // Tokenize the comma-separated list and load the requested workbenches if they exist in this
     // installation
@@ -3696,7 +3742,8 @@ void Application::applyColorScheme()
     // nothing is pinned, so leaving this unset came up black on a dark Windows.
     // An explicit empty value still means "follow the desktop" -- that is what
     // the Match desktop entry writes.
-    const std::string scheme = hGrp->GetASCII("ColorScheme", "Light");
+    const std::string scheme
+        = hGrp->GetASCII("ColorScheme", MainWindowParams::defaultColorScheme().c_str());
 
     if (scheme == "Light") {
         qGuiApp->styleHints()->setColorScheme(Qt::ColorScheme::Light);
@@ -3715,6 +3762,72 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
     Gui::MainWindow* mw = getMainWindow();
     auto mdi = mw->findChild<QMdiArea*>();
     mdi->setProperty("showImage", tiledBackground);
+
+    // The theme may have changed along with the stylesheet; follow it
+    // before any substitution below, and drop values resolved under the
+    // previous theme.
+    if (d->themeParametersSource) {
+        d->themeParametersSource->changeFilePath(styleParametersFilePath());
+        d->styleParameterManager->reload();
+    }
+
+    auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
+    QString iconSet = QString::fromUtf8(hGrp->GetASCII("IconSet").c_str());
+
+    // Styles every theme shares (defaults.qss): our own widgets' bits
+    // that should not depend on which sheet is active, preincluded
+    // ahead of the theme sheet exactly as upstream does -- and served
+    // even with no sheet at all, which is how the Classic theme gets
+    // them.
+    const QString defaultStyleSheet = [this]() {
+        QFile f(QStringLiteral("qss:defaults.qss"));
+        if (!f.open(QFile::ReadOnly)) {
+            return QString();
+        }
+        QTextStream in(&f);
+        return replaceVariablesInQss(in.readAll());
+    }();
+
+    // The theme's own sheet, with its variables resolved. Searched for in
+    // the user-defined search paths, which runApplication() sets up with
+    // the prefix "qss".
+    QString themeStyleSheet;
+    bool themeSheetRead = false;
+    if (!qssFile.isEmpty()) {
+        QString prefix(QStringLiteral("qss:"));
+
+        QFile f;
+        if (QFile::exists(qssFile)) {
+            f.setFileName(qssFile);
+        }
+        else if (QFile::exists(prefix + qssFile)) {
+            f.setFileName(prefix + qssFile);
+        }
+
+        if (!f.fileName().isEmpty() && f.open(QFile::ReadOnly | QFile::Text)) {
+            QTextStream str(&f);
+            themeStyleSheet = replaceVariablesInQss(str.readAll());
+            themeSheetRead = true;
+        }
+    }
+    const QString styleSheet = themeSheetRead
+        ? defaultStyleSheet + QStringLiteral("\n") + themeStyleSheet
+        : defaultStyleSheet;
+
+    // Nothing to do when this is what is applied already. The handlers call
+    // here whenever one of a dozen keys is STORED, changed or not, and OK in
+    // the preferences stores them all; an apply has Qt polish every widget
+    // again and the tree remake the icon of every item, seconds with a
+    // document open. Compared: the sheet as it would be set (so a file
+    // edited on disk, an accent colour or a theme variable still count),
+    // the icon set, the background, and the palette as the last apply left
+    // it (so a desktop that changed its scheme counts too).
+    if (d->appliedStyle.valid && (themeSheetRead || qssFile.isEmpty())
+        && d->appliedStyle.file == qssFile && d->appliedStyle.tiled == tiledBackground
+        && d->appliedStyle.iconSet == iconSet && d->appliedStyle.sheet == styleSheet
+        && d->appliedStyle.palette == qApp->palette()) {
+        return;
+    }
 
     // Qt's style sheet doesn't support it to define the link color of a QLabel
     // or in the property editor when an expression is set because therefore the
@@ -3748,54 +3861,14 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
 
     mw->setProperty("fc_currentStyleSheet", qssFile);
 
-    // The theme may have changed along with the stylesheet; follow it
-    // before any substitution below, and drop values resolved under the
-    // previous theme.
-    if (d->themeParametersSource) {
-        d->themeParametersSource->changeFilePath(styleParametersFilePath());
-        d->styleParameterManager->reload();
-    }
-
-    auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
-    QString iconSet = QString::fromUtf8(hGrp->GetASCII("IconSet").c_str());
     if (!iconSet.isEmpty())
         getMainWindow()->setOverrideExtraIcons(iconSet);
 
-    // Styles every theme shares (defaults.qss): our own widgets' bits
-    // that should not depend on which sheet is active, preincluded
-    // ahead of the theme sheet exactly as upstream does -- and served
-    // even with no sheet at all, which is how the Classic theme gets
-    // them.
-    const QString defaultStyleSheet = [this]() {
-        QFile f(QStringLiteral("qss:defaults.qss"));
-        if (!f.open(QFile::ReadOnly)) {
-            return QString();
-        }
-        QTextStream in(&f);
-        return replaceVariablesInQss(in.readAll());
-    }();
-
     if (!qssFile.isEmpty()) {
-        // Search for stylesheet in user-defined search paths.
-        // For qss they are set-up in runApplication() with the prefix "qss"
-        QString prefix(QStringLiteral("qss:"));
-
-        QFile f;
-        if (QFile::exists(qssFile)) {
-            f.setFileName(qssFile);
-        }
-        else if (QFile::exists(prefix + qssFile)) {
-            f.setFileName(prefix + qssFile);
-        }
-
-        if (!f.fileName().isEmpty() && f.open(QFile::ReadOnly | QFile::Text)) {
+        if (themeSheetRead) {
             mdi->setBackground(QBrush(Qt::NoBrush));
-            QTextStream str(&f);
 
-            QString styleSheetContent = replaceVariablesInQss(str.readAll());
-
-            qApp->setStyleSheet(defaultStyleSheet + QStringLiteral("\n")
-                                + styleSheetContent);
+            qApp->setStyleSheet(styleSheet);
 
             ActionStyleEvent e(ActionStyleEvent::Clear);
             qApp->sendEvent(mw, &e);
@@ -3846,6 +3919,13 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
 
         refreshInheritedPalettes();
     }
+
+    d->appliedStyle.valid = themeSheetRead || qssFile.isEmpty();
+    d->appliedStyle.file = qssFile;
+    d->appliedStyle.tiled = tiledBackground;
+    d->appliedStyle.iconSet = iconSet;
+    d->appliedStyle.sheet = styleSheet;
+    d->appliedStyle.palette = qApp->palette();
 }
 
 void Application::refreshInheritedPalettes()

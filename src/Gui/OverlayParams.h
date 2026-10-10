@@ -28,7 +28,7 @@ import OverlayParams
 OverlayParams.declare()
 ]]]*/
 
-// Auto generated code (Gui/OverlayParams.py:158)
+// Auto generated code (Gui/OverlayParams.py:166)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -74,6 +74,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CornerNaviCube
+    ///
+    /// Corner of the 3D view where the navigation cube is shown. 0 top left,
+    /// 1 top right, 2 bottom left, 3 bottom right. Overlay dock panels
+    /// leave room for the cube in that corner.
     static const long & getCornerNaviCube();
     static const long & defaultCornerNaviCube();
     static void removeCornerNaviCube();
@@ -85,6 +89,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DockOverlayAutoView
+    ///
+    /// Hide overlay dock panels automatically while the active view is not
+    /// a 3D view. Transparent panels also turn opaque over a maximized
+    /// view that cannot be panned.
     static const bool & getDockOverlayAutoView();
     static const bool & defaultDockOverlayAutoView();
     static void removeDockOverlayAutoView();
@@ -108,6 +116,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DockOverlayRevealDelay
+    ///
+    /// Milliseconds an overlay dock panel stays fully shown after one of
+    /// its widgets is switched on or a widget is dropped into it.
     static const long & getDockOverlayRevealDelay();
     static const long & defaultDockOverlayRevealDelay();
     static void removeDockOverlayRevealDelay();
@@ -411,7 +422,7 @@ public:
     static void onDockOverlayMinimumSizeChanged();
     //@}
 
-    // Auto generated code (Gui/OverlayParams.py:164)
+    // Auto generated code (Gui/OverlayParams.py:172)
     static const std::vector<QString> AnimationCurveTypes;
 
 // Auto generated code (Tools/params_utils.py:179)

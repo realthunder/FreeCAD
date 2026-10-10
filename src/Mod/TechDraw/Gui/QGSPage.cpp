@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 #include <algorithm>
 #include <cmath>
@@ -1214,7 +1216,7 @@ TechDraw::DrawPage* QGSPage::getDrawPage() { return m_vpPage->getDrawPage(); }
 QColor QGSPage::getBackgroundColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Background", 0x707070FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Background", TechDraw::TechDrawParams::defaultBackground()));
     return fcColor.asValue<QColor>();
 }
 

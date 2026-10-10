@@ -58,8 +58,6 @@ public:
     static double dimArrowSize();
 
     static Base::Color normalColor();
-    static Base::Color selectColor();
-    static Base::Color preselectColor();
     static Base::Color vertexColor();
     static double vertexScale();
     static int scaleType();
@@ -105,6 +103,7 @@ public:
     static Base::Color getAccessibleColor(Base::Color orig);
 
     static bool autoCorrectDimRefs();
+    static bool fixColorAlphaOnLoad();
     static int scrubCount();
 
     static double svgHatchFactor();
@@ -130,7 +129,8 @@ public:
     static int LineCapStyle();
     static int LineCapIndex();
 
-    static int LineSpacingISO();
+    static double LineSpacingISO();
+    static bool coarseView();
 
     static std::string currentLineDefFile();
     static std::string currentElementDefFile();

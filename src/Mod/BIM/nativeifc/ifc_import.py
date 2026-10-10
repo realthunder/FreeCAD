@@ -85,7 +85,7 @@ def insert(
     except NameError:
         document = FreeCAD.newDocument()
     if singledoc is None:
-        singledoc = PARAMS.GetBool("SingleDoc", True)
+        singledoc = PARAMS.GetBool("SingleDoc", False)
     if singledoc:
         prj_obj = ifc_tools.convert_document(document, filename, shapemode, strategy)
         ifc_tools.defer(toggle_lock_on)

@@ -385,8 +385,25 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                 recomputeCopy = true;
                 clearCopiedObjects();
 
+                // A temporary document of this binder's own, emptied for
+                // each copy. The element names of the shape carry the ids
+                // of the copies and the ids of the strings their names are
+                // made of, and both have to come out the same in every
+                // session, or every reference into this binder is lost at
+                // the first recompute after an open. In one document shared
+                // by every binder they did not: its object ids started at
+                // random and went on from one copy to the next, and its
+                // string table, whose strings hold those ids, grew with
+                // them. Emptied, the ids start over (Document::
+                // clearDocument()) and so does the table.
+                std::string tmpName("_tmp_binder_");
+                tmpName += getDocument()->getName();
+                tmpName += '_';
+                tmpName += getNameInDocument();
                 auto tmpDoc = App::GetApplication().newDocument(
-                                "_tmp_binder", 0, false, true);
+                                tmpName.c_str(), 0, false, true);
+                tmpDoc->clearDocument();
+                tmpDoc->getStringHasher()->clear();
                 auto objs = tmpDoc->copyObject({obj},true,true);
                 if(objs.size()) {
                     for(auto it=objs.rbegin(); it!=objs.rend(); ++it)
@@ -546,6 +563,13 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                 shape = shape.makECopy();
         }
         
+        // Whether the whole shape moves, and how: every support seen from
+        // another place than at the last update, all by the same motion. A
+        // container moved since then does that, and a reference into this
+        // binder that has to be found again by its geometry is then looked
+        // for where the geometry went (Part::Feature::setShapeMotion()).
+        Base::Matrix4D motion;
+        bool moved = false;
         if(shapes.size()==1 && !Relative.getValue())
             shapes.back().setPlacement(Base::Placement());
         else {
@@ -553,6 +577,36 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                 auto &shape = shapes[i];
                 shape = shape.makETransform(*shapeMats[i]);
             }
+            auto same = [](const Base::Matrix4D &a, const Base::Matrix4D &b) {
+                for(int i=0;i<4;++i) {
+                    for(int j=0;j<4;++j) {
+                        if(fabs(a[i][j]-b[i][j]) > 1e-9)
+                            return false;
+                    }
+                }
+                return true;
+            };
+            bool known = !mats.empty();
+            bool firstMotion = true;
+            for(auto &v : mats) {
+                auto prop = Base::freecad_dynamic_cast<App::PropertyMatrix>(
+                        getDynamicPropertyByName(cacheName(v.first)));
+                if(!prop) {
+                    known = false;
+                    break;
+                }
+                Base::Matrix4D mat = prop->getValue();
+                mat.inverseGauss();
+                mat = v.second * mat;
+                if(firstMotion) {
+                    firstMotion = false;
+                    motion = mat;
+                } else if(!same(motion, mat)) {
+                    known = false;
+                    break;
+                }
+            }
+            moved = known && !same(motion, Base::Matrix4D());
         }
 
         if(shapes.empty()) {
@@ -565,6 +619,13 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
             SupportShape.setValue(TopoShape());
         else
             SupportShape.setValue(result);
+
+        struct MotionGuard {
+            SubShapeBinder *self;
+            ~MotionGuard() { self->setShapeMotion(nullptr); }
+        } guard{this};
+        if(moved)
+            setShapeMotion(&motion);
         buildShape(result);
     }
 

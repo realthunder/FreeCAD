@@ -14,6 +14,11 @@
 # the verdict: the work the test does is what it writes, and a process
 # that died after DONE is reported as that, on its own line.
 #
+# Before the test's script FreeCAD is handed scripts/gui-test-profile.py,
+# which states what the tests start from where a default would otherwise
+# decide it -- no multisampling, which the pictures they read were written
+# against.
+#
 # Never the live desktop session: private XDG dirs + user.cfg, xvfb with
 # WAYLAND_DISPLAY unset (WSLg's survives into xvfb-run's child otherwise
 # and the window lands on the desktop), and `timeout` around the whole
@@ -86,7 +91,8 @@ if [ "$WINDOW" = 1 ]; then
         GT_OUT="$OUT" GT_RESULT="$RESULT" \
         QT_QPA_PLATFORM=xcb \
         timeout -k 15 "$TIMEOUT" \
-        "$RUN" "$FCBIN" --user-cfg "$ISO/user.cfg" "$SCRIPT" \
+        "$RUN" "$FCBIN" --user-cfg "$ISO/user.cfg" \
+        "$REPO/scripts/gui-test-profile.py" "$SCRIPT" \
         > "$LOG" 2>&1 </dev/null
 else
     env -u WAYLAND_DISPLAY "${GL[@]}" \
@@ -95,7 +101,8 @@ else
         QT_QPA_PLATFORM=xcb \
         timeout -k 15 "$TIMEOUT" \
         xvfb-run -a -s "-screen 0 1280x1024x24" \
-        "$RUN" "$FCBIN" --user-cfg "$ISO/user.cfg" "$SCRIPT" \
+        "$RUN" "$FCBIN" --user-cfg "$ISO/user.cfg" \
+        "$REPO/scripts/gui-test-profile.py" "$SCRIPT" \
         > "$LOG" 2>&1 </dev/null
 fi
 status=$?

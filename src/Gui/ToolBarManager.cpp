@@ -46,11 +46,13 @@
 #include <Base/Console.h>
 
 #include "ToolBarManager.h"
+#include "GeneralParams.h"
 
 #include "Action.h"
 #include "Application.h"
 #include "Command.h"
 #include "MainWindow.h"
+#include "MainWindowParams.h"
 #include "OverlayWidgets.h"
 #include "WidgetFactory.h"
 
@@ -526,14 +528,14 @@ ToolBarManager::ToolBarManager()
 
     globalArea = defaultArea = Qt::TopToolBarArea;
     hMainWindow = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/MainWindow");
-    std::string defarea = hMainWindow->GetASCII("DefaultToolBarArea");
+    std::string defarea = MainWindowParams::getDefaultToolBarArea();
     if (defarea == "Bottom")
         defaultArea = Qt::BottomToolBarArea;
     else if (defarea == "Left")
         defaultArea = Qt::LeftToolBarArea;
     else if (defarea == "Right")
         defaultArea = Qt::RightToolBarArea;
-    defarea = hMainWindow->GetASCII("GlobalToolBarArea");
+    defarea = MainWindowParams::getGlobalToolBarArea();
     if (defarea == "Bottom")
         globalArea = Qt::BottomToolBarArea;
     else if (defarea == "Left")
@@ -543,15 +545,15 @@ ToolBarManager::ToolBarManager()
 
     auto refreshParams = [this](const char *name) {
         if (!name || boost::equals(name, "ToolbarIconSize"))
-            _toolBarIconSize = hGeneral->GetInt("ToolbarIconSize", 24);
+            _toolBarIconSize = hGeneral->GetInt("ToolbarIconSize", GeneralParams::defaultToolbarIconSize());
         if (!name || boost::equals(name, "StatusBarIconSize"))
-            _statusBarIconSize = hGeneral->GetInt("StatusBarIconSize", 0);
+            _statusBarIconSize = hGeneral->GetInt("StatusBarIconSize", GeneralParams::defaultStatusBarIconSize());
         if (!name || boost::equals(name, "MenuBarIconSize"))
-            _menuBarIconSize = hGeneral->GetInt("MenuBarIconSize", 0);
+            _menuBarIconSize = hGeneral->GetInt("MenuBarIconSize", GeneralParams::defaultMenuBarIconSize());
         if (!name || boost::equals(name, "WorkbenchTabIconSize"))
-            _workbenchTabIconSize = hGeneral->GetInt("WorkbenchTabIconSize", 0);
+            _workbenchTabIconSize = hGeneral->GetInt("WorkbenchTabIconSize", GeneralParams::defaultWorkbenchTabIconSize());
         if (!name || boost::equals(name, "WorkbenchComboIconSize"))
-            _workbenchComboIconSize = hGeneral->GetInt("WorkbenchComboIconSize", 0);
+            _workbenchComboIconSize = hGeneral->GetInt("WorkbenchComboIconSize", GeneralParams::defaultWorkbenchComboIconSize());
     };
     refreshParams(nullptr);
 
@@ -567,7 +569,8 @@ ToolBarManager::ToolBarManager()
                     || Param == hMenuBarLeft
                     || (Param == hMainWindow
                         && Name
-                        && boost::equals(Name, "DefaultToolBarArea"))) {
+                        && (boost::equals(Name, "DefaultToolBarArea")
+                            || boost::equals(Name, "GlobalToolBarArea")))) {
                 timer.start(100);
             }
             else if (Param == hGlobal)
@@ -701,7 +704,7 @@ bool ToolBarManager::areTitleToolBarsLocked() const
     // Upstream FreeCAD/FreeCAD#26766 defaults this to true. Here it does not:
     // the toolbars in these areas have always been movable in this fork, and a
     // parameter that has never existed should not lock them on first run.
-    return hGeneral->GetBool("LockTitleToolBars", false);
+    return GeneralParams::getLockTitleToolBars();
 }
 
 void ToolBarManager::setTitleToolBarsLocked(bool locked)
@@ -791,7 +794,9 @@ static bool isToolBarEmpty(QToolBar *toolbar)
 void ToolBarManager::onTimer()
 {
     Base::StateLocker guard(relocating);
-    std::string defarea = hMainWindow->GetASCII("DefaultToolBarArea");
+    // Asked of the class: this runs from the timer the change starts, by
+    // which time the class has the new value.
+    std::string defarea = MainWindowParams::getDefaultToolBarArea();
     auto area = Qt::TopToolBarArea;
     if (defarea == "Bottom")
         area = Qt::BottomToolBarArea;
@@ -799,7 +804,7 @@ void ToolBarManager::onTimer()
         area = Qt::LeftToolBarArea;
     else if (defarea == "Right")
         area = Qt::RightToolBarArea;
-    defarea = hMainWindow->GetASCII("GlobalToolBarArea");
+    defarea = MainWindowParams::getGlobalToolBarArea();
     auto gArea = Qt::TopToolBarArea;
     if (defarea == "Bottom")
         gArea = Qt::BottomToolBarArea;
@@ -843,14 +848,26 @@ void ToolBarManager::onTimer()
             continue;
         }
 
+        // Whether it is shown, when no setting says: asked BEFORE a toolbar
+        // is taken out of an area, and then of the toolbar alone. The move
+        // hides it, and isVisible() asked afterwards wrote that hide down
+        // as the answer. "Reset all" in the preferences is what gets here
+        // with a toolbar still in the title bar -- every area's entries are
+        // gone at once, and on a maximized window the title bar swap that
+        // would have taken the workbench toolbar out properly waits for the
+        // window to leave the maximized state, so this ran first and the
+        // toolbar stayed hidden through the swap and through the theme
+        // applied after it.
+        bool shown = tb->isVisible();
         if (tb->parentWidget() != getMainWindow()) {
+            shown = !tb->isHidden();
             addToolBarToMainWindow(tb);
         }
 
         if (defArea != curArea && mw->toolBarArea(tb) == defArea)
             lines.emplace(ToolBarKey(tb),tb);
         if (tb->toggleViewAction()->isVisible())
-            setToolBarVisible(tb, hPref->GetBool(name, tb->isVisible()));
+            setToolBarVisible(tb, hPref->GetBool(name, shown));
     }
 
     bool first = true;
@@ -1184,7 +1201,11 @@ void ToolBarManager::restoreState()
             continue;
         }
         if (toolbar->parentWidget() != getMainWindow()) {
+            // The move hides it; what was decided above is put back (see
+            // onTimer()).
+            const bool shown = !toolbar->isHidden();
             addToolBarToMainWindow(toolbar);
+            setToolBarVisible(toolbar, shown);
         }
     }
 

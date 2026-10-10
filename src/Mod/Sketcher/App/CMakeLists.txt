@@ -56,6 +56,8 @@ SET(Features_SRCS
     SolverGeometryExtension.h
     SketchObject.cpp
     SketchObject.h
+    SketcherParams.cpp
+    SketcherParams.h
     SketchObjectGeometry.cpp
     SketchObjectExternal.cpp
     SketchObjectConstraints.cpp

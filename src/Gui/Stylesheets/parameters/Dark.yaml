@@ -12,7 +12,11 @@ DefaultButtonBorderColor: "blend(@ButtonBorderColor, @AccentColor, 20)"
 ToolButtonCheckedBorderColor: "@PrimaryColorLighten5"
 ToolButtonCheckedBackground: "@CheckedButtonTopBackgroundColor"
 CheckBoxBackgroundColor: "@TextEditFieldBackgroundColor"
-CheckBoxBorderColor: "@GeneralBorderColor"
+# Not @GeneralBorderColor, which is black here: a box in the field colour
+# with a black edge, in a dialog one step lighter, shows no edge at all, and
+# an unchecked box read as a darker patch. The Light set's edge is darker
+# than its field; this one has to be lighter.
+CheckBoxBorderColor: "@PrimaryColorLighten5"
 DialogBackgroundColor: "@PrimaryColorLighten3"
 GeneralAlternateBackgroundColor: "@PrimaryColorLighten2"
 GeneralBackgroundColor: "@PrimaryColor"
@@ -41,7 +45,7 @@ PrimaryColorLighten4: "lighten(@PrimaryColor,100)"
 PrimaryColorLighten5: "lighten(@PrimaryColor,300)"
 PrimaryColorLighten6: "lighten(@PrimaryColor,5890)"
 RadioButtonBackgroundColor: "@CheckBoxBackgroundColor"
-RadioButtonBorderColor: "@GeneralBorderColor"
+RadioButtonBorderColor: "@CheckBoxBorderColor"
 ScrollbarBackgroundColor: "@GeneralDisabledBackgroundColor"
 SketcherConflictingConstraintsColor: "#fc6c6c"
 SketcherEmptySketchColor: "#ffffff"

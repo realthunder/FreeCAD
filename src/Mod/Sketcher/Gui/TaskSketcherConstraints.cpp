@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <QContextMenuEvent>
 #include <QMenu>
@@ -268,7 +270,7 @@ public:
 
             ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/Mod/Sketcher");
-            bool extended = hGrp->GetBool("ExtendedConstraintInformation", false);
+            bool extended = Sketcher::SketcherParams::getExtendedConstraintInformation();
 
             if (extended) {
                 if (constraint->Second == Sketcher::GeoEnum::GeoUndef) {
@@ -1001,10 +1003,10 @@ TaskSketcherConstraints::TaskSketcherConstraints(ViewProviderSketch* sketchView)
     {
         QSignalBlocker block(this);
         action1->setChecked(sketchView->Autoconstraints.getValue());
-        action2->setChecked(hGrp->GetBool("AutoRemoveRedundants", false));
-        action3->setChecked(hGrp->GetBool("VisualisationTrackingFilter", false));
-        action4->setChecked(hGrp->GetBool("ExtendedConstraintInformation", false));
-        action5->setChecked(hGrp->GetBool("HideInternalAlignment", false));
+        action2->setChecked(Sketcher::SketcherParams::getAutoRemoveRedundants());
+        action3->setChecked(Sketcher::SketcherParams::getVisualisationTrackingFilter());
+        action4->setChecked(Sketcher::SketcherParams::getExtendedConstraintInformation());
+        action5->setChecked(Sketcher::SketcherParams::getHideInternalAlignment());
     }
     hGrp->Attach(this);
 
@@ -1163,8 +1165,8 @@ void TaskSketcherConstraints::onSettingsExtendedInformationChanged(bool value)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
 
-    if (hGrp->GetBool("ExtendedConstraintInformation", false) != value) {
-        hGrp->SetBool("ExtendedConstraintInformation", value);
+    if (Sketcher::SketcherParams::getExtendedConstraintInformation() != value) {
+        Sketcher::SketcherParams::setExtendedConstraintInformation(value);
     }
 
     slotConstraintsChanged();
@@ -1176,8 +1178,8 @@ void TaskSketcherConstraints::onSettingsHideInternalAligmentChanged(bool value)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
 
-    if (hGrp->GetBool("HideInternalAlignment", false) != value) {
-        hGrp->SetBool("HideInternalAlignment", value);
+    if (Sketcher::SketcherParams::getHideInternalAlignment() != value) {
+        Sketcher::SketcherParams::setHideInternalAlignment(value);
     }
 
     slotConstraintsChanged();
@@ -1189,8 +1191,8 @@ void TaskSketcherConstraints::onSettingsRestrictVisibilityChanged(bool value)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
 
-    if (hGrp->GetBool("VisualisationTrackingFilter", false) != value) {
-        hGrp->SetBool("VisualisationTrackingFilter", value);
+    if (Sketcher::SketcherParams::getVisualisationTrackingFilter() != value) {
+        Sketcher::SketcherParams::setVisualisationTrackingFilter(value);
     }
 
     // either way: switched off, what the filter hid is shown again
@@ -1211,8 +1213,8 @@ void TaskSketcherConstraints::onSettingsAutoRemoveRedundantChanged(bool value)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
 
-    if (hGrp->GetBool("AutoRemoveRedundants", false) != value) {
-        hGrp->SetBool("AutoRemoveRedundants", value);
+    if (Sketcher::SketcherParams::getAutoRemoveRedundants() != value) {
+        Sketcher::SketcherParams::setAutoRemoveRedundants(value);
     }
 }
 
@@ -1566,7 +1568,7 @@ void TaskSketcherConstraints::updateList()
     // enforce constraint visibility
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
-    bool visibilityTracksFilter = hGrp->GetBool("VisualisationTrackingFilter", false);
+    bool visibilityTracksFilter = Sketcher::SketcherParams::getVisualisationTrackingFilter();
     change3DViewVisibilityToTrackFilter(visibilityTracksFilter);
 }
 
@@ -1891,7 +1893,7 @@ bool TaskSketcherConstraints::isConstraintFiltered(QListWidgetItem* item)
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
-    bool hideInternalAlignment = hGrp->GetBool("HideInternalAlignment", false);
+    bool hideInternalAlignment = Sketcher::SketcherParams::getHideInternalAlignment();
 
     bool visible = true;
 

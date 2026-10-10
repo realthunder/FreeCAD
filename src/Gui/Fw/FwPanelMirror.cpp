@@ -56,6 +56,7 @@
 #include <Base/Parameter.h>
 
 #include "Control.h"
+#include <Gui/MiscParams.h>
 #include "Fw/FwImage.h"
 #include "Fw/FwPanelMirror.h"
 #include "Fw/FwQtView.h"
@@ -459,9 +460,7 @@ void PanelMirror::onRemoveDialog()
 
 bool PanelMirror::allowed(const QString& dialogClass) const
 {
-    ParameterGrp::handle grp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Fw");
-    const QString pref = QString::fromStdString(grp->GetASCII("PanelMirror", "all")).trimmed();
+    const QString pref = QString::fromStdString(MiscParams::getPanelMirror()).trimmed();
     if (pref.isEmpty() || pref == QLatin1String("all"))
         return true;
     if (pref == QLatin1String("none"))
@@ -695,9 +694,7 @@ bool PanelMirror::eventFilter(QObject* watched, QEvent* event)
 
 void PanelMirror::startPoll()
 {
-    ParameterGrp::handle grp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Fw");
-    const int ms = grp->GetInt("PanelPollMs", defaultPollMs());
+    const int ms = static_cast<int>(MiscParams::getPanelPollMs());
     if (ms > 0)
         _pollTimer.start(ms);
     else

@@ -271,6 +271,257 @@ class ParameterTestCase(unittest.TestCase):
         TestPar.Clear()
 
 
+class ParamRegistryTestCase(unittest.TestCase):
+    """The settings registry from Python: FreeCAD.registerParam(), FreeCAD.listParams()
+    and the definition files freecad.params loads."""
+
+    PATH = "User parameter:BaseApp/Preferences/Mod/Test"
+
+    def find(self, entry):
+        rows = [r for r in FreeCAD.listParams(entry) if r["entry"] == entry]
+        self.assertEqual(len(rows), 1, entry)
+        return rows[0]
+
+    def testGeneratedClassesAreListed(self):
+        rows = FreeCAD.listParams("Preferences/Document checkextension")
+        self.assertEqual([r["entry"] for r in rows], ["CheckExtension"])
+        row = rows[0]
+        self.assertEqual(row["path"], "User parameter:BaseApp/Preferences/Document")
+        self.assertEqual(row["displayPath"], "Preferences/Document/CheckExtension")
+        self.assertEqual(row["namespace"], "App")
+        self.assertEqual(row["context"], "DocumentParams")
+        self.assertEqual(row["type"], "Bool")
+        self.assertTrue(row["doc"])
+        self.assertGreater(len(FreeCAD.listParams()), len(rows))
+        self.assertEqual(FreeCAD.listParams("no-such-keyword-anywhere"), [])
+
+    def testRegister(self):
+        self.assertTrue(
+            FreeCAD.registerParam(
+                self.PATH,
+                "PyDoorFlag",
+                "Bool",
+                True,
+                title="A flag",
+                doc="Described by the registry's Python test.",
+                namespace="Test",
+                context="PyDoor",
+            )
+        )
+        row = self.find("PyDoorFlag")
+        self.assertEqual(row["path"], self.PATH)
+        self.assertEqual(row["displayPath"], "Preferences/Mod/Test/PyDoorFlag")
+        self.assertEqual(row["name"], "PyDoorFlag")
+        self.assertEqual(row["type"], "Bool")
+        self.assertEqual(row["default"], "true")
+        self.assertEqual(row["title"], "A flag")
+        self.assertEqual(row["namespace"], "Test")
+        self.assertEqual(row["context"], "PyDoor")
+        self.assertEqual(row["proxy"], "")
+        self.assertEqual(row["items"], [])
+        # the first description stands, and nothing was stored by describing
+        self.assertFalse(FreeCAD.registerParam(self.PATH, "PyDoorFlag", "Bool", False, doc="x"))
+        self.assertEqual(self.find("PyDoorFlag")["default"], "true")
+        self.assertNotIn("PyDoorFlag", FreeCAD.ParamGet(self.PATH).GetBools())
+        # nor over a setting of a generated class
+        self.assertFalse(
+            FreeCAD.registerParam(
+                "User parameter:BaseApp/Preferences/Document", "CheckExtension", "Bool", False
+            )
+        )
+
+    def testDefaultsByType(self):
+        doc = "Described by the registry's Python test."
+        for entry, kind, value, text in (
+            ("PyDoorInt", "Int", -3, "-3"),
+            ("PyDoorUInt", "UInt", 7, "7"),
+            ("PyDoorHex", "Hex", 0xCC333300, "0xCC333300"),
+            ("PyDoorFloat", "Float", 0.25, "0.25"),
+            ("PyDoorFloatFromInt", "Float", 2, "2"),
+            ("PyDoorString", "String", "a b", "a b"),
+        ):
+            self.assertTrue(FreeCAD.registerParam(self.PATH, entry, kind, value, doc=doc), entry)
+            row = self.find(entry)
+            self.assertEqual(row["type"], kind)
+            self.assertEqual(row["default"], text)
+
+    def testEditors(self):
+        doc = "Described by the registry's Python test."
+        self.assertTrue(
+            FreeCAD.registerParam(
+                self.PATH,
+                "PyDoorChoice",
+                "Int",
+                1,
+                doc=doc,
+                proxy="ComboBox",
+                items=["Ask", ("Always", "Every time"), ("Never",)],
+                translateItems=False,
+            )
+        )
+        row = self.find("PyDoorChoice")
+        self.assertEqual(row["proxy"], "ComboBox")
+        self.assertEqual(
+            row["items"], [("Ask", "", None), ("Always", "Every time", None), ("Never", "", None)]
+        )
+        self.assertFalse(row["translateItems"])
+        self.assertTrue(
+            FreeCAD.registerParam(
+                self.PATH,
+                "PyDoorChoiceByText",
+                "String",
+                "b",
+                doc=doc,
+                proxy="ComboBox",
+                items=[("First", None, "a"), ("Second", None, "b")],
+            )
+        )
+        self.assertEqual(
+            self.find("PyDoorChoiceByText")["items"], [("First", "", "a"), ("Second", "", "b")]
+        )
+        self.assertTrue(
+            FreeCAD.registerParam(
+                self.PATH,
+                "PyDoorSpin",
+                "Float",
+                0.5,
+                doc=doc,
+                proxy="SpinBox",
+                minimum=0.0,
+                maximum=2.0,
+                step=0.25,
+                decimals=2,
+            )
+        )
+        row = self.find("PyDoorSpin")
+        self.assertEqual(
+            (row["minimum"], row["maximum"], row["step"], row["decimals"]), (0.0, 2.0, 0.25, 2)
+        )
+        self.assertTrue(
+            FreeCAD.registerParam(
+                self.PATH, "PyDoorColor", "Hex", 255, doc=doc, proxy="Color", transparency=True
+            )
+        )
+        self.assertTrue(self.find("PyDoorColor")["transparency"])
+
+    def testRefusals(self):
+        with self.assertRaises(ValueError):
+            FreeCAD.registerParam(self.PATH, "PyDoorBad", "Colour", 0)
+        with self.assertRaises(TypeError):
+            FreeCAD.registerParam(self.PATH, "PyDoorBad", "Bool", 1)
+        with self.assertRaises(TypeError):
+            FreeCAD.registerParam(self.PATH, "PyDoorBad", "Int", True)
+        with self.assertRaises(TypeError):
+            FreeCAD.registerParam(self.PATH, "PyDoorBad", "Int", "3")
+        with self.assertRaises(TypeError):
+            FreeCAD.registerParam(self.PATH, "PyDoorBad", "String", 3)
+        with self.assertRaises(ValueError):
+            FreeCAD.registerParam(self.PATH, "PyDoorBad", "Hex", -1)
+        # a path the registry could not read a value through
+        with self.assertRaises(ValueError):
+            FreeCAD.registerParam("Preferences/Mod/Test", "PyDoorBad", "Bool", True)
+        with self.assertRaises(ValueError):
+            FreeCAD.registerParam("No such set:Preferences", "PyDoorBad", "Bool", True)
+        with self.assertRaises(ValueError):
+            FreeCAD.registerParam(self.PATH, "", "Bool", True)
+        with self.assertRaises(ValueError):
+            FreeCAD.registerParam(
+                self.PATH, "PyDoorBad", "String", "a", items=[("A", None, "a"), "B"]
+            )
+        self.assertEqual([r for r in FreeCAD.listParams("PyDoorBad")], [])
+
+    def testDefinitionFile(self):
+        import types
+        from freecad import params
+
+        definition = types.SimpleNamespace(
+            NameSpace="Test",
+            ClassName="PyDoorParams",
+            ParamPath=self.PATH,
+            Params=[
+                params.ParamBool("PyFileFlag", False, title="A flag", doc="A flag of the test."),
+                params.ParamInt(
+                    "PyFileChoice",
+                    2,
+                    doc="A choice of the test.",
+                    proxy=params.ParamComboBox(["Ask", ("Always", "Every time"), "Never"]),
+                ),
+                params.ParamHex(
+                    "PyFileColor",
+                    0xCC333300,
+                    doc="A colour of the test.",
+                    proxy=params.ParamColor(transparency=False),
+                ),
+                params.ParamFloat(
+                    "PyFileSize",
+                    1.5,
+                    doc="A size of the test.",
+                    proxy=params.ParamSpinBox(0.5, 10, 0.5, 1),
+                ),
+                params.ParamString(
+                    "PyFileText", "a \"b\"", doc="A text of the test.", subpath="Sub"
+                ),
+                params.ParamUInt("PyFileCount", 3, doc="A count of the test.", param_name="Count2"),
+            ],
+        )
+        self.assertEqual(params.register(definition), [])
+        row = self.find("PyFileFlag")
+        self.assertEqual((row["type"], row["default"]), ("Bool", "false"))
+        self.assertEqual((row["namespace"], row["context"]), ("Test", "PyDoorParams"))
+        self.assertEqual(row["title"], "A flag")
+        row = self.find("PyFileChoice")
+        self.assertEqual((row["type"], row["default"], row["proxy"]), ("Int", "2", "ComboBox"))
+        self.assertEqual([i[0] for i in row["items"]], ["Ask", "Always", "Never"])
+        self.assertEqual(row["items"][1][1], "Every time")
+        # a one-line documentation is the title too, as in a generated class
+        self.assertEqual(row["title"], "A choice of the test.")
+        row = self.find("PyFileColor")
+        self.assertEqual((row["type"], row["default"], row["proxy"]), ("Hex", "0xCC333300", "Color"))
+        self.assertFalse(row["transparency"])
+        row = self.find("PyFileSize")
+        self.assertEqual((row["default"], row["proxy"]), ("1.5", "SpinBox"))
+        self.assertEqual((row["minimum"], row["maximum"], row["decimals"]), (0.5, 10.0, 1))
+        row = self.find("PyFileText")
+        self.assertEqual(row["path"], self.PATH + "/Sub")
+        self.assertEqual(row["default"], 'a "b"')
+        row = self.find("Count2")
+        self.assertEqual((row["name"], row["type"], row["default"]), ("PyFileCount", "UInt", "3"))
+
+        # the same file again is no conflict; the same entry from another file is
+        self.assertEqual(params.register(definition), [])
+        other = types.SimpleNamespace(
+            NameSpace="Test",
+            ClassName="PyDoorOtherParams",
+            ParamPath=self.PATH,
+            Params=[params.ParamBool("PyFileFlag", True, doc="The same flag again.")],
+        )
+        noted = len(params.conflicts)
+        self.assertEqual(params.register(other), [(self.PATH, "PyFileFlag")])
+        self.assertEqual(
+            params.conflicts[noted:], [("Test::PyDoorOtherParams", self.PATH, "PyFileFlag")]
+        )
+        del params.conflicts[noted:]
+        self.assertEqual(self.find("PyFileFlag")["default"], "false")
+
+        # loading the generator's classes left no stand-in for its build tool behind
+        self.assertNotIn("cog", sys.modules)
+
+    def testModulesDefinitions(self):
+        """What the modules written in Python registered at start: nothing of it is
+        described twice, and every setting has a short documentation, as the C++
+        tests ask of the generated classes."""
+        from freecad import params
+
+        self.assertEqual(params.conflicts, [])
+        for path, entry in params._owners:
+            rows = [r for r in FreeCAD.listParams(entry) if (r["path"], r["entry"]) == (path, entry)]
+            self.assertEqual(len(rows), 1, entry)
+            doc = rows[0]["doc"]
+            self.assertTrue(doc, "%s/%s has no documentation" % (path, entry))
+            self.assertLessEqual(len(doc), 400, "%s/%s" % (path, entry))
+            self.assertTrue(rows[0]["title"], "%s/%s has no title" % (path, entry))
+
+
 class AlgebraTestCase(unittest.TestCase):
     def setUp(self):
         pass

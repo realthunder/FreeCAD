@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <memory>
 
 #ifndef _PreComp_
@@ -303,11 +305,11 @@ struct EditData {
         hSketchView = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/View");
         hSketchView->Attach(master);
         readLineStyles();
-        _AllowFaceExternal = hSketchGeneral->GetBool(_ParamAllowFaceExternal, true);
+        _AllowFaceExternal = hSketchGeneral->GetBool(_ParamAllowFaceExternal, Sketcher::SketcherParams::defaultAllowFaceExternalPick());
         _SnapTolerance = hSketchGeneral->GetFloat(_ParamSnapTolerance, 0.2);
-        _ViewBottomOnEdit = hSketchGeneral->GetBool(_ParamViewBottomOnEdit, false);
-        _AdjustCamera = hSketchGeneral->GetBool(_ParamAdjustCamera, true);
-        _FitOnEdit = hSketchGeneral->GetBool(_ParamFitOnEdit, true);
+        _ViewBottomOnEdit = hSketchGeneral->GetBool(_ParamViewBottomOnEdit, Sketcher::SketcherParams::defaultViewBottomOnEdit());
+        _AdjustCamera = hSketchGeneral->GetBool(_ParamAdjustCamera, Sketcher::SketcherParams::defaultAdjustCamera());
+        _FitOnEdit = hSketchGeneral->GetBool(_ParamFitOnEdit, Sketcher::SketcherParams::defaultFitSketchOnEdit());
 
         timer.setSingleShot(true);
         QObject::connect(&timer, &QTimer::timeout, [master]() {
@@ -344,14 +346,14 @@ struct EditData {
             CurveWidth[c] = std::max(1L, hSketchView->GetInt(names[c].width, 2));
             CurvePattern[c] = hSketchView->GetInt(names[c].pattern, names[c].defPattern) & 0xFFFF;
         }
-        DimensionLineWidth = std::max(1L, hSketchView->GetInt("DimensionalConstraintLineWidth", 2));
-        DimensionLinePattern = hSketchView->GetInt("DimensionalConstraintLinePattern", 0xFFFF) & 0xFFFF;
+        DimensionLineWidth = std::max(1L, hSketchView->GetInt("DimensionalConstraintLineWidth", Sketcher::SketcherParams::defaultDimensionalConstraintLineWidth()));
+        DimensionLinePattern = hSketchView->GetInt("DimensionalConstraintLinePattern", Sketcher::SketcherParams::defaultDimensionalConstraintLinePattern()) & 0xFFFF;
         AxisTransparency =
-            Base::clamp<long>(hSketchGeneral->GetInt("AxisTransparency", 30), 0, 100) / 100.0f;
-        AxisLineWidth = std::max(1L, hSketchView->GetInt("AxisLineWidth", 2));
-        AxisLinePattern = hSketchView->GetInt("AxisLinePattern", 0xFFFF) & 0xFFFF;
-        InformationWidth = std::max(1L, hSketchView->GetInt("InformationWidth", 1));
-        InformationPattern = hSketchView->GetInt("InformationPattern", 0xFCFC) & 0xFFFF;
+            Base::clamp<long>(hSketchGeneral->GetInt("AxisTransparency", Sketcher::SketcherParams::defaultAxisTransparency()), 0, 100) / 100.0f;
+        AxisLineWidth = std::max(1L, hSketchView->GetInt("AxisLineWidth", Sketcher::SketcherParams::defaultAxisLineWidth()));
+        AxisLinePattern = hSketchView->GetInt("AxisLinePattern", Sketcher::SketcherParams::defaultAxisLinePattern()) & 0xFFFF;
+        InformationWidth = std::max(1L, hSketchView->GetInt("InformationWidth", Sketcher::SketcherParams::defaultInformationWidth()));
+        InformationPattern = hSketchView->GetInt("InformationPattern", Sketcher::SketcherParams::defaultInformationPattern()) & 0xFFFF;
     }
 
     /// Put them on the draw styles. A field is written only when it
@@ -827,19 +829,34 @@ ViewProviderSketch::ViewProviderSketch()
 
     {//visibility automation: update defaults to follow preferences
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/General");
-        this->HideDependent.setValue(hGrp->GetBool("HideDependent", true));
-        this->ShowLinks.setValue(hGrp->GetBool("ShowLinks", true));
-        this->ShowSupport.setValue(hGrp->GetBool("ShowSupport", true));
-        this->RestoreCamera.setValue(hGrp->GetBool("RestoreCamera", true));
-        this->ForceOrtho.setValue(hGrp->GetBool("ForceOrtho", false));
-        this->SectionView.setValue(hGrp->GetBool("SectionView", false));
+        this->HideDependent.setValue(hGrp->GetBool("HideDependent", Sketcher::SketcherParams::defaultHideDependent()));
+        this->ShowLinks.setValue(hGrp->GetBool("ShowLinks", Sketcher::SketcherParams::defaultShowLinks()));
+        this->ShowSupport.setValue(hGrp->GetBool("ShowSupport", Sketcher::SketcherParams::defaultShowSupport()));
+        this->RestoreCamera.setValue(hGrp->GetBool("RestoreCamera", Sketcher::SketcherParams::defaultRestoreCamera()));
+        this->ForceOrtho.setValue(hGrp->GetBool("ForceOrtho", Sketcher::SketcherParams::defaultForceOrtho()));
+        this->SectionView.setValue(hGrp->GetBool("SectionView", Sketcher::SketcherParams::defaultSectionView()));
 
         // well it is not visibility automation but a good place nevertheless
-        this->ShowGrid.setValue(hGrp->GetBool("ShowGrid", true));
-        this->GridSize.setValue(Base::Quantity::parse(hGrp->GetGroup("GridSize")->GetASCII("Hist0", "10.0")).getValue());
-        this->GridAuto.setValue(hGrp->GetBool("GridAuto", true));
-        this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", true));
-        this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", true));
+        this->ShowGrid.setValue(hGrp->GetBool("ShowGrid", Sketcher::SketcherParams::defaultShowGrid()));
+        // The Grid page stores the spacing as the number GridSize of this
+        // sub-group. What was read here is Hist0, a text nothing writes any
+        // more, so a spacing set on the page never reached a new sketch.
+        // The Hist0 of an old profile still counts while the page's key is
+        // not stored.
+        auto hGridSize = hGrp->GetGroup("GridSize");
+        double gridSize = Sketcher::SketcherParams::defaultGridSize();
+        const std::string oldGridSize = hGridSize->GetASCII("Hist0", "");
+        if (!oldGridSize.empty()) {
+            try {
+                gridSize = Base::Quantity::parse(oldGridSize).getValue();
+            }
+            catch (const Base::Exception&) {
+            }
+        }
+        this->GridSize.setValue(hGridSize->GetFloat("GridSize", gridSize));
+        this->GridAuto.setValue(hGrp->GetBool("GridAuto", Sketcher::SketcherParams::defaultGridAuto()));
+        this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", Sketcher::SketcherParams::defaultAutoConstraints()));
+        this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", Sketcher::SketcherParams::defaultAvoidRedundantAutoconstraints()));
 
         App::Color faceColor;
         long faceTransparency;
@@ -1219,16 +1236,16 @@ void ViewProviderSketch::updateGridParameters()
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
     // The defaults are the extension's own, so a missing entry changes nothing.
     const unsigned long grey = SbColor(0.7f, 0.7f, 0.7f).getPackedValue();
-    setGridSizePixelThreshold(hGrp->GetInt("GridSizePixelThreshold", 15));
-    setGridNumberSubdivision(hGrp->GetInt("GridNumberSubdivision", 10));
-    setGridLinePattern(hGrp->GetInt("GridLinePattern", 0xffff));
-    setGridDivLinePattern(hGrp->GetInt("GridDivLinePattern", 0xffff));
-    setGridLineWidth(hGrp->GetInt("GridLineWidth", 1));
-    setGridDivLineWidth(hGrp->GetInt("GridDivLineWidth", 2));
-    setGridLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridLineColor", grey))));
-    setGridDivLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridDivLineColor", grey))));
+    setGridSizePixelThreshold(hGrp->GetInt("GridSizePixelThreshold", Sketcher::SketcherParams::defaultGridSizePixelThreshold()));
+    setGridNumberSubdivision(hGrp->GetInt("GridNumberSubdivision", Sketcher::SketcherParams::defaultGridNumberSubdivision()));
+    setGridLinePattern(hGrp->GetInt("GridLinePattern", Sketcher::SketcherParams::defaultGridLinePattern()));
+    setGridDivLinePattern(hGrp->GetInt("GridDivLinePattern", Sketcher::SketcherParams::defaultGridDivLinePattern()));
+    setGridLineWidth(hGrp->GetInt("GridLineWidth", Sketcher::SketcherParams::defaultGridLineWidth()));
+    setGridDivLineWidth(hGrp->GetInt("GridDivLineWidth", Sketcher::SketcherParams::defaultGridDivLineWidth()));
+    setGridLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridLineColor", Sketcher::SketcherParams::defaultGridLineColor()))));
+    setGridDivLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridDivLineColor", Sketcher::SketcherParams::defaultGridDivLineColor()))));
     // A percentage, 0 opaque; solid lines by default, so they are drawn light.
-    setGridTransparency(static_cast<float>(hGrp->GetInt("GridTransparency", 60)) / 100.0f);
+    setGridTransparency(static_cast<float>(hGrp->GetInt("GridTransparency", Sketcher::SketcherParams::defaultGridTransparency())) / 100.0f);
 }
 
 void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::ViewerContext *viewer, SbLine& line) const
@@ -4123,7 +4140,7 @@ void ViewProviderSketch::updateBaseColor()
     // top rendering (because of Z buffer works). So LowerRenderGeometryId will
     // be rendered first.
     int topid = hGrpp->GetInt("LowRenderGeometryId",1);
-    int midid = hGrpp->GetInt("MidRenderGeometryId",2);
+    int midid = hGrpp->GetInt("MidRenderGeometryId", Sketcher::SketcherParams::defaultMidRenderGeometryId());
 
     float zNormPoint = zdir * (topid==1?zHighPoints:(midid==1 && topid!=2)?zHighPoints:zLowPoints);
     float zConstrPoint = zdir * (topid==2?zHighPoints:(midid==2 && topid!=1)?zHighPoints:zLowPoints);
@@ -4205,7 +4222,7 @@ void ViewProviderSketch::updateBaseColor()
         return false;
     };
 
-    bool showOriginalColor = hGrpp->GetBool("ShowOriginalColor", false);
+    bool showOriginalColor = hGrpp->GetBool("ShowOriginalColor", Sketcher::SketcherParams::defaultShowOriginalColor());
     bool invalidSketch =   (getSketchObject()->getLastHasRedundancies()           ||
                             getSketchObject()->getLastHasConflicts()              ||
                             getSketchObject()->getLastHasMalformedConstraints()) && !showOriginalColor;
@@ -5079,11 +5096,11 @@ QString ViewProviderSketch::getPresentationString(const Constraint *constraint)
     // get parameter group for Sketcher display settings
     hGrpSketcher = App::GetApplication().GetUserParameter().GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Sketcher");
     // Get value of HideUnits option. Default is false.
-    iHideUnits = hGrpSketcher->GetBool("HideUnits", 0);
+    iHideUnits = Sketcher::SketcherParams::getHideUnits();
     // Get Value of ShowDimensionalName option. Default is true.
-    iShowDimName = hGrpSketcher->GetBool("ShowDimensionalName", true);
+    iShowDimName = Sketcher::SketcherParams::getShowDimensionalName();
     // Get the defined format string
-    formatStr = QString::fromStdString(hGrpSketcher->GetASCII("DimensionalStringFormat", "%N = %V"));
+    formatStr = QString::fromStdString(Sketcher::SketcherParams::getDimensionalStringFormat());
 
     // Get the current name parameter string of the constraint
     nameStr = QString::fromStdString(constraint->Name);
@@ -5828,15 +5845,15 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
     else if (gridDict.count(sReason))
         updateGridParameters();
     else if (boost::equals(sReason, _ParamAllowFaceExternal))
-        _AllowFaceExternal = edit->hSketchGeneral->GetBool(_ParamAllowFaceExternal, true);
+        _AllowFaceExternal = edit->hSketchGeneral->GetBool(_ParamAllowFaceExternal, Sketcher::SketcherParams::defaultAllowFaceExternalPick());
     else if (boost::equals(sReason, _ParamSnapTolerance))
         _SnapTolerance = edit->hSketchGeneral->GetFloat(_ParamSnapTolerance, 0.2);
     else if (boost::equals(sReason, _ParamViewBottomOnEdit))
-        _ViewBottomOnEdit = edit->hSketchGeneral->GetBool(_ParamViewBottomOnEdit, false);
+        _ViewBottomOnEdit = edit->hSketchGeneral->GetBool(_ParamViewBottomOnEdit, Sketcher::SketcherParams::defaultViewBottomOnEdit());
     else if (boost::equals(sReason, _ParamAdjustCamera))
-        _AdjustCamera = edit->hSketchGeneral->GetBool(_ParamAdjustCamera, true);
+        _AdjustCamera = edit->hSketchGeneral->GetBool(_ParamAdjustCamera, Sketcher::SketcherParams::defaultAdjustCamera());
     else if (boost::equals(sReason, _ParamFitOnEdit))
-        _FitOnEdit = edit->hSketchGeneral->GetBool(_ParamFitOnEdit, true);
+        _FitOnEdit = edit->hSketchGeneral->GetBool(_ParamFitOnEdit, Sketcher::SketcherParams::defaultFitSketchOnEdit());
 }
 
 bool ViewProviderSketch::allowFaceExternalPick()
@@ -5947,12 +5964,15 @@ void ViewProviderSketch::initParams()
 {
     //Add scaling to Constraint icons
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    double viewScalingFactor = hGrp->GetFloat("ViewScalingFactor", 1.0);
+    double viewScalingFactor = hGrp->GetFloat("ViewScalingFactor", Sketcher::SketcherParams::defaultViewScalingFactor());
     viewScalingFactor = Base::clamp<double>(viewScalingFactor, 0.5, 5.0);
-    int markersize = hGrp->GetInt("MarkerSize", 7);
+    int markersize = hGrp->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
     int defaultFontSizePixels = QApplication::fontMetrics().height(); // returns height in pixels, not points
-    int sketcherfontSize = hGrp->GetInt("EditSketcherFontSize", defaultFontSizePixels);
+    // 0, which is also the definition's default, is the application font's height
+    int sketcherfontSize = hGrp->GetInt("EditSketcherFontSize", Sketcher::SketcherParams::defaultEditSketcherFontSize());
+    if (sketcherfontSize <= 0)
+        sketcherfontSize = defaultFontSizePixels;
 
     if(edit) {
         // Coin draws into the framebuffer, whose pixels are DEVICE pixels.
@@ -5981,14 +6001,16 @@ void ViewProviderSketch::initParams()
             dpi = 96.0;
         edit->labelFontSize = std::lround(sketcherfontSize * dpr * 72.0 / dpi);
         // upstream b9a89bada1
-        edit->labelFontName = hGrp->GetASCII("EditSketcherFontName", "");
+        edit->labelFontName = hGrp->GetASCII("EditSketcherFontName", Sketcher::SketcherParams::defaultEditSketcherFontName().c_str());
         // A constraint symbol has a size of its own (upstream eef738b312,
         // dc22fb4b9b): the application font's height until it is set. It
         // was 0.8 of the label font's size and followed that.
-        long symbolSize = hGrp->GetInt("ConstraintSymbolSize", defaultFontSizePixels);
+        long symbolSize = hGrp->GetInt("ConstraintSymbolSize", Sketcher::SketcherParams::defaultConstraintSymbolSize());
+        if (symbolSize <= 0)
+            symbolSize = defaultFontSizePixels;
         edit->constraintIconSize = std::lround(std::max(6L, symbolSize) * dpr);
-        edit->iconLabelsPerLine = std::max(1L, hGrp->GetInt("ConstraintIconLabelsPerLine", 10));
-        edit->iconLabelLines = std::max(1L, hGrp->GetInt("ConstraintIconLabelLines", 3));
+        edit->iconLabelsPerLine = std::max(1L, hGrp->GetInt("ConstraintIconLabelsPerLine", Sketcher::SketcherParams::defaultConstraintIconLabelsPerLine()));
+        edit->iconLabelLines = std::max(1L, hGrp->GetInt("ConstraintIconLabelLines", Sketcher::SketcherParams::defaultConstraintIconLabelLines()));
 
         // Markers are bitmaps in a fixed set of sizes: scale, then take the
         // nearest one up, or the largest there is.
@@ -6003,7 +6025,7 @@ void ViewProviderSketch::initParams()
 
         edit->readLineStyles();
 
-        zCross = edit->hSketchGeneral->GetFloat("ZHeight", 1e-6f);
+        zCross = edit->hSketchGeneral->GetFloat("ZHeight", Sketcher::SketcherParams::defaultZHeight());
         if (zCross == 0.0f)
             zCross = 1e-6f;
         zEdit=zCross;
@@ -6064,71 +6086,71 @@ void ViewProviderSketch::initParams()
         defCurveMissingColor = (unsigned long)(CurveMissingColor.getPackedValue());
     }
     // set the curve color
-    color = hGrp->GetUnsigned("EditedEdgeColor", defCurveColor);
+    color = hGrp->GetUnsigned("EditedEdgeColor", Sketcher::SketcherParams::defaultEditedEdgeColor());
     CurveColor.setPackedValue((uint32_t)color, transparency);
     // set the construction curve color
-    color = hGrp->GetUnsigned("ConstructionColor", defCurveDraftColor);
+    color = hGrp->GetUnsigned("ConstructionColor", Sketcher::SketcherParams::defaultConstructionColor());
     CurveDraftColor.setPackedValue((uint32_t)color, transparency);
     // set the internal alignment geometry color
-    color = hGrp->GetUnsigned("InternalAlignedGeoColor", defInternalAlignedGeoColor);
+    color = hGrp->GetUnsigned("InternalAlignedGeoColor", Sketcher::SketcherParams::defaultInternalAlignedGeoColor());
     InternalAlignedGeoColor.setPackedValue((uint32_t)color, transparency);
     // set the color for a fully constrained element
-    color = hGrp->GetUnsigned("FullyConstraintElementColor", defFullyConstraintElementColor);
+    color = hGrp->GetUnsigned("FullyConstraintElementColor", Sketcher::SketcherParams::defaultFullyConstraintElementColor());
     FullyConstraintElementColor.setPackedValue((uint32_t)color, transparency);
     // set the color for fully constrained construction element
-    color = hGrp->GetUnsigned("FullyConstraintConstructionElementColor", defFullyConstraintConstructionElementColor);
+    color = hGrp->GetUnsigned("FullyConstraintConstructionElementColor", Sketcher::SketcherParams::defaultFullyConstraintConstructionElementColor());
     FullyConstraintConstructionElementColor.setPackedValue((uint32_t)color, transparency);
     // set the color for fully constrained internal alignment element
-    color = hGrp->GetUnsigned("FullyConstraintInternalAlignmentColor", defFullyConstraintInternalAlignmentColor);
+    color = hGrp->GetUnsigned("FullyConstraintInternalAlignmentColor", Sketcher::SketcherParams::defaultFullyConstraintInternalAlignmentColor());
     FullyConstraintInternalAlignmentColor.setPackedValue((uint32_t)color, transparency);
     // set the color for fully constrained construction points
     // set the cross lines color
     //CrossColorV.setPackedValue((uint32_t)color, transparency);
     //CrossColorH.setPackedValue((uint32_t)color, transparency);
     // set invalid sketch color
-    color = hGrp->GetUnsigned("InvalidSketchColor", defInvalidSketchColor);
+    color = hGrp->GetUnsigned("InvalidSketchColor", Sketcher::SketcherParams::defaultInvalidSketchColor());
     InvalidSketchColor.setPackedValue((uint32_t)color, transparency);
     // set the fully constrained color
-    color = hGrp->GetUnsigned("FullyConstrainedColor", defFullyConstrainedColor);
+    color = hGrp->GetUnsigned("FullyConstrainedColor", Sketcher::SketcherParams::defaultFullyConstrainedColor());
     FullyConstrainedColor.setPackedValue((uint32_t)color, transparency);
     // set the constraint dimension color
-    color = hGrp->GetUnsigned("ConstrainedDimColor", defConstrDimColor);
+    color = hGrp->GetUnsigned("ConstrainedDimColor", Sketcher::SketcherParams::defaultConstrainedDimColor());
     ConstrDimColor.setPackedValue((uint32_t)color, transparency);
     // set the constraint color
-    color = hGrp->GetUnsigned("ConstrainedIcoColor", defConstrIcoColor);
+    color = hGrp->GetUnsigned("ConstrainedIcoColor", Sketcher::SketcherParams::defaultConstrainedIcoColor());
     ConstrIcoColor.setPackedValue((uint32_t)color, transparency);
     // set non-driving constraint color
-    color = hGrp->GetUnsigned("NonDrivingConstrDimColor", defNonDrivingConstrDimColor);
+    color = hGrp->GetUnsigned("NonDrivingConstrDimColor", Sketcher::SketcherParams::defaultNonDrivingConstrDimColor());
     NonDrivingConstrDimColor.setPackedValue((uint32_t)color, transparency);
     // set expression based constraint color
-    color = hGrp->GetUnsigned("ExprBasedConstrDimColor", defExprBasedConstrDimColor);
+    color = hGrp->GetUnsigned("ExprBasedConstrDimColor", Sketcher::SketcherParams::defaultExprBasedConstrDimColor());
     ExprBasedConstrDimColor.setPackedValue((uint32_t)color, transparency);
     // set expression based constraint color
-    color = hGrp->GetUnsigned("DeactivatedConstrDimColor", defDeactivatedConstrDimColor );
+    color = hGrp->GetUnsigned("DeactivatedConstrDimColor", Sketcher::SketcherParams::defaultDeactivatedConstrDimColor());
     DeactivatedConstrDimColor.setPackedValue((uint32_t)color, transparency);
 
     // set the external geometry color
-    color = hGrp->GetUnsigned("ExternalColor", defCurveExternalColor);
+    color = hGrp->GetUnsigned("ExternalColor", Sketcher::SketcherParams::defaultExternalColor());
     CurveExternalColor.setPackedValue((uint32_t)color, transparency);
 
     static const unsigned long defCurveExternalDefiningColor =
         (unsigned long)(CurveExternalDefiningColor.getPackedValue());
-    color = hGrp->GetUnsigned("ExternalDefiningColor", defCurveExternalDefiningColor);
+    color = hGrp->GetUnsigned("ExternalDefiningColor", Sketcher::SketcherParams::defaultExternalDefiningColor());
     CurveExternalDefiningColor.setPackedValue((uint32_t)color, transparency);
 
     // the information layer: B-spline polygons, combs, the hints
     static const unsigned long defInformationColor =
         (unsigned long)(InformationColor.getPackedValue());
-    color = hGrp->GetUnsigned("InformationColor", defInformationColor);
+    color = hGrp->GetUnsigned("InformationColor", Sketcher::SketcherParams::defaultInformationColor());
     InformationColor.setPackedValue((uint32_t)color, transparency);
 
-    color = hGrp->GetUnsigned("FrozenColor", defCurveFrozenColor);
+    color = hGrp->GetUnsigned("FrozenColor", Sketcher::SketcherParams::defaultFrozenColor());
     CurveFrozenColor.setPackedValue((uint32_t)color, transparency);
 
-    color = hGrp->GetUnsigned("DetachedColor", defCurveDetachedColor);
+    color = hGrp->GetUnsigned("DetachedColor", Sketcher::SketcherParams::defaultDetachedColor());
     CurveDetachedColor.setPackedValue((uint32_t)color, transparency);
 
-    color = hGrp->GetUnsigned("MissingColor", defCurveMissingColor);
+    color = hGrp->GetUnsigned("MissingColor", Sketcher::SketcherParams::defaultMissingColor());
     CurveMissingColor.setPackedValue((uint32_t)color, transparency);
 
     // set the highlight color
@@ -6202,9 +6224,9 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
 
     ParameterGrp::handle hGrpsk = edit->hSketchGeneral;
 
-    int topid = hGrpsk->GetInt("TopRenderGeometryId",1);
-    int midid = hGrpsk->GetInt("MidRenderGeometryId",2);
-    int lowid = hGrpsk->GetInt("LowRenderGeometryId",3);
+    int topid = hGrpsk->GetInt("TopRenderGeometryId", Sketcher::SketcherParams::defaultTopRenderGeometryId());
+    int midid = hGrpsk->GetInt("MidRenderGeometryId", Sketcher::SketcherParams::defaultMidRenderGeometryId());
+    int lowid = hGrpsk->GetInt("LowRenderGeometryId", Sketcher::SketcherParams::defaultLowRenderGeometryId());
     std::stable_sort(geoIndices.begin(), geoIndices.end(),
         [&constructions, intGeoCount, topid, midid, lowid](int idx1, int idx2) {
             int id1, id2;
@@ -6245,7 +6267,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     // end information layer
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", 50);
+    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", Sketcher::SketcherParams::defaultSegmentsPerGeometry());
     // value cannot be smaller than 3
     if (stdcountsegments < 3)
         stdcountsegments = 3;
@@ -6706,7 +6728,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     if ( (combrepscale > (2 * combrepscalehyst)) || (combrepscale < (combrepscalehyst/2)))
         combrepscalehyst = combrepscale ;
 
-    bool externalVisible = hGrpsk->GetBool("BSplineExternalVisible", false);
+    bool externalVisible = hGrpsk->GetBool("BSplineExternalVisible", Sketcher::SketcherParams::defaultBSplineExternalVisible());
 
     // geometry information layer for bsplines, as they need a second round now that max curvature is known
     for (std::vector<int>::const_iterator it = bsplineGeoIds.begin(); it != bsplineGeoIds.end(); ++it) {
@@ -9128,7 +9150,7 @@ void ViewProviderSketch::faceColorFromPreference(App::Color &color, long &transp
     // transparent blue, not upstream's orange (8a6f859a57).
     unsigned long shcol = App::GetApplication()
         .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/General")
-        ->GetUnsigned("FaceColor", 0x54abff7f);
+        ->GetUnsigned("FaceColor", Sketcher::SketcherParams::defaultFaceColor());
     color = App::Color(((shcol >> 24) & 0xff) / 255.f, ((shcol >> 16) & 0xff) / 255.f,
                        ((shcol >> 8) & 0xff) / 255.f);
     transparency = 100 * (255 - long(shcol & 0xff)) / 255;
@@ -9399,7 +9421,7 @@ bool ViewProviderSketch::setEdit(int ModNum)
     initParams();
 
     ParameterGrp::handle hSketch = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
-    edit->handleEscapeButton = !hSketch->GetBool("LeaveSketchWithEscape", true);
+    edit->handleEscapeButton = !Sketcher::SketcherParams::getLeaveSketchWithEscape();
 
     createEditInventorNodes();
 
@@ -9493,7 +9515,7 @@ bool ViewProviderSketch::setEdit(int ModNum)
     // Enable solver initial solution update while dragging.
     ParameterGrp::handle hGrp2 = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
 
-    getSketchObject()->setRecalculateInitialSolutionWhileMovingPoint(hGrp2->GetBool("RecalculateInitialSolutionWhileDragging",true));
+    getSketchObject()->setRecalculateInitialSolutionWhileMovingPoint(Sketcher::SketcherParams::getRecalculateInitialSolutionWhileDragging());
 
     // intercept del key press from main app
     listener = std::make_unique<ShortcutListener>(this);
@@ -9840,7 +9862,7 @@ void ViewProviderSketch::createEditInventorNodes(void)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     float transparency;
     SbColor cursorTextColor(0,0,1);
-    cursorTextColor.setPackedValue((uint32_t)hGrp->GetUnsigned("CursorTextColor", cursorTextColor.getPackedValue()), transparency);
+    cursorTextColor.setPackedValue((uint32_t)hGrp->GetUnsigned("CursorTextColor", Sketcher::SketcherParams::defaultCursorTextColor()), transparency);
 
     // What a tool shows while it works -- the curve being drawn, its
     // markers, the hints, the cursor's coordinates -- and the copies a
@@ -10647,7 +10669,7 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string> &subList)
         // need to tidy up after ourselves again.
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool autoRecompute = hGrp->GetBool("AutoRecompute",false);
+        bool autoRecompute = Sketcher::SketcherParams::getAutoRecompute();
 
         if (autoRecompute) {
             Gui::Command::updateActive();

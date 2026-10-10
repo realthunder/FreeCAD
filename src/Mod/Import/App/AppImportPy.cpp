@@ -483,7 +483,9 @@ private:
         std::string filePath;
         std::string layerName;
         const char* optionSource = nullptr;
-        std::string defaultOptions = "User parameter:BaseApp/Preferences/Mod/Import";
+        // Where the DXF preference page stores the exporter's options, and
+        // where readDXF looks for the importer's
+        std::string defaultOptions = "User parameter:BaseApp/Preferences/Mod/Draft";
         int   versionParm = -1;
         bool  versionOverride = false;
         bool  polyOverride = false;

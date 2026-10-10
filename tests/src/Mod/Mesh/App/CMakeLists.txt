@@ -3,4 +3,5 @@ target_sources(
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Core/KDTree.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Mesh.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/MeshParams.cpp
 )

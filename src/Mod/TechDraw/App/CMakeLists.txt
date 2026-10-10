@@ -173,6 +173,8 @@ SET(TechDraw_SRCS
     ArrowPropEnum.h
     Preferences.cpp
     Preferences.h
+    TechDrawParams.cpp
+    TechDrawParams.h
     TechDrawExport.cpp
     TechDrawExport.h
     ProjectionAlgos.cpp

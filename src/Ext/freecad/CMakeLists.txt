@@ -31,6 +31,12 @@ configure_file(utils.py ${NAMESPACE_DIR}/utils.py)
 configure_file(deprecation.py ${NAMESPACE_DIR}/deprecation.py)
 configure_file(prefs.py ${NAMESPACE_DIR}/prefs.py)
 
+# The way into the settings registry for the modules written in Python:
+# params.py reads definition files written with the classes of the code
+# generator, so the generator comes with it.
+configure_file(params.py ${NAMESPACE_DIR}/params.py COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/src/Tools/params_utils.py ${NAMESPACE_DIR}/params_utils.py COPYONLY)
+
 # MCP debug console (pure-Python; requires the 'mcp' package at runtime)
 configure_file(mcp_console/__init__.py ${NAMESPACE_DIR}/mcp_console/__init__.py COPYONLY)
 configure_file(mcp_console/server.py ${NAMESPACE_DIR}/mcp_console/server.py COPYONLY)
@@ -58,6 +64,8 @@ INSTALL(
     FILES
         ${NAMESPACE_INIT}
         deprecation.py
+        params.py
+        ${CMAKE_SOURCE_DIR}/src/Tools/params_utils.py
         prefs.py
         project_utility.py
         UiTools.py

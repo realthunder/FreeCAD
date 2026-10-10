@@ -28,6 +28,7 @@ SET(Inspection_SRCS
 
 set(Inspection_Scripts
     ../Init.py
+    ../InspectionParams.py
 )
 
 if(FREECAD_USE_PCH)

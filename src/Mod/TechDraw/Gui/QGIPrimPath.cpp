@@ -120,12 +120,14 @@ void QGIPrimPath::setPreselect(bool enable)
 }
 
 void QGIPrimPath::setPrettyNormal() {
+    m_pretty = false;
     m_colCurrent = m_colNormal;
     m_fillColorCurrent = m_colNormalFill;
 }
 
 void QGIPrimPath::setPrettyPre() {
 //    Base::Console().Message("QGIPP::setPrettyPre()\n");
+    m_pretty = true;
     m_colCurrent = getPreColor();
     if (!m_fillOverride) {
         m_fillColorCurrent = getPreColor();
@@ -134,6 +136,7 @@ void QGIPrimPath::setPrettyPre() {
 
 void QGIPrimPath::setPrettySel() {
 //    Base::Console().Message("QGIPP::setPrettySel()\n");
+    m_pretty = true;
     m_colCurrent = getSelectColor();
     if (!m_fillOverride) {
         m_fillColorCurrent = getSelectColor();

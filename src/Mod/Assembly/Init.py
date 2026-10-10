@@ -29,6 +29,9 @@ ParGrp.SetString("HelpIndex", "Assembly/Help/index.html")
 ParGrp.SetString("WorkBenchName", "Assembly")
 ParGrp.SetString("WorkBenchModule", "AssemblyWorkbench.py")
 
+# The settings Assembly's Python code reads, described to the settings registry
+import AssemblyPyParams
+
 FreeCAD.__unit_test__ += ["TestAssemblyWorkbench"]
 
 # This adds a custom import type to the FreeCAD import dialog.

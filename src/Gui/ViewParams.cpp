@@ -42,6 +42,7 @@
 #include "ViewArea.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "RenderParams.h"
 #include "QSint/actionpanel/taskheader_p.h"
 
 /*[[[cog
@@ -73,6 +74,7 @@ public:
     bool RandomColor;
     unsigned long BoundingBoxColor;
     unsigned long AnnotationTextColor;
+    unsigned long CursorCrosshairColor;
     unsigned long HighlightColor;
     unsigned long SelectionColor;
     long MarkerSize;
@@ -255,6 +257,75 @@ public:
     double DatumPlaneSize;
     double DatumLineSize;
     double DatumTemporaryScaleFactor;
+    double EyeDistance;
+    bool CornerCoordSystem;
+    long CornerCoordSystemSize;
+    bool ShowAxisCross;
+    bool ShowFPS;
+    bool UseVBO;
+    bool Orthographic;
+    bool Perspective;
+    bool ApplyCameraTypeToAll;
+    long AntiAliasing;
+    long TransparentObjectRenderType;
+    std::string InternalTextureFormat;
+    bool Gradient;
+    bool RadialGradient;
+    bool Simple;
+    unsigned long BackgroundColor;
+    unsigned long BackgroundColor2;
+    unsigned long BackgroundColor3;
+    unsigned long BackgroundColor4;
+    bool UseBackgroundColorMid;
+    bool EnableHeadlight;
+    unsigned long HeadlightColor;
+    long HeadlightIntensity;
+    std::string HeadlightDirection;
+    std::string BacklightDirection;
+    bool EnableFillLight;
+    unsigned long FillLightColor;
+    long FillLightIntensity;
+    std::string FillLightDirection;
+    unsigned long AmbientLightColor;
+    long AmbientLightIntensity;
+    std::string NavigationStyle;
+    bool SameStyleForAllViews;
+    long OrbitStyle;
+    long RotationMode;
+    double Sensitivity;
+    bool ResetCursorPosition;
+    bool InvertZoom;
+    bool ZoomAtCursor;
+    double ZoomStep;
+    bool UseNavigationAnimations;
+    bool UseSpinningAnimations;
+    long AnimationDuration;
+    long stopAnimatingIfDeactivated;
+    bool ShowRotationCenter;
+    double RotationCenterSize;
+    unsigned long RotationCenterColor;
+    std::string NewDocumentCameraOrientation;
+    bool AutoFitToView;
+    bool ShowNaviCube;
+    bool DisableTouchTilt;
+    bool NavigationDebug;
+    std::string GestureRollFwdCommand;
+    std::string GestureRollBackCommand;
+    bool SaveWBbyTab;
+    unsigned long CbLabelColor;
+    long CbLabelTextSize;
+    double BoundingBoxFontSize;
+    double DatumPointSize;
+    double LocalCoordinateSystemSize;
+    long DefaultShapeShininess;
+    bool DimensionsVisible;
+    bool Dimensions3dVisible;
+    bool DimensionsDeltaVisible;
+    std::string SavePicture;
+    double HeadlightRotationX;
+    double HeadlightRotationY;
+    double HeadlightRotationZ;
+    double HeadlightRotationW;
 
     // Auto generated code (Tools/params_utils.py:254)
     ViewParamsP() {
@@ -281,11 +352,13 @@ public:
         funcs["BoundingBoxColor"] = &ViewParamsP::updateBoundingBoxColor;
         AnnotationTextColor = this->handle->GetUnsigned("AnnotationTextColor", 0xFFFFFFFF);
         funcs["AnnotationTextColor"] = &ViewParamsP::updateAnnotationTextColor;
+        CursorCrosshairColor = this->handle->GetUnsigned("CursorCrosshairColor", 0xFFFFFFFF);
+        funcs["CursorCrosshairColor"] = &ViewParamsP::updateCursorCrosshairColor;
         HighlightColor = this->handle->GetUnsigned("HighlightColor", 0xE1E114FF);
         funcs["HighlightColor"] = &ViewParamsP::updateHighlightColor;
         SelectionColor = this->handle->GetUnsigned("SelectionColor", 0x1CAD1CFF);
         funcs["SelectionColor"] = &ViewParamsP::updateSelectionColor;
-        MarkerSize = this->handle->GetInt("MarkerSize", 9);
+        MarkerSize = this->handle->GetInt("MarkerSize", 7);
         funcs["MarkerSize"] = &ViewParamsP::updateMarkerSize;
         DefaultLinkColor = this->handle->GetUnsigned("DefaultLinkColor", 0x66FFFFFF);
         funcs["DefaultLinkColor"] = &ViewParamsP::updateDefaultLinkColor;
@@ -645,6 +718,144 @@ public:
         funcs["DatumLineSize"] = &ViewParamsP::updateDatumLineSize;
         DatumTemporaryScaleFactor = this->handle->GetFloat("DatumTemporaryScaleFactor", 2.0);
         funcs["DatumTemporaryScaleFactor"] = &ViewParamsP::updateDatumTemporaryScaleFactor;
+        EyeDistance = this->handle->GetFloat("EyeDistance", 5.0);
+        funcs["EyeDistance"] = &ViewParamsP::updateEyeDistance;
+        CornerCoordSystem = this->handle->GetBool("CornerCoordSystem", true);
+        funcs["CornerCoordSystem"] = &ViewParamsP::updateCornerCoordSystem;
+        CornerCoordSystemSize = this->handle->GetInt("CornerCoordSystemSize", 10);
+        funcs["CornerCoordSystemSize"] = &ViewParamsP::updateCornerCoordSystemSize;
+        ShowAxisCross = this->handle->GetBool("ShowAxisCross", false);
+        funcs["ShowAxisCross"] = &ViewParamsP::updateShowAxisCross;
+        ShowFPS = this->handle->GetBool("ShowFPS", false);
+        funcs["ShowFPS"] = &ViewParamsP::updateShowFPS;
+        UseVBO = this->handle->GetBool("UseVBO", false);
+        funcs["UseVBO"] = &ViewParamsP::updateUseVBO;
+        Orthographic = this->handle->GetBool("Orthographic", true);
+        funcs["Orthographic"] = &ViewParamsP::updateOrthographic;
+        Perspective = this->handle->GetBool("Perspective", false);
+        funcs["Perspective"] = &ViewParamsP::updatePerspective;
+        ApplyCameraTypeToAll = this->handle->GetBool("ApplyCameraTypeToAll", false);
+        funcs["ApplyCameraTypeToAll"] = &ViewParamsP::updateApplyCameraTypeToAll;
+        AntiAliasing = this->handle->GetInt("AntiAliasing", 3);
+        funcs["AntiAliasing"] = &ViewParamsP::updateAntiAliasing;
+        TransparentObjectRenderType = this->handle->GetInt("TransparentObjectRenderType", 0);
+        funcs["TransparentObjectRenderType"] = &ViewParamsP::updateTransparentObjectRenderType;
+        InternalTextureFormat = this->handle->GetASCII("InternalTextureFormat", "Default");
+        funcs["InternalTextureFormat"] = &ViewParamsP::updateInternalTextureFormat;
+        Gradient = this->handle->GetBool("Gradient", true);
+        funcs["Gradient"] = &ViewParamsP::updateGradient;
+        RadialGradient = this->handle->GetBool("RadialGradient", false);
+        funcs["RadialGradient"] = &ViewParamsP::updateRadialGradient;
+        Simple = this->handle->GetBool("Simple", false);
+        funcs["Simple"] = &ViewParamsP::updateSimple;
+        BackgroundColor = this->handle->GetUnsigned("BackgroundColor", 0xEAE5DCFF);
+        funcs["BackgroundColor"] = &ViewParamsP::updateBackgroundColor;
+        BackgroundColor2 = this->handle->GetUnsigned("BackgroundColor2", 0x333365FF);
+        funcs["BackgroundColor2"] = &ViewParamsP::updateBackgroundColor2;
+        BackgroundColor3 = this->handle->GetUnsigned("BackgroundColor3", 0xABABC1FF);
+        funcs["BackgroundColor3"] = &ViewParamsP::updateBackgroundColor3;
+        BackgroundColor4 = this->handle->GetUnsigned("BackgroundColor4", 0x6F6F93FF);
+        funcs["BackgroundColor4"] = &ViewParamsP::updateBackgroundColor4;
+        UseBackgroundColorMid = this->handle->GetBool("UseBackgroundColorMid", false);
+        funcs["UseBackgroundColorMid"] = &ViewParamsP::updateUseBackgroundColorMid;
+        EnableHeadlight = this->handle->GetBool("EnableHeadlight", true);
+        funcs["EnableHeadlight"] = &ViewParamsP::updateEnableHeadlight;
+        HeadlightColor = this->handle->GetUnsigned("HeadlightColor", 0xFFFFFFFF);
+        funcs["HeadlightColor"] = &ViewParamsP::updateHeadlightColor;
+        HeadlightIntensity = this->handle->GetInt("HeadlightIntensity", 100);
+        funcs["HeadlightIntensity"] = &ViewParamsP::updateHeadlightIntensity;
+        HeadlightDirection = this->handle->GetASCII("HeadlightDirection", "");
+        funcs["HeadlightDirection"] = &ViewParamsP::updateHeadlightDirection;
+        BacklightDirection = this->handle->GetASCII("BacklightDirection", "");
+        funcs["BacklightDirection"] = &ViewParamsP::updateBacklightDirection;
+        EnableFillLight = this->handle->GetBool("EnableFillLight", false);
+        funcs["EnableFillLight"] = &ViewParamsP::updateEnableFillLight;
+        FillLightColor = this->handle->GetUnsigned("FillLightColor", 0xE6FAFFFF);
+        funcs["FillLightColor"] = &ViewParamsP::updateFillLightColor;
+        FillLightIntensity = this->handle->GetInt("FillLightIntensity", 60);
+        funcs["FillLightIntensity"] = &ViewParamsP::updateFillLightIntensity;
+        FillLightDirection = this->handle->GetASCII("FillLightDirection", "");
+        funcs["FillLightDirection"] = &ViewParamsP::updateFillLightDirection;
+        AmbientLightColor = this->handle->GetUnsigned("AmbientLightColor", 0xFFFFFFFF);
+        funcs["AmbientLightColor"] = &ViewParamsP::updateAmbientLightColor;
+        AmbientLightIntensity = this->handle->GetInt("AmbientLightIntensity", 20);
+        funcs["AmbientLightIntensity"] = &ViewParamsP::updateAmbientLightIntensity;
+        NavigationStyle = this->handle->GetASCII("NavigationStyle", "Gui::CADNavigationStyle");
+        funcs["NavigationStyle"] = &ViewParamsP::updateNavigationStyle;
+        SameStyleForAllViews = this->handle->GetBool("SameStyleForAllViews", true);
+        funcs["SameStyleForAllViews"] = &ViewParamsP::updateSameStyleForAllViews;
+        OrbitStyle = this->handle->GetInt("OrbitStyle", 1);
+        funcs["OrbitStyle"] = &ViewParamsP::updateOrbitStyle;
+        RotationMode = this->handle->GetInt("RotationMode", 1);
+        funcs["RotationMode"] = &ViewParamsP::updateRotationMode;
+        Sensitivity = this->handle->GetFloat("Sensitivity", 2.0);
+        funcs["Sensitivity"] = &ViewParamsP::updateSensitivity;
+        ResetCursorPosition = this->handle->GetBool("ResetCursorPosition", false);
+        funcs["ResetCursorPosition"] = &ViewParamsP::updateResetCursorPosition;
+        InvertZoom = this->handle->GetBool("InvertZoom", true);
+        funcs["InvertZoom"] = &ViewParamsP::updateInvertZoom;
+        ZoomAtCursor = this->handle->GetBool("ZoomAtCursor", true);
+        funcs["ZoomAtCursor"] = &ViewParamsP::updateZoomAtCursor;
+        ZoomStep = this->handle->GetFloat("ZoomStep", 0.2);
+        funcs["ZoomStep"] = &ViewParamsP::updateZoomStep;
+        UseNavigationAnimations = this->handle->GetBool("UseNavigationAnimations", true);
+        funcs["UseNavigationAnimations"] = &ViewParamsP::updateUseNavigationAnimations;
+        UseSpinningAnimations = this->handle->GetBool("UseSpinningAnimations", false);
+        funcs["UseSpinningAnimations"] = &ViewParamsP::updateUseSpinningAnimations;
+        AnimationDuration = this->handle->GetInt("AnimationDuration", 250);
+        funcs["AnimationDuration"] = &ViewParamsP::updateAnimationDuration;
+        stopAnimatingIfDeactivated = this->handle->GetInt("stopAnimatingIfDeactivated", 3000);
+        funcs["stopAnimatingIfDeactivated"] = &ViewParamsP::updatestopAnimatingIfDeactivated;
+        ShowRotationCenter = this->handle->GetBool("ShowRotationCenter", true);
+        funcs["ShowRotationCenter"] = &ViewParamsP::updateShowRotationCenter;
+        RotationCenterSize = this->handle->GetFloat("RotationCenterSize", 5.0);
+        funcs["RotationCenterSize"] = &ViewParamsP::updateRotationCenterSize;
+        RotationCenterColor = this->handle->GetUnsigned("RotationCenterColor", 0xFF000033);
+        funcs["RotationCenterColor"] = &ViewParamsP::updateRotationCenterColor;
+        NewDocumentCameraOrientation = this->handle->GetASCII("NewDocumentCameraOrientation", "Trimetric");
+        funcs["NewDocumentCameraOrientation"] = &ViewParamsP::updateNewDocumentCameraOrientation;
+        AutoFitToView = this->handle->GetBool("AutoFitToView", true);
+        funcs["AutoFitToView"] = &ViewParamsP::updateAutoFitToView;
+        ShowNaviCube = this->handle->GetBool("ShowNaviCube", true);
+        funcs["ShowNaviCube"] = &ViewParamsP::updateShowNaviCube;
+        DisableTouchTilt = this->handle->GetBool("DisableTouchTilt", true);
+        funcs["DisableTouchTilt"] = &ViewParamsP::updateDisableTouchTilt;
+        NavigationDebug = this->handle->GetBool("NavigationDebug", false);
+        funcs["NavigationDebug"] = &ViewParamsP::updateNavigationDebug;
+        GestureRollFwdCommand = this->handle->GetASCII("GestureRollFwdCommand", "Std_SelForward");
+        funcs["GestureRollFwdCommand"] = &ViewParamsP::updateGestureRollFwdCommand;
+        GestureRollBackCommand = this->handle->GetASCII("GestureRollBackCommand", "Std_SelBack");
+        funcs["GestureRollBackCommand"] = &ViewParamsP::updateGestureRollBackCommand;
+        SaveWBbyTab = this->handle->GetBool("SaveWBbyTab", false);
+        funcs["SaveWBbyTab"] = &ViewParamsP::updateSaveWBbyTab;
+        CbLabelColor = this->handle->GetUnsigned("CbLabelColor", 0xFFFFFFFF);
+        funcs["CbLabelColor"] = &ViewParamsP::updateCbLabelColor;
+        CbLabelTextSize = this->handle->GetInt("CbLabelTextSize", 13);
+        funcs["CbLabelTextSize"] = &ViewParamsP::updateCbLabelTextSize;
+        BoundingBoxFontSize = this->handle->GetFloat("BoundingBoxFontSize", 10.0);
+        funcs["BoundingBoxFontSize"] = &ViewParamsP::updateBoundingBoxFontSize;
+        DatumPointSize = this->handle->GetFloat("DatumPointSize", 2.5);
+        funcs["DatumPointSize"] = &ViewParamsP::updateDatumPointSize;
+        LocalCoordinateSystemSize = this->handle->GetFloat("LocalCoordinateSystemSize", 1.0);
+        funcs["LocalCoordinateSystemSize"] = &ViewParamsP::updateLocalCoordinateSystemSize;
+        DefaultShapeShininess = this->handle->GetInt("DefaultShapeShininess", 37);
+        funcs["DefaultShapeShininess"] = &ViewParamsP::updateDefaultShapeShininess;
+        DimensionsVisible = this->handle->GetBool("DimensionsVisible", true);
+        funcs["DimensionsVisible"] = &ViewParamsP::updateDimensionsVisible;
+        Dimensions3dVisible = this->handle->GetBool("Dimensions3dVisible", true);
+        funcs["Dimensions3dVisible"] = &ViewParamsP::updateDimensions3dVisible;
+        DimensionsDeltaVisible = this->handle->GetBool("DimensionsDeltaVisible", true);
+        funcs["DimensionsDeltaVisible"] = &ViewParamsP::updateDimensionsDeltaVisible;
+        SavePicture = this->handle->GetASCII("SavePicture", "");
+        funcs["SavePicture"] = &ViewParamsP::updateSavePicture;
+        HeadlightRotationX = this->handle->GetFloat("HeadlightRotationX", 0.0);
+        funcs["HeadlightRotationX"] = &ViewParamsP::updateHeadlightRotationX;
+        HeadlightRotationY = this->handle->GetFloat("HeadlightRotationY", 0.0);
+        funcs["HeadlightRotationY"] = &ViewParamsP::updateHeadlightRotationY;
+        HeadlightRotationZ = this->handle->GetFloat("HeadlightRotationZ", 0.0);
+        funcs["HeadlightRotationZ"] = &ViewParamsP::updateHeadlightRotationZ;
+        HeadlightRotationW = this->handle->GetFloat("HeadlightRotationW", 1.0);
+        funcs["HeadlightRotationW"] = &ViewParamsP::updateHeadlightRotationW;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -711,6 +922,10 @@ public:
         self->AnnotationTextColor = self->handle->GetUnsigned("AnnotationTextColor", 0xFFFFFFFF);
     }
     // Auto generated code (Tools/params_utils.py:314)
+    static void updateCursorCrosshairColor(ViewParamsP *self) {
+        self->CursorCrosshairColor = self->handle->GetUnsigned("CursorCrosshairColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateHighlightColor(ViewParamsP *self) {
         self->HighlightColor = self->handle->GetUnsigned("HighlightColor", 0xE1E114FF);
     }
@@ -720,7 +935,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMarkerSize(ViewParamsP *self) {
-        self->MarkerSize = self->handle->GetInt("MarkerSize", 9);
+        self->MarkerSize = self->handle->GetInt("MarkerSize", 7);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDefaultLinkColor(ViewParamsP *self) {
@@ -1474,6 +1689,282 @@ public:
     static void updateDatumTemporaryScaleFactor(ViewParamsP *self) {
         self->DatumTemporaryScaleFactor = self->handle->GetFloat("DatumTemporaryScaleFactor", 2.0);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEyeDistance(ViewParamsP *self) {
+        self->EyeDistance = self->handle->GetFloat("EyeDistance", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCornerCoordSystem(ViewParamsP *self) {
+        self->CornerCoordSystem = self->handle->GetBool("CornerCoordSystem", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCornerCoordSystemSize(ViewParamsP *self) {
+        self->CornerCoordSystemSize = self->handle->GetInt("CornerCoordSystemSize", 10);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowAxisCross(ViewParamsP *self) {
+        self->ShowAxisCross = self->handle->GetBool("ShowAxisCross", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowFPS(ViewParamsP *self) {
+        self->ShowFPS = self->handle->GetBool("ShowFPS", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUseVBO(ViewParamsP *self) {
+        self->UseVBO = self->handle->GetBool("UseVBO", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateOrthographic(ViewParamsP *self) {
+        self->Orthographic = self->handle->GetBool("Orthographic", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePerspective(ViewParamsP *self) {
+        self->Perspective = self->handle->GetBool("Perspective", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateApplyCameraTypeToAll(ViewParamsP *self) {
+        self->ApplyCameraTypeToAll = self->handle->GetBool("ApplyCameraTypeToAll", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAntiAliasing(ViewParamsP *self) {
+        self->AntiAliasing = self->handle->GetInt("AntiAliasing", 3);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransparentObjectRenderType(ViewParamsP *self) {
+        self->TransparentObjectRenderType = self->handle->GetInt("TransparentObjectRenderType", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInternalTextureFormat(ViewParamsP *self) {
+        self->InternalTextureFormat = self->handle->GetASCII("InternalTextureFormat", "Default");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGradient(ViewParamsP *self) {
+        self->Gradient = self->handle->GetBool("Gradient", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRadialGradient(ViewParamsP *self) {
+        self->RadialGradient = self->handle->GetBool("RadialGradient", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSimple(ViewParamsP *self) {
+        self->Simple = self->handle->GetBool("Simple", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBackgroundColor(ViewParamsP *self) {
+        self->BackgroundColor = self->handle->GetUnsigned("BackgroundColor", 0xEAE5DCFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBackgroundColor2(ViewParamsP *self) {
+        self->BackgroundColor2 = self->handle->GetUnsigned("BackgroundColor2", 0x333365FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBackgroundColor3(ViewParamsP *self) {
+        self->BackgroundColor3 = self->handle->GetUnsigned("BackgroundColor3", 0xABABC1FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBackgroundColor4(ViewParamsP *self) {
+        self->BackgroundColor4 = self->handle->GetUnsigned("BackgroundColor4", 0x6F6F93FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUseBackgroundColorMid(ViewParamsP *self) {
+        self->UseBackgroundColorMid = self->handle->GetBool("UseBackgroundColorMid", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEnableHeadlight(ViewParamsP *self) {
+        self->EnableHeadlight = self->handle->GetBool("EnableHeadlight", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightColor(ViewParamsP *self) {
+        self->HeadlightColor = self->handle->GetUnsigned("HeadlightColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightIntensity(ViewParamsP *self) {
+        self->HeadlightIntensity = self->handle->GetInt("HeadlightIntensity", 100);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightDirection(ViewParamsP *self) {
+        self->HeadlightDirection = self->handle->GetASCII("HeadlightDirection", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBacklightDirection(ViewParamsP *self) {
+        self->BacklightDirection = self->handle->GetASCII("BacklightDirection", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEnableFillLight(ViewParamsP *self) {
+        self->EnableFillLight = self->handle->GetBool("EnableFillLight", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFillLightColor(ViewParamsP *self) {
+        self->FillLightColor = self->handle->GetUnsigned("FillLightColor", 0xE6FAFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFillLightIntensity(ViewParamsP *self) {
+        self->FillLightIntensity = self->handle->GetInt("FillLightIntensity", 60);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFillLightDirection(ViewParamsP *self) {
+        self->FillLightDirection = self->handle->GetASCII("FillLightDirection", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAmbientLightColor(ViewParamsP *self) {
+        self->AmbientLightColor = self->handle->GetUnsigned("AmbientLightColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAmbientLightIntensity(ViewParamsP *self) {
+        self->AmbientLightIntensity = self->handle->GetInt("AmbientLightIntensity", 20);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateNavigationStyle(ViewParamsP *self) {
+        self->NavigationStyle = self->handle->GetASCII("NavigationStyle", "Gui::CADNavigationStyle");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSameStyleForAllViews(ViewParamsP *self) {
+        self->SameStyleForAllViews = self->handle->GetBool("SameStyleForAllViews", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateOrbitStyle(ViewParamsP *self) {
+        self->OrbitStyle = self->handle->GetInt("OrbitStyle", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRotationMode(ViewParamsP *self) {
+        self->RotationMode = self->handle->GetInt("RotationMode", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSensitivity(ViewParamsP *self) {
+        self->Sensitivity = self->handle->GetFloat("Sensitivity", 2.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateResetCursorPosition(ViewParamsP *self) {
+        self->ResetCursorPosition = self->handle->GetBool("ResetCursorPosition", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInvertZoom(ViewParamsP *self) {
+        self->InvertZoom = self->handle->GetBool("InvertZoom", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateZoomAtCursor(ViewParamsP *self) {
+        self->ZoomAtCursor = self->handle->GetBool("ZoomAtCursor", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateZoomStep(ViewParamsP *self) {
+        self->ZoomStep = self->handle->GetFloat("ZoomStep", 0.2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUseNavigationAnimations(ViewParamsP *self) {
+        self->UseNavigationAnimations = self->handle->GetBool("UseNavigationAnimations", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUseSpinningAnimations(ViewParamsP *self) {
+        self->UseSpinningAnimations = self->handle->GetBool("UseSpinningAnimations", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAnimationDuration(ViewParamsP *self) {
+        self->AnimationDuration = self->handle->GetInt("AnimationDuration", 250);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatestopAnimatingIfDeactivated(ViewParamsP *self) {
+        self->stopAnimatingIfDeactivated = self->handle->GetInt("stopAnimatingIfDeactivated", 3000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowRotationCenter(ViewParamsP *self) {
+        self->ShowRotationCenter = self->handle->GetBool("ShowRotationCenter", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRotationCenterSize(ViewParamsP *self) {
+        self->RotationCenterSize = self->handle->GetFloat("RotationCenterSize", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRotationCenterColor(ViewParamsP *self) {
+        self->RotationCenterColor = self->handle->GetUnsigned("RotationCenterColor", 0xFF000033);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateNewDocumentCameraOrientation(ViewParamsP *self) {
+        self->NewDocumentCameraOrientation = self->handle->GetASCII("NewDocumentCameraOrientation", "Trimetric");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoFitToView(ViewParamsP *self) {
+        self->AutoFitToView = self->handle->GetBool("AutoFitToView", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowNaviCube(ViewParamsP *self) {
+        self->ShowNaviCube = self->handle->GetBool("ShowNaviCube", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDisableTouchTilt(ViewParamsP *self) {
+        self->DisableTouchTilt = self->handle->GetBool("DisableTouchTilt", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateNavigationDebug(ViewParamsP *self) {
+        self->NavigationDebug = self->handle->GetBool("NavigationDebug", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGestureRollFwdCommand(ViewParamsP *self) {
+        self->GestureRollFwdCommand = self->handle->GetASCII("GestureRollFwdCommand", "Std_SelForward");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGestureRollBackCommand(ViewParamsP *self) {
+        self->GestureRollBackCommand = self->handle->GetASCII("GestureRollBackCommand", "Std_SelBack");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSaveWBbyTab(ViewParamsP *self) {
+        self->SaveWBbyTab = self->handle->GetBool("SaveWBbyTab", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCbLabelColor(ViewParamsP *self) {
+        self->CbLabelColor = self->handle->GetUnsigned("CbLabelColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCbLabelTextSize(ViewParamsP *self) {
+        self->CbLabelTextSize = self->handle->GetInt("CbLabelTextSize", 13);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBoundingBoxFontSize(ViewParamsP *self) {
+        self->BoundingBoxFontSize = self->handle->GetFloat("BoundingBoxFontSize", 10.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumPointSize(ViewParamsP *self) {
+        self->DatumPointSize = self->handle->GetFloat("DatumPointSize", 2.5);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLocalCoordinateSystemSize(ViewParamsP *self) {
+        self->LocalCoordinateSystemSize = self->handle->GetFloat("LocalCoordinateSystemSize", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDefaultShapeShininess(ViewParamsP *self) {
+        self->DefaultShapeShininess = self->handle->GetInt("DefaultShapeShininess", 37);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensionsVisible(ViewParamsP *self) {
+        self->DimensionsVisible = self->handle->GetBool("DimensionsVisible", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensions3dVisible(ViewParamsP *self) {
+        self->Dimensions3dVisible = self->handle->GetBool("Dimensions3dVisible", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensionsDeltaVisible(ViewParamsP *self) {
+        self->DimensionsDeltaVisible = self->handle->GetBool("DimensionsDeltaVisible", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSavePicture(ViewParamsP *self) {
+        self->SavePicture = self->handle->GetASCII("SavePicture", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationX(ViewParamsP *self) {
+        self->HeadlightRotationX = self->handle->GetFloat("HeadlightRotationX", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationY(ViewParamsP *self) {
+        self->HeadlightRotationY = self->handle->GetFloat("HeadlightRotationY", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationZ(ViewParamsP *self) {
+        self->HeadlightRotationZ = self->handle->GetFloat("HeadlightRotationZ", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationW(ViewParamsP *self) {
+        self->HeadlightRotationW = self->handle->GetFloat("HeadlightRotationW", 1.0);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -1492,9 +1983,15 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "can share one tab side by side. Off, every view gets its own tab\n"
 "and the split placement choices below do not apply."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseNewSelection", "UseNewSelection", App::ParamInfo::Bool, true)
-        .setTitle("Use New Selection"),
+        .setTitle("Use New Selection")
+        .setDoc("Highlight selection and preselection through the selection root of\n"
+"the 3D view, which allows picking sub-elements and objects inside\n"
+"links. When off, only objects that ask for it are handled that way."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseSelectionRoot", "UseSelectionRoot", App::ParamInfo::Bool, true)
-        .setTitle("Use Selection Root"),
+        .setTitle("Use Selection Root")
+        .setDoc("Give the visual copy a link makes of its linked object a selection\n"
+"root of its own, so that each link is highlighted separately. When\n"
+"off, a plain group without render caching is used."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableSelection", "EnableSelection", App::ParamInfo::Bool, true)
         .setTitle("Enable selection")
         .setDoc("Enable selection, highlighted with specified color"),
@@ -1505,9 +2002,9 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Render Cache")
         .setDoc("Which render path draws a 3D view: 0 auto, 1 distributed,\n"
 "2 centralized Coin caching, 3 the render cache that feeds the\n"
-"render engine. NOT a user setting -- the path is chosen at\n"
-"startup (RenderParams::selectRenderPath), which overrides\n"
-"whatever a config carries. Set it at runtime to compare paths.")
+"render engine. Looked at only under the render type 'Legacy'\n"
+"(View/Render/Type): with the render engine the program draws\n"
+"by 3 whatever this holds. Not on a preferences page.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UnifiedCanvas", "UnifiedCanvas", App::ParamInfo::Bool, false)
         .setTitle("Unified split-view canvas")
@@ -1519,37 +2016,71 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "mode 3). See docs/SplitViews.md sec 13.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RandomColor", "RandomColor", App::ParamInfo::Bool, false)
-        .setTitle("Random Color"),
+        .setTitle("Random Color")
+        .setDoc("Give every new object a random shape colour instead of the default\n"
+"shape colour."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BoundingBoxColor", "BoundingBoxColor", App::ParamInfo::Hex, 0xFFFFFFFF)
-        .setTitle("Bounding Box Color"),
+        .setTitle("Bounding Box Color")
+        .setDoc("Colour of the bounding box drawn for an object that has its bounding\n"
+"box display turned on."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AnnotationTextColor", "AnnotationTextColor", App::ParamInfo::Hex, 0xFFFFFFFF)
-        .setTitle("Annotation Text Color"),
+        .setTitle("Annotation Text Color")
+        .setDoc("Default text colour of new annotation objects."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CursorCrosshairColor", "CursorCrosshairColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Crosshair cursor colour")
+        .setDoc("Colour of the crosshair the drawing tools of the Sketcher put in\n"
+"place of the mouse pointer. The Sketcher's Appearance page shows\n"
+"it. Takes effect at the next tool started.")
+        .setProxy("Color")
+        .setTransparency(false),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HighlightColor", "HighlightColor", App::ParamInfo::Hex, 0xE1E114FF)
         .setTitle("Pre-selection highlight color")
-        .setDoc("Pre-selection highlight color"),
+        .setDoc("Pre-selection highlight color")
+        .setProxy("Color")
+        .setTransparency(false),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionColor", "SelectionColor", App::ParamInfo::Hex, 0x1CAD1CFF)
         .setTitle("Selection highlight color")
-        .setDoc("Selection highlight color"),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MarkerSize", "MarkerSize", App::ParamInfo::Int, 9)
-        .setTitle("Marker Size"),
+        .setDoc("Selection highlight color")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MarkerSize", "MarkerSize", App::ParamInfo::Int, 7)
+        .setTitle("Marker Size")
+        .setDoc("Size in pixels of the point markers drawn in the 3D view, such as\n"
+"sketch vertices and the end points of a measurement."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultLinkColor", "DefaultLinkColor", App::ParamInfo::Hex, 0x66FFFFFF)
-        .setTitle("Default Link Color"),
+        .setTitle("Default Link Color")
+        .setDoc("Default colour of the material of a new link, which is used when the\n"
+"link overrides the material of its linked object."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeLineColor", "DefaultShapeLineColor", App::ParamInfo::Hex, 0x191919FF)
-        .setTitle("Default Shape Line Color"),
+        .setTitle("Default Shape Line Color")
+        .setDoc("Default line colour of new shapes."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeVertexColor", "DefaultShapeVertexColor", App::ParamInfo::Hex, 0x191919FF)
-        .setTitle("Default Shape Vertex Color"),
+        .setTitle("Default Shape Vertex Color")
+        .setDoc("Default vertex colour of new shapes."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeColor", "DefaultShapeColor", App::ParamInfo::Hex, 0xCCCCE6FF)
-        .setTitle("Default Shape Color"),
+        .setTitle("Default Shape Color")
+        .setDoc("Default face colour of new shapes. Not used while random colours are\n"
+"turned on."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeTransparency", "DefaultShapeTransparency", App::ParamInfo::Int, 0)
-        .setTitle("Default Shape Transparency"),
+        .setTitle("Default Shape Transparency")
+        .setDoc("Default transparency of new shapes in percent. 0 is opaque, 100 is\n"
+"fully transparent."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeLineWidth", "DefaultShapeLineWidth", App::ParamInfo::Int, 2)
-        .setTitle("Default Shape Line Width"),
+        .setTitle("Default Shape Line Width")
+        .setDoc("Default line width of new shapes, in pixels."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapePointSize", "DefaultShapePointSize", App::ParamInfo::Int, 2)
-        .setTitle("Default Shape Point Size"),
+        .setTitle("Default Shape Point Size")
+        .setDoc("Default vertex size of new shapes, in pixels."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CoinCycleCheck", "CoinCycleCheck", App::ParamInfo::Bool, true)
-        .setTitle("Coin Cycle Check"),
+        .setTitle("Coin Cycle Check")
+        .setDoc("Check the 3D scene for an object that contains itself while the\n"
+"scene is traversed. A cycle is reported and skipped instead of being\n"
+"followed without end."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnablePropertyViewForInactiveDocument", "EnablePropertyViewForInactiveDocument", App::ParamInfo::Bool, true)
-        .setTitle("Enable Property View For Inactive Document"),
+        .setTitle("Enable Property View For Inactive Document")
+        .setDoc("Keep the property view usable when the selected objects belong to a\n"
+"document other than the active one. When off, the property view is\n"
+"disabled for such a selection."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowSelectionBoundingBox", "ShowSelectionBoundingBox", App::ParamInfo::Bool, false)
         .setTitle("Show selection bounding box instead of highlight")
         .setDoc("Show selection bounding box instead of highlight"),
@@ -1557,9 +2088,14 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Threshold for showing bounding box instead of selection highlight")
         .setDoc("Threshold for showing bounding box instead of selection highlight"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UpdateSelectionVisual", "UpdateSelectionVisual", App::ParamInfo::Bool, true)
-        .setTitle("Update Selection Visual"),
+        .setTitle("Update Selection Visual")
+        .setDoc("Bring back the selection highlight of a selected object when it is\n"
+"shown again after being hidden."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LinkChildrenDirect", "LinkChildrenDirect", App::ParamInfo::Bool, true)
-        .setTitle("Link Children Direct"),
+        .setTitle("Link Children Direct")
+        .setDoc("Show the children of a group with its own coordinate system, such as\n"
+"a part or body, through a link view. A link to the group then shows\n"
+"the children's visuals directly."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowSelectionOnTop", "ShowSelectionOnTop", App::ParamInfo::Bool, true)
         .setTitle("Show selection always on top")
         .setDoc("Show selection always on top")
@@ -1629,33 +2165,56 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setProxy("SpinBox")
         .setRange(0.0, 200.0, 1.0, 1),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionTransparency", "SelectionTransparency", App::ParamInfo::Float, 0.5)
-        .setTitle("Selection Transparency"),
+        .setTitle("Selection Transparency")
+        .setDoc("Transparency given to a selected face so that what lies behind it\n"
+"stays visible, used when picking through objects and when the\n"
+"highlight is drawn on top. 0 is opaque, 1 is invisible."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionLinePattern", "SelectionLinePattern", App::ParamInfo::Int, 0)
         .setTitle("Selected hidden line pattern")
+        .setDoc("Dash pattern of the hidden part of a selected line that is shown on\n"
+"top of the scene, as a 16 bit mask. 0 draws it solid.")
         .setProxy("LinePattern"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionLinePatternScale", "SelectionLinePatternScale", App::ParamInfo::Int, 1)
-        .setTitle("Selected line pattern scale"),
+        .setTitle("Selected line pattern scale")
+        .setDoc("Number of times each bit of the dash pattern of a selected hidden\n"
+"line is repeated. Larger values give longer dashes. 1 or less uses\n"
+"the pattern as it is."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionHiddenLineWidth", "SelectionHiddenLineWidth", App::ParamInfo::Float, 1.0)
         .setTitle("Selected hidden line width")
         .setDoc("Width of the hidden line."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionBBoxLineWidth", "SelectionBBoxLineWidth", App::ParamInfo::Float, 3.0)
-        .setTitle("Selection BBox Line Width"),
+        .setTitle("Selection BBox Line Width")
+        .setDoc("Line width in pixels of the bounding box drawn around a selected\n"
+"object when selection is shown by bounding box."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowHighlightEdgeOnly", "ShowHighlightEdgeOnly", App::ParamInfo::Bool, false)
         .setTitle("Show pre-selection highlight edge only")
         .setDoc("Show pre-selection highlight edge only"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PreSelectionDelay", "PreSelectionDelay", App::ParamInfo::Float, 0.1)
-        .setTitle("Pre Selection Delay"),
+        .setTitle("Pre Selection Delay")
+        .setDoc("Shortest time in seconds between two preselection picks in the 3D\n"
+"view while the mouse moves. 0 picks on every mouse move."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PickBackFaceDelay", "PickBackFaceDelay", App::ParamInfo::Int, 2)
-        .setTitle("Pick Back Face Delay"),
+        .setTitle("Pick Back Face Delay")
+        .setDoc("Number of mouse wheel steps, with Shift and Ctrl held, that it takes\n"
+"to move the pick one object further behind or back toward the\n"
+"front."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseNewRayPick", "UseNewRayPick", App::ParamInfo::Bool, true)
-        .setTitle("Use New Ray Pick"),
+        .setTitle("Use New Ray Pick")
+        .setDoc("Stop a single pick in the 3D view at the nearest hit instead of\n"
+"collecting everything along the pick ray. Off is the older and\n"
+"slower way."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ViewSelectionExtendFactor", "ViewSelectionExtendFactor", App::ParamInfo::Float, 0.5)
-        .setTitle("View Selection Extend Factor"),
+        .setTitle("View Selection Extend Factor")
+        .setDoc("Scale applied to the bounding box of the selection when testing\n"
+"whether it is already in view, before the view is extended to\n"
+"include it. Currently has no effect."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseTightBoundingBox", "UseTightBoundingBox", App::ParamInfo::Bool, true)
         .setTitle("Show more accurate bounds when using bounding box selection style")
         .setDoc("Show more accurate bounds when using bounding box selection style"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseBoundingBoxCache", "UseBoundingBoxCache", App::ParamInfo::Bool, true)
-        .setTitle("Use Bounding Box Cache"),
+        .setTitle("Use Bounding Box Cache")
+        .setDoc("Remember the bounding boxes of objects instead of computing them\n"
+"again on every request."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderProjectedBBox", "RenderProjectedBBox", App::ParamInfo::Bool, true)
         .setTitle("Render Projected BBox")
         .setDoc("Show projected bounding box that is aligned to axes of\n"
@@ -1664,13 +2223,24 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Show hidden tirangulation wires for selected face")
         .setDoc("Show hidden tirangulation wires for selected face"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "NewDocumentCameraScale", "NewDocumentCameraScale", App::ParamInfo::Float, 100.0)
-        .setTitle("New Document Camera Scale"),
+        .setTitle("New Document Camera Scale")
+        .setDoc("Camera zoom of a new document, as the diameter of the sphere that\n"
+"fits on the screen. A quarter of it is the default size of a new\n"
+"coordinate system."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MaxOnTopSelections", "MaxOnTopSelections", App::ParamInfo::Int, 100)
-        .setTitle("Max On Top Selections"),
+        .setTitle("Max On Top Selections")
+        .setDoc("Largest number of selected objects that are drawn on top of the\n"
+"scene. A larger selection is highlighted in place, and the tree view\n"
+"does not expand to show its items."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MaxViewSelections", "MaxViewSelections", App::ParamInfo::Int, 100)
-        .setTitle("Max View Selections"),
+        .setTitle("Max View Selections")
+        .setDoc("Largest number of selected objects taken into account when the view\n"
+"is fitted or aligned to the selection."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MaxSelectionNotification", "MaxSelectionNotification", App::ParamInfo::Int, 100)
-        .setTitle("Max Selection Notification"),
+        .setTitle("Max Selection Notification")
+        .setDoc("Number of pending add and remove selection notices after which they\n"
+"are replaced by one notice that the whole selection changed. 0 sets\n"
+"no limit."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MapChildrenPlacement", "MapChildrenPlacement", App::ParamInfo::Bool, false)
         .setTitle("Map Children Placement")
         .setDoc("Map child object into parent's coordinate space when showing on top.\n"
@@ -1721,6 +2291,8 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Whether to override transparency of all objects in the scene."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineFaceColor", "HiddenLineFaceColor", App::ParamInfo::Hex, 0xFFFFFFFF)
         .setTitle("Hidden Line Face Color")
+        .setDoc("Colour all faces are drawn in by the hidden line display style when\n"
+"it overrides the face colour.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOverrideFaceColor", "HiddenLineOverrideFaceColor", App::ParamInfo::Bool, true)
@@ -1728,6 +2300,8 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Enable preselection and highlight by specified color."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineColor", "HiddenLineColor", App::ParamInfo::Hex, 0x000000FF)
         .setTitle("Hidden Line Color")
+        .setDoc("Colour all lines and outlines are drawn in by the hidden line\n"
+"display style when it overrides the line colour.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOverrideColor", "HiddenLineOverrideColor", App::ParamInfo::Bool, true)
@@ -1735,10 +2309,14 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Enable selection highlighting and use specified color"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineBackground", "HiddenLineBackground", App::ParamInfo::Hex, 0xFFFFFFFF)
         .setTitle("Hidden Line Background")
+        .setDoc("Background colour of a 3D view in the hidden line display style,\n"
+"used when overriding the background is turned on.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOverrideBackground", "HiddenLineOverrideBackground", App::ParamInfo::Bool, true)
-        .setTitle("Override background color"),
+        .setTitle("Override background color")
+        .setDoc("Replace the background of a 3D view with the hidden line background\n"
+"colour while the hidden line display style is active."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineShaded", "HiddenLineShaded", App::ParamInfo::Bool, false)
         .setTitle("Shaded")
         .setDoc("Whether to enable shading in hidden line display style"),
@@ -1753,12 +2331,18 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Render outline of the whole scene."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOutlineWidth", "HiddenLineOutlineWidth", App::ParamInfo::Float, 0.0)
         .setTitle("Outline width")
+        .setDoc("Width in pixels of the outlines drawn by the hidden line display\n"
+"style. 0 uses the default width.")
         .setProxy("SpinBox")
         .setRange(0.0, 100.0, 0.5, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineWidth", "HiddenLineWidth", App::ParamInfo::Float, 1.5)
-        .setTitle("Line width"),
+        .setTitle("Line width")
+        .setDoc("Width in pixels of the lines of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own line width."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLinePointSize", "HiddenLinePointSize", App::ParamInfo::Float, 2)
-        .setTitle("Point size"),
+        .setTitle("Point size")
+        .setDoc("Size in pixels of the vertices of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own point size."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineHideSeam", "HiddenLineHideSeam", App::ParamInfo::Bool, true)
         .setTitle("Hide seam edge")
         .setDoc("Hide seam edges in hidden line display style."),
@@ -1769,7 +2353,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Hide face")
         .setDoc("Hide face in hidden line display style."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "StatusMessageTimeout", "StatusMessageTimeout", App::ParamInfo::Int, 5000)
-        .setTitle("Status Message Timeout"),
+        .setTitle("Status Message Timeout")
+        .setDoc("Milliseconds a message stays in the status bar when the command\n"
+"showing it gives no time of its own. 0 keeps it until the next\n"
+"message."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowSync", "ShadowSync", App::ParamInfo::Int, 1)
         .setTitle("Synchronize")
         .setDoc("Specifies how to sync shadow display style settings to opened document")
@@ -1787,15 +2374,20 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Use spot light")
         .setDoc("Whether to use spot light or directional light."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightIntensity", "ShadowLightIntensity", App::ParamInfo::Float, 0.8)
-        .setTitle("Light intensity"),
+        .setTitle("Light intensity")
+        .setDoc("Brightness of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightDirectionX", "ShadowLightDirectionX", App::ParamInfo::Float, -1.0)
-        .setTitle("Shadow Light Direction X"),
+        .setTitle("Shadow Light Direction X")
+        .setDoc("X component of the direction of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightDirectionY", "ShadowLightDirectionY", App::ParamInfo::Float, -1.0)
-        .setTitle("Shadow Light Direction Y"),
+        .setTitle("Shadow Light Direction Y")
+        .setDoc("Y component of the direction of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightDirectionZ", "ShadowLightDirectionZ", App::ParamInfo::Float, -1.0)
-        .setTitle("Shadow Light Direction Z"),
+        .setTitle("Shadow Light Direction Z")
+        .setDoc("Z component of the direction of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightColor", "ShadowLightColor", App::ParamInfo::Hex, 0xF0FDFFFF)
         .setTitle("Light color")
+        .setDoc("Colour of the light that casts the shadow.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowShowGround", "ShadowShowGround", App::ParamInfo::Bool, true)
@@ -1814,13 +2406,18 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setRange(0.0, 10000000.0, 0.5, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundColor", "ShadowGroundColor", App::ParamInfo::Hex, 0x7D7D7DFF)
         .setTitle("Ground color")
+        .setDoc("Colour of the ground that receives the shadow.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundBumpMap", "ShadowGroundBumpMap", App::ParamInfo::String, "")
         .setTitle("Ground bump map")
+        .setDoc("Image file used as a bump map that gives the shadow ground a surface\n"
+"relief. Empty for a flat ground.")
         .setProxy("File"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundTexture", "ShadowGroundTexture", App::ParamInfo::String, "")
         .setTitle("Ground texture")
+        .setDoc("Image file drawn as a texture on the ground that receives the\n"
+"shadow. Empty for a ground of plain colour.")
         .setProxy("File"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundTextureSize", "ShadowGroundTextureSize", App::ParamInfo::Float, 100.0)
         .setTitle("Ground texture size")
@@ -1842,18 +2439,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setRange(0.0, 1.0, 0.1, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundTransparency", "ShadowGroundTransparency", App::ParamInfo::Float, 1.0)
         .setTitle("Ground transparency")
-        .setDoc("How much of the shadow receiver plane is drawn beside the shadow\n"
-"itself.\n"
-"\n"
-"1 (the default) is the receiver a view of a part usually wants: the\n"
-"ground carries the shadow and nothing else, so there is no plane in\n"
-"the frame and no horizon behind the model -- only the shadow, at a\n"
-"fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
-"solid ground of that transparency and shades it, which is what a\n"
-"presentation image of a whole scene wants.\n"
-"\n"
-"A ground reflection needs a surface to blend onto, so it keeps the\n"
-"solid ground whatever this says.")
+        .setDoc("Transparency of the ground that receives the shadow. 1 (the default)\n"
+"draws the shadow only, with no ground plane; lower values draw a\n"
+"shaded ground of that transparency. A ground reflection always draws\n"
+"the ground.")
         .setProxy("SpinBox")
         .setRange(0.0, 1.0, 0.1, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundShading", "ShadowGroundShading", App::ParamInfo::Bool, true)
@@ -1861,7 +2450,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Render ground with shading. If disabled, the ground and the shadow casted\n"
 "on ground will not change shading when viewing in different angle."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowExtraRedraw", "ShadowExtraRedraw", App::ParamInfo::Bool, true)
-        .setTitle("Shadow Extra Redraw"),
+        .setTitle("Shadow Extra Redraw")
+        .setDoc("Redraw the 3D view once more after a change while shadows are shown,\n"
+"so that the shadow catches up with the scene. Currently has no\n"
+"effect."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowSmoothBorder", "ShadowSmoothBorder", App::ParamInfo::Int, 40)
         .setTitle("Smooth border")
         .setDoc("Specifies the blur raidus of the shadow edge. Higher number will result in\n"
@@ -1929,7 +2521,9 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Auto update shadow ground on scene changes. You can manually\n"
 "update the ground by using the 'Fit view' command"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PropertyViewTimer", "PropertyViewTimer", App::ParamInfo::UInt, 100)
-        .setTitle("Property View Timer"),
+        .setTitle("Property View Timer")
+        .setDoc("Milliseconds the property view waits before it refreshes after the\n"
+"selection or a property changes."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HierarchyAscend", "HierarchyAscend", App::ParamInfo::Bool, false)
         .setTitle("Hierarchy Ascend")
         .setDoc("Enable selection of upper hierarchy by repeatedly click some already\n"
@@ -2068,7 +2662,9 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Clip plane line width")
         .setDoc("Clip plane line width"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "TransformOnTop", "TransformOnTop", App::ParamInfo::Bool, true)
-        .setTitle("Transform On Top"),
+        .setTitle("Transform On Top")
+        .setDoc("Show an object on top of the scene while it is moved with the\n"
+"transform dragger. Currently has no effect."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionColorDifference", "SelectionColorDifference", App::ParamInfo::Float, 25.0)
         .setTitle("Selection Color Difference")
         .setDoc("Color difference threshold for auto making distinct\n"
@@ -2094,37 +2690,20 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Minimum hierarchy depth that the cache merge can happen."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderCacheKeepMax", "RenderCacheKeepMax", App::ParamInfo::Int, 32)
         .setTitle("Render Cache Keep Max")
-        .setDoc("Largest vertex cache map, in entries, that an object keeps after\n"
-"its parent has copied it up. A parent flattens its children into\n"
-"one map and then drops theirs, so the next frame re-derives the\n"
-"map of every object in the scene however little moved; keeping the\n"
-"small ones costs a few entries of memory each and is what stops\n"
-"that. The large ones are the copies of whole subtrees, which is the\n"
-"memory this bounds. Set zero to keep none."),
+        .setDoc("Largest render cache, in entries, an object keeps after its parent has\n"
+"merged it. Keeping the small ones avoids rebuilding them every frame.\n"
+"0 keeps none."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderCacheIncremental", "RenderCacheIncremental", App::ParamInfo::Int, 1)
         .setTitle("Render Cache Incremental")
-        .setDoc("Splice a rebuilt object's flattened vertex cache map from the map\n"
-"of the publish before it, instead of merging every child again. A\n"
-"container holding thousands of objects re-derives all of them on\n"
-"every publish however few moved, and the merge is priced per child\n"
-"rather than per entry. It costs memory, because the map of the\n"
-"previous publish has to survive the traversal that replaces it:\n"
-"on a 17800-object assembly, 49MB against 45% off the flatten.\n"
-"0 rebuilds (the old behaviour), 1 splices, 2 splices and also\n"
-"rebuilds wholesale to compare the two, logging any disagreement\n"
-"-- slow, for checking the splice, not for use."),
+        .setDoc("Update a container's render cache from its previous one instead of\n"
+"merging all its children again. Faster on large assemblies, at the\n"
+"cost of some memory. 0 off, 1 on, 2 does both and logs any difference\n"
+"(slow, for checking)."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderCacheMeshReuse", "RenderCacheMeshReuse", App::ParamInfo::Int, 1)
         .setTitle("Render Cache Mesh Reuse")
-        .setDoc("Reuse the mesh a vertex cache was translated into for the backend,\n"
-"instead of translating it again on every publish. A vertex cache is\n"
-"built once and never changed afterwards -- a shape whose geometry\n"
-"moves gets a new cache -- so the translation is the same work every\n"
-"time, and on a large assembly it is the largest single cost of a\n"
-"publish. Meshes are held only for as long as some draw list still\n"
-"refers to them. 0 translates every publish (the old behaviour), 1\n"
-"reuses, 2 reuses and also translates afresh to compare the two,\n"
-"logging any disagreement -- slow, for checking the reuse, not for\n"
-"use."),
+        .setDoc("Reuse the mesh a render cache was converted to for the render backend\n"
+"instead of converting it at every update. 0 off, 1 on, 2 does both and\n"
+"logs any difference (slow, for checking)."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LiveImportRedrawInterval", "LiveImportRedrawInterval", App::ParamInfo::Int, 200)
         .setTitle("Live Import Redraw Interval")
         .setDoc("Minimum interval in milliseconds between 3D view redraws while a\n"
@@ -2133,30 +2712,25 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "to redraw on every change."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LiveImportRedrawBudget", "LiveImportRedrawBudget", App::ParamInfo::Int, 10)
         .setTitle("Live Import Redraw Budget")
-        .setDoc("Percentage of the time the 3D view may spend redrawing while a\n"
-"progressive import is filling the document. Each new object makes\n"
-"the next frame rebuild the render cache of the whole scene, so on a\n"
-"large import a single frame costs far more than the objects drawn\n"
-"in it; keeping frames to a share of the time is what bounds that\n"
-"cost. The resulting wait scales with the measured frame cost, is\n"
-"never shorter than LiveImportRedrawInterval nor longer than ten\n"
-"times it, and mouse input renders immediately regardless. Set zero\n"
-"to budget nothing and use the plain interval."),
+        .setDoc("Percentage of time the 3D view may spend redrawing while a progressive\n"
+"import fills the document. The wait between frames is never shorter\n"
+"than LiveImportRedrawInterval nor longer than ten times it. 0 uses the\n"
+"plain interval."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LiveImportPumpInterval", "LiveImportPumpInterval", App::ParamInfo::Int, 50)
         .setTitle("Live Import Pump Interval")
-        .setDoc("Minimum interval in milliseconds between two turns of the event\n"
-"loop while a live import fills the document. The import holds the\n"
-"main thread, so the view only sees input and paints where the\n"
-"import hands the loop a slice, and on its own the progress bar\n"
-"does that on a 200 ms update throttle -- a slideshow to someone\n"
-"orbiting the model. Offering the loop a turn costs nothing when\n"
-"nothing is queued, and what a frame costs is bounded by\n"
-"LiveImportRedrawBudget rather than by how often a turn is\n"
-"offered. Set zero to pump at every offer."),
+        .setDoc("Minimum milliseconds between two chances for the window to process\n"
+"input and repaint while a live import fills the document. 0 offers one\n"
+"at every opportunity."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderHighlightPolygonOffsetFactor", "RenderHighlightPolygonOffsetFactor", App::ParamInfo::Float, 1)
-        .setTitle("Render Highlight Polygon Offset Factor"),
+        .setTitle("Render Highlight Polygon Offset Factor")
+        .setDoc("Slope scaled depth offset that pulls selection and preselection\n"
+"highlights toward the viewer, so that the faces under them do not\n"
+"hide them. Preselection gets twice the offset."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderHighlightPolygonOffsetUnits", "RenderHighlightPolygonOffsetUnits", App::ParamInfo::Float, 1)
-        .setTitle("Render Highlight Polygon Offset Units"),
+        .setTitle("Render Highlight Polygon Offset Units")
+        .setDoc("Constant depth offset, in depth buffer units, that pulls selection\n"
+"and preselection highlights toward the viewer, so that the faces\n"
+"under them do not hide them. Preselection gets twice the offset."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ForceSolidSingleSideLighting", "ForceSolidSingleSideLighting", App::ParamInfo::Bool, true)
         .setTitle("Force single side lighting on solid")
         .setDoc("Force single side lighting on solid. This can help visualizing invalid\n"
@@ -2164,16 +2738,27 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultFontSize", "DefaultFontSize", App::ParamInfo::Int, 0)
         .setTitle("Default Font Size")
+        .setDoc("Point size of the application font. 0 uses the system default.\n"
+"Sizes from 1 to 7 are raised to 8.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableTaskPanelKeyTranslate", "EnableTaskPanelKeyTranslate", App::ParamInfo::Bool, false)
         .setTitle("Enable Task Panel Key Translate")
+        .setDoc("Let the Up and Down arrow keys move the keyboard focus through the\n"
+"task panel, the way Shift+Tab and Tab do.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableMenuBarCheckBox", "EnableMenuBarCheckBox", App::ParamInfo::Bool, FC_ENABLE_MENUBAR_CHECKBOX)
-        .setTitle("Enable Menu Bar Check Box"),
+        .setTitle("Enable Menu Bar Check Box")
+        .setDoc("Show the entries of the toolbar and dock window menus of the menu\n"
+"bar as checkboxes, the way the right-click menu of the main window\n"
+"shows them. Off by default on macOS."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableBacklight", "EnableBacklight", App::ParamInfo::Bool, false)
-        .setTitle("Enable Backlight"),
+        .setTitle("Enable Backlight")
+        .setDoc("Turn on the backlight of the 3D view, a second light that shines on\n"
+"the faces turned away from the viewer."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BacklightColor", "BacklightColor", App::ParamInfo::Hex, 0xFFFFFFFF)
-        .setTitle("Backlight Color"),
+        .setTitle("Backlight Color")
+        .setDoc("Colour of the backlight, the light that shines on the faces turned\n"
+"away from the viewer."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BacklightIntensity", "BacklightIntensity", App::ParamInfo::Int, 100)
         .setTitle("Backlight Intensity")
         .setDoc("Backlight intensity, as a percentage. An integer because that is the\n"
@@ -2200,13 +2785,21 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setProxy("SpinBox")
         .setRange(0, 512, 10, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ToolTipDisable", "ToolTipDisable", App::ParamInfo::Bool, false)
-        .setTitle("Tool Tip Disable"),
+        .setTitle("Tool Tip Disable")
+        .setDoc("Turn off the tool tips of the application. Tips shown as an overlay\n"
+"in the 3D view, such as the preselection tip, still appear."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AxisXColor", "AxisXColor", App::ParamInfo::Hex, 0xCC333300)
-        .setTitle("Axis XColor"),
+        .setTitle("Axis X color")
+        .setDoc("Colour of the X axis of the transform dragger and of other axis\n"
+"markers in the 3D view."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AxisYColor", "AxisYColor", App::ParamInfo::Hex, 0x33CC3300)
-        .setTitle("Axis YColor"),
+        .setTitle("Axis Y color")
+        .setDoc("Colour of the Y axis of the transform dragger and of other axis\n"
+"markers in the 3D view."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AxisZColor", "AxisZColor", App::ParamInfo::Hex, 0x3333CC00)
-        .setTitle("Axis ZColor"),
+        .setTitle("Axis Z color")
+        .setDoc("Colour of the Z axis of the transform dragger and of other axis\n"
+"markers in the 3D view."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumScreenSize", "DatumScreenSize", App::ParamInfo::Bool, true)
         .setTitle("Constant datum size on screen")
         .setDoc("Draw origins, coordinate systems and datum elements at a constant size on\n"
@@ -2233,6 +2826,314 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("How much datum planes grow while a reference is picked from them.")
         .setProxy("SpinBox")
         .setRange(1.0, 10.0, 0.5, 1),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EyeDistance", "EyeDistance", App::ParamInfo::Float, 5.0)
+        .setTitle("Eye distance for stereo modes")
+        .setDoc("Offset between the left and the right eye image of a stereo 3D\n"
+"view. 0.1 to 1000. Applies at once to all open 3D views."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CornerCoordSystem", "CornerCoordSystem", App::ParamInfo::Bool, true)
+        .setTitle("Show coordinate system in the corner")
+        .setDoc("Show the small coordinate system in the corner of every 3D view.\n"
+"Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CornerCoordSystemSize", "CornerCoordSystemSize", App::ParamInfo::Int, 10)
+        .setTitle("Corner coordinate system size")
+        .setDoc("Size of the coordinate system in the corner of the 3D views, 2 to\n"
+"100. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowAxisCross", "ShowAxisCross", App::ParamInfo::Bool, false)
+        .setTitle("Show axis cross")
+        .setDoc("Show the axis cross at the origin of the 3D views. Applies at once\n"
+"to the open views and to new ones."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowFPS", "ShowFPS", App::ParamInfo::Bool, false)
+        .setTitle("Show counter of frames per second")
+        .setDoc("Show a frames per second counter in the 3D views. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseVBO", "UseVBO", App::ParamInfo::Bool, false)
+        .setTitle("Use vertex buffer objects")
+        .setDoc("Let Coin draw with vertex buffer objects. Applies at once to the\n"
+"open 3D views except split views; the driver override that goes\n"
+"with it is set at startup only."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "Orthographic", "Orthographic", App::ParamInfo::Bool, true)
+        .setTitle("Orthographic rendering")
+        .setDoc("Use an orthographic camera in the 3D views; the opposite of\n"
+"Perspective."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "Perspective", "Perspective", App::ParamInfo::Bool, false)
+        .setTitle("Perspective rendering")
+        .setDoc("Use a perspective camera in the 3D views. Read when a view is\n"
+"created; with ApplyCameraTypeToAll on, a change switches the open\n"
+"views too."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ApplyCameraTypeToAll", "ApplyCameraTypeToAll", App::ParamInfo::Bool, false)
+        .setTitle("Apply camera type to existing views")
+        .setDoc("When the camera type setting changes, switch every open 3D view\n"
+"to it as well."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AntiAliasing", "AntiAliasing", App::ParamInfo::Int, 3)
+        .setTitle("Anti-aliasing")
+        .setDoc("Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA\n"
+"2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a\n"
+"face that no edge runs along is a staircase. A change is taken\n"
+"by the open views at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "TransparentObjectRenderType", "TransparentObjectRenderType", App::ParamInfo::Int, 0)
+        .setTitle("Transparent object render type")
+        .setDoc("How Coin draws transparent objects: 0 in one pass, 1 with the back\n"
+"faces of non-solid objects in a pass of their own. Applies at once\n"
+"to the open 3D views except split views."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "InternalTextureFormat", "InternalTextureFormat", App::ParamInfo::String, "Default")
+        .setTitle("Offscreen buffer format")
+        .setDoc("Pixel format of the offscreen buffer a 3D view is drawn into:\n"
+"Default, GL_RGB, GL_RGBA, GL_RGB8, GL_RGBA8, GL_RGB10,\n"
+"GL_RGB10_A2, GL_RGB16, GL_RGBA16, GL_RGB32F or GL_RGBA32F. Read\n"
+"each time a buffer is created."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "Gradient", "Gradient", App::ParamInfo::Bool, true)
+        .setTitle("Linear background gradient")
+        .setDoc("Fill the background of the 3D views with a linear gradient from\n"
+"BackgroundColor2 (top) to BackgroundColor3 (bottom). Wins over\n"
+"RadialGradient. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RadialGradient", "RadialGradient", App::ParamInfo::Bool, false)
+        .setTitle("Radial background gradient")
+        .setDoc("Fill the background of the 3D views with a radial gradient; used\n"
+"when Gradient is off. With both off the plain BackgroundColor is\n"
+"used. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "Simple", "Simple", App::ParamInfo::Bool, false)
+        .setTitle("Simple background colour")
+        .setDoc("The 'Simple color' choice of the Colors page. The views use a\n"
+"plain background whenever Gradient and RadialGradient are both\n"
+"off, whatever this says."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BackgroundColor", "BackgroundColor", App::ParamInfo::Hex, 0xEAE5DCFF)
+        .setTitle("Background colour")
+        .setDoc("Colour of the 3D view background when no gradient is used.\n"
+"Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BackgroundColor2", "BackgroundColor2", App::ParamInfo::Hex, 0x333365FF)
+        .setTitle("Background gradient, first colour")
+        .setDoc("First colour of the background gradient of the 3D views: the top\n"
+"of a linear one, the centre of a radial one. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BackgroundColor3", "BackgroundColor3", App::ParamInfo::Hex, 0xABABC1FF)
+        .setTitle("Background gradient, last colour")
+        .setDoc("Last colour of the background gradient of the 3D views: the\n"
+"bottom of a linear one, the rim of a radial one. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BackgroundColor4", "BackgroundColor4", App::ParamInfo::Hex, 0x6F6F93FF)
+        .setTitle("Background gradient, middle colour")
+        .setDoc("Middle colour of the background gradient of the 3D views; used\n"
+"only with UseBackgroundColorMid on. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseBackgroundColorMid", "UseBackgroundColorMid", App::ParamInfo::Bool, false)
+        .setTitle("Use a middle background colour")
+        .setDoc("Give the background gradient of the 3D views a third, middle\n"
+"colour (BackgroundColor4). Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableHeadlight", "EnableHeadlight", App::ParamInfo::Bool, true)
+        .setTitle("Enable headlight")
+        .setDoc("Light the 3D views with the headlight, which follows the camera.\n"
+"Applies at once to every view with no light setting of its own."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightColor", "HeadlightColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Headlight colour")
+        .setDoc("Colour of the headlight of the 3D views. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightIntensity", "HeadlightIntensity", App::ParamInfo::Int, 100)
+        .setTitle("Headlight intensity")
+        .setDoc("Intensity of the headlight of the 3D views in percent, 0 to 100.\n"
+"Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightDirection", "HeadlightDirection", App::ParamInfo::String, "")
+        .setTitle("Headlight direction")
+        .setDoc("Direction of the headlight relative to the camera, as (x,y,z).\n"
+"Empty keeps the built-in direction. Turned in a 3D view from the\n"
+"Display style menu (Direction), and stored here by its Save as\n"
+"default. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BacklightDirection", "BacklightDirection", App::ParamInfo::String, "")
+        .setTitle("Backlight direction")
+        .setDoc("Direction of the backlight relative to the camera, as (x,y,z).\n"
+"Empty keeps the built-in direction. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableFillLight", "EnableFillLight", App::ParamInfo::Bool, false)
+        .setTitle("Enable fill light")
+        .setDoc("Light the 3D views with an extra fill light from the side.\n"
+"Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "FillLightColor", "FillLightColor", App::ParamInfo::Hex, 0xE6FAFFFF)
+        .setTitle("Fill light colour")
+        .setDoc("Colour of the fill light of the 3D views. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "FillLightIntensity", "FillLightIntensity", App::ParamInfo::Int, 60)
+        .setTitle("Fill light intensity")
+        .setDoc("Intensity of the fill light of the 3D views in percent, 0 to 100.\n"
+"Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "FillLightDirection", "FillLightDirection", App::ParamInfo::String, "")
+        .setTitle("Fill light direction")
+        .setDoc("Direction of the fill light relative to the camera, as (x,y,z).\n"
+"Empty keeps the built-in direction. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AmbientLightColor", "AmbientLightColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Ambient light colour")
+        .setDoc("Colour of the ambient light of the 3D views. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AmbientLightIntensity", "AmbientLightIntensity", App::ParamInfo::Int, 20)
+        .setTitle("Ambient light intensity")
+        .setDoc("Intensity of the ambient light of the 3D views in percent, 0 to\n"
+"100. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "NavigationStyle", "NavigationStyle", App::ParamInfo::String, "Gui::CADNavigationStyle")
+        .setTitle("3D navigation style")
+        .setDoc("Mouse navigation style of the 3D views, as a class name such as\n"
+"Gui::CADNavigationStyle. Applies at once to all open 3D views;\n"
+"TechDraw pages follow it as well."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SameStyleForAllViews", "SameStyleForAllViews", App::ParamInfo::Bool, true)
+        .setTitle("Same navigation style for all views")
+        .setDoc("A navigation style picked from a 3D view's context menu becomes\n"
+"the NavigationStyle setting, so that every view follows. When off\n"
+"it changes that view only."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "OrbitStyle", "OrbitStyle", App::ParamInfo::Int, 1)
+        .setTitle("Orbit style")
+        .setDoc("How dragging rotates the 3D view: 0 turntable, 1 trackball, 2 free\n"
+"turntable. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RotationMode", "RotationMode", App::ParamInfo::Int, 1)
+        .setTitle("Rotation mode")
+        .setDoc("Centre of rotation in the 3D views: 0 the window centre, 1 the\n"
+"point under the cursor, 2 the centre of the objects. Applies at\n"
+"once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "Sensitivity", "Sensitivity", App::ParamInfo::Float, 2.0)
+        .setTitle("Rotation sensitivity")
+        .setDoc("A value above 1 multiplies the angle of a mouse rotation of the 3D\n"
+"view. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ResetCursorPosition", "ResetCursorPosition", App::ParamInfo::Bool, false)
+        .setTitle("Reset cursor position on rotation")
+        .setDoc("Move the mouse cursor to the rotation centre when a rotation of\n"
+"the 3D view starts. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "InvertZoom", "InvertZoom", App::ParamInfo::Bool, true)
+        .setTitle("Invert zoom")
+        .setDoc("Invert the direction of zooming with the mouse wheel. The 3D\n"
+"views and TechDraw pages follow at once; the dependency graph\n"
+"reads it when it is opened."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ZoomAtCursor", "ZoomAtCursor", App::ParamInfo::Bool, true)
+        .setTitle("Zoom at cursor")
+        .setDoc("Zoom towards the point under the mouse cursor instead of the\n"
+"centre of the view. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ZoomStep", "ZoomStep", App::ParamInfo::Float, 0.2)
+        .setTitle("Zoom step")
+        .setDoc("Zoom factor of one step of the mouse wheel, 0.01 to 1. Applies at\n"
+"once to the 3D views and TechDraw pages."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseNavigationAnimations", "UseNavigationAnimations", App::ParamInfo::Bool, true)
+        .setTitle("Animate camera moves")
+        .setDoc("Animate camera moves such as switching to a standard view.\n"
+"Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseSpinningAnimations", "UseSpinningAnimations", App::ParamInfo::Bool, false)
+        .setTitle("Spin after a rotation")
+        .setDoc("Let the model keep spinning when the mouse button is released\n"
+"during a rotation. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AnimationDuration", "AnimationDuration", App::ParamInfo::Int, 250)
+        .setTitle("Animation duration")
+        .setDoc("Duration of an animated camera move in milliseconds, 100 to\n"
+"10000. Read each time an animation starts."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "stopAnimatingIfDeactivated", "stopAnimatingIfDeactivated", App::ParamInfo::Int, 3000)
+        .setTitle("Stop spinning when hidden after")
+        .setDoc("Milliseconds after which a spinning 3D view stops once it is\n"
+"hidden or minimized. A negative value never stops it."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowRotationCenter", "ShowRotationCenter", App::ParamInfo::Bool, true)
+        .setTitle("Show rotation centre")
+        .setDoc("Show a marker at the centre of rotation while a 3D view is\n"
+"rotated. Read at each rotation."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RotationCenterSize", "RotationCenterSize", App::ParamInfo::Float, 5.0)
+        .setTitle("Rotation centre size")
+        .setDoc("Size of the rotation centre marker, 1 to 100. Read when the marker\n"
+"is next created."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RotationCenterColor", "RotationCenterColor", App::ParamInfo::Hex, 0xFF000033)
+        .setTitle("Rotation centre colour")
+        .setDoc("Colour and opacity of the rotation centre marker: red and mostly\n"
+"see-through unless set. Read when the marker is next created.")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "NewDocumentCameraOrientation", "NewDocumentCameraOrientation", App::ParamInfo::String, "Trimetric")
+        .setTitle("Default camera orientation")
+        .setDoc("Camera orientation of a new document: Isometric, Dimetric,\n"
+"Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once\n"
+"set, the Home view takes it too; until then Home is Top. Read at\n"
+"each use."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AutoFitToView", "AutoFitToView", App::ParamInfo::Bool, true)
+        .setTitle("Fit view after opening a file")
+        .setDoc("Fit the 3D view to the model after a file is opened or imported."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowNaviCube", "ShowNaviCube", App::ParamInfo::Bool, true)
+        .setTitle("Show navigation cube")
+        .setDoc("Show the navigation cube in the 3D views. Applies at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DisableTouchTilt", "DisableTouchTilt", App::ParamInfo::Bool, true)
+        .setTitle("Disable touchscreen tilt gesture")
+        .setDoc("Gesture navigation: ignore the rotation part of a two-finger\n"
+"gesture on a touchscreen. Read at the start of each gesture."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "NavigationDebug", "NavigationDebug", App::ParamInfo::Bool, false)
+        .setTitle("Log gesture navigation")
+        .setDoc("Gesture navigation: write its state changes to the log. Read when\n"
+"the Gesture style is created."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "GestureRollFwdCommand", "GestureRollFwdCommand", App::ParamInfo::String, "Std_SelForward")
+        .setTitle("Roll forward gesture command")
+        .setDoc("Gesture navigation: command run by the forward roll gesture."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "GestureRollBackCommand", "GestureRollBackCommand", App::ParamInfo::String, "Std_SelBack")
+        .setTitle("Roll back gesture command")
+        .setDoc("Gesture navigation: command run by the backward roll gesture."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SaveWBbyTab", "SaveWBbyTab", App::ParamInfo::Bool, false)
+        .setTitle("Remember active workbench by tab")
+        .setDoc("Remember the active workbench separately for each view tab and\n"
+"switch back to it when the tab is activated."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CbLabelColor", "CbLabelColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Colour bar label colour")
+        .setDoc("Colour of the value labels of a colour bar in the 3D view. Read\n"
+"when the labels are next rebuilt.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CbLabelTextSize", "CbLabelTextSize", App::ParamInfo::Int, 13)
+        .setTitle("Colour bar label size")
+        .setDoc("Text size of the value labels of a colour bar in the 3D view, 4 to\n"
+"36. Read when the labels are next rebuilt."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BoundingBoxFontSize", "BoundingBoxFontSize", App::ParamInfo::Float, 10.0)
+        .setTitle("Bounding box font size")
+        .setDoc("Font size of the dimension labels on an object's bounding box, 2\n"
+"to 64. Read when a bounding box is first shown for an object."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumPointSize", "DatumPointSize", App::ParamInfo::Float, 2.5)
+        .setTitle("Datum point size")
+        .setDoc("Radius of the sphere drawn for a datum point."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LocalCoordinateSystemSize", "LocalCoordinateSystemSize", App::ParamInfo::Float, 1.0)
+        .setTitle("Datum scale factor")
+        .setDoc("Scale factor of datum objects -- origin axes, planes, points --\n"
+"when they are drawn at a fixed size on screen."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeShininess", "DefaultShapeShininess", App::ParamInfo::Int, 37)
+        .setTitle("Default shape shininess")
+        .setDoc("Shininess of the appearance given to new objects, in percent.\n"
+"Read each time a default appearance is made."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DimensionsVisible", "DimensionsVisible", App::ParamInfo::Bool, true)
+        .setTitle("Measurements shown")
+        .setDoc("The measurements made with the measure tools are shown in the 3D\n"
+"views. Stored by the command that toggles them; the views follow\n"
+"at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "Dimensions3dVisible", "Dimensions3dVisible", App::ParamInfo::Bool, true)
+        .setTitle("3D measurements shown")
+        .setDoc("The direct, 3D, lines of the measurements are shown. Stored by\n"
+"the command that toggles them; the views follow at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DimensionsDeltaVisible", "DimensionsDeltaVisible", App::ParamInfo::Bool, true)
+        .setTitle("Delta measurements shown")
+        .setDoc("The lines of the measurements along the three axes are shown.\n"
+"Stored by the command that toggles them; the views follow at\n"
+"once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SavePicture", "SavePicture", App::ParamInfo::String, "")
+        .setTitle("Save picture: last method")
+        .setDoc("How the Save picture dialog last made its picture:\n"
+"FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or\n"
+"empty for the dialog's own way. Stored when a method is chosen in\n"
+"the dialog's options, and used for every picture saved."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationX", "HeadlightRotationX", App::ParamInfo::Float, 0.0)
+        .setTitle("Headlight dragger: rotation x")
+        .setDoc("First component of the rotation the dragger of the Light\n"
+"sources page was left with. The view itself uses the headlight\n"
+"direction, which the page stores with it."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationY", "HeadlightRotationY", App::ParamInfo::Float, 0.0)
+        .setTitle("Headlight dragger: rotation y")
+        .setDoc("Second component of the rotation of the dragger of the Light\n"
+"sources page."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationZ", "HeadlightRotationZ", App::ParamInfo::Float, 0.0)
+        .setTitle("Headlight dragger: rotation z")
+        .setDoc("Third component of the rotation of the dragger of the Light\n"
+"sources page."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationW", "HeadlightRotationW", App::ParamInfo::Float, 1.0)
+        .setTitle("Headlight dragger: rotation w")
+        .setDoc("Fourth component of the rotation of the dragger of the Light\n"
+"sources page."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -2272,7 +3173,10 @@ void ViewParams::removeUseViewArea() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseNewSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Highlight selection and preselection through the selection root of\n"
+"the 3D view, which allows picking sub-elements and objects inside\n"
+"links. When off, only objects that ask for it are handled that way.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2299,7 +3203,10 @@ void ViewParams::removeUseNewSelection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseSelectionRoot() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Give the visual copy a link makes of its linked object a selection\n"
+"root of its own, so that each link is highlighted separately. When\n"
+"off, a plain group without render caching is used.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2385,9 +3292,9 @@ const char *ViewParams::docRenderCache() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Which render path draws a 3D view: 0 auto, 1 distributed,\n"
 "2 centralized Coin caching, 3 the render cache that feeds the\n"
-"render engine. NOT a user setting -- the path is chosen at\n"
-"startup (RenderParams::selectRenderPath), which overrides\n"
-"whatever a config carries. Set it at runtime to compare paths.");
+"render engine. Looked at only under the render type 'Legacy'\n"
+"(View/Render/Type): with the render engine the program draws\n"
+"by 3 whatever this holds. Not on a preferences page.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2447,7 +3354,9 @@ void ViewParams::removeUnifiedCanvas() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRandomColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Give every new object a random shape colour instead of the default\n"
+"shape colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2474,7 +3383,9 @@ void ViewParams::removeRandomColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docBoundingBoxColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the bounding box drawn for an object that has its bounding\n"
+"box display turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2501,7 +3412,8 @@ void ViewParams::removeBoundingBoxColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAnnotationTextColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default text colour of new annotation objects.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2524,6 +3436,36 @@ void ViewParams::setAnnotationTextColor(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void ViewParams::removeAnnotationTextColor() {
     instance()->handle->RemoveUnsigned("AnnotationTextColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docCursorCrosshairColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the crosshair the drawing tools of the Sketcher put in\n"
+"place of the mouse pointer. The Sketcher's Appearance page shows\n"
+"it. Takes effect at the next tool started.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getCursorCrosshairColor() {
+    return instance()->CursorCrosshairColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultCursorCrosshairColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setCursorCrosshairColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("CursorCrosshairColor",v);
+    instance()->CursorCrosshairColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeCursorCrosshairColor() {
+    instance()->handle->RemoveUnsigned("CursorCrosshairColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2584,7 +3526,9 @@ void ViewParams::removeSelectionColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMarkerSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size in pixels of the point markers drawn in the 3D view, such as\n"
+"sketch vertices and the end points of a measurement.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2594,7 +3538,7 @@ const long & ViewParams::getMarkerSize() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & ViewParams::defaultMarkerSize() {
-    const static long def = 9;
+    const static long def = 7;
     return def;
 }
 
@@ -2611,7 +3555,9 @@ void ViewParams::removeMarkerSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultLinkColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default colour of the material of a new link, which is used when the\n"
+"link overrides the material of its linked object.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2638,7 +3584,8 @@ void ViewParams::removeDefaultLinkColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeLineColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default line colour of new shapes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2665,7 +3612,8 @@ void ViewParams::removeDefaultShapeLineColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeVertexColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default vertex colour of new shapes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2692,7 +3640,9 @@ void ViewParams::removeDefaultShapeVertexColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default face colour of new shapes. Not used while random colours are\n"
+"turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2719,7 +3669,9 @@ void ViewParams::removeDefaultShapeColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default transparency of new shapes in percent. 0 is opaque, 100 is\n"
+"fully transparent.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2746,7 +3698,8 @@ void ViewParams::removeDefaultShapeTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeLineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default line width of new shapes, in pixels.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2773,7 +3726,8 @@ void ViewParams::removeDefaultShapeLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapePointSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default vertex size of new shapes, in pixels.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2800,7 +3754,10 @@ void ViewParams::removeDefaultShapePointSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docCoinCycleCheck() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Check the 3D scene for an object that contains itself while the\n"
+"scene is traversed. A cycle is reported and skipped instead of being\n"
+"followed without end.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2827,7 +3784,10 @@ void ViewParams::removeCoinCycleCheck() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnablePropertyViewForInactiveDocument() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Keep the property view usable when the selected objects belong to a\n"
+"document other than the active one. When off, the property view is\n"
+"disabled for such a selection.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2910,7 +3870,9 @@ void ViewParams::removeShowSelectionBoundingBoxThreshold() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUpdateSelectionVisual() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Bring back the selection highlight of a selected object when it is\n"
+"shown again after being hidden.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2937,7 +3899,10 @@ void ViewParams::removeUpdateSelectionVisual() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docLinkChildrenDirect() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show the children of a group with its own coordinate system, such as\n"
+"a part or body, through a link view. A link to the group then shows\n"
+"the children's visuals directly.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3500,7 +4465,10 @@ void ViewParams::removeTouchLoupeLift() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Transparency given to a selected face so that what lies behind it\n"
+"stays visible, used when picking through objects and when the\n"
+"highlight is drawn on top. 0 is opaque, 1 is invisible.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3527,7 +4495,9 @@ void ViewParams::removeSelectionTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionLinePattern() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Dash pattern of the hidden part of a selected line that is shown on\n"
+"top of the scene, as a 16 bit mask. 0 draws it solid.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3554,7 +4524,10 @@ void ViewParams::removeSelectionLinePattern() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionLinePatternScale() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Number of times each bit of the dash pattern of a selected hidden\n"
+"line is repeated. Larger values give longer dashes. 1 or less uses\n"
+"the pattern as it is.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3609,7 +4582,9 @@ void ViewParams::removeSelectionHiddenLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionBBoxLineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Line width in pixels of the bounding box drawn around a selected\n"
+"object when selection is shown by bounding box.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3664,7 +4639,9 @@ void ViewParams::removeShowHighlightEdgeOnly() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docPreSelectionDelay() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Shortest time in seconds between two preselection picks in the 3D\n"
+"view while the mouse moves. 0 picks on every mouse move.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3691,7 +4668,10 @@ void ViewParams::removePreSelectionDelay() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docPickBackFaceDelay() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Number of mouse wheel steps, with Shift and Ctrl held, that it takes\n"
+"to move the pick one object further behind or back toward the\n"
+"front.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3718,7 +4698,10 @@ void ViewParams::removePickBackFaceDelay() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseNewRayPick() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Stop a single pick in the 3D view at the nearest hit instead of\n"
+"collecting everything along the pick ray. Off is the older and\n"
+"slower way.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3745,7 +4728,10 @@ void ViewParams::removeUseNewRayPick() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docViewSelectionExtendFactor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Scale applied to the bounding box of the selection when testing\n"
+"whether it is already in view, before the view is extended to\n"
+"include it. Currently has no effect.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3800,7 +4786,9 @@ void ViewParams::removeUseTightBoundingBox() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseBoundingBoxCache() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Remember the bounding boxes of objects instead of computing them\n"
+"again on every request.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3884,7 +4872,10 @@ void ViewParams::removeSelectionFaceWire() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docNewDocumentCameraScale() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Camera zoom of a new document, as the diameter of the sphere that\n"
+"fits on the screen. A quarter of it is the default size of a new\n"
+"coordinate system.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3911,7 +4902,10 @@ void ViewParams::removeNewDocumentCameraScale() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMaxOnTopSelections() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Largest number of selected objects that are drawn on top of the\n"
+"scene. A larger selection is highlighted in place, and the tree view\n"
+"does not expand to show its items.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3938,7 +4932,9 @@ void ViewParams::removeMaxOnTopSelections() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMaxViewSelections() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Largest number of selected objects taken into account when the view\n"
+"is fitted or aligned to the selection.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3965,7 +4961,10 @@ void ViewParams::removeMaxViewSelections() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMaxSelectionNotification() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Number of pending add and remove selection notices after which they\n"
+"are replaced by one notice that the whole selection changed. 0 sets\n"
+"no limit.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4261,7 +5260,9 @@ void ViewParams::removeHiddenLineOverrideTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineFaceColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour all faces are drawn in by the hidden line display style when\n"
+"it overrides the face colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4316,7 +5317,9 @@ void ViewParams::removeHiddenLineOverrideFaceColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour all lines and outlines are drawn in by the hidden line\n"
+"display style when it overrides the line colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4371,7 +5374,9 @@ void ViewParams::removeHiddenLineOverrideColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineBackground() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Background colour of a 3D view in the hidden line display style,\n"
+"used when overriding the background is turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4398,7 +5403,9 @@ void ViewParams::removeHiddenLineBackground() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineOverrideBackground() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Replace the background of a 3D view with the hidden line background\n"
+"colour while the hidden line display style is active.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4537,7 +5544,9 @@ void ViewParams::removeHiddenLineSceneOutline() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineOutlineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Width in pixels of the outlines drawn by the hidden line display\n"
+"style. 0 uses the default width.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4564,7 +5573,9 @@ void ViewParams::removeHiddenLineOutlineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Width in pixels of the lines of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own line width.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4591,7 +5602,9 @@ void ViewParams::removeHiddenLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLinePointSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size in pixels of the vertices of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own point size.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4702,7 +5715,10 @@ void ViewParams::removeHiddenLineHideFace() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docStatusMessageTimeout() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Milliseconds a message stays in the status bar when the command\n"
+"showing it gives no time of its own. 0 keeps it until the next\n"
+"message.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4841,7 +5857,8 @@ void ViewParams::removeShadowSpotLight() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightIntensity() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Brightness of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4868,7 +5885,8 @@ void ViewParams::removeShadowLightIntensity() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightDirectionX() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"X component of the direction of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4895,7 +5913,8 @@ void ViewParams::removeShadowLightDirectionX() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightDirectionY() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Y component of the direction of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4922,7 +5941,8 @@ void ViewParams::removeShadowLightDirectionY() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightDirectionZ() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Z component of the direction of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4949,7 +5969,8 @@ void ViewParams::removeShadowLightDirectionZ() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5063,7 +6084,8 @@ void ViewParams::removeShadowGroundScale() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the ground that receives the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5090,7 +6112,9 @@ void ViewParams::removeShadowGroundColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundBumpMap() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Image file used as a bump map that gives the shadow ground a surface\n"
+"relief. Empty for a flat ground.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5117,7 +6141,9 @@ void ViewParams::removeShadowGroundBumpMap() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundTexture() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Image file drawn as a texture on the ground that receives the\n"
+"shadow. Empty for a ground of plain colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5209,18 +6235,10 @@ void ViewParams::removeShadowTransparency() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundTransparency() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"How much of the shadow receiver plane is drawn beside the shadow\n"
-"itself.\n"
-"\n"
-"1 (the default) is the receiver a view of a part usually wants: the\n"
-"ground carries the shadow and nothing else, so there is no plane in\n"
-"the frame and no horizon behind the model -- only the shadow, at a\n"
-"fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
-"solid ground of that transparency and shades it, which is what a\n"
-"presentation image of a whole scene wants.\n"
-"\n"
-"A ground reflection needs a surface to blend onto, so it keeps the\n"
-"solid ground whatever this says.");
+"Transparency of the ground that receives the shadow. 1 (the default)\n"
+"draws the shadow only, with no ground plane; lower values draw a\n"
+"shaded ground of that transparency. A ground reflection always draws\n"
+"the ground.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5276,7 +6294,10 @@ void ViewParams::removeShadowGroundShading() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowExtraRedraw() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Redraw the 3D view once more after a change while shadows are shown,\n"
+"so that the shadow catches up with the scene. Currently has no\n"
+"effect.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5630,7 +6651,9 @@ void ViewParams::removeShadowUpdateGround() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docPropertyViewTimer() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Milliseconds the property view waits before it refreshes after the\n"
+"selection or a property changes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6667,7 +7690,9 @@ void ViewParams::removeClipPlaneLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docTransformOnTop() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show an object on top of the scene while it is moved with the\n"
+"transform dragger. Currently has no effect.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6866,13 +7891,9 @@ void ViewParams::removeRenderCacheMergeDepthMin() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderCacheKeepMax() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Largest vertex cache map, in entries, that an object keeps after\n"
-"its parent has copied it up. A parent flattens its children into\n"
-"one map and then drops theirs, so the next frame re-derives the\n"
-"map of every object in the scene however little moved; keeping the\n"
-"small ones costs a few entries of memory each and is what stops\n"
-"that. The large ones are the copies of whole subtrees, which is the\n"
-"memory this bounds. Set zero to keep none.");
+"Largest render cache, in entries, an object keeps after its parent has\n"
+"merged it. Keeping the small ones avoids rebuilding them every frame.\n"
+"0 keeps none.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6900,16 +7921,10 @@ void ViewParams::removeRenderCacheKeepMax() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderCacheIncremental() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Splice a rebuilt object's flattened vertex cache map from the map\n"
-"of the publish before it, instead of merging every child again. A\n"
-"container holding thousands of objects re-derives all of them on\n"
-"every publish however few moved, and the merge is priced per child\n"
-"rather than per entry. It costs memory, because the map of the\n"
-"previous publish has to survive the traversal that replaces it:\n"
-"on a 17800-object assembly, 49MB against 45% off the flatten.\n"
-"0 rebuilds (the old behaviour), 1 splices, 2 splices and also\n"
-"rebuilds wholesale to compare the two, logging any disagreement\n"
-"-- slow, for checking the splice, not for use.");
+"Update a container's render cache from its previous one instead of\n"
+"merging all its children again. Faster on large assemblies, at the\n"
+"cost of some memory. 0 off, 1 on, 2 does both and logs any difference\n"
+"(slow, for checking).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6937,16 +7952,9 @@ void ViewParams::removeRenderCacheIncremental() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderCacheMeshReuse() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Reuse the mesh a vertex cache was translated into for the backend,\n"
-"instead of translating it again on every publish. A vertex cache is\n"
-"built once and never changed afterwards -- a shape whose geometry\n"
-"moves gets a new cache -- so the translation is the same work every\n"
-"time, and on a large assembly it is the largest single cost of a\n"
-"publish. Meshes are held only for as long as some draw list still\n"
-"refers to them. 0 translates every publish (the old behaviour), 1\n"
-"reuses, 2 reuses and also translates afresh to compare the two,\n"
-"logging any disagreement -- slow, for checking the reuse, not for\n"
-"use.");
+"Reuse the mesh a render cache was converted to for the render backend\n"
+"instead of converting it at every update. 0 off, 1 on, 2 does both and\n"
+"logs any difference (slow, for checking).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7005,15 +8013,10 @@ void ViewParams::removeLiveImportRedrawInterval() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docLiveImportRedrawBudget() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Percentage of the time the 3D view may spend redrawing while a\n"
-"progressive import is filling the document. Each new object makes\n"
-"the next frame rebuild the render cache of the whole scene, so on a\n"
-"large import a single frame costs far more than the objects drawn\n"
-"in it; keeping frames to a share of the time is what bounds that\n"
-"cost. The resulting wait scales with the measured frame cost, is\n"
-"never shorter than LiveImportRedrawInterval nor longer than ten\n"
-"times it, and mouse input renders immediately regardless. Set zero\n"
-"to budget nothing and use the plain interval.");
+"Percentage of time the 3D view may spend redrawing while a progressive\n"
+"import fills the document. The wait between frames is never shorter\n"
+"than LiveImportRedrawInterval nor longer than ten times it. 0 uses the\n"
+"plain interval.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7041,15 +8044,9 @@ void ViewParams::removeLiveImportRedrawBudget() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docLiveImportPumpInterval() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Minimum interval in milliseconds between two turns of the event\n"
-"loop while a live import fills the document. The import holds the\n"
-"main thread, so the view only sees input and paints where the\n"
-"import hands the loop a slice, and on its own the progress bar\n"
-"does that on a 200 ms update throttle -- a slideshow to someone\n"
-"orbiting the model. Offering the loop a turn costs nothing when\n"
-"nothing is queued, and what a frame costs is bounded by\n"
-"LiveImportRedrawBudget rather than by how often a turn is\n"
-"offered. Set zero to pump at every offer.");
+"Minimum milliseconds between two chances for the window to process\n"
+"input and repaint while a live import fills the document. 0 offers one\n"
+"at every opportunity.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7076,7 +8073,10 @@ void ViewParams::removeLiveImportPumpInterval() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Slope scaled depth offset that pulls selection and preselection\n"
+"highlights toward the viewer, so that the faces under them do not\n"
+"hide them. Preselection gets twice the offset.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7103,7 +8103,10 @@ void ViewParams::removeRenderHighlightPolygonOffsetFactor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderHighlightPolygonOffsetUnits() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Constant depth offset, in depth buffer units, that pulls selection\n"
+"and preselection highlights toward the viewer, so that the faces\n"
+"under them do not hide them. Preselection gets twice the offset.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7159,7 +8162,9 @@ void ViewParams::removeForceSolidSingleSideLighting() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultFontSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Point size of the application font. 0 uses the system default.\n"
+"Sizes from 1 to 7 are raised to 8.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7186,7 +8191,9 @@ void ViewParams::removeDefaultFontSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnableTaskPanelKeyTranslate() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Let the Up and Down arrow keys move the keyboard focus through the\n"
+"task panel, the way Shift+Tab and Tab do.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7213,7 +8220,10 @@ void ViewParams::removeEnableTaskPanelKeyTranslate() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnableMenuBarCheckBox() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show the entries of the toolbar and dock window menus of the menu\n"
+"bar as checkboxes, the way the right-click menu of the main window\n"
+"shows them. Off by default on macOS.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7240,7 +8250,9 @@ void ViewParams::removeEnableMenuBarCheckBox() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnableBacklight() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Turn on the backlight of the 3D view, a second light that shines on\n"
+"the faces turned away from the viewer.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7267,7 +8279,9 @@ void ViewParams::removeEnableBacklight() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docBacklightColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the backlight, the light that shines on the faces turned\n"
+"away from the viewer.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7440,7 +8454,9 @@ void ViewParams::removeToolTipIconSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docToolTipDisable() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Turn off the tool tips of the application. Tips shown as an overlay\n"
+"in the 3D view, such as the preselection tip, still appear.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7467,7 +8483,9 @@ void ViewParams::removeToolTipDisable() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAxisXColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the X axis of the transform dragger and of other axis\n"
+"markers in the 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7494,7 +8512,9 @@ void ViewParams::removeAxisXColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAxisYColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the Y axis of the transform dragger and of other axis\n"
+"markers in the 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7521,7 +8541,9 @@ void ViewParams::removeAxisYColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAxisZColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the Z axis of the transform dragger and of other axis\n"
+"markers in the 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7689,7 +8711,2022 @@ void ViewParams::removeDatumTemporaryScaleFactor() {
     instance()->handle->RemoveFloat("DatumTemporaryScaleFactor");
 }
 
-// Auto generated code (Gui/ViewParams.py:686)
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docEyeDistance() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Offset between the left and the right eye image of a stereo 3D\n"
+"view. 0.1 to 1000. Applies at once to all open 3D views.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getEyeDistance() {
+    return instance()->EyeDistance;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultEyeDistance() {
+    const static double def = 5.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setEyeDistance(const double &v) {
+    instance()->handle->SetFloat("EyeDistance",v);
+    instance()->EyeDistance = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeEyeDistance() {
+    instance()->handle->RemoveFloat("EyeDistance");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docCornerCoordSystem() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show the small coordinate system in the corner of every 3D view.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getCornerCoordSystem() {
+    return instance()->CornerCoordSystem;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultCornerCoordSystem() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setCornerCoordSystem(const bool &v) {
+    instance()->handle->SetBool("CornerCoordSystem",v);
+    instance()->CornerCoordSystem = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeCornerCoordSystem() {
+    instance()->handle->RemoveBool("CornerCoordSystem");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docCornerCoordSystemSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size of the coordinate system in the corner of the 3D views, 2 to\n"
+"100. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getCornerCoordSystemSize() {
+    return instance()->CornerCoordSystemSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultCornerCoordSystemSize() {
+    const static long def = 10;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setCornerCoordSystemSize(const long &v) {
+    instance()->handle->SetInt("CornerCoordSystemSize",v);
+    instance()->CornerCoordSystemSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeCornerCoordSystemSize() {
+    instance()->handle->RemoveInt("CornerCoordSystemSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docShowAxisCross() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show the axis cross at the origin of the 3D views. Applies at once\n"
+"to the open views and to new ones.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getShowAxisCross() {
+    return instance()->ShowAxisCross;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultShowAxisCross() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setShowAxisCross(const bool &v) {
+    instance()->handle->SetBool("ShowAxisCross",v);
+    instance()->ShowAxisCross = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeShowAxisCross() {
+    instance()->handle->RemoveBool("ShowAxisCross");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docShowFPS() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show a frames per second counter in the 3D views. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getShowFPS() {
+    return instance()->ShowFPS;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultShowFPS() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setShowFPS(const bool &v) {
+    instance()->handle->SetBool("ShowFPS",v);
+    instance()->ShowFPS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeShowFPS() {
+    instance()->handle->RemoveBool("ShowFPS");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docUseVBO() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Let Coin draw with vertex buffer objects. Applies at once to the\n"
+"open 3D views except split views; the driver override that goes\n"
+"with it is set at startup only.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getUseVBO() {
+    return instance()->UseVBO;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultUseVBO() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setUseVBO(const bool &v) {
+    instance()->handle->SetBool("UseVBO",v);
+    instance()->UseVBO = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeUseVBO() {
+    instance()->handle->RemoveBool("UseVBO");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docOrthographic() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Use an orthographic camera in the 3D views; the opposite of\n"
+"Perspective.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getOrthographic() {
+    return instance()->Orthographic;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultOrthographic() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setOrthographic(const bool &v) {
+    instance()->handle->SetBool("Orthographic",v);
+    instance()->Orthographic = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeOrthographic() {
+    instance()->handle->RemoveBool("Orthographic");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docPerspective() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Use a perspective camera in the 3D views. Read when a view is\n"
+"created; with ApplyCameraTypeToAll on, a change switches the open\n"
+"views too.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getPerspective() {
+    return instance()->Perspective;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultPerspective() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setPerspective(const bool &v) {
+    instance()->handle->SetBool("Perspective",v);
+    instance()->Perspective = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removePerspective() {
+    instance()->handle->RemoveBool("Perspective");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docApplyCameraTypeToAll() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"When the camera type setting changes, switch every open 3D view\n"
+"to it as well.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getApplyCameraTypeToAll() {
+    return instance()->ApplyCameraTypeToAll;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultApplyCameraTypeToAll() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setApplyCameraTypeToAll(const bool &v) {
+    instance()->handle->SetBool("ApplyCameraTypeToAll",v);
+    instance()->ApplyCameraTypeToAll = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeApplyCameraTypeToAll() {
+    instance()->handle->RemoveBool("ApplyCameraTypeToAll");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docAntiAliasing() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA\n"
+"2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a\n"
+"face that no edge runs along is a staircase. A change is taken\n"
+"by the open views at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getAntiAliasing() {
+    return instance()->AntiAliasing;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultAntiAliasing() {
+    const static long def = 3;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setAntiAliasing(const long &v) {
+    instance()->handle->SetInt("AntiAliasing",v);
+    instance()->AntiAliasing = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeAntiAliasing() {
+    instance()->handle->RemoveInt("AntiAliasing");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docTransparentObjectRenderType() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"How Coin draws transparent objects: 0 in one pass, 1 with the back\n"
+"faces of non-solid objects in a pass of their own. Applies at once\n"
+"to the open 3D views except split views.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getTransparentObjectRenderType() {
+    return instance()->TransparentObjectRenderType;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultTransparentObjectRenderType() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setTransparentObjectRenderType(const long &v) {
+    instance()->handle->SetInt("TransparentObjectRenderType",v);
+    instance()->TransparentObjectRenderType = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeTransparentObjectRenderType() {
+    instance()->handle->RemoveInt("TransparentObjectRenderType");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docInternalTextureFormat() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Pixel format of the offscreen buffer a 3D view is drawn into:\n"
+"Default, GL_RGB, GL_RGBA, GL_RGB8, GL_RGBA8, GL_RGB10,\n"
+"GL_RGB10_A2, GL_RGB16, GL_RGBA16, GL_RGB32F or GL_RGBA32F. Read\n"
+"each time a buffer is created.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getInternalTextureFormat() {
+    return instance()->InternalTextureFormat;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultInternalTextureFormat() {
+    const static std::string def = "Default";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setInternalTextureFormat(const std::string &v) {
+    instance()->handle->SetASCII("InternalTextureFormat",v);
+    instance()->InternalTextureFormat = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeInternalTextureFormat() {
+    instance()->handle->RemoveASCII("InternalTextureFormat");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docGradient() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Fill the background of the 3D views with a linear gradient from\n"
+"BackgroundColor2 (top) to BackgroundColor3 (bottom). Wins over\n"
+"RadialGradient. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getGradient() {
+    return instance()->Gradient;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultGradient() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setGradient(const bool &v) {
+    instance()->handle->SetBool("Gradient",v);
+    instance()->Gradient = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeGradient() {
+    instance()->handle->RemoveBool("Gradient");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docRadialGradient() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Fill the background of the 3D views with a radial gradient; used\n"
+"when Gradient is off. With both off the plain BackgroundColor is\n"
+"used. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getRadialGradient() {
+    return instance()->RadialGradient;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultRadialGradient() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setRadialGradient(const bool &v) {
+    instance()->handle->SetBool("RadialGradient",v);
+    instance()->RadialGradient = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeRadialGradient() {
+    instance()->handle->RemoveBool("RadialGradient");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docSimple() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"The 'Simple color' choice of the Colors page. The views use a\n"
+"plain background whenever Gradient and RadialGradient are both\n"
+"off, whatever this says.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getSimple() {
+    return instance()->Simple;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultSimple() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setSimple(const bool &v) {
+    instance()->handle->SetBool("Simple",v);
+    instance()->Simple = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeSimple() {
+    instance()->handle->RemoveBool("Simple");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docBackgroundColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the 3D view background when no gradient is used.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getBackgroundColor() {
+    return instance()->BackgroundColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultBackgroundColor() {
+    const static unsigned long def = 0xEAE5DCFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setBackgroundColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("BackgroundColor",v);
+    instance()->BackgroundColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeBackgroundColor() {
+    instance()->handle->RemoveUnsigned("BackgroundColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docBackgroundColor2() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"First colour of the background gradient of the 3D views: the top\n"
+"of a linear one, the centre of a radial one. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getBackgroundColor2() {
+    return instance()->BackgroundColor2;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultBackgroundColor2() {
+    const static unsigned long def = 0x333365FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setBackgroundColor2(const unsigned long &v) {
+    instance()->handle->SetUnsigned("BackgroundColor2",v);
+    instance()->BackgroundColor2 = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeBackgroundColor2() {
+    instance()->handle->RemoveUnsigned("BackgroundColor2");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docBackgroundColor3() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Last colour of the background gradient of the 3D views: the\n"
+"bottom of a linear one, the rim of a radial one. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getBackgroundColor3() {
+    return instance()->BackgroundColor3;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultBackgroundColor3() {
+    const static unsigned long def = 0xABABC1FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setBackgroundColor3(const unsigned long &v) {
+    instance()->handle->SetUnsigned("BackgroundColor3",v);
+    instance()->BackgroundColor3 = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeBackgroundColor3() {
+    instance()->handle->RemoveUnsigned("BackgroundColor3");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docBackgroundColor4() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Middle colour of the background gradient of the 3D views; used\n"
+"only with UseBackgroundColorMid on. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getBackgroundColor4() {
+    return instance()->BackgroundColor4;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultBackgroundColor4() {
+    const static unsigned long def = 0x6F6F93FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setBackgroundColor4(const unsigned long &v) {
+    instance()->handle->SetUnsigned("BackgroundColor4",v);
+    instance()->BackgroundColor4 = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeBackgroundColor4() {
+    instance()->handle->RemoveUnsigned("BackgroundColor4");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docUseBackgroundColorMid() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Give the background gradient of the 3D views a third, middle\n"
+"colour (BackgroundColor4). Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getUseBackgroundColorMid() {
+    return instance()->UseBackgroundColorMid;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultUseBackgroundColorMid() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setUseBackgroundColorMid(const bool &v) {
+    instance()->handle->SetBool("UseBackgroundColorMid",v);
+    instance()->UseBackgroundColorMid = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeUseBackgroundColorMid() {
+    instance()->handle->RemoveBool("UseBackgroundColorMid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docEnableHeadlight() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Light the 3D views with the headlight, which follows the camera.\n"
+"Applies at once to every view with no light setting of its own.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getEnableHeadlight() {
+    return instance()->EnableHeadlight;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultEnableHeadlight() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setEnableHeadlight(const bool &v) {
+    instance()->handle->SetBool("EnableHeadlight",v);
+    instance()->EnableHeadlight = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeEnableHeadlight() {
+    instance()->handle->RemoveBool("EnableHeadlight");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the headlight of the 3D views. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getHeadlightColor() {
+    return instance()->HeadlightColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultHeadlightColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("HeadlightColor",v);
+    instance()->HeadlightColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightColor() {
+    instance()->handle->RemoveUnsigned("HeadlightColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightIntensity() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Intensity of the headlight of the 3D views in percent, 0 to 100.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getHeadlightIntensity() {
+    return instance()->HeadlightIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultHeadlightIntensity() {
+    const static long def = 100;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightIntensity(const long &v) {
+    instance()->handle->SetInt("HeadlightIntensity",v);
+    instance()->HeadlightIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightIntensity() {
+    instance()->handle->RemoveInt("HeadlightIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightDirection() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Direction of the headlight relative to the camera, as (x,y,z).\n"
+"Empty keeps the built-in direction. Turned in a 3D view from the\n"
+"Display style menu (Direction), and stored here by its Save as\n"
+"default. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getHeadlightDirection() {
+    return instance()->HeadlightDirection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultHeadlightDirection() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightDirection(const std::string &v) {
+    instance()->handle->SetASCII("HeadlightDirection",v);
+    instance()->HeadlightDirection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightDirection() {
+    instance()->handle->RemoveASCII("HeadlightDirection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docBacklightDirection() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Direction of the backlight relative to the camera, as (x,y,z).\n"
+"Empty keeps the built-in direction. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getBacklightDirection() {
+    return instance()->BacklightDirection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultBacklightDirection() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setBacklightDirection(const std::string &v) {
+    instance()->handle->SetASCII("BacklightDirection",v);
+    instance()->BacklightDirection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeBacklightDirection() {
+    instance()->handle->RemoveASCII("BacklightDirection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docEnableFillLight() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Light the 3D views with an extra fill light from the side.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getEnableFillLight() {
+    return instance()->EnableFillLight;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultEnableFillLight() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setEnableFillLight(const bool &v) {
+    instance()->handle->SetBool("EnableFillLight",v);
+    instance()->EnableFillLight = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeEnableFillLight() {
+    instance()->handle->RemoveBool("EnableFillLight");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docFillLightColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the fill light of the 3D views. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getFillLightColor() {
+    return instance()->FillLightColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultFillLightColor() {
+    const static unsigned long def = 0xE6FAFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setFillLightColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("FillLightColor",v);
+    instance()->FillLightColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeFillLightColor() {
+    instance()->handle->RemoveUnsigned("FillLightColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docFillLightIntensity() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Intensity of the fill light of the 3D views in percent, 0 to 100.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getFillLightIntensity() {
+    return instance()->FillLightIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultFillLightIntensity() {
+    const static long def = 60;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setFillLightIntensity(const long &v) {
+    instance()->handle->SetInt("FillLightIntensity",v);
+    instance()->FillLightIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeFillLightIntensity() {
+    instance()->handle->RemoveInt("FillLightIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docFillLightDirection() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Direction of the fill light relative to the camera, as (x,y,z).\n"
+"Empty keeps the built-in direction. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getFillLightDirection() {
+    return instance()->FillLightDirection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultFillLightDirection() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setFillLightDirection(const std::string &v) {
+    instance()->handle->SetASCII("FillLightDirection",v);
+    instance()->FillLightDirection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeFillLightDirection() {
+    instance()->handle->RemoveASCII("FillLightDirection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docAmbientLightColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the ambient light of the 3D views. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getAmbientLightColor() {
+    return instance()->AmbientLightColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultAmbientLightColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setAmbientLightColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("AmbientLightColor",v);
+    instance()->AmbientLightColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeAmbientLightColor() {
+    instance()->handle->RemoveUnsigned("AmbientLightColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docAmbientLightIntensity() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Intensity of the ambient light of the 3D views in percent, 0 to\n"
+"100. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getAmbientLightIntensity() {
+    return instance()->AmbientLightIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultAmbientLightIntensity() {
+    const static long def = 20;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setAmbientLightIntensity(const long &v) {
+    instance()->handle->SetInt("AmbientLightIntensity",v);
+    instance()->AmbientLightIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeAmbientLightIntensity() {
+    instance()->handle->RemoveInt("AmbientLightIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docNavigationStyle() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Mouse navigation style of the 3D views, as a class name such as\n"
+"Gui::CADNavigationStyle. Applies at once to all open 3D views;\n"
+"TechDraw pages follow it as well.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getNavigationStyle() {
+    return instance()->NavigationStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultNavigationStyle() {
+    const static std::string def = "Gui::CADNavigationStyle";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setNavigationStyle(const std::string &v) {
+    instance()->handle->SetASCII("NavigationStyle",v);
+    instance()->NavigationStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeNavigationStyle() {
+    instance()->handle->RemoveASCII("NavigationStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docSameStyleForAllViews() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"A navigation style picked from a 3D view's context menu becomes\n"
+"the NavigationStyle setting, so that every view follows. When off\n"
+"it changes that view only.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getSameStyleForAllViews() {
+    return instance()->SameStyleForAllViews;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultSameStyleForAllViews() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setSameStyleForAllViews(const bool &v) {
+    instance()->handle->SetBool("SameStyleForAllViews",v);
+    instance()->SameStyleForAllViews = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeSameStyleForAllViews() {
+    instance()->handle->RemoveBool("SameStyleForAllViews");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docOrbitStyle() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"How dragging rotates the 3D view: 0 turntable, 1 trackball, 2 free\n"
+"turntable. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getOrbitStyle() {
+    return instance()->OrbitStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultOrbitStyle() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setOrbitStyle(const long &v) {
+    instance()->handle->SetInt("OrbitStyle",v);
+    instance()->OrbitStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeOrbitStyle() {
+    instance()->handle->RemoveInt("OrbitStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docRotationMode() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Centre of rotation in the 3D views: 0 the window centre, 1 the\n"
+"point under the cursor, 2 the centre of the objects. Applies at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getRotationMode() {
+    return instance()->RotationMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultRotationMode() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setRotationMode(const long &v) {
+    instance()->handle->SetInt("RotationMode",v);
+    instance()->RotationMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeRotationMode() {
+    instance()->handle->RemoveInt("RotationMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docSensitivity() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"A value above 1 multiplies the angle of a mouse rotation of the 3D\n"
+"view. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getSensitivity() {
+    return instance()->Sensitivity;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultSensitivity() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setSensitivity(const double &v) {
+    instance()->handle->SetFloat("Sensitivity",v);
+    instance()->Sensitivity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeSensitivity() {
+    instance()->handle->RemoveFloat("Sensitivity");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docResetCursorPosition() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Move the mouse cursor to the rotation centre when a rotation of\n"
+"the 3D view starts. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getResetCursorPosition() {
+    return instance()->ResetCursorPosition;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultResetCursorPosition() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setResetCursorPosition(const bool &v) {
+    instance()->handle->SetBool("ResetCursorPosition",v);
+    instance()->ResetCursorPosition = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeResetCursorPosition() {
+    instance()->handle->RemoveBool("ResetCursorPosition");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docInvertZoom() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Invert the direction of zooming with the mouse wheel. The 3D\n"
+"views and TechDraw pages follow at once; the dependency graph\n"
+"reads it when it is opened.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getInvertZoom() {
+    return instance()->InvertZoom;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultInvertZoom() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setInvertZoom(const bool &v) {
+    instance()->handle->SetBool("InvertZoom",v);
+    instance()->InvertZoom = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeInvertZoom() {
+    instance()->handle->RemoveBool("InvertZoom");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docZoomAtCursor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Zoom towards the point under the mouse cursor instead of the\n"
+"centre of the view. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getZoomAtCursor() {
+    return instance()->ZoomAtCursor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultZoomAtCursor() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setZoomAtCursor(const bool &v) {
+    instance()->handle->SetBool("ZoomAtCursor",v);
+    instance()->ZoomAtCursor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeZoomAtCursor() {
+    instance()->handle->RemoveBool("ZoomAtCursor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docZoomStep() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Zoom factor of one step of the mouse wheel, 0.01 to 1. Applies at\n"
+"once to the 3D views and TechDraw pages.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getZoomStep() {
+    return instance()->ZoomStep;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultZoomStep() {
+    const static double def = 0.2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setZoomStep(const double &v) {
+    instance()->handle->SetFloat("ZoomStep",v);
+    instance()->ZoomStep = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeZoomStep() {
+    instance()->handle->RemoveFloat("ZoomStep");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docUseNavigationAnimations() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Animate camera moves such as switching to a standard view.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getUseNavigationAnimations() {
+    return instance()->UseNavigationAnimations;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultUseNavigationAnimations() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setUseNavigationAnimations(const bool &v) {
+    instance()->handle->SetBool("UseNavigationAnimations",v);
+    instance()->UseNavigationAnimations = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeUseNavigationAnimations() {
+    instance()->handle->RemoveBool("UseNavigationAnimations");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docUseSpinningAnimations() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Let the model keep spinning when the mouse button is released\n"
+"during a rotation. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getUseSpinningAnimations() {
+    return instance()->UseSpinningAnimations;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultUseSpinningAnimations() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setUseSpinningAnimations(const bool &v) {
+    instance()->handle->SetBool("UseSpinningAnimations",v);
+    instance()->UseSpinningAnimations = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeUseSpinningAnimations() {
+    instance()->handle->RemoveBool("UseSpinningAnimations");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docAnimationDuration() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Duration of an animated camera move in milliseconds, 100 to\n"
+"10000. Read each time an animation starts.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getAnimationDuration() {
+    return instance()->AnimationDuration;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultAnimationDuration() {
+    const static long def = 250;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setAnimationDuration(const long &v) {
+    instance()->handle->SetInt("AnimationDuration",v);
+    instance()->AnimationDuration = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeAnimationDuration() {
+    instance()->handle->RemoveInt("AnimationDuration");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docstopAnimatingIfDeactivated() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Milliseconds after which a spinning 3D view stops once it is\n"
+"hidden or minimized. A negative value never stops it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getstopAnimatingIfDeactivated() {
+    return instance()->stopAnimatingIfDeactivated;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultstopAnimatingIfDeactivated() {
+    const static long def = 3000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setstopAnimatingIfDeactivated(const long &v) {
+    instance()->handle->SetInt("stopAnimatingIfDeactivated",v);
+    instance()->stopAnimatingIfDeactivated = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removestopAnimatingIfDeactivated() {
+    instance()->handle->RemoveInt("stopAnimatingIfDeactivated");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docShowRotationCenter() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show a marker at the centre of rotation while a 3D view is\n"
+"rotated. Read at each rotation.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getShowRotationCenter() {
+    return instance()->ShowRotationCenter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultShowRotationCenter() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setShowRotationCenter(const bool &v) {
+    instance()->handle->SetBool("ShowRotationCenter",v);
+    instance()->ShowRotationCenter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeShowRotationCenter() {
+    instance()->handle->RemoveBool("ShowRotationCenter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docRotationCenterSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size of the rotation centre marker, 1 to 100. Read when the marker\n"
+"is next created.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getRotationCenterSize() {
+    return instance()->RotationCenterSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultRotationCenterSize() {
+    const static double def = 5.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setRotationCenterSize(const double &v) {
+    instance()->handle->SetFloat("RotationCenterSize",v);
+    instance()->RotationCenterSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeRotationCenterSize() {
+    instance()->handle->RemoveFloat("RotationCenterSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docRotationCenterColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour and opacity of the rotation centre marker: red and mostly\n"
+"see-through unless set. Read when the marker is next created.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getRotationCenterColor() {
+    return instance()->RotationCenterColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultRotationCenterColor() {
+    const static unsigned long def = 0xFF000033;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setRotationCenterColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("RotationCenterColor",v);
+    instance()->RotationCenterColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeRotationCenterColor() {
+    instance()->handle->RemoveUnsigned("RotationCenterColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docNewDocumentCameraOrientation() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Camera orientation of a new document: Isometric, Dimetric,\n"
+"Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once\n"
+"set, the Home view takes it too; until then Home is Top. Read at\n"
+"each use.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getNewDocumentCameraOrientation() {
+    return instance()->NewDocumentCameraOrientation;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultNewDocumentCameraOrientation() {
+    const static std::string def = "Trimetric";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setNewDocumentCameraOrientation(const std::string &v) {
+    instance()->handle->SetASCII("NewDocumentCameraOrientation",v);
+    instance()->NewDocumentCameraOrientation = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeNewDocumentCameraOrientation() {
+    instance()->handle->RemoveASCII("NewDocumentCameraOrientation");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docAutoFitToView() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Fit the 3D view to the model after a file is opened or imported.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getAutoFitToView() {
+    return instance()->AutoFitToView;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultAutoFitToView() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setAutoFitToView(const bool &v) {
+    instance()->handle->SetBool("AutoFitToView",v);
+    instance()->AutoFitToView = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeAutoFitToView() {
+    instance()->handle->RemoveBool("AutoFitToView");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docShowNaviCube() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show the navigation cube in the 3D views. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getShowNaviCube() {
+    return instance()->ShowNaviCube;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultShowNaviCube() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setShowNaviCube(const bool &v) {
+    instance()->handle->SetBool("ShowNaviCube",v);
+    instance()->ShowNaviCube = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeShowNaviCube() {
+    instance()->handle->RemoveBool("ShowNaviCube");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDisableTouchTilt() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Gesture navigation: ignore the rotation part of a two-finger\n"
+"gesture on a touchscreen. Read at the start of each gesture.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDisableTouchTilt() {
+    return instance()->DisableTouchTilt;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDisableTouchTilt() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDisableTouchTilt(const bool &v) {
+    instance()->handle->SetBool("DisableTouchTilt",v);
+    instance()->DisableTouchTilt = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDisableTouchTilt() {
+    instance()->handle->RemoveBool("DisableTouchTilt");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docNavigationDebug() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Gesture navigation: write its state changes to the log. Read when\n"
+"the Gesture style is created.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getNavigationDebug() {
+    return instance()->NavigationDebug;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultNavigationDebug() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setNavigationDebug(const bool &v) {
+    instance()->handle->SetBool("NavigationDebug",v);
+    instance()->NavigationDebug = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeNavigationDebug() {
+    instance()->handle->RemoveBool("NavigationDebug");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docGestureRollFwdCommand() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Gesture navigation: command run by the forward roll gesture.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getGestureRollFwdCommand() {
+    return instance()->GestureRollFwdCommand;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultGestureRollFwdCommand() {
+    const static std::string def = "Std_SelForward";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setGestureRollFwdCommand(const std::string &v) {
+    instance()->handle->SetASCII("GestureRollFwdCommand",v);
+    instance()->GestureRollFwdCommand = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeGestureRollFwdCommand() {
+    instance()->handle->RemoveASCII("GestureRollFwdCommand");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docGestureRollBackCommand() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Gesture navigation: command run by the backward roll gesture.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getGestureRollBackCommand() {
+    return instance()->GestureRollBackCommand;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultGestureRollBackCommand() {
+    const static std::string def = "Std_SelBack";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setGestureRollBackCommand(const std::string &v) {
+    instance()->handle->SetASCII("GestureRollBackCommand",v);
+    instance()->GestureRollBackCommand = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeGestureRollBackCommand() {
+    instance()->handle->RemoveASCII("GestureRollBackCommand");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docSaveWBbyTab() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Remember the active workbench separately for each view tab and\n"
+"switch back to it when the tab is activated.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getSaveWBbyTab() {
+    return instance()->SaveWBbyTab;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultSaveWBbyTab() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setSaveWBbyTab(const bool &v) {
+    instance()->handle->SetBool("SaveWBbyTab",v);
+    instance()->SaveWBbyTab = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeSaveWBbyTab() {
+    instance()->handle->RemoveBool("SaveWBbyTab");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docCbLabelColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the value labels of a colour bar in the 3D view. Read\n"
+"when the labels are next rebuilt.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getCbLabelColor() {
+    return instance()->CbLabelColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultCbLabelColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setCbLabelColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("CbLabelColor",v);
+    instance()->CbLabelColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeCbLabelColor() {
+    instance()->handle->RemoveUnsigned("CbLabelColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docCbLabelTextSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Text size of the value labels of a colour bar in the 3D view, 4 to\n"
+"36. Read when the labels are next rebuilt.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getCbLabelTextSize() {
+    return instance()->CbLabelTextSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultCbLabelTextSize() {
+    const static long def = 13;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setCbLabelTextSize(const long &v) {
+    instance()->handle->SetInt("CbLabelTextSize",v);
+    instance()->CbLabelTextSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeCbLabelTextSize() {
+    instance()->handle->RemoveInt("CbLabelTextSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docBoundingBoxFontSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Font size of the dimension labels on an object's bounding box, 2\n"
+"to 64. Read when a bounding box is first shown for an object.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getBoundingBoxFontSize() {
+    return instance()->BoundingBoxFontSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultBoundingBoxFontSize() {
+    const static double def = 10.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setBoundingBoxFontSize(const double &v) {
+    instance()->handle->SetFloat("BoundingBoxFontSize",v);
+    instance()->BoundingBoxFontSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeBoundingBoxFontSize() {
+    instance()->handle->RemoveFloat("BoundingBoxFontSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDatumPointSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Radius of the sphere drawn for a datum point.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getDatumPointSize() {
+    return instance()->DatumPointSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultDatumPointSize() {
+    const static double def = 2.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDatumPointSize(const double &v) {
+    instance()->handle->SetFloat("DatumPointSize",v);
+    instance()->DatumPointSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDatumPointSize() {
+    instance()->handle->RemoveFloat("DatumPointSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docLocalCoordinateSystemSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Scale factor of datum objects -- origin axes, planes, points --\n"
+"when they are drawn at a fixed size on screen.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getLocalCoordinateSystemSize() {
+    return instance()->LocalCoordinateSystemSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultLocalCoordinateSystemSize() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setLocalCoordinateSystemSize(const double &v) {
+    instance()->handle->SetFloat("LocalCoordinateSystemSize",v);
+    instance()->LocalCoordinateSystemSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeLocalCoordinateSystemSize() {
+    instance()->handle->RemoveFloat("LocalCoordinateSystemSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDefaultShapeShininess() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Shininess of the appearance given to new objects, in percent.\n"
+"Read each time a default appearance is made.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ViewParams::getDefaultShapeShininess() {
+    return instance()->DefaultShapeShininess;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ViewParams::defaultDefaultShapeShininess() {
+    const static long def = 37;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDefaultShapeShininess(const long &v) {
+    instance()->handle->SetInt("DefaultShapeShininess",v);
+    instance()->DefaultShapeShininess = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDefaultShapeShininess() {
+    instance()->handle->RemoveInt("DefaultShapeShininess");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDimensionsVisible() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"The measurements made with the measure tools are shown in the 3D\n"
+"views. Stored by the command that toggles them; the views follow\n"
+"at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDimensionsVisible() {
+    return instance()->DimensionsVisible;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDimensionsVisible() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDimensionsVisible(const bool &v) {
+    instance()->handle->SetBool("DimensionsVisible",v);
+    instance()->DimensionsVisible = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDimensionsVisible() {
+    instance()->handle->RemoveBool("DimensionsVisible");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDimensions3dVisible() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"The direct, 3D, lines of the measurements are shown. Stored by\n"
+"the command that toggles them; the views follow at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDimensions3dVisible() {
+    return instance()->Dimensions3dVisible;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDimensions3dVisible() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDimensions3dVisible(const bool &v) {
+    instance()->handle->SetBool("Dimensions3dVisible",v);
+    instance()->Dimensions3dVisible = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDimensions3dVisible() {
+    instance()->handle->RemoveBool("Dimensions3dVisible");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDimensionsDeltaVisible() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"The lines of the measurements along the three axes are shown.\n"
+"Stored by the command that toggles them; the views follow at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDimensionsDeltaVisible() {
+    return instance()->DimensionsDeltaVisible;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDimensionsDeltaVisible() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDimensionsDeltaVisible(const bool &v) {
+    instance()->handle->SetBool("DimensionsDeltaVisible",v);
+    instance()->DimensionsDeltaVisible = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDimensionsDeltaVisible() {
+    instance()->handle->RemoveBool("DimensionsDeltaVisible");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docSavePicture() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"How the Save picture dialog last made its picture:\n"
+"FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or\n"
+"empty for the dialog's own way. Stored when a method is chosen in\n"
+"the dialog's options, and used for every picture saved.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getSavePicture() {
+    return instance()->SavePicture;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultSavePicture() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setSavePicture(const std::string &v) {
+    instance()->handle->SetASCII("SavePicture",v);
+    instance()->SavePicture = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeSavePicture() {
+    instance()->handle->RemoveASCII("SavePicture");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationX() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"First component of the rotation the dragger of the Light\n"
+"sources page was left with. The view itself uses the headlight\n"
+"direction, which the page stores with it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationX() {
+    return instance()->HeadlightRotationX;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationX() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationX(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationX",v);
+    instance()->HeadlightRotationX = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationX() {
+    instance()->handle->RemoveFloat("HeadlightRotationX");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationY() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Second component of the rotation of the dragger of the Light\n"
+"sources page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationY() {
+    return instance()->HeadlightRotationY;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationY() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationY(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationY",v);
+    instance()->HeadlightRotationY = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationY() {
+    instance()->handle->RemoveFloat("HeadlightRotationY");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationZ() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Third component of the rotation of the dragger of the Light\n"
+"sources page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationZ() {
+    return instance()->HeadlightRotationZ;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationZ() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationZ(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationZ",v);
+    instance()->HeadlightRotationZ = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationZ() {
+    instance()->handle->RemoveFloat("HeadlightRotationZ");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationW() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Fourth component of the rotation of the dragger of the Light\n"
+"sources page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationW() {
+    return instance()->HeadlightRotationW;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationW() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationW(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationW",v);
+    instance()->HeadlightRotationW = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationW() {
+    instance()->handle->RemoveFloat("HeadlightRotationW");
+}
+
+// Auto generated code (Gui/ViewParams.py:1121)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -7734,7 +10771,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:694)
+// Auto generated code (Gui/ViewParams.py:1129)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -7747,7 +10784,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:704)
+// Auto generated code (Gui/ViewParams.py:1139)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -7760,13 +10797,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:714)
+// Auto generated code (Gui/ViewParams.py:1149)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:721)
+// Auto generated code (Gui/ViewParams.py:1156)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -7774,7 +10811,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:730)
+// Auto generated code (Gui/ViewParams.py:1165)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -7786,7 +10823,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:743)
+// Auto generated code (Gui/ViewParams.py:1178)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)
@@ -7855,13 +10892,17 @@ void ViewParams::onUnifiedCanvasChanged() {
 
 bool ViewParams::isUsingRenderer()
 {
-    return getRenderCache() == 3;
+    // the mode the program draws by: 3 with the render engine whatever
+    // the setting holds, the setting under the render type "Legacy"
+    return RenderParams::renderCache() == 3;
 }
 
 void ViewParams::useRenderer(bool enable)
 {
+    // Only under "Legacy" is there anything to switch: with the render
+    // engine the render cache is in use, and stays so.
     if (isUsingRenderer()) {
-        if (!enable)
+        if (!enable && !RenderParams::usesEngine())
             setRenderCache(0);
     } else if (enable)
         setRenderCache(3);

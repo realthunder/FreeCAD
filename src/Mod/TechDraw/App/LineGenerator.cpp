@@ -76,8 +76,12 @@ QPen LineGenerator::getBestPen(size_t isoNumber, Qt::PenStyle qtStyle, double wi
 //    Base::Console().Message("DLG::getBestPen((%d, %d, %.3f)\n",
 //                            isoNumber, qtStyle, width);
     // TODO: use TechDraw::LineFormat::InvalidLine here
+    // Line numbers run from 1 to the number of definitions, the last one
+    // included (getLinePen): with "<" the last line of every standard --
+    // ASME's 17 "Chain", ISO's 15 -- fell through to the Qt style below and
+    // came out continuous.
     if (isoNumber > 0 &&
-        isoNumber < m_lineDefs.size()) {
+        isoNumber <= m_lineDefs.size()) {
         // we have a valid line number, so use it
         return getLinePen(isoNumber, width);
     }
@@ -183,13 +187,18 @@ int LineGenerator::fromQtStyle(Qt::PenStyle style)
     int dotted = 7;
     int dashDot = 10;
     int dashDotDot = 12;
-    if (Preferences::lineStandard() == ANSI) {
+    // By the body's name. The preference is a place in the sorted list of
+    // the files found -- ANSI, ASME, ISO with the ones shipped -- and was
+    // compared with the enum's ANSI, ISO, ASME: ASME was taken for ISO and
+    // ISO for ASME.
+    const std::string body = getLineStandardsBody();
+    if (body == "ANSI") {
         dashed = 2;
         dotted = 2;  // no dotted line in Ansi Y14.2?
         dashDot = 2;
         dashDotDot = 2;
     }
-    if (Preferences::lineStandard() == ASME) {
+    if (body == "ASME") {
         dashed = 2;
         dotted = 16;
         dashDot = 17;
@@ -250,7 +259,15 @@ std::map<std::string, int> LineGenerator::loadElements()
         }
         std::vector<std::string> tokens = DU::tokenize(line, ",");
         // should be 2 tokens: elementName, elementLength
-        result[tokens.front()] = std::stoi(tokens.back(), nullptr);
+        if (tokens.size() < 2) {
+            continue;
+        }
+        try {
+            result[tokens.front()] = std::stoi(tokens.back(), nullptr);
+        }
+        catch (const std::exception&) {
+            // a length that is not a number: the element is not defined
+        }
     }
     inFile.close();
     return result;
@@ -284,8 +301,12 @@ std::vector< std::vector<std::string> > LineGenerator::getLineDefinitions()
                 validTokens.emplace_back(token);
             }
         }
+        // a row too short to hold a pattern still counts: the rows are
+        // looked up by their place
         std::vector<std::string> lineDefRow;
-        lineDefRow.insert(lineDefRow.end(), validTokens.begin()+2, validTokens.end());
+        if (validTokens.size() > 2) {
+            lineDefRow.insert(lineDefRow.end(), validTokens.begin()+2, validTokens.end());
+        }
         lineDefs.push_back(lineDefRow);
     }
 
@@ -348,7 +369,7 @@ std::vector<std::string> LineGenerator::getLineDescriptions()
                 validTokens.emplace_back(token);
             }
         }
-        lineDescs.push_back(validTokens.at(1));
+        lineDescs.push_back(validTokens.size() > 1 ? validTokens[1] : std::string());
     }
 
     inFile.close();
@@ -360,9 +381,15 @@ std::vector<std::string> LineGenerator::getLineDescriptions()
 //! standard
 std::string  LineGenerator::getLineStandardsBody()
 {
-    int activeStandard = Preferences::lineStandard();
+    // The preference may name a standard that is not there: fewer files
+    // than when it was stored, or none found at all. This is read by a view
+    // provider as it is made, where throwing loses the object its view.
+    size_t activeStandard = static_cast<size_t>(Preferences::lineStandard());
     std::vector<std::string> choices = getAvailableLineStandards();
-    return getBodyFromString(choices.at(activeStandard));
+    if (choices.empty()) {
+        return {};
+    }
+    return getBodyFromString(choices[activeStandard < choices.size() ? activeStandard : 0]);
 }
 
 
@@ -381,7 +408,7 @@ bool LineGenerator::isCurrentProportional()
 bool LineGenerator::isProportional(size_t standardIndex)
 {
     std::vector<std::string> choices = getAvailableLineStandards();
-    if (standardIndex > choices.size()) {
+    if (standardIndex >= choices.size()) {
         // we don't have a standard for the specified index.
         return true;
     }
@@ -399,8 +426,11 @@ std::string LineGenerator::getBodyFromString(std::string inString)
 {
     size_t firstDot = inString.find(".");
     if (firstDot == std::string::npos) {
-        // something has gone very wrong if an entry in choices does not contain a dot.
-        THROWM(Base::RuntimeError, "Malformed standard name found.  Could not determine standards body.")
+        // An entry without a dot: any file with "LineDef" in its name is
+        // listed, so a stray one in the definitions folder gets here. No
+        // body, rather than an exception out of whoever asked -- a view
+        // provider being made, for one.
+        return {};
     }
     return inString.substr(0, firstDot);
 }

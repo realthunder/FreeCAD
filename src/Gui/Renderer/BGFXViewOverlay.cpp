@@ -501,6 +501,88 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
         | BGFX_STENCIL_OP_PASS_Z_KEEP;
     LineQuadVertex::init();
 
+    // The feathered outline of one face (OutlineSpec::feather): the
+    // boundary's own edges only, as transient instances; lines that fade
+    // in from their centre line, where the stencil cut is, and that mark
+    // what they draw so that neither a neighbouring line nor a corner cap
+    // blends over the fade. Whatever cannot be had this frame leaves the
+    // plain passes below to draw the outline as it always was.
+    //
+    // The plain passes run after it in any case. The boundary is not all
+    // of a face's outline: a face that turns away from the eye ends on a
+    // limb where it has no edge -- the side of a cylinder, a sphere, which
+    // has no boundary at all -- and only the triangle edges cut by the
+    // stencil draw the outline there. With the boundary's lines alone a
+    // sphere under the pointer showed nothing, and a cylinder's side two
+    // circles. What the lines here have drawn carries the mark, so the
+    // plain passes add the limb and nothing over the fade.
+    if (spec.feather) {
+        const auto &boundary = gpu->geom->ensurePartBoundary(mesh, start, count);
+        const uint32_t numEdges = uint32_t(boundary.edges.size() / 16);
+        const uint32_t numCorners =
+            spec.caps ? uint32_t(boundary.corners.size() / 8) : 0;
+        const uint16_t edgeStride = 16 * sizeof(float);
+        const uint16_t cornerStride = 8 * sizeof(float);
+        if (numEdges > 0
+                && bgfx::getAvailInstanceDataBuffer(numEdges, edgeStride) == numEdges) {
+            bgfx::InstanceDataBuffer edges;
+            bgfx::allocInstanceDataBuffer(&edges, numEdges, edgeStride);
+            std::memcpy(edges.data, boundary.edges.data(),
+                        size_t(numEdges) * edgeStride);
+            // 2 added to the alpha ceiling: the inner fade (fc_flat_fs.sh).
+            // A pixel wider, half of it on the outside: the fade takes
+            // about that much off the inside.
+            float fadeParams[4] = {params[0], params[1] + 1.0f, params[2],
+                                   2.0f + params[3]};
+            bgfx::setUniform(u_matColor, color);
+            bgfx::setUniform(u_matEmissive, zero);
+            bgfx::setUniform(u_matSpecular, zero);
+            bgfx::setUniform(u_params, fadeParams);
+            setClipUniforms(mat);
+            setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
+            bgfx::setVertexBuffer(0, m_lineQuadVb);
+            bgfx::setIndexBuffer(m_lineQuadIb);
+            bgfx::setInstanceDataBuffer(&edges);
+            bgfx::setState(outlinestate);
+            bgfx::setStencil(BGFX_STENCIL_TEST_NOTEQUAL
+                | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
+                | BGFX_STENCIL_OP_FAIL_S_KEEP
+                | BGFX_STENCIL_OP_FAIL_Z_KEEP
+                | BGFX_STENCIL_OP_PASS_Z_REPLACE);
+            bgfx::submit(vid(spec.view),
+                         clipped ? m_progLineClip : m_progLine);
+            ++drawcount;
+
+            // The caps fill what the lines left open at a corner, and
+            // nothing a line has drawn: those pixels carry the mark now.
+            if (numCorners > 0
+                    && bgfx::getAvailInstanceDataBuffer(numCorners, cornerStride)
+                        == numCorners) {
+                bgfx::InstanceDataBuffer corners;
+                bgfx::allocInstanceDataBuffer(&corners, numCorners, cornerStride);
+                std::memcpy(corners.data, boundary.corners.data(),
+                            size_t(numCorners) * cornerStride);
+                float capParams[4] = {params[0], params[1], params[2], params[3]};
+                if (spec.capWidth > 0.0f)
+                    capParams[1] = qMax(1.0f, std::floor(spec.capWidth + 0.5f));
+                bgfx::setUniform(u_matColor, color);
+                bgfx::setUniform(u_matEmissive, zero);
+                bgfx::setUniform(u_matSpecular, zero);
+                bgfx::setUniform(u_params, capParams);
+                setClipUniforms(mat);
+                setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
+                bgfx::setVertexBuffer(0, m_lineQuadVb);
+                bgfx::setIndexBuffer(m_lineQuadIb);
+                bgfx::setInstanceDataBuffer(&corners);
+                bgfx::setState(outlinestate);
+                bgfx::setStencil(outlinestencil);
+                bgfx::submit(vid(spec.view),
+                             clipped ? m_progPointClip : m_progPoint);
+                ++drawcount;
+            }
+        }
+    }
+
     // Pass 2: the triangle edges as instanced thick lines where the
     // stencil differs — the boundary outline. Instances map 1:1 onto
     // triangle index positions, so the index range is the instance

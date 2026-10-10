@@ -43,6 +43,7 @@
 #include "Document.h"
 #include "EditorView.h"
 #include "Macro.h"
+#include "MacroParams.h"
 #include "MainWindow.h"
 #include "PythonEditor.h"
 
@@ -88,8 +89,7 @@ DlgMacroExecuteImp::DlgMacroExecuteImp( QWidget* parent, Qt::WindowFlags fl )
     // retrieve the macro path from parameter or use the user data as default
     {
         QSignalBlocker blocker(ui->fileChooser);
-        std::string path = getWindowParameter()->GetASCII("MacroPath",
-            App::Application::getUserMacroDir().c_str());
+        std::string path = MacroManager::macroDirectory();
         this->macroPath = QString::fromUtf8(path.c_str());
         ui->fileChooser->setFileName(this->macroPath);
     }
@@ -414,7 +414,7 @@ void DlgMacroExecuteImp::onFileChooserFileNameChanged(const QString& fn)
     {
         // save the path in the parameters
         this->macroPath = fn;
-        getWindowParameter()->SetASCII("MacroPath",fn.toUtf8());
+        MacroParams::setMacroPath(fn.toUtf8().constData());
         // fill the list box
         fillUpList();
     }
@@ -467,8 +467,7 @@ void DlgMacroExecuteImp::onEditButtonClicked()
 void DlgMacroExecuteImp::onCreateButtonClicked()
 {
     // query file name
-    bool replaceSpaces = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->GetBool("ReplaceSpaces", true);
-    App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->SetBool("ReplaceSpaces", replaceSpaces); //create parameter
+    bool replaceSpaces = MacroParams::getReplaceSpaces();
 
     QString fn = QInputDialog::getText(this, tr("Macro file"), tr("Enter a file name, please:"),
         QLineEdit::Normal, QString(), nullptr, Qt::MSWindowsFixedSizeDialogHint);
@@ -796,8 +795,7 @@ void DlgMacroExecuteImp::onRenameButtonClicked()
     if (!item)
         return;
 
-    bool replaceSpaces = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->GetBool("ReplaceSpaces", true);
-    App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->SetBool("ReplaceSpaces", replaceSpaces); //create parameter
+    bool replaceSpaces = MacroParams::getReplaceSpaces();
 
     QString oldName = item->text(0);
     QFileInfo oldfi(dir, oldName);
@@ -847,21 +845,18 @@ void DlgMacroExecuteImp::onDuplicateButtonClicked()
 
     //When duplicating a macro we can either begin trying to find a unique name with @001 or begin with the current @NNN if applicable
 
-    bool from001 = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->GetBool("DuplicateFrom001", false);
-    App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->SetBool("DuplicateFrom001", from001); //create parameter
+    bool from001 = MacroParams::getDuplicateFrom001();
 
     //A user may wish to add a note to end of the filename when duplicating
     //example: mymacro@005.fix_bug_in_dialog.FCMacro
     //and then when duplicating to have the extra note removed so the suggested new name is:
     //mymacro@006.FCMacro instead of mymacro@006.fix_bug_in_dialog.FCMacro since the new duplicate will be given a new note
 
-    bool ignoreExtra = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->GetBool("DuplicateIgnoreExtraNote", false);
-    App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->SetBool("DuplicateIgnoreExtraNote", ignoreExtra); //create parameter
+    bool ignoreExtra = MacroParams::getDuplicateIgnoreExtraNote();
 
     //when creating a note it will be convenient to convert spaces to underscores if the user desires this behavior
 
-    bool replaceSpaces = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->GetBool("ReplaceSpaces", true);
-    App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")->SetBool("ReplaceSpaces", replaceSpaces); //create parameter
+    bool replaceSpaces = MacroParams::getReplaceSpaces();
 
     int index = ui->tabMacroWidget->currentIndex();
     if (index == 0) { //user-specific

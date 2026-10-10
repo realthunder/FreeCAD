@@ -41,6 +41,7 @@
 #include "PrefWidgets.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "ViewArea.h"
 #include "ViewParams.h"
 #include "Renderer/Renderer.h"
 #include "ui_DlgSettings3DView.h"
@@ -103,6 +104,11 @@ void DlgSettings3DViewImp::loadSettings()
     ui->radioOrthographic->onRestore();
     ui->CheckBox_ApplyToViews->onRestore();
     ui->spinPreselectionDelay->onRestore();
+    // The setting's own default, MSAA 4x since 2026-10-09: the box takes
+    // the item it shows before its first restore for what a profile
+    // without the key means, and the form says "None". (The items are in
+    // the order of the setting's values.)
+    ui->comboAliasing->setCurrentIndex(static_cast<int>(ViewParams::defaultAntiAliasing()));
     ui->comboAliasing->onRestore();
 
     ui->checkBoxEnhancedPick->onRestore();
@@ -116,7 +122,10 @@ void DlgSettings3DViewImp::loadSettings()
     ui->boxMarkerSize->addItem(tr("20px"), QVariant(20));
     ui->boxMarkerSize->addItem(tr("25px"), QVariant(25));
     ui->boxMarkerSize->addItem(tr("30px"), QVariant(30));
-    ui->boxMarkerSize->setCurrentIndex(2); // default value 9px
+    // the setting's default: one size for every marker (it was 9 here and
+    // 4, 5 or 7 where a module drew its own)
+    ui->boxMarkerSize->setCurrentIndex(
+        ui->boxMarkerSize->findData(QVariant(static_cast<int>(ViewParams::defaultMarkerSize()))));
     ui->boxMarkerSize->onRestore();
 
 }
@@ -138,8 +147,8 @@ namespace {
 
 void applyCameraType(ParameterGrp *hGrp)
 {
-    if (hGrp->GetBool("ApplyCameraTypeToAll", false)) {
-        const char *cameraType = hGrp->GetBool("Perspective", false) ?
+    if (hGrp->GetBool("ApplyCameraTypeToAll", Gui::ViewParams::defaultApplyCameraTypeToAll())) {
+        const char *cameraType = hGrp->GetBool("Perspective", Gui::ViewParams::defaultPerspective()) ?
             "PerspectiveCamera" : "OrthographicCamera";
         for (auto doc : App::GetApplication().getDocuments()) {
             auto gdoc = Application::Instance->getDocument(doc);
@@ -187,6 +196,18 @@ void applyAntiAlias(ParameterGrp *)
             sMsg += ppReturn;
             const char** pReturnIgnore=0;
             clone->onMsg(sMsg.c_str(), pReturnIgnore);
+        }
+        // A view in a cell of a split hands its cell to the copy. Given to
+        // the main window like any new view, the copy became a tab of its
+        // own and the cell went with the view deleted below: a 3D view and
+        // a page side by side came out of a change of this setting as two
+        // tabs.
+        ViewArea *area = ViewArea::areaOf(view);
+        ViewAreaCell *cell = area ? area->cellOf(view) : nullptr;
+        if (cell && area->setCellView(cell, clone)) {
+            // the cell closed the old view to take the new one
+            viewMap[view] = clone;
+            continue;
         }
         if (view->currentViewMode() == MDIView::Child)
             getMainWindow()->addWindow(clone);

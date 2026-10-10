@@ -217,7 +217,7 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
     applySettings();
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    if (hGrp->GetBool("Perspective", false))
+    if (hGrp->GetBool("Perspective", Gui::ViewParams::defaultPerspective()))
         onMsg("PerspectiveCamera", nullptr);
     else
         onMsg("OrthographicCamera", nullptr);
@@ -1251,7 +1251,7 @@ void View3DInventor::customEvent(QEvent * e)
         auto se = static_cast<NavigationStyleEvent*>(e);
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
             ("User parameter:BaseApp/Preferences/View");
-        if (hGrp->GetBool("SameStyleForAllViews", true))
+        if (hGrp->GetBool("SameStyleForAllViews", Gui::ViewParams::defaultSameStyleForAllViews()))
             hGrp->SetASCII("NavigationStyle", se->style().getName());
         else
             _viewer->setNavigationType(se->style());

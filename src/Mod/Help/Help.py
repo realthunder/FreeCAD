@@ -461,8 +461,8 @@ def openBrowserHTML(html, baseurl, title, icon, dialog=False):
     if dialog:
         area = PREFS.GetInt("dockWidgetArea", 2)
         floating = PREFS.GetBool("dockWidgetFloat", True)
-        height = PREFS.GetBool("dockWidgetWidth", 200)
-        width = PREFS.GetBool("dockWidgetHeight", 300)
+        width = PREFS.GetInt("dockWidgetWidth", 200)
+        height = PREFS.GetInt("dockWidgetHeight", 300)
         dock = mw.findChild(QtWidgets.QDockWidget, "HelpWidget")
         if not dock:
             dock = QtWidgets.QDockWidget()

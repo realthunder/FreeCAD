@@ -371,4 +371,8 @@ showing. And a Z clip is invisible to a camera pointing down Z: stage
   which is the development route; a config file no longer is, since
   startup overrides it -- including the `View` preference-pack template,
   which used to carry `RenderCache` and `UseVBO` and no longer does. See `docs/CoinRetirement.md` stages 2 and 3, and
-  3.7 there for what a machine can lose by it.
+  3.7 there for what a machine can lose by it. Since 2026-10-09 the
+  renderer type IS a setting again in one respect: `Legacy` (the old
+  Coin rendering, the render cache then the user's own) is kept, and
+  `Default` means the render engine on the platform's backend with the
+  render cache always 3 -- the same section, "Changed 2026-10-09".

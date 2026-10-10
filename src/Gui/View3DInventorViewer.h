@@ -898,6 +898,45 @@ public:
     /// overrides the document carried reach the light nodes.
     void syncLightProperties();
 
+    /** @name This view's own lights (the Display style menu)
+     *
+     * A key is one of the rig's (isLightPreferenceKey): "EnableHeadlight",
+     * "HeadlightColor", "HeadlightDirection", "HeadlightIntensity", the
+     * same for "Backlight" and "FillLight", "AmbientLightColor" and
+     * "AmbientLightIntensity". Its value travels as the property a
+     * Light_<key> override is: App::PropertyBool for an Enable...,
+     * App::PropertyColor, App::PropertyVector for a direction (relative
+     * to the camera), App::PropertyFloat for an intensity, 0 to 1.
+     */
+    //@{
+    /// What lights this view for \a key, read into \a out: its override
+    /// if it has one, the preference otherwise, and for a direction that
+    /// neither says, where the light points. False for a key that is not
+    /// of the rig or an \a out of another type.
+    bool getLightSetting(const char *key, App::Property &out) const;
+    /// Give this view its own value for \a key: the Light_<key> property
+    /// is made if need be and set, and from then on the preference stops
+    /// at this view. It is a property of the view like any other, kept
+    /// with the document. False for a viewer with no view to keep it on.
+    bool setLightSetting(const char *key, const App::Property &value);
+    /// Give every other open 3D view the lights of this one, once: each
+    /// of them is set, as by setLightSetting(), to what lights this view
+    /// now, and nothing ties them together after that. The number of
+    /// views reached.
+    int applyLightSettingsToAllViews() const;
+    /// Write what lights this view into the preferences: what a view with
+    /// no lights of its own is lit by, a new one for one.
+    void saveLightSettings() const;
+    /// Raise the handle the headlight's direction is turned with in this
+    /// view -- Coin's light dragger, drawn over the model where the
+    /// camera looks -- or take it down. A drag of the handle is a
+    /// setLightSetting() of "HeadlightDirection" with each move; its
+    /// middle drags it aside. Everything else in the view works as ever
+    /// while it is up. Escape in the view takes it down too.
+    void setLightManipulator(bool on);
+    bool hasLightManipulator() const;
+    //@}
+
     const SoPathList *getLatePickPaths() const;
 
     void appendDetailPath(SoPath *path, ViewProvider *vp);

@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <cmath>
 
 #include <Base/Console.h>
@@ -226,7 +227,7 @@ private:
             );
 
             onViewParameterVisibility = static_cast<OnViewParameterVisibility>(
-                hGrp->GetInt("OnViewParameterVisibility", 1)
+                hGrp->GetInt("OnViewParameterVisibility", Sketcher::SketcherParams::defaultOnViewParameterVisibility())
             );
         }
 

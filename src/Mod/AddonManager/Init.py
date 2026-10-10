@@ -6,3 +6,6 @@
 import FreeCAD
 
 FreeCAD.__unit_test__ += ["TestAddonManagerApp"]
+
+# The Addon Manager's settings, described to the settings registry
+import addonmanager_params_registry

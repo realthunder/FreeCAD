@@ -205,6 +205,36 @@ fc_add_gui_test(GuiPdEditShownPerView_tests_run pd-edit-shown-per-view.py
 fc_add_gui_test(GuiPdOriginInEdit_tests_run pd-origin-in-edit.py
                 --timeout 240)
 
+# A TechDraw view gets its view provider with the line standard preference
+# out of range: the preference page stored -1 in it, and every view of a
+# part then threw out of its view provider's constructor.
+fc_add_gui_test(GuiTechDrawLineStandardOutOfRange_tests_run
+                techdraw-line-standard-out-of-range.py --timeout 180)
+
+# A TechDraw page switched to the backend's page layer and back while it is
+# open: on a session whose backend is not OpenGL the switch crashed in the
+# page's paint, and switching off left the view on a GL viewport.
+fc_add_gui_test(GuiTechDrawPageBackendSwitch_tests_run
+                techdraw-page-backend-switch.py --timeout 180)
+
+# A TechDraw page drawn by the backend is drawn once: the Qt items of what
+# the backend's layer holds are not painted over it, and the layer shows
+# what only they used to -- frames, labels, what is selected.
+fc_add_gui_test(GuiTechDrawPageBackendSingleDraw_tests_run
+                techdraw-page-backend-single-draw.py --timeout 240)
+
+# A click on a TechDraw section line is not a move, and a move is by what
+# the line moved: every release recomputed the section, and at any scale
+# but 1:1 each time took it further from the centroid.
+fc_add_gui_test(GuiTechDrawSectionLineClick_tests_run
+                techdraw-section-line-click.py --timeout 180)
+
+# A TechDraw colour a document stored with no opacity -- every colour of an
+# older document -- is drawn: dimensions, balloons and hatches restored
+# from one were on the page fully transparent.
+fc_add_gui_test(GuiTechDrawColourWithoutOpacity_tests_run
+                techdraw-colour-without-opacity.py --timeout 180)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view
@@ -1212,6 +1242,13 @@ fc_add_gui_test(GuiSequencerInputAfterStop_tests_run
                 sequencer-input-after-stop.py
                 --timeout 120)
 
+# The progress bar is on screen only while something runs: the status bar's
+# item registry shows every widget that does not carry a userEnabled
+# property, and the bar did not, so each registration showed it idle.
+fc_add_gui_test(GuiStatusBarProgressIdle_tests_run
+                statusbar-progress-idle.py
+                --timeout 120)
+
 # A number typed into a tool's on-view box is the number the tool uses: the
 # box commits on Enter and Tab ahead of reading its own text, and committed
 # what it held before the typing.
@@ -1558,3 +1595,425 @@ fc_add_gui_test(GuiElementTakeIn_tests_run element-take-in.py
 # tree before, 4 of the 8 checks.
 fc_add_gui_test(GuiActiveViewActiveCell_tests_run active-view-active-cell.py
                 --timeout 200)
+
+# A file opened through a command arrives whole: File > Open and the recent
+# list run the load under the command's own UserEditGuard, the load marks
+# its document as filling, and every object of the file was refused.
+fc_add_gui_test(GuiOpenThroughCommand_tests_run
+                open-through-command.py
+                --timeout 180)
+
+# The status bar's view dimension says a shared unit once, "100 x 80 mm",
+# and keeps both where the sides differ.
+fc_add_gui_test(GuiStatusDimensionText_tests_run
+                status-dimension-text.py
+                --timeout 120)
+
+# A tip shows its whole icon and keeps its own pictures: a tip of two lines
+# cut its icon's last rows off, and the first picture of the navigation
+# styles' table was taken for the tip's icon.
+fc_add_gui_test(GuiToolTipIconAndImages_tests_run
+                tooltip-icon-and-images.py
+                --timeout 180)
+
+# Switching the custom title bar on a maximized window leaves it in one
+# place: on Windows the frame change left Qt 8 px away from where the
+# system had the client area, and the normal placement crept off the screen.
+fc_add_gui_test(GuiTitleBarSwitchMaximized_tests_run
+                titlebar-switch-maximized.py
+                --timeout 180)
+
+# A view on a read-back backend shows the frame that was drawn
+# (Render/ReadbackFrameMode): a highlight, a wheel zoom and a new size
+# came with the next redraw. The waiting itself is only claimed where the
+# backend reads its frame back, which the default one here (OpenGL) does
+# not; the pictures are claimed everywhere.
+fc_add_gui_test(GuiReadbackFrameMode_tests_run
+                readback-frame-mode.py
+                --timeout 300)
+
+# What a theme leaves dark on dark: the custom title bar's buttons, a check
+# box's edge, the navigation icon, a spreadsheet's text, the report view's
+# older lines -- in Dark, in Light after it and in Dark again.
+fc_add_gui_test(GuiThemeSwitchContrast_tests_run
+                theme-switch-contrast.py
+                --timeout 240)
+
+# A report view line that stands in for repeats has its mark in the margin:
+# no underline, the text in line with the others, and the mark -- not the
+# line -- is what a click unfolds.
+fc_add_gui_test(GuiReportFoldMark_tests_run
+                report-fold-mark.py
+                --timeout 120)
+
+# OK in the preferences on a profile that never changed anything stores, for
+# every setting with a definition, the definition's default and its type:
+# a page showing another default, or clamping one to a spin box's range,
+# changed the setting behind the user's back.
+fc_add_gui_test(GuiPreferencesOkKeepsDefaults_tests_run
+                preferences-ok-keeps-defaults.py
+                --timeout 180)
+
+# The report view follows its newest line unless told not to: "Go to end"
+# is on for a profile that never stored it, and still a choice.
+fc_add_gui_test(GuiReportGoToEnd_tests_run
+                report-go-to-end.py
+                --timeout 120)
+
+# OK in the preferences with nothing changed sets no stylesheet again,
+# activates no language again, and a key stored with the value it had
+# while unset is no change of the thing it names; a real change still
+# arrives.
+fc_add_gui_test(GuiPreferencesOkReappliesNothing_tests_run
+                preferences-ok-reapplies-nothing.py
+                --timeout 240)
+
+# Every theme sets TechDraw's preselection colour: Classic stored one and
+# Dark and Light did not mention the key, so after Classic a switch left
+# TechDraw yellow under a blue 3D view.
+fc_add_gui_test(GuiThemeOwnsTechDrawPreselect_tests_run
+                theme-owns-techdraw-preselect.py
+                --timeout 180)
+
+# A menu is see-through only when a menu sheet was chosen: the menus that
+# pop up over the 3D view are shared with the main menu, and Tools >
+# Command history came up see-through whenever a theme had a stylesheet.
+fc_add_gui_test(GuiMenuSeeThroughIsAChoice_tests_run
+                menu-see-through-is-a-choice.py
+                --timeout 180)
+
+# Bringing the omni search up for the first time makes no command's icon:
+# the completers' lists are laid out with the box's own delegate, not the
+# stock one that reads every row's icon to size it.
+fc_add_gui_test(GuiOmniSearchFirstBringUp_tests_run
+                omni-search-first-bring-up.py
+                --timeout 120)
+
+# Switching anti-aliasing on gives the view multisampled targets: a
+# multisampled depth cannot be read as a texture, and built that way every
+# MSAA view lost its framebuffer and fell back to none for the session.
+fc_add_gui_test(GuiMsaaReachesTheView_tests_run
+                msaa-reaches-the-view.py
+                --timeout 180)
+
+# The report view's settings are behind ReportViewParams: listed by the
+# omni search, one default each, followed at once -- and "Record critical
+# messages" no longer switches normal messages off.
+fc_add_gui_test(GuiReportViewSettings_tests_run
+                report-view-settings.py
+                --timeout 180)
+
+# Part's measurements follow their settings at once: the colours and the
+# font of the 3D dimensions are behind PartGui's PartParams, and a change
+# rebuilds the measurements on screen.
+fc_add_gui_test(GuiPartMeasureSettings_tests_run
+                part-measure-settings.py
+                --timeout 180)
+
+# The settings of Preferences/General are behind GeneralParams: listed by
+# the omni search, the page's tool tip icon size stored where it is read,
+# and "apply preferences at once" applying itself at once.
+fc_add_gui_test(GuiGeneralSettings_tests_run
+                general-settings.py
+                --timeout 180)
+
+# The preferences opened and cancelled with nothing touched write no
+# setting and ask nothing: a page that sets a widget after its restore
+# stores the key when preferences are applied at once, and the dialog took
+# the dock windows' own layout being saved for a change to revert.
+fc_add_gui_test(GuiPreferencesCancelAsksNothing_tests_run
+                preferences-cancel-asks-nothing.py
+                --timeout 180)
+
+# The main window's and the theme's settings are behind MainWindowParams
+# and ThemeParams: listed by the omni search, the accent colours with one
+# default each wherever one is needed, and the global tool bar area
+# followed when it alone changes.
+fc_add_gui_test(GuiMainWindowSettings_tests_run
+                mainwindow-settings.py
+                --timeout 180)
+
+# The notification area's settings are behind NotificationAreaParams:
+# listed by the omni search, and the area still follows its switch at once.
+fc_add_gui_test(GuiNotificationAreaSettings_tests_run
+                notification-area-settings.py
+                --timeout 180)
+
+# The Python console's, the macros' and the dialogs' settings are behind
+# PythonConsoleParams, MacroParams and DialogParams: listed by the omni
+# search and followed at once; a macro path stored empty means the user's
+# macro directory, and Draft's ShapeString panel leaves the file dialog
+# switch as it found it.
+fc_add_gui_test(GuiConsoleMacroSettings_tests_run
+                console-macro-settings.py
+                --timeout 180)
+
+# The unit settings are behind App::UnitsParams: listed by the omni
+# search, and a change of the unit system, the number of decimals or the
+# inch fraction is in force when it is made, not at the next start, the
+# next document or the next OK in the preferences.
+fc_add_gui_test(GuiUnitsSettings_tests_run
+                units-settings.py
+                --timeout 180)
+
+# The editors' settings are behind EditorParams: listed by the omni search
+# (the colours too, whose keys contain spaces), Tab and Enter agree on
+# spaces, and the report view's line limit is the view's own key.
+fc_add_gui_test(GuiEditorSettings_tests_run
+                editor-settings.py
+                --timeout 180)
+
+# The rest of the document settings are behind App::DocumentParams: listed
+# by the omni search, and the Document page stores no key nothing reads.
+fc_add_gui_test(GuiDocumentSettings_tests_run
+                document-settings.py
+                --timeout 180)
+
+# Sixty-one more settings of the View group are behind ViewParams, and a
+# setting that is not stored is its default to every reader: zooming still
+# works after a zoom step was stored and removed, and Home is the view a
+# new document opens in.
+fc_add_gui_test(GuiViewSettings_tests_run
+                view-settings.py
+                --timeout 180)
+
+# The navigation cube's settings are behind NaviCubeParams: listed by the
+# omni search, and the views still follow the cube's switch at once.
+fc_add_gui_test(GuiNaviCubeSettings_tests_run
+                navicube-settings.py
+                --timeout 180)
+
+# PartDesign's settings are behind PartDesign::PartDesignParams: listed by
+# the omni search, and new features and datums still take them.
+fc_add_gui_test(GuiPartDesignSettings_tests_run
+                partdesign-settings.py
+                --timeout 180)
+
+# Part's Boolean and geometry check options are behind the two PartParams
+# classes, in their sub-groups: listed by the omni search, and a new Boolean
+# still takes its refine switch.
+fc_add_gui_test(GuiPartOptionsSettings_tests_run
+                part-options-settings.py
+                --timeout 180)
+
+# Fourteen settings of small parameter groups (recent macros, gizmos, cache
+# directory, shortcut timeout, workbench tab bar, the start-up switches,
+# the dependency graph) are behind MiscParams, each under its own group.
+fc_add_gui_test(GuiMiscSettings_tests_run
+                misc-settings.py
+                --timeout 180)
+
+# The settings of the Sketcher's own group are behind
+# Sketcher::SketcherParams: listed by the omni search, and a new sketch
+# still takes what it starts with from them.
+fc_add_gui_test(GuiSketcherSettings_tests_run
+                sketcher-settings.py
+                --timeout 180)
+
+# The Sketcher's solver settings are behind Sketcher::SketcherParams, and
+# the solver box of the task panel stores a parameter of the redundant
+# solver under that solver's key.
+fc_add_gui_test(GuiSketcherSolverSettings_tests_run
+                sketcher-solver-settings.py
+                --timeout 180)
+
+# The settings of TechDraw's General group are behind
+# TechDraw::TechDrawParams: listed by the omni search, and a new page
+# still takes its scale and its update switch from them.
+fc_add_gui_test(GuiTechDrawSettings_tests_run
+                techdraw-settings.py
+                --timeout 180)
+
+# The settings C++ reads in Assembly, Points, Fem, Mesh and Spreadsheet are
+# listed (entry 24, the small modules).
+fc_add_gui_test(GuiModuleSettings_tests_run
+                module-settings.py
+                --timeout 180)
+
+# What the reporter decided about entry 24's defaults and findings: the
+# editors' font, the Asymptote size, the settings listed since, one datum
+# colour, the Sketcher's remembered radius or diameter.
+fc_add_gui_test(GuiEntry24Decisions_tests_run
+                entry24-decisions.py
+                --timeout 180)
+
+# The settings a module's Python code reads are listed: the way into the
+# settings registry from Python, and Assembly as the first module through it.
+fc_add_gui_test(GuiPythonSettingsDoor_tests_run
+                python-settings-door.py
+                --timeout 180)
+
+# A spreadsheet's view is opened when it is asked for, not when a caller
+# only asks whether there is one: a click on the sheet in the tree opened it.
+fc_add_gui_test(GuiSheetViewOnRequest_tests_run
+                sheet-view-on-request.py
+                --timeout 180)
+
+# The state the program keeps and the settings entry 24 had not reached are
+# behind generated classes too, group by group: the 3D mouse first.
+fc_add_gui_test(GuiStateAndMissedSettings_tests_run
+                state-and-missed-settings.py
+                --timeout 180)
+
+# A view kept in a split view cell goes when what it shows is hidden,
+# deleted or closed with its document: a TechDraw page left its view in the
+# cell, and its closing document a write into freed memory (a crash on exit).
+fc_add_gui_test(GuiViewInCellGoesWithItsObject_tests_run
+                view-in-cell-goes-with-its-object.py
+                --timeout 180)
+
+# The last line of a line standard -- ASME's "Chain" -- is drawn dashed like
+# its sample in the style combo box, not continuous.
+fc_add_gui_test(GuiTechDrawLastLineStyle_tests_run
+                techdraw-last-line-style.py
+                --timeout 180)
+
+# Selecting a TechDraw dimension, by a click or from the tree, is not a drag
+# of its label: it recomputed the document and dropped the selection.
+fc_add_gui_test(GuiTechDrawDimensionClickNoRecompute_tests_run
+                techdraw-dimension-click-no-recompute.py
+                --timeout 180)
+
+# The omni search's highlighted row is written in a colour that reads on
+# what the style paints behind it: white on the native style's pale blue.
+fc_add_gui_test(GuiOmniSearchHighlightedRow_tests_run
+                omni-search-highlighted-row.py
+                --timeout 180)
+
+# A theme takes away the colours an overlay preset left behind -- the Python
+# console's background above all, which no theme listed and so none cleared.
+fc_add_gui_test(GuiThemeClearsOverlayPresetLeftovers_tests_run
+                theme-clears-overlay-preset-leftovers.py
+                --timeout 180)
+
+# A drag in a split view -- a corner zone or a border -- is shown as frames
+# over the cells it changes and carried out at the release; a split that
+# would leave a cell under the minimum cell size is refused.
+fc_add_gui_test(GuiViewCellDragFrames_tests_run
+                view-cell-drag-frames.py
+                --timeout 180)
+
+# A TechDraw page drawn by the backend has the Qt page's dashes at any zoom:
+# zoomed out they closed up, a cosmetic frame's grew with the zoom.
+fc_add_gui_test(GuiTechDrawPageBackendDashes_tests_run
+                techdraw-page-backend-dashes.py
+                --timeout 180)
+
+# A TechDraw page drawn by the backend has the Qt page's line widths: Qt
+# cuts an edge's pen to whole scene units (0.35 mm is drawn 0.3), and the
+# highlight laid over a line, read off the Qt item, was thinner than it.
+fc_add_gui_test(GuiTechDrawPageBackendLineWidths_tests_run
+                techdraw-page-backend-line-widths.py
+                --timeout 180)
+
+# A TechDraw page drawn by the backend has the Qt page's hatch on a cut face:
+# zoomed out most of its lines were dropped and the rest drawn at full
+# strength, zoomed in it went soft.
+fc_add_gui_test(GuiTechDrawPageBackendHatch_tests_run
+                techdraw-page-backend-hatch.py
+                --timeout 180)
+
+# "Reset all" in the preferences, on a maximized window under a theme: the
+# workbench toolbar stays shown (the toolbar manager hid it taking it out of
+# the title bar) and the 3D view keeps its render backend.
+fc_add_gui_test(GuiPreferencesResetAll_tests_run
+                preferences-reset-all.py
+                --timeout 180)
+
+# Closing the preferences does not freeze the program: each file chooser
+# had a file system model of its own, with a thread, and the dialog's
+# destruction waited for every one of them.
+fc_add_gui_test(GuiPreferencesCloseDoesNotWait_tests_run
+                preferences-close-does-not-wait.py
+                --timeout 180)
+
+# The omni search lists the items last confirmed in it when it comes up: a
+# command run, a parameter or a property opened, the newest first, gone as
+# soon as more is typed, carried out again when picked.
+fc_add_gui_test(GuiOmniSearchRecentItems_tests_run
+                omni-search-recent-items.py
+                --timeout 180)
+
+# The Display style menu: the styles as one combo box, the anti-aliasing,
+# and the lights of the active view (stored in the view, or in every open
+# view; saved as the default by a button; the headlight turned with the
+# pointer). The Light Sources preference page is gone.
+fc_add_gui_test(GuiDisplayStyleMenu_tests_run
+                display-style-menu.py
+                --timeout 240)
+
+# The render type alone says whether the render engine draws: "Default" is
+# the engine on the platform's backend with the render cache always 3,
+# "Legacy" the old Coin rendering with the render cache the user's own.
+fc_add_gui_test(GuiRenderTypeDefaultAndLegacy_tests_run
+                render-type-default-and-legacy.py
+                --timeout 180)
+
+# A change of the anti-aliasing setting leaves a split view as it is: a 3D
+# view that Coin draws is replaced by a copy, which took a tab of its own
+# and left its cell to collapse.
+fc_add_gui_test(GuiAntiAliasingChangeKeepsTheCells_tests_run
+                antialiasing-change-keeps-the-cells.py
+                --timeout 180)
+
+# A TechDraw page that comes back with the window layout is drawn before a
+# progressive load has built the view providers of its views; it is drawn
+# again when they exist, not only at the next recompute.
+fc_add_gui_test(GuiTechDrawPageBeforeItsViewProviders_tests_run
+                techdraw-page-before-its-view-providers.py
+                --timeout 240)
+
+# The outline of a highlighted face has no staircase on its inner edge: the
+# stencil cut of the face is one sample a pixel, the lines fade in from it.
+fc_add_gui_test(GuiFaceOutlineInnerEdge_tests_run
+                face-outline-inner-edge.py
+                --timeout 180)
+
+# A selected object shown on top dims the edges its own faces hide, as the
+# object under the pointer does; by the render engine and by Coin.
+fc_add_gui_test(GuiSelectionOnTopHiddenEdges_tests_run
+                selection-on-top-hidden-edges.py
+                --timeout 180)
+
+# The status bar's progress bar keeps its place while a message is up: a
+# left item is hidden with the message, and the bar then sat at the left end.
+fc_add_gui_test(GuiStatusBarProgressPlace_tests_run
+                statusbar-progress-place.py
+                --timeout 180)
+
+# A view cell drag is given up by Escape or another mouse button; the look
+# of its frames and handles; a border pushed past a cell's minimum closes
+# it; a cell whose view there is only one of is split with a 3D view.
+fc_add_gui_test(GuiViewCellDragCancelAndLook_tests_run
+                view-cell-drag-cancel-and-look.py
+                --timeout 240)
+
+# The browser viewer's split view follows the desktop's view cells: a drag
+# shown as frames and carried out at the release, given up by Escape or
+# another button, a border that closes a cell pushed under the minimum.
+# Needs the built viewer, node, PUPPETEER_PATH and CHROME; skips without.
+fc_add_gui_test(GuiSplitViewBrowser_tests_run
+                split-view-browser.py
+                --timeout 420)
+
+# A 3D view that takes a closed cell's room is still on the screen: the
+# cell tree was un-nested with QSplitter::replaceWidget, which takes the
+# surviving cell out of the window on the way, and a QOpenGLWidget that
+# leaves its window is composed from nothing until its next resize.
+fc_add_gui_test(GuiViewCellCloseKeepsThePicture_tests_run
+                view-cell-close-keeps-the-picture.py
+                --timeout 240)
+
+# The live Cycles view is the same way up as the view: its frame is an
+# uploaded image drawn with a render target's texture coordinate, which is
+# upside down on every backend but OpenGL. Skips without Cycles.
+fc_add_gui_test(GuiCyclesViewRightWayUp_tests_run
+                cycles-view-right-way-up.py
+                --timeout 300)
+
+# The crease that cavity shading draws has no staircase: the pass reads one
+# normal a pixel after the scene is resolved, and smooths its creases itself
+# by weighing in the face next to a pixel by the part of it that face covers.
+fc_add_gui_test(GuiCavityCreaseIsSmooth_tests_run
+                cavity-crease-is-smooth.py
+                --timeout 300)

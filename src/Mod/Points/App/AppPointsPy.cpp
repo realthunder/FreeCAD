@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "PointsParams.h"
 #ifndef _PreComp_
 #include <memory>
 #endif
@@ -67,9 +69,9 @@ private:
                                                  .GetGroup("BaseApp")
                                                  ->GetGroup("Preferences")
                                                  ->GetGroup("Mod/Points/E57");
-        bool useColor = hGrp->GetBool("UseColor", true);
-        bool checkState = hGrp->GetBool("CheckInvalidState", true);
-        double minDistance = hGrp->GetFloat("MinDistance", -1.);
+        bool useColor = hGrp->GetBool("UseColor", Points::PointsParams::defaultUseColor());
+        bool checkState = hGrp->GetBool("CheckInvalidState", Points::PointsParams::defaultCheckInvalidState());
+        double minDistance = hGrp->GetFloat("MinDistance", Points::PointsParams::defaultMinDistance());
 
         return std::make_tuple(useColor, checkState, minDistance);
     }

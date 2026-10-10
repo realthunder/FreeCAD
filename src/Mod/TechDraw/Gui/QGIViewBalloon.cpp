@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <cmath>
 # include <string>
@@ -953,7 +955,7 @@ int QGIViewBalloon::prefDefaultArrow() const { return Preferences::balloonArrow(
 //when would you want a crooked pyramid?
 bool QGIViewBalloon::prefOrthoPyramid() const
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetBool("PyramidOrtho", true);
+    return Preferences::getPreferenceGroup("Decorations")->GetBool("PyramidOrtho", TechDraw::TechDrawParams::defaultPyramidOrtho());
 }
 
 DrawView* QGIViewBalloon::getSourceView() const

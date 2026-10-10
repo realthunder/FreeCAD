@@ -62,11 +62,13 @@
 #include "Command.h"
 #include "Control.h"
 #include "MainWindow.h"
+#include "MainWindowParams.h"
 #include "MDIView.h"
 #include "NaviCube.h"
 #include "OverlayManager.h"
 #include "OverlayParams.h"
 #include "TaskView/TaskView.h"
+#include "ThemeParams.h"
 #include "Tree.h"
 #include "TreeParams.h"
 #include "propertyeditor/PropertyEditor.h"
@@ -2058,10 +2060,43 @@ OverlayDragFrame::OverlayDragFrame(QWidget * parent)
 void OverlayDragFrame::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
-    painter.drawRect(0, 0, this->width()-1, this->height()-1);
-    painter.setOpacity(0.3);
-    painter.setBrush(QBrush(Qt::blue));
-    painter.drawRect(0, 0, this->width()-1, this->height()-1);
+    paintFrame(painter, rect(), accentColor(this));
+}
+
+QColor OverlayDragFrame::accentColor(const QWidget *widget)
+{
+    // A theme is a style sheet (MainWindow/StyleSheet), and its accent is
+    // a parameter the sheet is filled in with (Application::
+    // replaceVariablesInQss): nothing puts it into the palette. With no
+    // sheet chosen the palette is all there is. Not qApp->styleSheet():
+    // the application carries a sheet of its own in every session.
+    if (!MainWindowParams::getStyleSheet().empty()) {
+        const unsigned long packed = ThemeParams::getThemeAccentColor1();
+        return QColor(int((packed >> 24) & 0xff), int((packed >> 16) & 0xff),
+                      int((packed >> 8) & 0xff));
+    }
+    return (widget ? widget->palette() : qApp->palette()).color(QPalette::Highlight);
+}
+
+void OverlayDragFrame::paintFrame(QPainter &painter, const QRect &rect, const QColor &accent)
+{
+    if (rect.width() < 2 || rect.height() < 2)
+        return;
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    QColor face = accent;
+    face.setAlphaF(FaceOpacity);
+    painter.fillRect(rect, face);
+    painter.setBrush(Qt::NoBrush);
+    if (rect.width() > 8 && rect.height() > 8) {
+        QPen border(Qt::white, 2);
+        border.setJoinStyle(Qt::MiterJoin);
+        painter.setPen(border);
+        painter.drawRect(rect.adjusted(2, 2, -2, -2));
+    }
+    painter.setPen(QPen(QColor(0, 0, 0, 200), 1));
+    painter.drawRect(rect.adjusted(0, 0, -1, -1));
+    painter.restore();
 }
 
 QSize OverlayDragFrame::sizeHint() const

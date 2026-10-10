@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "MiscParams.h"
+
 #ifndef _PreComp_
 # include <QCoreApplication>
 # include <QDate>
@@ -353,26 +355,22 @@ QString ApplicationCache::toString(qint64 size)
 
 unsigned int ApplicationCacheSettings::getCacheSizeLimit()
 {
-    ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("CacheDirectory");
-    return hGrp->GetUnsigned("Limit", 500);
+    return static_cast<unsigned int>(MiscParams::getCacheLimit());
 }
 
 void ApplicationCacheSettings::setCacheSizeLimit(unsigned int limit)
 {
-    ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("CacheDirectory");
-    hGrp->SetUnsigned("Limit", limit);
+    MiscParams::setCacheLimit(limit);
 }
 
 int ApplicationCacheSettings::getCheckPeriod()
 {
-    ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("CacheDirectory");
-    return hGrp->GetInt("Period", static_cast<int>(ApplicationCache::Period::Weekly));
+    return static_cast<int>(MiscParams::getCachePeriod());
 }
 
 void ApplicationCacheSettings::setCheckPeriod(int period)
 {
-    ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("CacheDirectory");
-    hGrp->SetInt("Period", period);
+    MiscParams::setCachePeriod(period);
 }
 
 

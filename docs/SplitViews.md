@@ -188,12 +188,16 @@ Rules:
 ### 5.4 Gestures (Blender parity)
 
 - Corner action zones (~16px, top-right and bottom-left of every cell, cursor
-  feedback): drag inward past a threshold splits along the dominant drag
-  axis, then hands off to live border-resize until release. Drag outward into
-  the sibling cell arms join: the doomed neighbor dims with an overlay arrow
-  (a translucent child widget), release executes, Esc cancels.
-- Splitter borders: native QSplitter resize; right-click on a handle opens
-  Split Horizontal / Split Vertical / Join menu.
+  feedback): drag inward past a threshold arms a split along the dominant
+  drag axis, the new border under the cursor. Drag outward into the sibling
+  cell arms a join. Nothing happens to the layout while the button is down:
+  the drag is shown as frames over the cells it changes, and carried out at
+  the release (sec 21, which replaces the live split and the dim-and-arrow
+  overlay this list first described). Dragging back to the press point
+  cancels.
+- Splitter borders: a drag shows the frames of every cell it resizes and
+  moves the border at the release (sec 21); right-click on a handle opens
+  the Close left / Close right menu.
 - Hovering the per-cell menu button, or any splitter handle, also reveals
   the corner zones (sec 18): the visible chrome is what points at the two
   invisible ones.
@@ -203,8 +207,10 @@ Rules:
   restore preserves the layout), Close cell.
 - New splits clone the current cell's content: a 3D cell splits into two 3D
   views on the same document via the `Document::createView` path (camera
-  copied, no `addWindow`); a page cell splits into a second view of the same
-  page. This is Blender's behavior and gives split-then-navigate for free.
+  copied, no `addWindow`). A cell whose view there is only one of -- a page,
+  a spreadsheet -- gives the new cell a 3D view of its document (sec 22; the
+  second view of the same page this list first described was never built).
+  This is Blender's behavior and gives split-then-navigate for free.
 
 ### 5.5 Heterogeneous content (the editor selector)
 
@@ -220,6 +226,15 @@ Each cell carries a content menu listing what the document can show:
   cast. A page can be shown in a cell and later re-opened as a plain MDI tab;
   whichever host exists adopts the one scene. First revision: one host per
   page at a time (the scene's item parenting is single-view).
+- One entry per spreadsheet, open or not.
+
+Which views are open is read off the views -- an object's view carries the
+object's name as its own (`MDIViewPage`, `SheetView`) -- and never by asking
+each view provider for its view: `ViewProviderSheet::getMDIView()` answers by
+making one, and every TechDraw view object answers with its page's. A view
+opened by a pick is opened for that cell (`ViewPlacement::IntoCell`); left to
+the placement policy it went into the last non-3D cell and closed what was
+there.
 - Future editors slot in by type: spreadsheet views, the Python console, the
   start page, a second document's 3D view -- anything that is an MDIView.
 
@@ -698,8 +713,8 @@ smokes re-run as regression.
   in ViewArea.cpp without Q_OBJECT, so the name is what tests and
   stylesheets find it by), subtle until hovered. Its menu is the
   content selector -- "3D view" plus one entry per object-provided
-  view (materialized views anywhere, TechDraw pages by type name, no
-  Gui->TechDraw dependency) -- then Split horizontal/vertical,
+  view (materialized views anywhere, TechDraw pages and spreadsheets by
+  type name, no Gui->module dependency) -- then Split horizontal/vertical,
   Maximize/Restore, Close. The 3D entry clones a sibling 3D cell
   first (its camera is the area's context), any document 3D view
   second, bare createView3D last.
@@ -1604,3 +1619,271 @@ own double click, edit and "Show spreadsheet" go on making and placing
 as they do. **A single click on a sheet in the tree then selects it and
 opens nothing**, as for a drawing page (the user: "single click
 selects"); the double click opens.
+## 21. A drag is shown as frames and carried out at the release (2026-10-09)
+
+Asked for in hands-on use (docs/HandsOnQueue.md entry 29): "when resizing
+(either dragging the corner or the split handle) show transparent box of
+the involved cell to track the resizing in real time, just like how overlay
+widget does it", then, with the gestures explained: "just make the frames
+right to hint the operation is enough". Until then a split happened the
+moment the drag passed its threshold, a join announced itself by a dim and
+an arrow over the neighbor only, and a border moved at every mouse move --
+a resize of each 3D view per move.
+
+**One frames widget per container** (`ViewAreaDragFrames`, made on first
+use, a raised child of the `ViewArea` masked to what it draws). A frame is
+a rectangle in the container's coordinates and a kind:
+
+| kind | what it covers | drawn as |
+|---|---|---|
+| kept | a cell that stays, at the size it WILL have | accent border, faint fill |
+| fresh | the cell a split makes | stronger fill, a plus |
+| going | the neighbor a join closes | dimmed, the arrow |
+| refused | a cell that cannot be split (too small) | red, crossed out |
+
+`ViewArea::showDragFrames(operation, frames)`; what is shown is also set as
+dynamic properties (`operation`, `frames`, `kinds`), which is how a test
+reads a class that lives in the .cpp.
+
+**Split** (`ViewAreaZone`): the two cells the one will become, the border
+under the cursor, clamped so that neither goes under the minimum cell
+size. At the release `splitCell()` is given what the cell keeps, in
+pixels. A split is cancelled by dragging back.
+
+**Join**: the cell that stays over the room it will have -- its own and
+the neighbor's -- and the neighbor going.
+
+**Border** (`ViewAreaSplitterHandle` takes the mouse itself):
+`resizeFrames()` gives EVERY cell whose geometry the move changes its
+frame -- "border resize shall track the sizes of all involved cells". The
+side the border moves into gives way from the border outwards, each
+widget down to its least before the next is pushed; a nested splitter on
+either side hands the change on, to all its children across its axis and
+in proportion along it. That is QSplitter's own arithmetic written out
+again (its `doMove` cannot be asked "what if"), so a frame may be a pixel
+or two off the size the cell gets; the legal range of the border itself
+is QSplitter's (`closestLegalPosition`).
+
+**Minimum cell size**, `View/OpenView/MinimumCellSize`, default 300 (asked
+for at 200, and raised to 300 by the reporter the day it was built), on the
+preferences' Views group: `canSplitCell()` refuses a split that would
+leave either half of the divided cell narrower than it, or a new cell
+shorter than it the other way -- "if creating a new view will result in
+any existing (or the new) view fall below the limit, the view creation is
+refused". Refusals are said in the report view, not more than once in
+five seconds. Kept in `splitCell()`, so the gesture, the commands and the
+cell menu all meet it; the placement policy takes the refusal for "no
+room" and opens the view in a tab (docs/ViewPlacement.md sec 3.2). Not
+applied to a cell without geometry (a layout coming back with its
+document).
+
+The same number is the cell's own minimum (`ViewAreaCell::
+minimumSizeHint`), which is what stops a dragged border and a shrinking
+window. Until this a cell answered with its view's hint, and every
+`MDIView` asks for 400 x 300 -- a minimum nobody had chosen, wider than the
+one asked for, and the reason a split border dropped where the frames said
+snapped somewhere else (found by the test). The cell's answer is capped at
+that old 400 x 300: a large setting refuses splits, it does not push the
+main window off the screen.
+
+**Chrome**: the corner zones, and the menu button while hovered, are drawn
+on an opaque ground (the palette's window colour) -- strokes straight onto
+the scene could not be seen over a busy or like-coloured view. The border
+between cells is 3 pixels (`ViewAreaSplitter::HandleWidth`), thinner than
+a splitter elsewhere, and still takes a drag and a right-click.
+
+Test: `tests/gui/view-cell-drag-frames.py`.
+
+## 22. Giving a drag up; the look of frames and chrome; a border that closes (2026-10-09)
+
+Asked for after a morning with sec 21 (docs/HandsOnQueue.md entry 56, ten
+points, a to j).
+
+**Only the release of the left button carries a drag out.** Escape, and
+any other mouse button pressed while the left one is held, give it up: the
+frames go and nothing is split, joined, resized or closed. For a corner
+zone and for a border alike. Escape is not the zone's or the handle's to
+receive -- the keyboard is somewhere else -- so each puts an event filter
+on the application for as long as its drag lasts (`ViewAreaZone::
+eventFilter`, `ViewAreaSplitterHandle::eventFilter`). The same filter gives
+the drag up when the application or its window loses the activation, or
+the mouse grab is taken away: another program coming to the front takes
+the release with it, and the frames stayed on the screen. The right click that gave a
+border drag up does not bring the border's menu (`_swallowMenu`).
+
+**One look for a drag frame**, the overlay's and the cells':
+`OverlayDragFrame::paintFrame()`. The face is the ACCENT at an opacity of
+0.3 (`FaceOpacity`, what the overlay's frame always had), inside a white
+border 2 pixels wide, with a thin dark line round it so that the border
+shows on a white ground. The accent (`OverlayDragFrame::accentColor()`) is
+the theme's -- `Themes/ThemeAccentColor1`, the parameter a theme's style
+sheet is filled in with -- while a theme's sheet is chosen
+(`MainWindow/StyleSheet`), and the palette's selection highlight with none. Until this the overlay's frame
+was a fixed blue and the cells' frames the palette's highlight under any
+theme, at 0.24 for a cell that stays and 0.47 for a new one. A new cell is
+told from a kept one by its plus alone now.
+
+| kind | what it covers | drawn as |
+|---|---|---|
+| kept | a cell that stays, at the size it WILL have | the frame |
+| fresh | the cell a split makes | the frame, a plus |
+| going | a cell that is closed: a join's neighbor, a border's victim | red, crossed out; the kept frame's face is left off it |
+
+A cell that goes is framed red with a red cross, and the frame of the cell
+that stays -- which covers the room of both -- leaves its face off it: two
+faces one on the other are neither colour. (First built as a red stop
+sign with no frame, on "draw a big red stop sign in the center of removing
+cell"; changed the same day: "use the red frame and red cross here. I feel
+this hints more like a close".)
+
+**A split that cannot be has no frame.** The red frame was the refusal's
+look until it became the closing cell's. A corner drag that would leave a
+cell under the minimum turns the cursor to the forbidden one
+(`ViewAreaZone::armSplit`) and says why at that moment, once for every
+turn from the splitting cursor to the forbidden one
+(`ViewArea::reportRefusedSplit`); the release then does nothing and says
+nothing more.
+
+**A border takes room from the widget next to it, and from no other.**
+`QSplitter`'s own range (`closestLegalPosition()`) goes on past that
+widget's minimum and pushes the next border along, each widget down to its
+least in turn; the handle clamps the border to what its two neighbours can
+give. "when dragging the splitter, do not move the other splitter in case
+the next view size limit is reached. change it to view close action when
+size limit reached."
+
+**A border pushed past a cell's minimum closes that cell** (operation
+"close"). Dragged more than 12 pixels beyond where it stops (`CloseSlack`,
+so that the limit itself can be held) the cell the border is pushed into
+is shown as going, the widget on the other side of the border framed over
+the room of both, and the release calls `closeCell()` and then gives that
+room to the widget across the border -- the splitter would share it out
+among everything left. Only when what is pushed is a single cell -- a
+nested splitter on that side stops at its minimum as before. The CORNER zone keeps
+its meaning: dragged inward it only ever creates, and a split that would
+leave a cell under the minimum is refused ("drag in itself only create and
+never close. so as to not create ambiguity").
+
+**A refusal is said as an error**, which the notification area shows as
+well as the report view. (A plain error, not one "for the user" alone:
+the report view takes none of those.) A corner drag says it at each turn
+of its cursor; a split command or a view opening by itself, not more than
+once in five seconds.
+
+**Chrome on a ground that shows.** The menu button under the cursor and
+the corner zones are painted on the accent colour with a white rim, their
+strokes white (`paintChromeGround`). Sec 21 had given them the palette's
+window colour with strokes in the highlight colour, which on a light grey
+or a white view -- a page, a sheet, a light 3D background -- was a light
+patch on a light ground.
+
+**The active cell's border** (`ViewAreaHighlight`, sec 16.1) is two pixels
+of the accent the drag frames have, not quite opaque. It was one pixel of
+the palette's highlight, which under a dark theme could not be told from
+the border between cells ("also draw a subtle frame on the active view").
+
+**A zone steps aside from a scroll bar** (`ViewAreaCell::placeChrome`): the
+top right one to the left of a vertical scroll bar of the hosted view that
+its corner would lie on, the bottom left one to above a horizontal bar. A
+page's bars run into the cell's corners; a spreadsheet's stand in from
+the edge, and only its horizontal one reaches the bottom left zone. Looked at on every resize, whenever the cursor comes into the cell,
+and when a scroll bar of the view is shown, hidden, moved or resized (an
+event filter on each).
+
+**Every cell can be split.** `cloneChildFor()` knew how to make a second
+3D view and nothing else, so a split of a page's or a spreadsheet's cell
+did nothing and said nothing. A view there is only one of now gives the
+new cell a 3D view of its document (`Document::createView3D`, the
+document's modified state put back after it). Sec 5.4's "a page cell
+splits into a second view of the same page" was never built.
+
+Tests: `tests/gui/view-cell-drag-cancel-and-look.py`; the border's two
+behaviours at and past the minimum are in `view-cell-drag-frames.py`.
+
+## 23. The browser viewer follows (2026-10-09)
+
+"btw, do the same view cell logic in browser" (docs/HandsOnQueue.md entry
+57). The chrome of sec 9.4 (`web/src/splitview.tsx`) had the desktop's
+gestures as they were before sec 21: a split happened the moment the drag
+passed its threshold and the rest of the drag moved the new border live, a
+border moved at every pointer move, a join showed a dim and an arrow, and
+nothing could be given up but by dragging back.
+
+It has secs 21 and 22 now, in the tree's own terms:
+
+- **Nothing changes while the button is down.** A drag works out what the
+  release would do (`onMove`), shows it as frames -- DOM elements over the
+  cells, `.fc-split-frame` with `data-kind` kept / fresh / going /
+  refused, the operation in `data-op` on the root -- and the release of
+  the primary button does it (`onCommit`). A border's frames come from the
+  layout worked out with the tentative ratio (`layout({split, ratio})`).
+- **Giving up** (`beginDrag`): Escape; another button of the mouse, which
+  for a pointer already down arrives as a MOVE with more buttons held, and
+  whose context menu is swallowed; a second finger or any other pointer
+  going down -- the way out a touch screen has, my choice; `pointercancel`;
+  the window losing the front or the page being hidden.
+- **The minimum cell size** is 300 CSS pixels, the desktop's default, and
+  the viewer's own: the desktop's setting is not sent to it. `?mincell=N`
+  in the page's address overrides it (0 for none), which a phone held
+  upright needs to split side by side at all. `MIN_RATIO` stays as the
+  floor of a stored layout and of a window that shrank.
+- **A border** takes room from the cell next to it and from no other. In
+  a tree of ratios a border belongs to one split, and that split's ratio
+  alone would scale everything on both sides; the change is handed down
+  each side to its near end instead, the far parts keeping the pixels
+  they have (`resizeNear`). It stops where the cell next to it reaches the
+  minimum (`canGive`), and more than 12 pixels past that it closes that
+  cell (`nearCell`) -- shown, and done, as the cell squeezed to nothing, so
+  that what is across the border takes its room and nothing else moves. **A corner** only creates:
+  under the minimum there is no frame, the cursor is the forbidden one
+  wherever the pointer is (a class on the document, `fc-split-forbidden`),
+  and the reason is said at each turn of the cursor, in a line at the
+  bottom of the page and as a console error.
+- **A join** and a close: the cell that stays framed over the room of
+  both, the cell that goes framed red and crossed out, the first one's
+  face clipped off it (`clipOf`).
+- **The look** is the desktop's frame in CSS: the accent at 0.3 (a
+  variable of the split root, `--fc-accent-rgb`, FreeCAD's default accent
+  -- the desktop's theme is not sent either), a white border of 2 pixels
+  as an inset shadow, a dark line of 1. A corner zone under the pointer is
+  on the accent in a white rim.
+
+Not carried over, for cause: zones stepping off a scroll bar (a cell has
+none here), and the 3D view for a cell whose view cannot be shown twice
+(a page cell splits into a page cell: the viewer draws a page per cell).
+
+Test: `tests/gui/split-view-browser.py`, which drives
+`scripts/splitview-drive.js` in a real browser on the built page, no
+document served.
+
+## 24. A cell tree that never leaves the window (2026-10-09)
+
+**A 3D view black after a cell was closed** (docs/HandsOnQueue.md entry
+60): "surviving resized view is black and will only back to normal if I
+resize it. camera move has no effect". Whenever closing a cell UN-NESTED a
+splitter. `collapseCell()` moved the lone cell up with
+`QSplitter::replaceWidget()`, and that takes the widget it replaces -- the
+nested splitter, the lone cell still inside it -- out of the window before
+it puts the cell in. A `QOpenGLWidget` that leaves its window drops the
+texture the window composes it from; an initialized one, with
+`AA_ShareOpenGLContexts` set as it is here, gets it back at its next
+resize and at nothing else -- not at a paint, a show, or the very resize
+that came with the move. So the view went on drawing, correctly, into a
+framebuffer that nothing put on the screen.
+
+Measured in the reporter's own black window, a session of the dev build
+opened for it: the view's surface read back complete, the same rectangle
+of the screen 100% black; `update()`, a `Show` event, hide-and-show left it
+black, one pixel of resize brought it back.
+
+So the cell tree is rebuilt without any cell leaving the window:
+`insertWidget()` of the cell into the parent, then the emptied splitter
+taken out (`collapseCell`); `insertWidget()` of the new nested splitter,
+then the cell moved into it (`splitCell`, where `replaceWidget()` did the
+same to the cell being split -- hidden there by the resize that always
+follows a split).
+
+! `grabFramebuffer()`, the engine's capture and its statistics all say the
+view is fine while the screen is black. Only the screen can judge this:
+`tests/gui/view-cell-close-keeps-the-picture.py` reads the window's pixels
+with `QScreen::grabWindow`.

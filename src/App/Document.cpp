@@ -107,6 +107,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "DocumentObserver.h"
 #include "DocumentObject.h"
 #include "DocumentParams.h"
+#include "UnitsParams.h"
 #include "ExpressionParser.h"
 #include "ExpressionSecurityRuntime.h"
 #ifdef FC_EXPR_IMAGE_HOST
@@ -913,8 +914,7 @@ Document::Document(const char* documentName)
     }
     UnitSystem.setEnums(enumValsAsVector);
     // Get the preferences/General unit system as the default for a new document
-    ParameterGrp::handle hGrpu = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Units");
-    UnitSystem.setValue(hGrpu->GetInt("UserSchema", 0));
+    UnitSystem.setValue(UnitsParams::getUserSchema());
     ADD_PROPERTY_TYPE(Comment, (""), 0, Prop_None, "Additional tag to save a comment");
     ADD_PROPERTY_TYPE(Meta, (), 0, Prop_None, "Map with additional meta information");
     ADD_PROPERTY_TYPE(Material, (), 0, Prop_None, "Map with material properties");
@@ -940,7 +940,9 @@ Document::Document(const char* documentName)
     if (index >= 0 && index < App::countOfLicenses) {
         name = App::licenseItems.at(index).at(App::posnOfFullName);
         url = App::licenseItems.at(index).at(App::posnOfUrl);
-        if(DocumentParams::getprefLicenseUrl().empty()) {
+        // The address from the preferences where there is one. The test was
+        // the other way round, so it was only ever taken when it was empty.
+        if(!DocumentParams::getprefLicenseUrl().empty()) {
             licenseUrl = DocumentParams::getprefLicenseUrl();
         } else if (url) {
             licenseUrl = url;
@@ -1529,6 +1531,17 @@ Document::UserEditGuard::~UserEditGuard()
     if (toggled) {
         s_userEditing = false;
     }
+}
+
+Document::UserEditSuspend::UserEditSuspend()
+    : saved(s_userEditing)
+{
+    s_userEditing = false;
+}
+
+Document::UserEditSuspend::~UserEditSuspend()
+{
+    s_userEditing = saved;
 }
 
 bool Document::isUserEditing()
@@ -3164,6 +3177,9 @@ bool Document::isAnyRestoring() {
 void Document::restore (const char *filename,
         bool delaySignal, const std::vector<std::string> &objNames)
 {
+    // The load's own writes, not those of the command that asked for it.
+    UserEditSuspend loading;
+
     if(!filename)
         filename = FileName.getValue();
     Base::FileInfo fi(filename);

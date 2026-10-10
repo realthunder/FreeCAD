@@ -36,6 +36,7 @@
 #include <App/Document.h>
 #include <Base/Console.h>
 #include <Base/UnitsApi.h>
+#include <Gui/ViewParams.h>
 #include <Gui/Action.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
@@ -149,7 +150,7 @@ ViewProviderPointMarker::ViewProviderPointMarker()
         "CIRCLE_FILLED",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 9)
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize())
     );
     pMarker->numPoints = 0;
     pMarker->ref();

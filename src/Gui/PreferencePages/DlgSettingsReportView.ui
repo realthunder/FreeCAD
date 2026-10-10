@@ -134,6 +134,9 @@ on-screen while displaying the warning</string>
         <property name="text">
          <string>Show report view on warning</string>
         </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
         <property name="prefEntry" stdset="0">
          <cstring>checkShowReportViewOnWarning</cstring>
         </property>

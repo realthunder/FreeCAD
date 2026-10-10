@@ -6471,6 +6471,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
         spec.width = draw.material.outlinewidth;
         spec.depthTest = false;
         spec.caps = true;
+        // One face, a known index range: its inner edge can be faded in
+        // instead of being cut to a staircase (docs/HandsOnQueue.md
+        // entry 25) -- where the face's own fill is not drawn over it. With
+        // the fill, as for a selected face by default, the cut and the fill
+        // end on the very same pixels and hide the model's edge between
+        // them; a fade there lets that edge through, as dark dots along
+        // the outline (seen, on the first build of this).
+        spec.feather = draw.indexCount >= 3 && draw.material.outlineonly;
         spec.start = draw.indexStart;
         spec.count = draw.indexCount;
         return spec;
@@ -6754,9 +6762,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // then ask for both it and the finished colour back. Depth is
         // what no backend blits, and geometryPixels is measured from
         // it, so this pass is the whole reason a capture is portable.
-        bgfx::setTexture(0, view->s_texSceneDepth, view->bgfxDepth);
-        view->fullscreen(BGFXView::ViewCaptureDepth, view->m_progDepthEnc,
-                         BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        //
+        // A multisampled depth cannot be read as a texture at all, so
+        // such a view's capture goes without: the colour is what an
+        // export wants, and the two numbers measured from depth are
+        // reported as unknown below rather than read off a target
+        // nothing drew into.
+        captureHasDepth = view->depthSampleable;
+        if (captureHasDepth) {
+            bgfx::setTexture(0, view->s_texSceneDepth, view->bgfxDepth);
+            view->fullscreen(BGFXView::ViewCaptureDepth, view->m_progDepthEnc,
+                             BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        }
         // Sized off the staging texture's own format, which
         // ensureCaptureTargets picked to match the blit source -- the
         // RGBA8 present output when a colour transform is on, the
@@ -6813,19 +6830,33 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // The blit queued above executes in the frame the boundary just
         // returned, so that is what its latency is measured from.
         view->noteReadbackFrame(frameNum);
-        // Benchmark only (FC_BGFX_READBACK_SYNC): spin until the copy
-        // has landed, which is the fully serialized route section 2
-        // costed. Off by default -- the pipelined form shows a frame
-        // that is one or two old and pays nothing for the wait. A
-        // capture (renderOffscreen) always waits: nothing redraws it
-        // later, so the frame it gets is the one it keeps.
+        // Spin until the copy has landed, which is the fully serialized
+        // route section 2 costed -- unless the host said this frame is
+        // one of a run (setFramePipelined: an animation), where the
+        // next frame shows it anyway and the pipelined form pays
+        // nothing for the wait. A frame nothing follows must wait, or
+        // the screen stays a frame or two behind the scene for as long
+        // as nothing redraws it. A capture (renderOffscreen) always
+        // waits for the same reason: the frame it gets is the one it
+        // keeps. FC_BGFX_READBACK_SYNC holds one form for a benchmark.
         //
         // Above the phase clock's restart on purpose: those frames are
         // bgfx's, not the context hand-off's, and charging them to
-        // CpuCtxIn would put a benchmark switch's cost inside a number
-        // that is supposed to be flat.
-        frameNum = view->syncReadback(frameNum,
-                                      _BGFXLib.captureWidth != 0);
+        // CpuCtxIn would put the wait's cost inside a number that is
+        // supposed to be flat.
+        const bool capture = _BGFXLib.captureWidth != 0;
+        const int forced = BGFXView::readbackSyncForced();
+        const bool wait = capture
+            || (forced < 0 ? !framePipelined : forced > 0);
+        frameNum = view->syncReadback(frameNum, wait);
+        // Forced pipelined is a measurement of that form alone: it
+        // reports nothing to settle, or the host's settling frame would
+        // be pipelined too and ask for the next one without end.
+        if (!capture)
+            frameTrailing = !wait && forced < 0;
+    }
+    else if (_BGFXLib.captureWidth == 0) {
+        frameTrailing = false;
     }
     // bgfx::frame() has its own timer; restart the chain past it so
     // it is not counted twice.
@@ -6950,7 +6981,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
             const float *drow = depth + sy * capturePixW;
             const unsigned char *crow = &rgba[size_t(y) * capturePixW * 4];
-            for (uint16_t x = 0; x < capturePixW; ++x) {
+            for (uint16_t x = 0; captureHasDepth && x < capturePixW; ++x) {
                 if (drow[x] < 0.999f) {
                     ++ng;
                     r += crow[x * 4];
@@ -6962,7 +6993,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         lastStats.width = capturePixW;
         lastStats.height = capturePixH;
         lastStats.temporalSamples = view->accumFrames;
-        lastStats.geometryPixels = ng;
+        lastStats.geometryPixels = captureHasDepth ? ng : -1;
+        lastStats.msaaSamples = view->msaaSamples;
         lastStats.nonFiniteChannels = captureHdr ? nonFinite : -1;
         // Said out loud as well as recorded: this is a broken frame,
         // and the capture that carries it should not become a golden.
@@ -7130,7 +7162,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // `stale` is as much the answer as the milliseconds are: the
         // pipelined form does not wait for the copy, so a stale frame
         // is one where the screen showed an image older than the scene.
-        // FC_BGFX_READBACK_SYNC trades those away for `wait`.
+        // A frame that waits for its copy trades those away for `wait`.
         if (due && view->readbackStats.frames) {
             const BGFXView::ReadbackStats rb = view->readbackStats;
             view->readbackStats.clear();

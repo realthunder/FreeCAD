@@ -30,6 +30,7 @@
 #include <App/Application.h>
 #include <App/DocumentObject.h>
 #include <Gui/MainWindow.h>
+#include <Gui/NotificationAreaParams.h>
 
 namespace Gui {
 
@@ -150,11 +151,7 @@ inline void Gui::Notify(TNotifier && notifier, TCaption && caption, TMessage && 
     static_assert(!(recipient == Base::IntendedRecipient::All && content == Base::ContentType::Translated),
                   "Information intended for Developers must not be translated. Provide an untranslated message instead.");
 
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().
-    GetGroup("BaseApp")->GetGroup("Preferences")->
-    GetGroup("NotificationArea");
-
-    bool nonIntrusive = hGrp->GetBool("NonIntrusiveNotificationsEnabled", true);
+    bool nonIntrusive = NotificationAreaParams::getNonIntrusiveNotificationsEnabled();
 
     if(!nonIntrusive) {
 

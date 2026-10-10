@@ -71,7 +71,7 @@ private:
     // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelType = nullptr;
-    Gui::PrefLineEdit *Type = nullptr;
+    Gui::PrefComboBox *Type = nullptr;
     QLabel *labelOutputTransform = nullptr;
     Gui::PrefComboBox *OutputTransform = nullptr;
     QLabel *labelExposure = nullptr;

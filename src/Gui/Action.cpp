@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include "MiscParams.h"
+
 #ifndef _PreComp_
 # include <QActionEvent>
 # include <QActionGroup>
@@ -69,6 +71,7 @@
 #include <Base/Tools.h>
 
 #include "Action.h"
+#include "GeneralParams.h"
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "CommandCompleter.h"
@@ -1116,26 +1119,26 @@ public:
     }
 
     bool showText() {
-        return handle->GetBool("TabBarShowText", false);
+        return MiscParams::getTabBarShowText();
     }
 
     void setShowText(bool enable) {
-        handle->SetBool("TabBarShowText", enable);
+        MiscParams::setTabBarShowText(enable);
     }
 
     bool showTabBar() {
-        return handle->GetBool("ShowTabBar", false);
+        return MiscParams::getShowTabBar();
     }
 
     void setShowTabBar(bool enable) {
-        handle->SetBool("ShowTabBar", enable);
+        MiscParams::setShowTabBar(enable);
     }
 
     /*! How much room the tab bar may ask for along the direction the tabs run,
      * in pixels. 0 asks for as much as the tabs it holds actually need.
      */
     int tabBarMaxLength() {
-        return handle->GetInt("TabBarMaxLength", 0);
+        return static_cast<int>(MiscParams::getTabBarMaxLength());
     }
 
     void OnChange(Base::Subject<const char*> &, const char *reason)
@@ -1750,8 +1753,7 @@ public:
     void trySaveUserParameter()
     {
         // update the XML structure and save the user parameter to disk (#0001989)
-        bool saveParameter = App::GetApplication().GetParameterGroupByPath
-            ("User parameter:BaseApp/Preferences/General")->GetBool("SaveUserParameter", true);
+        bool saveParameter = GeneralParams::getSaveUserParameter();
         if (saveParameter) {
             saveUserParameter();
         }
@@ -1962,8 +1964,7 @@ void RecentMacrosAction::appendFile(const QString& filename)
     save();
 
     // update the XML structure and save the user parameter to disk (#0001989)
-    bool saveParameter = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/General")->GetBool("SaveUserParameter", true);
+    bool saveParameter = GeneralParams::getSaveUserParameter();
     if (saveParameter) {
         ParameterManager* parmgr = App::GetApplication().GetParameterSet("User parameter");
         parmgr->SaveDocument(App::Application::Config()["UserParameter"].c_str());
@@ -1978,9 +1979,9 @@ void RecentMacrosAction::setFiles(const QStringList& files)
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter().GetGroup("BaseApp")
                                 ->GetGroup("Preferences")->GetGroup("RecentMacros");
-    this->shortcut_modifiers = hGrp->GetASCII("ShortcutModifiers","Ctrl+Shift+");
-    this->shortcut_count = std::min<int>(hGrp->GetInt("ShortcutCount",3),9);//max = 9, e.g. Ctrl+Shift+9
-    this->visibleItems = hGrp->GetInt("RecentMacros",12);
+    this->shortcut_modifiers = MiscParams::getShortcutModifiers();
+    this->shortcut_count = std::min<int>(MiscParams::getShortcutCount(),9);//max = 9, e.g. Ctrl+Shift+9
+    this->visibleItems = MiscParams::getRecentMacros();
     QList<QAction*> recentFiles = groupAction()->actions();
 
     int numRecentFiles = std::min<int>(recentFiles.count(), files.count());
@@ -2119,7 +2120,9 @@ void RecentMacrosAction::restore()
     for (int i=groupAction()->actions().size(); i<this->maximumItems; i++) {
         groupAction()->addAction(QStringLiteral(""))->setVisible(false);
     }
-    resizeList(hGrp->GetInt("RecentMacros"));
+    // the size of the list had no default here, 12 where the list is
+    // filled and 4 on the Macro page
+    resizeList(MiscParams::getRecentMacros());
 
     int count = std::max<int>(this->maximumItems, this->visibleItems);
     for (int i=groupAction()->actions().size(); i<count; i++) {

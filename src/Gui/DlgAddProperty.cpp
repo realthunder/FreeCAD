@@ -33,6 +33,7 @@
 #include <Base/Tools.h>
 
 #include "DlgAddProperty.h"
+#include "MiscParams.h"
 #include "ui_DlgAddProperty.h"
 #include "MainWindow.h"
 #include "ViewProviderDocumentObject.h"
@@ -58,10 +59,8 @@ DlgAddProperty::DlgAddProperty(QWidget* parent,
     ui->comboType->setFocus();
     ui->comboType->lineEdit()->selectAll();
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/PropertyView");
     auto defType = Base::Type::fromName(
-            hGrp->GetASCII("NewPropertyType","App::PropertyString").c_str());
+            MiscParams::getNewPropertyType().c_str());
     if(defType.isBad())
         defType = App::PropertyString::getClassTypeId();
 
@@ -89,8 +88,8 @@ DlgAddProperty::DlgAddProperty(QWidget* parent,
     }
 
     ui->edtGroup->setText(QString::fromUtf8(
-                hGrp->GetASCII("NewPropertyGroup","Base").c_str()));
-    ui->chkAppend->setChecked(hGrp->GetBool("NewPropertyAppend",true));
+                MiscParams::getNewPropertyGroup().c_str()));
+    ui->chkAppend->setChecked(MiscParams::getNewPropertyAppend());
 }
 
 /**
@@ -164,11 +163,9 @@ void DlgAddProperty::accept()
             return;
         }
     }
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/PropertyView");
-    hGrp->SetASCII("NewPropertyType",type.c_str());
-    hGrp->SetASCII("NewPropertyGroup",group.c_str());
-    hGrp->SetBool("NewPropertyAppend",ui->chkAppend->isChecked());
+    MiscParams::setNewPropertyType(type);
+    MiscParams::setNewPropertyGroup(group);
+    MiscParams::setNewPropertyAppend(ui->chkAppend->isChecked());
     QDialog::accept();
 }
 

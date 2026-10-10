@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include "MaterialParams.h"
 #include <random>
 
 
@@ -65,7 +66,7 @@ MaterialManager::MaterialManager()
 #if defined(BUILD_MATERIAL_EXTERNAL)
     _hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/ExternalInterface");
-    _useExternal = _hGrp->GetBool("UseExternal", false);
+    _useExternal = _hGrp->GetBool("UseExternal", Materials::MaterialParams::defaultUseExternal());
     _hGrp->Attach(this);
 #else
     _useExternal = false;
@@ -111,7 +112,7 @@ void MaterialManager::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp:
     const ParameterGrp& rGrp = static_cast<ParameterGrp&>(rCaller);
     if (strcmp(Reason, "UseExternal") == 0) {
         Base::Console().log("Use external changed\n");
-        _useExternal = rGrp.GetBool("UseExternal", false);
+        _useExternal = rGrp.GetBool("UseExternal", Materials::MaterialParams::defaultUseExternal());
         // _dbManager->refresh();
     }
 }
@@ -224,7 +225,7 @@ QString MaterialManager::defaultMaterialUUID()
     // Make this a preference
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material");
-    auto uuid = param->GetASCII("DefaultMaterial", "7f9fd73b-50c9-41d8-b7b2-575a030c1eeb");
+    auto uuid = param->GetASCII("DefaultMaterial", Materials::MaterialParams::defaultDefaultMaterial().c_str());
     return QString::fromStdString(uuid);
 }
 

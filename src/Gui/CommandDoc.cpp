@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include "ViewParams.h"
 #ifndef _PreComp_
 # include <Inventor/nodes/SoCamera.h>
 # include <QApplication>
@@ -51,6 +53,7 @@
 
 #include "Action.h"
 #include "Application.h"
+#include "GeneralParams.h"
 #include "ViewPlacement.h"
 #include "BitmapFactory.h"
 #include "Command.h"
@@ -338,12 +341,10 @@ QString createDefaultExportBasename()
     auto selection = Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
     QString exportFormatString;
     if (selection.size() == 1) {
-        exportFormatString = QString::fromStdString (App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
-            GetASCII("ExportDefaultFilenameSingle", "%F-%P-"));
+        exportFormatString = QString::fromStdString (GeneralParams::getExportDefaultFilenameSingle());
     }
     else {
-        exportFormatString = QString::fromStdString (App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
-            GetASCII("ExportDefaultFilenameMultiple", "%F"));
+        exportFormatString = QString::fromStdString (GeneralParams::getExportDefaultFilenameMultiple());
     }
 
     // For code simplicity, pull all values we might need
@@ -698,7 +699,7 @@ void StdCmdNew::activated(int iMsg)
     doCommand(Command::Gui,"Gui.activeDocument().activeView().viewDefaultOrientation()");
 
     ParameterGrp::handle hViewGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    if (hViewGrp->GetBool("ShowAxisCross"))
+    if (hViewGrp->GetBool("ShowAxisCross", Gui::ViewParams::defaultShowAxisCross()))
         doCommand(Command::Gui,"Gui.ActiveDocument.ActiveView.setAxisCross(True)");
 }
 

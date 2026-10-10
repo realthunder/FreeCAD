@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #ifndef _PreComp_
 # include <QAction>
 # include <QColor>
@@ -258,7 +260,7 @@ double ViewProviderDimension::prefWeight() const
 
 int ViewProviderDimension::prefStandardAndStyle() const
 {
-    return Preferences::getPreferenceGroup("Dimensions")->GetInt("StandardAndStyle", STD_STYLE_ISO_ORIENTED);
+    return Preferences::getPreferenceGroup("Dimensions")->GetInt("StandardAndStyle", TechDraw::TechDrawParams::defaultStandardAndStyle());
 }
 
 void ViewProviderDimension::handleChangedPropertyType(Base::XMLReader &reader, const char *TypeName, App::Property *prop)

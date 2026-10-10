@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <algorithm>
 #include <cmath>
@@ -324,7 +326,7 @@ void CurveConverter::updateCurvedEdgeCountSegmentsParameter()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/View"
     );
-    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", 50);
+    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", Sketcher::SketcherParams::defaultSegmentsPerGeometry());
 
     // value cannot be smaller than 6
     if (stdcountsegments < 6) {
@@ -1916,7 +1918,7 @@ bool DrawSketchHandler::areDirectionalAutoConstraintHintsVisible() const
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General"
     );
-    return hGrp->GetBool("ShowDirectionalAutoConstraintHints", true);
+    return hGrp->GetBool("ShowDirectionalAutoConstraintHints", Sketcher::SketcherParams::defaultShowDirectionalAutoConstraintHints());
 }
 
 void DrawSketchHandler::resetParallelPerpendicularHint()

@@ -31,6 +31,8 @@
 #include "DlgSettingsFemGmshImp.h"
 #include "ui_DlgSettingsFemGmsh.h"
 
+#include <Mod/Fem/App/FemParams.h>
+
 
 using namespace FemGui;
 
@@ -64,7 +66,10 @@ void DlgSettingsFemGmshImp::loadSettings()
     // determine number of CPU threads
 
     ParameterGrp::handle hGrp = ui->sb_threads->getWindowParameter();
-    ui->sb_threads->setValue(hGrp->GetInt(ui->sb_threads->entryName(), QThread::idealThreadCount()));
+    // 0, which is also the definition's default, is as many as there are
+    const long threads
+        = hGrp->GetInt(ui->sb_threads->entryName(), Fem::FemParams::defaultGmshNumOfThreads());
+    ui->sb_threads->setValue(threads > 0 ? static_cast<int>(threads) : QThread::idealThreadCount());
 
     populateLogVerbosity();
     ui->cb_log_verbosity->onRestore();
@@ -110,7 +115,7 @@ void DlgSettingsFemGmshImp::populateLogVerbosity()
 
     // set default index
     auto hGrp = ui->cb_log_verbosity->getWindowParameter();
-    std::string current = hGrp->GetASCII(ui->cb_log_verbosity->entryName(), "3");
+    std::string current = hGrp->GetASCII(ui->cb_log_verbosity->entryName(), Fem::FemParams::defaultGmshLogVerbosity().c_str());
     int index = ui->cb_log_verbosity->findData(QByteArray::fromStdString(current));
     ui->cb_log_verbosity->setCurrentIndex(index);
 }

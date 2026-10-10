@@ -21,6 +21,10 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <QApplication>
 #include <QMessageBox>
@@ -153,9 +157,9 @@ struct ToolBarOptions
             "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
         ParameterGrp::handle commands = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
-        return {constraints->GetBool("UnifiedCoincident", true),
-                constraints->GetBool("AutoHorVer", true),
-                commands->GetBool("UnifiedLineCommands", true)};
+        return {constraints->GetBool("UnifiedCoincident", Sketcher::SketcherParams::defaultUnifiedCoincident()),
+                constraints->GetBool("AutoHorVer", Sketcher::SketcherParams::defaultAutoHorVer()),
+                commands->GetBool("UnifiedLineCommands", Sketcher::SketcherParams::defaultUnifiedLineCommands())};
     }
 
     bool operator==(const ToolBarOptions& other) const
@@ -211,8 +215,8 @@ void SketcherSettings::saveSettings()
     // Dimensioning constraints mode
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", true);
-    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool());
+    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools());
     bool singleTool = true;
     bool SeparatedTools = false;
     int index = ui->dimensioningMode->currentIndex();
@@ -304,8 +308,8 @@ void SketcherSettings::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-    bool singleTool = hGrp->GetBool("SingleDimensioningTool", true);
-    bool SeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+    bool singleTool = hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool());
+    bool SeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools());
     int index = SeparatedTools ? (singleTool ? 2 : 1) : 0;
     {
         QSignalBlocker sigblk(ui->dimensioningMode);
@@ -325,8 +329,8 @@ void SketcherSettings::loadSettings()
     ui->radiusDiameterMode->addItem(tr("Diameter"));
     ui->radiusDiameterMode->addItem(tr("Radius"));
 
-    bool Diameter = hGrp->GetBool("DimensioningDiameter", true);
-    bool Radius = hGrp->GetBool("DimensioningRadius", true);
+    bool Diameter = hGrp->GetBool("DimensioningDiameter", Sketcher::SketcherParams::defaultDimensioningDiameter());
+    bool Radius = hGrp->GetBool("DimensioningRadius", Sketcher::SketcherParams::defaultDimensioningRadius());
     index = Diameter ? (Radius ? 0 : 1) : 2;
     ui->radiusDiameterMode->setCurrentIndex(index);
 
@@ -335,8 +339,7 @@ void SketcherSettings::loadSettings()
     ui->autoScaleMode->addItem(tr("Always"));
     ui->autoScaleMode->addItem(tr("Never"));
     ui->autoScaleMode->addItem(tr("When no scale feature is visible"));
-    index = hGrp->GetInt("AutoScaleMode",
-                         static_cast<int>(AutoScaleMode::WhenNoScaleFeatureIsVisible));
+    index = hGrp->GetInt("AutoScaleMode", Sketcher::SketcherParams::defaultAutoScaleMode());
     ui->autoScaleMode->setCurrentIndex(index);
 
     hGrp = App::GetApplication().GetParameterGroupByPath(
@@ -346,7 +349,7 @@ void SketcherSettings::loadSettings()
     ui->ovpVisibility->addItem(tr("Dimensions only"));
     ui->ovpVisibility->addItem(tr("Position and dimensions"));
 
-    index = hGrp->GetInt("OnViewParameterVisibility", 1);
+    index = hGrp->GetInt("OnViewParameterVisibility", Sketcher::SketcherParams::defaultOnViewParameterVisibility());
     ui->ovpVisibility->setCurrentIndex(index);
 }
 
@@ -375,8 +378,8 @@ void SketcherSettings::resetSettingsToDefaults()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
     const ToolBarOptions previousToolBars = ToolBarOptions::read();
-    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", true);
-    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool());
+    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools());
 
     // the dimensioning tools on the tool bar
     hGrp->RemoveBool("SingleDimensioningTool");
@@ -399,8 +402,8 @@ void SketcherSettings::resetSettingsToDefaults()
     // the tool bars follow here
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-    if (previousSingleTool != hGrp->GetBool("SingleDimensioningTool", true)
-        || previousSeparatedTools != hGrp->GetBool("SeparatedDimensioningTools", false)
+    if (previousSingleTool != hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool())
+        || previousSeparatedTools != hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools())
         || !(ToolBarOptions::read() == previousToolBars)) {
         reinstallToolBars();
     }
@@ -490,13 +493,13 @@ void SketcherSettingsGrid::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
-    int pattern = hGrp->GetInt("GridLinePattern", 0xffff);
+    int pattern = hGrp->GetInt("GridLinePattern", Sketcher::SketcherParams::defaultGridLinePattern());
     int index = ui->gridLinePattern->findData(QVariant(pattern));
     if (index < 0) {
         index = 1;
     }
     ui->gridLinePattern->setCurrentIndex(index);
-    pattern = hGrp->GetInt("GridDivLinePattern", 0xffff);
+    pattern = hGrp->GetInt("GridDivLinePattern", Sketcher::SketcherParams::defaultGridDivLinePattern());
     index = ui->gridDivLinePattern->findData(QVariant(pattern));
     if (index < 0) {
         index = 0;
@@ -558,7 +561,7 @@ void SketcherSettingsDisplay::saveSettings()
     if (ui->fontBoxSketcherFontName->currentFont().family() != loadedFontFamily
         || !App::GetApplication()
                 .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                ->GetASCII("EditSketcherFontName", "")
+                ->GetASCII("EditSketcherFontName", Sketcher::SketcherParams::defaultEditSketcherFontName().c_str())
                 .empty()) {
         ui->fontBoxSketcherFontName->onSave();
     }
@@ -598,15 +601,23 @@ void SketcherSettingsDisplay::loadSettings()
     ui->fontBoxSketcherFontName->onRestore();
     loadedFontFamily = ui->fontBoxSketcherFontName->currentFont().family();
     onFontNameChanged(ui->fontBoxSketcherFontName->currentFont());
-    ui->EditSketcherFontSize->onRestore();
+    // Unset, or 0, both sizes are the application font's height: show
+    // that, not the number the form was drawn with
+    auto restoreFontHeightSize = [](Gui::PrefSpinBox* box) {
+        const int height = QApplication::fontMetrics().height();
+        box->setValue(height);
+        box->onRestore();
+        if (box->getWindowParameter()->GetInt(box->entryName(), height) <= 0) {
+            QSignalBlocker block(box);
+            box->setValue(height);
+        }
+    };
+    restoreFontHeightSize(ui->EditSketcherFontSize);
     ui->ConstraintIconLabelsPerLine->onRestore();
     ui->ConstraintIconLabelLines->onRestore();
     ui->ElementIconSize->onRestore();
     ui->axisTransparency->onRestore();
-    // Unset, a symbol is as high as the application font: show that, not
-    // the number the form was drawn with
-    ui->ConstraintSymbolSize->setValue(QApplication::fontMetrics().height());
-    ui->ConstraintSymbolSize->onRestore();
+    restoreFontHeightSize(ui->ConstraintSymbolSize);
     ui->viewScalingFactor->onRestore();
     ui->SegmentsPerGeometry->onRestore();
     ui->dialogOnDistanceConstraint->onRestore();
@@ -699,20 +710,20 @@ QColor SketcherSettingsDisplay::getSketcherBackgroundColor()
     auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
 
     uint32_t backgroundColor;
-    if (parameters->GetBool("Gradient", false) || parameters->GetBool("RadialGradient", false)) {
-        if (parameters->GetBool("UseBackgroundColorMid")) {
-            backgroundColor = parameters->GetUnsigned("BackgroundColor4", 0xFFFFFFFF);
+    if (parameters->GetBool("Gradient", Gui::ViewParams::defaultGradient()) || parameters->GetBool("RadialGradient", Gui::ViewParams::defaultRadialGradient())) {
+        if (parameters->GetBool("UseBackgroundColorMid", Gui::ViewParams::defaultUseBackgroundColorMid())) {
+            backgroundColor = parameters->GetUnsigned("BackgroundColor4", Gui::ViewParams::defaultBackgroundColor4());
         }
         else {
             // a gradient of two colours: their average, the background in
             // the middle of the view
-            backgroundColor = (((parameters->GetUnsigned("BackgroundColor2", 0xFFFFFFFF)) >> 8)
-                               + ((parameters->GetUnsigned("BackgroundColor3", 0xFFFFFFFF)) >> 8))
+            backgroundColor = (((parameters->GetUnsigned("BackgroundColor2", Gui::ViewParams::defaultBackgroundColor2())) >> 8)
+                               + ((parameters->GetUnsigned("BackgroundColor3", Gui::ViewParams::defaultBackgroundColor3())) >> 8))
                 << 7;
         }
     }
     else {
-        backgroundColor = parameters->GetUnsigned("BackgroundColor", 0xFFFFFFFF);
+        backgroundColor = parameters->GetUnsigned("BackgroundColor", Gui::ViewParams::defaultBackgroundColor());
     }
 
     return QColor((backgroundColor >> 24) & 0xFF,
@@ -723,7 +734,7 @@ QColor SketcherSettingsDisplay::getSketcherBackgroundColor()
 QColor SketcherSettingsDisplay::getSketcherConstraintColor()
 {
     auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
-    uint32_t constraintColor = parameters->GetUnsigned("ConstrainedDimColor", 0x000000FF);
+    uint32_t constraintColor = parameters->GetUnsigned("ConstrainedDimColor", Sketcher::SketcherParams::defaultConstrainedDimColor());
 
     return QColor((constraintColor >> 24) & 0xFF,
                   (constraintColor >> 16) & 0xFF,

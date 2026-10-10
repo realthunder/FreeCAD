@@ -56,7 +56,9 @@ class LineSet;
 class DashSet;
 
 //changes in direction of complex section line. also marks at arrow positions.
-class ChangePoint
+//Exported: the section line item makes them too, for a line that shows no
+//marks (QGISectionLine::onItemMoved).
+class TechDrawExport ChangePoint
 {
 public:
     ChangePoint(QPointF location, QPointF preDirection, QPointF postDirection);

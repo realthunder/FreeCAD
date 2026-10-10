@@ -155,14 +155,69 @@ std::string ParamRegistry::key(const char* path, const char* entry)
     return res;
 }
 
+const ParamInfo* ParamRegistry::insert(ParamInfo&& info)
+{
+    _infos.push_back(std::move(info));
+    const ParamInfo* ptr = &_infos.back();
+    _entries.push_back(ptr);
+    _index[key(ptr->path, ptr->entry)] = ptr;
+    return ptr;
+}
+
 void ParamRegistry::add(std::vector<ParamInfo>&& infos)
 {
     for (auto& info : infos) {
-        _infos.push_back(std::move(info));
-        const ParamInfo* ptr = &_infos.back();
-        _entries.push_back(ptr);
-        _index[key(ptr->path, ptr->entry)] = ptr;
+        // One description of a setting. Two generated classes can share a
+        // definition -- Part's and PartGui's PartParams do, for the four
+        // tessellation settings both read -- and a list would show the
+        // setting once for each. The first stands: the library loaded first.
+        if (find(info.path, info.entry)) {
+            continue;
+        }
+        insert(std::move(info));
     }
+}
+
+const char* ParamRegistry::keep(const std::string& text)
+{
+    if (text.empty()) {
+        return "";
+    }
+    _strings.push_back(text);
+    return _strings.back().c_str();
+}
+
+const ParamInfo* ParamRegistry::add(const ParamSpec& spec)
+{
+    std::string def;
+    if (spec.path.empty() || spec.entry.empty()
+        || !normalizeValue(spec.type, spec.defaultValue, def)
+        || find(spec.path.c_str(), spec.entry.c_str())) {
+        return nullptr;
+    }
+    // the constructor copies the default, the one string an entry owns
+    ParamInfo info(keep(spec.nameSpace),
+                   keep(spec.className),
+                   keep(spec.path),
+                   keep(spec.name.empty() ? spec.entry : spec.name),
+                   keep(spec.entry),
+                   spec.type,
+                   ParamInfo::Default(def.c_str()));
+    info.setTitle(keep(spec.title))
+        .setDoc(keep(spec.doc))
+        .setOnChange(spec.onChange)
+        .setProxy(keep(spec.proxy))
+        .setRange(spec.minimum, spec.maximum, spec.step, spec.decimals)
+        .setTransparency(spec.transparency);
+    std::vector<ParamInfo::Item> items;
+    items.reserve(spec.items.size());
+    for (const auto& item : spec.items) {
+        items.push_back({keep(item.text),
+                         keep(item.tooltip),
+                         spec.comboDataIsString ? keep(item.data) : nullptr});
+    }
+    info.setItems(std::move(items), spec.comboDataIsString, spec.translateItems);
+    return insert(std::move(info));
 }
 
 const ParamInfo* ParamRegistry::find(const char* path, const char* entry) const
@@ -227,6 +282,56 @@ static ParameterGrp::handle groupOf(const ParamInfo& info)
     return App::GetApplication().GetParameterGroupByPath(info.path);
 }
 
+namespace
+{
+
+// A value read from text, by type: what setValue() stores and
+// normalizeValue() spells out again.
+struct ParsedValue
+{
+    bool boolean = false;
+    long integer = 0;
+    unsigned long natural = 0;
+    double real = 0.0;
+};
+
+bool parseValue(ParamInfo::Type type, const std::string& value, ParsedValue& res)
+{
+    const char* text = value.c_str();
+    char* end = nullptr;
+    errno = 0;
+    switch (type) {
+        case ParamInfo::Bool: {
+            std::string v = toLower(value);
+            if (v == "true" || v == "1" || v == "yes" || v == "on") {
+                res.boolean = true;
+            }
+            else if (v == "false" || v == "0" || v == "no" || v == "off") {
+                res.boolean = false;
+            }
+            else {
+                return false;
+            }
+            return true;
+        }
+        case ParamInfo::Int:
+            res.integer = std::strtol(text, &end, 0);
+            break;
+        case ParamInfo::UInt:
+        case ParamInfo::Hex:
+            res.natural = std::strtoul(text, &end, 0);
+            break;
+        case ParamInfo::Float:
+            res.real = std::strtod(text, &end);
+            break;
+        case ParamInfo::String:
+            return true;
+    }
+    return end != text && !*end && !errno;
+}
+
+}  // namespace
+
 std::string ParamRegistry::getValue(const ParamInfo& info) const
 {
     auto hGrp = groupOf(info);
@@ -264,56 +369,61 @@ std::string ParamRegistry::getValue(const ParamInfo& info) const
 
 bool ParamRegistry::setValue(const ParamInfo& info, const std::string& value) const
 {
+    ParsedValue v;
+    if (!parseValue(info.type, value, v)) {
+        return false;
+    }
     auto hGrp = groupOf(info);
-    const char* text = value.c_str();
-    char* end = nullptr;
-    errno = 0;
     switch (info.type) {
-        case ParamInfo::Bool: {
-            std::string v = toLower(value);
-            bool b;
-            if (v == "true" || v == "1" || v == "yes" || v == "on") {
-                b = true;
-            }
-            else if (v == "false" || v == "0" || v == "no" || v == "off") {
-                b = false;
-            }
-            else {
-                return false;
-            }
-            hGrp->SetBool(info.entry, b);
-            return true;
-        }
-        case ParamInfo::Int: {
-            long v = std::strtol(text, &end, 0);
-            if (end == text || *end || errno) {
-                return false;
-            }
-            hGrp->SetInt(info.entry, v);
-            return true;
-        }
+        case ParamInfo::Bool:
+            hGrp->SetBool(info.entry, v.boolean);
+            break;
+        case ParamInfo::Int:
+            hGrp->SetInt(info.entry, v.integer);
+            break;
         case ParamInfo::UInt:
-        case ParamInfo::Hex: {
-            unsigned long v = std::strtoul(text, &end, 0);
-            if (end == text || *end || errno) {
-                return false;
-            }
-            hGrp->SetUnsigned(info.entry, v);
-            return true;
-        }
-        case ParamInfo::Float: {
-            double v = std::strtod(text, &end);
-            if (end == text || *end || errno) {
-                return false;
-            }
-            hGrp->SetFloat(info.entry, v);
-            return true;
-        }
+        case ParamInfo::Hex:
+            hGrp->SetUnsigned(info.entry, v.natural);
+            break;
+        case ParamInfo::Float:
+            hGrp->SetFloat(info.entry, v.real);
+            break;
         case ParamInfo::String:
             hGrp->SetASCII(info.entry, value);
+            break;
+    }
+    return true;
+}
+
+bool ParamRegistry::normalizeValue(ParamInfo::Type type, const std::string& value, std::string& res)
+{
+    ParsedValue v;
+    if (!parseValue(type, value, v)) {
+        return false;
+    }
+    char buf[64];
+    switch (type) {
+        case ParamInfo::Bool:
+            res = v.boolean ? "true" : "false";
+            return true;
+        case ParamInfo::Int:
+            std::snprintf(buf, sizeof(buf), "%ld", v.integer);
+            break;
+        case ParamInfo::UInt:
+            std::snprintf(buf, sizeof(buf), "%lu", v.natural);
+            break;
+        case ParamInfo::Hex:
+            std::snprintf(buf, sizeof(buf), "0x%08lX", v.natural);
+            break;
+        case ParamInfo::Float:
+            std::snprintf(buf, sizeof(buf), "%.15g", v.real);
+            break;
+        case ParamInfo::String:
+            res = value;
             return true;
     }
-    return false;
+    res = buf;
+    return true;
 }
 
 void ParamRegistry::reset(const ParamInfo& info) const

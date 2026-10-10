@@ -416,6 +416,8 @@ SET(Document_CPP_SRCS
     StringIDPyImp.cpp
     Document.cpp
     DocumentParams.cpp
+    UnitsParams.cpp
+    SandboxParams.cpp
     FileBlobManager.cpp
     FileSet.cpp
     GroupParams.cpp
@@ -494,6 +496,8 @@ SET(Document_HPP_SRCS
     StringHasher.h
     Document.h
     DocumentParams.h
+    UnitsParams.h
+    SandboxParams.h
     FileBlobManager.h
     FileSet.h
     GroupParams.h

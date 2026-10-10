@@ -73,6 +73,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NormalsFromUVNodes
+    ///
+    /// Take the shading normals of a shape from its exact surface instead
+    /// of from the display triangles. Gives smoother shading of curved
+    /// faces.
     static const bool & getNormalsFromUVNodes();
     static const bool & defaultNormalsFromUVNodes();
     static void removeNormalsFromUVNodes();
@@ -83,6 +87,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TwoSideRendering
+    ///
+    /// Light new shapes from both sides, so the back of a face looks like
+    /// the front. When off the back shows the backlight colour or black.
     static const bool & getTwoSideRendering();
     static const bool & defaultTwoSideRendering();
     static void removeTwoSideRendering();
@@ -93,6 +100,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumDeviation
+    ///
+    /// Lower limit of the tessellation deviation of shapes, in percent of
+    /// the object size. Objects asking for a finer mesh are drawn with
+    /// this value instead.
     static const double & getMinimumDeviation();
     static const double & defaultMinimumDeviation();
     static void removeMinimumDeviation();
@@ -104,6 +115,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshDeviation
+    ///
+    /// Accuracy of the mesh that shapes are drawn with, as the largest
+    /// deviation in percent of the object size. Lower is finer and
+    /// slower. Sets the Deviation of new objects; a change is applied to
+    /// all open objects.
     static const double & getMeshDeviation();
     static const double & defaultMeshDeviation();
     static void removeMeshDeviation();
@@ -115,6 +131,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshAngularDeflection
+    ///
+    /// Largest angle between neighbouring segments of the mesh that
+    /// shapes are drawn with, in degrees. Lower is smoother and slower.
+    /// Sets the Angular Deflection of new objects; a change is applied to
+    /// all open objects.
     static const double & getMeshAngularDeflection();
     static const double & defaultMeshAngularDeflection();
     static void removeMeshAngularDeflection();
@@ -126,6 +147,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumAngularDeflection
+    ///
+    /// Lower limit of the angular deflection used to mesh shapes, in
+    /// degrees. Objects asking for a smaller angle are drawn with this
+    /// value instead.
     static const double & getMinimumAngularDeflection();
     static const double & defaultMinimumAngularDeflection();
     static void removeMinimumAngularDeflection();
@@ -137,6 +162,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter OverrideTessellation
+    ///
+    /// Draw every shape with the deviation and angular deflection set
+    /// here, ignoring the values stored in each object. When off a change
+    /// of those two settings is written into the open objects instead.
     static const bool & getOverrideTessellation();
     static const bool & defaultOverrideTessellation();
     static void removeOverrideTessellation();
@@ -148,6 +177,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapFaceColor
+    ///
+    /// Let new shapes take their face colours from the shapes they were
+    /// made from. Turn off to give all faces of an object one colour.
     static const bool & getMapFaceColor();
     static const bool & defaultMapFaceColor();
     static void removeMapFaceColor();
@@ -158,6 +190,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapLineColor
+    ///
+    /// Let new shapes take their edge colours from the shapes they were
+    /// made from. Turn off to give all edges of an object one colour.
     static const bool & getMapLineColor();
     static const bool & defaultMapLineColor();
     static void removeMapLineColor();
@@ -168,6 +203,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapPointColor
+    ///
+    /// Let new shapes take their vertex colours from the shapes they were
+    /// made from. Turn off to give all vertices of an object one colour.
     static const bool & getMapPointColor();
     static const bool & defaultMapPointColor();
     static void removeMapPointColor();
@@ -178,6 +216,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapTransparency
+    ///
+    /// Let new shapes take the transparency of their faces from the
+    /// shapes they were made from. Turn off for one transparency per
+    /// object.
     static const bool & getMapTransparency();
     static const bool & defaultMapTransparency();
     static void removeMapTransparency();
@@ -188,6 +230,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoGridScale
+    ///
+    /// Double or halve the grid size of a sketch being edited as the view
+    /// is zoomed, so that the grid keeps a similar spacing on screen.
     static const bool & getAutoGridScale();
     static const bool & defaultAutoGridScale();
     static void removeAutoGridScale();
@@ -198,6 +243,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewAddColor
+    ///
+    /// Colour of the preview of a feature that adds material. Its alpha
+    /// part sets how transparent the preview is.
     static const unsigned long & getPreviewAddColor();
     static const unsigned long & defaultPreviewAddColor();
     static void removePreviewAddColor();
@@ -208,6 +256,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewSubColor
+    ///
+    /// Colour of the preview of a feature that removes material. Its
+    /// alpha part sets how transparent the preview is.
     static const unsigned long & getPreviewSubColor();
     static const unsigned long & defaultPreviewSubColor();
     static void removePreviewSubColor();
@@ -218,6 +269,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewDressColor
+    ///
+    /// Colour of the preview of a dress-up feature such as a fillet or a
+    /// chamfer. Its alpha part sets how transparent the preview is.
     static const unsigned long & getPreviewDressColor();
     static const unsigned long & defaultPreviewDressColor();
     static void removePreviewDressColor();
@@ -228,6 +282,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewIntersectColor
+    ///
+    /// Colour of the preview of a feature that keeps what it has in
+    /// common with the body. Its alpha part sets how transparent the
+    /// preview is.
     static const unsigned long & getPreviewIntersectColor();
     static const unsigned long & defaultPreviewIntersectColor();
     static void removePreviewIntersectColor();
@@ -238,6 +296,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewOnEdit
+    ///
+    /// Show a preview of the result while a PartDesign feature is edited,
+    /// and hold back the recompute of the feature until the preview is
+    /// turned off or the edit ends.
     static const bool & getPreviewOnEdit();
     static const bool & defaultPreviewOnEdit();
     static void removePreviewOnEdit();
@@ -248,6 +310,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewWithTransparency
+    ///
+    /// Draw the preview of an edited PartDesign feature transparent. When
+    /// off it is drawn opaque.
     static const bool & getPreviewWithTransparency();
     static const bool & defaultPreviewWithTransparency();
     static void removePreviewWithTransparency();
@@ -258,6 +323,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditOnTop
+    ///
+    /// Draw the PartDesign feature being edited on top of everything else
+    /// in the 3D view.
     static const bool & getEditOnTop();
     static const bool & defaultEditOnTop();
     static void removeEditOnTop();
@@ -268,6 +336,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditRecomputeWait
+    ///
+    /// Delay between a change in a PartDesign task panel and the update
+    /// of the feature, in milliseconds. A third of it is used while the
+    /// preview is shown.
     static const long & getEditRecomputeWait();
     static const long & defaultEditRecomputeWait();
     static void removeEditRecomputeWait();
@@ -278,6 +350,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AdjustCameraForNewFeature
+    ///
+    /// Move the camera to bring a newly created feature into view. Used
+    /// by Part offset and thickness, by PartDesign features made from a
+    /// selected profile, and by new bodies.
     static const bool & getAdjustCameraForNewFeature();
     static const bool & defaultAdjustCameraForNewFeature();
     static void removeAdjustCameraForNewFeature();
@@ -288,6 +364,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultDatumColor
+    ///
+    /// Colour and transparency of new datum planes, lines and points, of
+    /// shape binders, of sub-shape binders shown in binder style, and of
+    /// PartDesign extrusions: golden yellow, mostly see-through, unless
+    /// set.
     static const unsigned long & getDefaultDatumColor();
     static const unsigned long & defaultDefaultDatumColor();
     static void removeDefaultDatumColor();
@@ -311,6 +392,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RespectSystemDPI
+    ///
+    /// Scale the line width and point size of shapes by the pixel ratio
+    /// of the display. May look wrong with monitors of different scaling.
     static const bool & getRespectSystemDPI();
     static const bool & defaultRespectSystemDPI();
     static void removeRespectSystemDPI();
@@ -338,6 +422,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionPickThreshold
+    ///
+    /// Size of a shape above which picking first narrows the search with
+    /// bounding boxes, counted in face, edge or point indices. Smaller
+    /// shapes are tested whole. 0 or less always tests everything.
     static const long & getSelectionPickThreshold();
     static const long & defaultSelectionPickThreshold();
     static void removeSelectionPickThreshold();
@@ -348,6 +436,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionPickThreshold2
+    ///
+    /// Size above which a single face or edge gets a search structure of
+    /// its own for picking: the triangles of a face, the points of an
+    /// edge. 0 or less turns it off for faces.
     static const long & getSelectionPickThreshold2();
     static const long & defaultSelectionPickThreshold2();
     static void removeSelectionPickThreshold2();
@@ -359,21 +451,323 @@ public:
     //@{
     /// Accessor for parameter SelectionPickRTree
     ///
-    /// Pick with a per-triangle R-tree instead of walking every
-    /// triangle of a part. Without it the only spatial filter is the
-    /// per-part bounding box, so a ray that reaches a dense part
-    /// sends all of its triangles through Coin's primitive callbacks:
-    /// on an imported mesh (one part carrying everything) a selecting
-    /// click cost 116 ms, and 18 ms with this on. The tree is built
-    /// lazily, per part, on the first pick that reaches it -- that
-    /// first pick pays about 15 ms more, every one after it is the
-    /// cheap one. Parts smaller than SelectionPickThreshold2 are
-    /// picked directly either way.
+    /// Pick with a spatial index of a part's triangles instead of testing
+    /// every triangle. Much faster on dense parts; the index is built on the
+    /// first pick that reaches a part. Parts smaller than
+    /// SelectionPickThreshold2 are picked directly.
     static const bool & getSelectionPickRTree();
     static const bool & defaultSelectionPickRTree();
     static void removeSelectionPickRTree();
     static void setSelectionPickRTree(const bool &v);
     static const char *docSelectionPickRTree();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Dimensions3dColor
+    ///
+    /// Colour of the direct distance of a Part measurement in the 3D view.
+    /// The measurements shown follow a change.
+    static const unsigned long & getDimensions3dColor();
+    static const unsigned long & defaultDimensions3dColor();
+    static void removeDimensions3dColor();
+    static void setDimensions3dColor(const unsigned long &v);
+    static const char *docDimensions3dColor();
+    static void onDimensions3dColorChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsDeltaColor
+    ///
+    /// Colour of the X, Y and Z components of a Part distance measurement
+    /// in the 3D view. The measurements shown follow a change.
+    static const unsigned long & getDimensionsDeltaColor();
+    static const unsigned long & defaultDimensionsDeltaColor();
+    static void removeDimensionsDeltaColor();
+    static void setDimensionsDeltaColor(const unsigned long &v);
+    static const char *docDimensionsDeltaColor();
+    static void onDimensionsDeltaColorChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsAngularColor
+    ///
+    /// Colour of a Part angle measurement in the 3D view. The
+    /// measurements shown follow a change.
+    static const unsigned long & getDimensionsAngularColor();
+    static const unsigned long & defaultDimensionsAngularColor();
+    static void removeDimensionsAngularColor();
+    static void setDimensionsAngularColor(const unsigned long &v);
+    static const char *docDimensionsAngularColor();
+    static void onDimensionsAngularColorChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontSize
+    ///
+    /// Size of the text of Part measurements in the 3D view. The
+    /// measurements shown follow a change.
+    static const long & getDimensionsFontSize();
+    static const long & defaultDimensionsFontSize();
+    static void removeDimensionsFontSize();
+    static void setDimensionsFontSize(const long &v);
+    static const char *docDimensionsFontSize();
+    static void onDimensionsFontSizeChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontName
+    ///
+    /// Font of the text of Part measurements in the 3D view; defaultFont
+    /// is the 3D view's own. The measurements shown follow a change.
+    static const std::string & getDimensionsFontName();
+    static const std::string & defaultDimensionsFontName();
+    static void removeDimensionsFontName();
+    static void setDimensionsFontName(const std::string &v);
+    static const char *docDimensionsFontName();
+    static void onDimensionsFontNameChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontStyleBold
+    ///
+    /// Draw the text of Part measurements in the 3D view in bold.
+    static const bool & getDimensionsFontStyleBold();
+    static const bool & defaultDimensionsFontStyleBold();
+    static void removeDimensionsFontStyleBold();
+    static void setDimensionsFontStyleBold(const bool &v);
+    static const char *docDimensionsFontStyleBold();
+    static void onDimensionsFontStyleBoldChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontStyleItalic
+    ///
+    /// Draw the text of Part measurements in the 3D view in italic.
+    static const bool & getDimensionsFontStyleItalic();
+    static const bool & defaultDimensionsFontStyleItalic();
+    static void removeDimensionsFontStyleItalic();
+    static void setDimensionsFontStyleItalic(const bool &v);
+    static const char *docDimensionsFontStyleItalic();
+    static void onDimensionsFontStyleItalicChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryAutoRun
+    ///
+    /// Run the geometry check as soon as its panel opens, without the Run
+    /// Check button.
+    static const bool & getCheckGeometryAutoRun();
+    static const bool & defaultCheckGeometryAutoRun();
+    static void removeCheckGeometryAutoRun();
+    static void setCheckGeometryAutoRun(const bool &v);
+    static const char *docCheckGeometryAutoRun();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryRunBOPCheck
+    ///
+    /// Run the Boolean operation check on shapes the basic check finds
+    /// valid. It finds more, and can be very slow.
+    static const bool & getCheckGeometryRunBOPCheck();
+    static const bool & defaultCheckGeometryRunBOPCheck();
+    static void removeCheckGeometryRunBOPCheck();
+    static void setCheckGeometryRunBOPCheck(const bool &v);
+    static const char *docCheckGeometryRunBOPCheck();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryRunSingleThreaded
+    ///
+    /// Run the Boolean operation check of the geometry check in a single
+    /// thread: slower, and more stable.
+    static const bool & getCheckGeometryRunSingleThreaded();
+    static const bool & defaultCheckGeometryRunSingleThreaded();
+    static void removeCheckGeometryRunSingleThreaded();
+    static void setCheckGeometryRunSingleThreaded(const bool &v);
+    static const char *docCheckGeometryRunSingleThreaded();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryLogErrors
+    ///
+    /// Write the errors the geometry check finds to the report view.
+    static const bool & getCheckGeometryLogErrors();
+    static const bool & defaultCheckGeometryLogErrors();
+    static void removeCheckGeometryLogErrors();
+    static void setCheckGeometryLogErrors(const bool &v);
+    static const char *docCheckGeometryLogErrors();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryExpandShapeContent
+    ///
+    /// Open the shape content of the geometry check's result when it is
+    /// shown.
+    static const bool & getCheckGeometryExpandShapeContent();
+    static const bool & defaultCheckGeometryExpandShapeContent();
+    static void removeCheckGeometryExpandShapeContent();
+    static void setCheckGeometryExpandShapeContent(const bool &v);
+    static const char *docCheckGeometryExpandShapeContent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryAdvancedShapeContent
+    ///
+    /// Show more about the shape in the geometry check's shape content.
+    static const bool & getCheckGeometryAdvancedShapeContent();
+    static const bool & defaultCheckGeometryAdvancedShapeContent();
+    static void removeCheckGeometryAdvancedShapeContent();
+    static void setCheckGeometryAdvancedShapeContent(const bool &v);
+    static const char *docCheckGeometryAdvancedShapeContent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryArgumentTypeMode
+    ///
+    /// Boolean operation check: look for shapes of a kind the operation
+    /// cannot take.
+    static const bool & getCheckGeometryArgumentTypeMode();
+    static const bool & defaultCheckGeometryArgumentTypeMode();
+    static void removeCheckGeometryArgumentTypeMode();
+    static void setCheckGeometryArgumentTypeMode(const bool &v);
+    static const char *docCheckGeometryArgumentTypeMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometrySelfInterMode
+    ///
+    /// Boolean operation check: look for shapes that intersect themselves.
+    static const bool & getCheckGeometrySelfInterMode();
+    static const bool & defaultCheckGeometrySelfInterMode();
+    static void removeCheckGeometrySelfInterMode();
+    static void setCheckGeometrySelfInterMode(const bool &v);
+    static const char *docCheckGeometrySelfInterMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometrySmallEdgeMode
+    ///
+    /// Boolean operation check: look for edges that are too small.
+    static const bool & getCheckGeometrySmallEdgeMode();
+    static const bool & defaultCheckGeometrySmallEdgeMode();
+    static void removeCheckGeometrySmallEdgeMode();
+    static void setCheckGeometrySmallEdgeMode(const bool &v);
+    static const char *docCheckGeometrySmallEdgeMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryRebuildFaceMode
+    ///
+    /// Boolean operation check: look for faces that cannot be rebuilt.
+    static const bool & getCheckGeometryRebuildFaceMode();
+    static const bool & defaultCheckGeometryRebuildFaceMode();
+    static void removeCheckGeometryRebuildFaceMode();
+    static void setCheckGeometryRebuildFaceMode(const bool &v);
+    static const char *docCheckGeometryRebuildFaceMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryContinuityMode
+    ///
+    /// Boolean operation check: look for edges that are not continuous.
+    static const bool & getCheckGeometryContinuityMode();
+    static const bool & defaultCheckGeometryContinuityMode();
+    static void removeCheckGeometryContinuityMode();
+    static void setCheckGeometryContinuityMode(const bool &v);
+    static const char *docCheckGeometryContinuityMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryTangentMode
+    ///
+    /// Boolean operation check: look for shapes that only touch.
+    static const bool & getCheckGeometryTangentMode();
+    static const bool & defaultCheckGeometryTangentMode();
+    static void removeCheckGeometryTangentMode();
+    static void setCheckGeometryTangentMode(const bool &v);
+    static const char *docCheckGeometryTangentMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryMergeVertexMode
+    ///
+    /// Boolean operation check: look for vertices that should be one.
+    static const bool & getCheckGeometryMergeVertexMode();
+    static const bool & defaultCheckGeometryMergeVertexMode();
+    static void removeCheckGeometryMergeVertexMode();
+    static void setCheckGeometryMergeVertexMode(const bool &v);
+    static const char *docCheckGeometryMergeVertexMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryMergeEdgeMode
+    ///
+    /// Boolean operation check: look for edges that should be one.
+    static const bool & getCheckGeometryMergeEdgeMode();
+    static const bool & defaultCheckGeometryMergeEdgeMode();
+    static void removeCheckGeometryMergeEdgeMode();
+    static void setCheckGeometryMergeEdgeMode(const bool &v);
+    static const char *docCheckGeometryMergeEdgeMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryCurveOnSurfaceMode
+    ///
+    /// Boolean operation check: look for edges whose curve on a face does
+    /// not follow the edge.
+    static const bool & getCheckGeometryCurveOnSurfaceMode();
+    static const bool & defaultCheckGeometryCurveOnSurfaceMode();
+    static void removeCheckGeometryCurveOnSurfaceMode();
+    static void setCheckGeometryCurveOnSurfaceMode(const bool &v);
+    static const char *docCheckGeometryCurveOnSurfaceMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ParametricRefine
+    ///
+    /// Refine Shape makes a parametric Refine feature that follows its
+    /// source. When off it makes a plain copy of the refined shape.
+    static const bool & getParametricRefine();
+    static const bool & defaultParametricRefine();
+    static void removeParametricRefine();
+    static void setParametricRefine(const bool &v);
+    static const char *docParametricRefine();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AddBaseObjectName
+    ///
+    /// Extrude and Scale label their result with the name of the object
+    /// it was made from.
+    static const bool & getAddBaseObjectName();
+    static const bool & defaultAddBaseObjectName();
+    static void removeAddBaseObjectName();
+    static void setAddBaseObjectName(const bool &v);
+    static const char *docAddBaseObjectName();
     //@}
 
 // Auto generated code (Tools/params_utils.py:179)

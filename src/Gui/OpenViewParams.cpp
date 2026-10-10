@@ -45,6 +45,7 @@ public:
     std::string DocViewTarget;
     std::string UtilityTarget;
     std::string SplitDirection;
+    long MinimumCellSize;
 
     // Auto generated code (Tools/params_utils.py:254)
     OpenViewParamsP() {
@@ -59,6 +60,8 @@ public:
         funcs["UtilityTarget"] = &OpenViewParamsP::updateUtilityTarget;
         SplitDirection = this->handle->GetASCII("SplitDirection", "Auto");
         funcs["SplitDirection"] = &OpenViewParamsP::updateSplitDirection;
+        MinimumCellSize = this->handle->GetInt("MinimumCellSize", 300);
+        funcs["MinimumCellSize"] = &OpenViewParamsP::updateMinimumCellSize;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -90,6 +93,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSplitDirection(OpenViewParamsP *self) {
         self->SplitDirection = self->handle->GetASCII("SplitDirection", "Auto");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMinimumCellSize(OpenViewParamsP *self) {
+        self->MinimumCellSize = self->handle->GetInt("MinimumCellSize", 300);
     }
 };
 
@@ -125,6 +132,15 @@ static const App::ParamRegistry::Registrar _OpenViewParamsRegistrar({
         .setDoc("Which way a cell is divided when a view opens in a split")
         .setProxy("ComboBox")
         .setItems({{"Along the longer side", "", "Auto"}, {"To the right", "", "Right"}, {"Below", "", "Down"}}, true, true),
+    App::ParamInfo("Gui", "OpenViewParams", "User parameter:BaseApp/Preferences/View/OpenView", "MinimumCellSize", "MinimumCellSize", App::ParamInfo::Int, 300)
+        .setTitle("Minimum view cell size")
+        .setDoc("The least width and height, in pixels, of a cell of a split view.\n"
+"A split that would leave a cell smaller than this -- either half of\n"
+"the cell divided -- is not made, and says so in the report view; a\n"
+"view opening by itself goes to a tab instead. A border dragged\n"
+"stops there too, up to 400 by 300. 0 for no limit.")
+        .setProxy("SpinBox")
+        .setRange(0, 2000, 10, 0),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -244,5 +260,37 @@ void OpenViewParams::setSplitDirection(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void OpenViewParams::removeSplitDirection() {
     instance()->handle->RemoveASCII("SplitDirection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *OpenViewParams::docMinimumCellSize() {
+    return QT_TRANSLATE_NOOP("OpenViewParams",
+"The least width and height, in pixels, of a cell of a split view.\n"
+"A split that would leave a cell smaller than this -- either half of\n"
+"the cell divided -- is not made, and says so in the report view; a\n"
+"view opening by itself goes to a tab instead. A border dragged\n"
+"stops there too, up to 400 by 300. 0 for no limit.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & OpenViewParams::getMinimumCellSize() {
+    return instance()->MinimumCellSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & OpenViewParams::defaultMinimumCellSize() {
+    const static long def = 300;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void OpenViewParams::setMinimumCellSize(const long &v) {
+    instance()->handle->SetInt("MinimumCellSize",v);
+    instance()->MinimumCellSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void OpenViewParams::removeMinimumCellSize() {
+    instance()->handle->RemoveInt("MinimumCellSize");
 }
 //[[[end]]]

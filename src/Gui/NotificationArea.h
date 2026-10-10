@@ -26,8 +26,12 @@
 #include <QPushButton>
 #include <QString>
 
+#include <functional>
 #include <map>
 #include <memory>
+#include <string>
+
+#include <fastsignals/signal.h>
 
 #include <Base/Observer.h>
 #include <Base/Parameter.h>
@@ -46,18 +50,19 @@ class NotificationArea: public QPushButton
     };
 
 public:
-    class ParameterObserver: public ParameterGrp::ObserverType
+    /// Applies the notification area's settings: each of them when the area
+    /// is made, and the one NotificationAreaParams says has changed.
+    class ParameterObserver
     {
     public:
         explicit ParameterObserver(NotificationArea* notificationarea);
-        ~ParameterObserver() override;
 
-        void OnChange(Base::Subject<const char*>& rCaller, const char* sReason) override;
+        void onChange(const char* name);
 
     private:
         NotificationArea* notificationArea;
-        ParameterGrp::handle hGrp;
-        std::map<std::string, std::function<void(const std::string& string)>> parameterMap;
+        fastsignals::scoped_connection connection;
+        std::map<std::string, std::function<void()>> parameterMap;
     };
 
     NotificationArea(QWidget* parent = nullptr);

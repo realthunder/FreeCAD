@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include "PartDesignParams.h"
 #include "ShapeBinder.h"
 #ifndef _PreComp_
 # include <BRepAlgoAPI_Common.hxx>
@@ -63,7 +65,7 @@ Boolean::Boolean()
     ADD_PROPERTY_TYPE(Refine,(0),"Part Design",(App::PropertyType)(App::Prop_None),"Refine shape (clean up redundant edges) after adding/subtracting");
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
-    this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+    this->Refine.setValue(PartDesign::PartDesignParams::getRefineModel());
     ADD_PROPERTY_TYPE(FuzzyTolerance, (0.0), "Part Design", App::Prop_None,
                       FeatureAddSub::fuzzyToleranceDoc);
     FuzzyTolerance.setConstraints(&FeatureAddSub::fuzzyToleranceRange);

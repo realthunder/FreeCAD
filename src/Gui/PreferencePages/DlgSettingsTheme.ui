@@ -277,9 +277,9 @@ draws straight from it.</string>
         </property>
         <property name="color" stdset="0">
          <color>
-          <red>85</red>
-          <green>123</green>
-          <blue>182</blue>
+          <red>64</red>
+          <green>92</green>
+          <blue>137</blue>
          </color>
         </property>
         <property name="prefEntry" stdset="0">
@@ -304,9 +304,9 @@ draws straight from it.</string>
         </property>
         <property name="color" stdset="0">
          <color>
-          <red>85</red>
-          <green>123</green>
-          <blue>182</blue>
+          <red>75</red>
+          <green>108</green>
+          <blue>160</blue>
          </color>
         </property>
         <property name="prefEntry" stdset="0">

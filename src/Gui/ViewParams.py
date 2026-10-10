@@ -51,7 +51,9 @@ ParamHiddenLineOverrideColor = ParamBool(
 
 ParamHiddenLineOverrideBackground = ParamBool(
         'HiddenLineOverrideBackground', True,
-        title='Override background color')
+        title='Override background color',
+                                        doc = "Replace the background of a 3D view with the hidden line background\n"
+                                              "colour while the hidden line display style is active.")
 
 ParamHiddenLineOverrideTransparency = ParamBool(
         'HiddenLineOverrideTransparency', True,
@@ -158,8 +160,14 @@ Params = [
         doc="Host views in a split-capable view area, so that several views\n"
             "can share one tab side by side. Off, every view gets its own tab\n"
             "and the split placement choices below do not apply."),
-    ParamBool('UseNewSelection', True),
-    ParamBool('UseSelectionRoot', True),
+    ParamBool('UseNewSelection', True,
+        doc = "Highlight selection and preselection through the selection root of\n"
+              "the 3D view, which allows picking sub-elements and objects inside\n"
+              "links. When off, only objects that ask for it are handled that way."),
+    ParamBool('UseSelectionRoot', True,
+        doc = "Give the visual copy a link makes of its linked object a selection\n"
+              "root of its own, so that each link is highlighted separately. When\n"
+              "off, a plain group without render caching is used."),
     ParamBool('EnableSelection', True,
         title='Enable selection',
         doc='Enable selection, highlighted with specified color'),
@@ -169,9 +177,9 @@ Params = [
     ParamInt('RenderCache', 3, on_change=True,
         doc="Which render path draws a 3D view: 0 auto, 1 distributed,\n"
         "2 centralized Coin caching, 3 the render cache that feeds the\n"
-        "render engine. NOT a user setting -- the path is chosen at\n"
-        "startup (RenderParams::selectRenderPath), which overrides\n"
-        "whatever a config carries. Set it at runtime to compare paths."),
+        "render engine. Looked at only under the render type 'Legacy'\n"
+        "(View/Render/Type): with the render engine the program draws\n"
+        "by 3 whatever this holds. Not on a preferences page."),
     ParamBool('UnifiedCanvas', False, on_change=True,
         title='Unified split-view canvas',
         doc="Draw all the 3D cells of a split view (ViewArea) into ONE\n"
@@ -180,29 +188,67 @@ Params = [
         "one copy of the GPU scene serve every cell (the browser tier's\n"
         "model). Experimental; needs the render engine (render cache\n"
         "mode 3). See docs/SplitViews.md sec 13."),
-    ParamBool('RandomColor', False),
-    ParamHex('BoundingBoxColor', 0xffffffff),
-    ParamHex('AnnotationTextColor', 0xffffffff),
-    ParamHex('HighlightColor', 0xe1e114ff,
+    ParamBool('RandomColor', False,
+        doc = "Give every new object a random shape colour instead of the default\n"
+              "shape colour."),
+    ParamHex('BoundingBoxColor', 0xffffffff,
+        doc = "Colour of the bounding box drawn for an object that has its bounding\n"
+              "box display turned on."),
+    ParamHex('AnnotationTextColor', 0xffffffff,
+        title = 'Annotation Text Color',
+        doc = "Default text colour of new annotation objects."),
+    ParamHex('CursorCrosshairColor', 0xffffffff, proxy=ParamColor(transparency=False),
+        title = 'Crosshair cursor colour',
+        doc = "Colour of the crosshair the drawing tools of the Sketcher put in\n"
+              "place of the mouse pointer. The Sketcher's Appearance page shows\n"
+              "it. Takes effect at the next tool started."),
+    ParamHex('HighlightColor', 0xe1e114ff, proxy=ParamColor(transparency=False),
         doc='Pre-selection highlight color', no_label=True),
-    ParamHex('SelectionColor', 0x1cad1cff,
+    ParamHex('SelectionColor', 0x1cad1cff, proxy=ParamColor(transparency=False),
         doc='Selection highlight color', no_label=True),
-    ParamInt('MarkerSize', 9),
-    ParamHex('DefaultLinkColor', 0x66FFFFFF),
-    ParamHex('DefaultShapeLineColor', 0x191919FF),
-    ParamHex('DefaultShapeVertexColor', 0x191919FF),
-    ParamHex('DefaultShapeColor', 0xCCCCE6FF),
-    ParamInt('DefaultShapeTransparency', 0),
-    ParamInt('DefaultShapeLineWidth', 2),
-    ParamInt('DefaultShapePointSize', 2),
-    ParamBool('CoinCycleCheck', True),
-    ParamBool('EnablePropertyViewForInactiveDocument', True),
+    ParamInt('MarkerSize', 7,
+        doc = "Size in pixels of the point markers drawn in the 3D view, such as\n"
+              "sketch vertices and the end points of a measurement."),
+    ParamHex('DefaultLinkColor', 0x66FFFFFF,
+        doc = "Default colour of the material of a new link, which is used when the\n"
+              "link overrides the material of its linked object."),
+    ParamHex('DefaultShapeLineColor', 0x191919FF,
+        title = 'Default Shape Line Color',
+        doc = "Default line colour of new shapes."),
+    ParamHex('DefaultShapeVertexColor', 0x191919FF,
+        title = 'Default Shape Vertex Color',
+        doc = "Default vertex colour of new shapes."),
+    ParamHex('DefaultShapeColor', 0xCCCCE6FF,
+        doc = "Default face colour of new shapes. Not used while random colours are\n"
+              "turned on."),
+    ParamInt('DefaultShapeTransparency', 0,
+        doc = "Default transparency of new shapes in percent. 0 is opaque, 100 is\n"
+              "fully transparent."),
+    ParamInt('DefaultShapeLineWidth', 2,
+        title = 'Default Shape Line Width',
+        doc = "Default line width of new shapes, in pixels."),
+    ParamInt('DefaultShapePointSize', 2,
+        title = 'Default Shape Point Size',
+        doc = "Default vertex size of new shapes, in pixels."),
+    ParamBool('CoinCycleCheck', True,
+        doc = "Check the 3D scene for an object that contains itself while the\n"
+              "scene is traversed. A cycle is reported and skipped instead of being\n"
+              "followed without end."),
+    ParamBool('EnablePropertyViewForInactiveDocument', True,
+        doc = "Keep the property view usable when the selected objects belong to a\n"
+              "document other than the active one. When off, the property view is\n"
+              "disabled for such a selection."),
     ParamBool('ShowSelectionBoundingBox', False,
         doc='Show selection bounding box instead of highlight'),
     ParamInt('ShowSelectionBoundingBoxThreshold', 0,
        doc="Threshold for showing bounding box instead of selection highlight"),
-    ParamBool('UpdateSelectionVisual', True),
-    ParamBool('LinkChildrenDirect', True),
+    ParamBool('UpdateSelectionVisual', True,
+        doc = "Bring back the selection highlight of a selected object when it is\n"
+              "shown again after being hidden."),
+    ParamBool('LinkChildrenDirect', True,
+        doc = "Show the children of a group with its own coordinate system, such as\n"
+              "a part or body, through a link view. A link to the group then shows\n"
+              "the children's visuals directly."),
     ParamBool('ShowSelectionOnTop', True, on_change=True, doc='Show selection always on top'),
     ParamBool('ShowPreSelectedFaceOnTop', True, doc="Show pre-selected face always on top"),
     ParamBool('ShowPreSelectedFaceOutline', True, doc="Show pre-selected face outline"),
@@ -253,31 +299,65 @@ Params = [
             'The pick ring and its centre dot sit this far above the contact\n'
             'point so the finger never covers what it is aiming at.',
         proxy=ParamSpinBox(0.0, 200.0, 1.0, 1)),
-    ParamFloat('SelectionTransparency', 0.5),
-    ParamInt('SelectionLinePattern', 0, title='Selected hidden line pattern', proxy=ParamLinePattern()),
-    ParamInt('SelectionLinePatternScale', 1, title='Selected line pattern scale'),
+    ParamFloat('SelectionTransparency', 0.5,
+        doc = "Transparency given to a selected face so that what lies behind it\n"
+              "stays visible, used when picking through objects and when the\n"
+              "highlight is drawn on top. 0 is opaque, 1 is invisible."),
+    ParamInt('SelectionLinePattern', 0, title='Selected hidden line pattern', proxy=ParamLinePattern(),
+        doc = "Dash pattern of the hidden part of a selected line that is shown on\n"
+              "top of the scene, as a 16 bit mask. 0 draws it solid."),
+    ParamInt('SelectionLinePatternScale', 1, title='Selected line pattern scale',
+        doc = "Number of times each bit of the dash pattern of a selected hidden\n"
+              "line is repeated. Larger values give longer dashes. 1 or less uses\n"
+              "the pattern as it is."),
     ParamFloat('SelectionHiddenLineWidth', 1.0,
         title='Selected hidden line width',
         doc="Width of the hidden line."),
-    ParamFloat('SelectionBBoxLineWidth', 3.0),
+    ParamFloat('SelectionBBoxLineWidth', 3.0,
+        doc = "Line width in pixels of the bounding box drawn around a selected\n"
+              "object when selection is shown by bounding box."),
     ParamBool('ShowHighlightEdgeOnly', False,
        "Show pre-selection highlight edge only"),
-    ParamFloat('PreSelectionDelay', 0.1),
-    ParamInt('PickBackFaceDelay', 2),
-    ParamBool('UseNewRayPick', True),
-    ParamFloat('ViewSelectionExtendFactor', 0.5),
+    ParamFloat('PreSelectionDelay', 0.1,
+        doc = "Shortest time in seconds between two preselection picks in the 3D\n"
+              "view while the mouse moves. 0 picks on every mouse move."),
+    ParamInt('PickBackFaceDelay', 2,
+        doc = "Number of mouse wheel steps, with Shift and Ctrl held, that it takes\n"
+              "to move the pick one object further behind or back toward the\n"
+              "front."),
+    ParamBool('UseNewRayPick', True,
+        doc = "Stop a single pick in the 3D view at the nearest hit instead of\n"
+              "collecting everything along the pick ray. Off is the older and\n"
+              "slower way."),
+    ParamFloat('ViewSelectionExtendFactor', 0.5,
+        doc = "Scale applied to the bounding box of the selection when testing\n"
+              "whether it is already in view, before the view is extended to\n"
+              "include it. Currently has no effect."),
     ParamBool('UseTightBoundingBox', True,
         "Show more accurate bounds when using bounding box selection style"),
-    ParamBool('UseBoundingBoxCache', True),
+    ParamBool('UseBoundingBoxCache', True,
+        doc = "Remember the bounding boxes of objects instead of computing them\n"
+              "again on every request."),
     ParamBool('RenderProjectedBBox', True,
         "Show projected bounding box that is aligned to axes of\n"
         "global coordinate space"),
     ParamBool('SelectionFaceWire', False,
         "Show hidden tirangulation wires for selected face"),
-    ParamFloat('NewDocumentCameraScale', 100.0),
-    ParamInt('MaxOnTopSelections', 100),
-    ParamInt('MaxViewSelections', 100),
-    ParamInt('MaxSelectionNotification', 100),
+    ParamFloat('NewDocumentCameraScale', 100.0,
+        doc = "Camera zoom of a new document, as the diameter of the sphere that\n"
+              "fits on the screen. A quarter of it is the default size of a new\n"
+              "coordinate system."),
+    ParamInt('MaxOnTopSelections', 100,
+        doc = "Largest number of selected objects that are drawn on top of the\n"
+              "scene. A larger selection is highlighted in place, and the tree view\n"
+              "does not expand to show its items."),
+    ParamInt('MaxViewSelections', 100,
+        doc = "Largest number of selected objects taken into account when the view\n"
+              "is fitted or aligned to the selection."),
+    ParamInt('MaxSelectionNotification', 100,
+        doc = "Number of pending add and remove selection notices after which they\n"
+              "are replaced by one notice that the whole selection changed. 0 sets\n"
+              "no limit."),
     ParamBool('MapChildrenPlacement', False, on_change=True, doc=
         "Map child object into parent's coordinate space when showing on top.\n"
         "Note that once activated, this option will also activate option ShowOnTop.\n"
@@ -316,11 +396,17 @@ Params = [
         doc="Overridden transparency value of all objects in the scene.",
         proxy=ParamProxy(ParamHiddenLineOverrideTransparency)),
     ParamHiddenLineOverrideTransparency,
-    ParamHex('HiddenLineFaceColor', 0xffffffff, proxy=ParamColor(ParamHiddenLineOverrideFaceColor)),
+    ParamHex('HiddenLineFaceColor', 0xffffffff, proxy=ParamColor(ParamHiddenLineOverrideFaceColor),
+        doc = "Colour all faces are drawn in by the hidden line display style when\n"
+              "it overrides the face colour."),
     ParamHiddenLineOverrideFaceColor,
-    ParamHex('HiddenLineColor', 0x000000ff, proxy=ParamColor(ParamHiddenLineOverrideColor)),
+    ParamHex('HiddenLineColor', 0x000000ff, proxy=ParamColor(ParamHiddenLineOverrideColor),
+        doc = "Colour all lines and outlines are drawn in by the hidden line\n"
+              "display style when it overrides the line colour."),
     ParamHiddenLineOverrideColor,
-    ParamHex('HiddenLineBackground', 0xffffffff, proxy=ParamColor(ParamHiddenLineOverrideBackground)),
+    ParamHex('HiddenLineBackground', 0xffffffff, proxy=ParamColor(ParamHiddenLineOverrideBackground),
+        doc = "Background colour of a 3D view in the hidden line display style,\n"
+              "used when overriding the background is turned on."),
     ParamHiddenLineOverrideBackground,
     ParamBool('HiddenLineShaded',  False, title='Shaded',
         doc='Whether to enable shading in hidden line display style'),
@@ -333,9 +419,15 @@ Params = [
     ParamBool('HiddenLineSceneOutline',  False,
         "Render outline of the whole scene.", title='Draw scene outline'),
     ParamFloat('HiddenLineOutlineWidth',  0.0, title='Outline width',
-        proxy=ParamSpinBox(0.0, 100.0, 0.5)),
-    ParamFloat('HiddenLineWidth',  1.5, title='Line width'),
-    ParamFloat('HiddenLinePointSize',  2, title='Point size'),
+        proxy=ParamSpinBox(0.0, 100.0, 0.5),
+        doc = "Width in pixels of the outlines drawn by the hidden line display\n"
+              "style. 0 uses the default width."),
+    ParamFloat('HiddenLineWidth',  1.5, title='Line width',
+        doc = "Width in pixels of the lines of all objects in the hidden line\n"
+              "display style. A value below 1 keeps each object's own line width."),
+    ParamFloat('HiddenLinePointSize',  2, title='Point size',
+        doc = "Size in pixels of the vertices of all objects in the hidden line\n"
+              "display style. A value below 1 keeps each object's own point size."),
     ParamBool('HiddenLineHideSeam',  True,
         "Hide seam edges in hidden line display style.",
         title='Hide seam edge'),
@@ -345,7 +437,10 @@ Params = [
     ParamBool('HiddenLineHideFace', False,
        "Hide face in hidden line display style.",
        title='Hide face'),
-    ParamInt('StatusMessageTimeout',  5000),
+    ParamInt('StatusMessageTimeout',  5000,
+        doc = "Milliseconds a message stays in the status bar when the command\n"
+              "showing it gives no time of its own. 0 keeps it until the next\n"
+              "message."),
     ParamInt('ShadowSync', 1,
        title='Synchronize', doc="Specifies how to sync shadow display style settings to opened document",
         proxy=ParamComboBox(items=[(item[0], item[1]) for item in DrawStyleSync])),
@@ -358,11 +453,19 @@ Params = [
     ParamBool('ShadowSpotLight',  False,
        doc="Whether to use spot light or directional light.",
        title='Use spot light'),
-    ParamFloat('ShadowLightIntensity',  0.8, title='Light intensity'),
-    ParamFloat('ShadowLightDirectionX',  -1.0),
-    ParamFloat('ShadowLightDirectionY',  -1.0),
-    ParamFloat('ShadowLightDirectionZ',  -1.0),
-    ParamHex('ShadowLightColor',  0xf0fdffff, title='Light color', proxy=ParamColor()),
+    ParamFloat('ShadowLightIntensity',  0.8, title='Light intensity',
+        doc = "Brightness of the light that casts the shadow."),
+    ParamFloat('ShadowLightDirectionX',  -1.0,
+        title = 'Shadow Light Direction X',
+        doc = "X component of the direction of the light that casts the shadow."),
+    ParamFloat('ShadowLightDirectionY',  -1.0,
+        title = 'Shadow Light Direction Y',
+        doc = "Y component of the direction of the light that casts the shadow."),
+    ParamFloat('ShadowLightDirectionZ',  -1.0,
+        title = 'Shadow Light Direction Z',
+        doc = "Z component of the direction of the light that casts the shadow."),
+    ParamHex('ShadowLightColor',  0xf0fdffff, title='Light color', proxy=ParamColor(),
+        doc = "Colour of the light that casts the shadow."),
     ParamBool('ShadowShowGround',  True,
        "Whether to show auto generated ground face. You can specify you own ground\n"
        "object by changing its view property 'ShadowStyle' to 'Shadowed', meaning\n"
@@ -375,9 +478,14 @@ Params = [
        "The auto generated ground face is determined by the scene bounding box\n"
        "multiplied by this scale",
        title='Ground scale', proxy=ParamSpinBox(0.0, 1e7, 0.5)),
-    ParamHex('ShadowGroundColor',  0x7d7d7dff, title='Ground color', proxy=ParamColor()),
-    ParamString('ShadowGroundBumpMap', '', title='Ground bump map', proxy=ParamFile()),
-    ParamString('ShadowGroundTexture', '', title='Ground texture', proxy=ParamFile()),
+    ParamHex('ShadowGroundColor',  0x7d7d7dff, title='Ground color', proxy=ParamColor(),
+        doc = "Colour of the ground that receives the shadow."),
+    ParamString('ShadowGroundBumpMap', '', title='Ground bump map', proxy=ParamFile(),
+        doc = "Image file used as a bump map that gives the shadow ground a surface\n"
+              "relief. Empty for a flat ground."),
+    ParamString('ShadowGroundTexture', '', title='Ground texture', proxy=ParamFile(),
+        doc = "Image file drawn as a texture on the ground that receives the\n"
+              "shadow. Empty for a ground of plain colour."),
     ParamFloat('ShadowGroundTextureSize',  100.0,
        "Specifies the physcal length of the ground texture image size.\n"
        "Texture mappings beyond this size will be wrapped around",
@@ -392,25 +500,33 @@ Params = [
        "A drawn ground ignores it -- there the shadow is the ground shaded,\n"
        "and how dark it goes is a matter of the light.",
        title='Shadow transparency', proxy=ParamSpinBox(0.0, 1.0, 0.1)),
+    # The long form, kept here; the documentation shown is the short one below.
+    # How much of the shadow receiver plane is drawn beside the shadow
+    # itself.
+    #
+    # 1 (the default) is the receiver a view of a part usually wants: the
+    # ground carries the shadow and nothing else, so there is no plane in
+    # the frame and no horizon behind the model -- only the shadow, at a
+    # fixed 0.8 opacity where it is fully dark. Anything below 1 draws a
+    # solid ground of that transparency and shades it, which is what a
+    # presentation image of a whole scene wants.
+    #
+    # A ground reflection needs a surface to blend onto, so it keeps the
+    # solid ground whatever this says.
     ParamFloat('ShadowGroundTransparency',  1.0,
-       "How much of the shadow receiver plane is drawn beside the shadow\n"
-       "itself.\n"
-       "\n"
-       "1 (the default) is the receiver a view of a part usually wants: the\n"
-       "ground carries the shadow and nothing else, so there is no plane in\n"
-       "the frame and no horizon behind the model -- only the shadow, at a\n"
-       "fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
-       "solid ground of that transparency and shades it, which is what a\n"
-       "presentation image of a whole scene wants.\n"
-       "\n"
-       "A ground reflection needs a surface to blend onto, so it keeps the\n"
-       "solid ground whatever this says.",
+       "Transparency of the ground that receives the shadow. 1 (the default)\n"
+       "draws the shadow only, with no ground plane; lower values draw a\n"
+       "shaded ground of that transparency. A ground reflection always draws\n"
+       "the ground.",
        title='Ground transparency', proxy=ParamSpinBox(0.0, 1.0, 0.1)),
     ParamBool('ShadowGroundShading',  True,
         "Render ground with shading. If disabled, the ground and the shadow casted\n"
         "on ground will not change shading when viewing in different angle.",
         title='Ground shading'),
-    ParamBool('ShadowExtraRedraw',  True),
+    ParamBool('ShadowExtraRedraw',  True,
+        doc = "Redraw the 3D view once more after a change while shadows are shown,\n"
+              "so that the shadow catches up with the scene. Currently has no\n"
+              "effect."),
     ParamInt('ShadowSmoothBorder',  40,
         "Specifies the blur raidus of the shadow edge. Higher number will result in\n"
         "slower rendering speed on scene change. Use a lower 'Precision' value to\n"
@@ -463,7 +579,9 @@ Params = [
         "Auto update shadow ground on scene changes. You can manually\n"
         "update the ground by using the 'Fit view' command",
         title='Update ground on scene change'),
-    ParamUInt('PropertyViewTimer',  100),
+    ParamUInt('PropertyViewTimer',  100,
+        doc = "Milliseconds the property view waits before it refreshes after the\n"
+              "selection or a property changes."),
     ParamBool('HierarchyAscend',  False,
         "Enable selection of upper hierarchy by repeatedly click some already\n"
         "selected sub-element."),
@@ -523,7 +641,9 @@ Params = [
     ParamFloat('ClipPlaneSize',  40.0,  "Clip plane visual size"),
     ParamString('ClipPlaneColor',  "cyan",  "Clip plane color"),
     ParamFloat('ClipPlaneLineWidth',  2.0,  "Clip plane line width"),
-    ParamBool('TransformOnTop',  True),
+    ParamBool('TransformOnTop',  True,
+        doc = "Show an object on top of the scene while it is moved with the\n"
+              "transform dragger. Currently has no effect."),
     ParamFloat('SelectionColorDifference',  25.0,
         doc="Color difference threshold for auto making distinct\n"
             "selection highlight color",
@@ -538,74 +658,113 @@ Params = [
         "Maximum hierarchy depth that the cache merge can happen. Less than 0 means no limit."),
     ParamInt('RenderCacheMergeDepthMin',  1,
         "Minimum hierarchy depth that the cache merge can happen."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Largest vertex cache map, in entries, that an object keeps after
+    # its parent has copied it up. A parent flattens its children into
+    # one map and then drops theirs, so the next frame re-derives the
+    # map of every object in the scene however little moved; keeping the
+    # small ones costs a few entries of memory each and is what stops
+    # that. The large ones are the copies of whole subtrees, which is the
+    # memory this bounds. Set zero to keep none.
     ParamInt('RenderCacheKeepMax',  32,
-        "Largest vertex cache map, in entries, that an object keeps after\n"
-        "its parent has copied it up. A parent flattens its children into\n"
-        "one map and then drops theirs, so the next frame re-derives the\n"
-        "map of every object in the scene however little moved; keeping the\n"
-        "small ones costs a few entries of memory each and is what stops\n"
-        "that. The large ones are the copies of whole subtrees, which is the\n"
-        "memory this bounds. Set zero to keep none."),
+        "Largest render cache, in entries, an object keeps after its parent has\n"
+        "merged it. Keeping the small ones avoids rebuilding them every frame.\n"
+        "0 keeps none."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Splice a rebuilt object's flattened vertex cache map from the map
+    # of the publish before it, instead of merging every child again. A
+    # container holding thousands of objects re-derives all of them on
+    # every publish however few moved, and the merge is priced per child
+    # rather than per entry. It costs memory, because the map of the
+    # previous publish has to survive the traversal that replaces it:
+    # on a 17800-object assembly, 49MB against 45% off the flatten.
+    # 0 rebuilds (the old behaviour), 1 splices, 2 splices and also
+    # rebuilds wholesale to compare the two, logging any disagreement
+    # -- slow, for checking the splice, not for use.
     ParamInt('RenderCacheIncremental',  1,
-        "Splice a rebuilt object's flattened vertex cache map from the map\n"
-        "of the publish before it, instead of merging every child again. A\n"
-        "container holding thousands of objects re-derives all of them on\n"
-        "every publish however few moved, and the merge is priced per child\n"
-        "rather than per entry. It costs memory, because the map of the\n"
-        "previous publish has to survive the traversal that replaces it:\n"
-        "on a 17800-object assembly, 49MB against 45% off the flatten.\n"
-        "0 rebuilds (the old behaviour), 1 splices, 2 splices and also\n"
-        "rebuilds wholesale to compare the two, logging any disagreement\n"
-        "-- slow, for checking the splice, not for use."),
+        "Update a container's render cache from its previous one instead of\n"
+        "merging all its children again. Faster on large assemblies, at the\n"
+        "cost of some memory. 0 off, 1 on, 2 does both and logs any difference\n"
+        "(slow, for checking)."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Reuse the mesh a vertex cache was translated into for the backend,
+    # instead of translating it again on every publish. A vertex cache is
+    # built once and never changed afterwards -- a shape whose geometry
+    # moves gets a new cache -- so the translation is the same work every
+    # time, and on a large assembly it is the largest single cost of a
+    # publish. Meshes are held only for as long as some draw list still
+    # refers to them. 0 translates every publish (the old behaviour), 1
+    # reuses, 2 reuses and also translates afresh to compare the two,
+    # logging any disagreement -- slow, for checking the reuse, not for
+    # use.
     ParamInt('RenderCacheMeshReuse',  1,
-        "Reuse the mesh a vertex cache was translated into for the backend,\n"
-        "instead of translating it again on every publish. A vertex cache is\n"
-        "built once and never changed afterwards -- a shape whose geometry\n"
-        "moves gets a new cache -- so the translation is the same work every\n"
-        "time, and on a large assembly it is the largest single cost of a\n"
-        "publish. Meshes are held only for as long as some draw list still\n"
-        "refers to them. 0 translates every publish (the old behaviour), 1\n"
-        "reuses, 2 reuses and also translates afresh to compare the two,\n"
-        "logging any disagreement -- slow, for checking the reuse, not for\n"
-        "use."),
+        "Reuse the mesh a render cache was converted to for the render backend\n"
+        "instead of converting it at every update. 0 off, 1 on, 2 does both and\n"
+        "logs any difference (slow, for checking)."),
     ParamInt('LiveImportRedrawInterval',  200,
         "Minimum interval in milliseconds between 3D view redraws while a\n"
         "progressive import is filling the document, and the window after\n"
         "any mouse input during which redraws are never held back. Set zero\n"
         "to redraw on every change."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Percentage of the time the 3D view may spend redrawing while a
+    # progressive import is filling the document. Each new object makes
+    # the next frame rebuild the render cache of the whole scene, so on a
+    # large import a single frame costs far more than the objects drawn
+    # in it; keeping frames to a share of the time is what bounds that
+    # cost. The resulting wait scales with the measured frame cost, is
+    # never shorter than LiveImportRedrawInterval nor longer than ten
+    # times it, and mouse input renders immediately regardless. Set zero
+    # to budget nothing and use the plain interval.
     ParamInt('LiveImportRedrawBudget',  10,
-        "Percentage of the time the 3D view may spend redrawing while a\n"
-        "progressive import is filling the document. Each new object makes\n"
-        "the next frame rebuild the render cache of the whole scene, so on a\n"
-        "large import a single frame costs far more than the objects drawn\n"
-        "in it; keeping frames to a share of the time is what bounds that\n"
-        "cost. The resulting wait scales with the measured frame cost, is\n"
-        "never shorter than LiveImportRedrawInterval nor longer than ten\n"
-        "times it, and mouse input renders immediately regardless. Set zero\n"
-        "to budget nothing and use the plain interval."),
+        "Percentage of time the 3D view may spend redrawing while a progressive\n"
+        "import fills the document. The wait between frames is never shorter\n"
+        "than LiveImportRedrawInterval nor longer than ten times it. 0 uses the\n"
+        "plain interval."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Minimum interval in milliseconds between two turns of the event
+    # loop while a live import fills the document. The import holds the
+    # main thread, so the view only sees input and paints where the
+    # import hands the loop a slice, and on its own the progress bar
+    # does that on a 200 ms update throttle -- a slideshow to someone
+    # orbiting the model. Offering the loop a turn costs nothing when
+    # nothing is queued, and what a frame costs is bounded by
+    # LiveImportRedrawBudget rather than by how often a turn is
+    # offered. Set zero to pump at every offer.
     ParamInt('LiveImportPumpInterval',  50,
-        "Minimum interval in milliseconds between two turns of the event\n"
-        "loop while a live import fills the document. The import holds the\n"
-        "main thread, so the view only sees input and paints where the\n"
-        "import hands the loop a slice, and on its own the progress bar\n"
-        "does that on a 200 ms update throttle -- a slideshow to someone\n"
-        "orbiting the model. Offering the loop a turn costs nothing when\n"
-        "nothing is queued, and what a frame costs is bounded by\n"
-        "LiveImportRedrawBudget rather than by how often a turn is\n"
-        "offered. Set zero to pump at every offer."),
+        "Minimum milliseconds between two chances for the window to process\n"
+        "input and repaint while a live import fills the document. 0 offers one\n"
+        "at every opportunity."),
     # The experimental render engine parameters (former Renderer* keys)
     # live in RenderParams.py (Preferences/View/Render); see
     # RenderParams::migrate() for the key migration.
-    ParamFloat('RenderHighlightPolygonOffsetFactor', 1),
-    ParamFloat('RenderHighlightPolygonOffsetUnits', 1),
+    ParamFloat('RenderHighlightPolygonOffsetFactor', 1,
+        doc = "Slope scaled depth offset that pulls selection and preselection\n"
+              "highlights toward the viewer, so that the faces under them do not\n"
+              "hide them. Preselection gets twice the offset."),
+    ParamFloat('RenderHighlightPolygonOffsetUnits', 1,
+        doc = "Constant depth offset, in depth buffer units, that pulls selection\n"
+              "and preselection highlights toward the viewer, so that the faces\n"
+              "under them do not hide them. Preselection gets twice the offset."),
     ParamBool('ForceSolidSingleSideLighting',  True, on_change=True, title='Force single side lighting on solid',
         doc="Force single side lighting on solid. This can help visualizing invalid\n"
         "solid shapes with flipped normals."),
-    ParamInt('DefaultFontSize',  0, on_change=True),
-    ParamBool('EnableTaskPanelKeyTranslate',  False, on_change=True),
-    ParamBool('EnableMenuBarCheckBox',  'FC_ENABLE_MENUBAR_CHECKBOX'),
-    ParamBool('EnableBacklight',  False),
-    ParamHex('BacklightColor',  0xffffffff),
+    ParamInt('DefaultFontSize',  0, on_change=True,
+        doc = "Point size of the application font. 0 uses the system default.\n"
+              "Sizes from 1 to 7 are raised to 8."),
+    ParamBool('EnableTaskPanelKeyTranslate',  False, on_change=True,
+        doc = "Let the Up and Down arrow keys move the keyboard focus through the\n"
+              "task panel, the way Shift+Tab and Tab do."),
+    ParamBool('EnableMenuBarCheckBox',  'FC_ENABLE_MENUBAR_CHECKBOX',
+        doc = "Show the entries of the toolbar and dock window menus of the menu\n"
+              "bar as checkboxes, the way the right-click menu of the main window\n"
+              "shows them. Off by default on macOS."),
+    ParamBool('EnableBacklight',  False,
+        doc = "Turn on the backlight of the 3D view, a second light that shines on\n"
+              "the faces turned away from the viewer."),
+    ParamHex('BacklightColor',  0xffffffff,
+        doc = "Colour of the backlight, the light that shines on the faces turned\n"
+              "away from the viewer."),
     ParamInt('BacklightIntensity',  100,
         "Backlight intensity, as a percentage. An integer because that is the\n"
         "slot everything else uses: the Clipping dialog's slider, the 3D view\n"
@@ -623,10 +782,21 @@ Params = [
             'will be shown in its original size. You can disable all images in\n'
             'the tooltip by setting this option to zero.',
         proxy=ParamSpinBox(0, 512, 10)),
-    ParamBool('ToolTipDisable', False),
-    ParamHex('AxisXColor', 0xCC333300),
-    ParamHex('AxisYColor', 0x33CC3300),
-    ParamHex('AxisZColor', 0x3333CC00),
+    ParamBool('ToolTipDisable', False,
+        doc = "Turn off the tool tips of the application. Tips shown as an overlay\n"
+              "in the 3D view, such as the preselection tip, still appear."),
+    ParamHex('AxisXColor', 0xCC333300,
+        title = 'Axis X color',
+        doc = "Colour of the X axis of the transform dragger and of other axis\n"
+              "markers in the 3D view."),
+    ParamHex('AxisYColor', 0x33CC3300,
+        title = 'Axis Y color',
+        doc = "Colour of the Y axis of the transform dragger and of other axis\n"
+              "markers in the 3D view."),
+    ParamHex('AxisZColor', 0x3333CC00,
+        title = 'Axis Z color',
+        doc = "Colour of the Z axis of the transform dragger and of other axis\n"
+              "markers in the 3D view."),
     ParamBool('DatumScreenSize', True, title='Constant datum size on screen', doc=
         "Draw origins, coordinate systems and datum elements at a constant size on\n"
         "screen, the way upstream FreeCAD does. When off, an origin is sized to the\n"
@@ -644,6 +814,271 @@ Params = [
     ParamFloat('DatumTemporaryScaleFactor', 2.0, title='Datum temporary scale',
         doc="How much datum planes grow while a reference is picked from them.",
         proxy=ParamSpinBox(1.0, 10.0, 0.5, 1)),
+
+    # ------------------------------------------------------------------
+    # The settings of this group that used to be read straight from it,
+    # each with a default of its own at every reader (docs/HandsOnQueue.md
+    # entry 24). Most of them reach the 3D views through View3DSettings,
+    # one observer per view, which is told by the parameter group itself:
+    # it keeps reading the group and takes its DEFAULTS from here.
+    #
+    # What the program keeps here for itself is at the end of the list;
+    # the icon browser's two fields are not listed. Not listed, because
+    # nothing reads them:
+    # UseAutoRotation, ColorRecompute. Not listed, because their default
+    # is not a constant: GestureMoveThreshold and GestureTapHoldTimeout
+    # (the system's), the three colours of the default appearance (the
+    # material card's).
+
+    # --- the 3D view
+    ParamFloat('EyeDistance', 5.0, title='Eye distance for stereo modes',
+        doc="Offset between the left and the right eye image of a stereo 3D\n"
+            "view. 0.1 to 1000. Applies at once to all open 3D views."),
+    ParamBool('CornerCoordSystem', True, title='Show coordinate system in the corner',
+        doc="Show the small coordinate system in the corner of every 3D view.\n"
+            "Applies at once."),
+    ParamInt('CornerCoordSystemSize', 10, title='Corner coordinate system size',
+        doc="Size of the coordinate system in the corner of the 3D views, 2 to\n"
+            "100. Applies at once."),
+    ParamBool('ShowAxisCross', False, title='Show axis cross',
+        doc="Show the axis cross at the origin of the 3D views. Applies at once\n"
+            "to the open views and to new ones."),
+    ParamBool('ShowFPS', False, title='Show counter of frames per second',
+        doc="Show a frames per second counter in the 3D views. Applies at once."),
+    ParamBool('UseVBO', False, title='Use vertex buffer objects',
+        doc="Let Coin draw with vertex buffer objects. Applies at once to the\n"
+            "open 3D views except split views; the driver override that goes\n"
+            "with it is set at startup only."),
+    ParamBool('Orthographic', True, title='Orthographic rendering',
+        doc="Use an orthographic camera in the 3D views; the opposite of\n"
+            "Perspective."),
+    ParamBool('Perspective', False, title='Perspective rendering',
+        doc="Use a perspective camera in the 3D views. Read when a view is\n"
+            "created; with ApplyCameraTypeToAll on, a change switches the open\n"
+            "views too."),
+    ParamBool('ApplyCameraTypeToAll', False, title='Apply camera type to existing views',
+        doc="When the camera type setting changes, switch every open 3D view\n"
+            "to it as well."),
+    ParamInt('AntiAliasing', 3, title='Anti-aliasing',
+        doc="Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA\n"
+            "2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a\n"
+            "face that no edge runs along is a staircase. A change is taken\n"
+            "by the open views at once."),
+    ParamInt('TransparentObjectRenderType', 0, title='Transparent object render type',
+        doc="How Coin draws transparent objects: 0 in one pass, 1 with the back\n"
+            "faces of non-solid objects in a pass of their own. Applies at once\n"
+            "to the open 3D views except split views."),
+    ParamString('InternalTextureFormat', 'Default', title='Offscreen buffer format',
+        doc="Pixel format of the offscreen buffer a 3D view is drawn into:\n"
+            "Default, GL_RGB, GL_RGBA, GL_RGB8, GL_RGBA8, GL_RGB10,\n"
+            "GL_RGB10_A2, GL_RGB16, GL_RGBA16, GL_RGB32F or GL_RGBA32F. Read\n"
+            "each time a buffer is created."),
+
+    # --- its background
+    ParamBool('Gradient', True, title='Linear background gradient',
+        doc="Fill the background of the 3D views with a linear gradient from\n"
+            "BackgroundColor2 (top) to BackgroundColor3 (bottom). Wins over\n"
+            "RadialGradient. Applies at once."),
+    ParamBool('RadialGradient', False, title='Radial background gradient',
+        doc="Fill the background of the 3D views with a radial gradient; used\n"
+            "when Gradient is off. With both off the plain BackgroundColor is\n"
+            "used. Applies at once."),
+    ParamBool('Simple', False, title='Simple background colour',
+        doc="The 'Simple color' choice of the Colors page. The views use a\n"
+            "plain background whenever Gradient and RadialGradient are both\n"
+            "off, whatever this says."),
+    ParamHex('BackgroundColor', 0xEAE5DCFF, title='Background colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the 3D view background when no gradient is used.\n"
+            "Applies at once."),
+    ParamHex('BackgroundColor2', 0x333365FF, title='Background gradient, first colour',
+        proxy=ParamColor(transparency=False),
+        doc="First colour of the background gradient of the 3D views: the top\n"
+            "of a linear one, the centre of a radial one. Applies at once."),
+    ParamHex('BackgroundColor3', 0xABABC1FF, title='Background gradient, last colour',
+        proxy=ParamColor(transparency=False),
+        doc="Last colour of the background gradient of the 3D views: the\n"
+            "bottom of a linear one, the rim of a radial one. Applies at once."),
+    ParamHex('BackgroundColor4', 0x6F6F93FF, title='Background gradient, middle colour',
+        proxy=ParamColor(transparency=False),
+        doc="Middle colour of the background gradient of the 3D views; used\n"
+            "only with UseBackgroundColorMid on. Applies at once."),
+    ParamBool('UseBackgroundColorMid', False, title='Use a middle background colour',
+        doc="Give the background gradient of the 3D views a third, middle\n"
+            "colour (BackgroundColor4). Applies at once."),
+
+    # --- its lights (a view with a light setting of its own keeps that)
+    ParamBool('EnableHeadlight', True, title='Enable headlight',
+        doc="Light the 3D views with the headlight, which follows the camera.\n"
+            "Applies at once to every view with no light setting of its own."),
+    ParamHex('HeadlightColor', 0xFFFFFFFF, title='Headlight colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the headlight of the 3D views. Applies at once."),
+    ParamInt('HeadlightIntensity', 100, title='Headlight intensity',
+        doc="Intensity of the headlight of the 3D views in percent, 0 to 100.\n"
+            "Applies at once."),
+    ParamString('HeadlightDirection', '', title='Headlight direction',
+        doc="Direction of the headlight relative to the camera, as (x,y,z).\n"
+            "Empty keeps the built-in direction. Turned in a 3D view from the\n"
+            "Display style menu (Direction), and stored here by its Save as\n"
+            "default. Applies at once."),
+    ParamString('BacklightDirection', '', title='Backlight direction',
+        doc="Direction of the backlight relative to the camera, as (x,y,z).\n"
+            "Empty keeps the built-in direction. Applies at once."),
+    ParamBool('EnableFillLight', False, title='Enable fill light',
+        doc="Light the 3D views with an extra fill light from the side.\n"
+            "Applies at once."),
+    ParamHex('FillLightColor', 0xE6FAFFFF, title='Fill light colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the fill light of the 3D views. Applies at once."),
+    ParamInt('FillLightIntensity', 60, title='Fill light intensity',
+        doc="Intensity of the fill light of the 3D views in percent, 0 to 100.\n"
+            "Applies at once."),
+    ParamString('FillLightDirection', '', title='Fill light direction',
+        doc="Direction of the fill light relative to the camera, as (x,y,z).\n"
+            "Empty keeps the built-in direction. Applies at once."),
+    ParamHex('AmbientLightColor', 0xFFFFFFFF, title='Ambient light colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the ambient light of the 3D views. Applies at once."),
+    ParamInt('AmbientLightIntensity', 20, title='Ambient light intensity',
+        doc="Intensity of the ambient light of the 3D views in percent, 0 to\n"
+            "100. Applies at once."),
+
+    # --- navigation
+    ParamString('NavigationStyle', 'Gui::CADNavigationStyle', title='3D navigation style',
+        doc="Mouse navigation style of the 3D views, as a class name such as\n"
+            "Gui::CADNavigationStyle. Applies at once to all open 3D views;\n"
+            "TechDraw pages follow it as well."),
+    ParamBool('SameStyleForAllViews', True, title='Same navigation style for all views',
+        doc="A navigation style picked from a 3D view's context menu becomes\n"
+            "the NavigationStyle setting, so that every view follows. When off\n"
+            "it changes that view only."),
+    ParamInt('OrbitStyle', 1, title='Orbit style',
+        doc="How dragging rotates the 3D view: 0 turntable, 1 trackball, 2 free\n"
+            "turntable. Applies at once."),
+    ParamInt('RotationMode', 1, title='Rotation mode',
+        doc="Centre of rotation in the 3D views: 0 the window centre, 1 the\n"
+            "point under the cursor, 2 the centre of the objects. Applies at\n"
+            "once."),
+    ParamFloat('Sensitivity', 2.0, title='Rotation sensitivity',
+        doc="A value above 1 multiplies the angle of a mouse rotation of the 3D\n"
+            "view. Applies at once."),
+    ParamBool('ResetCursorPosition', False, title='Reset cursor position on rotation',
+        doc="Move the mouse cursor to the rotation centre when a rotation of\n"
+            "the 3D view starts. Applies at once."),
+    ParamBool('InvertZoom', True, title='Invert zoom',
+        doc="Invert the direction of zooming with the mouse wheel. The 3D\n"
+            "views and TechDraw pages follow at once; the dependency graph\n"
+            "reads it when it is opened."),
+    ParamBool('ZoomAtCursor', True, title='Zoom at cursor',
+        doc="Zoom towards the point under the mouse cursor instead of the\n"
+            "centre of the view. Applies at once."),
+    ParamFloat('ZoomStep', 0.2, title='Zoom step',
+        doc="Zoom factor of one step of the mouse wheel, 0.01 to 1. Applies at\n"
+            "once to the 3D views and TechDraw pages."),
+    ParamBool('UseNavigationAnimations', True, title='Animate camera moves',
+        doc="Animate camera moves such as switching to a standard view.\n"
+            "Applies at once."),
+    ParamBool('UseSpinningAnimations', False, title='Spin after a rotation',
+        doc="Let the model keep spinning when the mouse button is released\n"
+            "during a rotation. Applies at once."),
+    ParamInt('AnimationDuration', 250, title='Animation duration',
+        doc="Duration of an animated camera move in milliseconds, 100 to\n"
+            "10000. Read each time an animation starts."),
+    ParamInt('stopAnimatingIfDeactivated', 3000, title='Stop spinning when hidden after',
+        doc="Milliseconds after which a spinning 3D view stops once it is\n"
+            "hidden or minimized. A negative value never stops it."),
+    ParamBool('ShowRotationCenter', True, title='Show rotation centre',
+        doc="Show a marker at the centre of rotation while a 3D view is\n"
+            "rotated. Read at each rotation."),
+    ParamFloat('RotationCenterSize', 5.0, title='Rotation centre size',
+        doc="Size of the rotation centre marker, 1 to 100. Read when the marker\n"
+            "is next created."),
+    ParamHex('RotationCenterColor', 0xFF000033, title='Rotation centre colour',
+        proxy=ParamColor(),
+        doc="Colour and opacity of the rotation centre marker: red and mostly\n"
+            "see-through unless set. Read when the marker is next created."),
+    ParamString('NewDocumentCameraOrientation', 'Trimetric', title='Default camera orientation',
+        doc="Camera orientation of a new document: Isometric, Dimetric,\n"
+            "Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once\n"
+            "set, the Home view takes it too; until then Home is Top. Read at\n"
+            "each use."),
+    ParamBool('AutoFitToView', True, title='Fit view after opening a file',
+        doc="Fit the 3D view to the model after a file is opened or imported."),
+    ParamBool('ShowNaviCube', True, title='Show navigation cube',
+        doc="Show the navigation cube in the 3D views. Applies at once."),
+    ParamBool('DisableTouchTilt', True, title='Disable touchscreen tilt gesture',
+        doc="Gesture navigation: ignore the rotation part of a two-finger\n"
+            "gesture on a touchscreen. Read at the start of each gesture."),
+    ParamBool('NavigationDebug', False, title='Log gesture navigation',
+        doc="Gesture navigation: write its state changes to the log. Read when\n"
+            "the Gesture style is created."),
+    ParamString('GestureRollFwdCommand', 'Std_SelForward', title='Roll forward gesture command',
+        doc="Gesture navigation: command run by the forward roll gesture."),
+    ParamString('GestureRollBackCommand', 'Std_SelBack', title='Roll back gesture command',
+        doc="Gesture navigation: command run by the backward roll gesture."),
+
+    # --- the rest
+    ParamBool('SaveWBbyTab', False, title='Remember active workbench by tab',
+        doc="Remember the active workbench separately for each view tab and\n"
+            "switch back to it when the tab is activated."),
+    ParamHex('CbLabelColor', 0xFFFFFFFF, title='Colour bar label colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the value labels of a colour bar in the 3D view. Read\n"
+            "when the labels are next rebuilt."),
+    ParamInt('CbLabelTextSize', 13, title='Colour bar label size',
+        doc="Text size of the value labels of a colour bar in the 3D view, 4 to\n"
+            "36. Read when the labels are next rebuilt."),
+    ParamFloat('BoundingBoxFontSize', 10.0, title='Bounding box font size',
+        doc="Font size of the dimension labels on an object's bounding box, 2\n"
+            "to 64. Read when a bounding box is first shown for an object."),
+    ParamFloat('DatumPointSize', 2.5, title='Datum point size',
+        doc="Radius of the sphere drawn for a datum point."),
+    ParamFloat('LocalCoordinateSystemSize', 1.0, title='Datum scale factor',
+        doc="Scale factor of datum objects -- origin axes, planes, points --\n"
+            "when they are drawn at a fixed size on screen."),
+    ParamInt('DefaultShapeShininess', 37, title='Default shape shininess',
+        doc="Shininess of the appearance given to new objects, in percent.\n"
+            "Read each time a default appearance is made."),
+    # --- what the program keeps in this group for itself. Their readers
+    # read the group as before.
+    ParamBool('DimensionsVisible', True,
+        title = 'Measurements shown',
+        doc = "The measurements made with the measure tools are shown in the 3D\n"
+              "views. Stored by the command that toggles them; the views follow\n"
+              "at once."),
+    ParamBool('Dimensions3dVisible', True,
+        title = '3D measurements shown',
+        doc = "The direct, 3D, lines of the measurements are shown. Stored by\n"
+              "the command that toggles them; the views follow at once."),
+    ParamBool('DimensionsDeltaVisible', True,
+        title = 'Delta measurements shown',
+        doc = "The lines of the measurements along the three axes are shown.\n"
+              "Stored by the command that toggles them; the views follow at\n"
+              "once."),
+    ParamString('SavePicture', '',
+        title = 'Save picture: last method',
+        doc = "How the Save picture dialog last made its picture:\n"
+              "FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or\n"
+              "empty for the dialog's own way. Stored when a method is chosen in\n"
+              "the dialog's options, and used for every picture saved."),
+    ParamFloat('HeadlightRotationX', 0.0,
+        title = 'Headlight dragger: rotation x',
+        doc = "First component of the rotation the dragger of the Light\n"
+              "sources page was left with. The view itself uses the headlight\n"
+              "direction, which the page stores with it."),
+    ParamFloat('HeadlightRotationY', 0.0,
+        title = 'Headlight dragger: rotation y',
+        doc = "Second component of the rotation of the dragger of the Light\n"
+              "sources page."),
+    ParamFloat('HeadlightRotationZ', 0.0,
+        title = 'Headlight dragger: rotation z',
+        doc = "Third component of the rotation of the dragger of the Light\n"
+              "sources page."),
+    ParamFloat('HeadlightRotationW', 1.0,
+        title = 'Headlight dragger: rotation w',
+        doc = "Fourth component of the rotation of the dragger of the Light\n"
+              "sources page."),
 ]
 
 def declare_begin():

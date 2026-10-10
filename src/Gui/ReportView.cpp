@@ -31,6 +31,10 @@
 # include <QTime>
 # include <QTimer>
 # include <QMouseEvent>
+# include <QAbstractTextDocumentLayout>
+# include <QPainter>
+# include <QPainterPath>
+# include <QScrollBar>
 # include <QTextBlock>
 # include <QTextCharFormat>
 # include <deque>
@@ -41,6 +45,7 @@
 #include <App/Color.h>
 
 #include "ReportView.h"
+#include "GeneralParams.h"
 #include "Action.h"
 #include "Application.h"
 #include "BitmapFactory.h"
@@ -51,6 +56,7 @@
 #include "PythonConsolePy.h"
 #include "Tools.h"
 #include "MessageCollapse.h"
+#include "EditorParams.h"
 #include "ReportViewParams.h"
 #include "Command.h"
 
@@ -99,7 +105,7 @@ ReportView::ReportView( QWidget* parent )
 
     // raise the tab page set in the preferences
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("General");
-    int index = hGrp->GetInt("AutoloadTab", 0);
+    int index = GeneralParams::getAutoloadTab();
     tabWidget->setCurrentIndex(index);
 }
 
@@ -170,14 +176,16 @@ void ReportHighlighter::highlightBlock (const QString & text)
     //a block is highlighted again whenever an edit touches it, and a state
     //repeating the one before it spans nothing, so keep it out rather than let
     //the vector grow by one on every rehighlight
-    if (ud->block.isEmpty() || ud->block.last().length != b.length
-        || ud->block.last().type != b.type) {
+    //and recoloring writes nothing: the type current then belongs to whatever
+    //line came last, not to this block
+    if (ud->block.isEmpty()
+        || (!recoloring
+            && (ud->block.last().length != b.length || ud->block.last().type != b.type))) {
         ud->block.append(b);
     }
 
-    //a line standing in for others is underlined, so that it reads as something
-    //to click before the reader has hovered it
-    const bool foldable = !ud->folded.isEmpty();
+    //a line standing in for others is not marked here: its mark is drawn in
+    //the margin, by the view (ReportOutput::paintEvent)
 
     QVector<TextBlockData::State> block = ud->block;
     int start = 0;
@@ -206,10 +214,6 @@ void ReportHighlighter::highlightBlock (const QString & text)
             break;
         }
 
-        if (foldable) {
-            fmt.setFontUnderline(true);
-            formatted = true;
-        }
         if (formatted) {
             setFormat(start, it.length-start, fmt);
         }
@@ -223,29 +227,54 @@ void ReportHighlighter::setParagraphType(ReportHighlighter::Paragraph t)
     type = t;
 }
 
+void ReportHighlighter::recolor()
+{
+    if (!document() || document()->isEmpty()) {
+        return;
+    }
+    recoloring = true;
+    rehighlight();
+    recoloring = false;
+}
+
 void ReportHighlighter::setTextColor( const QColor& col )
 {
-    txtCol = col;
+    if (txtCol != col) {
+        txtCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setLogColor( const QColor& col )
 {
-    logCol = col;
+    if (logCol != col) {
+        logCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setWarningColor( const QColor& col )
 {
-    warnCol = col;
+    if (warnCol != col) {
+        warnCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setErrorColor( const QColor& col )
 {
-    errCol = col;
+    if (errCol != col) {
+        errCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setCriticalColor( const QColor& col )
 {
-    criticalCol = col;
+    if (criticalCol != col) {
+        criticalCol = col;
+        recolor();
+    }
 }
 
 namespace {
@@ -410,6 +439,8 @@ public:
     static PyObject* default_stderr;
     static PyObject* replace_stderr;
 
+    fastsignals::scoped_connection connParam;
+
     ReportHighlighter::Paragraph pendingType;
     QStringList pendingMessage;
 
@@ -467,7 +498,7 @@ ReportOutput::ReportOutput(QWidget* parent)
   : QTextEdit(parent)
   , WindowParameter("OutputWindow")
   , d(new Data)
-  , gotoEnd(false)
+  , gotoEnd(true)
   , blockStart(true)
 {
     bLog = false;
@@ -481,19 +512,28 @@ ReportOutput::ReportOutput(QWidget* parent)
     restoreFont();
     setReadOnly(true);
     clear();
+    fitFoldMargin();
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     Base::Console().AttachObserver(this);
+    // still told by the group itself: colorCriticalText
     getWindowParameter()->Attach(this);
     getWindowParameter()->NotifyAll();
-    // do this explicitly because the keys below might not yet be part of a group
-    getWindowParameter()->Notify("RedirectPythonOutput");
-    getWindowParameter()->Notify("RedirectPythonErrors");
+    // The view's own settings come from ReportViewParams, which knows their
+    // defaults and says when one changed -- from the preferences, the
+    // context menu, the omni search or a script alike.
+    d->connParam = ReportViewParams::signalParamChanged().connect(
+        [this](const char *name) { applySetting(name); });
+    for (const char *name : {"checkMessage", "checkLogging", "checkWarning", "checkError",
+                             "checkCritical", "colorText", "colorLogging", "colorWarning",
+                             "colorError", "checkGoToEnd", "RedirectPythonOutput",
+                             "RedirectPythonErrors", "MaxLines"}) {
+        applySetting(name);
+    }
 
     _prefs = WindowParameter::getDefaultParameter()->GetGroup("Editor");
     _prefs->Attach(this);
     _prefs->Notify("FontSize");
-    _prefs->Notify("MaxLines");
 
     // scroll to bottom at startup to make sure that last appended text is visible
     ensureCursorVisible();
@@ -699,23 +739,98 @@ void ReportOutput::keepFolded(const QTextBlock& block,
     }
     data->folded = folded;
     data->foldedType = type;
-    //the underline says the line is foldable, and the highlighter draws it from
-    //this data, which was not there yet when the block was first highlighted
-    reportHl->rehighlightBlock(block);
+    //the mark says the line is foldable, and it is drawn from this data, which
+    //was not there yet when the line was painted
+    viewport()->update();
 }
 
-//! the collapsed line under this point, invalid when there is none
+//! the margin the marks are drawn in
+//!
+//! The document's own margin, on purpose: it is the one indent every line gets
+//! alike, so a line with a mark and a line without start in the same column,
+//! and it survives the document being cleared, which a format put on the root
+//! frame or on the blocks does not.
+void ReportOutput::fitFoldMargin()
+{
+    const qreal margin = fontMetrics().height() + 2;
+    if (!qFuzzyCompare(document()->documentMargin(), margin)) {
+        document()->setDocumentMargin(margin);
+    }
+}
+
+QRectF ReportOutput::foldMarkRect(const QTextBlock& block) const
+{
+    const QRectF line = document()->documentLayout()->blockBoundingRect(block);
+    const qreal row = fontMetrics().height();
+    const qreal side = qMin(row, document()->documentMargin()) - 4;
+    const qreal x = (document()->documentMargin() - side) / 2 - horizontalScrollBar()->value();
+    const qreal y = line.top() + (row - side) / 2 - verticalScrollBar()->value();
+    return {x, y, side, side};
+}
+
+//! the collapsed line whose mark is under this point, invalid when there is none
+//!
+//! Only the mark answers. The line's text used to, with an underline to say
+//! so, which made a line that could not be clicked into for a selection.
 QTextBlock ReportOutput::foldedBlockAt(const QPoint& pos) const
 {
-    QTextBlock block = cursorForPosition(pos).block();
+    if (pos.x() + horizontalScrollBar()->value() >= document()->documentMargin()) {
+        return {};
+    }
+    //whatever line is at this height; the cursor is asked inside the text
+    QTextBlock block =
+        cursorForPosition(QPoint(qRound(document()->documentMargin()) + 1, pos.y())).block();
     if (!block.isValid()) {
         return {};
     }
     auto* data = static_cast<TextBlockData*>(block.userData());
-    if (data && !data->folded.isEmpty()) {
+    if (data && !data->folded.isEmpty()
+        && foldMarkRect(block).adjusted(-2, -2, 2, 2).contains(pos)) {
         return block;
     }
     return {};
+}
+
+//! the text, and in the margin a mark for each line that stands in for others
+//!
+//! A triangle pointing at the line while it is closed and down while its
+//! messages are shown, in the colour of the text, so that it follows a theme.
+void ReportOutput::paintEvent(QPaintEvent* ev)
+{
+    QTextEdit::paintEvent(ev);
+
+    QPainter painter(viewport());
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(palette().color(QPalette::Text));
+
+    const QRect exposed = ev->rect();
+    QTextBlock block =
+        cursorForPosition(QPoint(qRound(document()->documentMargin()) + 1, exposed.top())).block();
+    for (; block.isValid(); block = block.next()) {
+        const QRectF mark = foldMarkRect(block);
+        if (mark.top() > exposed.bottom()) {
+            break;
+        }
+        auto* data = static_cast<TextBlockData*>(block.userData());
+        if (!data || data->folded.isEmpty()) {
+            continue;
+        }
+        const QRectF r = mark.adjusted(1, 1, -1, -1);
+        QPainterPath path;
+        if (data->expanded > 0) {
+            path.moveTo(r.left(), r.top() + r.height() * 0.25);
+            path.lineTo(r.right(), r.top() + r.height() * 0.25);
+            path.lineTo(r.center().x(), r.bottom() - r.height() * 0.1);
+        }
+        else {
+            path.moveTo(r.left() + r.width() * 0.25, r.top());
+            path.lineTo(r.right() - r.width() * 0.1, r.center().y());
+            path.lineTo(r.left() + r.width() * 0.25, r.bottom());
+        }
+        path.closeSubpath();
+        painter.drawPath(path);
+    }
 }
 
 //! open the fold on this line, or close it again
@@ -745,6 +860,7 @@ void ReportOutput::toggleFold(const QTextBlock& block)
         cursor.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
         cursor.removeSelectedText();
         cursor.endEditBlock();
+        viewport()->update();
         return;
     }
 
@@ -767,6 +883,8 @@ void ReportOutput::toggleFold(const QTextBlock& block)
     cursor.setPosition(start);
     cursor.insertText(QStringLiteral("\n") + lines.join(QStringLiteral("\n")));
     cursor.endEditBlock();
+    //the line itself did not change, and its mark has to turn
+    viewport()->update();
 }
 
 void ReportOutput::appendReport(ReportHighlighter::Paragraph messageType, const QString& message,
@@ -864,7 +982,7 @@ void ReportOutput::appendReport(ReportHighlighter::Paragraph messageType, const 
 }
 
 
-//! open or close the fold on the collapsed line that was clicked
+//! open or close the fold whose mark was clicked
 void ReportOutput::mousePressEvent(QMouseEvent* ev)
 {
     if (ev->button() == Qt::LeftButton) {
@@ -877,7 +995,7 @@ void ReportOutput::mousePressEvent(QMouseEvent* ev)
     QTextEdit::mousePressEvent(ev);
 }
 
-//! point at a collapsed line, so it reads as something to click
+//! point at the mark of a collapsed line, so it reads as something to click
 void ReportOutput::mouseMoveEvent(QMouseEvent* ev)
 {
     viewport()->setCursor(foldedBlockAt(ev->pos()).isValid() ? Qt::PointingHandCursor
@@ -898,7 +1016,7 @@ bool ReportOutput::event(QEvent* event)
 void ReportOutput::changeEvent(QEvent *ev)
 {
     if (ev->type() == QEvent::StyleChange) {
-        OnChange(*getWindowParameter(), "colorText");
+        applySetting("colorText");
     }
     QTextEdit::changeEvent(ev);
 }
@@ -1057,34 +1175,31 @@ bool ReportOutput::isCritical() const
     return bCritical;
 }
 
+// The toggles store the setting; applySetting() is what acts on it, here as
+// for a change that came from anywhere else.
 void ReportOutput::onToggleError()
 {
-    bErr = bErr ? false : true;
-    getWindowParameter()->SetBool( "checkError", bErr );
+    ReportViewParams::setcheckError(!ReportViewParams::getcheckError());
 }
 
 void ReportOutput::onToggleWarning()
 {
-    bWrn = bWrn ? false : true;
-    getWindowParameter()->SetBool( "checkWarning", bWrn );
+    ReportViewParams::setcheckWarning(!ReportViewParams::getcheckWarning());
 }
 
 void ReportOutput::onToggleLogMessage()
 {
-    bLog = bLog ? false : true;
-    getWindowParameter()->SetBool( "checkLogging", bLog );
+    ReportViewParams::setcheckLogging(!ReportViewParams::getcheckLogging());
 }
 
 void ReportOutput::onToggleNormalMessage()
 {
-    bMsg = bMsg ? false : true;
-    getWindowParameter()->SetBool( "checkMessage", bMsg );
+    ReportViewParams::setcheckMessage(!ReportViewParams::getcheckMessage());
 }
 
 void ReportOutput::onToggleCritical()
 {
-    bCritical = bCritical ? false : true;
-    getWindowParameter()->SetBool( "checkCritical", bCritical );
+    ReportViewParams::setcheckCritical(!ReportViewParams::getcheckCritical());
 }
 
 void ReportOutput::onToggleShowReportViewOnWarning()
@@ -1114,62 +1229,50 @@ void ReportOutput::onToggleShowReportViewOnLogMessage()
 
 void ReportOutput::onToggleRedirectPythonStdout()
 {
-    if (d->redirected_stdout) {
-        d->redirected_stdout = false;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stdout", d->default_stdout);
-    }
-    else {
-        d->redirected_stdout = true;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stdout", d->replace_stdout);
-    }
-
-    getWindowParameter()->SetBool("RedirectPythonOutput", d->redirected_stdout);
+    ReportViewParams::setRedirectPythonOutput(!ReportViewParams::getRedirectPythonOutput());
 }
 
 void ReportOutput::onToggleRedirectPythonStderr()
 {
-    if (d->redirected_stderr) {
-        d->redirected_stderr = false;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stderr", d->default_stderr);
-    }
-    else {
-        d->redirected_stderr = true;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stderr", d->replace_stderr);
-    }
-
-    getWindowParameter()->SetBool("RedirectPythonErrors", d->redirected_stderr);
+    ReportViewParams::setRedirectPythonErrors(!ReportViewParams::getRedirectPythonErrors());
 }
 
 void ReportOutput::onToggleGoToEnd()
 {
-    gotoEnd = gotoEnd ? false : true;
-    getWindowParameter()->SetBool( "checkGoToEnd", gotoEnd );
+    ReportViewParams::setcheckGoToEnd(!ReportViewParams::getcheckGoToEnd());
 }
 
-void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sReason)
+/* One of the view's settings, applied. Called for each at construction and
+ * whenever ReportViewParams says one changed; every branch can be run again
+ * with nothing changed.
+ */
+void ReportOutput::applySetting(const char *name)
 {
-    ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
-    if (strcmp(sReason, "checkLogging") == 0) {
-        bLog = rclGrp.GetBool( sReason, bLog );
+    if (!name)
+        return;
+    if (strcmp(name, "checkLogging") == 0) {
+        bLog = ReportViewParams::getcheckLogging();
     }
-    else if (strcmp(sReason, "checkWarning") == 0) {
-        bWrn = rclGrp.GetBool( sReason, bWrn );
+    else if (strcmp(name, "MaxLines") == 0) {
+        // The limit is this view's, stored by its context menu. It used
+        // to be read at every start from the EDITOR group, which has no
+        // such key, so a limit that had been set was 10000 again.
+        this->document()->setMaximumBlockCount(static_cast<int>(ReportViewParams::getMaxLines()));
     }
-    else if (strcmp(sReason, "checkError") == 0) {
-        bErr = rclGrp.GetBool( sReason, bErr );
+    else if (strcmp(name, "checkWarning") == 0) {
+        bWrn = ReportViewParams::getcheckWarning();
     }
-    else if (strcmp(sReason, "checkMessage") == 0) {
-        bMsg = rclGrp.GetBool( sReason, bMsg );
+    else if (strcmp(name, "checkError") == 0) {
+        bErr = ReportViewParams::getcheckError();
     }
-    else if (strcmp(sReason, "checkCritical") == 0) {
-        bMsg = rclGrp.GetBool( sReason, bMsg );
+    else if (strcmp(name, "checkMessage") == 0) {
+        bMsg = ReportViewParams::getcheckMessage();
     }
-    else if (strcmp(sReason, "colorText") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
+    else if (strcmp(name, "checkCritical") == 0) {
+        bCritical = ReportViewParams::getcheckCritical();
+    }
+    else if (strcmp(name, "colorText") == 0) {
+        unsigned long col = ReportViewParams::getcolorText();
         if (col == 0) {
             QPalette pal = palette();
             QColor color = pal.windowText().color();
@@ -1178,31 +1281,51 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
         }
         reportHl->setTextColor(App::Color::fromPackedRGB<QColor>(col));
     }
-    else if (strcmp(sReason, "colorCriticalText") == 0) {
+    else if (strcmp(name, "colorLogging") == 0) {
+        reportHl->setLogColor(App::Color::fromPackedRGB<QColor>(ReportViewParams::getcolorLogging()));
+    }
+    else if (strcmp(name, "colorWarning") == 0) {
+        reportHl->setWarningColor(App::Color::fromPackedRGB<QColor>(ReportViewParams::getcolorWarning()));
+    }
+    else if (strcmp(name, "colorError") == 0) {
+        reportHl->setErrorColor(App::Color::fromPackedRGB<QColor>(ReportViewParams::getcolorError()));
+    }
+    else if (strcmp(name, "checkGoToEnd") == 0) {
+        gotoEnd = ReportViewParams::getcheckGoToEnd();
+    }
+    else if (strcmp(name, "RedirectPythonOutput") == 0) {
+        const bool on = ReportViewParams::getRedirectPythonOutput();
+        if (on != d->redirected_stdout) {
+            d->redirected_stdout = on;
+            Base::PyGILStateLocker lock;
+            PySys_SetObject("stdout", on ? d->replace_stdout : d->default_stdout);
+        }
+    }
+    else if (strcmp(name, "RedirectPythonErrors") == 0) {
+        const bool on = ReportViewParams::getRedirectPythonErrors();
+        if (on != d->redirected_stderr) {
+            d->redirected_stderr = on;
+            Base::PyGILStateLocker lock;
+            PySys_SetObject("stderr", on ? d->replace_stderr : d->default_stderr);
+        }
+    }
+}
+
+void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sReason)
+{
+    ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
+    // The view's own settings are applySetting()'s, told by ReportViewParams.
+    // What is left here is colorCriticalText and what the Editor group says.
+    if (strcmp(sReason, "colorCriticalText") == 0) {
         unsigned long col = rclGrp.GetUnsigned( sReason );
         reportHl->setTextColor( QColor( (col >> 24) & 0xff,(col >> 16) & 0xff,(col >> 8) & 0xff) );
     }
-    else if (strcmp(sReason, "colorLogging") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        reportHl->setLogColor(App::Color::fromPackedRGB<QColor>(col));
-    }
-    else if (strcmp(sReason, "colorWarning") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        reportHl->setWarningColor(App::Color::fromPackedRGB<QColor>(col));
-    }
-    else if (strcmp(sReason, "colorError") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        reportHl->setErrorColor(App::Color::fromPackedRGB<QColor>(col));
-    }
-    else if (strcmp(sReason, "checkGoToEnd") == 0) {
-        gotoEnd = rclGrp.GetBool(sReason, gotoEnd);
-    }
     else if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
-        int fontSize = rclGrp.GetInt("FontSize", 10);
-        QString fontFamily = QString::fromUtf8(rclGrp.GetASCII("Font", "Courier").c_str());
-
-        QFont font(fontFamily, fontSize);
+        int fontSize = rclGrp.GetInt("FontSize", EditorParams::defaultFontSize());
+        QFont font = editorFont(
+            rclGrp.GetASCII("Font", EditorParams::defaultFont().c_str()), fontSize);
         setFont(font);
+        fitFoldMargin();
         QFontMetrics metric(font);
         int width = QtTools::horizontalAdvance(metric, QStringLiteral("0000"));
 #if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
@@ -1210,19 +1333,6 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
 #else
         setTabStopDistance(width);
 #endif
-    }
-    else if (strcmp(sReason, "RedirectPythonOutput") == 0) {
-        bool checked = rclGrp.GetBool(sReason, true);
-        if (checked != d->redirected_stdout)
-            onToggleRedirectPythonStdout();
-    }
-    else if (strcmp(sReason, "RedirectPythonErrors") == 0) {
-        bool checked = rclGrp.GetBool(sReason, true);
-        if (checked != d->redirected_stderr)
-            onToggleRedirectPythonStderr();
-    }
-    else if (strcmp(sReason, "MaxLines") == 0) {
-        this->document()->setMaximumBlockCount(rclGrp.GetInt("MaxLines", 10000));
     }
 }
 

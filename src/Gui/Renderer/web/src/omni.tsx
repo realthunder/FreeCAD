@@ -52,6 +52,9 @@ export interface Input {
   query: string;
   /// Where the query starts in the full text
   offset: number;
+  /// Chooser only: the text is the beginning of a keyword ("/c"), which is
+  /// as likely the beginning of an object's name; objects are listed too
+  withObjects?: boolean;
 }
 
 /// No '/param ' here: the host's preferences are not a browser's to change
@@ -61,16 +64,31 @@ const PREFIXES: [string, Mode][] = [
   ['/ ', 'object'],
 ];
 
-/// The desktop grammar (OmniSearch::parseInput): a full prefix picks
-/// the mode, a lone '/' or a partial prefix is the chooser, and text
-/// without a slash is an object query as typed.
+/// The words that select a mode after the slash. The desktop has 'param'
+/// as well; here it is a name like any other.
+const KEYWORDS = ['cmd'];
+
+/// The desktop grammar (OmniSearch::parseInput): a full prefix picks the
+/// mode. After the slash, a word that is no keyword is an object query
+/// with no space needed ("/Box"), and the space is how to ask for an
+/// object named like a keyword ("/ cmd"). A keyword in full is the
+/// keyword; the beginning of one ("/c") is the chooser with objects
+/// listed after the modes. A lone '/' is the chooser, and text without a
+/// slash is an object query as typed.
 export function parseInput(text: string): Input {
   if (!text.startsWith('/')) return { mode: 'object', query: text, offset: 0 };
   for (const [prefix, mode] of PREFIXES) {
     if (text.startsWith(prefix))
       return { mode, query: text.slice(prefix.length), offset: prefix.length };
   }
-  return { mode: 'chooser', query: text.slice(1), offset: 1 };
+  const word = text.slice(1);
+  if (!word) return { mode: 'chooser', query: word, offset: 1 };
+  const lower = word.toLowerCase();
+  for (const keyword of KEYWORDS) {
+    if (keyword.startsWith(lower))
+      return { mode: 'chooser', query: word, offset: 1, withObjects: word.length < keyword.length };
+  }
+  return { mode: 'object', query: word, offset: 1 };
 }
 
 /// Rows on screen at most; the rest is a count
@@ -236,7 +254,8 @@ export function OmniBox(props: {
 
   // Object mode needs the document's objects; once per opening
   createEffect(() => {
-    if (props.open() && input().mode === 'object') paths.ensureObjects();
+    const inp = input();
+    if (props.open() && (inp.mode === 'object' || inp.withObjects)) paths.ensureObjects();
   });
 
   const objectRows = (query: string) => paths.rows(query, props.selection(), LIMIT);
@@ -245,8 +264,12 @@ export function OmniBox(props: {
     const inp = input();
     switch (inp.mode) {
       case 'chooser': {
-        const rows = MODE_ROWS.filter((r) => r.title.startsWith('/' + inp.query));
-        return { rows, total: rows.length };
+        const typed = '/' + inp.query.toLowerCase();
+        const rows = MODE_ROWS.filter((r) => r.title.startsWith(typed));
+        if (!inp.withObjects) return { rows, total: rows.length };
+        // the modes it could be, then the objects it could name
+        const objects = objectRows(inp.query);
+        return { rows: [...rows, ...objects.rows], total: rows.length + objects.total };
       }
       case 'command': {
         commands.generation();
@@ -644,7 +667,7 @@ export function OmniBox(props: {
             autocapitalize="off"
             spellcheck={false}
             value={text()}
-            placeholder="/ object, /cmd command"
+            placeholder="/name object, /cmd command"
             onInput={(e) => { setText(e.currentTarget.value); setHi(-1); setStatus(null); }}
             onKeyDown={onKey}
           />

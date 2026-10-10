@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "TechDrawParams.h"
 #ifndef _PreComp_
 # include <sstream>
 
@@ -74,9 +76,16 @@ DrawPage::DrawPage(void)
 
     // Projection Properties
     ProjectionType.setEnums(ProjectionTypeEnums);
-    ADD_PROPERTY(ProjectionType, ((long)Preferences::projectionAngle()));
+    // "Page", the third choice of the preference, is for a projection group
+    // (follow the page). A page is first or third angle: upstream sets its
+    // two-entry enumeration to 2 here, which is no value.
+    long projection = Preferences::projectionAngle();
+    if (projection > 1) {
+        projection = TechDraw::TechDrawParams::defaultProjectionAngle();
+    }
+    ADD_PROPERTY(ProjectionType, (projection));
 
-    double defScale = Preferences::getPreferenceGroup("General")->GetFloat("DefaultScale", 1.0);
+    double defScale = Preferences::getPreferenceGroup("General")->GetFloat("DefaultScale", TechDraw::TechDrawParams::defaultDefaultScale());
     ADD_PROPERTY_TYPE(Scale, (defScale), group, (App::PropertyType)(App::Prop_None),
                       "Scale factor for this Page");
 
@@ -303,6 +312,13 @@ int DrawPage::removeView(App::DocumentObject* docObj)
 void DrawPage::requestPaint(void) { signalGuiPaint(this); }
 
 //this doesn't work right because there is no guaranteed of the restoration order
+void DrawPage::Restore(Base::XMLReader& reader)
+{
+    RestoredEnumerations enumerations(*this);
+    App::DocumentObject::Restore(reader);
+    enumerations.repair();
+}
+
 void DrawPage::onDocumentRestored()
 {
     if (canUpdate()) {
@@ -493,13 +509,13 @@ bool DrawPage::hasObject(App::DocumentObject* obj)
 //allow/prevent drawing updates for all Pages
 bool DrawPage::GlobalUpdateDrawings(void)
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("GlobalUpdateDrawings", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("GlobalUpdateDrawings", TechDraw::TechDrawParams::defaultGlobalUpdateDrawings());
 }
 
 //allow/prevent a single page to update despite GlobalUpdateDrawings setting
 bool DrawPage::AllowPageOverride(void)
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("AllowPageOverride", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("AllowPageOverride", TechDraw::TechDrawParams::defaultAllowPageOverride());
 }
 
 //! get a translated label string from the context (ex TaskActiveView), the base name (ex ActiveView) and

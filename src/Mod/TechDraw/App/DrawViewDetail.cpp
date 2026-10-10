@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepBndLib.hxx>
@@ -488,7 +490,7 @@ double DrawViewDetail::getFudgeRadius() { return Radius.getValue() * m_fudge; }
 
 bool DrawViewDetail::debugDetail()
 {
-    return Preferences::getPreferenceGroup("debug")->GetBool("debugDetail", false);
+    return Preferences::getPreferenceGroup("debug")->GetBool("debugDetail", TechDraw::TechDrawParams::defaultdebugDetail());
 }
 
 void DrawViewDetail::unsetupObject()

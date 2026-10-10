@@ -60,21 +60,29 @@ public:
     bool EnableFoldsCheck;
     bool StrictlyDegenerated;
     bool SubElementSelection;
+    bool ExportAmfCompressed;
+    bool Export3mfModel;
+    long FillHoleLevel;
+    double MeshingLinearDeflection;
+    double MeshingAngularDeflection;
+    bool MeshingRelativeLinearDeflection;
 
     // Auto generated code (Tools/params_utils.py:254)
     MeshParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Mesh");
         handle->Attach(this);
 
-        subHandles.resize(2);
+        subHandles.resize(3);
         subHandles[0] = handle->GetGroup("Asymptote");
         subHandles[0]->Attach(this);
         subHandles[1] = handle->GetGroup("Evaluation");
         subHandles[1]->Attach(this);
+        subHandles[2] = handle->GetGroup("Meshing/Standard");
+        subHandles[2]->Attach(this);
         AsymptoteWidth = this->subHandles[0]->GetASCII("Width", "500");
-        funcs["AsymptoteWidth"] = &MeshParamsP::updateAsymptoteWidth;
-        AsymptoteHeight = this->subHandles[0]->GetASCII("Height", "500");
-        funcs["AsymptoteHeight"] = &MeshParamsP::updateAsymptoteHeight;
+        funcs["Width"] = &MeshParamsP::updateAsymptoteWidth;
+        AsymptoteHeight = this->subHandles[0]->GetASCII("Height", "");
+        funcs["Height"] = &MeshParamsP::updateAsymptoteHeight;
         DefaultShapeType = this->handle->GetInt("DefaultShapeType", 0);
         funcs["DefaultShapeType"] = &MeshParamsP::updateDefaultShapeType;
         MeshColor = this->handle->GetUnsigned("MeshColor", 0);
@@ -107,6 +115,18 @@ public:
         funcs["StrictlyDegenerated"] = &MeshParamsP::updateStrictlyDegenerated;
         SubElementSelection = this->handle->GetBool("SubElementSelection", false);
         funcs["SubElementSelection"] = &MeshParamsP::updateSubElementSelection;
+        ExportAmfCompressed = this->handle->GetBool("ExportAmfCompressed", true);
+        funcs["ExportAmfCompressed"] = &MeshParamsP::updateExportAmfCompressed;
+        Export3mfModel = this->handle->GetBool("Export3mfModel", true);
+        funcs["Export3mfModel"] = &MeshParamsP::updateExport3mfModel;
+        FillHoleLevel = this->handle->GetInt("FillHoleLevel", 2);
+        funcs["FillHoleLevel"] = &MeshParamsP::updateFillHoleLevel;
+        MeshingLinearDeflection = this->subHandles[2]->GetFloat("LinearDeflection", 0.1);
+        funcs["LinearDeflection"] = &MeshParamsP::updateMeshingLinearDeflection;
+        MeshingAngularDeflection = this->subHandles[2]->GetFloat("AngularDeflection", 30.0);
+        funcs["AngularDeflection"] = &MeshParamsP::updateMeshingAngularDeflection;
+        MeshingRelativeLinearDeflection = this->subHandles[2]->GetBool("RelativeLinearDeflection", false);
+        funcs["RelativeLinearDeflection"] = &MeshParamsP::updateMeshingRelativeLinearDeflection;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -133,7 +153,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:322)
     static void updateAsymptoteHeight(MeshParamsP *self) {
-        auto v = self->subHandles[0]->GetASCII("Height", "500");
+        auto v = self->subHandles[0]->GetASCII("Height", "");
         if (self->AsymptoteHeight != v) {
             self->AsymptoteHeight = v;
             MeshParams::onAsymptoteHeightChanged();
@@ -203,6 +223,30 @@ public:
     static void updateSubElementSelection(MeshParamsP *self) {
         self->SubElementSelection = self->handle->GetBool("SubElementSelection", false);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExportAmfCompressed(MeshParamsP *self) {
+        self->ExportAmfCompressed = self->handle->GetBool("ExportAmfCompressed", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExport3mfModel(MeshParamsP *self) {
+        self->Export3mfModel = self->handle->GetBool("Export3mfModel", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFillHoleLevel(MeshParamsP *self) {
+        self->FillHoleLevel = self->handle->GetInt("FillHoleLevel", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMeshingLinearDeflection(MeshParamsP *self) {
+        self->MeshingLinearDeflection = self->subHandles[2]->GetFloat("LinearDeflection", 0.1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMeshingAngularDeflection(MeshParamsP *self) {
+        self->MeshingAngularDeflection = self->subHandles[2]->GetFloat("AngularDeflection", 30.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMeshingRelativeLinearDeflection(MeshParamsP *self) {
+        self->MeshingRelativeLinearDeflection = self->subHandles[2]->GetBool("RelativeLinearDeflection", false);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -217,42 +261,110 @@ MeshParamsP *instance() {
 static const App::ParamRegistry::Registrar _MeshParamsRegistrar({
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Asymptote", "AsymptoteWidth", "Width", App::ParamInfo::String, "500")
         .setTitle("Asymptote Width")
+        .setDoc("Width of the picture in an exported Asymptote (.asy) file, as\n"
+"written to its size() command, in points. Leave empty to write no\n"
+"size at all.")
         .setOnChange(),
-    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Asymptote", "AsymptoteHeight", "Height", App::ParamInfo::String, "500")
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Asymptote", "AsymptoteHeight", "Height", App::ParamInfo::String, "")
         .setTitle("Asymptote Height")
+        .setDoc("Height of the picture in an exported Asymptote (.asy) file, in\n"
+"points. Only written when a width is set; leave empty to give the\n"
+"width alone.")
         .setOnChange(),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "DefaultShapeType", "DefaultShapeType", App::ParamInfo::Int, 0)
-        .setTitle("Default Shape Type"),
+        .setTitle("Default Shape Type")
+        .setDoc("Shape type hint given to new mesh objects. 0 unknown, 1 solid.\n"
+"Filling the cut of a clip plane only works on a solid mesh."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "MeshColor", "MeshColor", App::ParamInfo::UInt, 0)
-        .setTitle("Mesh Color"),
+        .setTitle("Mesh Color")
+        .setDoc("Default face colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "LineColor", "LineColor", App::ParamInfo::UInt, 0)
-        .setTitle("Line Color"),
+        .setTitle("Line Color")
+        .setDoc("Default line colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "MeshTransparency", "MeshTransparency", App::ParamInfo::Int, 0)
-        .setTitle("Mesh Transparency"),
+        .setTitle("Mesh Transparency")
+        .setDoc("Default transparency of the faces of new mesh objects, in percent."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "LineTransparency", "LineTransparency", App::ParamInfo::Int, 0)
-        .setTitle("Line Transparency"),
+        .setTitle("Line Transparency")
+        .setDoc("Default transparency of the lines of new mesh objects, in percent."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "TwoSideRendering", "TwoSideRendering", App::ParamInfo::Bool, false)
-        .setTitle("Two Side Rendering"),
+        .setTitle("Two Side Rendering")
+        .setDoc("Light new mesh objects from both sides, so the back of a surface\n"
+"looks like the front. When off the back shows the backlight colour\n"
+"or black."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "VertexPerNormals", "VertexPerNormals", App::ParamInfo::Bool, false)
-        .setTitle("Vertex Per Normals"),
+        .setTitle("Vertex Per Normals")
+        .setDoc("Give new mesh objects the default crease angle, which shades them\n"
+"smoothly across edges flatter than that angle. When off new meshes\n"
+"are shaded flat, one normal per triangle."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "CreaseAngle", "CreaseAngle", App::ParamInfo::Float, 0.0)
-        .setTitle("Crease Angle"),
+        .setTitle("Crease Angle")
+        .setDoc("Crease angle given to new mesh objects, in degrees. Faces meeting\n"
+"at less than this angle are shaded smoothly across their edge.\n"
+"Only used when normals per vertex are turned on."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "DisplayAliasFormatString", "DisplayAliasFormatString", App::ParamInfo::String, "%V = %A")
-        .setTitle("Display Alias Format String"),
+        .setTitle("Display Alias Format String")
+        .setDoc("Not used by the Mesh workbench. The spreadsheet setting of the\n"
+"same name controls how a cell with an alias is shown."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "ShowBoundingBox", "ShowBoundingBox", App::ParamInfo::Bool, false)
-        .setTitle("Show Bounding Box"),
+        .setTitle("Show Bounding Box")
+        .setDoc("Mark a highlighted or selected mesh with its bounding box instead\n"
+"of colouring the mesh. Applies to new mesh objects."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "MaxDeviationExport", "MaxDeviationExport", App::ParamInfo::Float, 0.1)
-        .setTitle("Max Deviation Export"),
+        .setTitle("Max Deviation Export")
+        .setDoc("Maximum deviation between a shape and the mesh made from it when\n"
+"exporting to a mesh file, in mm. Smaller values give finer meshes\n"
+"and larger files."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "RenderTriangleLimit", "RenderTriangleLimit", App::ParamInfo::Int, -1)
-        .setTitle("Render Triangle Limit"),
+        .setTitle("Render Triangle Limit")
+        .setDoc("Draw large meshes as points while the view is being moved. The\n"
+"value is a power of ten: 5 means meshes of more than 100000\n"
+"triangles. 0 or less always draws the triangles."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Evaluation", "CheckNonManifoldPoints", "CheckNonManifoldPoints", App::ParamInfo::Bool, false)
-        .setTitle("Check Non Manifold Points"),
+        .setTitle("Check Non Manifold Points")
+        .setDoc("Also look for non-manifold points when the mesh evaluation dialog\n"
+"checks for non-manifolds, and remove them on repair."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Evaluation", "EnableFoldsCheck", "EnableFoldsCheck", App::ParamInfo::Bool, false)
-        .setTitle("Enable Folds Check"),
+        .setTitle("Enable Folds Check")
+        .setDoc("Offer the check for folds on the surface in the mesh evaluation\n"
+"dialog, and include it when everything is analysed."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Evaluation", "StrictlyDegenerated", "StrictlyDegenerated", App::ParamInfo::Bool, true)
-        .setTitle("Strictly Degenerated"),
+        .setTitle("Strictly Degenerated")
+        .setDoc("Count only faces of zero area as degenerated in the mesh\n"
+"evaluation dialog. When off, nearly degenerated faces count too."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "SubElementSelection", "SubElementSelection", App::ParamInfo::Bool, false)
-        .setTitle("Sub Element Selection"),
+        .setTitle("Sub Element Selection")
+        .setDoc("Select single facets of a mesh when clicking in the 3D view,\n"
+"instead of the whole mesh object."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "ExportAmfCompressed", "ExportAmfCompressed", App::ParamInfo::Bool, true)
+        .setTitle("Compress AMF files")
+        .setDoc("Writes mesh files in the AMF format with ZIP compression. Takes\n"
+"effect at the next export."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "Export3mfModel", "Export3mfModel", App::ParamInfo::Bool, true)
+        .setTitle("Export 3MF as model")
+        .setDoc("Always exports a mesh as model type in a 3MF file, even when it is\n"
+"not a solid. Takes effect at the next export."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "FillHoleLevel", "FillHoleLevel", App::ParamInfo::Int, 2)
+        .setTitle("Hole filling level")
+        .setDoc("How far around a hole the mesh is looked at when the hole is\n"
+"filled by picking one of its border triangles: the number of rings\n"
+"of neighbouring triangles. Takes effect at the next fill."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Meshing/Standard", "MeshingLinearDeflection", "LinearDeflection", App::ParamInfo::Float, 0.1)
+        .setTitle("Mesh from shape: last surface deviation")
+        .setDoc("The surface deviation 'Create mesh from shape' was last used with,\n"
+"on its Standard tab. Stored when the dialog is accepted."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Meshing/Standard", "MeshingAngularDeflection", "AngularDeflection", App::ParamInfo::Float, 30.0)
+        .setTitle("Mesh from shape: last angular deviation")
+        .setDoc("The angular deviation, in degrees, 'Create mesh from shape' was\n"
+"last used with, on its Standard tab. Stored when the dialog is\n"
+"accepted."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Meshing/Standard", "MeshingRelativeLinearDeflection", "RelativeLinearDeflection", App::ParamInfo::Bool, false)
+        .setTitle("Mesh from shape: last 'relative surface deviation'")
+        .setDoc("'Relative surface deviation' was checked when 'Create mesh from\n"
+"shape' was last used, on its Standard tab. Stored when the dialog\n"
+"is accepted."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -262,7 +374,10 @@ ParameterGrp::handle MeshParams::getHandle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docAsymptoteWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Width of the picture in an exported Asymptote (.asy) file, as\n"
+"written to its size() command, in points. Leave empty to write no\n"
+"size at all.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -284,12 +399,15 @@ void MeshParams::setAsymptoteWidth(const std::string &v) {
 
 // Auto generated code (Tools/params_utils.py:431)
 void MeshParams::removeAsymptoteWidth() {
-    instance()->subHandles[0]->RemoveASCII("AsymptoteWidth");
+    instance()->subHandles[0]->RemoveASCII("Width");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docAsymptoteHeight() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Height of the picture in an exported Asymptote (.asy) file, in\n"
+"points. Only written when a width is set; leave empty to give the\n"
+"width alone.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -299,7 +417,7 @@ const std::string & MeshParams::getAsymptoteHeight() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const std::string & MeshParams::defaultAsymptoteHeight() {
-    const static std::string def = "500";
+    const static std::string def = "";
     return def;
 }
 
@@ -311,12 +429,14 @@ void MeshParams::setAsymptoteHeight(const std::string &v) {
 
 // Auto generated code (Tools/params_utils.py:431)
 void MeshParams::removeAsymptoteHeight() {
-    instance()->subHandles[0]->RemoveASCII("AsymptoteHeight");
+    instance()->subHandles[0]->RemoveASCII("Height");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docDefaultShapeType() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Shape type hint given to new mesh objects. 0 unknown, 1 solid.\n"
+"Filling the cut of a clip plane only works on a solid mesh.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -343,7 +463,9 @@ void MeshParams::removeDefaultShapeType() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docMeshColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default face colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -370,7 +492,9 @@ void MeshParams::removeMeshColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docLineColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default line colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -397,7 +521,8 @@ void MeshParams::removeLineColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docMeshTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default transparency of the faces of new mesh objects, in percent.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -424,7 +549,8 @@ void MeshParams::removeMeshTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docLineTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default transparency of the lines of new mesh objects, in percent.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -451,7 +577,10 @@ void MeshParams::removeLineTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docTwoSideRendering() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Light new mesh objects from both sides, so the back of a surface\n"
+"looks like the front. When off the back shows the backlight colour\n"
+"or black.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -478,7 +607,10 @@ void MeshParams::removeTwoSideRendering() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docVertexPerNormals() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Give new mesh objects the default crease angle, which shades them\n"
+"smoothly across edges flatter than that angle. When off new meshes\n"
+"are shaded flat, one normal per triangle.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -505,7 +637,10 @@ void MeshParams::removeVertexPerNormals() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docCreaseAngle() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Crease angle given to new mesh objects, in degrees. Faces meeting\n"
+"at less than this angle are shaded smoothly across their edge.\n"
+"Only used when normals per vertex are turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -532,7 +667,9 @@ void MeshParams::removeCreaseAngle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docDisplayAliasFormatString() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Not used by the Mesh workbench. The spreadsheet setting of the\n"
+"same name controls how a cell with an alias is shown.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -559,7 +696,9 @@ void MeshParams::removeDisplayAliasFormatString() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docShowBoundingBox() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Mark a highlighted or selected mesh with its bounding box instead\n"
+"of colouring the mesh. Applies to new mesh objects.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -586,7 +725,10 @@ void MeshParams::removeShowBoundingBox() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docMaxDeviationExport() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Maximum deviation between a shape and the mesh made from it when\n"
+"exporting to a mesh file, in mm. Smaller values give finer meshes\n"
+"and larger files.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -613,7 +755,10 @@ void MeshParams::removeMaxDeviationExport() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docRenderTriangleLimit() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Draw large meshes as points while the view is being moved. The\n"
+"value is a power of ten: 5 means meshes of more than 100000\n"
+"triangles. 0 or less always draws the triangles.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -640,7 +785,9 @@ void MeshParams::removeRenderTriangleLimit() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docCheckNonManifoldPoints() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Also look for non-manifold points when the mesh evaluation dialog\n"
+"checks for non-manifolds, and remove them on repair.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -667,7 +814,9 @@ void MeshParams::removeCheckNonManifoldPoints() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docEnableFoldsCheck() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Offer the check for folds on the surface in the mesh evaluation\n"
+"dialog, and include it when everything is analysed.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -694,7 +843,9 @@ void MeshParams::removeEnableFoldsCheck() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docStrictlyDegenerated() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Count only faces of zero area as degenerated in the mesh\n"
+"evaluation dialog. When off, nearly degenerated faces count too.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -721,7 +872,9 @@ void MeshParams::removeStrictlyDegenerated() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docSubElementSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Select single facets of a mesh when clicking in the 3D view,\n"
+"instead of the whole mesh object.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -744,5 +897,182 @@ void MeshParams::setSubElementSelection(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void MeshParams::removeSubElementSelection() {
     instance()->handle->RemoveBool("SubElementSelection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docExportAmfCompressed() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Writes mesh files in the AMF format with ZIP compression. Takes\n"
+"effect at the next export.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MeshParams::getExportAmfCompressed() {
+    return instance()->ExportAmfCompressed;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MeshParams::defaultExportAmfCompressed() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setExportAmfCompressed(const bool &v) {
+    instance()->handle->SetBool("ExportAmfCompressed",v);
+    instance()->ExportAmfCompressed = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeExportAmfCompressed() {
+    instance()->handle->RemoveBool("ExportAmfCompressed");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docExport3mfModel() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Always exports a mesh as model type in a 3MF file, even when it is\n"
+"not a solid. Takes effect at the next export.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MeshParams::getExport3mfModel() {
+    return instance()->Export3mfModel;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MeshParams::defaultExport3mfModel() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setExport3mfModel(const bool &v) {
+    instance()->handle->SetBool("Export3mfModel",v);
+    instance()->Export3mfModel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeExport3mfModel() {
+    instance()->handle->RemoveBool("Export3mfModel");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docFillHoleLevel() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"How far around a hole the mesh is looked at when the hole is\n"
+"filled by picking one of its border triangles: the number of rings\n"
+"of neighbouring triangles. Takes effect at the next fill.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MeshParams::getFillHoleLevel() {
+    return instance()->FillHoleLevel;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MeshParams::defaultFillHoleLevel() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setFillHoleLevel(const long &v) {
+    instance()->handle->SetInt("FillHoleLevel",v);
+    instance()->FillHoleLevel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeFillHoleLevel() {
+    instance()->handle->RemoveInt("FillHoleLevel");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docMeshingLinearDeflection() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"The surface deviation 'Create mesh from shape' was last used with,\n"
+"on its Standard tab. Stored when the dialog is accepted.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & MeshParams::getMeshingLinearDeflection() {
+    return instance()->MeshingLinearDeflection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & MeshParams::defaultMeshingLinearDeflection() {
+    const static double def = 0.1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setMeshingLinearDeflection(const double &v) {
+    instance()->subHandles[2]->SetFloat("LinearDeflection",v);
+    instance()->MeshingLinearDeflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeMeshingLinearDeflection() {
+    instance()->subHandles[2]->RemoveFloat("LinearDeflection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docMeshingAngularDeflection() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"The angular deviation, in degrees, 'Create mesh from shape' was\n"
+"last used with, on its Standard tab. Stored when the dialog is\n"
+"accepted.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & MeshParams::getMeshingAngularDeflection() {
+    return instance()->MeshingAngularDeflection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & MeshParams::defaultMeshingAngularDeflection() {
+    const static double def = 30.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setMeshingAngularDeflection(const double &v) {
+    instance()->subHandles[2]->SetFloat("AngularDeflection",v);
+    instance()->MeshingAngularDeflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeMeshingAngularDeflection() {
+    instance()->subHandles[2]->RemoveFloat("AngularDeflection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docMeshingRelativeLinearDeflection() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"'Relative surface deviation' was checked when 'Create mesh from\n"
+"shape' was last used, on its Standard tab. Stored when the dialog\n"
+"is accepted.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MeshParams::getMeshingRelativeLinearDeflection() {
+    return instance()->MeshingRelativeLinearDeflection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MeshParams::defaultMeshingRelativeLinearDeflection() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setMeshingRelativeLinearDeflection(const bool &v) {
+    instance()->subHandles[2]->SetBool("RelativeLinearDeflection",v);
+    instance()->MeshingRelativeLinearDeflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeMeshingRelativeLinearDeflection() {
+    instance()->subHandles[2]->RemoveBool("RelativeLinearDeflection");
 }
 //[[[end]]]

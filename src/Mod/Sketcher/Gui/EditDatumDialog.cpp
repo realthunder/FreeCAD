@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/Sketcher/App/SketcherParams.h>
+
 #ifndef _PreComp_
 /// Qt Include Files
 #include <Inventor/sensors/SoSensor.h>
@@ -434,7 +436,7 @@ void SketcherGui::performDatumAutoScale(Sketcher::SketchObject* sketch,
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
     long autoScaleMode = hGrp->GetInt(
-        "AutoScaleMode", static_cast<int>(SketcherGui::AutoScaleMode::WhenNoScaleFeatureIsVisible));
+        "AutoScaleMode", Sketcher::SketcherParams::defaultAutoScaleMode());
     if (autoScaleMode == static_cast<int>(SketcherGui::AutoScaleMode::Never)) {
         return;
     }
@@ -940,7 +942,7 @@ bool DatumEditSession::eventFilter(QObject* watched, QEvent* event)
                     if (App::GetApplication()
                             .GetParameterGroupByPath(
                                 "User parameter:BaseApp/Preferences/Mod/Sketcher/General")
-                            ->GetBool("DatumEscapeTakesBack", false)) {
+                            ->GetBool("DatumEscapeTakesBack", Sketcher::SketcherParams::defaultDatumEscapeTakesBack())) {
                         finish(false);
                         return true;
                     }
@@ -1025,7 +1027,7 @@ void SketcherGui::editDatums(Sketcher::SketchObject* sketch,
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
-    const bool inPlace = widgetless || hGrp->GetBool("EditDatumInPlace", true);
+    const bool inPlace = widgetless || hGrp->GetBool("EditDatumInPlace", Sketcher::SketcherParams::defaultEditDatumInPlace());
 
     if (vp && viewer && inPlace) {
         if (sketch->hasConflicts()) {

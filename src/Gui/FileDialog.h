@@ -234,11 +234,11 @@ private Q_SLOTS:
 
 protected:
     void resizeEvent(QResizeEvent*) override;
+    bool eventFilter(QObject*, QEvent*) override;
 
 private:
     QLineEdit *lineEdit;
     QCompleter *completer;
-    QFileSystemModel *fs_model;
     QPushButton *button;
     Mode md;
     AcceptMode accMode;

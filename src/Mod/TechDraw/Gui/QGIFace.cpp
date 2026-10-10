@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <cmath>
 
@@ -80,9 +82,9 @@ QGIFace::QGIFace(int index) :
     getParameters();
 
     // set up style & colour defaults
-    m_colDefFill = App::Color(static_cast<uint32_t>(Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", 0xFFFFFF)))
+    m_colDefFill = App::Color(static_cast<uint32_t>(Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", TechDraw::TechDrawParams::defaultFaceColor())))
                    .asValue<QColor>();
-    m_colDefFill.setAlpha(Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", false) ? 0 : 255);
+    m_colDefFill.setAlpha(Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", TechDraw::TechDrawParams::defaultClearFace()) ? 0 : 255);
 
     m_fillDef = Qt::SolidPattern;
     m_fillSelect = Qt::SolidPattern;
@@ -433,6 +435,6 @@ void QGIFace::setLineWeight(double w) {
 
 void QGIFace::getParameters()
 {
-    m_maxSeg = Preferences::getPreferenceGroup("PAT")->GetInt("MaxSeg", 10000l);
-    m_maxTile = Preferences::getPreferenceGroup("Decorations")->GetInt("MaxSVGTile", 10000l);
+    m_maxSeg = Preferences::getPreferenceGroup("PAT")->GetInt("MaxSeg", TechDraw::TechDrawParams::defaultMaxSeg());
+    m_maxTile = Preferences::getPreferenceGroup("Decorations")->GetInt("MaxSVGTile", TechDraw::TechDrawParams::defaultMaxSVGTile());
 }

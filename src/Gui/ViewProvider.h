@@ -672,6 +672,16 @@ public:
     static Base::Matrix4D convert(const SbMatrix &sbMat);
     //@}
 
+    /** The view this provider's object is shown in, if it has one and it
+     * is open; null otherwise.
+     *
+     * A QUESTION, never a creation: the tree asks it at every selection
+     * with "sync view" on, the split-view area asks it while it saves a
+     * layout, the expression editor while it places itself. An override
+     * that made the view here opened it for each of them. A caller that
+     * wants the view to exist asks
+     * ViewProviderDocumentObject::getOrCreateMDIView().
+     */
     virtual MDIView *getMDIView() const {
         return nullptr;
     }

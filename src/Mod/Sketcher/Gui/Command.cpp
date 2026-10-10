@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <QApplication>
 #include <QCheckBox>
@@ -1634,11 +1636,11 @@ public:
 
         ParameterGrp::handle hGrp = getParameterPath();
 
-        updateCheckBox(snapToObjects, hGrp->GetBool("SnapToObjects", true));
+        updateCheckBox(snapToObjects, hGrp->GetBool("SnapToObjects", Sketcher::SketcherParams::defaultSnapToObjects()));
 
-        updateCheckBox(snapToGrid, hGrp->GetBool("SnapToGrid", false));
+        updateCheckBox(snapToGrid, hGrp->GetBool("SnapToGrid", Sketcher::SketcherParams::defaultSnapToGrid()));
 
-        updateSpinBox(snapAngle, hGrp->GetFloat("SnapAngle", 5.0));
+        updateSpinBox(snapAngle, hGrp->GetFloat("SnapAngle", Sketcher::SketcherParams::defaultSnapAngle()));
 
         snapToObjects->setEnabled(snapenabled);
         snapToGrid->setEnabled(snapenabled);
@@ -1778,6 +1780,11 @@ CmdSketcherSnap::CmdSketcherSnap()
 
     ParameterGrp::handle hGrp = this->getParameterPath();
     hGrp->Attach(this);
+    // The state is refreshed when the key changes; it has to be read once
+    // as well. It started as "on" whatever was stored, so in a session that
+    // begins with snapping off the first click stored "not on" -- off again
+    // -- and did nothing.
+    snapEnabled = hGrp->GetBool("Snap", Sketcher::SketcherParams::defaultSnap());
 }
 
 CmdSketcherSnap::~CmdSketcherSnap()
@@ -1792,7 +1799,7 @@ void CmdSketcherSnap::OnChange(Base::Subject<const char*>& rCaller, const char* 
     Q_UNUSED(rCaller)
 
     if (strcmp(sReason, "Snap") == 0) {
-        snapEnabled = getParameterPath()->GetBool("Snap", true);
+        snapEnabled = getParameterPath()->GetBool("Snap", Sketcher::SketcherParams::defaultSnap());
     }
 }
 
@@ -1897,9 +1904,9 @@ public:
         auto hGrp = getParameterPath();
 
         // 1->Normal Geometry, 2->Construction, 3->External
-        int topid = hGrp->GetInt("TopRenderGeometryId", 1);
-        int midid = hGrp->GetInt("MidRenderGeometryId", 2);
-        int lowid = hGrp->GetInt("LowRenderGeometryId", 3);
+        int topid = hGrp->GetInt("TopRenderGeometryId", Sketcher::SketcherParams::defaultTopRenderGeometryId());
+        int midid = hGrp->GetInt("MidRenderGeometryId", Sketcher::SketcherParams::defaultMidRenderGeometryId());
+        int lowid = hGrp->GetInt("LowRenderGeometryId", Sketcher::SketcherParams::defaultLowRenderGeometryId());
 
         {
             QSignalBlocker block(this);
@@ -2041,7 +2048,7 @@ CmdRenderingOrder::CmdRenderingOrder()
     ParameterGrp::handle hGrp = this->getParameterPath();
     hGrp->Attach(this);
 
-    TopElement = static_cast<ElementType>(getParameterPath()->GetInt("TopRenderGeometryId", 1));
+    TopElement = static_cast<ElementType>(getParameterPath()->GetInt("TopRenderGeometryId", Sketcher::SketcherParams::defaultTopRenderGeometryId()));
 }
 
 CmdRenderingOrder::~CmdRenderingOrder()
@@ -2056,7 +2063,7 @@ void CmdRenderingOrder::OnChange(Base::Subject<const char*>& rCaller, const char
     Q_UNUSED(rCaller)
 
     if (strcmp(sReason, "TopRenderGeometryId") == 0) {
-        TopElement = static_cast<ElementType>(getParameterPath()->GetInt("TopRenderGeometryId", 1));
+        TopElement = static_cast<ElementType>(getParameterPath()->GetInt("TopRenderGeometryId", Sketcher::SketcherParams::defaultTopRenderGeometryId()));
 
         updateIcon();
     }
@@ -2160,7 +2167,7 @@ void SketcherGui::addViewSettingsActions(QMenu* menu)
         snapAction->updateWidget(App::GetApplication()
                                      .GetParameterGroupByPath(
                                          "User parameter:BaseApp/Preferences/Mod/Sketcher/Snap")
-                                     ->GetBool("Snap", true));
+                                     ->GetBool("Snap", Sketcher::SketcherParams::defaultSnap()));
         renderingAction->updateWidget();
     });
 }

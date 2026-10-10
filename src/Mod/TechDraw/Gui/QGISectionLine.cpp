@@ -21,7 +21,10 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
+# include <QApplication>
 # include <QGraphicsScene>
 # include <QGraphicsSceneMouseEvent>
 # include <QPainter>
@@ -84,7 +87,6 @@ QGISectionLine::QGISectionLine() :
     addToGroup(m_symbol2);
 
     setWidth(Rez::guiX(0.75));          //a default?
-    setStyle(getSectionStyle());
     setColor(getSectionColor());
 }
 
@@ -551,22 +553,10 @@ QColor QGISectionLine::getSectionColor()
     return PreferencesGui::sectionLineQColor();
 }
 
-//SectionLineStyle
-void QGISectionLine::setSectionStyle(int style)
-{
-    Qt::PenStyle sectStyle = static_cast<Qt::PenStyle> (style);
-    setStyle(sectStyle);
-}
-
-Qt::PenStyle QGISectionLine::getSectionStyle()
-{
-    return PreferencesGui::sectionLineStyle();
-}
-
 //ASME("traditional") vs ISO("reference arrow method") arrows
 int QGISectionLine::getPrefSectionStandard()
 {
-    return Preferences::getPreferenceGroup("Standards")->GetInt("SectionLineStandard", ISOSTANDARD);
+    return Preferences::getPreferenceGroup("Standards")->GetInt("SectionLineStandard", TechDraw::TechDrawParams::defaultSectionLineStandard());
 }
 
 
@@ -659,11 +649,23 @@ QPainterPath QGISectionLine::shape() const
     return QPainterPath();
 }
 
+namespace {
+
+// Whether the mouse went as far from where its button came down as
+// starts a drag.
+bool wasDragged(const QGraphicsSceneMouseEvent *ev)
+{
+    const QPoint gone = ev->screenPos() - ev->buttonDownScreenPos(Qt::LeftButton);
+    return gone.manhattanLength() >= QApplication::startDragDistance();
+}
+
+} // namespace
+
 void QGISectionLine::onItemMoved(QGraphicsItem *item, QPointF &oldPos, QGraphicsSceneMouseEvent *ev)
 {
-    auto doneMoving = [this, ev](const char *msg) {
+    auto doneMoving = [this](const char *msg,
+                             const TechDraw::ChangePointVector &changePointData) {
         auto objT = getFeatureT();
-        auto changePointData = m_changePointData;
         QTimer::singleShot(0, [changePointData, objT, msg]() {
             if (auto drawSection = Base::freecad_dynamic_cast<TechDraw::DrawViewSection>(objT.getObject())) {
                 try {
@@ -682,22 +684,76 @@ void QGISectionLine::onItemMoved(QGraphicsItem *item, QPointF &oldPos, QGraphics
     }
     else if (item == m_line) {
         if (ev->type() == QEvent::GraphicsSceneMouseRelease) {
+            // A click is not a move. Every release used to end in
+            // "Move section line": the section was given the line's
+            // points again and recomputed, for a click that selected
+            // it. The mouse has to have gone as far as starts a drag
+            // anywhere else; short of that the line goes back.
+            if (!wasDragged(ev) || this->pos() == oldPos) {
+                this->setPos(oldPos);
+                return;
+            }
+            // The two ends, also of a line that shows no marks at them
+            // (SectionLineMarks off, when there are no change points
+            // to move and this read past the end of an empty vector).
+            TechDraw::ChangePointVector points = m_changePointData;
+            if (points.size() < 2) {
+                if (pathMode()) {
+                    this->setPos(oldPos);
+                    return;
+                }
+                QPointF start = Rez::appX(m_start);
+                QPointF end = Rez::appX(m_end);
+                QPointF dir = DrawUtil::normalize(end - start);
+                points.clear();
+                points.emplace_back(start, -dir, dir);
+                points.emplace_back(end, -dir, dir);
+            }
             auto offset = Rez::appX(this->pos()) - Rez::appX(oldPos);
-            for (auto &point : m_changePointData)
+            for (auto &point : points)
                 point.setLocation(point.getLocation() + offset);
+            if (!m_changePointData.empty())
+                m_changePointData = points;
             if (!pathMode()) {
-                setEnds(Rez::guiX(m_changePointData[0].getLocation()),
-                        Rez::guiX(m_changePointData[1].getLocation()));
+                setEnds(Rez::guiX(points[0].getLocation()),
+                        Rez::guiX(points[1].getLocation()));
             }
             this->setPos(QPointF(0, 0));
             draw();
-            doneMoving(QT_TRANSLATE_NOOP("Command", "Move section line"));
+            doneMoving(QT_TRANSLATE_NOOP("Command", "Move section line"), points);
         }
     }
     else if (auto pointItem = qgraphicsitem_cast<QGIEdge*>(item)) {
         int index = pointItem->getProjIndex();
         int count = static_cast<int>(m_changePointData.size());
         if (index >= 0 && index < count) {
+            // the two-point line follows its points
+            auto followPoints = [this]() {
+                if (m_changePointData.size() != 2)
+                    return;
+                setEnds(Rez::guiX(m_changePointData[0].getLocation()),
+                        Rez::guiX(m_changePointData[1].getLocation()));
+                if (m_arrowMode == SINGLEDIRECTIONMODE) {
+                    QPointF dir = m_changePointData[0].getPostDirection();
+                    setDirection(dir.y(), dir.x());
+                }
+            };
+            const bool released = ev->type() == QEvent::GraphicsSceneMouseRelease;
+            if (!m_markDragging) {
+                m_markDragging = true;
+                m_changePointsAtPress = m_changePointData;
+            }
+            if (released) {
+                m_markDragging = false;
+                if (!wasDragged(ev)) {
+                    // a click on the mark, or the hand shaking over it:
+                    // as it was, and nothing for the section to do
+                    m_changePointData = m_changePointsAtPress;
+                    followPoints();
+                    draw();
+                    return;
+                }
+            }
             int preIdx = index==0 ? count-1 : index-1;
             int postIdx = index==count-1 ? 0 : index+1;
             Base::Vector3d pos = DrawUtil::toVector3d(Rez::appX(pointItem->pos()));
@@ -724,20 +780,13 @@ void QGISectionLine::onItemMoved(QGraphicsItem *item, QPointF &oldPos, QGraphics
             point.setPostDirection(DrawUtil::normalize(postPoint.getLocation() - point.getLocation()));
             prePoint.setPostDirection(-point.getPreDirection());
             postPoint.setPreDirection(-point.getPostDirection());
-            if (m_changePointData.size() == 2) {
-                setEnds(Rez::guiX(m_changePointData[0].getLocation()),
-                        Rez::guiX(m_changePointData[1].getLocation()));
-
-                if (m_arrowMode == SINGLEDIRECTIONMODE) {
-                    QPointF dir = m_changePointData[0].getPostDirection();
-                    setDirection(dir.y(), dir.x());
-                }
-            }
+            followPoints();
             oldPos = pointItem->pos();
-            if (ev->type() != QEvent::GraphicsSceneMouseRelease)
+            if (!released)
                 draw();
             else
-                doneMoving(QT_TRANSLATE_NOOP("Command", "Rotate section line"));
+                doneMoving(QT_TRANSLATE_NOOP("Command", "Rotate section line"),
+                           m_changePointData);
         }
     }
 }

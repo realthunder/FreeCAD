@@ -28,7 +28,8 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.abspath(__file__))), 'Tools'))
 import params_utils
 
-from params_utils import ParamBool, ParamInt, ParamString, ParamQString, ParamUInt, ParamFloat
+from params_utils import ParamBool, ParamInt, ParamString, ParamQString, ParamUInt, ParamFloat, \
+                         ParamHex, ParamColor
 
 NameSpace = 'Gui'
 ClassName = 'ReportViewParams'
@@ -37,23 +38,89 @@ ClassDoc = 'Convenient class to obtain ReportView related parameters'
 Signal = True
 
 Params = [
-    ParamBool('checkShowReportViewOnWarning', True),
-    ParamBool('checkShowReportViewOnError', True),
-    ParamBool('checkShowReportViewOnNormalMessage', False),
-    ParamBool('checkShowReportViewOnLogMessage', False),
-    ParamBool('checkShowReportViewOnCritical', False),
-    ParamBool("checkShowReportTimecode", True),
+    ParamBool('checkMessage', True,
+        title = 'Record normal messages',
+        doc = "Show normal messages in the report view."),
+    ParamBool('checkLogging', False,
+        title = 'Record log messages',
+        doc = "Show log messages in the report view. They are many; the log file\n"
+              "has them either way."),
+    ParamBool('checkWarning', True,
+        title = 'Record warnings',
+        doc = "Show warnings in the report view."),
+    ParamBool('checkError', True,
+        title = 'Record error messages',
+        doc = "Show error messages in the report view."),
+    ParamBool('checkCritical', True,
+        title = 'Record critical messages',
+        doc = "Show critical messages in the report view."),
+    ParamHex('colorText', 0, proxy=ParamColor(transparency=False),
+        title = 'Normal message colour',
+        doc = "Colour of normal messages in the report view, and of the status\n"
+              "bar's. 0 uses the window's text colour."),
+    ParamHex('colorLogging', 0x0000ffff, proxy=ParamColor(transparency=False),
+        title = 'Log message colour',
+        doc = "Colour of log messages in the report view."),
+    ParamHex('colorWarning', 0xffaa00ff, proxy=ParamColor(transparency=False),
+        title = 'Warning colour',
+        doc = "Colour of warnings in the report view and in the status bar."),
+    ParamHex('colorError', 0xff0000ff, proxy=ParamColor(transparency=False),
+        title = 'Error colour',
+        doc = "Colour of error messages in the report view and in the status bar."),
+    ParamBool('checkGoToEnd', True,
+        title = 'Go to end',
+        doc = "Keep the newest line of the report view in sight as messages\n"
+              "arrive. When off the view stays where it was scrolled to."),
+    ParamBool('RedirectPythonOutput', True,
+        title = 'Redirect Python output',
+        doc = "Show what Python code prints (sys.stdout) in the report view. Also\n"
+              "decides where the output of a macro goes."),
+    ParamBool('RedirectPythonErrors', True,
+        title = 'Redirect Python errors',
+        doc = "Show Python's error output (sys.stderr) in the report view. Also\n"
+              "decides where the errors of a macro go."),
+    ParamInt('MaxLines', 10000,
+        title = 'Maximum lines',
+        doc = "Largest number of lines the report view keeps; older lines are\n"
+              "dropped. 0 means no limit. Also in the view's context menu."),
+    ParamBool('checkShowReportViewOnWarning', True,
+        title = 'Show report view on warning',
+        doc = "Bring the report view on screen when a warning arrives."),
+    ParamBool('checkShowReportViewOnError', True,
+        title = 'Show report view on error',
+        doc = "Bring the report view on screen when an error arrives."),
+    ParamBool('checkShowReportViewOnNormalMessage', False,
+        title = 'Show report view on normal message',
+        doc = "Bring the report view on screen when a normal message arrives."),
+    ParamBool('checkShowReportViewOnLogMessage', False,
+        title = 'Show report view on log message',
+        doc = "Bring the report view on screen when a log message arrives."),
+    ParamBool('checkShowReportViewOnCritical', False,
+        title = 'Show report view on critical message',
+        doc = "Bring the report view on screen when a critical message arrives."),
+    ParamBool("checkShowReportTimecode", True,
+        title = 'Show time code',
+        doc = "Put the time a message arrived in front of each line of the report\n"
+              "view."),
 
-    ParamInt("LogMessageSize", 0),
+    ParamInt("LogMessageSize", 0,
+        doc = "Largest number of characters of one log message shown in the report\n"
+              "view. A longer message is cut off. 0 uses the built-in limit of 2048\n"
+              "characters."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # How many of the most recently shown lines a new line is compared against
+    # before it is shown. A line that repeats any of them is held back instead,
+    # and shown once - the first one held, carrying (xN) for the number it
+    # stands in for, and clickable to expand the ones that were kept back -
+    # when a different line has to be shown or DuplicateTimeout expires.
+    # Set to 0 to show every line as it arrives.
+    # This affects the Report view only. The log file, the Python console and
+    # every other console observer still receive every message.
     ParamInt("DuplicateWindow", 3,
-        doc='How many of the most recently shown lines a new line is compared against\n'
-            'before it is shown. A line that repeats any of them is held back instead,\n'
-            'and shown once - the first one held, carrying (xN) for the number it\n'
-            'stands in for, and clickable to expand the ones that were kept back -\n'
-            'when a different line has to be shown or DuplicateTimeout expires.\n'
-            'Set to 0 to show every line as it arrives.\n'
-            'This affects the Report view only. The log file, the Python console and\n'
-            'every other console observer still receive every message.'),
+        doc="How many of the most recent lines a new line is compared with. A line\n"
+            "that repeats one of them is held back and shown once with a count (xN)\n"
+            "that can be clicked to expand. 0 shows every line. Affects the Report\n"
+            "view only; the log file and other consoles get every message."),
     ParamInt("DuplicateKeyLength", 100,
         doc='How many leading non-digit characters two messages must share to count\n'
             'as the same message. Digits are skipped rather than compared, so the same\n'

@@ -121,8 +121,17 @@ public:
 private:
     /** @name for internal use only */
     //@{
+    /** Gives the lines already written the colors as they are now. A line
+     * keeps the format it was written with, so a color changed afterwards --
+     * a theme applied to a running session -- left what was there in the old
+     * one: black text on a view that had turned dark.
+     */
+    void recolor();
+
     Paragraph type;
     QColor txtCol, logCol, warnCol, errCol, criticalCol;
+    /// highlightBlock() is running for recolor(), not for a line being written
+    bool recoloring = false;
     //@}
 };
 
@@ -165,9 +174,11 @@ public:
 protected:
     /** For internal use only */
     void customEvent ( QEvent* ev ) override;
-    /** Folds or unfolds the messages a collapsed line stands in for */
+    /** Draws the mark of each collapsed line in the margin */
+    void paintEvent(QPaintEvent* ev) override;
+    /** Folds or unfolds the messages behind the mark that was clicked */
     void mousePressEvent(QMouseEvent* ev) override;
-    /** Points the cursor at a collapsed line */
+    /** Points the cursor at the mark of a collapsed line */
     void mouseMoveEvent(QMouseEvent* ev) override;
     /** Handles the change of style sheets */
     void changeEvent(QEvent *) override;
@@ -209,6 +220,9 @@ public Q_SLOTS:
     void onToggleGoToEnd();
 
 private:
+    void applySetting(const char *name);
+
+private:
     /** Hold back a line that repeats one of the last few shown; true when held. */
     bool holdDuplicate(ReportHighlighter::Paragraph type, const QString& text);
     /** Put one line into the view, batching as the report view always has.
@@ -224,8 +238,14 @@ private:
     /** Hang the held messages on the line shown in their place. */
     void keepFolded(const QTextBlock& block, ReportHighlighter::Paragraph type,
                     const QStringList& folded);
-    /** The collapsed line at this point, an invalid block when there is none. */
+    /** The collapsed line whose mark is at this point of the viewport, an
+     * invalid block when there is none. */
     QTextBlock foldedBlockAt(const QPoint& pos) const;
+    /** Where a line's mark goes, in the viewport: a square in the margin, at
+     * the height of the line's first row. */
+    QRectF foldMarkRect(const QTextBlock& block) const;
+    /** Makes the margin wide enough for the mark at the font in use. */
+    void fitFoldMargin();
     /** Show the messages behind a collapsed line, or hide them again. */
     void toggleFold(const QTextBlock& block);
 

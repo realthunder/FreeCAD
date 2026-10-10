@@ -73,7 +73,171 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter checkMessage
+    ///
+    /// Show normal messages in the report view.
+    static const bool & getcheckMessage();
+    static const bool & defaultcheckMessage();
+    static void removecheckMessage();
+    static void setcheckMessage(const bool &v);
+    static const char *doccheckMessage();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter checkLogging
+    ///
+    /// Show log messages in the report view. They are many; the log file
+    /// has them either way.
+    static const bool & getcheckLogging();
+    static const bool & defaultcheckLogging();
+    static void removecheckLogging();
+    static void setcheckLogging(const bool &v);
+    static const char *doccheckLogging();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter checkWarning
+    ///
+    /// Show warnings in the report view.
+    static const bool & getcheckWarning();
+    static const bool & defaultcheckWarning();
+    static void removecheckWarning();
+    static void setcheckWarning(const bool &v);
+    static const char *doccheckWarning();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter checkError
+    ///
+    /// Show error messages in the report view.
+    static const bool & getcheckError();
+    static const bool & defaultcheckError();
+    static void removecheckError();
+    static void setcheckError(const bool &v);
+    static const char *doccheckError();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter checkCritical
+    ///
+    /// Show critical messages in the report view.
+    static const bool & getcheckCritical();
+    static const bool & defaultcheckCritical();
+    static void removecheckCritical();
+    static void setcheckCritical(const bool &v);
+    static const char *doccheckCritical();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter colorText
+    ///
+    /// Colour of normal messages in the report view, and of the status
+    /// bar's. 0 uses the window's text colour.
+    static const unsigned long & getcolorText();
+    static const unsigned long & defaultcolorText();
+    static void removecolorText();
+    static void setcolorText(const unsigned long &v);
+    static const char *doccolorText();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter colorLogging
+    ///
+    /// Colour of log messages in the report view.
+    static const unsigned long & getcolorLogging();
+    static const unsigned long & defaultcolorLogging();
+    static void removecolorLogging();
+    static void setcolorLogging(const unsigned long &v);
+    static const char *doccolorLogging();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter colorWarning
+    ///
+    /// Colour of warnings in the report view and in the status bar.
+    static const unsigned long & getcolorWarning();
+    static const unsigned long & defaultcolorWarning();
+    static void removecolorWarning();
+    static void setcolorWarning(const unsigned long &v);
+    static const char *doccolorWarning();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter colorError
+    ///
+    /// Colour of error messages in the report view and in the status bar.
+    static const unsigned long & getcolorError();
+    static const unsigned long & defaultcolorError();
+    static void removecolorError();
+    static void setcolorError(const unsigned long &v);
+    static const char *doccolorError();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter checkGoToEnd
+    ///
+    /// Keep the newest line of the report view in sight as messages
+    /// arrive. When off the view stays where it was scrolled to.
+    static const bool & getcheckGoToEnd();
+    static const bool & defaultcheckGoToEnd();
+    static void removecheckGoToEnd();
+    static void setcheckGoToEnd(const bool &v);
+    static const char *doccheckGoToEnd();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RedirectPythonOutput
+    ///
+    /// Show what Python code prints (sys.stdout) in the report view. Also
+    /// decides where the output of a macro goes.
+    static const bool & getRedirectPythonOutput();
+    static const bool & defaultRedirectPythonOutput();
+    static void removeRedirectPythonOutput();
+    static void setRedirectPythonOutput(const bool &v);
+    static const char *docRedirectPythonOutput();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RedirectPythonErrors
+    ///
+    /// Show Python's error output (sys.stderr) in the report view. Also
+    /// decides where the errors of a macro go.
+    static const bool & getRedirectPythonErrors();
+    static const bool & defaultRedirectPythonErrors();
+    static void removeRedirectPythonErrors();
+    static void setRedirectPythonErrors(const bool &v);
+    static const char *docRedirectPythonErrors();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MaxLines
+    ///
+    /// Largest number of lines the report view keeps; older lines are
+    /// dropped. 0 means no limit. Also in the view's context menu.
+    static const long & getMaxLines();
+    static const long & defaultMaxLines();
+    static void removeMaxLines();
+    static void setMaxLines(const long &v);
+    static const char *docMaxLines();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter checkShowReportViewOnWarning
+    ///
+    /// Bring the report view on screen when a warning arrives.
     static const bool & getcheckShowReportViewOnWarning();
     static const bool & defaultcheckShowReportViewOnWarning();
     static void removecheckShowReportViewOnWarning();
@@ -84,6 +248,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnError
+    ///
+    /// Bring the report view on screen when an error arrives.
     static const bool & getcheckShowReportViewOnError();
     static const bool & defaultcheckShowReportViewOnError();
     static void removecheckShowReportViewOnError();
@@ -94,6 +260,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnNormalMessage
+    ///
+    /// Bring the report view on screen when a normal message arrives.
     static const bool & getcheckShowReportViewOnNormalMessage();
     static const bool & defaultcheckShowReportViewOnNormalMessage();
     static void removecheckShowReportViewOnNormalMessage();
@@ -104,6 +272,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnLogMessage
+    ///
+    /// Bring the report view on screen when a log message arrives.
     static const bool & getcheckShowReportViewOnLogMessage();
     static const bool & defaultcheckShowReportViewOnLogMessage();
     static void removecheckShowReportViewOnLogMessage();
@@ -114,6 +284,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnCritical
+    ///
+    /// Bring the report view on screen when a critical message arrives.
     static const bool & getcheckShowReportViewOnCritical();
     static const bool & defaultcheckShowReportViewOnCritical();
     static void removecheckShowReportViewOnCritical();
@@ -124,6 +296,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportTimecode
+    ///
+    /// Put the time a message arrived in front of each line of the report
+    /// view.
     static const bool & getcheckShowReportTimecode();
     static const bool & defaultcheckShowReportTimecode();
     static void removecheckShowReportTimecode();
@@ -134,6 +309,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LogMessageSize
+    ///
+    /// Largest number of characters of one log message shown in the report
+    /// view. A longer message is cut off. 0 uses the built-in limit of 2048
+    /// characters.
     static const long & getLogMessageSize();
     static const long & defaultLogMessageSize();
     static void removeLogMessageSize();
@@ -145,14 +324,10 @@ public:
     //@{
     /// Accessor for parameter DuplicateWindow
     ///
-    /// How many of the most recently shown lines a new line is compared against
-    /// before it is shown. A line that repeats any of them is held back instead,
-    /// and shown once - the first one held, carrying (xN) for the number it
-    /// stands in for, and clickable to expand the ones that were kept back -
-    /// when a different line has to be shown or DuplicateTimeout expires.
-    /// Set to 0 to show every line as it arrives.
-    /// This affects the Report view only. The log file, the Python console and
-    /// every other console observer still receive every message.
+    /// How many of the most recent lines a new line is compared with. A line
+    /// that repeats one of them is held back and shown once with a count (xN)
+    /// that can be clicked to expand. 0 shows every line. Affects the Report
+    /// view only; the log file and other consoles get every message.
     static const long & getDuplicateWindow();
     static const long & defaultDuplicateWindow();
     static void removeDuplicateWindow();

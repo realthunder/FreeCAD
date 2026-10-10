@@ -402,71 +402,133 @@ TreeParamsP *instance() {
 static const App::ParamRegistry::Registrar _TreeParamsRegistrar({
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "SyncSelection", "SyncSelection", App::ParamInfo::Bool, true)
         .setTitle("Auto expand tree item when the corresponding object is selected in 3D view")
+        .setDoc("Expand the tree view to show the item of an object when it is\n"
+"selected in the 3D view, and scroll to it. When off, the item is\n"
+"selected without expanding its parents.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "CheckBoxesSelection", "CheckBoxesSelection", App::ParamInfo::Bool, false)
         .setTitle("Add checkboxes for selection in document tree")
+        .setDoc("Show a checkbox on every object in the tree view. Ticking the box\n"
+"selects the object and clearing it deselects the object.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "SyncView", "SyncView", App::ParamInfo::Bool, true)
-        .setTitle("Auto switch to the 3D view containing the selected item"),
+        .setTitle("Auto switch to the 3D view containing the selected item")
+        .setDoc("Switch to the 3D view that shows an object when its item is selected\n"
+"in the tree view."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "PreSelection", "PreSelection", App::ParamInfo::Bool, true)
-        .setTitle("Preselect the object in 3D view when mouse over the tree item"),
+        .setTitle("Preselect the object in 3D view when mouse over the tree item")
+        .setDoc("Preselect an object in the 3D view while the mouse rests on its item\n"
+"in the tree view."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "SyncPlacement", "SyncPlacement", App::ParamInfo::Bool, false)
-        .setTitle("Sync Placement"),
+        .setTitle("Sync Placement")
+        .setDoc("Adjust the placement of an object dragged and dropped in the tree\n"
+"view into another coordinate system, so that it stays where it was\n"
+"in space."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "RecordSelection", "RecordSelection", App::ParamInfo::Bool, true)
-        .setTitle("Record selection in tree view in order to go back/forward using navigation button"),
+        .setTitle("Record selection in tree view in order to go back/forward using navigation button")
+        .setDoc("Record every selection, so that the selection back and forward\n"
+"buttons can step through earlier selections."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "DocumentMode", "DocumentMode", App::ParamInfo::Int, 2)
         .setTitle("Document Mode")
+        .setDoc("How open documents are listed in the tree view. 0 shows only the\n"
+"active document, 1 shows all documents, 2 shows all and expands the\n"
+"active one while collapsing the others.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "StatusTimeout", "StatusTimeout", App::ParamInfo::Int, 100)
-        .setTitle("Status Timeout"),
+        .setTitle("Status Timeout")
+        .setDoc("Milliseconds the tree view waits before it refreshes its items after\n"
+"objects change. Changes within that time are handled in one pass."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "SelectionTimeout", "SelectionTimeout", App::ParamInfo::Int, 100)
-        .setTitle("Selection Timeout"),
+        .setTitle("Selection Timeout")
+        .setDoc("Milliseconds the tree view waits before it follows a change of the\n"
+"selection. Changes within that time are handled in one pass."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "PreSelectionTimeout", "PreSelectionTimeout", App::ParamInfo::Int, 500)
-        .setTitle("Pre Selection Timeout"),
+        .setTitle("Pre Selection Timeout")
+        .setDoc("Milliseconds the mouse must rest on a tree view item before its\n"
+"object is preselected in the 3D view. Applies when nothing was\n"
+"preselected from the tree within PreSelectionDelay."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "PreSelectionDelay", "PreSelectionDelay", App::ParamInfo::Int, 700)
-        .setTitle("Pre Selection Delay"),
+        .setTitle("Pre Selection Delay")
+        .setDoc("Milliseconds after a preselection from the tree view during which\n"
+"moving to another item preselects it at once. After that the mouse\n"
+"has to rest for PreSelectionTimeout again."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "PreSelectionMinDelay", "PreSelectionMinDelay", App::ParamInfo::Int, 200)
-        .setTitle("Pre Selection Min Delay"),
+        .setTitle("Pre Selection Min Delay")
+        .setDoc("Shortest time in milliseconds between two preselections from the\n"
+"tree view. Moving across items faster than this waits before the\n"
+"next one is preselected. 0 sets no limit."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "RecomputeOnDrop", "RecomputeOnDrop", App::ParamInfo::Bool, true)
-        .setTitle("Recompute On Drop"),
+        .setTitle("Recompute On Drop")
+        .setDoc("Recompute the document after objects are dragged and dropped in the\n"
+"tree view."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "KeepRootOrder", "KeepRootOrder", App::ParamInfo::Bool, true)
-        .setTitle("Keep Root Order"),
+        .setTitle("Keep Root Order")
+        .setDoc("Keep the top level objects of the tree view in the order they were\n"
+"created. An object that returns to the top level goes back to its\n"
+"place instead of to the end."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeActiveAutoExpand", "TreeActiveAutoExpand", App::ParamInfo::Bool, true)
-        .setTitle("Tree Active Auto Expand"),
+        .setTitle("Tree Active Auto Expand")
+        .setDoc("Expand the tree view item of an object when it becomes the active\n"
+"one, such as the active body or part. Objects that ask for it are\n"
+"collapsed again when they stop being active."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeActiveColor", "TreeActiveColor", App::ParamInfo::UInt, 3873898495)
         .setTitle("Tree Active Color")
+        .setDoc("Background colour of the tree view item of an active object, such\n"
+"as the active body or part.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeEditColor", "TreeEditColor", App::ParamInfo::UInt, 2459042047)
         .setTitle("Tree Edit Color")
+        .setDoc("Background colour of the tree view item of the object being edited.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "SelectingGroupColor", "SelectingGroupColor", App::ParamInfo::UInt, 1082163711)
         .setTitle("Selecting Group Color")
+        .setDoc("Background colour of the tree view item marked with 'Toggle\n"
+"selecting group'. A pick in the 3D view inside that group selects\n"
+"its child object as a whole.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeActiveBold", "TreeActiveBold", App::ParamInfo::Bool, true)
         .setTitle("Tree Active Bold")
+        .setDoc("Show the label of an active object, such as the active body or part,\n"
+"in bold in the tree view.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeActiveItalic", "TreeActiveItalic", App::ParamInfo::Bool, false)
         .setTitle("Tree Active Italic")
+        .setDoc("Show the label of an active object, such as the active body or part,\n"
+"in italics in the tree view.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeActiveUnderlined", "TreeActiveUnderlined", App::ParamInfo::Bool, false)
         .setTitle("Tree Active Underlined")
+        .setDoc("Underline the label of an active object, such as the active body or\n"
+"part, in the tree view.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeActiveOverlined", "TreeActiveOverlined", App::ParamInfo::Bool, false)
         .setTitle("Tree Active Overlined")
+        .setDoc("Draw a line over the label of an active object, such as the active\n"
+"body or part, in the tree view.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "Indentation", "Indentation", App::ParamInfo::Int, 0)
         .setTitle("Indentation")
+        .setDoc("Width in pixels by which each level of the tree view is indented. 0\n"
+"uses the default of the style. Applies to tree views created\n"
+"afterwards.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "LabelExpression", "LabelExpression", App::ParamInfo::Bool, false)
-        .setTitle("Label Expression"),
+        .setTitle("Label Expression")
+        .setDoc("Edit an object's label in the tree view with an editor that accepts\n"
+"an expression, so that the label can be bound to one."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "IconSize", "IconSize", App::ParamInfo::Int, 0)
         .setTitle("Icon Size")
+        .setDoc("Size in pixels of the icons in the tree view, which also sets the\n"
+"row height. 0 uses the system default size.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "FontSize", "FontSize", App::ParamInfo::Int, 0)
         .setTitle("Font Size")
+        .setDoc("Point size of the label font in the tree view. 0 uses the\n"
+"application font size.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "ItemSpacing", "ItemSpacing", App::ParamInfo::Int, 0)
         .setTitle("Item Spacing")
+        .setDoc("Extra height in pixels added to every row of the tree view.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "ItemBackground", "ItemBackground", App::ParamInfo::Hex, 0x00000000)
         .setTitle("Item background color")
@@ -495,11 +557,18 @@ static const App::ParamRegistry::Registrar _TreeParamsRegistrar({
         .setDoc("Allow tree view columns to be manually resized.")
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "ColumnSize1", "ColumnSize1", App::ParamInfo::Int, 0)
-        .setTitle("Column Size1"),
+        .setTitle("Column Size1")
+        .setDoc("Width in pixels of the first tree view column, remembered when the\n"
+"column is resized by hand. Used only with resizable columns. 0\n"
+"leaves the width alone."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "ColumnSize2", "ColumnSize2", App::ParamInfo::Int, 0)
-        .setTitle("Column Size2"),
+        .setTitle("Column Size2")
+        .setDoc("Width in pixels of the second tree view column, remembered when the\n"
+"column is resized by hand. Used only with resizable columns. 0\n"
+"leaves the width alone."),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "TreeToolTipIcon", "TreeToolTipIcon", App::ParamInfo::Bool, false)
-        .setTitle("Show icon in tool tip"),
+        .setTitle("Show icon in tool tip")
+        .setDoc("Show the icon of the object in the tool tip of its tree view item."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -509,7 +578,10 @@ ParameterGrp::handle TreeParams::getHandle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docSyncSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Expand the tree view to show the item of an object when it is\n"
+"selected in the 3D view, and scroll to it. When off, the item is\n"
+"selected without expanding its parents.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -536,7 +608,9 @@ void TreeParams::removeSyncSelection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docCheckBoxesSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Show a checkbox on every object in the tree view. Ticking the box\n"
+"selects the object and clearing it deselects the object.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -563,7 +637,9 @@ void TreeParams::removeCheckBoxesSelection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docSyncView() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Switch to the 3D view that shows an object when its item is selected\n"
+"in the tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -590,7 +666,9 @@ void TreeParams::removeSyncView() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docPreSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Preselect an object in the 3D view while the mouse rests on its item\n"
+"in the tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -617,7 +695,10 @@ void TreeParams::removePreSelection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docSyncPlacement() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Adjust the placement of an object dragged and dropped in the tree\n"
+"view into another coordinate system, so that it stays where it was\n"
+"in space.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -644,7 +725,9 @@ void TreeParams::removeSyncPlacement() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docRecordSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Record every selection, so that the selection back and forward\n"
+"buttons can step through earlier selections.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -671,7 +754,10 @@ void TreeParams::removeRecordSelection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docDocumentMode() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"How open documents are listed in the tree view. 0 shows only the\n"
+"active document, 1 shows all documents, 2 shows all and expands the\n"
+"active one while collapsing the others.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -698,7 +784,9 @@ void TreeParams::removeDocumentMode() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docStatusTimeout() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Milliseconds the tree view waits before it refreshes its items after\n"
+"objects change. Changes within that time are handled in one pass.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -725,7 +813,9 @@ void TreeParams::removeStatusTimeout() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docSelectionTimeout() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Milliseconds the tree view waits before it follows a change of the\n"
+"selection. Changes within that time are handled in one pass.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -752,7 +842,10 @@ void TreeParams::removeSelectionTimeout() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docPreSelectionTimeout() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Milliseconds the mouse must rest on a tree view item before its\n"
+"object is preselected in the 3D view. Applies when nothing was\n"
+"preselected from the tree within PreSelectionDelay.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -779,7 +872,10 @@ void TreeParams::removePreSelectionTimeout() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docPreSelectionDelay() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Milliseconds after a preselection from the tree view during which\n"
+"moving to another item preselects it at once. After that the mouse\n"
+"has to rest for PreSelectionTimeout again.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -806,7 +902,10 @@ void TreeParams::removePreSelectionDelay() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docPreSelectionMinDelay() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Shortest time in milliseconds between two preselections from the\n"
+"tree view. Moving across items faster than this waits before the\n"
+"next one is preselected. 0 sets no limit.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -833,7 +932,9 @@ void TreeParams::removePreSelectionMinDelay() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docRecomputeOnDrop() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Recompute the document after objects are dragged and dropped in the\n"
+"tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -860,7 +961,10 @@ void TreeParams::removeRecomputeOnDrop() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docKeepRootOrder() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Keep the top level objects of the tree view in the order they were\n"
+"created. An object that returns to the top level goes back to its\n"
+"place instead of to the end.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -887,7 +991,10 @@ void TreeParams::removeKeepRootOrder() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeActiveAutoExpand() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Expand the tree view item of an object when it becomes the active\n"
+"one, such as the active body or part. Objects that ask for it are\n"
+"collapsed again when they stop being active.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -914,7 +1021,9 @@ void TreeParams::removeTreeActiveAutoExpand() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeActiveColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Background colour of the tree view item of an active object, such\n"
+"as the active body or part.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -941,7 +1050,8 @@ void TreeParams::removeTreeActiveColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeEditColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Background colour of the tree view item of the object being edited.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -968,7 +1078,10 @@ void TreeParams::removeTreeEditColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docSelectingGroupColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Background colour of the tree view item marked with 'Toggle\n"
+"selecting group'. A pick in the 3D view inside that group selects\n"
+"its child object as a whole.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -995,7 +1108,9 @@ void TreeParams::removeSelectingGroupColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeActiveBold() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Show the label of an active object, such as the active body or part,\n"
+"in bold in the tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1022,7 +1137,9 @@ void TreeParams::removeTreeActiveBold() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeActiveItalic() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Show the label of an active object, such as the active body or part,\n"
+"in italics in the tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1049,7 +1166,9 @@ void TreeParams::removeTreeActiveItalic() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeActiveUnderlined() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Underline the label of an active object, such as the active body or\n"
+"part, in the tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1076,7 +1195,9 @@ void TreeParams::removeTreeActiveUnderlined() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeActiveOverlined() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Draw a line over the label of an active object, such as the active\n"
+"body or part, in the tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1103,7 +1224,10 @@ void TreeParams::removeTreeActiveOverlined() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docIndentation() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Width in pixels by which each level of the tree view is indented. 0\n"
+"uses the default of the style. Applies to tree views created\n"
+"afterwards.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1130,7 +1254,9 @@ void TreeParams::removeIndentation() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docLabelExpression() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Edit an object's label in the tree view with an editor that accepts\n"
+"an expression, so that the label can be bound to one.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1157,7 +1283,9 @@ void TreeParams::removeLabelExpression() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docIconSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Size in pixels of the icons in the tree view, which also sets the\n"
+"row height. 0 uses the system default size.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1184,7 +1312,9 @@ void TreeParams::removeIconSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docFontSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Point size of the label font in the tree view. 0 uses the\n"
+"application font size.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1211,7 +1341,8 @@ void TreeParams::removeFontSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docItemSpacing() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Extra height in pixels added to every row of the tree view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1406,7 +1537,10 @@ void TreeParams::removeResizableColumn() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docColumnSize1() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Width in pixels of the first tree view column, remembered when the\n"
+"column is resized by hand. Used only with resizable columns. 0\n"
+"leaves the width alone.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1433,7 +1567,10 @@ void TreeParams::removeColumnSize1() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docColumnSize2() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Width in pixels of the second tree view column, remembered when the\n"
+"column is resized by hand. Used only with resizable columns. 0\n"
+"leaves the width alone.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1460,7 +1597,8 @@ void TreeParams::removeColumnSize2() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docTreeToolTipIcon() {
-    return "";
+    return QT_TRANSLATE_NOOP("TreeParams",
+"Show the icon of the object in the tool tip of its tree view item.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

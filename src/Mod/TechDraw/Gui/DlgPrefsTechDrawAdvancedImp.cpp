@@ -49,6 +49,7 @@ void DlgPrefsTechDrawAdvancedImp::saveSettings()
     ui->cbDebugSection->onSave();
     ui->cbDebugDetail->onSave();
     ui->cbCrazyEdges->onSave();
+    ui->cbRoundLineWidth->onSave();
     ui->cbFuseBeforeSection->onSave();
     ui->pdsbEdgeFuzz->onSave();
     ui->pdsbMarkFuzz->onSave();
@@ -67,6 +68,7 @@ void DlgPrefsTechDrawAdvancedImp::loadSettings()
     ui->cbDebugSection->onRestore();
     ui->cbDebugDetail->onRestore();
     ui->cbCrazyEdges->onRestore();
+    ui->cbRoundLineWidth->onRestore();
     ui->cbFuseBeforeSection->onRestore();
     ui->pdsbEdgeFuzz->onRestore();
     ui->pdsbMarkFuzz->onRestore();

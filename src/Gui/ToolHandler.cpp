@@ -32,6 +32,7 @@
 #include <Base/Parameter.h>
 
 #include "BitmapFactory.h"
+#include "ViewParams.h"
 #include "InputHint.h"
 #include "MainWindow.h"
 #include "ToolHandler.h"
@@ -85,10 +86,7 @@ void ToolHandler::deactivate()
 
 unsigned long ToolHandler::getCrosshairColor()
 {
-    unsigned long color = 0xFFFFFFFF;  // white
-    ParameterGrp::handle hGrp =
-        App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    color = hGrp->GetUnsigned("CursorCrosshairColor", color);
+    unsigned long color = ViewParams::getCursorCrosshairColor();  // white unless set
     // from rgba to rgb
     color = (color >> 8) & 0xFFFFFF;
     return color;

@@ -966,8 +966,10 @@ StatefulLabel::StatefulLabel(QWidget* parent)
     : QLabel(parent)
     , _overridePreference(false)
 {
-    // Always attach to the parameter group that stores the main FreeCAD stylesheet
-    _stylesheetGroup = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General");
+    // Always attach to the parameter group that stores the main FreeCAD
+    // stylesheet. That is MainWindow: this waited in General, where the key
+    // never is, so a change of style sheet left the cached styles as they were.
+    _stylesheetGroup = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
     _stylesheetGroup->Attach(this);
 }
 
@@ -1327,6 +1329,20 @@ void TipLabel::set(const QString &text)
     resize(s);
 }
 
+namespace {
+/// The size of a tip once its text is laid out and an icon goes beside it.
+QSize tipSizeWithIcon(const QSize &textSize, const QSize &iconSize, int margin)
+{
+    // The picture is drawn inside the label's margin, like the text: a tip of
+    // two lines is lower than its icon, and sized to the icon alone it cut
+    // the picture's last rows off.
+    QSize s(textSize);
+    s.setHeight(std::max(s.height(), iconSize.height() + 2 * margin));
+    s.setWidth(s.width() + iconSize.width());
+    return s;
+}
+} // anonymous namespace
+
 void TipLabel::set(const QString &text, QPixmap pixmap)
 {
     set(text);
@@ -1345,13 +1361,7 @@ void TipLabel::set(const QString &text, QPixmap pixmap)
     this->setPixmap(pixmap);
     QSize iconSize = pixmap.size();
     iconSize.setHeight(std::max(iconSize.height(), tipIconSize));
-    QSize s(this->size());
-    if (s.height() < iconSize.height())
-        s.setHeight(iconSize.height());
-    else
-        iconSize.setHeight(s.height());
-    s.setWidth(s.width() + iconSize.width());
-    this->resize(s);
+    this->resize(tipSizeWithIcon(this->size(), iconSize, margin()));
 }
 
 void TipLabel::set(const QString &text, const QString &iconPath)
@@ -1408,13 +1418,7 @@ void TipLabel::set(const QString &text, const QString &iconPath)
     }
 
     iconSize.setHeight(std::max(iconSize.height(), _TipIconSize));
-    QSize s(this->size());
-    if (s.height() < iconSize.height())
-        s.setHeight(iconSize.height());
-    else
-        iconSize.setHeight(s.height());
-    s.setWidth(s.width() + iconSize.width());
-    this->resize(s);
+    this->resize(tipSizeWithIcon(this->size(), iconSize, margin()));
 }
 
 void TipLabel::paintEvent(QPaintEvent *ev)
@@ -1666,19 +1670,22 @@ bool ToolTip::checkToolTip(QWidget *w, QHelpEvent *helpEvent) {
     if (tooltip.isEmpty())
         return false;
 
+    // The image an Action puts in its tip to be the tip's icon is taken out of
+    // the text and drawn beside it, larger. It is told from an image that is
+    // content by the float:right Action::createToolTip() gives it: taking the
+    // first image of ANY tip emptied the first cell of the navigation styles'
+    // table of mouse buttons and hung that picture in the corner.
     QString key = QStringLiteral("<img src='");
     int index = tooltip.indexOf(key);
     QString iconPath;
     if (index >= 0) {
         int end = tooltip.indexOf(QLatin1Char('\''), index + key.size());
-        if (end >= 0) {
+        int close = end < 0 ? -1 : tooltip.indexOf(QLatin1Char('>'), end+1);
+        if (close >= 0
+                && tooltip.mid(end, close - end).contains(QStringLiteral("float:right"))) {
             iconPath = tooltip.mid(index+key.size(), end-index-key.size());
             iconPath = QUrl::fromPercentEncoding(iconPath.toUtf8());
-            end = tooltip.indexOf(QLatin1Char('>'), end+1);
-            if (end < 0)
-                iconPath.clear();
-            else
-                tooltip = tooltip.left(index) + tooltip.right(tooltip.size() - end - 1);
+            tooltip = tooltip.left(index) + tooltip.right(tooltip.size() - close - 1);
         }
     }
     ToolTip::showText(helpEvent->globalPos(), tooltip, iconPath, w);

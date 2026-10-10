@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "OverlayParams.h"
+
 #ifndef _PreComp_
 #include <QApplication>
 #include <QClipboard>
@@ -515,7 +517,7 @@ private:
             return;
         long corner = App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("CornerNaviCube", 1);
+            ->GetInt("CornerNaviCube", Gui::OverlayParams::defaultCornerNaviCube());
         if (auto view = qobject_cast<View3DInventor *>(
                 getMainWindow() ? getMainWindow()->activeWindow() : nullptr)) {
             if (auto cube = view->getViewer()->getNaviCube())

@@ -33,6 +33,7 @@
 #endif
 
 #include "TextEdit.h"
+#include "EditorParams.h"
 #include "SyntaxHighlighter.h"
 #include "Tools.h"
 #include <App/Color.h>
@@ -197,21 +198,12 @@ struct TextEditorP
     QMap<QString, QColor> colormap; // Color map
     TextEditorP()
     {
-        colormap[QStringLiteral("Text")] = qApp->palette().windowText().color();
-        colormap[QStringLiteral("Bookmark")] = Qt::cyan;
-        colormap[QStringLiteral("Breakpoint")] = Qt::red;
-        colormap[QStringLiteral("Keyword")] = Qt::blue;
-        colormap[QStringLiteral("Comment")] = QColor(0, 170, 0);
-        colormap[QStringLiteral("Block comment")] = QColor(160, 160, 164);
-        colormap[QStringLiteral("Number")] = Qt::blue;
-        colormap[QStringLiteral("String")] = Qt::red;
-        colormap[QStringLiteral("Character")] = Qt::red;
-        colormap[QStringLiteral("Class name")] = QColor(255, 170, 0);
-        colormap[QStringLiteral("Define name")] = QColor(255, 170, 0);
-        colormap[QStringLiteral("Operator")] = QColor(160, 160, 164);
-        colormap[QStringLiteral("Python output")] = QColor(170, 170, 127);
-        colormap[QStringLiteral("Python error")] = Qt::red;
-        colormap[QStringLiteral("Current line highlight")] = QColor(224,224,224);
+        // The colours and their defaults are EditorParams'. Bookmark,
+        // Breakpoint and Character used to be listed here too: the
+        // highlighter knows no such colour and dropped them.
+        for (const auto& entry : editorColorDefaults()) {
+            colormap[entry.first] = entry.second;
+        }
     }
 };
 } // namespace Gui
@@ -348,12 +340,31 @@ void TextEditor::setSyntaxHighlighter(SyntaxHighlighter* sh)
     this->highlighter = sh;
 }
 
+void TextEditor::applyColor(const QString& key)
+{
+    auto it = d->colormap.constFind(key);
+    if (it == d->colormap.constEnd() || !this->highlighter) {
+        return;
+    }
+    // Read from the group, not from EditorParams: this is reached from the
+    // group's own notification, before the class has the new value.
+    QColor color = it.value();
+    unsigned int col = App::Color::asPackedRGB<QColor>(color);
+    auto value = static_cast<unsigned long>(col);
+    value = getWindowParameter()->GetUnsigned(key.toUtf8().constData(), value);
+    col = static_cast<unsigned int>(value);
+    color.setRgb((col>>24)&0xff, (col>>16)&0xff, (col>>8)&0xff);
+    this->highlighter->setColor(key, color);
+}
+
 void TextEditor::keyPressEvent (QKeyEvent * e)
 {
     if ( e->key() == Qt::Key_Tab ) {
-        ParameterGrp::handle hPrefGrp = getWindowParameter();
-        int indent = hPrefGrp->GetInt( "IndentSize", 4 );
-        bool space = hPrefGrp->GetBool( "Spaces", false );
+        // Spaces was off here and on to the Python editor's automatic
+        // indentation, so in one editor Tab inserted a tab and Enter
+        // indented with spaces. EditorParams has the one default.
+        int indent = static_cast<int>(EditorParams::getIndentSize());
+        bool space = EditorParams::getSpaces();
         QString ch = space ? QString(indent, QLatin1Char(' '))
                            : QStringLiteral("\t");
 
@@ -393,8 +404,7 @@ void TextEditor::keyPressEvent (QKeyEvent * e)
             return; // Shift+Tab should not do anything
         // If some text is selected we remove a leading tab or
         // spaces from each selected block
-        ParameterGrp::handle hPrefGrp = getWindowParameter();
-        int indent = hPrefGrp->GetInt( "IndentSize", 4 );
+        int indent = static_cast<int>(EditorParams::getIndentSize());
 
         int selStart = cursor.selectionStart();
         int selEnd = cursor.selectionEnd();
@@ -440,32 +450,19 @@ void TextEditor::OnChange(Base::Subject<const char*> &rCaller,const char* sReaso
     Q_UNUSED(rCaller);
     ParameterGrp::handle hPrefGrp = getWindowParameter();
     if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
-#ifdef FC_OS_LINUX
-        int fontSize = hPrefGrp->GetInt("FontSize", 15);
-#else
-        int fontSize = hPrefGrp->GetInt("FontSize", 10);
-#endif
-        QString fontFamily = QString::fromUtf8(hPrefGrp->GetASCII( "Font", "Courier" ).c_str());
-
-        QFont font(fontFamily, fontSize);
+        // The defaults are EditorParams' (the size was 15 on Linux here
+        // and 10 to everything else that shows this font).
+        int fontSize = hPrefGrp->GetInt("FontSize", EditorParams::defaultFontSize());
+        QFont font = editorFont(
+            hPrefGrp->GetASCII("Font", EditorParams::defaultFont().c_str()), fontSize);
         setFont(font);
         lineNumberArea->setFont(font);
     } else {
-        QMap<QString, QColor>::ConstIterator it = d->colormap.constFind(QString::fromUtf8(sReason));
-        if (it != d->colormap.constEnd()) {
-            QColor color = it.value();
-            unsigned int col = App::Color::asPackedRGB<QColor>(color);
-            auto value = static_cast<unsigned long>(col);
-            value = hPrefGrp->GetUnsigned(sReason, value);
-            col = static_cast<unsigned int>(value);
-            color.setRgb((col>>24)&0xff, (col>>16)&0xff, (col>>8)&0xff);
-            if (this->highlighter)
-                this->highlighter->setColor(QString::fromUtf8(sReason), color);
-        }
+        applyColor(QString::fromUtf8(sReason));
     }
 
     if (strcmp(sReason, "TabSize") == 0 || strcmp(sReason, "FontSize") == 0) {
-        int tabWidth = hPrefGrp->GetInt("TabSize", 4);
+        int tabWidth = hPrefGrp->GetInt("TabSize", EditorParams::defaultTabSize());
         QFontMetrics metric(font());
         int fontSize = QtTools::horizontalAdvance(metric, QLatin1Char('0'));
 #if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
@@ -478,7 +475,7 @@ void TextEditor::OnChange(Base::Subject<const char*> &rCaller,const char* sReaso
     // Enables/Disables Line number in the Macro Editor from Edit->Preferences->Editor menu.
     if (strcmp(sReason, "EnableLineNumber") == 0) {
         QRect cr = contentsRect();
-        bool show = hPrefGrp->GetBool("EnableLineNumber", true);
+        bool show = hPrefGrp->GetBool("EnableLineNumber", EditorParams::defaultEnableLineNumber());
         if(show)
             lineNumberArea->setGeometry(QRect(cr.left(), cr.top(), lineNumberAreaWidth(), cr.height()));
         else
@@ -488,7 +485,7 @@ void TextEditor::OnChange(Base::Subject<const char*> &rCaller,const char* sReaso
     if (strcmp(sReason, "EnableBlockCursor") == 0 ||
         strcmp(sReason, "FontSize") == 0 ||
         strcmp(sReason, "Font") == 0) {
-        bool block = hPrefGrp->GetBool("EnableBlockCursor", false);
+        bool block = hPrefGrp->GetBool("EnableBlockCursor", EditorParams::defaultEnableBlockCursor());
         if (block)
             setCursorWidth(QFontMetrics(font()).averageCharWidth());
         else

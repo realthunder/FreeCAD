@@ -22,6 +22,10 @@
 
 #include "PreCompiled.h"
 
+#include "MiscParams.h"
+
+#include "ViewParams.h"
+
 #ifndef _PreComp_
 # include <QApplication>
 # include <QFile>
@@ -94,7 +98,7 @@ public:
         QByteArray preprocessed = str;
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/DependencyGraph");
-        if(hGrp->GetBool("Unflatten", true)) {
+        if(MiscParams::getUnflatten()) {
             // Write data to unflatten process
             unflattenProc.write(str);
             unflattenProc.closeWriteChannel();
@@ -239,7 +243,7 @@ GraphvizView::GraphvizView(App::Document & _doc, QWidget* parent)
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
             ("User parameter:BaseApp/Preferences/View");
-    bool on = hGrp->GetBool("InvertZoom", true);
+    bool on = hGrp->GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
     zoomer->set_zoom_inverted(on);
 
     // Set central widget to view
@@ -418,7 +422,7 @@ QByteArray GraphvizView::exportGraph(const QString& format)
     }
 
     ParameterGrp::handle depGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/DependencyGraph");
-    if(depGrp->GetBool("Unflatten", true)) {
+    if(MiscParams::getUnflatten()) {
         flatProc.setEnvironment(QProcess::systemEnvironment());
         flatProc.start(unflatten, flatArgs);
         if (!flatProc.waitForStarted()) {

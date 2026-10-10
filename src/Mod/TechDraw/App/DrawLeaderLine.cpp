@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 
@@ -247,7 +249,7 @@ Base::Vector3d DrawLeaderLine::getTailPoint() const
 
 bool DrawLeaderLine::getDefAuto() const
 {
-    return Preferences::getPreferenceGroup("LeaderLine")->GetBool("AutoHorizontal", true);
+    return Preferences::getPreferenceGroup("LeaderLine")->GetBool("AutoHorizontal", TechDraw::TechDrawParams::defaultAutoHorizontal());
 }
 
 

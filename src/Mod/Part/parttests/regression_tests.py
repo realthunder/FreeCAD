@@ -612,3 +612,52 @@ class RegressionTests(unittest.TestCase):
         first, last = shape.Edges[0].ParameterRange
         self.assertAlmostEqual(first / 2e100, -1.0)
         self.assertAlmostEqual(last / 2e100, 1.0)
+
+    def test_refine_leaves_its_input_alone(self):
+        """
+        Refining a shape must not change the shape it was made from.
+
+        A ring cut through by a slot: the half of the ring that crosses the
+        cylinder's seam is left as two faces. A second cut elsewhere shares
+        those faces and their edges with the first result, and removeSplitter()
+        on it joins the two into one. The joined face was built over the old
+        faces' surface, so the pcurves of the shared edges were moved by a
+        period in place -- and the first result, which nobody had touched, had
+        a face running 1.23 turns for 0.23 and was no longer valid. In a
+        document that is a feature going invalid when the NEXT one is
+        recomputed (a pocket under a helix with Refine on, in the file this
+        came from).
+        """
+
+        def ring_spans(shape):
+            return sorted(
+                round(f.ParameterRange[1] - f.ParameterRange[0], 6)
+                for f in shape.Faces
+                if isinstance(f.Surface, Part.Cylinder) and abs(f.Surface.Radius - 7.0) < 1e-9
+            )
+
+        ring = Part.makeCylinder(7.0, 0.7)
+        stem = Part.makeCylinder(5.0, 4.0)
+        body = ring.fuse(stem).removeSplitter()
+        slot = Part.makeBox(1.5, 20.0, 1.0, Vector(-0.75, -10.0, 0.0))
+        base = body.cut(slot).Solids[0]
+        self.assertTrue(base.isValid())
+        volume = base.Volume
+        spans = ring_spans(base)
+        # the premise: one half of the ring whole, the other in two at the seam
+        self.assertEqual(len(spans), 3)
+        self.assertAlmostEqual(spans[0], spans[1], places=5)
+        self.assertAlmostEqual(spans[0] + spans[1], spans[2], places=5)
+
+        notch = Part.makeBox(2.0, 2.0, 2.0, Vector(-1.0, -1.0, 3.0))
+        second = base.cut(notch).Solids[0]
+        refined = second.removeSplitter()
+
+        # the refine did join the two faces across the seam
+        self.assertTrue(refined.isValid())
+        self.assertEqual(len(ring_spans(refined)), 2)
+        self.assertAlmostEqual(refined.Volume, second.Volume)
+        # and the shape it started from is what it was
+        self.assertTrue(base.isValid())
+        self.assertAlmostEqual(base.Volume, volume)
+        self.assertEqual(ring_spans(base), spans)

@@ -27,6 +27,8 @@
 # include <vector>
 #endif
 
+#include <QSignalBlocker>
+
 #include <Base/Tools.h>
 
 #include <Mod/TechDraw/App/LineGroup.h>
@@ -35,6 +37,8 @@
 
 #include "DlgPrefsTechDrawAnnotationImp.h"
 #include "ui_DlgPrefsTechDrawAnnotation.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #include "DrawGuiUtil.h"
 
 using namespace TechDrawGui;
@@ -88,7 +92,10 @@ void DlgPrefsTechDrawAnnotationImp::saveSettings()
     ui->cbCutSurface->onSave();
 
     ui->pcbLineGroup->onSave();
-    ui->pcbLineStandard->onSave();
+    // not with no current item: that is saved as -1, which names no standard
+    if (ui->pcbLineStandard->currentIndex() >= 0) {
+        ui->pcbLineStandard->onSave();
+    }
     ui->pcbSectionStyle->onSave();
     ui->pcbCenterStyle->onSave();
     ui->pcbHighlightStyle->onSave();
@@ -119,6 +126,8 @@ void DlgPrefsTechDrawAnnotationImp::loadSettings()
     for (auto it = lgNames.begin(); it < lgNames.end(); ++it) {
         ui->pcbLineGroup->addItem(tr((*it).c_str()));
     }
+    // the list is filled here, so its first entry would be the page's default
+    ui->pcbLineGroup->setCurrentIndex(TechDraw::TechDrawParams::defaultLineGroup());
 
     ui->cbAutoHoriz->onRestore();
     ui->cbPrintCenterMarks->onRestore();
@@ -141,15 +150,26 @@ void DlgPrefsTechDrawAnnotationImp::loadSettings()
 
     ui->cbEndCap->onRestore();
 
-    ui->pcbLineStandard->onRestore();
-    DrawGuiUtil::loadLineStandardsChoices(ui->pcbLineStandard);
-    if (ui->pcbLineStandard->count() > Preferences::lineStandard()) {
-        ui->pcbLineStandard->setCurrentIndex(Preferences::lineStandard());
+    {
+        // Refilled in silence. This runs again on a language change, with the
+        // slot below connected by then: emptying the list said "index -1",
+        // the slot stored that as the line standard and then threw reading
+        // the definitions of standard -1, before the index was put back.
+        QSignalBlocker quiet(ui->pcbLineStandard);
+        ui->pcbLineStandard->onRestore();
+        DrawGuiUtil::loadLineStandardsChoices(ui->pcbLineStandard);
+        if (ui->pcbLineStandard->count() > Preferences::lineStandard()) {
+            ui->pcbLineStandard->setCurrentIndex(Preferences::lineStandard());
+        }
+        else if (ui->pcbLineStandard->count() > 0) {
+            ui->pcbLineStandard->setCurrentIndex(0);
+        }
     }
     // we have to connect the slot after the inital load or the current standard will
     // be set to index 0 when the widget is created
     connect(ui->pcbLineStandard, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, &DlgPrefsTechDrawAnnotationImp::onLineStandardChanged);
+            this, &DlgPrefsTechDrawAnnotationImp::onLineStandardChanged,
+            Qt::UniqueConnection);
 
     ui->pcbSectionStyle->onRestore();
     ui->pcbCenterStyle->onRestore();
@@ -207,6 +227,9 @@ void DlgPrefsTechDrawAnnotationImp::onLineGroupChanged(int index)
 //! line style comboboxes are filled for the correct standard.
 void DlgPrefsTechDrawAnnotationImp::onLineStandardChanged(int index)
 {
+    if (index < 0) { // the list is empty, or being refilled: no standard is chosen
+        return;
+    }
     Preferences::setLineStandard(index);
     m_lineGenerator->reloadDescriptions();
     loadLineStyleBoxes();
@@ -218,25 +241,26 @@ void DlgPrefsTechDrawAnnotationImp::loadLineStyleBoxes()
     // note: line numbering starts at 1, not 0.  we set the preference to the
     // currentIndex in saveSettings, Preferences returns the actual line number,
     // so we need to subtract 1 here to get the index.
+    // A line number runs from 1 to the count of the list. The test was
+    // "count > number", so the last style of a list was never selected
+    // again, and the next Apply stored the first in its place.
+    auto select = [](QComboBox* box, int lineNumber) {
+        if (lineNumber >= 1 && lineNumber <= box->count()) {
+            box->setCurrentIndex(lineNumber - 1);
+        }
+    };
+
     DrawGuiUtil::loadLineStyleChoices(ui->pcbSectionStyle, m_lineGenerator);
-    if (ui->pcbSectionStyle->count() > Preferences::SectionLineStyle()) {
-        ui->pcbSectionStyle->setCurrentIndex(Preferences::SectionLineStyle() - 1);
-    }
+    select(ui->pcbSectionStyle, Preferences::SectionLineStyle());
 
     DrawGuiUtil::loadLineStyleChoices(ui->pcbCenterStyle, m_lineGenerator);
-    if (ui->pcbCenterStyle->count() > Preferences::CenterLineStyle()) {
-        ui->pcbCenterStyle->setCurrentIndex(Preferences::CenterLineStyle() - 1);
-    }
+    select(ui->pcbCenterStyle, Preferences::CenterLineStyle());
 
     DrawGuiUtil::loadLineStyleChoices(ui->pcbHighlightStyle, m_lineGenerator);
-    if (ui->pcbHighlightStyle->count() > Preferences::HighlightLineStyle()) {
-        ui->pcbHighlightStyle->setCurrentIndex(Preferences::HighlightLineStyle() - 1);
-    }
+    select(ui->pcbHighlightStyle, Preferences::HighlightLineStyle());
 
     DrawGuiUtil::loadLineStyleChoices(ui->pcbHiddenStyle, m_lineGenerator);
-    if (ui->pcbHiddenStyle->count() > Preferences::HiddenLineStyle()) {
-        ui->pcbHiddenStyle->setCurrentIndex(Preferences::HiddenLineStyle() - 1);
-    }
+    select(ui->pcbHiddenStyle, Preferences::HiddenLineStyle());
 }
 
 #include <Mod/TechDraw/Gui/moc_DlgPrefsTechDrawAnnotationImp.cpp>

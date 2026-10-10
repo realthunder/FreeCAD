@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 #include <cmath>
 
@@ -780,7 +782,6 @@ void QGIViewPart::drawSectionLine(TechDraw::DrawViewSection* viewSection, bool b
             sectionLine->setSymbolOffsets(DU::toQPointF(vpSection->SymbolOffset1.getValue()),
                                           DU::toQPointF(vpSection->SymbolOffset2.getValue()));
         }
-        sectionLine->setSectionStyle(vp->SectionLineStyle.getValue());
         App::Color color = Preferences::getAccessibleColor(vp->SectionLineColor.getValue());
         sectionLine->setSectionColor(color.asValue<QColor>());
         sectionLine->setPathMode(false);
@@ -870,7 +871,6 @@ void QGIViewPart::drawComplexSectionLine(TechDraw::DrawViewSection* viewSection,
     sectionLine->setFeature(viewSection);
     addToGroup(sectionLine);
     sectionLine->setSymbol(const_cast<char*>(viewSection->SectionSymbol.getValue()));
-    sectionLine->setSectionStyle(vp->SectionLineStyle.getValue());
     App::Color color = Preferences::getAccessibleColor(vp->SectionLineColor.getValue());
     sectionLine->setSectionColor(color.asValue<QColor>());
     sectionLine->setPathMode(true);
@@ -1178,13 +1178,13 @@ void QGIViewPart::rotateView() {}
 bool QGIViewPart::prefFaceEdges()
 {
     bool result = false;
-    result = Preferences::getPreferenceGroup("General")->GetBool("DrawFaceEdges", false);
+    result = Preferences::getPreferenceGroup("General")->GetBool("DrawFaceEdges", TechDraw::TechDrawParams::defaultDrawFaceEdges());
     return result;
 }
 
 bool QGIViewPart::prefPrintCenters()
 {
-    bool printCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("PrintCenterMarks", false);//true matches v0.18 behaviour
+    bool printCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("PrintCenterMarks", TechDraw::TechDrawParams::defaultPrintCenterMarks());//true matches v0.18 behaviour
     return printCenters;
 }
 

@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <Mod/CAM/App/CAMParams.h>
 #include <limits>
 #include <boost/algorithm/string/replace.hpp>
 
@@ -49,6 +50,7 @@
 #include <QApplication>
 #include <QMenu>
 
+#include <Gui/ViewParams.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
@@ -160,20 +162,20 @@ ViewProviderPath::ViewProviderPath()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/CAM"
     );
-    unsigned long lcol = hGrp->GetUnsigned("DefaultNormalPathColor", 11141375UL);  // dark green
+    unsigned long lcol = hGrp->GetUnsigned("DefaultNormalPathColor", Path::CAMParams::defaultDefaultNormalPathColor());  // dark green
                                                                                    // (0,170,0)
     float lr, lg, lb;
     lr = ((lcol >> 24) & 0xff) / 255.0;
     lg = ((lcol >> 16) & 0xff) / 255.0;
     lb = ((lcol >> 8) & 0xff) / 255.0;
-    unsigned long mcol = hGrp->GetUnsigned("DefaultPathMarkerColor", 1442775295UL);  // lime green
+    unsigned long mcol = hGrp->GetUnsigned("DefaultPathMarkerColor", Path::CAMParams::defaultDefaultPathMarkerColor());  // lime green
                                                                                      // (85,255,0)
     float mr, mg, mb;
     mr = ((mcol >> 24) & 0xff) / 255.0;
     mg = ((mcol >> 16) & 0xff) / 255.0;
     mb = ((mcol >> 8) & 0xff) / 255.0;
-    int lwidth = hGrp->GetInt("DefaultPathLineWidth", 1);
-    float arrowScale = hGrp->GetFloat("DefaultArrowScale", 3.0f);
+    int lwidth = hGrp->GetInt("DefaultPathLineWidth", Path::CAMParams::defaultDefaultPathLineWidth());
+    float arrowScale = hGrp->GetFloat("DefaultArrowScale", Path::CAMParams::defaultDefaultArrowScale());
     ADD_PROPERTY_TYPE(NormalColor, (lr, lg, lb), "Path", App::Prop_None, "The color of the feed rate moves");
     ADD_PROPERTY_TYPE(MarkerColor, (mr, mg, mb), "Path", App::Prop_None, "The color of the markers");
     ADD_PROPERTY_TYPE(LineWidth, (lwidth), "Path", App::Prop_None, "The line width of this path");
@@ -213,7 +215,7 @@ ViewProviderPath::ViewProviderPath()
     pcMarkerStyle->style = SoDrawStyle::POINTS;
     pcMarkerStyle->pointSize = App::GetApplication()
                                    .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                                   ->GetInt("MarkerSize", 4);
+                                   ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
     pcDrawStyle = new SoDrawStyle();
     pcDrawStyle->ref();
@@ -270,7 +272,7 @@ ViewProviderPath::ViewProviderPath()
 
     static const char* SelectionStyleEnum[] = {"Shape", "BoundBox", "None", nullptr};
     SelectionStyle.setEnums(SelectionStyleEnum);
-    unsigned long sstyle = hGrp->GetInt("DefaultSelectionStyle", 0);
+    unsigned long sstyle = hGrp->GetInt("DefaultSelectionStyle", Path::CAMParams::defaultDefaultSelectionStyle());
     SelectionStyle.setValue(sstyle);
 
     PathSelectionObserver::init();
@@ -394,14 +396,14 @@ void ViewProviderPath::onChanged(const App::Property* prop)
                 "User parameter:BaseApp/Preferences/Mod/CAM"
             );
             unsigned long rcol
-                = hGrp->GetUnsigned("DefaultRapidPathColor", 2852126975UL);  // dark red (170,0,0)
+                = hGrp->GetUnsigned("DefaultRapidPathColor", Path::CAMParams::defaultDefaultRapidPathColor());  // dark red (170,0,0)
             float rr, rg, rb;
             rr = ((rcol >> 24) & 0xff) / 255.0;
             rg = ((rcol >> 16) & 0xff) / 255.0;
             rb = ((rcol >> 8) & 0xff) / 255.0;
 
             unsigned long pcol
-                = hGrp->GetUnsigned("DefaultProbePathColor", 4293591295UL);  // yellow (255,255,5)
+                = hGrp->GetUnsigned("DefaultProbePathColor", Path::CAMParams::defaultDefaultProbePathColor());  // yellow (255,255,5)
             float pr, pg, pb;
             pr = ((pcol >> 24) & 0xff) / 255.0;
             pg = ((pcol >> 16) & 0xff) / 255.0;
@@ -479,10 +481,10 @@ unsigned long ViewProviderPath::getBoundColor() const
         "User parameter:BaseApp/Preferences/Mod/CAM"
     );
     if (SelectionStyle.getValue() == 0 || !Selectable.getValue()) {
-        return hGrp->GetUnsigned("DefaultBBoxNormalColor", 4294967295UL);  // white (255,255,255)
+        return hGrp->GetUnsigned("DefaultBBoxNormalColor", Path::CAMParams::defaultDefaultBBoxNormalColor());  // white (255,255,255)
     }
     else {
-        return hGrp->GetUnsigned("DefaultBBoxSelectionColor", 0xc8ffff00UL);  // rgb(0,85,255)
+        return hGrp->GetUnsigned("DefaultBBoxSelectionColor", Path::CAMParams::defaultDefaultBBoxSelectionColor());  // rgb(0,85,255)
     }
 }
 
@@ -517,7 +519,7 @@ void ViewProviderPath::updateData(const App::Property* prop)
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/CAM"
         );
-        bool hideFirstRapid = hGrp->GetBool("HideFirstRapid", false);
+        bool hideFirstRapid = hGrp->GetBool("HideFirstRapid", Path::CAMParams::defaultHideFirstRapid());
 
         if (hideFirstRapid) {
             // Find the first feed move and set StartIndex accordingly

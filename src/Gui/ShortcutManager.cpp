@@ -21,6 +21,8 @@
  ****************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "MiscParams.h"
 #ifndef _PreComp_
 # include <QShortcutEvent>
 # include <QApplication>
@@ -46,7 +48,7 @@ ShortcutManager::ShortcutManager()
     hPriorities->Attach(this);
     hSetting = hShortcuts->GetGroup("Settings");
     hSetting->Attach(this);
-    timeout = hSetting->GetInt("ShortcutTimeout", 300);
+    timeout = static_cast<int>(MiscParams::getShortcutTimeout());
     timer.setSingleShot(true);
 
     QObject::connect(&timer, &QTimer::timeout, [this](){onTimer();});
@@ -88,7 +90,7 @@ void ShortcutManager::OnChange(Base::Subject<const char*> &src, const char *reas
 {
     if (hSetting == &src) {
         if (boost::equals(reason, "ShortcutTimeout"))
-            timeout = hSetting->GetInt("ShortcutTimeout");
+            timeout = hSetting->GetInt("ShortcutTimeout", MiscParams::defaultShortcutTimeout());
         return;
     }
 
