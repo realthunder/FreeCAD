@@ -208,7 +208,12 @@ After the stage, on the reporter's answer to the setting's four points
 ("1,2,3 yes. 4 expose to techdraw preference page"): the rounding has a
 check box on TechDraw's Advanced preference page, `a343a386b6` (entry 61,
 once more, below). Local: not pushed, not staged -- the word to push and
-stage was given before this was asked. PAUSED here.
+stage was given before this was asked.
+
+Pushed 2026-10-10 11:18, on the reporter's word ("push only"):
+origin/PartDesignPort at `1151e3a6e5`, which has `a343a386b6`. NOT staged:
+the copy under test is still the one of 09:44:51 (`72180a4812`), without
+the check box. PAUSED here.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
