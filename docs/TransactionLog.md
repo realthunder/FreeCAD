@@ -17214,6 +17214,63 @@ takes them in.**
 a name is made on another thread, the map and the table are as they
 were; on the main thread it is kept, and found there the next time.
 
+### 31.30 The string table has a lock (user, 2026-10-10; built)
+
+31.29's Q1 recommended against it: "every `getID` on the main thread then
+pays for it". **The user:** "if I use read/write lock on string table,
+then it won't pay that much right? since there's seldom any write in other
+thread". Right, and measured.
+
+**Built.** `StringHasher`'s table (`HashMap`, in the source file -- the
+header is as it was) has a `std::shared_mutex`. Every function that reads
+the entries takes it shared, every one that changes them exclusive,
+through one guard (`TableLock`).
+
+- *The guard may be taken again by the thread that has it.* The table's
+  functions call each other -- a merge looks ids up, a save asks the last
+  id -- so the guard keeps, for each thread, what it holds of which table:
+  a read under a read or a write, and a write under a write, lock nothing.
+- *A write under a read is a fault*, asserted: what the outer function
+  looked up need not be there once the shared lock is let go to take the
+  other. So every function that may come to add a string takes the write
+  from its start. The one that only may -- `getID` of a string, which
+  adds what it does not find -- takes them one after the other: shared to
+  look, and where the string is not there, exclusive to add it, looking
+  again first, since another thread may have added it in between.
+- *Two tables* (`merge`, the imports): the other's is taken shared. Two
+  threads bringing each table into the other at once could each wait for
+  the other; nothing does that.
+- A string's own reference count was atomic already, and the table keeps
+  a reference to every string in it, so one that is found is alive.
+
+**Measured** (`~/.cache/txnlog-ref/cost.sh`; the gtest
+`StringHasherCost.DISABLED_aCallIntoTheTable`, 200,000 strings, and
+`names.py`, a box cut by sixty cylinders, each cut on the last, the whole
+chain recomputed):
+
+| | before | with the lock |
+| --- | --- | --- |
+| a string that is there | 88 ns | 107 ns |
+| a string by its id | 108 ns | 120 ns |
+| a new string | 500 ns | 620 ns |
+| the recompute | 4.13 s | 4.16 s, inside the 2% the three runs differ by |
+
+**What the lock does not give.**
+
+- *An id is the order of arrival.* With a second thread adding strings
+  the same model can come to other ids from one run to the next, and the
+  id is in the name's text (`;#3;Solid#1;...`). Each run is right in
+  itself.
+- *A string's flags* (`mark()`, set while a table is saved) are the
+  string's own and not under the lock.
+- *A function given to the table* (`compact`'s keep, `rows`' want) runs
+  under the lock. One that waited there for another thread which wants
+  the table would wait for ever; the gates, which run the log's worker
+  throughout, saw none.
+
+**Gates:** 18 Gui checks, Python 3105 with the freeze on and off, ctest
+894 both.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

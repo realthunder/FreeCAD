@@ -13,6 +13,10 @@
 #include <QCryptographicHash>
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <iostream>
+#include <string>
+#include <vector>
 #include <sstream>
 
 class StringIDTest: public ::testing::Test
@@ -1912,4 +1916,50 @@ TEST_F(StringHasherTest, lookupTextFindsByContentAndTakesNothingIn)  // NOLINT
     App::StringHasher::ImportMemo none;
     EXPECT_FALSE(fresh->lookupText(stored, *Hasher(), working, none));
     EXPECT_EQ(fresh->size(), 0U);
+}
+
+// Not a check: the cost of one call into the table, for a decision
+// (docs/TransactionLog.md sec 31.30). Run with
+// --gtest_also_run_disabled_tests --gtest_filter='StringHasherCost.*'.
+TEST(StringHasherCost, DISABLED_aCallIntoTheTable)  // NOLINT
+{
+    using Clock = std::chrono::steady_clock;
+    constexpr int count = 200000;
+    constexpr int rounds = 5;
+    Base::Reference<App::StringHasher> hasher(new App::StringHasher);
+    std::vector<std::string> texts;
+    texts.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        texts.push_back("Face" + std::to_string(i) + ";:M;CUT;:H1a:7,F");
+    }
+    std::vector<App::StringIDRef> held;
+    held.reserve(count);
+    auto start = Clock::now();
+    for (const auto& text : texts) {
+        held.push_back(hasher->getID(text.c_str(), static_cast<int>(text.size())));
+    }
+    const double made =
+        std::chrono::duration<double, std::nano>(Clock::now() - start).count() / count;
+    double found = 1e30;
+    double byId = 1e30;
+    long sum = 0;
+    for (int round = 0; round < rounds; ++round) {
+        start = Clock::now();
+        for (const auto& text : texts) {
+            sum += hasher->getID(text.c_str(), static_cast<int>(text.size())).value();
+        }
+        found = std::min(
+            found,
+            std::chrono::duration<double, std::nano>(Clock::now() - start).count() / count);
+        start = Clock::now();
+        for (int i = 1; i <= count; ++i) {
+            sum += hasher->getID(static_cast<long>(i)).value();
+        }
+        byId = std::min(
+            byId,
+            std::chrono::duration<double, std::nano>(Clock::now() - start).count() / count);
+    }
+    std::cout << "COST new string " << made << " ns, string found " << found << " ns, by id "
+              << byId << " ns (" << sum << ")\n";
+    EXPECT_EQ(hasher->size(), static_cast<std::size_t>(count));
 }

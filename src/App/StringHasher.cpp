@@ -29,8 +29,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cassert>
 #include <deque>
+#include <shared_mutex>
 #include <sstream>
+#include <vector>
 #include <boost/io/ios_state.hpp>
 #include <boost/iostreams/device/array.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -106,7 +109,113 @@ public:
     /// Counts the changes to the entries, which is what the cached hash of
     /// the whole table (contentHash()) is valid for.
     uint64_t Revision = 0;
+    /// Many readers or one writer, of any thread (docs/TransactionLog.md sec
+    /// 31.30): taken through TableLock by every function that reads or
+    /// changes the entries.
+    mutable std::shared_mutex mutex;
 };
+
+namespace {
+
+/// What this thread holds of one table
+struct HeldTable
+{
+    const std::shared_mutex* mutex;
+    int readers;
+    int writers;
+    bool exclusive;
+};
+thread_local std::vector<HeldTable> heldTables;
+
+/** A table's lock for one function: shared to read, exclusive to change.
+ * The functions of the table call each other, so it may be taken again by
+ * the thread that has it: to read under either, to write under a write.
+ * To write under a read is a fault of the function that took the read --
+ * what it looked up may not be there once the lock was let go to take the
+ * other -- and is asserted; every function that may come to add a string
+ * takes the write from its start. The one that only may, the lookup that
+ * adds what it does not find, takes them one after the other and looks
+ * again.
+ */
+class TableLock
+{
+public:
+    enum Mode { Read, Write };
+
+    template<class Table>
+    TableLock(const Table& table, Mode mode)
+        : _mutex(table.mutex)
+        , _mode(mode)
+    {
+        HeldTable* held = find();
+        if (!held) {
+            if (mode == Write)
+                _mutex.lock();
+            else
+                _mutex.lock_shared();
+            heldTables.push_back({&_mutex, mode == Read ? 1 : 0, mode == Write ? 1 : 0,
+                                  mode == Write});
+            return;
+        }
+        if (mode == Write && !held->exclusive) {
+            assert(!"string table: a write taken under a read");
+            _mutex.unlock_shared();
+            _mutex.lock();
+            held->exclusive = true;
+            _raised = true;
+        }
+        ++(mode == Read ? held->readers : held->writers);
+    }
+
+    ~TableLock()
+    {
+        HeldTable* held = find();
+        --(_mode == Read ? held->readers : held->writers);
+        if (_raised) {
+            _mutex.unlock();
+            _mutex.lock_shared();
+            held->exclusive = false;
+            return;
+        }
+        if (held->readers == 0 && held->writers == 0) {
+            if (held->exclusive)
+                _mutex.unlock();
+            else
+                _mutex.unlock_shared();
+            heldTables.erase(heldTables.begin() + (held - heldTables.data()));
+        }
+    }
+
+    TableLock(const TableLock&) = delete;
+    TableLock& operator=(const TableLock&) = delete;
+
+    /// Whether this thread has the table for writing already
+    template<class Table>
+    static bool writing(const Table& table)
+    {
+        for (const auto& held : heldTables) {
+            if (held.mutex == &table.mutex)
+                return held.exclusive;
+        }
+        return false;
+    }
+
+private:
+    HeldTable* find() const
+    {
+        for (auto& held : heldTables) {
+            if (held.mutex == &_mutex)
+                return &held;
+        }
+        return nullptr;
+    }
+
+    std::shared_mutex& _mutex;
+    Mode _mode;
+    bool _raised {false};
+};
+
+} // namespace
 
 ///////////////////////////////////////////////////////////
 
@@ -196,6 +305,7 @@ StringHasher::~StringHasher() {
 }
 
 void StringHasher::setSaveAll(bool enable) {
+    TableLock lock(*_hashes, TableLock::Write);
     // No compaction here: what may go depends on what the file's history
     // still uses, which only the document knows (docs/TransactionLog.md sec
     // 27.50 item 4). The next save compacts.
@@ -204,6 +314,7 @@ void StringHasher::setSaveAll(bool enable) {
 
 std::vector<long> StringHasher::compact(const std::function<bool(long)>& keep)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     std::vector<long> dropped;
     if (_hashes->SaveAll)
         return dropped;
@@ -243,6 +354,7 @@ std::vector<long> StringHasher::compact(const std::function<bool(long)>& keep)
 
 std::string StringHasher::saveTable() const
 {
+    TableLock lock(*_hashes, TableLock::Write);
     std::ostringstream out;
     out << "StringTableStart v1 " << size() << '\n';
     saveStream(out, true);
@@ -258,6 +370,7 @@ std::string StringHasher::saveTable() const
 
 const std::string& StringHasher::contentHash() const
 {
+    TableLock lock(*_hashes, TableLock::Write);
     if (_contentHash.empty() || _hashRevision != _hashes->Revision)
         saveTable();
     return _contentHash;
@@ -265,6 +378,7 @@ const std::string& StringHasher::contentHash() const
 
 void StringHasher::restoreTable(std::istream& stream)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     // The last id stays what the element that named the table said.
     const long last = _hashes->LastID;
     clear();
@@ -288,6 +402,7 @@ void StringHasher::restoreTable(std::istream& stream)
 std::vector<StringHasher::Row> StringHasher::rows(long after,
                                                   const std::function<bool(long)>& want) const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     std::vector<Row> out;
     for (auto it = _hashes->right.upper_bound(after); it != _hashes->right.end(); ++it) {
         const StringID& d = *it->second;
@@ -310,6 +425,7 @@ std::vector<StringHasher::Row> StringHasher::rows(long after,
 
 std::size_t StringHasher::insertRows(const std::vector<Row>& rows, std::size_t* conflicts)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     constexpr auto kept = ~static_cast<int>(StringID::Flag::Marked);
     std::size_t taken = 0;
     std::size_t clashes = 0;
@@ -355,11 +471,13 @@ std::size_t StringHasher::insertRows(const std::vector<Row>& rows, std::size_t* 
 
 bool StringHasher::hasID(long id) const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     return _hashes->right.count(id) != 0;
 }
 
 StringHasher::StorageSizes StringHasher::getStorageSize() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     StorageSizes sizes;
     std::unordered_set<const char *> dataset;
     for (const auto & v : _hashes->right) {
@@ -381,19 +499,23 @@ StringHasher::StorageSizes StringHasher::getStorageSize() const
 }
 
 bool StringHasher::getSaveAll() const {
+    TableLock lock(*_hashes, TableLock::Read);
     return _hashes->SaveAll;
 }
 
 void StringHasher::setThreshold(int threshold) {
+    TableLock lock(*_hashes, TableLock::Write);
     _hashes->Threshold = threshold;
 }
 
 int StringHasher::getThreshold() const {
+    TableLock lock(*_hashes, TableLock::Read);
     return _hashes->Threshold;
 }
 
 long StringHasher::lastID() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     if (_hashes->right.empty()) {
         return _hashes->LastID;
     }
@@ -404,6 +526,8 @@ long StringHasher::lastID() const
 
 bool StringHasher::merge(const StringHasher& other, std::size_t* aliased)
 {
+    TableLock theirs(*other._hashes, TableLock::Read);
+    TableLock lock(*_hashes, TableLock::Write);
     // docs/TransactionLog.md sec 27.40 item 2: the table of one document of
     // a file, read on its own, joins the file's. First see that no id means
     // something else here; only then change anything.
@@ -465,21 +589,36 @@ StringIDRef StringHasher::getID(const QByteArray& data, Options options)
     bool hashable = options.testFlag(Option::Hashable);
     bool nocopy = options.testFlag(Option::NoCopy);
 
-    bool hashed = hashable && _hashes->Threshold > 0 && (int)data.size() > _hashes->Threshold;
-
+    // Looked up under the shared lock, which is all a string that is there
+    // needs; one that is not is put in under the exclusive one, and looked
+    // up again first where the lock was let go in between: another thread
+    // may have put it in (docs/TransactionLog.md sec 31.30).
+    const bool writing = TableLock::writing(*_hashes);
+    bool hashed = false;
     StringID dataID;
-    if (hashed) {
-        QCryptographicHash hasher(QCryptographicHash::Sha1);
-        hasher.addData(data);
-        dataID._data = hasher.result();
-    }
-    else {
-        dataID._data = data;
-    }
+    {
+        TableLock lock(*_hashes, TableLock::Read);
+        hashed = hashable && _hashes->Threshold > 0 && (int)data.size() > _hashes->Threshold;
+        if (hashed) {
+            QCryptographicHash hasher(QCryptographicHash::Sha1);
+            hasher.addData(data);
+            dataID._data = hasher.result();
+        }
+        else {
+            dataID._data = data;
+        }
 
-    auto it = _hashes->left.find(&dataID);
-    if (it != _hashes->left.end()) {
-        return {it->first};
+        auto it = _hashes->left.find(&dataID);
+        if (it != _hashes->left.end()) {
+            return {it->first};
+        }
+    }
+    TableLock lock(*_hashes, TableLock::Write);
+    if (!writing) {
+        auto it = _hashes->left.find(&dataID);
+        if (it != _hashes->left.end()) {
+            return {it->first};
+        }
     }
 
     if (!hashed && !nocopy) {
@@ -500,6 +639,7 @@ StringIDRef StringHasher::getID(const QByteArray& data, Options options)
 
 StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<StringIDRef>& sids)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     StringID tempID;
     tempID._postfix = name.postfixBytes();
 
@@ -666,6 +806,7 @@ bool StringHasher::importName(const Data::MappedName& name, const StringHasher& 
                               Data::MappedName& out, QVector<StringIDRef>& sids,
                               ImportMemo& memo)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     QVector<StringIDRef> named;
     QByteArray data;
     QByteArray postfix;
@@ -846,6 +987,7 @@ long StringHasher::ImportTags::map(long tag)
 bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, QByteArray& out,
                               QVector<StringIDRef>* sids, ImportMemo& memo, bool take)
 {
+    TableLock lock(*_hashes, take ? TableLock::Write : TableLock::Read);
     int pos = text.indexOf('#');
     if (pos < 0) {
         out = rewriteTags(rewriteMinted(text));
@@ -890,6 +1032,7 @@ bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, 
 
 StringIDRef StringHasher::importOne(const StringIDRef& foreign, ImportMemo& memo, bool take)
 {
+    TableLock lock(*_hashes, take ? TableLock::Write : TableLock::Read);
     if (!foreign)
         return {};
     const StringID* theirs = foreign._sid;
@@ -913,6 +1056,7 @@ StringIDRef StringHasher::importOne(const StringIDRef& foreign, ImportMemo& memo
 StringIDRef StringHasher::importNew(const StringID& theirs, const StringHasher& from,
                                     ImportMemo& memo, bool take, const QByteArray* said)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     // The name this one is built on, as this file numbers the thing (sec
     // 31.14, mintedText): another string than the one it comes as anywhere
     // else, so not through the memo.
@@ -992,6 +1136,7 @@ StringIDRef StringHasher::importNew(const StringID& theirs, const StringHasher& 
 
 StringIDRef StringHasher::getID(long id, int index) const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     if (id <= 0) {
         return {};
     }
@@ -1019,6 +1164,7 @@ const std::string& StringHasher::getPersistenceFileName() const
 
 void StringHasher::Save(Base::Writer& writer) const
 {
+    TableLock lock(*_hashes, TableLock::Write);
 
     size_t count = 0;
     if (_hashes->SaveAll) {
@@ -1061,6 +1207,7 @@ void StringHasher::saveReference(Base::Writer& writer, const std::string& file,
                                  const std::string& hash, std::size_t count,
                                  const std::vector<long>& used) const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     writer.Stream() << writer.ind()
         << "<StringHasher saveall=\"" << _hashes->SaveAll
         << "\" threshold=\"" << _hashes->Threshold << "\" lastid=\"" << lastID()
@@ -1114,6 +1261,7 @@ bool StringHasher::parseUsed(const std::string& xml, std::vector<std::pair<long,
 
 std::vector<long> StringHasher::markedIDs() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     std::vector<long> out;
     for (auto & v : _hashes->right) {
         if (v.second->isMarked() || v.second->isPersistent())
@@ -1123,6 +1271,7 @@ std::vector<long> StringHasher::markedIDs() const
 }
 
 void StringHasher::SaveDocFile (Base::Writer &writer) const {
+    TableLock lock(*_hashes, TableLock::Write);
     // What saveStream() writes, under the marker RestoreDocFile() reads it
     // by: a bare count there means the older format.
     std::size_t count = 0;
@@ -1135,6 +1284,7 @@ void StringHasher::SaveDocFile (Base::Writer &writer) const {
 }
 
 void StringHasher::saveStream(std::ostream &stream, bool all) const {
+    TableLock lock(*_hashes, TableLock::Write);
     Base::OutputStream str(stream,false);
     boost::io::ios_flags_saver ifs(stream);
     stream << std::hex;
@@ -1237,11 +1387,13 @@ void StringHasher::saveStream(std::ostream &stream, bool all) const {
 
 void StringHasher::RestoreDocFile(Base::Reader& reader)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     restoreTable(reader);
 }
 
 void StringHasher::restoreStreamNew(std::istream &stream, std::size_t count)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     Base::InputStream str(stream,false);
     _hashes->clear();
     std::string content;
@@ -1357,6 +1509,7 @@ void StringHasher::restoreStreamNew(std::istream &stream, std::size_t count)
 
 StringID* StringHasher::insert(const StringIDRef& sid)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     assert(sid && sid._sid->_hasher == nullptr);
     auto & d = *sid._sid;
     d._hasher = this;
@@ -1372,6 +1525,7 @@ StringID* StringHasher::insert(const StringIDRef& sid)
 }
 
 void StringHasher::restoreStream(std::istream &stream, std::size_t count) {
+    TableLock lock(*_hashes, TableLock::Write);
     Base::InputStream str(stream,false);
     _hashes->clear();
     std::string content;
@@ -1391,6 +1545,7 @@ void StringHasher::restoreStream(std::istream &stream, std::size_t count) {
 }
 
 void StringHasher::clear() {
+    TableLock lock(*_hashes, TableLock::Write);
     for (auto & v : _hashes->right) {
         v.second->_hasher = nullptr;
         v.second->unref();
@@ -1402,11 +1557,13 @@ void StringHasher::clear() {
 
 size_t StringHasher::size() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     return _hashes->size();
 }
 
 size_t StringHasher::count() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     size_t count = 0;
     for(auto &v : _hashes->right)  {
         if(v.second->getRefCount()>1) {
@@ -1418,6 +1575,7 @@ size_t StringHasher::count() const
 
 void StringHasher::Restore(Base::XMLReader& reader)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     clear();
     reader.readElement("StringHasher");
     _hashes->SaveAll = reader.getAttributeAsInteger("saveall")?true:false;
@@ -1495,6 +1653,7 @@ void StringHasher::Restore(Base::XMLReader& reader)
 
 unsigned int StringHasher::getMemSize() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     return (_hashes->SaveAll ? size() : count()) * 10;
 }
 
@@ -1505,6 +1664,7 @@ PyObject* StringHasher::getPyObject()
 
 std::map<long,StringIDRef> StringHasher::getIDMap() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     std::map<long,StringIDRef> ret;
     for(auto &v : _hashes->right) {
         ret.emplace_hint(ret.end(), v.first, StringIDRef(v.second));
@@ -1514,6 +1674,7 @@ std::map<long,StringIDRef> StringHasher::getIDMap() const
 
 void StringHasher::clearMarks() const
 {
+    TableLock lock(*_hashes, TableLock::Write);
     for (auto & v : _hashes->right) {
         v.second->_flags.setFlag(StringID::Flag::Marked, false);
     }
