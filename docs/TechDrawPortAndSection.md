@@ -2712,11 +2712,25 @@ section 36 has it.
   rim a third of a pixel wide to a highlight, measured. Hidden is the
   host's own state of its page, not content: it is not on the wire, and
   feeding the edge again shows it. A
-  line asked for at no width is a hairline, as Qt's cosmetic pen. Only the
-  DASHES still follow Qt (`wholeUnits` in `PageFeed.cpp`): they are counted
-  in the width Qt's pen has, so a dashed line has the same dashes in the
-  same places whichever of the two draws the page. (For one day, entry 61,
-  the feed drew Qt's cut widths instead.)
+  line asked for at no width is a hairline, as Qt's cosmetic pen. The
+  DASHES go with the width (`dashUnit` in `PageFeed.cpp`): a pattern is so
+  many line widths long, and it is counted in the width asked for, an
+  edge's and a captured item's alike. So a 0.35 mm hidden line has its
+  pattern a sixth longer than on the Qt page, which counts in its pen's
+  0.3 -- six dashes where Qt has seven; a line of whole tenths has Qt's
+  dashes exactly. ("Do the new dash", 2026-10-10; for some hours before
+  it the dashes had been left Qt's while the widths were not, and for a
+  day before that, entry 61, the feed drew Qt's cut widths.) How the
+  dashes take a ZOOM is as Qt's, as above.
+  Qt's cut can be had back: the setting
+  `Mod/TechDraw/General/PageRendererVgRoundLineWidth` (off by default; no
+  preference page has it, the omni search does) rounds a width down to
+  whole scene units as `QPen::setWidth(int)` does, and the dashes are
+  then Qt's too, being counted in the width drawn. One function says what
+  a line is drawn at (`drawnWidth` in `PageFeed.cpp`) for an edge, a
+  captured item and the dashes of both, so a line and its highlight agree
+  either way. A change reaches an open page at once: `QGVPage` feeds every
+  view again.
   `tests/gui/techdraw-page-backend-line-widths.py`: the widths asked for,
   measured, and each highlight against the line under it.
 - Vertex dots are a little smaller than Qt's, which strokes them as well

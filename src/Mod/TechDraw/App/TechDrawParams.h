@@ -326,6 +326,22 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter PageRendererVgRoundLineWidth
+    ///
+    /// With the backend page renderer, round a line's width down to a
+    /// whole tenth of a millimetre, as the Qt scene items draw it: 0.35
+    /// mm as 0.3. Off, a line is as wide as it is asked to be. Its
+    /// dashes are counted in the width it is drawn at. Applies at once
+    /// to open pages.
+    static const bool & getPageRendererVgRoundLineWidth();
+    static const bool & defaultPageRendererVgRoundLineWidth();
+    static void removePageRendererVgRoundLineWidth();
+    static void setPageRendererVgRoundLineWidth(const bool &v);
+    static const char *docPageRendererVgRoundLineWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ProjectionAngle
     ///
     /// Projection convention of new pages and projection groups: 0 first

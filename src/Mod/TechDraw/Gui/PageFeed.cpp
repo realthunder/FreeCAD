@@ -256,21 +256,46 @@ struct EdgeStroke
 // the thinner of the two. A captured QGIPrimPath is therefore given the
 // width it was ASKED for, as here (capturePrimPath).
 //
-// The dashes are left as Qt counts them, in the width its pen has
-// (wholeUnits): a line has the same dashes in the same places whichever
-// of the two draws the page, and is only as much wider as was asked.
-float primPathWidth(double asked, float hairline)
+// The dashes go with the width (dashUnit): a pattern is so many line
+// widths long, and the line's width is the one asked for.
+//
+// And Qt's cut can be had back: the setting PageRendererVgRoundLineWidth
+// ("Add a techdraw setting for backend rendering line width rounding")
+// rounds a width down to whole scene units here as QPen::setWidth(int)
+// does there, one under a unit a hairline, the dashes counted in what is
+// left. Off, which is the default, a line is as wide as was asked. The
+// one function says it for an edge, for a captured item and for the
+// dashes of both, so that a line and its highlight cannot differ.
+double drawnWidth(double asked)
 {
-    return asked > 0.0 ? (float)asked : hairline;
+    if (!(asked > 0.0))
+        return 0.0;
+    if (TechDraw::TechDrawParams::getPageRendererVgRoundLineWidth()) {
+        const double whole = std::floor(asked);
+        return whole >= 1.0 ? whole : 0.0;
+    }
+    return asked;
 }
 
-// What Qt's pen makes of a width asked for, which is what it counts a dash
-// pattern in: whole scene units, and none (0: a cosmetic pen, counted in
-// device pixels) for a width under one.
-float wholeUnits(double asked)
+float primPathWidth(double asked, float hairline)
 {
-    const float whole = (float)std::floor(asked);
-    return whole >= 1.0f ? whole : 0.0f;
+    const double drawn = drawnWidth(asked);
+    return drawn > 0.0 ? (float)drawn : hairline;
+}
+
+// What a dash pattern is counted in, given the width asked for: the width
+// the line is drawn at, as the stroke's is -- a line standard says a dash
+// is so many line widths long. A line of no width is a hairline, whose
+// pattern is counted in device pixels (0), as Qt counts a cosmetic pen's.
+//
+// Not Qt's count either: its pen is the width cut to a whole number of
+// scene units, so its 0.35 mm hidden line counts its dashes in 0.3 mm and
+// has seven where this has six. For a while the dashes were left Qt's
+// while the widths were not (wholeUnits, 2649caa38f); the reporter, asked:
+// "Do the new dash".
+float dashUnit(double asked)
+{
+    return (float)drawnWidth(asked);
 }
 
 // Per-edge appearance, mirroring QGIViewPart::drawAllEdges: cosmetic
@@ -352,11 +377,8 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
     if (pen.style() != Qt::SolidLine) {
         for (qreal d : pen.dashPattern())
             es.dash.pattern.push_back((float)d);
-        // The unit is the width the Qt page's pen HAS, not the stroke's:
-        // a 0.35 mm hidden line counts its dashes in 0.3 mm -- seven
-        // dashes where 0.35 gives six -- and a width under one unit is a
-        // cosmetic pen, counted in pixels (unit 0).
-        es.dash.unit = wholeUnits(asked);
+        // counted in the stroke's own width (dashUnit)
+        es.dash.unit = dashUnit(asked);
         es.dash.offset = (float)pen.dashOffset();
         es.dash.cap = pen.capStyle() != Qt::FlatCap;
     }
@@ -684,7 +706,7 @@ void captureDashedPath(Page2D::Recorder& rec, const QPainterPath& path,
 // \a asked, where it is given (not negative), is the stroke's width in the
 // item's own units in place of the pen's: what a QGIPrimPath was asked
 // for, which its pen holds cut to a whole number (primPathWidth). The
-// dashes stay the pen's.
+// pen's dash pattern is counted in it too.
 void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
                     const QTransform& t, const QPen& pen, const QBrush& brush,
                     double asked = -1.0)
@@ -696,7 +718,14 @@ void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
     if (!fill && !stroke)
         return;
 
-    const DashSpec dashes = penDashes(pen, t);
+    DashSpec dashes = penDashes(pen, t);
+    // the pattern of a QGIPrimPath's pen is counted in the width the
+    // item was asked for, as its stroke is, not in the pen's cut one
+    // (rounded, where it is to be, in the item's own units as Qt's pen
+    // is: the item's transform comes after)
+    const double drawn = asked < 0.0 ? 0.0 : drawnWidth(asked) * avgScale(t);
+    if (asked >= 0.0 && !dashes.empty())
+        dashes.unit = (float)drawn;
     if (fill || dashes.empty())
         capturePainterPath(rec, path, t);
     if (fill)
@@ -707,8 +736,7 @@ void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
             captureDashedPath(rec, path, t, dashes);
         rec.stroke(packColor(pen.color()),
                    asked < 0.0 ? penWidth(pen, t)
-                               : primPathWidth(asked * avgScale(t),
-                                               captureHairline));
+                               : drawn > 0.0 ? (float)drawn : captureHairline);
     }
 }
 

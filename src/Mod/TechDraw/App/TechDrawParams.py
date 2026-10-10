@@ -132,6 +132,13 @@ Params = [
         title = "Page Renderer Vg Verify",
         doc = "Also paint the Qt scene items over the backend's picture of the\n"
               "page, so that differences between the two show. Applies at once."),
+    ParamBool('PageRendererVgRoundLineWidth', False, subpath='General',
+        title = "Page Renderer Vg Round Line Width",
+        doc = "With the backend page renderer, round a line's width down to a\n"
+              "whole tenth of a millimetre, as the Qt scene items draw it: 0.35\n"
+              "mm as 0.3. Off, a line is as wide as it is asked to be. Its\n"
+              "dashes are counted in the width it is drawn at. Applies at once\n"
+              "to open pages."),
     ParamInt('ProjectionAngle', 0, subpath='General',
         title = "Projection Angle",
         doc = "Projection convention of new pages and projection groups: 0 first\n"

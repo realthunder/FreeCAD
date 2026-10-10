@@ -178,6 +178,14 @@ public:
             page->resetCachedContent();
             page->viewport()->update();
         }
+        else if (strcmp(Reason, "PageRendererVgRoundLineWidth") == 0) {
+            // every line of every view is another width now: all of them
+            // are fed again at the next paint
+            for (const auto& v : page->m_vgViews)
+                page->m_vgDirty.insert(v.first);
+            page->resetCachedContent();
+            page->viewport()->update();
+        }
         else if (strcmp(Reason, "NavigationStyle") == 0) {
             std::string model =
                 rGrp.GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());

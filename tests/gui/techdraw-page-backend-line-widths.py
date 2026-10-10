@@ -21,6 +21,10 @@ four lines is added up, fractions of a pixel included:
     cosmetic line (0.35), a section line (0.375): each in the backend's
     picture as wide as was asked, within half a pixel -- and Qt's noted
     beside it, which is the whole tenths below;
+  - with the setting PageRendererVgRoundLineWidth turned on while the page
+    is up ("Add a techdraw setting for backend rendering line width
+    rounding"), each line is as wide as Qt's, whole tenths, at once; and a
+    selected line is still as wide as its highlight, nothing beside it;
   - with the cosmetic line selected, and then the hidden line: the line is
     the highlight's colour, as in Qt's picture; the line under the highlight
     does not show beside it (the ink that is neither the paper's colour nor
@@ -41,7 +45,7 @@ RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "WidthCompare"
 GEN = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/TechDraw/General")
 KEYS = (("PageRendererVg", False), ("PageRendererVgComposite", True),
-        ("PageRendererVgVerify", False))
+        ("PageRendererVgVerify", False), ("PageRendererVgRoundLineWidth", False))
 HAD = [GEN.GetBool(k, d) for k, d in KEYS]
 VIEW_X, VIEW_Y = 110.0, 120.0
 ZOOM = 20.0  # pixels to the millimetre
@@ -75,6 +79,7 @@ def switch(on):
     # read back into a raster viewport: a widget grab cannot read a GL one
     GEN.SetBool("PageRendererVgComposite", False)
     GEN.SetBool("PageRendererVgVerify", False)
+    GEN.SetBool("PageRendererVgRoundLineWidth", False)
     GEN.SetBool("PageRendererVg", on)
 
 
@@ -300,6 +305,36 @@ def to_backend():
     switch(True)
 
 
+def to_rounded():
+    # the page is up and drawn by the backend: the setting has to reach it
+    # as it stands
+    GEN.SetBool("PageRendererVgRoundLineWidth", True)
+
+
+def compare_rounded():
+    """With the setting on, the backend's widths are Qt's: whole tenths"""
+    qt, vg = SEEN.get("qt"), SEEN.get("rounded")
+    if not check("the picture with the widths rounded was taken", qt and vg):
+        return
+    for name in LINES:
+        q, v = qt[name][0], vg[name][0]
+        asked = ASKED[name]
+        whole = math.floor(asked * 10.0 + 1e-6) / 10.0
+        check("rounded, the %s is as wide as Qt's" % name,
+              abs(v - whole * ZOOM) <= 0.5 and abs(v - q) <= 0.5,
+              "asked %.3f mm, whole tenths %.1f (%.2f px); the backend %.2f px, Qt %.2f px" % (
+                  asked, whole, whole * ZOOM, v, q))
+    for name in SELECTED:
+        vs = SEEN.get(("rounded", name))
+        if not check("rounded, the picture of the selected %s was taken" % name, vs):
+            continue
+        check("rounded, the %s under its highlight does not show beside it" % name,
+              vs[2] <= 0.25, "%.2f px of ink neither paper nor highlight" % vs[2])
+        check("rounded, the highlight of the %s is as wide as the line" % name,
+              abs(vs[0] - vg[name][0]) <= 0.5,
+              "the line %.2f px, selected %.2f px" % (vg[name][0], vs[0]))
+
+
 def compare():
     qt, vg = SEEN.get("qt"), SEEN.get("backend")
     if not check("both pictures were taken", qt and vg):
@@ -340,6 +375,7 @@ def compare():
 def finish():
     try:
         compare()
+        compare_rounded()
     except Exception:
         note("FAIL the comparison ran | " + traceback.format_exc().replace("\n", " | "))
     for (k, d), had in zip(KEYS, HAD):
@@ -385,4 +421,6 @@ STEPS.extend(shot("qt"))
 STEPS.append((500, to_backend))
 STEPS.append((4000, look))
 STEPS.extend(shot("backend"))
+STEPS.append((500, to_rounded))
+STEPS.extend(shot("rounded"))
 advance()

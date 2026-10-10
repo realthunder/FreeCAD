@@ -1,4 +1,12 @@
-"""A TechDraw page drawn by the backend has the Qt page's dashes, at any zoom.
+"""A TechDraw page drawn by the backend has dashes that behave as the Qt
+page's at any zoom, counted in the line's own width.
+
+In the line's own width: the backend draws a line as wide as it is asked to
+be and Qt's page cuts the pen to whole tenths of a millimetre, so a 0.35 mm
+hidden line's pattern is counted in 0.35 here and in 0.3 there -- the same
+pattern, a sixth longer ("change techdraw bgfx rendering to support
+fractional line width", and of the dashes then left Qt's: "Do the new
+dash"). A line whose width is whole tenths has Qt's dashes exactly.
 
 docs/HandsOnQueue.md entry 36: "most dashed line rendering does not behave
 the same as Qt, namely view frame, section line, hidden line, and so on",
@@ -20,13 +28,20 @@ zooms, the dashes counted along a hidden line, a section line and the top
 side of the view's frame:
   - every one of them is dashed in both (the measurement finds what it
     looks for);
-  - the hidden line and the section line have as many dashes as Qt's, give
-    or take one where the pen is thinner than a pixel -- there the layer's
-    pixel is the zoom band's, up to sqrt(2) off the screen's;
+  - where the pen is thinner than a pixel, the hidden line and the section
+    line have as many dashes as Qt's, give or take one: both count in
+    pixels there, the layer in the zoom band's, up to sqrt(2) off the
+    screen's;
+  - where it is not, their pattern is as much longer than Qt's as the width
+    asked for is wider than Qt's pen (0.35 to 0.3: a sixth), and they have
+    that many fewer dashes, give or take one;
   - their gaps can be seen: two pixels or more wherever Qt's are;
+  - with the setting PageRendererVgRoundLineWidth on, the widths are Qt's
+    whole tenths and so are the dashes: as many, at the same pitch;
   - the frame's dashes are a few pixels long at every zoom, as Qt's are,
     and do not grow with it.
 """
+import math
 import os
 import traceback
 
@@ -39,7 +54,7 @@ RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "DashCompare"
 GEN = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/TechDraw/General")
 KEYS = (("PageRendererVg", False), ("PageRendererVgComposite", True),
-        ("PageRendererVgVerify", False))
+        ("PageRendererVgVerify", False), ("PageRendererVgRoundLineWidth", False))
 HAD = [GEN.GetBool(k, d) for k, d in KEYS]
 VIEW_X, VIEW_Y = 110.0, 120.0
 # pixels to the millimetre: a scene unit is a tenth of a millimetre
@@ -71,6 +86,7 @@ def switch(on):
     # read back into a raster viewport: a widget grab cannot read a GL one
     GEN.SetBool("PageRendererVgComposite", False)
     GEN.SetBool("PageRendererVgVerify", False)
+    GEN.SetBool("PageRendererVgRoundLineWidth", False)
     GEN.SetBool("PageRendererVg", on)
 
 
@@ -111,13 +127,17 @@ def runs(img, a, b, half):
 
 
 def summary(rs):
-    """(dashes, the mean length of those not cut by the ends, the mean gap)"""
+    """(dashes, the mean length of those not cut by the ends, the mean gap,
+    the pitch). The pitch is from the start of one dash to the start of the
+    next, the first dash left out as the stretch may begin inside it: none
+    (0) with fewer than three dashes."""
     if not rs:
-        return (0, 0.0, 0.0)
+        return (0, 0.0, 0.0, 0.0)
     lengths = [r[1] for r in rs]
     inner = lengths[1:-1] or lengths
     gaps = [rs[i + 1][0] - (rs[i][0] + rs[i][1]) for i in range(len(rs) - 1)]
-    return (len(rs), sum(inner) / len(inner), sum(gaps) / len(gaps) if gaps else 0.0)
+    pitch = (rs[-1][0] - rs[1][0]) / float(len(rs) - 2) if len(rs) >= 3 else 0.0
+    return (len(rs), sum(inner) / len(inner), sum(gaps) / len(gaps) if gaps else 0.0, pitch)
 
 
 def frame_side(img):
@@ -145,9 +165,9 @@ def measure(tag, zoom):
         "frame": summary(frame_side(img)),
     }
     SEEN[(tag, zoom)] = out
-    for k, (n, length, gap) in out.items():
-        note("NOTE %-8s %4g px/mm  %-12s %2d dashes of %5.1f px, %5.1f px apart" % (
-            tag, zoom, k, n, length, gap))
+    for k, (n, length, gap, pitch) in out.items():
+        note("NOTE %-8s %4g px/mm  %-12s %2d dashes of %5.1f px, %5.1f px apart, a pitch of "
+             "%5.1f px" % (tag, zoom, k, n, length, gap, pitch))
 
 
 def set_zoom(zoom):
@@ -203,6 +223,9 @@ def make():
 def look():
     if page_view() is None:
         raise RuntimeError("no page view")
+    # a hidden line and a section line are both asked for at the hidden width
+    vp = FreeCADGui.getDocument(DOC).getObject("View")
+    SEEN["asked"] = float(vp.HiddenWidth) * vp.LineScale
 
 
 def zoom_steps(tag, zoom):
@@ -219,14 +242,33 @@ def to_backend():
     switch(True)
 
 
+def to_rounded():
+    GEN.SetBool("PageRendererVgRoundLineWidth", True)
+
+
+def compare_rounded():
+    """With the widths rounded as Qt rounds them, the dashes are Qt's"""
+    zoom = ZOOMS[-1]
+    qt, vg = SEEN.get(("qt", zoom)), SEEN.get(("rounded", zoom))
+    if not check("%g px/mm: the picture with the widths rounded was taken" % zoom, qt and vg):
+        return
+    qn, qlen, qgap, qpitch = qt["hidden line"]
+    vn, vlen, vgap, vpitch = vg["hidden line"]
+    check("%g px/mm, rounded: the hidden line has as many dashes as Qt's" % zoom,
+          vn == qn, "Qt %d, the backend %d" % (qn, vn))
+    check("%g px/mm, rounded: and the same pattern" % zoom,
+          qpitch > 0.0 and abs(vpitch / qpitch - 1.0) <= 0.03,
+          "a pitch of %.1f px, Qt's %.1f" % (vpitch, qpitch))
+
+
 def compare():
     for zoom in ZOOMS:
         qt, vg = SEEN.get(("qt", zoom)), SEEN.get(("backend", zoom))
         if not check("%g px/mm: both pictures were taken" % zoom, qt and vg):
             continue
         for line in ("hidden line", "section line"):
-            qn, qlen, qgap = qt[line]
-            vn, vlen, vgap = vg[line]
+            qn, qlen, qgap, qpitch = qt[line]
+            vn, vlen, vgap, vpitch = vg[line]
             if qn < 2:
                 # too short on screen at this zoom for two of Qt's dashes: nothing
                 # to compare (the stretch of section line measured is 11 mm)
@@ -235,17 +277,44 @@ def compare():
             if not check("%g px/mm: the %s is dashed in both" % (zoom, line),
                          qn >= 2 and vn >= 2, (qt[line], vg[line])):
                 continue
-            # a pen thinner than a pixel: Qt counts in the screen's pixels, the
-            # layer in its zoom band's
-            thin = zoom * 0.3 < 1.0
-            check("%g px/mm: the %s has as many dashes as Qt's%s" % (
-                zoom, line, ", give or take one" if thin else ""),
-                abs(vn - qn) <= (1 if thin else 0), "Qt %d, the backend %d" % (qn, vn))
+            # the width asked for, and what Qt's pen makes of it: whole tenths
+            asked = SEEN["asked"]
+            whole = math.floor(asked * 10.0 + 1e-6) / 10.0
+            if zoom * asked < 1.0:
+                # a pen thinner than a pixel: Qt counts in the screen's
+                # pixels, the layer in its zoom band's
+                check("%g px/mm: the %s has as many dashes as Qt's, give or take one" % (
+                    zoom, line), abs(vn - qn) <= 1, "Qt %d, the backend %d" % (qn, vn))
+            elif zoom * whole < 1.0:
+                note("NOTE %g px/mm: Qt's pen is thinner than a pixel and the backend's is "
+                     "not: nothing to compare" % zoom)
+            else:
+                ratio = asked / whole
+                # by the pitch where there are dashes enough for one; by the
+                # gap, which no end of the stretch cuts, where it is wide
+                # enough to measure: a gap is read to a pixel or two (round
+                # caps, soft ends), and the difference looked for is a sixth
+                if qpitch > 0.0 and vpitch > 0.0:
+                    got, how = vpitch / qpitch, "pitch %.1f px, Qt's %.1f" % (vpitch, qpitch)
+                elif qgap >= 30.0:
+                    got, how = vgap / qgap, "gap %.1f px, Qt's %.1f" % (vgap, qgap)
+                else:
+                    note("NOTE %g px/mm: the %s has too few dashes and too small a gap to "
+                         "measure its pattern by" % (zoom, line))
+                    got = None
+                if got is not None:
+                    check("%g px/mm: the %s's pattern is counted in the width asked for" % (
+                        zoom, line), abs(got - ratio) <= 0.1,
+                        "asked %.2f mm, Qt's pen %.1f: a pattern %.3f times Qt's wanted, %.3f "
+                        "measured (%s)" % (asked, whole, ratio, got, how))
+                check("%g px/mm: the %s has that many fewer dashes, give or take one" % (
+                    zoom, line), abs(vn - qn / ratio) <= 1.0,
+                    "Qt %d, the backend %d" % (qn, vn))
             check("%g px/mm: the %s's gaps can be seen" % (zoom, line),
                   vgap >= 2.0 or vgap >= qgap - 0.5,
                   "Qt %.1f px, the backend %.1f px" % (qgap, vgap))
-        qn, qlen, qgap = qt["frame"]
-        vn, vlen, vgap = vg["frame"]
+        qn, qlen, qgap, _ = qt["frame"]
+        vn, vlen, vgap, _ = vg["frame"]
         if check("%g px/mm: the frame is dashed in both" % zoom, qn >= 2 and vn >= 2,
                  (qt["frame"], vg["frame"])):
             check("%g px/mm: the frame's dashes are Qt's few pixels, within the band" % zoom,
@@ -256,6 +325,7 @@ def compare():
 def finish():
     try:
         compare()
+        compare_rounded()
     except Exception:
         note("FAIL the comparison ran | " + traceback.format_exc().replace("\n", " | "))
     for (k, d), had in zip(KEYS, HAD):
@@ -293,4 +363,6 @@ STEPS.append((500, to_backend))
 STEPS.append((4000, look))
 for _z in ZOOMS:
     STEPS.extend(zoom_steps("backend", _z))
+STEPS.append((500, to_rounded))
+STEPS.extend(zoom_steps("rounded", ZOOMS[-1]))
 advance()

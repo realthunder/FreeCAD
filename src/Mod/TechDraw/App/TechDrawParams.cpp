@@ -61,6 +61,7 @@ public:
     bool PageRendererVg;
     bool PageRendererVgComposite;
     bool PageRendererVgVerify;
+    bool PageRendererVgRoundLineWidth;
     long ProjectionAngle;
     bool restoreCosmetic;
     long ScrubCount;
@@ -246,6 +247,8 @@ public:
         funcs["PageRendererVgComposite"] = &TechDrawParamsP::updatePageRendererVgComposite;
         PageRendererVgVerify = this->subHandles[0]->GetBool("PageRendererVgVerify", false);
         funcs["PageRendererVgVerify"] = &TechDrawParamsP::updatePageRendererVgVerify;
+        PageRendererVgRoundLineWidth = this->subHandles[0]->GetBool("PageRendererVgRoundLineWidth", false);
+        funcs["PageRendererVgRoundLineWidth"] = &TechDrawParamsP::updatePageRendererVgRoundLineWidth;
         ProjectionAngle = this->subHandles[0]->GetInt("ProjectionAngle", 0);
         funcs["ProjectionAngle"] = &TechDrawParamsP::updateProjectionAngle;
         restoreCosmetic = this->subHandles[0]->GetBool("restoreCosmetic", true);
@@ -565,6 +568,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updatePageRendererVgVerify(TechDrawParamsP *self) {
         self->PageRendererVgVerify = self->subHandles[0]->GetBool("PageRendererVgVerify", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePageRendererVgRoundLineWidth(TechDrawParamsP *self) {
+        self->PageRendererVgRoundLineWidth = self->subHandles[0]->GetBool("PageRendererVgRoundLineWidth", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateProjectionAngle(TechDrawParamsP *self) {
@@ -1117,6 +1124,13 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTitle("Page Renderer Vg Verify")
         .setDoc("Also paint the Qt scene items over the backend's picture of the\n"
 "page, so that differences between the two show. Applies at once."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "PageRendererVgRoundLineWidth", "PageRendererVgRoundLineWidth", App::ParamInfo::Bool, false)
+        .setTitle("Page Renderer Vg Round Line Width")
+        .setDoc("With the backend page renderer, round a line's width down to a\n"
+"whole tenth of a millimetre, as the Qt scene items draw it: 0.35\n"
+"mm as 0.3. Off, a line is as wide as it is asked to be. Its\n"
+"dashes are counted in the width it is drawn at. Applies at once\n"
+"to open pages."),
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "ProjectionAngle", "ProjectionAngle", App::ParamInfo::Int, 0)
         .setTitle("Projection Angle")
         .setDoc("Projection convention of new pages and projection groups: 0 first\n"
@@ -2207,6 +2221,38 @@ void TechDrawParams::setPageRendererVgVerify(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void TechDrawParams::removePageRendererVgVerify() {
     instance()->subHandles[0]->RemoveBool("PageRendererVgVerify");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docPageRendererVgRoundLineWidth() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"With the backend page renderer, round a line's width down to a\n"
+"whole tenth of a millimetre, as the Qt scene items draw it: 0.35\n"
+"mm as 0.3. Off, a line is as wide as it is asked to be. Its\n"
+"dashes are counted in the width it is drawn at. Applies at once\n"
+"to open pages.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getPageRendererVgRoundLineWidth() {
+    return instance()->PageRendererVgRoundLineWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultPageRendererVgRoundLineWidth() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setPageRendererVgRoundLineWidth(const bool &v) {
+    instance()->subHandles[0]->SetBool("PageRendererVgRoundLineWidth",v);
+    instance()->PageRendererVgRoundLineWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removePageRendererVgRoundLineWidth() {
+    instance()->subHandles[0]->RemoveBool("PageRendererVgRoundLineWidth");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
