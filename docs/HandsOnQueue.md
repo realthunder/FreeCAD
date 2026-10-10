@@ -60,6 +60,19 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-10 21:46: entry 47, what the 20 s of empty view on LinkVibe are
+made of (`b257109420`).**
+- The view-provider drain 7.35 s, Part's visual drain 2.68 s, the pre-mesh
+  on the worker threads 0.66 s. So it is NOT the meshing on other
+  threads. The other 10 to 15 s go by between the drains' 31 slices, a
+  third to a half of a second per turn of the event loop; what a turn
+  does for that long is not measured.
+- Two questions with the reporter, NOT ANSWERED YET: (a) the crash, way 1
+  or way 2; (b) whether the wait itself is to be worked on -- not
+  started.
+- The tree is at `b257109420` plus this queue's commit; nothing pushed,
+  nothing staged.
+
 **2026-10-10 21:40: entry 47 MEASURED on both branches; a crash FOUND, not
 fixed; two ways to fix it with the reporter.**
 - LinkVibe is built (`85250d4cc0`, ended 18:17, exit 0). The tree is at
@@ -508,7 +521,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | STAGED 2026-10-09 08:40, fixed `813d0250f9`, PUSHED 2026-10-08: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 | 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | STAGED 2026-10-09 08:40, fixed `c7fdcf3220`, PUSHED 2026-10-08, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
 | 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | STAGED 2026-10-09 12:25, fixed `6dacf21b11`: the backend drew the hatch from one picture of the whole face, read one pixel in five at the zoom a page opens at (1.1 lines across a 17 px strip at 0.99 strength, Qt 5.0 at 0.19; now 5.0 at 0.33); a hatch is one tile laid side by side now and every picture of a page has coarser copies. Three more found by the test and fixed with it: a hatch with `HatchRotation` turned the WRONG WAY, every image drawn over all the line work of a page, the tiles showing their seams. 22 PASS and 8 FAIL before, 39 PASS after. Left: a hatch line about a pixel wide is paler than Qt's (`docs/HandsOnLog.md`) |
-| 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | MEASURED on both branches 2026-10-10 (`docs/HandsOnLog.md`, `a99ee11a31`); nothing changed; a crash FOUND on both, NOT fixed; two ways to fix it with the reporter, NOT ANSWERED YET. It is EVERY first open, the load not being over: after the open returns the view of `scanner.FCStd` is empty for 35 to 40 s on PartDesignPort (`2a45e36492`) and for 20 to 23 s on LinkVibe (`85250d4cc0`; complete at 25 s in 7 sessions of 7), so LinkVibe's load fixes (`fc74256a24`, `3c7c8bdcbf`, `806ab94621`) take 15 to 20 s off and the empty stretch stays. A CLOSE from a script timer inside the load crashed 5 of 6 on PartDesignPort and 1 of 12 on LinkVibe, both from `Gui::Document::runDeferredRestoreSlice`: the progress bar runs events inside a restore slice and the close deletes the document under it. Not tried: the reporter's own close (tab button, Ctrl+W) during the load. The ways: (1) a slice runs no events -- the build session's choice; (2) the close defers to the slice, as `3c7c8bdcbf` does for Part's visual drain. Before: seen once, not followed up; not seen in 16 opens of `scanner.FCStd` by the build session on 2026-10-10 |
+| 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | MEASURED on both branches 2026-10-10 (`docs/HandsOnLog.md`, `a99ee11a31`); nothing changed; a crash FOUND on both, NOT fixed; two questions with the reporter, NOT ANSWERED YET: (a) the crash, way 1 or way 2; (b) whether the wait itself is to be worked on (not started). It is EVERY first open, the load not being over: after the open returns the view of `scanner.FCStd` is empty for 35 to 40 s on PartDesignPort (`2a45e36492`) and for 20 to 23 s on LinkVibe (`85250d4cc0`; complete at 25 s in 7 sessions of 7), so LinkVibe's load fixes (`fc74256a24`, `3c7c8bdcbf`, `806ab94621`) take 15 to 20 s off and the empty stretch stays. What LinkVibe's 20 s are made of (`b257109420`): the view-provider drain 7.35 s in 17 slices, Part's visual drain 2.68 s in 14, the pre-mesh on the worker threads 0.66 s -- so NOT the meshing on other threads; the other 10 to 15 s go by between the 31 slices, a third to a half of a second per turn of the event loop, and what a turn does for that long is not measured. A CLOSE from a script timer inside the load crashed 5 of 6 on PartDesignPort and 1 of 12 on LinkVibe, both from `Gui::Document::runDeferredRestoreSlice`: the progress bar runs events inside a restore slice and the close deletes the document under it. Not tried: the reporter's own close (tab button, Ctrl+W) during the load. The ways: (1) a slice runs no events -- the build session's choice; (2) the close defers to the slice, as `3c7c8bdcbf` does for Part's visual drain. Before: seen once, not followed up; not seen in 16 opens of `scanner.FCStd` by the build session on 2026-10-10 |
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | Both FIXED, not staged: `31c09e28e7` (pushed 16:30) and `8a7595512d` (local), the second the TEST's own fault: `element-color-hide.py` took view 1 for "the other view" (`gdoc.activeView()` after `Std_ViewCreate` answers view 1 again in a run's second document); with the views told apart there is no leak, 624 of 624. The "REAL defect" named further on in this cell is WITHDRAWN. A proposal only: after `Std_ViewCreate` the active view and the keyboard focus can disagree. The first (`per-view-shown-eviction.py`: on Direct3D a stated GPU budget was held against everything the process holds; it is held against the geometry uploaded now, as the setting's text says; 5 of 5). As reported at 14:14 and WITHDRAWN at 16:57: the other, `element-color-hide.py`, is a REAL defect, reproduced and narrowed, NOT fixed: one view's own hide of a path takes the object out of the OTHER view too -- its pick and what it draws -- when the hiding view is traversed first; in both link modes. Before that: read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | STAGED 2026-10-09 12:25, fixed `664d57f39b`: it needs a MAXIMIZED window and then happens every time -- the toolbar manager took the workbench toolbar out of the title bar itself (a move that hides it) and only then asked whether it was visible; it asks before the move now. `tests/gui/preferences-reset-all.py`, the reset driven through the dialog: 5 PASS and 4 FAIL on the staged copy, 9 PASS on the dev build (`docs/HandsOnLog.md`) |
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | STAGED 2026-10-09 12:25, fixed `4cb1ee6ad1` (a) and `69a2028e23` (b). (a) as decided: `Default` is the engine on the platform's backend, `Legacy` is Coin; the type is a list on the Render engine page (`Default`, `Legacy`, the backends this build has) and is kept; the render cache setting is not looked at while the engine draws and not rewritten; nothing is written at startup; 13 PASS. (b) the copy that replaces a Coin-drawn view on an anti-aliasing change takes the old view's cell; 11 PASS and 7 FAIL on the staged copy, 18 PASS now (`docs/HandsOnLog.md`) |
@@ -4456,7 +4469,7 @@ The pictures: `..\dl\handson\2026-10-08\q2\g-e36m1-dev\qt-z1.0.png` against
 `backend-z1.0.png` (and the same pair at `z2.5` and `z6.0`).
 Not said yet by the reporter: whether and when it is to be worked on.
 
-## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches 2026-10-10: the view is empty after EVERY first open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe; a close inside the load CRASHES on both, FOUND, NOT fixed; two ways for the reporter (see `docs/HandsOnLog.md`)
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches 2026-10-10: the view is empty after EVERY first open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe; a close inside the load CRASHES on both, FOUND, NOT fixed; LinkVibe's 20 s are the two drains and the turns between their slices, not the meshing; two questions for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 08:33, seen by the build session on entry 28** and given a
 number here (its log, entry 28, `961d2dcd83`, local). Not reported by the
@@ -4563,6 +4576,31 @@ stretch is made of is BEING MEASURED.** Passed to it by the note-taker at
 - Whether the reporter's "mesh loading in other thread" explains the
   stretch: no evidence either way yet. Nothing is to be read into the
   measurement on that until the split is there.
+
+**2026-10-10 21:46, from the build session: what the 20 s on LinkVibe are
+made of is MEASURED, in `docs/HandsOnLog.md` (`b257109420`, the block
+"What the 20 s on LinkVibe are made of" in section "47.").** One open
+with the Gui and Part log on (`g-s-e47b-log-dev`; the view empty at
+20.3 s, complete at 25.0), the drains' own account:
+- the view providers (`Gui::Document`): 17 slices, 7.35 s of work, 320 of
+  them;
+- the visuals (Part): 14 slices, 2.68 s, 275 of 275, after the view
+  providers are done;
+- the pre-mesh on the worker threads: 0.66 s, 166 shapes, none failed.
+So the meshing on other threads is NOT what the wait is made of -- this
+answers the reporter's "it could be mesh loading in other thread" for
+this file. The two drains worked 10.0 s between them; the other 10 to
+15 s went by BETWEEN their 31 slices, a third to a half of a second per
+turn of the event loop. What a turn does for that long is NOT measured
+(the log names the frame, the tree, the pages, and the script's own five
+frames and timer as in it).
+
+**Two separate questions for the reporter now -- NOT ANSWERED YET:**
+- (a) the crash: way 1 or way 2, as listed above (the build session's
+  choice is way 1);
+- (b) whether the wait itself is to be worked on. The leads, in the build
+  session's words: "the time between slices, and the view showing nothing
+  until the last slice". Not decided, and not started.
 
 ## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- both FIXED, not staged: `31c09e28e7`, and `8a7595512d`, which is the TEST's -- the "real defect" of 14:14 is WITHDRAWN; the third no defect (see `docs/HandsOnLog.md`)
 
