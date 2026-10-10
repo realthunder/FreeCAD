@@ -417,9 +417,17 @@ void RecoveryWriter::writeFiles()
                 fi.createDirectory();
             }
 
-            // For properties a copy can be created and then this can be written to disk in a thread
+            // For properties a copy can be created and then this can be written to disk in a thread.
+            // Not one whose copy shares what the main thread may still change in place -- a shape
+            // that is not frozen (App::Property::canSaveOffThread, docs/TransactionLog.md sec
+            // 27.99, 31.28): that one is written here, as it stands.
+            const App::Property* prop = nullptr;
             if (entry.Object->isDerivedFrom(App::Property::getClassTypeId())) {
-                const auto* prop = static_cast<const App::Property*>(entry.Object);
+                prop = static_cast<const App::Property*>(entry.Object);
+                if (!prop->canSaveOffThread())
+                    prop = nullptr;
+            }
+            if (prop) {
                 QThreadPool::globalInstance()->start(new RecoveryRunnable(getModes(), DirName.c_str(), entry.FileName.c_str(), prop));
             }
             else {
