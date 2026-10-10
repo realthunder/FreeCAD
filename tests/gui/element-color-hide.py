@@ -133,10 +133,14 @@ def scenario(direct):
         v1 = gdoc.activeView()
         FreeCADGui.runCommand("Std_ViewCreate")
         settle()
-        v2 = gdoc.activeView()
-        if len(gdoc.mdiViewsOfType("Gui::View3DInventor")) != 2:
+        # Not gdoc.activeView(): in the second document of a run it answered
+        # view 1 again, and "the other view" was then the hiding view itself
+        # (docs/HandsOnLog.md, entry 48)
+        others = [v for v in gdoc.mdiViewsOfType("Gui::View3DInventor") if v is not v1]
+        if len(others) != 1:
             note("ABORT %s: no second 3D view" % mode)
             return
+        v2 = others[0]
         for v in (v1, v2):
             v.viewFront()
             v.fitAll()
