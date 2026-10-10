@@ -379,6 +379,16 @@ inline void reportCoverage(const CoverageHistogram &hist)
 /// gpuTimeBegin..gpuTimeEnd is what the GPU then spent on them.
 struct FrameStatsAccum {
     uint32_t frames = 0;
+    /// bgfx::frame() calls behind those frames. More than one a frame
+    /// where the frame waits for its readback copy (syncReadback spins
+    /// empty frames until it lands): bgfx's statistics describe the LAST
+    /// of them, so read once a frame they described a frame that drew
+    /// nothing -- "draws 0 prims 0", a frame time of a fifth of a
+    /// millisecond and a negative `outside`, on every frame of the
+    /// Direct3D default. They are read after each of the calls now and
+    /// added up; this is what turns the GPU's mean per sample back into
+    /// a mean per frame.
+    uint32_t bgfxFrames = 0;
     double frameMs = 0.0;    ///< between two bgfx::frame calls
     double submitMs = 0.0;   ///< the render thread issuing draw commands
     // No waitSubmit/waitRender here on purpose. bgfx assigns those two
@@ -455,18 +465,23 @@ struct FrameStatsAccum {
     uint16_t height = 0;
 };
 
-/// Accumulate one frame of backend statistics. Cheap enough to run
-/// unconditionally while the switch is on: getStats() hands back a
-/// pointer to state bgfx maintains anyway.
+/// Accumulate the backend statistics of one bgfx::frame() call. Cheap
+/// enough to run unconditionally while the switch is on: getStats()
+/// hands back a pointer to state bgfx maintains anyway. To be called
+/// right after EACH bgfx::frame() of a frame, \a first on the one that
+/// carries the scene -- see FrameStatsAccum::bgfxFrames.
 static void accumulateFrameStats(FrameStatsAccum &acc, uint16_t sceneWidth,
                                  uint16_t sceneHeight,
-                                 const std::function<int(uint16_t)> &resolvePass)
+                                 const std::function<int(uint16_t)> &resolvePass,
+                                 bool first = true)
 {
     const bgfx::Stats *s = bgfx::getStats();
     if (!s || s->cpuTimerFreq <= 0)
         return;
     const double toMs = 1000.0 / double(s->cpuTimerFreq);
-    ++acc.frames;
+    if (first)
+        ++acc.frames;
+    ++acc.bgfxFrames;
     acc.frameMs += double(s->cpuTimeFrame) * toMs;
     acc.submitMs += double(s->cpuTimeEnd - s->cpuTimeBegin) * toMs;
     acc.draws += s->numDraw;
@@ -518,7 +533,12 @@ static void reportFrameStats(FrameStatsAccum &acc)
     const double drawsPerFrame = double(acc.draws) / frames;
     const double submitMs = acc.submitMs / frames;
     const bool haveGpu = acc.gpuSamples > 0;
-    const double gpuMs = haveGpu ? acc.gpuMs / double(acc.gpuSamples) : 0.0;
+    // A sample is one bgfx::frame() call's worth; a frame is however
+    // many of those it took.
+    const double gpuMs = haveGpu
+        ? acc.gpuMs / double(acc.gpuSamples)
+            * double(std::max(acc.bgfxFrames, acc.frames)) / frames
+        : 0.0;
     char perDraw[128];
     if (drawsPerFrame > 0.0) {
         if (haveGpu)
@@ -6716,7 +6736,10 @@ public:
     /// pipelined and shows whatever has landed. The caller decides; a
     /// capture always waits, since it is read once, right after this
     /// frame, and a pipelined one hands back the frame before it.
-    uint32_t syncReadback(uint32_t frameNum, bool wait);
+    /// \a spun is called after each frame it spins, for the frame
+    /// statistics.
+    uint32_t syncReadback(uint32_t frameNum, bool wait,
+                          const std::function<void()> &spun = {});
     /// Upload whatever has landed and draw it into the caller's bound
     /// framebuffer. Same destination rect convention as blit().
     void blitReadback(uint32_t frameNum, int dstX, int dstY, int dstH);
