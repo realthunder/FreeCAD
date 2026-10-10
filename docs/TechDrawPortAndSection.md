@@ -2723,8 +2723,9 @@ section 36 has it.
   day before that, entry 61, the feed drew Qt's cut widths.) How the
   dashes take a ZOOM is as Qt's, as above.
   Qt's cut can be had back: the setting
-  `Mod/TechDraw/General/PageRendererVgRoundLineWidth` (off by default; no
-  preference page has it, the omni search does) rounds a width down to
+  `Mod/TechDraw/General/PageRendererVgRoundLineWidth` (off by default; the
+  check box "Round Line Widths (Backend Renderer)" on TechDraw's Advanced
+  preference page, and in the omni search) rounds a width down to
   whole scene units as `QPen::setWidth(int)` does, and the dashes are
   then Qt's too, being counted in the width drawn. One function says what
   a line is drawn at (`drawnWidth` in `PageFeed.cpp`) for an edge, a

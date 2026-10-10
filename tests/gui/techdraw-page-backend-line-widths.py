@@ -23,8 +23,10 @@ four lines is added up, fractions of a pixel included:
     beside it, which is the whole tenths below;
   - with the setting PageRendererVgRoundLineWidth turned on while the page
     is up ("Add a techdraw setting for backend rendering line width
-    rounding"), each line is as wide as Qt's, whole tenths, at once; and a
-    selected line is still as wide as its highlight, nothing beside it;
+    rounding") -- by its check box on TechDraw's Advanced preference page
+    and OK ("expose to techdraw preference page") -- it is stored, each
+    line is as wide as Qt's, whole tenths, at once; and a selected line is
+    still as wide as its highlight, nothing beside it;
   - with the cosmetic line selected, and then the hidden line: the line is
     the highlight's colour, as in Qt's picture; the line under the highlight
     does not show beside it (the ink that is neither the paper's colour nor
@@ -306,9 +308,31 @@ def to_backend():
 
 
 def to_rounded():
-    # the page is up and drawn by the backend: the setting has to reach it
-    # as it stands
-    GEN.SetBool("PageRendererVgRoundLineWidth", True)
+    """The setting turned on where a user turns it on: the check box on
+    TechDraw's Advanced preference page, and OK. The page is up and drawn by
+    the backend meanwhile: the setting has to reach it as it stands."""
+    def press():
+        dialog = None
+        for w in QtWidgets.QApplication.topLevelWidgets():
+            if w.metaObject().className() == "Gui::Dialog::DlgPreferencesImp" and w.isVisible():
+                dialog = w
+        if not check("the preferences dialog is up", dialog is not None):
+            return
+        box = dialog.findChild(QtWidgets.QCheckBox, "cbRoundLineWidth")
+        if check("TechDraw's Advanced page has the check box for the rounding, unticked",
+                 box is not None and not box.isChecked(),
+                 None if box is None else "ticked %s, %r" % (box.isChecked(), box.text())):
+            box.setChecked(True)
+        dialog.findChild(QtWidgets.QDialogButtonBox).button(
+            QtWidgets.QDialogButtonBox.Ok).click()
+
+    QtCore.QTimer.singleShot(1500, press)
+    FreeCADGui.runCommand("Std_DlgPreferences")
+
+
+def rounded_is_stored():
+    check("ticked and confirmed with OK, the setting is stored",
+          GEN.GetBool("PageRendererVgRoundLineWidth", False) is True)
 
 
 def compare_rounded():
@@ -422,5 +446,6 @@ STEPS.append((500, to_backend))
 STEPS.append((4000, look))
 STEPS.extend(shot("backend"))
 STEPS.append((500, to_rounded))
+STEPS.append((5000, rounded_is_stored))
 STEPS.extend(shot("rounded"))
 advance()

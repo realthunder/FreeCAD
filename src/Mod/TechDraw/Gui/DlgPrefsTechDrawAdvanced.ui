@@ -177,6 +177,22 @@ Each unit is approx. 0.1 mm wide</string>
           </property>
          </widget>
         </item>
+        <item row="3" column="2">
+         <widget class="Gui::PrefCheckBox" name="cbRoundLineWidth">
+          <property name="toolTip">
+           <string>With the backend page renderer, round a line's width down to a whole tenth of a millimetre, as the Qt scene items draw it: 0.35 mm as 0.3. Off, a line is as wide as it is asked to be. Its dashes are counted in the width it is drawn at. Applies at once to open pages.</string>
+          </property>
+          <property name="text">
+           <string>Round Line Widths (Backend Renderer)</string>
+          </property>
+          <property name="prefEntry" stdset="0">
+           <cstring>PageRendererVgRoundLineWidth</cstring>
+          </property>
+          <property name="prefPath" stdset="0">
+           <cstring>/Mod/TechDraw/General</cstring>
+          </property>
+         </widget>
+        </item>
         <item row="10" column="2">
          <widget class="Gui::PrefSpinBox" name="sbMaxPat">
           <property name="minimumSize">
