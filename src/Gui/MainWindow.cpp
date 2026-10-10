@@ -99,6 +99,7 @@
 #include "Action.h"
 #include "Assistant.h"
 #include "BitmapFactory.h"
+#include "ClipboardFormats.h"
 #include "ComboView.h"
 #include "Command.h"
 #include "DockWindowManager.h"
@@ -688,7 +689,11 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
 
     // update view-sensitive commands when clipboard has changed
     QClipboard *clipbd = QApplication::clipboard();
-    connect(clipbd, &QClipboard::dataChanged, this, &MainWindow::updateEditorActions);
+    connect(clipbd, &QClipboard::dataChanged, this, [this]() {
+        // Before the commands are asked: Std_Paste reads the list
+        ClipboardFormats::invalidate();
+        updateEditorActions();
+    });
 
     d->windowMapper = new QSignalMapper(this);
 
@@ -3118,6 +3123,15 @@ bool MainWindow::canInsertFromMimeData (const QMimeData * source) const
     return source->hasUrls() ||
         source->hasFormat(_MimeDocObj) || source->hasFormat(_MimeDocObjX) ||
         source->hasFormat(_MimeDocObjFile) || source->hasFormat(_MimeDocObjXFile);
+}
+
+bool ClipboardFormats::insertable()
+{
+    // As canInsertFromMimeData(), hasUrls() being this format
+    const QStringList& formats = get();
+    return formats.contains(QStringLiteral("text/uri-list")) ||
+        formats.contains(_MimeDocObj) || formats.contains(_MimeDocObjX) ||
+        formats.contains(_MimeDocObjFile) || formats.contains(_MimeDocObjXFile);
 }
 
 void MainWindow::insertFromMimeData (const QMimeData * mimeData)

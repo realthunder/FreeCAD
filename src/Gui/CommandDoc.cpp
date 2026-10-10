@@ -56,6 +56,7 @@
 #include "GeneralParams.h"
 #include "ViewPlacement.h"
 #include "BitmapFactory.h"
+#include "ClipboardFormats.h"
 #include "Command.h"
 #include "Control.h"
 #include "FileDialog.h"
@@ -1242,6 +1243,8 @@ void StdCmdCopy::activated(int iMsg)
         QMimeData * mimeData = getMainWindow()->createMimeDataFromSelection();
         QClipboard* cb = QApplication::clipboard();
         cb->setMimeData(mimeData);
+        // Whether or not the clipboard announces its change
+        ClipboardFormats::invalidate();
     }
 }
 
@@ -1287,11 +1290,8 @@ bool StdCmdPaste::isActive()
 {
     if (getGuiApplication()->sendHasMsgToFocusView("Paste"))
         return true;
-    QClipboard* cb = QApplication::clipboard();
-    const QMimeData* mime = cb->mimeData();
-    if (!mime)
-        return false;
-    return getMainWindow()->canInsertFromMimeData(mime);
+    // Not the clipboard itself, which every pass over the commands would ask
+    return ClipboardFormats::insertable();
 }
 
 DEF_STD_CMD_A(StdCmdDuplicateSelection)

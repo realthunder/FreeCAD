@@ -38,6 +38,7 @@
 #include <Mod/Material/App/ShaderGraph.h>
 
 #include <Gui/Application.h>
+#include <Gui/ClipboardFormats.h>
 #include <Gui/Command.h>
 #include <Gui/ViewProvider.h>
 #include <Gui/Control.h>
@@ -477,6 +478,8 @@ void CmdMaterialCopy::activated(int iMsg)
         mime->setData(QString::fromLatin1(Materials::Clipboard::mimeType()),
                       QByteArray(data.data(), static_cast<int>(data.size())));
         QApplication::clipboard()->setMimeData(mime);
+        // Whether or not the clipboard announces its change
+        Gui::ClipboardFormats::invalidate();
         return;
     }
 }
@@ -555,8 +558,9 @@ void CmdMaterialPaste::activated(int iMsg)
 
 bool CmdMaterialPaste::isActive()
 {
-    const QMimeData* mime = QApplication::clipboard()->mimeData();
-    if (!mime || !mime->hasFormat(QString::fromLatin1(Materials::Clipboard::mimeType()))) {
+    // The formats as remembered, not the clipboard asked again on every pass
+    // over the commands
+    if (!Gui::ClipboardFormats::has(QString::fromLatin1(Materials::Clipboard::mimeType()))) {
         return false;
     }
     return !Gui::Selection().getObjectsOfType<App::DocumentObject>().empty();

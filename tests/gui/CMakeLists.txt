@@ -2039,3 +2039,12 @@ fc_add_gui_test(GuiCyclesViewRightWayUp_tests_run
 fc_add_gui_test(GuiCavityCreaseIsSmooth_tests_run
                 cavity-crease-is-smooth.py
                 --timeout 300)
+
+# Std_Paste and Material_Paste asked the clipboard on every pass over the
+# commands, a call into another process each time; they read the formats
+# as remembered since the clipboard last changed. That the list follows
+# the clipboard -- a copy, a clear, a URL and a text put there from outside
+# the commands -- is what this holds; it holds on the tree before too.
+fc_add_gui_test(GuiPasteFollowsTheClipboard_tests_run
+                paste-follows-the-clipboard.py
+                --timeout 120)
