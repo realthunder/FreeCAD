@@ -326,7 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, not pushed; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen -- for the reporter; x16win asked for its numbers | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, not pushed; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen; 10 s of them FIXED `ee9583a247` (a folder listed for every edge drawn), not pushed; the pages' work at load is for the reporter; x16win asked for its numbers | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5258,6 +5258,54 @@ whole view provider drain (by design: a visual built between its slices
 is touched again by the sweep). Not started: the pages doing their work
 when they are first shown; that is TechDraw's design and the reporter's
 to decide.
+
+**Where TechDraw's time goes: the file system, and one function -- FIXED
+`ee9583a247`.** A sampling profile of the GUI thread taken from outside
+(`stacksample.py`, from the stack dump tool of 2026-10-04: the thread
+suspended every 40 ms, its stack walked, and where the walk stops in a
+hook's frame the raw stack scanned for the application's return
+addresses), over the load:
+
+- 24 s of 44 with the thread in a file system call (`NtCreateFile` 433
+  samples of 1020), under the frame of `tmmon64.dll` -- the box's watcher
+  -- where the walk stops. The earlier warning about this box's file
+  creates, measured on the load;
+- 12.6 s of those from `Base::FileInfo::isFile` in
+  `TechDraw::LineGenerator::getAvailableLineStandards`, 14.5 s with that
+  function on the stack: `QGIViewPart::drawAllEdges` -> `getLinePen` ->
+  `isCurrentProportional` -> `isProportional` lists the folder of line
+  definitions and asks about every entry, for EVERY EDGE drawn;
+- the rest of the file time is the load's own: the archive's entries
+  opened one by one (`ZipInputStream`, 2.8 s), the embedded files hashed
+  (`FileBlobManager::hashFile`, 2.2 s), the material library at startup.
+
+The list is kept for the folder the preference names and read again no
+sooner than two seconds after. Three plain loads each:
+
+| | before | after `ee9583a247` | without TechDraw |
+|---|---|---|---|
+| the open returns after | 17.6, 18.6 s | 13.3 to 13.6 s | 3.8, 3.9 s |
+| the model first on the screen, after that | 13.9, 17.2 s | 9.8 to 10.7 s | 6.3, 7.0 s |
+| from the open to the model | 32 to 35 s | 23 to 24 s | 10 to 11 s |
+
+Six of TechDraw's GUI tests on it (line standard out of range, line style
+preferences, last line style, dimension click, section line click, page
+before its view providers): 73 checks, none failed.
+
+A second profile after it: TechDraw on or near the stack for 6.5 s of 27
+busy, spread thin -- a view provider finding its view by walking every
+item of the page's scene (`QGSPage::findQViewForDocObj`, 2.3 s by the
+profile), the dimensions' updates and their formatted values, the
+sections' faces. I tried a look-first map for the first of these: built,
+tested, and no gain to be seen in three plain loads (13.3 to 13.6 s, 9.8
+to 10.7 s), so it is not kept -- the scan counts stale return addresses,
+and what it says about a function it did not walk to is a lead, not a
+measure. What remains of TechDraw's 13 s is the pages' own work at load,
+which is the question above.
+
+How much of all this another box pays is not known: the 12.6 s were dear
+because each question to the file system is, here. x16win's numbers are
+not in.
 
 **The close.** The script closes its document when its last frame is
 taken.
