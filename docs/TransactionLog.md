@@ -17354,12 +17354,100 @@ two. The last ran 300 times over.
 
 - *What a hold costs is not measured.* It walks the maps of everything
   the shape was made of, at every handover -- as the save that follows
-  does.
+  does. **Measured since: 31.33.** Nothing to do.
 - *Only names wait.* Any other edit of a held map -- `addChildElements`,
   an erase -- is still made in place; the check reports it, and found
   none.
 - *A caller off the main thread* must be given the map held and a shape
   with its own cache. Nothing is one yet but the last of the tests.
+
+### 31.32 One lock for the table and the map: measured, not taken (user, 2026-10-10)
+
+**Asked (user):** "can we use the same lock in string table to insert name
+into element map". The scheme: a name goes into a map under the exclusive
+side of 31.30's lock, a reader on another thread walks the map under the
+shared side, the main thread writes a held map in place, and nothing
+waits -- no hold to ask about, no list.
+
+**What was said against it, and what was wrong in that.** That the main
+thread would pay an exclusive lock for every name it sets. The user: "but
+adding new names almost always means there will be new string added to
+table" -- so that lock is taken already. Counted, on twelve chained cuts:
+780 names set, 797 strings added. The objection does not stand for a
+name that is new.
+
+**Built as a switch and measured** (user: "yes, test it"). A recompute of
+40 chained cuts, the best of four, alone and beside a thread that saves
+the element maps of ten held shapes without a pause (0.06 to 0.08 ms and
+3 KB a save). Two runs:
+
+| scheme | alone | beside the reader |
+| --- | --- | --- |
+| the list (31.31) | 1.08, 1.11 s | 1.24, 1.26 s |
+| one lock | 1.08, 1.08 s | 2.36, 2.38 s |
+| one lock, a waiting writer first | 1.08, 1.09 s | 2.32, 2.32 s |
+
+- *With nobody else on the lock it costs nothing*, as the user said.
+- *Against a reader that never pauses the recompute takes 2.2 times as
+  long*; the list's 1.15 is two busy threads on one machine, not a wait.
+  Each save has the lock for 0.07 ms, but a name that finds it taken
+  waits and then pays for the thread being woken, and a recompute sets
+  some thousands of names.
+- *Letting a waiting writer in before a new reader does not help*: the
+  cost is the handover at each name, not the order.
+- *The reader is the worst case.* The log's worker saves a value once
+  and is idle; the wait in practice is no more than the map saves queued
+  at that moment -- some milliseconds a commit on this model, more on a
+  larger one, where a commit has more values and each a larger map.
+
+**Ruled (user, 2026-10-10): "keep the list".** It is built and tested,
+the main thread waits for nobody, and one lock would not have done
+without the list or a locked lookup for a name made off the main thread.
+What one lock had for it was less code. The switch (`FC_MAP_LOCK`) is
+gone from the tree.
+
+**Kept:** the measurement, as gtest
+`PropertyShapeImmutableTest.DISABLED_aRecomputeBesideAReaderOfMaps`. It
+is not a check and asserts no time.
+
+### 31.33 What a hold costs (2026-10-10; measured, nothing to do)
+
+31.31 left it unmeasured, and 31.32 chose the scheme that has it. A hold
+is taken on the main thread at every handover of a shape (a commit's
+value for the log's worker, the auto saver's), and walks the map and the
+maps it has as children.
+
+**Which shapes have children.** A cut's map has every name itself: 506
+names after 80 chained cuts, and one map. A compound's map has its
+children's maps, and where a child is a compound too, that one's
+children directly (`addChildElements` puts the grandchild in the child's
+place) -- so the walk is as wide as the shapes below and one deep.
+
+**Measured.** 80 chained cuts and their 80 tools, then compounds of them;
+the best of 50 holds, and of 3 saves of the same value into memory -- the
+map only, which is what the worker does with what was held.
+
+| value | names | hold | save |
+| --- | --- | --- | --- |
+| cut 1 | 32 | 0.05 us | 9 us, 0.9 KB |
+| cut 40 | 266 | 0.05 us | 61 us, 3.4 KB |
+| cut 80 | 506 | 0.05 us | 118 us, 6.1 KB |
+| compound of 10 | 260 | 0.25 us | 91 us, 5.6 KB |
+| compound of 40 | 1940 | 0.95 us | 755 us, 34 KB |
+| compound of 160 | 22160 | 4.9 us | 11.0 ms, 360 KB |
+| compound of 4 compounds of 40 | 22160 | 4.8 us | 10.6 ms, 365 KB |
+
+- *About 0.03 us a map*, whatever the map's size: the walk touches a
+  count in each and not its names.
+- *All 80 cuts held, one after the other: 0.004 ms*, in a recompute of
+  9 s, and beside 5 ms of saves.
+- *A two-thousandth of the save* of the same value at the widest. A
+  compound of ten thousand shapes would be held in a third of a
+  millisecond, if it goes on as measured.
+
+Nothing to change. Kept as gtest
+`PropertyShapeImmutableTest.DISABLED_aHoldOfAMapByItsDepth`, which also
+asserts what it holds is held and let go of.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 

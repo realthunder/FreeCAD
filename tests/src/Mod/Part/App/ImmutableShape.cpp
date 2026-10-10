@@ -4,6 +4,12 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <Mod/Part/App/PrimitiveFeature.h>
+#include <Mod/Part/App/FeaturePartCut.h>
+#include <Mod/Part/App/FeatureCompound.h>
+#include <Mod/Part/App/FeaturePartBox.h>
+#include <Base/Writer.h>
+#include <App/DocumentParams.h>
 #include <Base/Interpreter.h>
 #include <Base/Matrix.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -39,6 +45,7 @@
 #include <Geom_CylindricalSurface.hxx>
 #include <Geom_Plane.hxx>
 #include <gp_Pln.hxx>
+#include <iostream>
 #include <sstream>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -512,6 +519,211 @@ TEST_F(HeldElementMapTest, namesGivenFromManyThreadsAreTakenInOnce)
     EXPECT_EQ(names(), _names + 2);
     EXPECT_EQ(nameOf("Solid1"), first[0]);
     EXPECT_EQ(nameOf("Solid2"), second[0]);
+}
+
+// Not a check: what a recompute costs beside a thread that saves element
+// maps without a pause, as the transaction log's worker would with a queue
+// that never empties (docs/TransactionLog.md sec 31.32, which has what it
+// printed for the scheme that was not kept). Run with
+// --gtest_also_run_disabled_tests --gtest_filter='*aRecomputeBesideAReaderOfMaps'.
+TEST_F(PropertyShapeImmutableTest, DISABLED_aRecomputeBesideAReaderOfMaps)
+{
+    using Clock = std::chrono::steady_clock;
+    constexpr int cuts = 40;
+    constexpr int rounds = 4;
+    const long logWas = App::DocumentParams::getTransactionLog();
+    App::DocumentParams::setTransactionLog(0);   // the reader below is the only one
+
+    auto* box = static_cast<Part::Box*>(_doc->addObject("Part::Box", "Box"));
+    box->Length.setValue(4.0 * cuts + 4.0);
+    box->Width.setValue(10.0);
+    box->Height.setValue(10.0);
+    App::DocumentObject* base = box;
+    std::vector<Part::Feature*> made;
+    for (int i = 0; i < cuts; ++i) {
+        auto* tool = static_cast<Part::Cylinder*>(_doc->addObject("Part::Cylinder", "Tool"));
+        tool->Radius.setValue(1.0);
+        tool->Height.setValue(20.0);
+        tool->Placement.setValue(
+            Base::Placement(Base::Vector3d(4.0 * i + 4.0, 5.0, -5.0), Base::Rotation()));
+        auto* cut = static_cast<Part::Cut*>(_doc->addObject("Part::Cut", "Cut"));
+        cut->Base.setValue(base);
+        cut->Tool.setValue(tool);
+        base = cut;
+        made.push_back(cut);
+    }
+    _doc->recompute();
+    ASSERT_FALSE(made.back()->Shape.getValue().IsNull());
+
+    auto recompute = [&]() {
+        double best = 1e30;
+        double sum = 0.0;
+        for (int round = 0; round < rounds; ++round) {
+            for (auto* obj : _doc->getObjects())
+                obj->touch();
+            const auto start = Clock::now();
+            _doc->recompute();
+            const double ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+            best = std::min(best, ms);
+            sum += ms;
+        }
+        return std::make_pair(best, sum / rounds);
+    };
+    const auto alone = recompute();
+
+    // The values a worker would have been handed: the last cuts' shapes,
+    // their maps made and held, here on the main thread.
+    std::vector<Part::TopoShape> values;
+    std::vector<std::shared_ptr<void>> holds;
+    for (int i = cuts - 10; i < cuts; ++i) {
+        values.push_back(made[i]->Shape.getShape());
+        (void)values.back().getElementMapSize();
+        holds.push_back(made[i]->Shape.holdForOffThread());
+    }
+    std::atomic<bool> stop {false};
+    std::atomic<long> saves {0};
+    std::atomic<long> bytes {0};
+    std::thread reader([&]() {
+        while (!stop) {
+            for (const auto& value : values) {
+                Base::StringWriter writer;
+                value.Save(writer);
+                bytes += static_cast<long>(writer.getString().size());
+                ++saves;
+            }
+        }
+    });
+    const auto startBeside = Clock::now();
+    const auto beside = recompute();
+    const double span = std::chrono::duration<double, std::milli>(Clock::now() - startBeside).count();
+    stop = true;
+    reader.join();
+    holds.clear();
+    App::DocumentParams::setTransactionLog(logWas);
+
+    std::cout << "BESIDE: alone " << alone.first
+              << " ms (mean " << alone.second << "), beside the reader " << beside.first
+              << " ms (mean " << beside.second << "), reader " << saves.load() << " saves in "
+              << span << " ms, " << (saves.load() ? span / saves.load() : 0.0) << " ms each, "
+              << (saves.load() ? bytes.load() / saves.load() : 0) << " bytes each\n";
+}
+
+// Not a check: what holding a shape's element map for another thread costs
+// the main thread at a handover, by how many features the shape was made
+// of, beside what the save that follows costs the worker and what the
+// recompute that made the shapes cost (docs/TransactionLog.md sec 31.33).
+// Run with --gtest_also_run_disabled_tests --gtest_filter='*aHoldOfAMapByItsDepth'.
+TEST_F(PropertyShapeImmutableTest, DISABLED_aHoldOfAMapByItsDepth)
+{
+    using Clock = std::chrono::steady_clock;
+    constexpr int cuts = 80;
+    const long logWas = App::DocumentParams::getTransactionLog();
+    App::DocumentParams::setTransactionLog(0);
+
+    auto* box = static_cast<Part::Box*>(_doc->addObject("Part::Box", "Box"));
+    box->Length.setValue(4.0 * cuts + 4.0);
+    box->Width.setValue(10.0);
+    box->Height.setValue(10.0);
+    App::DocumentObject* base = box;
+    std::vector<Part::Feature*> made;
+    std::vector<App::DocumentObject*> leaves;
+    for (int i = 0; i < cuts; ++i) {
+        auto* tool = static_cast<Part::Cylinder*>(_doc->addObject("Part::Cylinder", "Tool"));
+        tool->Radius.setValue(1.0);
+        tool->Height.setValue(20.0);
+        tool->Placement.setValue(
+            Base::Placement(Base::Vector3d(4.0 * i + 4.0, 5.0, -5.0), Base::Rotation()));
+        auto* cut = static_cast<Part::Cut*>(_doc->addObject("Part::Cut", "Cut"));
+        cut->Base.setValue(base);
+        cut->Tool.setValue(tool);
+        base = cut;
+        made.push_back(cut);
+        leaves.push_back(cut);
+        leaves.push_back(tool);
+    }
+    // A cut's map has every name itself; a compound's has its children's
+    // maps, and a hold walks those. Of 10, 40 and 160 shapes, and one of
+    // four compounds of 40.
+    auto compoundOf = [&](std::size_t from, std::size_t count) {
+        auto* compound = static_cast<Part::Compound*>(_doc->addObject("Part::Compound", "Group"));
+        compound->Links.setValues(std::vector<App::DocumentObject*>(
+            leaves.begin() + from, leaves.begin() + from + count));
+        return compound;
+    };
+    std::vector<std::pair<std::string, Part::Feature*>> groups;
+    groups.emplace_back("compound of 10", compoundOf(0, 10));
+    groups.emplace_back("compound of 40", compoundOf(0, 40));
+    groups.emplace_back("compound of 160", compoundOf(0, 160));
+    {
+        std::vector<App::DocumentObject*> inner;
+        for (int i = 0; i < 4; ++i)
+            inner.push_back(compoundOf(40 * i, 40));
+        auto* outer = static_cast<Part::Compound*>(_doc->addObject("Part::Compound", "Outer"));
+        outer->Links.setValues(inner);
+        groups.emplace_back("compound of 4 compounds of 40", outer);
+    }
+    const auto startAll = Clock::now();
+    _doc->recompute();
+    const double all = std::chrono::duration<double, std::milli>(Clock::now() - startAll).count();
+    ASSERT_FALSE(made.back()->Shape.getValue().IsNull());
+
+    auto micros = [](Clock::time_point from) {
+        return std::chrono::duration<double, std::micro>(Clock::now() - from).count();
+    };
+    std::vector<double> holds;
+    std::vector<double> saves;
+    std::vector<double> names;
+    std::vector<double> bytes;
+    auto measure = [&](Part::Feature* feature) {
+        Part::TopoShape value = feature->Shape.getShape();
+        names.push_back(static_cast<double>(value.getElementMapSize()));
+        double hold = 1e30;
+        for (int round = 0; round < 50; ++round) {
+            const auto start = Clock::now();
+            auto held = feature->Shape.holdForOffThread();
+            hold = std::min(hold, micros(start));
+            EXPECT_TRUE(held);
+            EXPECT_TRUE(value.isElementMapHeld());
+        }
+        EXPECT_FALSE(value.isElementMapHeld());
+        double save = 1e30;
+        for (int round = 0; round < 3; ++round) {
+            Base::StringWriter writer;
+            const auto start = Clock::now();
+            value.Save(writer);
+            save = std::min(save, micros(start));
+            if (round == 0)
+                bytes.push_back(static_cast<double>(writer.getString().size()));
+        }
+        holds.push_back(hold);
+        saves.push_back(save);
+    };
+    for (auto* cut : made)
+        measure(cut);
+    for (auto& group : groups)
+        measure(group.second);
+    App::DocumentParams::setTransactionLog(logWas);
+
+    std::cout << "HOLD recompute of " << cuts << " cuts " << all << " ms\n";
+    double holdSum = 0.0;
+    double saveSum = 0.0;
+    for (int i = 0; i < cuts; ++i) {
+        holdSum += holds[i];
+        saveSum += saves[i];
+        const int depth = i + 1;
+        if (depth == 1 || depth == 10 || depth == 40 || depth == 80) {
+            std::cout << "HOLD cut " << depth << ": " << names[i] << " names, hold " << holds[i]
+                      << " us, save " << saves[i] << " us of " << bytes[i]
+                      << " bytes; up to here holds " << holdSum / 1000.0 << " ms, saves "
+                      << saveSum / 1000.0 << " ms\n";
+        }
+    }
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+        const std::size_t at = cuts + i;
+        std::cout << "HOLD " << groups[i].first << ": " << names[at] << " names, hold "
+                  << holds[at] << " us, save " << saves[at] << " us of " << bytes[at]
+                  << " bytes\n";
+    }
 }
 
 TEST(ImmutableShapeTest, booleanGoesNonDestructive)
