@@ -60,6 +60,69 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**Where it stands, 2026-10-10 16:57: pushed, not staged; two results
+more, local.**
+- Pushed about 16:30 on the reporter's word to the build session, relayed
+  by it ("push first"): origin/PartDesignPort = `e7f5ee912a` (checked by
+  the note-taker). It has everything through entry 30's one overlay
+  preset and entry 58's kept count.
+- NOT staged: the copy under test is still the one of 09:44:51
+  (`72180a4812`).
+- Both full suites on the afternoon's tree: ctest 791 of 791; Python 3411
+  tests with the two known thickness failures.
+- Since the push, LOCAL, not pushed, not staged: entry 58's note in the
+  pattern panels (`2a45e36492`); entry 48's second test (`8a7595512d`),
+  the TEST's own fault -- the per-view hide "defect" is WITHDRAWN.
+- Waiting for a stage: entry 61's check box (`a343a386b6`), entry 52's
+  measurement and the frame report (`00f295f8d7`, `d79122782b`), entry
+  30's overlay preset (`438216ad93`, `5c021cb111`), entry 48
+  (`31c09e28e7`, `8a7595512d`), entry 58 (`1adffbfe7c`, `b4f22e0b60`,
+  `a30fdda2a5`, `2a45e36492`).
+- With the reporter, new: entry 58's two points on the pattern limit (a
+  preference page row; read at each use); entry 48's proposal on the
+  active view after `Std_ViewCreate`.
+- NOT started: of entry 66, the first opening and the three proposals.
+  Entry 47 stays OPEN, not seen again.
+
+**2026-10-10 16:14, two results more, on the reporter's words to the build
+session this afternoon; LOCAL, not pushed, not staged:**
+- Entry 58: `PolarPattern003`'s 1024 occurrences are right ("now I
+  remembered, yes it is 1024"); the limit was wrong to cut a file's own
+  count: FIXED `a30fdda2a5`. A warning on entering edit that names the
+  setting is asked, for the NEXT session ("do that in next session").
+- Entry 30, the first task turned again: ONE overlay preset whose colours
+  are the theme's, DONE `438216ad93`; the morning's two overlay themes are
+  gone.
+- Both full suites are running on this tree; the build session sends the
+  result.
+- origin/PartDesignPort is at `1151e3a6e5` and the copy under test at
+  `72180a4812` (09:44:51), as before.
+
+**Where it stands, 2026-10-10 14:14: four entries more have results, all
+LOCAL.** The build session worked from 11:30 on the reporter's "continue
+as planned" through the open entries in the order left.
+- Pushed 11:18 on the reporter's word to it ("push only", from
+  `docs/HandsOnLog.md`): origin/PartDesignPort = `1151e3a6e5`, which has
+  entry 61's check box (`a343a386b6`). NOT staged: the copy under test is
+  still the one of 09:44:51 (`72180a4812`).
+- Entry 52 MEASURED (`00f295f8d7`): the line shader stays; and the frame
+  report fixed on the way (`d79122782b`).
+- Entry 30's first task DONE (`3d9edca80c`, `5c021cb111`): the two
+  overlay presets are themes.
+- Entry 48: one test's defect FIXED (`31c09e28e7`); the other is a real
+  defect, found and narrowed, NOT fixed.
+- Entry 58 AUDITED: two kinds FIXED (`1adffbfe7c`, `b4f22e0b60`), the
+  rest listed with proposals.
+- Entry 47: not seen in 16 opens today; stays OPEN.
+- Suites on the build of `00f295f8d7`: ctest 791 of 791; Python 3411
+  tests with the two known thickness failures. (`b4f22e0b60` came after
+  them; TechDraw's own 7 Python tests pass on it, by the log.)
+- With the reporter, new: entry 30's five choices; entry 52's lighter
+  line under MSAA; entry 48's per-view hide defect (when to take it up);
+  entry 58's proposals and the `PolarPattern003` question.
+- NOT started: of entry 66, the first opening and the three proposals.
+  Nothing else in the queue is unstarted.
+
 **2026-10-10 10:11, one commit since the stage of 09:44:** entry 61's
 rounding setting is on TechDraw's Advanced preference page (`a343a386b6`),
 on the reporter's answer to the setting's four points, verbatim: "1,2,3
@@ -397,7 +460,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21). The reporter on the staged copy, 2026-10-09 10:51: entry 56 |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK DECIDED ANEW by the reporter 2026-10-09 09:47, not started: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | FIRST TASK DONE as TURNED by the reporter on 2026-10-10 afternoon ("one overlay preset that can auto change its color to match the main theme"): ONE preset "Overlay" `438216ad93` (it replaces the morning's two overlay themes `3d9edca80c`), and `5c021cb111`; pushed 2026-10-10 16:30, not staged. The preset is the layout alone, no colour and no style sheet; an overlay's look is the theme's (Dark, Light and now Classic too name the overlay sheet for see-through panels, the tree's backing and the console's page), so the preset under Dark is Dark's and turns Light's when Light is applied. Kept from the morning: the themes listing each other's keys, Light's own syntax colours, the editor and console fixes. Four of the morning's choices still with the reporter. THE MORNING'S FORM, replaced: "Overlay dark theme" and "Overlay light theme" are themes (Tools > Preset configurations > Themes), the two presets are gone; an overlay theme is its base theme (Dark or Light, every key) plus the presets' LAYOUT; the overlay's LOOK (the outline overlay sheet, the tree items' backing, a console background that is the theme's own page) is in Dark and Light themselves, on the reporter's words to the build session ("color shall follow the Dark/Light theme. port those onverlay part"; "need to modify python editor part to make it more suitable to the theme"); Light, Dark and Classic each list every key another sets; Light has syntax colours of its own; the editor's current line and the console's old text take a changed colour at once. Five choices of the build session's for the reporter. THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK as DECIDED ANEW by the reporter 2026-10-09 09:47: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | STAGED 2026-10-09 08:40, fixed `47b5e72c79`: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | STAGED 2026-10-09 08:40, fixed `b960092ea5`: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | STAGED 2026-10-09 08:40, fixed `ef4df215b5` (the cycles submodule at its `35a3bd898`): the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Both pushed since (`docs/HandsOnLog.md`) |
@@ -414,21 +477,21 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | STAGED 2026-10-09 08:40, fixed `813d0250f9`, PUSHED 2026-10-08: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 | 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | STAGED 2026-10-09 08:40, fixed `c7fdcf3220`, PUSHED 2026-10-08, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
 | 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | STAGED 2026-10-09 12:25, fixed `6dacf21b11`: the backend drew the hatch from one picture of the whole face, read one pixel in five at the zoom a page opens at (1.1 lines across a 17 px strip at 0.99 strength, Qt 5.0 at 0.19; now 5.0 at 0.33); a hatch is one tile laid side by side now and every picture of a page has coarser copies. Three more found by the test and fixed with it: a hatch with `HatchRotation` turned the WRONG WAY, every image drawn over all the line work of a page, the tiles showing their seams. 22 PASS and 8 FAIL before, 39 PASS after. Left: a hatch line about a pixel wide is paler than Qt's (`docs/HandsOnLog.md`) |
-| 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
-| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
+| 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up; not seen in 16 opens of `scanner.FCStd` by the build session on 2026-10-10 |
+| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | Both FIXED, not staged: `31c09e28e7` (pushed 16:30) and `8a7595512d` (local), the second the TEST's own fault: `element-color-hide.py` took view 1 for "the other view" (`gdoc.activeView()` after `Std_ViewCreate` answers view 1 again in a run's second document); with the views told apart there is no leak, 624 of 624. The "REAL defect" named further on in this cell is WITHDRAWN. A proposal only: after `Std_ViewCreate` the active view and the keyboard focus can disagree. The first (`per-view-shown-eviction.py`: on Direct3D a stated GPU budget was held against everything the process holds; it is held against the geometry uploaded now, as the setting's text says; 5 of 5). As reported at 14:14 and WITHDRAWN at 16:57: the other, `element-color-hide.py`, is a REAL defect, reproduced and narrowed, NOT fixed: one view's own hide of a path takes the object out of the OTHER view too -- its pick and what it draws -- when the hiding view is traversed first; in both link modes. Before that: read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | STAGED 2026-10-09 12:25, fixed `664d57f39b`: it needs a MAXIMIZED window and then happens every time -- the toolbar manager took the workbench toolbar out of the title bar itself (a move that hides it) and only then asked whether it was visible; it asks before the move now. `tests/gui/preferences-reset-all.py`, the reset driven through the dialog: 5 PASS and 4 FAIL on the staged copy, 9 PASS on the dev build (`docs/HandsOnLog.md`) |
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | STAGED 2026-10-09 12:25, fixed `4cb1ee6ad1` (a) and `69a2028e23` (b). (a) as decided: `Default` is the engine on the platform's backend, `Legacy` is Coin; the type is a list on the Render engine page (`Default`, `Legacy`, the backends this build has) and is kept; the render cache setting is not looked at while the engine draws and not rewritten; nothing is written at startup; 13 PASS. (b) the copy that replaces a Coin-drawn view on an anti-aliasing change takes the old view's cell; 11 PASS and 7 FAIL on the staged copy, 18 PASS now (`docs/HandsOnLog.md`) |
 | 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | (b) STAGED 2026-10-09 12:25, fixed `d157abf559` for the desktop: MSAA 4x (`View/AntiAliasing` 3) is the default for both render types; a sphere's limb, rows blended 0.0% without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. (a) confirmed expected. The BROWSER viewer does not follow: WebGL2 does not create a multisampled RGBA16F scene target. With the reporter: an 8 or 10 bit target there (true MSAA, at a price in the colour pipeline), the engine's idle accumulation (a still picture only), or a post-process pass (does not exist yet); the build session recommends measuring the first, no code needed (`docs/HandsOnLog.md`) |
-| 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
+| 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | MEASURED `00f295f8d7`, pushed 2026-10-10 16:30, not staged; nothing dropped: the lines' computed coverage is what gets a fractional width right, MSAA or not -- within 0.09 px of the width asked without MSAA and 0.13 px with MSAA 4x, against 0.75 and 0.26 px as plain quads. Its cost is under what the benchmark resolves. One finding for the reporter, not changed: with MSAA 4x a line is up to 0.13 px LIGHTER than asked. Found on the way and fixed, `d79122782b`: on Direct3D every `View/Render/DebugTiming` report was of an empty frame. The reporter's rule, 2026-10-09 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
 | 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | STAGED 2026-10-09 12:25, fixed `c820c3aea1`: not the recompute -- the page comes back with the window layout and is drawn while the progressive load is still building the view providers of its views; without one the Qt page draws nothing of a view and the backend draws it by fallback widths (0.6 mm), and the view provider's own request to draw was dropped because the document was still flagged as restoring; it asks again a turn later. On the reporter's file the page as loaded is now the page after a recompute, in both renderers. 4 claims fail on the copy staged 08:40, 12 PASS now (`docs/HandsOnLog.md`) |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | STAGED 2026-10-09 15:11, fixed `8bb8bd10fa`: a fully selected object drew every edge at full colour, front or behind -- a rule copied from the old Coin renderer, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected BY ITSELF still shows through at full colour. Cost: nothing in the engine; Coin (`Legacy`) 2.18 -> 2.54 ms a frame on 100 heavy spheres all selected. 16 PASS and 2 FAIL on the staged copy, 18 PASS now. For the reporter: whether `Legacy` keeps the change (`docs/HandsOnLog.md`) |
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | STAGED 2026-10-09 15:11, fixed `739120f1c7`: a warning or an error shown to the user is the status bar's own temporary message, which hides every non-permanent widget -- the preselection label that held the progress bar in place; a bar that came up with a message showing sat at x 2 of 1920 instead of 1441. It is a permanent widget now, first of the right-hand group. 4 PASS and 2 FAIL on the staged copy, 6 PASS now (`docs/HandsOnLog.md`) |
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | STAGED 2026-10-09 15:11, fixed `f5a651b723`, all eleven points (a) to (k); five choices for the reporter: Esc, any other button, or the window losing the front or the mouse give a drag up, a border's too; one look for the overlay's and the cells' frames -- the theme's accent at 0.3, a white border, a thin dark line; a join's cell that goes has a red stop sign and no dim; a border pushed more than 12 px past a cell's minimum closes it, a corner only creates and its refusal is an ERROR; handles on the accent colour and off a scroll bar; a page's or sheet's cell splits with a 3D view of its document. 19 PASS and 26 FAIL on the staged copy, 82 PASS now (`docs/HandsOnLog.md`). CHANGED AGAIN on the reporter's words to the build session, DONE `dbff5c6378`, STAGED 2026-10-09 16:42 (the desktop's), desktop and browser both: a refused corner drag shows NO frame, only the forbidden cursor, with the error said at each turn from the splitting cursor to the forbidden one; the cell that goes (a join's, a border's) is framed RED and crossed out, the stop sign is gone; the active cell has a subtle border in the frames' accent. 81 PASS and 7 FAIL on the staged copy, 88 PASS now. Three choices left with the reporter. ONE MORE, DONE `b4004d2635`, STAGED 2026-10-09 17:36: a dragged border takes room from the cell next to it and from no other -- at that cell's minimum the drag closes it instead of pushing the next border along; 91 PASS and 3 FAIL on the copy staged 16:42, 94 PASS now |
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | FIXED `a50e708959`, PUSHED 2026-10-09 16:41; not in the staged copy (the browser viewer is not part of it); three choices for the reporter: the browser's split view shows a drag as frames and carries it out at the release, with the desktop's cancel (Escape, another button, a second finger, the window losing the front), a minimum cell size of 300, a border that closes a cell pushed 12 px past the minimum, the stop sign and the frame look. 7 PASS and 22 FAIL on the old bundle, 36 PASS now, in headless Chrome. Not run: a touch screen, Safari (`docs/HandsOnLog.md`). The view cell changes of `dbff5c6378` (entry 56, points (l) to (n)) are in the browser's too |
-| 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
+| 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | AUDITED; three FIXED, pushed 16:30, not staged: `1adffbfe7c` (the origin's point had no icon file: "Cannot find icon: Std_Point"), `b4f22e0b60` (one dimension's tolerance warned of 56 times a recompute, once now) and `a30fdda2a5` (the pattern limit cut a FILE's own count, `PolarPattern003`'s 1024 -> 1000; the reporter: "yes it is 1024"; a restored count is kept now). The WARNING the reporter asked for on entering edit is DONE `2a45e36492`, local, not pushed, not staged: a pattern over `Mod/Part/MaximumPatternOccurrences` shows a note under its count box in both pattern panels (PartDesign's and the link array's) -- the count, the limit, that it can be lowered and not raised, the setting by title and parameter path, that it is on no preference page, that the search box finds it, and that a change counts from the next start. Open for the reporter, neither done: a row for the setting on a preference page; reading it at each use instead of once a session. The rest is in `docs/HandsOnLog.md` as a table with a proposal each, nothing changed: 90 "hasher mismatch" from the optics addon's rays, 45 "auto change element reference", `SectionView003` said three times over, a sketch whose first solver fails without being named, three TechDraw view providers writing into the document while attached, and `PolarPattern003` cut from 1024 to 1000 occurrences (answered and fixed since, as the head of this cell says). Before the audit: a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | STAGED 2026-10-09 15:11, fixed `e9ac624959`, as decided: "Reset all" puts `Mod/Start/Migration2024Complete` back when it was set; the migration is untouched. A profile already switched off this way (the reporter's) STAYS off until Preferences > Start or `Mod/Start/ShowOnStartup` switches it on. 10 PASS and 2 FAIL on the staged copy, 12 PASS now (`docs/HandsOnLog.md`) |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | STAGED 2026-10-09 16:42, fixed `d6f640f4ee`: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
-| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | STAGED 2026-10-10 09:44, in its third form. REVERSED by a new request of the reporter's about 22:25 ("support fractional line width, but make sure the highlight shows the same width"), done `2649caa38f`; then the dashes with the widths and a rounding setting, done `721fdcf39b`: the backend draws every line of a page at the width asked for, fractions included (0.35 mm is 0.35; Qt's page has 0.3), dimension lines, section lines and leaders too; the highlight of an edge is as wide as the edge, and the edge under it is left out of the drawing while it is lit (7.00 px selected for a 7.00 px line, no ink of another colour beside it). `techdraw-page-backend-line-widths.py` 19 PASS. The DASHES, decided by the reporter ("Do the new dash"): counted in the width the line is drawn at -- a 0.35 mm hidden line has six dashes where the Qt page has seven; a line of whole tenths has Qt's dashes exactly. A new setting asked by the reporter, `Mod/TechDraw/General/PageRendererVgRoundLineWidth`, OFF by default: on, a width is rounded DOWN to a whole tenth of a millimetre as the Qt page draws it and the dashes are Qt's too; it reaches an open page at once; in the omni search, on no preference page. `techdraw-page-backend-dashes.py` 30 PASS, `techdraw-page-backend-line-widths.py` 30 PASS. The setting's four points ANSWERED by the reporter about 10:10 ("1,2,3 yes. 4 expose to techdraw preference page"): off by default, rounded down, one switch -- confirmed; and it goes on a preference page: DONE `a343a386b6`, NOT staged, not pushed -- a check box "Round Line Widths (Backend Renderer)" on TechDraw's Advanced page; `techdraw-page-backend-line-widths.py` 33 PASS. BEFORE the reversal, superseded: FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
+| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | STAGED 2026-10-10 09:44, in its third form. REVERSED by a new request of the reporter's about 22:25 ("support fractional line width, but make sure the highlight shows the same width"), done `2649caa38f`; then the dashes with the widths and a rounding setting, done `721fdcf39b`: the backend draws every line of a page at the width asked for, fractions included (0.35 mm is 0.35; Qt's page has 0.3), dimension lines, section lines and leaders too; the highlight of an edge is as wide as the edge, and the edge under it is left out of the drawing while it is lit (7.00 px selected for a 7.00 px line, no ink of another colour beside it). `techdraw-page-backend-line-widths.py` 19 PASS. The DASHES, decided by the reporter ("Do the new dash"): counted in the width the line is drawn at -- a 0.35 mm hidden line has six dashes where the Qt page has seven; a line of whole tenths has Qt's dashes exactly. A new setting asked by the reporter, `Mod/TechDraw/General/PageRendererVgRoundLineWidth`, OFF by default: on, a width is rounded DOWN to a whole tenth of a millimetre as the Qt page draws it and the dashes are Qt's too; it reaches an open page at once; in the omni search, on no preference page. `techdraw-page-backend-dashes.py` 30 PASS, `techdraw-page-backend-line-widths.py` 30 PASS. The setting's four points ANSWERED by the reporter about 10:10 ("1,2,3 yes. 4 expose to techdraw preference page"): off by default, rounded down, one switch -- confirmed; and it goes on a preference page: DONE `a343a386b6`, pushed 2026-10-10 11:18, NOT staged -- a check box "Round Line Widths (Backend Renderer)" on TechDraw's Advanced page; `techdraw-page-backend-line-widths.py` 33 PASS. BEFORE the reversal, superseded: FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | DONE `9d354a8c44` and, the order turned as the reporter said, `f5dc9027e7`; STAGED 2026-10-10 09:44: the recent items are listed BEFORE the three modes and the box comes up on the first of them, so Return on a box just brought up repeats the last item; `omni-search-recent-items.py` 18 PASS. Points 1 to 4 still with the reporter. As first built: the box comes up with the items last confirmed in it below the three modes -- a command run from the box, a parameter or a property whose editor was opened, an object selected -- ten at most, the newest first, each once; gone as soon as more is typed; a picked row is carried out again. `tests/gui/omni-search-recent-items.py` 17 PASS, and the store in `OmniSearch_Tests_run`. The four points "not said" and a fifth were decided by the build session, each easy to turn: for the reporter (`docs/HandsOnLog.md`). The fifth DECIDED by the reporter about 22:15, the other way: the recent items come BEFORE the three modes -- done, as the head of this cell says; the other four not answered |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | DONE `b20c825573` and, the reporter's three changes of 22:15, `8fed56f3df`; STAGED 2026-10-10 09:44: the tool button wears the split cube (the reporter's pick of the three, "for now"); "All views" and the setting `View/SyncLightSettings` are gone and "Apply all" is a button that copies the active view's lights to every other open 3D view once; "Direction" raises Coin's light dragger in the view, drawn over the model, its arrow orange (the build session's choice). `display-style-menu.py` 34 PASS. For the reporter to TRY: the handle by hand, and the menu as a popup. As first built, with the icon and the way the light's direction is set left open: the Display style menu has the style as ONE combo box with icons (the active view's), the anti-aliasing as another (applies at once), and a Lights section in place of the Light Sources preference page, which is gone -- headlight, fill light, ambient light, a switch, a colour and an intensity each; a change is stored in the active view's properties (`Light_*`), or in every open 3D view's with "All views" ticked (the remembered setting `View/SyncLightSettings`, for all the light settings); "Save as default" writes the view's lights into the preferences; "Direction" is a toggle (the button or Escape). `tests/gui/display-style-menu.py` 24 PASS; fifteen other GUI tests around it, no FAIL. OPEN in it, by the reporter's words of the evening: (a) the ICON -- the three offered were turned down, two directions offered after a search, not answered; (b) the light's DIRECTION by the Coin light manipulator, as the shadow light has it -- next session. Three things for the reporter to TRY by hand (`docs/HandsOnLog.md`). The reporter about 22:15 (all three done since, as the head of this cell says): one of the build session's three icons goes on the tool button "for now" (WHICH did not reach it -- no picture came; asked); the check box "All views" becomes a BUTTON "Apply all"; the light handle with the manipulator. The request as answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59) |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | STAGED 2026-10-10 09:44, fixed `66ccd277b9`: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, fixed `dfdfc04c5c`, staged with it: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
@@ -2766,7 +2829,7 @@ What is asked now:
   and the border still has to be wide enough to grab and to right-click (its
   menu closes a neighbouring view).
 
-## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DECIDED 2026-10-09: two new themes, "Overlay dark theme" and "Overlay light theme", each a theme merged with its overlay preset, and the two presets go; not started (see `docs/HandsOnLog.md`)
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DONE as turned by the reporter 2026-10-10: ONE overlay preset, its colours the theme's, `438216ad93` and `5c021cb111`, not staged (the morning's two overlay themes `3d9edca80c` are gone); four choices for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 09:47, the reporter changed their mind on the first task; THIS
 is the one to do, and it replaces the answer of 09:38 below:** "regarding
@@ -2995,6 +3058,95 @@ the preset's other keys that no pack lists -- `TreeView` (`TreeEditColor`,
 `ItemBackground`, `TreeActiveColor`), `View` (`BackgroundColor`, `Gradient`,
 `Simple`, `CursorCrosshairColor`): each is left behind the same way. This is
 the first task of this entry seen from the other end.
+
+**The reporter to the build session while it worked on the first task,
+2026-10-10, relayed by it verbatim (the note-taker did not hear them):**
+- "color shall follow the Dark/Light theme. port those onverlay part"
+- "need to modify python editor part to make it more suitable to the
+  theme"
+
+**2026-10-10 14:14, from the build session: the FIRST TASK DONE
+`3d9edca80c` and `5c021cb111`; local, not pushed, not staged.** The
+account is in `docs/HandsOnLog.md`, "30, the first task"; in short:
+- "Overlay dark theme" and "Overlay light theme" are THEMES (Tools >
+  Preset configurations > Themes: Classic, Dark, Light and the two). The
+  two presets are gone.
+- An overlay theme is its base theme (Dark or Light, every key) plus the
+  presets' LAYOUT.
+- The overlay's LOOK is in Dark and Light themselves: the outline overlay
+  sheet the presets named, the tree items' backing, and a console
+  background that is the theme's own page instead of the presets' light
+  grey.
+- Light, Dark and Classic each list every key another sets. Light missed
+  35 of Dark's, the editor's current line among them -- the reporter's
+  example of a setting stuck.
+- Light has syntax colours of its own, made for a light page.
+- Two code defects fixed (`5c021cb111`): the editor's current line and
+  the console's old text take a changed colour at once.
+- `tests/gui/theme-overlay-themes.py` 59 claims,
+  `tests/gui/editor-colours-follow-the-theme.py` 18 claims. Pictures in
+  `..\dl\handson\2026-10-10\q2`.
+
+**For the reporter, five choices of the build session's, "to overrule" --
+NOT ANSWERED YET:**
+1. The plain themes (Dark, Light, Classic) leave the LAYOUT alone: after
+   an overlay theme the panels stay in their overlays.
+2. An overlay theme carries the presets' panel SIZES too, so switching
+   between the two puts a panel resized by hand back to them.
+3. Dark and Light name `Dark-Outline.qss` / `Light-Outline.qss` instead
+   of `Dark_overlay.qss` / `Light_overlay.qss`. This changes what a panel
+   put into an overlay by hand looks like under Dark and Light.
+4. The 3D background and the tree's colours are the base theme's, not the
+   presets'.
+5. The six unbundled packs are not touched.
+Found on the way, not changed (the log has them): a theme saved from the
+Theme page under a name of its own has no style parameters file; the
+freeze of the second task is as it was.
+
+**2026-10-10 afternoon, the reporter turns the first task again, said to
+the build session and relayed by it verbatim (the note-taker did not hear
+it):** "also regarding the overlay themes. I have second thought. Can you
+make one overlay preset that can auto change its color to match the main
+theme, so the overlay preset only change the overlay pattern and their
+colors, like before"
+- ONE overlay preset, not two overlay themes.
+- Its colours follow the main theme by themselves.
+- The preset changes only the overlay pattern (and the overlays' colours),
+  as the presets did before.
+(This replaces the decision of 2026-10-09 09:47 and 09:50: two new themes,
+the presets gone.)
+
+**2026-10-10 16:14, from the build session: DONE `438216ad93`; local, not
+pushed, not staged.** It replaces the morning's two overlay themes
+(`3d9edca80c`). The account is in `docs/HandsOnLog.md`, "30, again"; in
+short:
+- Tools > Preset configurations has ONE "Overlay": the layout alone (35
+  keys -- the panels in their overlays, the tree and the property view
+  apart, the tree's hidden column, two overlay switches), no colour and no
+  style sheet.
+- The Themes menu is Classic, Dark and Light again; the two overlay themes
+  of the morning are gone.
+- An overlay's look is the THEME's: Dark, Light and now Classic too name
+  the overlay sheet for see-through panels, the tree items' backing and
+  the console's page. So the preset applied under Dark is Dark's, and it
+  turns Light's when Light is applied; the panels stay where they are.
+- Classic, changed with it: it names `Dark-Outline.qss` now (its 3D view
+  is dark blue), with the tree backing and a white console page.
+- Kept from the morning: the themes listing each other's keys, Light's
+  own syntax colours, the editor and console fixes (`5c021cb111`).
+- `tests/gui/overlay-preset-follows-the-theme.py` 45 claims,
+  `editor-colours-follow-the-theme.py` 18. Pictures in
+  `..\dl\handson\2026-10-10\q2\g-t-e30overlay-dev`.
+
+**Of the morning's five choices, what is left for the reporter -- NOT
+ANSWERED YET (the build session's count, four):**
+1. the plain themes leave the layout alone -- "now simply how a preset
+   and a theme divide";
+2. the preset carries the old panel SIZES;
+3. Dark and Light name the outline overlay sheets instead of
+   `Dark_overlay.qss` and `Light_overlay.qss`;
+5. the six unbundled packs are untouched.
+(Choice 4, the 3D background, is the theme's -- "as asked".)
 
 ## 31. Report view: "Go to end" on by default (a change request) -- STAGED 2026-10-09, fixed `47b5e72c79` (see `docs/HandsOnLog.md`)
 
@@ -4273,7 +4425,7 @@ The pictures: `..\dl\handson\2026-10-08\q2\g-e36m1-dev\qt-z1.0.png` against
 `backend-z1.0.png` (and the same pair at `z2.5` and `z6.0`).
 Not said yet by the reporter: whether and when it is to be worked on.
 
-## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- OPEN, seen once, not followed up
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- OPEN, seen once, not followed up; not seen in 16 opens on 2026-10-10
 
 **2026-10-09 08:33, seen by the build session on entry 28** and given a
 number here (its log, entry 28, `961d2dcd83`, local). Not reported by the
@@ -4289,7 +4441,58 @@ whether this is kin to it is not known.
 Not said yet by the reporter: whether they have seen it, and whether it is
 to be followed up.
 
-## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- OPEN; one of the three is no defect
+**2026-10-10 14:14, from the build session: not seen today, not followed
+up.** `scanner.FCStd` was opened 16 times in its benchmark legs for entry
+52; in the 8 of them without MSAA, where the engine counts covered pixels,
+the model was there at the first look (`docs/HandsOnLog.md`). "For what
+that is worth", in its words. The entry stays OPEN.
+
+## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- both FIXED, not staged: `31c09e28e7`, and `8a7595512d`, which is the TEST's -- the "real defect" of 14:14 is WITHDRAWN; the third no defect (see `docs/HandsOnLog.md`)
+
+**2026-10-10 16:57, from the build session: the second test FIXED
+`8a7595512d` -- and it was the TEST; the "real defect" of 14:14 below is
+WITHDRAWN.** Local, not pushed, not staged. The account is in
+`docs/HandsOnLog.md`, "48, again"; in short:
+- There is NO leak of one view's path hide into the other view.
+- The test and the build session's probe both took view 1 for "the other
+  view": `gdoc.activeView()` after `Std_ViewCreate` answers view 1 again
+  in a run's second document. So "the other view" was the hiding view
+  itself.
+- With the two views told apart, in four documents and both link modes:
+  view 2 picks and draws the object after view 1's hide.
+  `element-color-hide.py` is 624 of 624.
+- So the question left with the reporter at 14:14 (when to take the
+  defect up) FALLS AWAY.
+
+**Seen on the way, a proposal only, not made -- for the reporter, NOT
+ANSWERED YET:** after `Std_ViewCreate` the active view and the keyboard
+focus can disagree (the new view is active while the keys still go to the
+old one), or view 1 stays the active view. The proposal: the view placed
+in an area takes the focus with the activation, so the two agree. Nine
+more GUI tests take their second view the same way; they pass, and are
+left as they are.
+
+**2026-10-10 14:14, from the build session: one FIXED `31c09e28e7`, the
+other a REAL defect, reproduced and narrowed, NOT fixed; local, not
+pushed, not staged.** The account is in `docs/HandsOnLog.md`, entry 48; in
+short:
+- `per-view-shown-eviction.py`: FIXED. On Direct3D a stated GPU budget was
+  held against everything the process holds -- hundreds of megabytes
+  before an object is drawn -- so the engine stood in memory pressure from
+  the first frame and the scene lost its lines. A stated budget
+  (`GpuMemoryBudgetMB`) is held against the geometry uploaded now, as the
+  setting's text says. 4 of 5 before, 5 of 5 after.
+- `element-color-hide.py`, two of 624 claims: a REAL DEFECT. One view's
+  own hide of a path takes the object out of the OTHER view too -- out of
+  its pick and out of what it draws -- when the hiding view is the first
+  to be traversed after the hide. In both link modes
+  (`LinkChildrenDirect` on and off). Clearing the hide brings the object
+  back in both views. Which cache carries it over is not found. "Left for
+  a session of its own"; the probe is `e48probe.py` in
+  `..\dl\handson\2026-10-10\q2`.
+- `navicube-per-view.py`: no defect, as said before.
+For the reporter, NOT ANSWERED YET: whether and when the per-view hide
+defect is to be taken up.
 
 **2026-10-09 09:40, the build session, read only so far:**
 `navicube-per-view.py` passes its 11 claims and "never ends" only because
@@ -4796,7 +4999,7 @@ serve, mobile) take the same default. Nothing of (b) is left with the
 reporter. The same message asks for a benchmark of the line shader: entry
 52.
 
-## 52. Is the line shader still needed, and what does it cost: a benchmark asked -- OPEN, nothing run; the reporter's rule: needed if it is what gets fractional widths right
+## 52. Is the line shader still needed, and what does it cost: a benchmark asked -- MEASURED `00f295f8d7`, not staged: it is what gets a fractional width right, its cost under what the benchmark resolves, nothing dropped; one finding for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 10:17, the reporter, when asked what difference in frame time
 would be enough to drop it:** "not sure about the cost tradeoff part. but if
@@ -4857,6 +5060,30 @@ Not known to the note-taker: whether coverage can be switched off without a
 code change (the id pass turns it off by a negated width).
 Not said yet by the reporter: on which models, and what difference in
 frame time would be enough to drop it.
+
+**2026-10-10 14:14, from the build session: MEASURED `00f295f8d7`; nothing
+dropped; local, not pushed, not staged.** The account is in
+`docs/HandsOnLog.md`, entry 52; in short:
+- By the reporter's rule the line shader STAYS: its computed coverage is
+  what gets a fractional width right, MSAA or not.
+  - With the coverage: within 0.09 px of the width asked without MSAA,
+    0.13 px with MSAA 4x.
+  - As plain quads: 0.75 px off without MSAA, 0.26 px with MSAA 4x. A
+    1.25 px line is 2 px wide lying flat and 0.71 px at 45 degrees.
+- Its COST is under what the benchmark resolves: one leg run twice
+  differs by 0.2 ms of GPU time, more than coverage differs from plain
+  quads on `scanner.FCStd` or on 20000 view-long lines.
+- Measured in one binary by a new switch, the environment variable
+  `FC_BGFX_LINE_NO_COVERAGE`; a new test,
+  `tests/gui/line-weight-is-its-width.py`. Direct3D 11 only; MiSTer.FCStd
+  not run.
+- Found on the way and FIXED, `d79122782b`: on Direct3D every
+  `View/Render/DebugTiming` report was of an empty frame ("draws 0").
+
+**For the reporter, one finding, not changed -- NOT ANSWERED YET:** with
+MSAA 4x (the default) a line is up to 0.13 px LIGHTER than asked (2.5 px
+lying flat weighs 2.37). Half a pixel more quad on each side would close
+it, at the cost of those fragments on every line.
 
 ## 53. `scanner.FCStd` opened without the recompute: on the TechDraw page geometry is missing (Qt's drawing) and lines are thickened (both renderers) -- STAGED 2026-10-09 12:25, fixed `c820c3aea1` (see `docs/HandsOnLog.md`)
 
@@ -5420,7 +5647,7 @@ desktop's setting carried over to the browser or a value of the viewer's
 own; and whether touch (a finger has no Esc and no second button) gets a
 way to cancel of its own.
 
-## 58. Audit the warnings of opening and recomputing `scanner.FCStd`, and fix what can be fixed (a task, for later) -- OPEN
+## 58. Audit the warnings of opening and recomputing `scanner.FCStd`, and fix what can be fixed (a task, for later) -- AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60` and `a30fdda2a5` (the pattern limit cut a file's own count), and the note in the pattern panels `2a45e36492`, not staged; two points on the limit and the rest's proposals for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 11:37, the reporter:** "new task, can do it later. audit for all
 warning when opening and recomputing the scanner document. fix when
@@ -5468,6 +5695,111 @@ Not said yet by the reporter: whether messages and log lines are in it or
 warnings and errors only; and what "fix" is to mean for a warning that is
 right about the file -- change the file, or say it once instead of ninety
 times.
+
+**2026-10-10 14:14, from the build session: AUDITED; two kinds FIXED
+(`1adffbfe7c`, `b4f22e0b60`); the rest listed with a proposal each,
+nothing changed; local, not pushed, not staged.** The account, with the
+table, is in `docs/HandsOnLog.md`, entry 58; in short:
+- The run: the dev build, a profile of its own with the reporter's two
+  addons (`fasteners`, `OpticsWorkbench`) copied in, a copy of the file,
+  the migration question answered Yes. The open: 1 error, 4 warnings. The
+  recompute: 5 errors, 140 warnings (195 before the second fix).
+- FIXED `1adffbfe7c`: "Cannot find icon: Std_Point" -- the origin's point
+  had no icon file.
+- FIXED `b4f22e0b60`: one dimension's tolerance (`Dimension241`, 0.0001
+  shown with three decimals) was warned of 56 times a recompute; once
+  now. The warning itself is right about the file.
+
+**Left, by kind, each with the build session's proposal -- for the
+reporter, NOT ANSWERED YET:**
+- 90 "hasher mismatch", 82 of them through the optics addon's `Ray.py`.
+  Proposal: at a raised log level only, or once an object.
+- 45 "auto change element reference". Proposal: one summary line a
+  recompute, the list at log level.
+- `SectionView003`: three lines for one fact (its section origin is
+  outside its part), at the open and again at the recompute.
+- A sketch whose first solver (DogLeg) fails, then another succeeds;
+  neither line names the sketch. Proposal: name it, and the DogLeg line
+  at log level when another solver then succeeds.
+- Three TechDraw view providers write into the document while they are
+  being attached ("5 document changes suppressed"): entry 35's family,
+  "worth a look of its own".
+- `PolarPattern003`: cut from 1024 occurrences to 1000 by
+  `MaximumPatternOccurrences` (entry 42's setting). This CHANGES THE
+  MODEL. The question: is 1000 the limit wanted for this file?
+- The known ones stay: `Fillet011` (entry 17), `Pad033` (entries 15 and
+  17).
+Also, to the entry's question whether messages and log lines are in the
+audit, still not answered: 72 "no exact match for changed 2d reference"
+at Message level, and 100 solver timing lines at Log level. And without
+the addons installed, the open alone is 743 lines of error for this
+file's 37 addon objects; not changed.
+
+**2026-10-10 afternoon, the reporter on `PolarPattern003`, said to the
+build session and relayed by it verbatim, in order (the note-taker did
+not hear them):**
+- "PolarPattern003 got 1024 occurrence? that must be an error"
+- "show me the screeshot of this pattern. I don't remember having any
+  pattern that big"
+- then, with the pictures: "are right. now I remembered, yes it is 1024.
+  so add some warning when enter edit if it exceeds. did we expose the
+  setting to preference? mention this setting in warning message"
+- then: "do that in next session"
+So the question of 14:14 is ANSWERED: 1024 is right; 1000 is NOT wanted
+for this file. The pattern is the code wheel's 1024 encoder lines (label
+"CodeWheel", in `Body007`).
+
+**2026-10-10 16:14, from the build session: FIXED `a30fdda2a5`; local, not
+pushed, not staged.** The account is in `docs/HandsOnLog.md`, "58,
+again"; in short:
+- The error was the LIMIT's: `MaximumPatternOccurrences` is for typed-in
+  counts, and its port of 2026-10-02 (`d882d9d88b`) cut a FILE's count to
+  1000 at every load. Every load of `scanner.FCStd` since made the code
+  wheel with 1000 lines, on one warning; a save after it would have kept
+  1000.
+- Now a restored count is kept, through the load and through the panel's
+  OK. An object restored over the limit can keep or lower its count, not
+  raise it. A new pattern and a typed-in count stop at the limit as
+  before.
+- `scanner.FCStd`'s wheel recomputes with 1024 again, and the warning is
+  gone.
+- `TestLinkArray` 15, `TestPartDesignApp` 347 with the two known
+  thickness failures, `tests/gui/pattern-count-over-the-limit.py` (new) 9.
+
+**Asked by the reporter and NOT done, on their word ("do that in next
+session"):** a WARNING on entering edit when a pattern's count exceeds
+the limit, the message naming the setting.
+The build session's answer to "did we expose the setting to preference?":
+it is on NO preference page; it is in the settings list the omni search
+reads (Part, "Most occurrences of a pattern"), and it is read once, so a
+change counts from the next start.
+(Not said by the reporter, the note-taker's count: whether the setting is
+then to go on a preference page.)
+
+**2026-10-10 16:57, from the build session: the warning asked for is DONE
+`2a45e36492`; local, not pushed, not staged.** The account is in
+`docs/HandsOnLog.md`, "58, once more"; in short:
+- A pattern whose count is over `Mod/Part/MaximumPatternOccurrences`
+  opens its panel with a NOTE under the count box. It says: the count;
+  the limit; that the count can be lowered and not raised; the setting by
+  title ("Most occurrences of a pattern") and parameter path; that it is
+  on no preference page and the search box finds it; and that a change
+  counts from the next start.
+- A note in the panel, not a message box: it stays while the panel is
+  open, and entering edit is not stopped by a question each time.
+- In both pattern panels, PartDesign's and the link array's; a pattern
+  along a path too. A count within the limit has no note.
+- `tests/gui/pattern-count-over-the-limit.py`: 16 claims. Pictures in
+  `..\dl\handson\2026-10-10\q2\g-o-overlimit-dev`. Not tried on
+  `scanner.FCStd` itself.
+(The reporter's word had been "do that in next session"; the build
+session's message does not say what moved it up. Recorded as it came.)
+
+**Open for the reporter, neither done -- NOT ANSWERED YET:**
+- a row for the setting on a preference page (Part Design's or Part's
+  general page);
+- reading the setting at each use instead of once a session, so that
+  raising it works at once.
 
 ## 59. The Start page no longer opens at startup: the Start module's migration ran again after "Reset all" -- STAGED 2026-10-09 15:11, fixed `e9ac624959` (see `docs/HandsOnLog.md`)
 

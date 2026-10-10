@@ -127,6 +127,11 @@ GuiExport QString patternReferenceText(const App::DocumentObject* obj,
 /// The Python value of a reference, for a recorded command
 GuiExport std::string patternReferencePython(const App::DocumentObject* obj,
                                              const std::vector<std::string>& subs);
+/** What is said of an occurrence count that is over the limit on counts,
+ * Mod/Part/MaximumPatternOccurrences, naming that setting; empty for a count
+ * within it, and for a property that is no count
+ */
+GuiExport QString patternOverLimitText(const App::Property* prop);
 
 /** Where the on-view labels of a pattern direction go, in the world
  *
@@ -233,6 +238,7 @@ private:
     void onSpacingEdited(int index, double value);
     void adaptVisibilityToMode();
     void rebuildSpacingRows();
+    void updateOverLimit();
     double fallbackSpacing(int index) const;
     bool hasIndividualSpacings() const;
     int gapCount() const;
@@ -256,6 +262,8 @@ private:
     Gui::QuantitySpinBox* spinSpacing = nullptr;
     QLabel* labelOccurrences = nullptr;
     Gui::UIntSpinBox* spinOccurrences = nullptr;
+    /// The note under a count that is over the limit on counts
+    QLabel* labelOverLimit = nullptr;
     QCheckBox* checkIndividual = nullptr;
     QWidget* spacingsBox = nullptr;
     QFormLayout* spacingsForm = nullptr;
@@ -346,6 +354,7 @@ private:
     };
     void addRow(const char* name, QWidget* editor, bool withLabel = true);
     Row* findRow(const char* name);
+    void updateOverLimit();
 
 private:
     Kind kind;
@@ -355,6 +364,8 @@ private:
     bool blockUpdate = false;
     QFormLayout* form = nullptr;
     QComboBox* comboReference = nullptr;
+    /// The note under the count of a path pattern that is over the limit
+    QLabel* labelOverLimit = nullptr;
     std::vector<Row> rows;
 };
 

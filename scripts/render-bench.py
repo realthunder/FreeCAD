@@ -98,6 +98,19 @@ MAXSEC = float(os.environ.get("FC_BENCH_MAX_SECONDS", "60"))
 # only comparable against another leg that came up the same.
 SIZE = os.environ.get("FC_BENCH_SIZE", "1280x720")
 OUT = os.environ.get("FC_BENCH_OUT", "")
+# The value of View/AntiAliasing for the leg (0 none, 2 MSAA 2x, 3 MSAA
+# 4x). Stated, never inherited: the default is MSAA 4x since 2026-10-09
+# and every table before that was taken with none, so a leg that leaves
+# it to the profile is not comparable with any of them. A multisampled
+# view answers geometryPixels -1; the settle then has only the drain to
+# go by, and the scene line says so.
+MSAA = int(os.environ.get("FC_BENCH_MSAA", "0"))
+# The view's draw style for the timed run ("Wireframe", "Flat Lines",
+# ...; see drawStyleNames()). Empty leaves it "As Is".
+DRAWSTYLE = os.environ.get("FC_BENCH_DRAWSTYLE", "")
+# A picture of the last timed frame, for a leg whose question is what
+# the frame looks like as well as what it costs.
+SHOT = os.environ.get("FC_BENCH_SHOT", "")
 # How long the covered-pixel count must hold STILL before the timed run
 # starts, and how long to wait for that at all. A restored document parks
 # every visual on the deferred drain (Part/Gui/ViewProviderExt.cpp, the
@@ -145,6 +158,8 @@ def say(line):
 FreeCAD.ParamGet(RENDER).SetString("Type", BACKEND)
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
     "RenderCache", 3)
+FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
+    "AntiAliasing", MSAA)
 
 # Same configuration as the chess golden, so the frame being timed is the
 # frame that test blesses: PBR lit by the HDR, every optional stage off,
@@ -470,6 +485,15 @@ def open_scene():
             b.Placement.Base = FreeCAD.Vector((i % 20) * 15, (i // 20) * 15, 0)
         doc.recompute()
         load_s = time.perf_counter() - t0
+    elif DOC.startswith("open:"):
+        # A document the caller has open already, by name. For a file
+        # this script cannot open by itself: one that asks a question on
+        # the way in (a modal box inside openDocument stops everything
+        # here), or one whose own page takes the front from the 3D view.
+        # The caller answers the one and undoes the other, then runs
+        # this file.
+        doc = FreeCAD.getDocument(DOC.split(":", 1)[1])
+        load_s = 0.0
     elif DOC:
         t0 = time.perf_counter()
         doc = FreeCAD.openDocument(DOC)
@@ -593,6 +617,8 @@ def bench():
     # resolved against the viewport, so a fit staged into a different
     # one frames the model differently.
     restage_viewport(v)
+    if DRAWSTYLE:
+        v.DrawStyle = DRAWSTYLE
     v.setCameraOrientation((0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
     # Let the deferred shapes settle, or the first timed frames measure
@@ -659,13 +685,20 @@ def bench():
     # one that measures its own polling, and it is not visible in any
     # timing number -- the first run of this on a 17k-object assembly
     # reported 2 primitives a frame and looked like a result.
+    samples = -1
     try:
         st = v.getRenderStats()
         pixels = st["geometryPixels"]
         cover = 100.0 * pixels / float(max(1, st["width"] * st["height"]))
+        samples = st.get("msaaSamples", -1)
     except Exception as exc:
         pixels, cover = -1, 0.0
         say("  !! getRenderStats failed: %s" % exc)
+    if SHOT:
+        try:
+            v.saveRenderDump(SHOT)
+        except Exception as exc:
+            say("  !! saveRenderDump failed: %s" % exc)
 
     wall = elapsed * 1000.0 / n
     say("%s" % BACKEND)
@@ -687,6 +720,10 @@ def bench():
         % (rep.width, rep.height, fmt(rep.mean("draws"), "%.0f"),
            fmt(rep.mean("prims"), "%.0f"), pixels, cover,
            len(doc.Objects), shapes))
+    say("  view    AntiAliasing %d -> %s samples | draw style %s%s"
+        % (MSAA, samples, str(v.DrawStyle),
+           " | lines WITHOUT coverage (FC_BGFX_LINE_NO_COVERAGE)"
+           if os.environ.get("FC_BGFX_LINE_NO_COVERAGE") else ""))
     # Printed only when the composite ran. On OpenGL the GL blit
     # carries the frame and there is no composite to price; on every
     # other backend this is the difference between "the frame was

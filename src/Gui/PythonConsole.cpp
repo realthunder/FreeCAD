@@ -1639,6 +1639,19 @@ void PythonConsoleHighlighter::colorChanged(const QString& type, const QColor& c
 {
     Q_UNUSED(type);
     Q_UNUSED(col);
+    // What is in the console already takes the new colour as well. This
+    // did nothing, so a change of theme left every line typed or printed
+    // before it in the last theme's colours -- the Classic theme's black
+    // and dark blue on the Dark theme's background. One pass for a burst:
+    // a theme writes a dozen colours one after another, and so does the
+    // start of the session, into a console that is still empty.
+    if (recolorPending)
+        return;
+    recolorPending = true;
+    QTimer::singleShot(0, this, [this]() {
+        recolorPending = false;
+        rehighlight();
+    });
 }
 
 // ---------------------------------------------------------------------

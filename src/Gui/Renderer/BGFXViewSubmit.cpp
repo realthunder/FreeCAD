@@ -1318,7 +1318,8 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // affordable because line fragments are a flat colour and a clamp;
     // the feather is bounded at half a pixel per side, so the fragment
     // count grows by at most 2/width.
-    if (thickline)
+    const bool plainline = thickline && lineCoverageOff();
+    if (thickline && !plainline)
         blend = true;
 
     // GL disables depth writes together with the depth test; bgfx does
@@ -1421,8 +1422,10 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // glowing bulb face is its own light, not a lit surface).
     if (mat.lightsource)
         shaded = false;
+    // A plain line passes its width NEGATED, which is how the line
+    // stages are told to leave the feather and the coverage out.
     params[1] = mat.type == Render::Material::Line
-        ? qMax(1.0f, mat.linewidth)
+        ? (plainline ? -1.0f : 1.0f) * qMax(1.0f, mat.linewidth)
         : mat.type == Render::Material::Point
             ? qMax(1.0f, std::floor(mat.pointsize + 0.5f))
             : shaded ? 1.0f : 0.0f;
@@ -1578,7 +1581,10 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
                 ? (patterned
                     ? (clipped ? m_progLinePatClip
                                : m_progLinePat)
-                    : (clipped ? m_progLineClip : m_progLine))
+                    : (clipped ? m_progLineClip
+                               : plainline
+                                       && bgfx::isValid(m_progLinePlain)
+                                   ? m_progLinePlain : m_progLine))
                 : thickpoint
                     ? (mesh->markers
                         ? (clipped ? m_progMarkerClip : m_progMarker)

@@ -208,7 +208,72 @@ After the stage, on the reporter's answer to the setting's four points
 ("1,2,3 yes. 4 expose to techdraw preference page"): the rounding has a
 check box on TechDraw's Advanced preference page, `a343a386b6` (entry 61,
 once more, below). Local: not pushed, not staged -- the word to push and
-stage was given before this was asked. PAUSED here.
+stage was given before this was asked.
+
+Pushed 2026-10-10 11:18, on the reporter's word ("push only"):
+origin/PartDesignPort at `1151e3a6e5`, which has `a343a386b6`. NOT staged:
+the copy under test is still the one of 09:44:51 (`72180a4812`), without
+the check box. PAUSED here.
+
+The session of 2026-10-10, from 11:30 (the reporter, the evening before:
+"next session, continue fixing issues in the notes"; then "continue as
+planned"; the open entries in the order left: 52, entry 30's first task, 58,
+47, the two tests of 48). The reporter said two things while it ran, both
+on entry 30: "color shall follow the Dark/Light theme. port those overlay
+part", and "need to modify python editor part to make it more suitable to
+the theme". Done in it: 52 measured (`00f295f8d7`, and the frame report it
+found wrong, `d79122782b`); entry 30's first task (`3d9edca80c`,
+`5c021cb111`); one of entry 48's two tests (`31c09e28e7`), the other
+reproduced and narrowed; entry 58's audit run made and sorted, two of its
+kinds fixed (`1adffbfe7c`, `b4f22e0b60`, the second after the suites:
+TechDraw's own 7 Python tests pass on it).
+Entry 47 was not seen, for what that is worth: `scanner.FCStd` was opened
+16 times in the benchmark legs, and in the 8 of them without MSAA (where
+the engine counts covered pixels) the model was there at the first look,
+which is 43 s after the open -- not the 13 s of the one empty frame. Not
+followed up beyond that. All LOCAL: not pushed, not staged --
+origin is at `1151e3a6e5` and the copy under test at `72180a4812`. Tools
+and results in `..\dl\handson\2026-10-10\q2`. Both full suites on the build
+of `00f295f8d7`, ended 13:45 and 13:56: ctest 791 of 791 (800 entries, 9
+disabled, 1 skipped); Python 3411 tests with the two known thickness
+failures, 50 skipped, 6 expected failures (`full-ctest.log`,
+`fullpy-pytest.log` there). GUI tests by hand on that build, no FAIL:
+`theme-overlay-themes.py` 59, `editor-colours-follow-the-theme.py` 18,
+`line-weight-is-its-width.py` 4, `per-view-shown-eviction.py` 5;
+`element-color-hide.py` 622 of 624, as before.
+
+The same day, afternoon, on the reporter's words to the summary of the
+above. On entry 58's `PolarPattern003`: "that must be an error", "show me
+the screeshot of this pattern", then "now I remembered, yes it is 1024" --
+the limit on typed-in counts had been cutting the file's own; fixed,
+`a30fdda2a5` ("58, again" below). A warning on entering edit that names the
+setting was asked and put off by them: "do that in next session". On entry
+30: "I have second thought. Can you make one overlay preset that can auto
+change its color to match the main theme" -- the two overlay themes of the
+morning are one preset, `438216ad93` ("30, again" below). Both LOCAL, not
+pushed, not staged. Tested on their builds: `TestLinkArray` 15,
+`TestPartDesignApp` 347 with the two known thickness failures,
+`pattern-count-over-the-limit.py` 9, `overlay-preset-follows-the-theme.py`
+45, `editor-colours-follow-the-theme.py` 18; the full suites were NOT run
+again after the morning's (the pattern code and three theme files since).
+
+They were, started 16:15 on the afternoon's tree (`438216ad93`) and ended
+16:21 and 16:33: ctest 791 of 791; Python 3411 tests with the two known
+thickness failures, 50 skipped, 6 expected failures.
+
+Pushed 2026-10-10 about 16:30, on the reporter's word ("push first"):
+origin/PartDesignPort at `e7f5ee912a`. Not staged: the copy under test is
+still `72180a4812`.
+
+The session of 2026-10-10, from 16:30 (the reporter: "continue as planned",
+then "push first"). The warning put off from the afternoon is in,
+`2a45e36492` ("58, once more" below). Entry 48's second test is fixed,
+`8a7595512d`, and it was the TEST: the defect this log reported in the
+morning does not exist ("48, again" below). Both LOCAL, not pushed, not
+staged. GUI tests by hand on that build, no FAIL:
+`pattern-count-over-the-limit.py` 16, `element-color-hide.py` 624 of 624.
+The full suites were not run again (one accessor in App, two labels in the
+pattern panels, two test scripts since the run above).
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
@@ -226,7 +291,7 @@ Evidence that does not belong in the repository is under
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 28 | NOT REPRODUCED in 15 loads; nothing changed; a question for the reporter | the part the report fits -- a solid of the imported motor -- has light blue as its OWN stored colour and is drawn light blue on every load here; the light grey is what was not seen. One first load of a session came up with an empty 3D view, not followed up |
 | 29 | DONE `dd336be800`, and `c9bc1e22c5` for the default of 300 the reporter then asked for; not staged, not pushed; four choices of mine for the reporter | a drag of a corner zone or of a border is shown as frames over every cell it changes and carried out at the release; the minimum cell size setting (300 by default) refuses a split and stops a border; corner zones and the hovered menu button on an opaque ground; the border 3 pixels |
-| 30 | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed; the freeze MEASURED, not fixed; the first task waits for the reporter | Light, Dark and Classic list the colours an overlay preset leaves behind, so a theme clears the Python console's background again. The freeze on `scanner.FCStd`: 13 s for the dark overlay preset, of which 9.5 s is the application's style sheet being changed; the same preset a second time, nothing changing, still 4 s |
+| 30 | FIRST TASK DONE, as the reporter turned it the same afternoon: ONE overlay preset `438216ad93` (the morning's two overlay themes, `3d9edca80c`, replaced by it) and `5c021cb111`; not pushed, not staged. Third task STAGED `dad4f5d18a`; the freeze MEASURED, not fixed | Tools > Preset configurations has one "Overlay": the layout alone. An overlay's look is the theme's -- Dark, Light and Classic each name the overlay sheet for see-through panels, the tree's backing and a console background that is the theme's own page -- so the preset under Dark is Dark's and turns Light's when Light is applied. Light, Dark and Classic each list every key another theme sets (Light missed 35 of Dark's); Light has syntax colours for a light page; the editor's current line and the console take a changed colour at once. The freeze on `scanner.FCStd`: 13 s for the old dark preset, 9.5 s of it the application's style sheet being changed |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
 | 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
 | 33 | FIXED `ef4df215b5` (cycles `35a3bd898`), not staged | the path tracer's CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now |
@@ -259,6 +324,9 @@ Evidence that does not belong in the repository is under
 | 63 | DONE `b20c825573`, and the reporter's three changes `8fed56f3df`; not pushed, not staged; for the reporter to try: the menu as a popup, and the handle by hand | the menu has the style as a combo, the anti-aliasing and the lights. Since: the tool button wears the split cube; "Apply all" is a button that copies the active view's lights to the other views once; "Direction" raises Coin's light dragger in the view, drawn over the model, asked before the navigation |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
+| 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
+| 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
+| 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -4473,3 +4541,482 @@ page draws. A matter of when the test looks, by my guess; not shown.
 
 **Not run:** the streamed page, as before -- it takes the same feed and so
 the same setting.
+
+## 52. Is the line shader still needed, and what does it cost -- MEASURED `00f295f8d7`: it is what gets a fractional width right, and its cost is under what the benchmark resolves; nothing dropped
+
+The reporter's rule (2026-10-09): "if it does helps to get the fractional
+width right, then it is still needed". It does, and with MSAA 4x on as
+well. Measured on the dev build, Direct3D 11, in one binary: the
+environment variable `FC_BGFX_LINE_NO_COVERAGE` (new, a measurement switch)
+draws scene lines the way they were before the coverage -- plain quads of
+the asked width, no feather, no blend, no discard in the fragment stage.
+
+**The width.** `tests/gui/line-weight-is-its-width.py` (new): black lines
+on white, six widths from 1 to 3.5 px, each at six angles; the ink across
+a line added up in the frame and divided by its length is the width it has
+to the eye.
+
+| | furthest from the width asked | widest difference between two angles of one width |
+|---|---|---|
+| coverage, no MSAA | 0.09 px | 0.09 px |
+| coverage, MSAA 4x | 0.13 px | 0.13 px |
+| plain quads, no MSAA | 0.75 px | 1.29 px |
+| plain quads, MSAA 4x | 0.26 px | 0.29 px |
+
+Without the coverage and without MSAA a 1.25 px line is 2 px wide lying
+flat and 0.71 px at 45 degrees. MSAA 4x does not replace the coverage: four
+samples give a plain quad its width in steps (1.5 px asked, 1.76 at 45
+degrees; 2.5 asked, 2.30).
+
+**A finding of its own, NOT changed:** with the coverage a multisampled line
+is up to 0.13 px LIGHTER than asked (2.5 px lying flat weighs 2.37). The
+quad ends where the coverage reaches nothing, its outermost pixels are
+covered in part, and a multisampled pixel keeps its colour for the samples
+the quad covers alone. Half a pixel more quad on each side would close it
+and costs those fragments on every line, with MSAA 4x the default. For the
+reporter to say; the test allows 0.16 px under MSAA and says why.
+
+**The cost.** `scripts/render-bench.py`, 1280x720, vsync off, the camera
+turned a degree a frame, 20 s a leg; GPU time a frame by the engine's own
+account, coverage against plain quads, two rounds:
+
+| scene | no MSAA | MSAA 4x |
+|---|---|---|
+| `scanner.FCStd` as it is (68 draws, 25339 primitives) | 0.92 against 0.94 ms; 0.95 against 0.81 | 1.23 against 1.33; 1.02 against 1.08 |
+| `scanner.FCStd` in wireframe | 0.82 against 0.83; 0.63 against 0.63 | 1.06 against 0.88; 0.83 against 1.09 |
+| 20000 lines as long as the view, one object (120003 primitives) | 2.25 against 2.03; 2.32 against 2.35 | 3.44 against 3.39; 3.52 against 3.50 |
+
+So: no cost that this measurement resolves. One leg run twice differs by up
+to 0.2 ms (0.82 and 0.63; 1.23 and 1.02), and that is more than the
+coverage differs from plain quads in any pair -- on the scene made to be
+the worst case for it, 0.22 ms more in one round and 0.03 ms LESS in the
+other. The frame as a whole (4 to 5 ms of bgfx frame time, 8 to 10 ms on
+the wall with the harness's own turn) moves more from run to run than the
+coverage could move it.
+
+**The instrument was wrong, and is fixed: `d79122782b`.** The first legs
+read "draws 0 prims 0" and a frame of 0.17 ms: on Direct3D, where a frame
+reaches the screen by readback, a frame that waits for its copy spins empty
+frames behind the one that drew, and bgfx's statistics were read once, after
+the last of them. Every `View/Render/DebugTiming` report on the Windows
+default was of an empty frame. They are read after each `bgfx::frame()` and
+added up now.
+
+**What is in the tree:** the switch, the test (4 claims; registered as
+`GuiLineWeightIsItsWidth_tests_run`), `FC_BENCH_MSAA`, `FC_BENCH_DRAWSTYLE`,
+`FC_BENCH_SHOT` and `FC_BENCH_DOC=open:<name>` in `scripts/render-bench.py`,
+and the two tables in `docs/RenderEngine.md`, "Lines": `00f295f8d7`. Tools and
+results in `..\dl\handson\2026-10-10\q2` (`bench52.cmd`, `e52bench.py`,
+`g-r1-*`, `g-r2-*`, `g-w-cov-dev`, `g-w-plain-dev`).
+
+**Not run:** MiSTer.FCStd (the load benchmarks' 17000-object model), and
+any backend but Direct3D 11.
+
+## 30, the first task. The two overlay presets are themes -- DONE `3d9edca80c` and `5c021cb111`, not pushed, not staged
+
+The reporter's words, in order: "I want two new theme under Tools -> Preset
+configurations -> Themes, which are the dark theme merged with overlay dark
+theme, and light ones too ... switching in combinations got some setting
+stuck at a bad combination, such as the python editor colors"; "two presets
+should go. two new themes named Overlay dark/light theme"; and, to this
+session while it was at it, "color shall follow the Dark/Light theme. port
+those overlay part" and "need to modify python editor part to make it more
+suitable to the theme".
+
+**What there is now.** Five themes in Tools > Preset configurations >
+Themes: Classic, Dark, Light, Overlay dark theme, Overlay light theme. The
+two presets are gone from the menu beside it and from the source
+(`data/settings/OverlayDark.FCParam`, `OverlayLight.FCParam`; a tree built
+before this has its copies removed at the next configure, and the stage
+mirrors that).
+
+An overlay theme is its base theme -- every key of Dark or Light with its
+value -- and the presets' LAYOUT: the panels in their overlays, the tree and
+the property view apart, the tree's hidden column, the two overlay
+switches. 35 keys. The two files are written from `Dark.cfg` and
+`Light.cfg` by `src/Gui/PreferencePacks/make-overlay-themes.py`, by hand
+after an edit; the test fails on a stale one.
+
+**"port those overlay part": the overlay's LOOK went into Dark and Light
+themselves.** My first build had only the layout in the overlay themes and
+every colour and sheet from the base theme. The picture said no: under
+`Dark_overlay.qss`, which Dark named, a see-through panel is a slab -- the
+task panel an empty dark rectangle down the right side -- and the tree's
+text black over the 3D view. The presets named the other overlay sheet,
+the one made for see-through panels. And a plain theme applied after an
+overlay theme keeps the panels where they are (below), so the look cannot
+live in the overlay themes alone, or Dark after Overlay dark is the slab
+again. So Dark and Light now name `Dark-Outline.qss` and
+`Light-Outline.qss`, and carry the presets' backing behind a tree item. A
+panel in an overlay looks the same under Dark and under Overlay dark
+theme, whoever put it there.
+
+**"modify python editor part":**
+- the console's background. The presets set it so that the console can be
+  read in an overlay, to a light grey (`#C8C8C8`) that went with no theme:
+  under Dark it was the theme's light text on it. It is the page the
+  theme's sheet draws an editor on now (`#191919`, `#FAFAFA`), in all four
+  themes; the test holds the key to what the sheet draws;
+- Light's syntax colours were the Dark theme's, pale ones made for a dark
+  page, with the text colour alone changed: an operator `#D4D4D4`, a
+  function name `#DCDCAA`, a number `#B5CEA8` on `#FAFAFA`. Light has
+  colours of its own: keyword `#0000FF`, comment `#008000`, string and block
+  comment `#A31515`, number `#098658`, class `#267F99`, function `#795E26`,
+  operator `#3C3C3C`, output `#616161`, error `#CD3131`, the cursor's line
+  `#DDE6F4`. Each 4.4 to 1 or better against the page; Dark's were 5.3 to
+  1 or better already and are as they were;
+- two colours were stuck by the CODE, whatever the themes said
+  (`5c021cb111`). The band on the editor's current line was drawn when the
+  cursor moved and not when its colour changed: after a change of theme
+  the line under the cursor kept the last theme's band until a key was
+  pressed. And the console did nothing at all for a changed colour: every
+  line typed or printed before a change of theme stayed in the last
+  theme's colours -- the Classic theme's black and dark blue on the Dark
+  theme's page. Both take the colour at once now.
+
+**What got stuck, in the themes.** A theme writes the keys it lists and no
+others. Light did not list 35 keys Dark sets: the editor's current line
+(Dark's dark blue under Light's light page -- the reporter's example), the
+Draft grid's white, six sketch colours, the Arch colours. Dark did not list
+three of Light's, Classic not the three accent colours nor those three.
+Light, Dark and Classic each list every key another theme sets now; Light
+takes Classic's value, the coded default, where it had none. 97 keys, the
+same 97 in all five (Classic has 24 more of its own, which nothing else
+sets).
+
+**The style sheet's parameters.** They are found by the theme's NAME,
+`parameters/<theme>.yaml`, so "Overlay dark theme" would have been the
+parameterized sheet with no parameters. The overlay themes name their base
+theme's file in `MainWindow/ThemeStyleParametersFile`, and that key is one
+a change of theme clears now; a change of it re-applies the sheet. The
+application's style sheet under Overlay dark theme is Dark's to the
+character (75757), and Light's under Overlay light theme (75752).
+
+**MY CHOICES, for the reporter to overrule:**
+1. Dark, Light and Classic leave the LAYOUT alone: after an overlay theme
+   the panels stay in their overlays. The other way -- a plain theme puts
+   the panels back -- would also undo an overlay a user made by hand at
+   every change of theme, and Light and Dark are applied without asking
+   when the theme follows the desktop.
+2. An overlay theme carries the presets' panel SIZES too (the left overlay
+   300 wide, the bottom one 180 high, ...): switching between the two
+   overlay themes puts a panel that was resized by hand back to them.
+3. Dark and Light name the outline overlay sheet instead of
+   `Dark_overlay.qss` and `Light_overlay.qss` (upstream's, of 2023), which
+   are still there to choose on the Theme page. This changes what a panel
+   put into an overlay by hand looks like under Dark and Light.
+4. The 3D background, the tree's edit and active colours and the
+   cross-hair are the base theme's, not the presets' (the dark preset had a
+   flat grey 3D background).
+5. The six unbundled packs (Darker, Dark modern, ...) are not touched.
+
+**Scored.** `tests/gui/theme-overlay-themes.py` (the old
+`theme-clears-overlay-preset-leftovers.py`, rewritten): 59 claims --
+the menu, the files, the tree in its overlay, the application styled to
+the character as under the base theme, Light after an overlay theme, Dark
+after one, and each of the five putting its own console background and
+tree backing over the preset's. `tests/gui/editor-colours-follow-the-
+theme.py` (new): 18 claims, a file in the editor and a statement, its
+output and an error in the console, Dark applied and then Light; on the
+copy staged 2026-10-10 the four of them it can state fail (the band
+`#e0e0e0` for Dark's `#1f3d5c`; the console in `#000000`, `#0000ff`,
+`#00aa00`, `#a0a0a4`, `#ff0000`). Pictures of the editor, the console and
+the window under each theme, before and after, in
+`..\dl\handson\2026-10-10\q2` (`g-b-e30edit-dev` before, `g-h-e30edit-dev`
+and `g-h-e30overlay-dev` after; `g-e-e30overlay-staged` is the old preset).
+
+**Found on the way, NOT changed:**
+- a theme SAVED from the Theme page under a name of its own has the same
+  gap the overlay themes had: no `parameters/<its name>.yaml`, and nothing
+  written into `ThemeStyleParametersFile` at the save;
+- the highlighter reads `0x10` as a number, a name and a number;
+- once in four first applications of an overlay theme the picture taken 8
+  s later showed the panels in their overlays but not yet laid out. Not
+  seen in the test, which asks where the tree is and passed every run;
+- the freeze of the second task is as it was: a change of theme sets the
+  application's style sheet again.
+
+## 48. Two GUI tests that failed on every build here -- one FIXED `31c09e28e7`; the other FOUND, not fixed (WITHDRAWN: see "48, again")
+
+**`per-view-shown-eviction.py`, "the plan evicts H1, released": FIXED.**
+The test simulates a GPU budget of 1 MB, "GL states no GPU budget, so one
+is simulated". On Direct3D the engine compared that budget with the API's
+own number -- everything the process holds, hundreds of megabytes before
+an object is drawn -- so it stood in memory pressure from the first frame
+("pressure stage 2: points+lines dropped" in every plan's readout), the
+scene lost its lines, and what was left of it was under the 52 KB mark it
+was to stand over. Not the test's fault alone: `GpuMemoryBudgetMB` is
+documented as "GPU memory the displayed geometry may use", and a budget a
+user states was held against render targets, textures and the environment
+too. A stated budget is held against the upload accounting now; the API's
+number stays with the API's own limit, which is what applies with nothing
+stated. 4 of 5 before, 5 of 5 after.
+
+**What follows on `element-color-hide.py` is WRONG and is kept as it was
+written: the probe compared view 1 with itself. "48, again" has what is
+true.**
+
+**`element-color-hide.py`, two of 624 ("mirror Link2 hide + v1 path hide,
+other view: asm.box2 picks as before"): a REAL defect, reproduced and
+narrowed, NOT fixed.** One view's own hide of a path (`Asm`, `Sub.Box2.`)
+takes the object out of the OTHER view as well -- out of its pick and out
+of what it draws -- when the hiding view is the first to be traversed
+after the hide. `e48probe.py` in `..\dl\handson\2026-10-10\q2`, two views
+of one document, view 1 hides Asm's Box2 for itself:
+
+| first traversed after the hide | view 2 picks at Asm's Box2 | view 2 draws there |
+|---|---|---|
+| view 2 | Box2, and still after view 1 has picked, boxed and drawn | Box2 (210, 210, 235) |
+| view 1 | nothing, and still nothing after a bounding box pass and a draw of its own | the background (155, 155, 179) |
+
+The same with `LinkChildrenDirect` on and off, and with or without
+Link2's colour hide: the test's "direct" half passes by the order it
+happens to look in, not because that mode is right. Clearing the hide
+brings the object back in both views. What it is not, read from the
+source: the scene capture (a callback action, where the visibility element
+is not enabled), and a view without a table hands the backend no draw set
+at all. So something built at the first traversal after the hide -- under
+view 1's table -- is reused for view 2; the Coin caches record the
+element and compare by the table's identity, which should stop exactly
+that, and I have not found which cache it is. Left for a session of its
+own; the probe is the way in.
+
+**`navicube-per-view.py`:** no defect, as said before -- a run-by-hand
+script that does not close FreeCAD.
+
+## 58. The warnings of opening and recomputing `scanner.FCStd` -- the audit's run made and sorted; two kinds FIXED, the rest listed for the reporter
+
+**The run.** `e58.py` in `..\dl\handson\2026-10-10\q2`: the dev build, a
+profile of its own with the reporter's two addons copied into it
+(`fasteners`, `OpticsWorkbench`; without them the open alone is 743 lines
+of error, the addons' objects failing to restore), a copy of the file
+opened, the migration question answered Yes, 150 s waited. Every line the
+console got, with its phase, is in `g-k-e58-dev\messages.txt`, and grouped
+in `summary.txt`. The open: 1 error, 4 warnings. The recompute: 5 errors,
+140 warnings (195 before the second fix below). `Pad033` and `Fillet011`
+end in error, as known.
+
+**Fixed:**
+- `Cannot find icon: Std_Point`, nine times in an open of the reporter's:
+  the origin's point names an icon whose file never came with the code
+  that names it. It is upstream's (`a9bc28daa0`); `1adffbfe7c`. Gone from
+  the run.
+- `Dimension Dimension241 value 0.000100 is too small for format
+  specifier: %+.3f`, 56 times in the recompute: ONE tolerance of one
+  dimension, said at every formatting of its label. Said once now;
+  `b4f22e0b60`. The warning itself is right about the file: a tolerance of
+  0.0001 shown with three decimals.
+
+**What is left, by kind, with what I make of each -- nothing changed:**
+
+| count | phase | what | right to give? |
+|---|---|---|---|
+| 90 | recompute | `<TopoShape> Ray.py(496)\|TopoShapeEx.cpp(1317): hasher mismatch` (82 through the optics addon's `Ray.py`, 8 without a script line) | a developer's note with no object in it: a shape being mapped took names whose string ids belong to another hasher, and the ids are dropped. The same message at the function's other place is given only with the log level raised. Proposal: the same here, or once an object |
+| 45 | recompute | `<App> PropertyLinks.cpp(480): X.<property> auto change element reference Y old -> new` (`Base` 12, `Support` 9, `AttachmentSupport` 10, `ExternalGeometry` 6, `Profile` 4, `BaseObject` 3, `_NeutralEdge` 1) | yes, each is a reference found again by geometry after the element map's version change, which is what a migration recompute is. One of them deserves its line more than the others: `Sketch053.ExternalGeometry ... ;#f752;WIR;:H764:4,E.Edge1 -> Edge1`, a mapped name traded for a bare index. Proposal: one summary line a recompute, the list at log level |
+| 1 + 1, twice | both | `DVS: SectionOrigin doesn't intersect part in SectionView003`, `DVS::makeSectionCut - prism & input don't intersect`, and the error `DVS::prepareShape - failed to build shape SectionView003 - Bnd_Box is void` | right about the file -- that section's origin is outside its part -- but three lines for one fact, at the open and again at the recompute |
+| 1 | open | `PolarPattern003.Occurrences: 1024 occurrences, more than MaximumPatternOccurrences allows; set to 1000` | right, and it CHANGES THE MODEL: the pattern is made with 1000 where the file says 1024 (entry 42's setting, default 1000). For the reporter: is 1000 the limit wanted for this file |
+| 1 | open | `Recomputation required for document ... on geo element version change in Body.Shape: 1.15.70200.4 -> 1.15.80001.4` | yes; it is the reason for the question that follows |
+| 1 + 1 | recompute | `Invalid solution from DogLeg solver.` and the error `Updating geometry: Error build geometry(1): GC_MakeLine::Value() - no result` | one sketch, and neither line says which. The log beside them: "the LevenbergMarquardt solver succeeded where the DogLeg solver had failed" -- so the sketch IS solved, and the warning is of a first attempt. Proposal: name the sketch; the DogLeg line at log level when another solver then succeeds |
+| 1 | recompute | `<Gui> Document.cpp(3838): progressive restore: 5 document changes suppressed while replaying the view providers (Balloon005.touch(), ProjGroup004.touch(), ProjItem011.X, ProjItem011.Y)` | yes, and worth a look of its own: three TechDraw view providers write into the document while they are being attached. It is entry 35's family (a click that started a recompute) |
+| 1 | recompute | `<Exception> FeatureDressUp.cpp(143): Invalid edge link: ?Edge93` (`Fillet011`) | yes; entry 17's |
+| 1 + 1 | recompute | `Failed to recompute Pad033: Sub shape not found: Sketch043.?InternalFace2`, `Recompute failed!` | yes; entries 15 and 17's |
+
+Not in this run and in the reporter's log of 2026-10-09: two Qt lines from
+a dialog (`QLayout::addChildLayout: layout QHBoxLayout "" already has a
+parent`, `Empty widget item in QVBoxLayout 'verticalLayout_3'`); which
+dialog is not known.
+
+Messages and log lines, for the question whether they are in the audit:
+`DimensionNNN - no exact match for changed 2d reference: 0`, 72 times at
+Message level in the recompute; the sketch solver's timing, 100 lines at
+Log level.
+
+**Found by the run without the addons, NOT changed:** an object of an
+addon that is not installed costs about twenty lines of error each --
+`PropertyPythonObject::Restore: unsupported serialisation:` and then the
+object's whole stored state, one error line for each line of it. 743 lines
+for this file's 37 such objects.
+
+## 58, again. `PolarPattern003` and its 1024 occurrences -- the limit was wrong to cut it: FIXED `a30fdda2a5`
+
+**The reporter, on the table above:** "PolarPattern003 got 1024 occurrence?
+that must be an error"; then "show me the screeshot of this pattern. I
+don't remember having any pattern that big"; and, with the pictures: "are
+right. now I remembered, yes it is 1024."
+
+**What it is,** read from the file and from its stored shape
+(`e58wheel.py`, pictures in `..\dl\handson\2026-10-10\q2\g-p-e58wheel-dev`):
+`PolarPattern003`, labelled "CodeWheel", in `Body007`; `Occurrences` 1024
+over 360 degrees. Its own part is 1024 solids, each 1.21 x 0.048 x 0.02 mm,
+their centres on a circle of radius 13.42 mm, in the bottom 0.02 mm of a
+wheel 28.2 mm across and 0.12 mm thick: the lines of an encoder track. Two
+links use it. Nothing of it shows from above or at the wheel's own colour,
+which is how a pattern that size goes unremembered.
+
+**So the error was the limit's, and mine.** `MaximumPatternOccurrences`
+(1000) came with upstream `293726c5d8` to stop a typo -- "Constraints for
+user-entered pattern occurrence counts" -- and upstream leaves a file
+alone. My port of it (`d882d9d88b`, 2026-10-02) also cut a restored count
+to the limit and marked the object for a recompute: every load of
+`scanner.FCStd` since has made the code wheel with 1000 lines on one
+warning, and a save after it would have kept 1000.
+
+**Fixed, in two steps the second of which the test found.** A restored
+count is left alone. That was not enough: the panel showed 1024 and OK,
+nothing typed, stored 1000 -- the panel (and the property editor) store a
+count by assigning it from Python, and the assignment is clamped by the
+constraint. So an object restored with more than the limit takes a range of
+its own, ending at what it holds: the count can be kept or lowered, not
+raised. A new pattern and a typed-in count stop at the limit as before.
+
+**Scored.** `scanner.FCStd` recomputed: `PolarPattern003` has 1024
+occurrences, is valid, its own part 1024 solids and its shape the 5129
+faces the file has; the warning is gone (the open: 1 error, 3 warnings).
+`TestLinkArray` 15 of 15 (`testRestoreKeepsOccurrencesOverTheLimit`, which
+was `testRestoreClampsOccurrences` and asserted the cut);
+`TestPartDesignApp` 347 with the two known thickness failures;
+`tests/gui/pattern-count-over-the-limit.py` (new) 9 claims; on the first
+step alone its "after OK, nothing typed, the array still holds it" read
+1000.
+
+**Asked by the reporter and NOT done, on their word ("do that in next
+session"):** "add some warning when enter edit if it exceeds. did we expose
+the setting to preference? mention this setting in warning message". The
+answer to the question: it is on no preference page; it is in the settings
+list the omni search reads (Part, "Most occurrences of a pattern"), and it
+is read once, so a change counts from the next start.
+
+## 30, again. One overlay preset, its colours the theme's -- DONE `438216ad93`, not pushed, not staged
+
+**The reporter, the same afternoon:** "also regarding the overlay themes. I
+have second thought. Can you make one overlay preset that can auto change
+its color to match the main theme, so the overlay preset only change the
+overlay pattern and their colors, like before".
+
+**What there is now.** Tools > Preset configurations has ONE "Overlay"
+(`data/settings/Overlay.FCParam`): the 35 layout keys the two old presets
+shared -- the panels in their overlays, the tree and the property view
+apart, the tree's hidden column, two overlay switches -- and no colour and
+no style sheet. The Themes menu is Classic, Dark and Light again; the two
+overlay themes of this morning and the script that wrote them are gone,
+and so is the handling of `ThemeStyleParametersFile` that only they needed.
+
+The overlay's colours follow the theme because they ARE the theme's, which
+this morning's work had already arranged: Dark and Light name the overlay
+sheet for see-through panels, carry the tree items' backing and give the
+console their own page for a background. Apply the preset under Dark and
+the overlay is Dark's; apply Light afterwards and the panels stay where
+they are and everything about them turns Light's.
+
+**Classic, changed with it.** Classic named no overlay sheet and left the
+choice to the colour scheme in effect, which is light for it -- so its
+overlay took the light sheet, dark text, over Classic's dark blue 3D view.
+It names `Dark-Outline.qss` now, with the tree backing, and gives the
+console the white page an editor has without a style sheet.
+
+**Kept from this morning:** Light, Dark and Classic each list every key
+another sets; Light's own syntax colours; the editor's current line and
+the console's old text taking a changed colour at once.
+
+**Scored.** `tests/gui/overlay-preset-follows-the-theme.py` (this
+morning's `theme-overlay-themes.py`, rewritten): 45 claims -- the menu,
+the preset's file holding the layout alone, the preset under Dark leaving
+the theme and the application's sheet as they were, Light after it, Classic
+after that, and each theme's console background and tree backing.
+`editor-colours-follow-the-theme.py` 18. Pictures in
+`..\dl\handson\2026-10-10\q2\g-t-e30overlay-dev`.
+
+**Of this morning's five choices, what is left for the reporter:** the
+plain themes leave the layout alone (now simply how a preset and a theme
+divide); the preset carries the old panel sizes; Dark and Light name the
+outline overlay sheets instead of upstream's `Dark_overlay.qss` and
+`Light_overlay.qss`; the unbundled packs are untouched. The 3D background
+is the theme's, as asked.
+
+## 58, once more. A pattern over the limit says so in its panel -- DONE `2a45e36492`, not pushed, not staged
+
+**The reporter, 2026-10-10 afternoon:** "add some warning when enter edit
+if it exceeds. did we expose the setting to preference? mention this
+setting in warning message".
+
+**What there is now.** A pattern whose count is over
+`Mod/Part/MaximumPatternOccurrences` opens its panel with a note under the
+count box:
+
+> This pattern has 1024 occurrences, more than the 1000 a pattern may be
+> given. They are kept: the count can be lowered here, not raised. The
+> limit is the setting "Most occurrences of a pattern"
+> (Mod/Part/MaximumPatternOccurrences). It is on no preference page, the
+> search box finds it, and a change of it counts from the next start.
+
+In the panel and not a message box: it stays for as long as the panel is
+open, beside the box whose odd upper end it explains, and entering edit of
+the code wheel is not stopped by a question each time. Both pattern panels
+have it, PartDesign's and the link array's, since the count boxes are
+`Gui/PatternWidgets`'; a pattern along a path too, whose count is another
+widget's. A count within the limit has no note. It is shown for as long as
+the property carries the range of its own that `a30fdda2a5` gave it, so it
+does not go away while the count is lowered and brought back in one edit.
+
+**The reporter's question, "did we expose the setting to preference?":**
+no. It is on no preference page; the search box lists it (Part, "Most
+occurrences of a pattern"), and it is read ONCE in a session
+(`occurrencesRange()` in `src/App/Pattern.cpp`, as upstream reads it), so
+a changed value counts from the next start -- the note says both. Two
+things left for the reporter to decide, neither done: a row for it on a
+preference page (Part Design's or Part's general page), and reading it
+again at each use, so that raising it works at once.
+
+**Scored.** `tests/gui/pattern-count-over-the-limit.py`, 16 claims, 7 of
+them new: the note in the panel of a linear array of 1024, once, with the
+count and the limit in it; the same for an array along a path; none in the
+panel of an array of 1000. Pictures `panel-over.png`, `panel-along.png`,
+`panel-within.png` in `..\dl\handson\2026-10-10\q2\g-o-overlimit-dev`. Not
+tried on `scanner.FCStd` itself: its panel is PartDesign's, the same
+widget, and the file is the reporter's.
+
+## 48, again. `element-color-hide.py`: the test's fault, and no leak between views -- FIXED `8a7595512d`, not pushed; this morning's finding WITHDRAWN
+
+**This log said this morning** that one view's own hide of a path takes the
+object out of the other view too, "when the hiding view is the first to be
+traversed after the hide". That is wrong. There is no such defect.
+
+**What it was.** The test makes its second view with `Std_ViewCreate` and
+then takes `gdoc.activeView()` for it. In the first document of a run that
+is the new view. In the second document -- the test's "mirror" half, the
+one that failed -- it answered view 1 again, so "the other view" was the
+hiding view itself and had of course lost the object. The check on the
+number of views (two) passed all the while. My probe of the morning had
+the same line, and its table's two rows were not two orders of traversal
+but the first document and the later ones: three of its four scenarios
+print "v1 picks" for both views, which I did not read.
+
+**With the views told apart** (`e48probe2.py`: the second view is the one
+in `mdiViewsOfType` that is not view 1), in four documents, both link
+modes, either view looked at first: view 2 picks Box2 and draws it (210,
+210, 235) after view 1's hide, before and after view 1 has picked and
+drawn; view 1 picks nothing and draws the background. The test, with the
+same change: 624 of 624.
+
+**Left, seen on the way and not chased to its end: which view is active
+after `Std_ViewCreate`.** `ViewPlacement` splits the area and makes the new
+view's cell the active one. Measured (`e48probe3.py`, `e48probe4.py`,
+`e48probe5.py`):
+
+| keyboard focus as the command runs | documents | active view after | focus after |
+|---|---|---|---|
+| in view 1's viewer | 9 of 9 | the new view | still in view 1's viewer |
+| on nothing | 3 of 3 | view 1 | in view 1's viewer |
+| on nothing, cleared by the script | 1 of 1 | the new view | on nothing |
+
+So where the focus arrives in view 1 while the command runs, view 1 is the
+active view again -- a view area makes the cell that takes the focus its
+active one (`ViewArea::onFocusChanged`) -- and where it was there already,
+the new view is active while the keys still go to the old one. What leaves
+a document with no focus at all is not found (the three were the second
+and later documents of `e48probe4.py`; a picture of each view before the
+close, tried in `e48probe5.py`, does not do it). A proposal, not made:
+the view placed in an area takes the focus with the activation, so the
+two agree. Nine more GUI tests take their second view the same way
+(`grep -A4 Std_ViewCreate tests/gui`); they pass, being the first document
+of their run, and are left as they are.

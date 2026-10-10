@@ -461,6 +461,13 @@ void TextEditor::OnChange(Base::Subject<const char*> &rCaller,const char* sReaso
         applyColor(QString::fromUtf8(sReason));
     }
 
+    // The band on the cursor's line is drawn when the cursor moves, so a
+    // new colour for it -- a theme was changed -- showed only at the next
+    // key press: the Dark theme's text on the Light theme's band until then.
+    if (strcmp(sReason, "Current line highlight") == 0) {
+        highlightCurrentLine();
+    }
+
     if (strcmp(sReason, "TabSize") == 0 || strcmp(sReason, "FontSize") == 0) {
         int tabWidth = hPrefGrp->GetInt("TabSize", EditorParams::defaultTabSize());
         QFontMetrics metric(font());

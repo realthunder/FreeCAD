@@ -1696,6 +1696,12 @@ fc_add_gui_test(GuiMsaaReachesTheView_tests_run
                 msaa-reaches-the-view.py
                 --timeout 180)
 
+# A line weighs the width it was asked for, fractions included, at every
+# angle, multisampled or not: what the coverage of fs_fc_line is for.
+fc_add_gui_test(GuiLineWeightIsItsWidth_tests_run
+                line-weight-is-its-width.py
+                --timeout 180)
+
 # The report view's settings are behind ReportViewParams: listed by the
 # omni search, one default each, followed at once -- and "Record critical
 # messages" no longer switches normal messages off.
@@ -1880,10 +1886,26 @@ fc_add_gui_test(GuiOmniSearchHighlightedRow_tests_run
                 omni-search-highlighted-row.py
                 --timeout 180)
 
-# A theme takes away the colours an overlay preset left behind -- the Python
-# console's background above all, which no theme listed and so none cleared.
-fc_add_gui_test(GuiThemeClearsOverlayPresetLeftovers_tests_run
-                theme-clears-overlay-preset-leftovers.py
+# The one overlay preset is the layout alone and its colours are the
+# theme's, whichever is applied before or after it; and no theme leaves a
+# key of another behind -- the editor's current line, the console's
+# background the old overlay presets used to leave.
+fc_add_gui_test(GuiOverlayPresetFollowsTheTheme_tests_run
+                overlay-preset-follows-the-theme.py
+                --timeout 300)
+
+# The Python editor and console take a theme's colours when it is applied --
+# the band on the current line, the text already in the console -- and each
+# theme's syntax colours can be read on its page.
+fc_add_gui_test(GuiEditorColoursFollowTheTheme_tests_run
+                editor-colours-follow-the-theme.py
+                --timeout 180)
+
+# A pattern keeps the count its file holds over MaximumPatternOccurrences,
+# which is a limit on what is typed in: through the load, and through its
+# panel, where OK stored the limit for it.
+fc_add_gui_test(GuiPatternCountOverTheLimit_tests_run
+                pattern-count-over-the-limit.py
                 --timeout 180)
 
 # A drag in a split view -- a corner zone or a border -- is shown as frames

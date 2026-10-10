@@ -1079,6 +1079,8 @@ void BGFXView::init(bool keepShared)
         ensureProgram(m_progLine, "vs_fc_line", "fs_fc_line");
         ensureProgram(m_progLineClip, "vs_fc_line_clip",
                       "fs_fc_line_clip");
+        if (lineCoverageOff())
+            ensureProgram(m_progLinePlain, "vs_fc_line", "fs_fc_flat");
         ensureProgram(m_progLinePat, "vs_fc_line_pat", "fs_fc_line_pat");
         ensureProgram(m_progLinePatClip, "vs_fc_line_pat_clip",
                       "fs_fc_line_pat_clip");
@@ -2169,7 +2171,8 @@ int BGFXView::readbackSyncForced()
     return forced;
 }
 
-uint32_t BGFXView::syncReadback(uint32_t frameNum, bool wait)
+uint32_t BGFXView::syncReadback(uint32_t frameNum, bool wait,
+                                const std::function<void()> &spun)
 {
     // A capture cannot trail, and the caller always asks it to wait.
     // The screen redraws the previous image and catches up a frame
@@ -2193,8 +2196,11 @@ uint32_t BGFXView::syncReadback(uint32_t frameNum, bool wait)
     if (!want || frameNum >= want)
         return frameNum;
     const int64_t t0 = bx::getHPCounter();
-    for (int i = 0; i < kReadbackSyncMaxFrames && frameNum < want; ++i)
+    for (int i = 0; i < kReadbackSyncMaxFrames && frameNum < want; ++i) {
         frameNum = bgfx::frame();
+        if (spun)
+            spun();
+    }
     readbackStats.waitMs += 1000.0 * double(bx::getHPCounter() - t0)
         / double(bx::getHPFrequency());
     return frameNum;

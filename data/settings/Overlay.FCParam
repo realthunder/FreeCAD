@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
 <FCParameters>
 
+  <!-- The dock windows in overlay mode: where the panels are, and nothing of
+       how they look. An overlay's colours are the theme's own: Dark and Light
+       name the overlay style sheet for see-through panels, and with no theme,
+       or the Classic one, the overlay picks the light or the dark one by the
+       colour scheme in effect. This is what OverlayDark.FCParam and
+       OverlayLight.FCParam were before 2026-10, less the colours and style
+       sheets they wrote over whatever theme was there. -->
   <FCParamGroup Name="Root">
     <FCParamGroup Name="BaseApp">
       <FCParamGroup Name="MainWindow">
@@ -47,13 +54,6 @@
       <FCParamGroup Name="Preferences">
         <FCParamGroup Name="TreeView">
           <FCBool Name="HideColumn" Value="1"/>
-          <FCUInt Name="TreeEditColor" Value="1431634175"/>
-          <FCUInt Name="ItemBackground" Value="20"/>
-          <FCUInt Name="TreeActiveColor" Value="1431666687"/>
-        </FCParamGroup>
-        <FCParamGroup Name="MainWindow">
-          <FCText Name="StyleSheet">Dark.qss</FCText>
-          <FCText Name="OverlayActiveStyleSheet">Dark-Outline.qss</FCText>
         </FCParamGroup>
         <FCParamGroup Name="DockWindows">
           <FCParamGroup Name="ComboView">
@@ -69,18 +69,11 @@
         <FCParamGroup Name="View">
           <FCBool Name="DockOverlayCheckNaviCube" Value="1"/>
           <FCBool Name="DockOverlayActivateOnHover" Value="0"/>
-          <FCBool Name="Gradient" Value="0"/>
-          <FCBool Name="Simple" Value="1"/>
-          <FCUInt Name="BackgroundColor" Value="1953789183"/>
-          <FCUInt Name="CursorCrosshairColor" Value="4294967295"/>
-        </FCParamGroup>
-        <FCParamGroup Name="Editor">
-          <FCUInt Name="Background" Value="3368601600"/>
         </FCParamGroup>
       </FCParamGroup>
     </FCParamGroup>
-    <FCText Name="Name">Overlay dark theme</FCText>
-    <FCText Name="ToolTip">Switch on dock widget overlay mode with a dark colored theme.</FCText>
+    <FCText Name="Name">Overlay</FCText>
+    <FCText Name="ToolTip">Switch on dock widget overlay mode. Its colours follow the theme.</FCText>
   </FCParamGroup>
 
 </FCParameters>

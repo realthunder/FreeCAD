@@ -254,6 +254,27 @@ std::string Gui::patternReferencePython(const App::DocumentObject* obj,
     return ss.str();
 }
 
+QString Gui::patternOverLimitText(const App::Property* prop)
+{
+    // A count over the limit has a range of its own that ends at what the
+    // file held (App::Pattern::setupProperties), which is what the spin box
+    // stops at: said for as long as that range is the property's
+    auto count = dynamic_cast<const App::PropertyIntegerConstraint*>(prop);
+    long limit = App::Pattern::maxOccurrences();
+    if (!count || count->getMaximum() <= limit) {
+        return {};
+    }
+    return QCoreApplication::translate(
+               "Gui::PatternWidgets",
+               "This pattern has %1 occurrences, more than the %2 a pattern may be given. "
+               "They are kept: the count can be lowered here, not raised. The limit is the "
+               "setting \"Most occurrences of a pattern\" (%3). It is on no preference page, "
+               "the search box finds it, and a change of it counts from the next start.")
+        .arg(count->getMaximum())
+        .arg(limit)
+        .arg(QStringLiteral("Mod/Part/MaximumPatternOccurrences"));
+}
+
 // ----------------------------------------------------------------------------
 
 PatternDirectionWidget::Properties
@@ -343,6 +364,10 @@ PatternDirectionWidget::PatternDirectionWidget(Kind kind, QWidget* parent)
     labelOccurrences = new QLabel(this);
     spinOccurrences = new Gui::UIntSpinBox(this);
     form->addRow(labelOccurrences, spinOccurrences);
+
+    labelOverLimit = new QLabel(this);
+    labelOverLimit->setWordWrap(true);
+    form->addRow(labelOverLimit);
 
     retranslate();
 
@@ -434,6 +459,14 @@ void PatternDirectionWidget::retranslate()
     labelMoreSpacings->setText(tr("The gaps after the first %1 are in the property editor, "
                                   "as Spacings.")
                                    .arg(MaxSpacingRows));
+    updateOverLimit();
+}
+
+void PatternDirectionWidget::updateOverLimit()
+{
+    QString text = patternOverLimitText(props.occurrences);
+    labelOverLimit->setText(text);
+    form->setRowVisible(labelOverLimit, !text.isEmpty());
 }
 
 void PatternDirectionWidget::bind(const Properties& p)
@@ -502,6 +535,7 @@ void PatternDirectionWidget::updateUI()
     spinExtent->setValue(props.extent->getValue());
     spinSpacing->setValue(props.spacing->getValue());
     spinOccurrences->setValue(props.occurrences->getValue());
+    updateOverLimit();
 
     if (hasIndividualSpacings()) {
         individual = true;
@@ -983,6 +1017,9 @@ PatternParametersWidget::PatternParametersWidget(Kind kind, QWidget* parent)
             });
             addRow("SpacingMode", mode);
             count("Count");
+            labelOverLimit = new QLabel(this);
+            labelOverLimit->setWordWrap(true);
+            form->addRow(labelOverLimit);
             quantity("Spacing");
             quantity("StartOffset");
             quantity("EndOffset");
@@ -1055,6 +1092,20 @@ void PatternParametersWidget::retranslate()
         combo->setItemText(1, tr("Fixed spacing"));
         combo->setItemText(2, tr("Fixed count and spacing"));
     }
+    updateOverLimit();
+}
+
+void PatternParametersWidget::updateOverLimit()
+{
+    if (!labelOverLimit) {
+        return;
+    }
+    // Not for a count its mode leaves unused, whose row is hidden
+    auto prop = object ? App::Pattern::getProperty(*object, "Count") : nullptr;
+    QString text = prop && !prop->testStatus(App::Property::Hidden) ? patternOverLimitText(prop)
+                                                                    : QString();
+    labelOverLimit->setText(text);
+    form->setRowVisible(labelOverLimit, !text.isEmpty());
 }
 
 void PatternParametersWidget::bind(App::DocumentObject* obj)
@@ -1128,6 +1179,7 @@ void PatternParametersWidget::updateUI()
         // The rows the other inputs leave unused, as the property editor
         form->setRowVisible(row.editor, !prop->testStatus(App::Property::Hidden));
     }
+    updateOverLimit();
 }
 
 void PatternParametersWidget::apply(App::DocumentObject* obj) const

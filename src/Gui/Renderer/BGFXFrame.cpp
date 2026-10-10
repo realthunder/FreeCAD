@@ -6710,13 +6710,27 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // per-draw C++, which is what phase 2 would attack. Only the
     // call is timed -- the GL context switches around it are Qt's
     // cost, not bgfx's, and folding them in would flatter phase 2.
+    // docs/FarFieldProxies.md sec 10.1: what the frame cost the CPU
+    // against what it cost the GPU. bgfx's statistics are read right
+    // after the boundary they describe, and after every boundary of the
+    // frame: a frame that waits for its readback copy spins empty ones
+    // behind this (syncReadback), and read at the end of the frame the
+    // statistics were those of the last empty one.
+    auto frameStatsOf = [&](bool first) {
+        accumulateFrameStats(frameStats, view->width, view->height,
+                             [&](uint16_t id) {
+                                 return view->passIndexOf(id);
+                             }, first);
+    };
     auto timedBgfxFrame = [&]() {
         const int64_t t0 = bx::getHPCounter();
         const uint32_t n = bgfx::frame();
-        if (debugconf.frameTiming)
+        if (debugconf.frameTiming) {
             frameStats.bgfxFrameMs += 1000.0
                 * double(bx::getHPCounter() - t0)
                 / double(bx::getHPFrequency());
+            frameStatsOf(true);
+        }
         return n;
     };
     uint32_t frameNum = 0;
@@ -6848,7 +6862,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
         const int forced = BGFXView::readbackSyncForced();
         const bool wait = capture
             || (forced < 0 ? !framePipelined : forced > 0);
-        frameNum = view->syncReadback(frameNum, wait);
+        frameNum = view->syncReadback(
+            frameNum, wait,
+            debugconf.frameTiming
+                ? std::function<void()>([&] { frameStatsOf(false); })
+                : std::function<void()>());
         // Forced pipelined is a measurement of that form alone: it
         // reports nothing to settle, or the host's settling frame would
         // be pipelined too and ask for the next one without end.
@@ -7070,12 +7088,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
         idReadyFrame = 0;
     }
 
-    // docs/FarFieldProxies.md §10.1: what that frame cost the CPU
-    // against what it cost the GPU. Sampled here rather than at the
-    // top of the next frame so that the numbers belong to a frame
-    // that was actually submitted -- publishScene returns early on
-    // several paths, and a sample taken on one of those would
-    // average a frame that drew nothing into the mean.
+    // The frame's statistics were taken at its boundaries
+    // (frameStatsOf), so they belong to a frame that was actually
+    // submitted -- publishScene returns early on several paths, and a
+    // sample taken on one of those would average a frame that drew
+    // nothing into the mean. What is left here is the report.
     // ⚠️ bgfx fills `viewStats` only while this is set, and it is a
     // whole-context switch rather than a per-view one — so it is
     // turned on with the timing readout and off with it, never left
@@ -7088,10 +7105,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
         Render::FrameOutside::setEnabled(profilerOn);
     }
     if (debugconf.frameTiming) {
-        accumulateFrameStats(frameStats, view->width, view->height,
-                             [&](uint16_t id) {
-                                 return view->passIndexOf(id);
-                             });
         const bool due = frameStatsDue();
         // Snapshot before the report, which resets the accumulator.
         std::map<int, std::pair<double, double>> viewMs;

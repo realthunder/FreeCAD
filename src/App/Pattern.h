@@ -173,6 +173,12 @@ public:
      * a file does not store, and the status their modes imply
      */
     static void setupProperties(Type type, PropertyContainer& obj);
+    /** The most occurrences a count may be set to: the parameter
+     * Mod/Part/MaximumPatternOccurrences, read once in a session. A count
+     * that a file holds over it is kept, with a range of its own that ends
+     * at the count.
+     */
+    static long maxOccurrences();
     /** Keep the dependent inputs of a pattern in step after \a prop changed:
      * the read-only side of Length/Offset (Angle/Offset) by Mode, Length and
      * Offset with each other, Spacings with Occurrences.
