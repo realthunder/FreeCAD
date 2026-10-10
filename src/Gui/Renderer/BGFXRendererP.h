@@ -10864,10 +10864,21 @@ public:
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 
-    /// GPU geometry bytes in use: the API's own number where it
-    /// reports one, else the upload accounting.
-    static size_t gpuUsedBytes()
+    /// GPU bytes in use, in the currency of the budget they are held
+    /// against (gpuBudgetBytes). A budget that was STATED is
+    /// GpuMemoryBudgetMB, "GPU memory the displayed geometry may use":
+    /// the upload accounting answers that. The API's own number is
+    /// everything the process holds -- render targets, textures, the
+    /// environment -- and belongs with the API's own limit. Held against
+    /// a stated budget it read as standing pressure on every backend
+    /// that reports one: a Direct3D session is hundreds of megabytes
+    /// before it has drawn an object, so a 1 MB budget (what
+    /// tests/gui/per-view-shown-eviction.py simulates, written where GL
+    /// reports nothing) dropped every line and point for good.
+    size_t gpuUsedBytes() const
     {
+        if (gpuBudget)
+            return s_gpuGeometryBytes.load();
         const bgfx::Stats *stats = _BGFXLib.deviceUp() ? bgfx::getStats() : nullptr;
         if (stats && stats->gpuMemoryUsed > 0)
             return size_t(stats->gpuMemoryUsed);
