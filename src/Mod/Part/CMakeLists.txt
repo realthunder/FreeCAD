@@ -68,6 +68,7 @@ set(Part_tests
     parttests/part_test_objects.py
     parttests/regression_tests.py
     parttests/ShapeListTest.py
+    parttests/ShapeDiffTest.py
     parttests/TopoShapeListTest.py
     parttests/ColorPerFaceTest.py
     parttests/ElementAppearanceTest.py

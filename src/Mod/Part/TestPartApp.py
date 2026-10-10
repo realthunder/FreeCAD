@@ -34,6 +34,7 @@ from parttests.ElementAppearanceTest import ElementAppearanceMadeTest, ElementAp
 from parttests.ElementNameTest import ElementNameTest, LoftCapNameTest
 from parttests.HLRProjectionTest import HLRProjectionTest
 from parttests.ShapeListTest import ShapeListTest
+from parttests.ShapeDiffTest import ShapeDiffTest
 from parttests.TopoShapeListTest import TopoShapeListTest
 
 #---------------------------------------------------------------------------

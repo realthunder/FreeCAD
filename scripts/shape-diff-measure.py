@@ -95,9 +95,10 @@ def canon(text, one):
         op = op0 if i == 0 else text[hops[i - 1].end():m.start()]
         toks.append([op, m.group(1), m.group(2), m.group(3)])
     tail = text[hops[-1].end():]
+    born = toks[0][2] in one        # made by an object of the one side: its steps stay
     new = []
     for op, sign, tag, ty in toks:
-        if tag in one and not sign and new:
+        if tag in one and not sign and new and not born:
             new[-1][0] = op
         else:
             new.append([op, sign, tag, ty])
@@ -210,6 +211,17 @@ def compare(tag, A, B, live=None):
         "" if related is None else " | getRelatedElements of the %d not paired by 1: %d, to several %d" % (len(onlyA), related, many)))
     print("SD %-20s   time (Python): 1 %.1f ms, 2 %.1f ms, 3 %.1f ms, 4 %.1f ms; geometry alone, all faces: %.1f ms, pairs %d; tags of one side %s" % (
         tag, t1 * 1e3, t2 * 1e3, t3 * 1e3, t4 * 1e3, tall * 1e3, foundAll, sorted(one)))
+    # the same asked of Part::ShapeDiff (sec 32.6), which is what is built from this
+    if hasattr(A, "diff"):
+        import collections
+        t = time.time(); d = A.diff(B); tc = time.time() - t
+        by = collections.Counter(e[2] for e in d["Face"]); what = collections.Counter(e[3] for e in d["Face"])
+        differ = sum(1 for e in d["Face"] if e[0] and e[1] and pairs.get(e[0]) != e[1])
+        print("SD %-20s   Shape.diff: 1 %d, 2 %d, 3 %d, 4 %d, left %d / %d; same %d moved %d changed %d; pairs other than above %d; %.1f ms (%s)%s" % (
+            tag, by["name"] + by["shape"], by["steps"], by["geometry"], by["around"], what["removed"], what["added"],
+            what["same"], what["moved"], what["changed"], differ, tc * 1e3,
+            ", ".join("%s %.1f" % (k, v * 1e3) for k, v in d["cost"].items() if v >= 5e-5),
+            " (the whole: same)" if d["same"] else " (the whole: moved)" if d["moved"] else ""))
     inv = {v: k for k, v in a.items()}; invb = {v: k for k, v in b.items()}
     for x in restA[:2]: print("SD %-20s     left in A %s: %s" % (tag, x, pa[inv[x]][:300]))
     for y in restB[:2]: print("SD %-20s     left in B %s: %s" % (tag, y, pb[invb[y]][:300]))

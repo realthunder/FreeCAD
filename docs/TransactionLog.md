@@ -17663,3 +17663,99 @@ spelled-out text; the build walks the steps.
 **So, for step 2:** the four stages as measured, each pair saying which
 stage found it, and whether it is changed said apart from how it was
 paired.
+
+### 32.6 Step 2, built: `Part::ShapeDiff` and `Shape.diff()` (2026-10-10)
+
+`src/Mod/Part/App/ShapeDiff.{h,cpp}`; Python
+`a.diff(b, edges=False, vertices=False, geometry=True, around=True, tol=1e-7)`.
+Headless, nothing of the view in it.
+
+**What it gives.** Whether the two are one shape, or one the other moved
+and by what motion; and for each face -- and each edge and vertex where
+asked for -- an entry: its index in A and in B (one of them none where it
+is added or removed), **how the pair was found** (`shape`, `name`,
+`steps`, `geometry`, `around`) and **what became of it** (`same`,
+`moved`, `changed`, `added`, `removed`). The two are said apart, as 32.5
+asked: a face found by its name may have changed, and one found by its
+geometry has a boundary that did not.
+
+**How.**
+
+- *The whole first*, so a shape only moved is not every face changed:
+  one `TShape` in one place; or the motion that every corner and every
+  edge's middle agrees with, element for element (`recoverShapeMotion`,
+  27.37), and each face on the surface it was. Then the pairs are by
+  index.
+- *Stage 1*, one name. One string table: the stored text. Two -- a
+  version open beside the document has its own -- the name spelled out.
+- *Stage 2*, the steps only one side has taken out. Which objects those
+  are is read off the names: the tags in any name of A that no name of B
+  has, and the reverse -- from the string table's entries, without
+  spelling a name out. Then each name stage 1 left is spelled out and
+  read as steps (32.5), and paired where one name on each side is left
+  equal. **An element the object made keeps its name**: where the first
+  step is the object's there is nothing before to fall back on. (The
+  measurement's own reading had not that; it changed none of its
+  numbers, and a test here found it.)
+- *Stage 3*, `searchSubShape`, where it gives one face not yet paired.
+- *Stage 4*, the paired faces around: for a face those it shares an edge
+  with, for an edge or a vertex those it is on; two or more, and one
+  element on each side with them. For faces again until none.
+- *What became of a pair.* One `TShape` in one place: same. Else its
+  corners, a point of each of its edges (three of an edge's own, so an
+  arc is not its chord) and its count of edges: where they agree in
+  place it is the same, where they agree after a motion it is moved --
+  the motion `recoverShapeMotion` finds, or a slide where there are too
+  few corners to say how it turned -- and else it is changed. A face
+  must be on one surface besides: a plane is its boundary; a cylinder, a
+  cone, a sphere, a torus are their boundary and a radius or two; any
+  other surface is asked for its area.
+
+**Against the measurement.** `scripts/shape-diff-measure.py` asks
+`Shape.diff` beside its own pairing: on the scanner's body every stage of
+every row of 32.5 has the same count, and no pair is another.
+
+**Cost**, the same 65 faces, in ms:
+
+| | all | read | whole | steps | geometry | around | what |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| pad longer | 7.5 | 1.3 | 0.6 | 2.7 | | 0.6 | 1.9 |
+| hole put in | 16.6 | 1.4 | | 3.2 | 2.5 | 0.6 | 8.6 |
+| pad longer / hole put in | 10.0 | 1.4 | | 3.8 | 1.9 | 0.7 | 1.8 |
+| hole put in / all four redrawn | 24.0 | 1.5 | | 4.4 | 6.8 | 0.7 | 9.7 |
+| a recompute that changed nothing | 13 | 1.2 | 12 | | | | |
+
+The first cut asked every pair for its area and the whole for its area
+and volume (the congruence index, which guards a shape stored in place of
+another and is right to): 25 ms and 60 ms of 30 to 65. What is left of
+`what` is the faces that are neither planes nor of a radius.
+
+**An object's tag is its id, and an id is the application's.** The same
+three objects made in two documents have other tags and share no name;
+the geometry and the faces around are what pairs them. A copy of the
+file opened beside the document has the same ids and another table, and
+pairs by name. Both are tests.
+
+**Tests.** gtest, 20: `ShapeDiffNameTest` (7, a name read as steps),
+`ShapeDiffTest` (10, a box with two holes cut in it: the same, recomputed
+as it was, moved, a parameter, a feature put in early and the other way
+about, each pair of one face, a face renamed here and changed there found
+by the faces around, edges and vertices, a copy of the file, two
+documents made apart) and `ShapeDiffPlainTest` (3, shapes with no names;
+null). Python `parttests.ShapeDiffTest`, 4, for what the dict is.
+
+**Left.**
+
+- *A name longer than 64 KB spelled out* is left to the stages after.
+  Names grow with every feature and every name an operation lists; none
+  here is near it (900 characters at 15 features).
+- *Stage 3 asks the whole of B for each element left*: fine for what the
+  names leave, slow for two large shapes with no names at all.
+- *An element with two names* is known by its first.
+- *Edges and vertices* are tested, not measured on the model.
+- *Two documents made apart* pair by geometry only; an import's tags are
+  mapped (30.16), and the diff could be given that map.
+
+**Next (32.4):** step 3, a value at a state as a shape -- the log's value
+into a `TopoShape` with its names -- so that the two shapes to diff can
+be had from a row, a branch or a version.
