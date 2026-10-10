@@ -2839,6 +2839,11 @@ void TransactionLog::ValueTask::captureNow(const CaptureConfig& config)
         captured = captureValue(config, *copy);
         isCaptured = true;
     }
+    else {
+        // Written on the worker: what it shares with the live value is
+        // held until then (sec 31.31).
+        hold = copy->holdForOffThread();
+    }
 }
 
 void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops)

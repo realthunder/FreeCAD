@@ -1513,10 +1513,16 @@ bool PropertyPartShape::canSaveOffThread() const
     // thread that asks, the worker's Save finds it there and writes
     // nothing to the cache.
     _Shape.flushElementMap();
-    // And the map itself is shared, and edited in place by whoever edits
-    // it: told that a reader on another thread has it now (sec 31.28).
-    _Shape.holdElementMap();
     return true;
+}
+
+std::shared_ptr<void> PropertyPartShape::holdForOffThread() const
+{
+    // The map is one object for every copy of the shape, and edited in
+    // place by whoever edits it: held while the reader has it, a name made
+    // meanwhile waits beside it (docs/TransactionLog.md sec 31.28, 31.31).
+    ensureRestored();
+    return _Shape.holdElementMap();
 }
 
 void PropertyPartShape::Paste(const App::Property &from)

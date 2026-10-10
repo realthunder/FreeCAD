@@ -394,6 +394,15 @@ public:
      */
     virtual bool canSaveOffThread() const { return true; }
 
+    /** Holds, for a reader on another thread, what this value shares with
+     * others that is not to change under that reader, until what is
+     * returned is let go of -- on any thread. Asked on the main thread of a
+     * value that answered yes to canSaveOffThread(), as it is handed over.
+     * Null where there is nothing to hold, which is the default. A shape
+     * holds its element map (docs/TransactionLog.md sec 31.31).
+     */
+    virtual std::shared_ptr<void> holdForOffThread() const { return {}; }
+
     /// Set value by interpolate between two values
     virtual void interpolate(const Property &from, const Property &to, float t) {
         (void)from;

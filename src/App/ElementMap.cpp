@@ -316,10 +316,12 @@ static ElementMapPtr& restoredMap(unsigned id)
 // A map that a value given to another thread holds -- a shape's copy the
 // transaction log saves on its worker, the auto saver on its pool -- is read
 // there with no lock, and a map is edited in place, with no copy made for
-// whoever else holds it (docs/TransactionLog.md sec 31.28). The check: such a
-// map is marked when the value is handed over, and an edit of a marked map
-// is counted and reported. On with FC_ELEMENTMAP_CHECK in the environment
-// ("abort" to stop at the first, for a stack), or by a test.
+// whoever else holds it (docs/TransactionLog.md sec 31.28). So a map is
+// counted as held from the handover until its reader is done, and a name
+// made meanwhile waits beside the map and is taken in afterwards (sec
+// 31.31). The check: an edit of a map while it is held is counted and
+// reported. On with FC_ELEMENTMAP_CHECK in the environment ("abort" to stop
+// at the first, for a stack), or by a test.
 static std::atomic<int> _heldMapCheck {-1};
 static std::atomic<unsigned long> _heldMapEdits {0};
 
@@ -346,20 +348,117 @@ static void editedWhileHeld(const char *how)
 class ElementMap : public std::enable_shared_from_this<ElementMap> {
 public:
 
-    /// Marks this map and the maps of its children as held by a value
-    /// another thread reads. Only while the check is on.
-    void hold() const
+    /// A name made where the map could not be written, waiting to be taken
+    /// in: ComplexGeoData::deferElementName().
+    struct PendingName
     {
-        if (_held || !checkingHeldMaps())
+        IndexedName element;
+        MappedName name;
+        ElementIDRefs sids;
+        /// What the name was made of, and what each of those named then:
+        /// the name is taken in only while they still do.
+        std::vector<std::pair<MappedName, IndexedName>> lower;
+        PendingName *next = nullptr;
+    };
+
+    ~ElementMap()
+    {
+        dropPending();
+    }
+
+    /// Whether a reader on another thread has this map
+    bool held() const
+    {
+        return _holds.load(std::memory_order_acquire) > 0;
+    }
+
+    /** Counts this map and the maps of its children -- a save writes them
+     * all -- as held, each once, and gives them in 'out' for release(). The
+     * main thread's alone. A map nobody held yet first takes in the names
+     * that waited, so the value handed over has them.
+     */
+    void hold(std::vector<std::shared_ptr<const ElementMap>> &out,
+              std::set<const ElementMap*> &seen) const
+    {
+        if (!seen.insert(this).second)
             return;
-        std::map<const ElementMap*, int> childMapSet;
-        std::vector<const ElementMap*> childMaps;
-        std::map<QByteArray, int> postfixMap;
-        std::vector<QByteArray> postfixes;
-        collectChildMaps(childMapSet, childMaps, postfixMap, postfixes);
-        for (const ElementMap *map : childMaps)
-            map->_held = true;
-        _held = true;
+        if (!held())
+            const_cast<ElementMap*>(this)->mergePending();
+        ++_holds;
+        out.push_back(shared_from_this());
+        for (auto &v : this->indexedNames) {
+            for (auto &child : v.second.children) {
+                if (child.second.elementMap)
+                    child.second.elementMap->hold(out, seen);
+            }
+        }
+    }
+
+    /// The reader is done. Any thread's.
+    void release() const
+    {
+        --_holds;
+    }
+
+    /** Puts a name to wait: any thread's, and no lock. The node is linked to
+     * the head this thread saw and swapped in, again if another got there
+     * first. Nobody but the taker ever unlinks or frees one.
+     */
+    void defer(PendingName *node) const
+    {
+        node->next = _pending.load(std::memory_order_relaxed);
+        while (!_pending.compare_exchange_weak(node->next, node,
+                                               std::memory_order_release,
+                                               std::memory_order_relaxed)) {
+        }
+    }
+
+    /** Takes in the names that waited: the main thread's, and only while
+     * nobody holds the map. The whole list is taken with one exchange. A
+     * name goes in unless the map has moved on under it: its element has a
+     * name by now, one of the names it was made of is gone or names another
+     * element, or the name itself is another element's.
+     */
+    void mergePending()
+    {
+        PendingName *list = _pending.exchange(nullptr, std::memory_order_acquire);
+        PendingName *ordered = nullptr;   // oldest first
+        while (list) {
+            PendingName *next = list->next;
+            list->next = ordered;
+            ordered = list;
+            list = next;
+        }
+        while (ordered) {
+            std::unique_ptr<PendingName> node(ordered);
+            ordered = node->next;
+            if (findMapped(node->element))
+                continue;
+            bool stale = false;
+            for (auto &lower : node->lower) {
+                if (!(findMapped(lower.first) == lower.second)) {
+                    stale = true;
+                    break;
+                }
+            }
+            if (stale)
+                continue;
+            IndexedName existing;
+            MappedName name = node->name;
+            addName(name, node->element, node->sids, false, &existing);
+        }
+    }
+
+    /// Lets go of the names that wait: the map is going, or is being read
+    /// again from a file.
+    void dropPending()
+    {
+        PendingName *list = _pending.exchange(nullptr, std::memory_order_acquire);
+        while (list) {
+            PendingName *next = list->next;
+            delete list;
+            list = next;
+        }
     }
 
     ElementMap()
@@ -661,6 +760,7 @@ public:
         }
         map = shared_from_this();
         changed("restore");
+        dropPending();
 
         const char *hasherWarn = nullptr;
         const char *hasherIDWarn = nullptr;
@@ -940,7 +1040,39 @@ public:
         return true;
     }
 
+    /// A name that waits to be taken in (mergePending) is found as one the
+    /// map has: whoever was given it finds its element by it.
     IndexedName find(const MappedName &name, ElementIDRefs * sids = nullptr) const
+    {
+        IndexedName res = findMapped(name, sids);
+        if (!res) {
+            for (auto *node = _pending.load(std::memory_order_acquire); node; node = node->next) {
+                if (node->name == name) {
+                    if (sids)
+                        *sids += node->sids;
+                    return node->element;
+                }
+            }
+        }
+        return res;
+    }
+
+    MappedName find(const IndexedName &idx, ElementIDRefs * sids = nullptr) const
+    {
+        MappedName res = findMapped(idx, sids);
+        if (!res && idx) {
+            for (auto *node = _pending.load(std::memory_order_acquire); node; node = node->next) {
+                if (node->element == idx) {
+                    if (sids)
+                        *sids += node->sids;
+                    return node->name;
+                }
+            }
+        }
+        return res;
+    }
+
+    IndexedName findMapped(const MappedName &name, ElementIDRefs * sids = nullptr) const
     {
         auto it = mappedNames.find(name);
         if (it == mappedNames.end()) {
@@ -990,7 +1122,7 @@ public:
         return it->second;
     }
 
-    MappedName find(const IndexedName &idx, ElementIDRefs * sids = nullptr) const
+    MappedName findMapped(const IndexedName &idx, ElementIDRefs * sids = nullptr) const
     {
         if (!idx)
             return MappedName();
@@ -1523,14 +1655,17 @@ private:
     /// (translateElementMap).
     unsigned long _revision = 0;
 
-    /// A value another thread reads holds this map: see hold().
-    mutable bool _held = false;
+    /// How many readers on other threads have this map: see hold().
+    mutable std::atomic<int> _holds {0};
+
+    /// The names that wait: see defer().
+    mutable std::atomic<PendingName*> _pending {nullptr};
 
     /// Every edit of the map comes through here.
     void changed(const char *how)
     {
         ++_revision;
-        if (_held)
+        if (_holds.load(std::memory_order_relaxed) > 0 && checkingHeldMaps())
             editedWhileHeld(how);
     }
 
@@ -1914,10 +2049,54 @@ void ComplexGeoData::flushElementMap() const
 {
 }
 
-void ComplexGeoData::holdElementMap() const
+namespace {
+/// The maps one handover holds, let go of together
+struct HeldMaps
 {
-    if (_elementMap)
-        _elementMap->hold();
+    std::vector<std::shared_ptr<const ElementMap>> maps;
+    ~HeldMaps()
+    {
+        for (auto &map : maps)
+            map->release();
+    }
+};
+}
+
+std::shared_ptr<void> ComplexGeoData::holdElementMap() const
+{
+    if (!_elementMap)
+        return {};
+    auto held = std::make_shared<HeldMaps>();
+    std::set<const ElementMap*> seen;
+    _elementMap->hold(held->maps, seen);
+    return held;
+}
+
+bool ComplexGeoData::isElementMapHeld() const
+{
+    return _elementMap && _elementMap->held();
+}
+
+void ComplexGeoData::deferElementName(const IndexedName &element, const MappedName &name,
+                                      const ElementIDRefs &sids,
+                                      const std::vector<MappedName> &lower) const
+{
+    if (!_elementMap || !element || !name)
+        return;
+    auto node = new ElementMap::PendingName;
+    node->element = element;
+    node->name = name;
+    node->sids = sids;
+    node->lower.reserve(lower.size());
+    for (const auto &low : lower)
+        node->lower.emplace_back(low, _elementMap->find(low));
+    _elementMap->defer(node);
+}
+
+void ComplexGeoData::mergeDeferredElementNames()
+{
+    if (_elementMap && !_elementMap->held())
+        _elementMap->mergePending();
 }
 
 void ComplexGeoData::setElementMapCheck(bool on)
@@ -2247,6 +2426,15 @@ void ComplexGeoData::setPersistenceFileName(const char *filename) const {
 }
 
 void ComplexGeoData::Save(Base::Writer &writer) const {
+
+    // The names that waited go into what the main thread saves (sec 31.31).
+    // A save on another thread is of a map that is held, and writes it as
+    // it was handed over.
+    if (App::Application::isMainThread()) {
+        flushElementMap();
+        if (_elementMap && !_elementMap->held())
+            _elementMap->mergePending();
+    }
 
     if(!getElementMapSize()) {
         writer.Stream() << writer.ind() << "<ElementMap/>\n";

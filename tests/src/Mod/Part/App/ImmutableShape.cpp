@@ -61,6 +61,7 @@
 #include <chrono>
 #include <future>
 #include <thread>
+#include <vector>
 
 // The OCCT fork's Immutable flag (docs/TransactionLog.md sec 23.6): a
 // shape held as a property value refuses every change to its geometry and
@@ -265,83 +266,252 @@ TEST_F(PropertyShapeImmutableTest, aCopyForTheWorkerHasItsElementMap)
 }
 
 // A copy given to the worker shares its element map with the live value and
-// with every other copy, and a map is edited in place. The check
-// (ComplexGeoData::holdElementMap, FC_ELEMENTMAP_CHECK) marks the map when
-// the copy is handed over and counts an edit of it afterwards
-// (docs/TransactionLog.md sec 31.28).
-TEST_F(PropertyShapeImmutableTest, anEditOfAMapTheWorkerHoldsIsCounted)
-{
-    struct Checking
-    {
-        Checking() { Data::ComplexGeoData::setElementMapCheck(true); }
-        ~Checking() { Data::ComplexGeoData::setElementMapCheck(false); }
-    } checking;
-    const App::StringHasherRef hasher = _doc->getStringHasher();
-    Part::TopoShape one(1, hasher, BRepPrimAPI_MakeBox(10, 20, 30).Shape());
-    Part::TopoShape two(2, hasher, BRepPrimAPI_MakeBox(1, 2, 3).Shape());
-    Part::TopoShape both(_feature->getID(), hasher);
-    both.makECompound({one, two});
-    _feature->Shape.setValue(both);
-    ASSERT_GT(_feature->Shape.getShape().getElementMapSize(), 0U);
+// with every other copy, and a map is edited in place. So the map is held
+// from the handover until the reader is done (Property::holdForOffThread),
+// and the check (FC_ELEMENTMAP_CHECK) counts an edit of it meanwhile
+// (docs/TransactionLog.md sec 31.28, 31.31).
+namespace {
 
-    // Not held yet: a name given to a copy of the value is no finding.
+struct CheckingHeldMaps
+{
+    CheckingHeldMaps() { Data::ComplexGeoData::setElementMapCheck(true); }
+    ~CheckingHeldMaps() { Data::ComplexGeoData::setElementMapCheck(false); }
+    CheckingHeldMaps(const CheckingHeldMaps&) = delete;
+    CheckingHeldMaps& operator=(const CheckingHeldMaps&) = delete;
+};
+
+} // namespace
+
+class HeldElementMapTest: public PropertyShapeImmutableTest
+{
+protected:
+    /// A compound of two boxes, named, as the feature's own value
+    void SetUp() override
+    {
+        PropertyShapeImmutableTest::SetUp();
+        _hasher = _doc->getStringHasher();
+        Part::TopoShape one(1, _hasher, BRepPrimAPI_MakeBox(10, 20, 30).Shape());
+        Part::TopoShape two(2, _hasher, BRepPrimAPI_MakeBox(1, 2, 3).Shape());
+        Part::TopoShape both(_feature->getID(), _hasher);
+        both.makECompound({one, two});
+        _feature->Shape.setValue(both);
+        _names = _feature->Shape.getShape().getElementMapSize();
+        ASSERT_GT(_names, 0U);
+    }
+
+    std::size_t names() const
+    {
+        return _feature->Shape.getShape().getElementMapSize();
+    }
+
+    std::pair<std::string, std::string> nameOf(const char* element) const
+    {
+        return _feature->getElementName(element, App::GeoFeature::Export);
+    }
+
+    App::StringHasherRef _hasher;
+    std::size_t _names = 0;
+    CheckingHeldMaps _checking;
+};
+
+TEST_F(HeldElementMapTest, anEditOfAHeldMapIsCounted)
+{
     const unsigned long before = Data::ComplexGeoData::elementMapEditsWhileHeld();
+    // Not held: a name given to a copy of the value is no finding.
     Part::TopoShape early = _feature->Shape.getShape();
     early.setElementName(Data::IndexedName::fromConst("Face", 1), Data::MappedName("early"));
     EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before);
 
     std::unique_ptr<App::Property> copy(_feature->Shape.Copy());
     ASSERT_TRUE(copy->canSaveOffThread());
+    std::shared_ptr<void> hold = copy->holdForOffThread();
+    ASSERT_TRUE(hold);
+    EXPECT_TRUE(_feature->Shape.getShape().isElementMapHeld());
     // What a later shape is made of is its own map: no finding.
-    Part::TopoShape made(_feature->getID(), hasher);
+    Part::TopoShape made(_feature->getID(), _hasher);
     made.makECompound({_feature->Shape.getShape()});
     EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before);
-    // A name given in place to a copy of the value is the worker's map
+    // A name set in place on a copy of the value is the reader's map
     // changed under it.
     Part::TopoShape late = _feature->Shape.getShape();
     late.setElementName(Data::IndexedName::fromConst("Face", 2), Data::MappedName("late"));
+    EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before + 1);
+    // The reader done, it is nobody's but the main thread's again.
+    hold.reset();
+    EXPECT_FALSE(_feature->Shape.getShape().isElementMapHeld());
+    late.setElementName(Data::IndexedName::fromConst("Face", 3), Data::MappedName("later"));
     EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before + 1);
 }
 
 // A solid has no name of its own: asked for one, a feature makes it of its
 // faces' names and keeps it in the shape's element map -- the property's own
-// map, written through a copy of the shape. On the main thread that stands
-// as it was. On any other thread nothing shared is written: the name is made
-// in a map of the call's own and with no string table, and the property's
-// map is as it was (docs/TransactionLog.md sec 31.29).
-TEST_F(PropertyShapeImmutableTest, aSolidNamedOffTheMainThreadLeavesTheMapAlone)
+// map, written through a copy of the shape. That was the one edit of a held
+// map the check found (sec 31.28). While the map is held the name waits
+// beside it, found there by whoever asks, and goes in once the reader is
+// done.
+TEST_F(HeldElementMapTest, aSolidNamedWhileTheMapIsHeldWaits)
+{
+    const unsigned long edits = Data::ComplexGeoData::elementMapEditsWhileHeld();
+    std::unique_ptr<App::Property> copy(_feature->Shape.Copy());
+    std::shared_ptr<void> hold = copy->holdForOffThread();
+
+    const auto made = nameOf("Solid1");
+    EXPECT_NE(made.first.find(".Solid1"), std::string::npos);
+    EXPECT_EQ(made.second, "Solid1");
+    EXPECT_EQ(names(), _names);   // not in the map
+    EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), edits);
+    // Asked again it is the same name, and the name finds the solid.
+    EXPECT_EQ(nameOf("Solid1"), made);
+    EXPECT_EQ(nameOf(made.first.c_str()).second, "Solid1");
+    EXPECT_EQ(names(), _names);
+
+    hold.reset();
+    // Still waiting: nothing takes it in but a hold, a save, or being asked to.
+    EXPECT_EQ(names(), _names);
+    Part::TopoShape value = _feature->Shape.getShape();
+    value.mergeDeferredElementNames();
+    EXPECT_EQ(names(), _names + 1);
+    EXPECT_EQ(nameOf("Solid1"), made);
+    EXPECT_EQ(nameOf(made.first.c_str()).second, "Solid1");
+}
+
+// The next handover takes the waiting names in first, so the value handed
+// over has them.
+TEST_F(HeldElementMapTest, aHandoverTakesInWhatWaited)
+{
+    std::unique_ptr<App::Property> copy(_feature->Shape.Copy());
+    std::shared_ptr<void> hold = copy->holdForOffThread();
+    const auto made = nameOf("Solid1");
+    EXPECT_EQ(names(), _names);
+    hold.reset();
+
+    hold = copy->holdForOffThread();
+    EXPECT_EQ(names(), _names + 1);
+    EXPECT_EQ(nameOf("Solid1"), made);
+}
+
+// Off the main thread nothing writes the map at all: the name waits, held or
+// not, and it is the name the main thread would have made -- the string
+// table has a lock (sec 31.30).
+TEST_F(HeldElementMapTest, aSolidNamedOffTheMainThreadWaits)
 {
     ASSERT_TRUE(App::Application::isMainThread());
-    const App::StringHasherRef hasher = _doc->getStringHasher();
-    Part::TopoShape one(1, hasher, BRepPrimAPI_MakeBox(10, 20, 30).Shape());
-    Part::TopoShape two(2, hasher, BRepPrimAPI_MakeBox(1, 2, 3).Shape());
-    Part::TopoShape both(_feature->getID(), hasher);
-    both.makECompound({one, two});
-    _feature->Shape.setValue(both);
-    const std::size_t names = _feature->Shape.getShape().getElementMapSize();
-    ASSERT_GT(names, 0U);
-    const std::size_t strings = hasher->size();
-
     bool there = true;
     std::pair<std::string, std::string> made;
     std::thread other([&]() {
         there = App::Application::isMainThread();
-        made = _feature->getElementName("Solid1", App::GeoFeature::Export);
+        made = nameOf("Solid1");
     });
     other.join();
     EXPECT_FALSE(there);
-    // A name was made, and neither the map nor the table has it.
-    EXPECT_FALSE(made.first.empty());
-    EXPECT_NE(made.first.find("Solid1"), std::string::npos);
-    EXPECT_EQ(_feature->Shape.getShape().getElementMapSize(), names);
-    EXPECT_EQ(hasher->size(), strings);
+    EXPECT_NE(made.first.find(".Solid1"), std::string::npos);
+    EXPECT_EQ(names(), _names);
+    // The main thread knows it, and makes no other.
+    EXPECT_EQ(nameOf(made.first.c_str()).second, "Solid1");
+    EXPECT_EQ(nameOf("Solid1"), made);
 
-    // Here it is kept, as ever, and found there the next time.
-    const auto kept = _feature->getElementName("Solid1", App::GeoFeature::Export);
-    EXPECT_FALSE(kept.first.empty());
-    EXPECT_EQ(_feature->Shape.getShape().getElementMapSize(), names + 1);
-    EXPECT_EQ(_feature->getElementName("Solid1", App::GeoFeature::Export), kept);
-    EXPECT_EQ(_feature->Shape.getShape().getElementMapSize(), names + 1);
+    Part::TopoShape value = _feature->Shape.getShape();
+    value.mergeDeferredElementNames();
+    EXPECT_EQ(names(), _names + 1);
+    EXPECT_EQ(nameOf("Solid1"), made);
+}
+
+// A waiting name is not taken in where the map moved on under it.
+TEST_F(HeldElementMapTest, aStaleNameIsDropped)
+{
+    Part::TopoShape value = _feature->Shape.getShape();
+    const Data::IndexedName solid = Data::IndexedName::fromConst("Solid", 1);
+    const Data::IndexedName face1 = Data::IndexedName::fromConst("Face", 1);
+    const Data::IndexedName face2 = Data::IndexedName::fromConst("Face", 2);
+    // Names of this map's own, which can be taken away again: a face of a
+    // compound is named through the map of the box it came from.
+    const Data::MappedName low1 =
+        value.setElementName(face1, Data::MappedName("lowone;:H1:1,F"));
+    const Data::MappedName low2 =
+        value.setElementName(face2, Data::MappedName("lowtwo;:H1:1,F"));
+    ASSERT_TRUE(low1 && low2);
+
+    // One of the names it was made of is gone.
+    value.deferElementName(solid, Data::MappedName("waiting;:H1:1,S"), {}, {low1, low2});
+    EXPECT_EQ(value.getIndexedName(Data::MappedName("waiting;:H1:1,S")), solid);
+    ASSERT_TRUE(value.eraseElementName(low2));
+    value.mergeDeferredElementNames();
+    EXPECT_FALSE(value.getIndexedName(Data::MappedName("waiting;:H1:1,S")));
+
+    // The element was named meanwhile.
+    value.deferElementName(solid, Data::MappedName("second;:H1:1,S"), {}, {low1});
+    value.setElementName(solid, Data::MappedName("first;:H1:1,S"));
+    value.mergeDeferredElementNames();
+    EXPECT_FALSE(value.getIndexedName(Data::MappedName("second;:H1:1,S")));
+    EXPECT_EQ(value.getIndexedName(Data::MappedName("first;:H1:1,S")), solid);
+
+    // The name is another element's by then.
+    const Data::IndexedName shell = Data::IndexedName::fromConst("Shell", 1);
+    value.deferElementName(shell, Data::MappedName("taken;:H1:1,S"), {}, {low1});
+    value.setElementName(face2, Data::MappedName("taken;:H1:1,S"));
+    value.mergeDeferredElementNames();
+    EXPECT_EQ(value.getIndexedName(Data::MappedName("taken;:H1:1,S")), face2);
+
+    // And a map that is replaced takes its waiting names with it.
+    value.deferElementName(shell, Data::MappedName("gone;:H1:1,S"), {}, {low1});
+    Part::TopoShape other(_feature->getID(), _hasher, BRepPrimAPI_MakeBox(4, 5, 6).Shape());
+    other.setElementName(face1, Data::MappedName("another;:H1:1,F"));
+    _feature->Shape.setValue(other);
+    Part::TopoShape now = _feature->Shape.getShape();
+    now.mergeDeferredElementNames();
+    EXPECT_FALSE(now.getIndexedName(Data::MappedName("gone;:H1:1,S")));
+}
+
+// Many givers, one taker, no lock. Each thread has the map held for it and
+// a shape of its own over it -- its own cache, which asking a shape for its
+// parts writes (sec 31.27) -- and asks for the same names; the main thread
+// takes them in afterwards, each element named once.
+TEST_F(HeldElementMapTest, namesGivenFromManyThreadsAreTakenInOnce)
+{
+    struct Naming: Part::Feature
+    {
+        using Part::Feature::getExportElementName;
+    };
+    const auto* naming = static_cast<const Naming*>(_feature);
+    constexpr int threads = 8;
+    constexpr int rounds = 100;
+    struct Mapped: Part::TopoShape
+    {
+        using Data::ComplexGeoData::elementMap;
+    };
+    const Part::TopoShape value = _feature->Shape.getShape();
+    const Data::ElementMapPtr map = static_cast<const Mapped&>(value).elementMap();
+    ASSERT_TRUE(map);
+    std::unique_ptr<App::Property> copy(_feature->Shape.Copy());
+    std::shared_ptr<void> hold = copy->holdForOffThread();
+    std::vector<std::thread> givers;
+    std::vector<std::pair<std::string, std::string>> first(threads);
+    std::vector<std::pair<std::string, std::string>> second(threads);
+    for (int t = 0; t < threads; ++t) {
+        givers.emplace_back([&, t]() {
+            for (int i = 0; i < rounds; ++i) {
+                Part::TopoShape own(value.Tag, _hasher, value.getShape());
+                own.resetElementMap(map);
+                first[t] = naming->getExportElementName(own, "Solid1");
+                second[t] = naming->getExportElementName(own, "Solid2");
+            }
+        });
+    }
+    for (auto& giver : givers)
+        giver.join();
+    for (int t = 1; t < threads; ++t) {
+        EXPECT_EQ(first[t], first[0]);
+        EXPECT_EQ(second[t], second[0]);
+    }
+    EXPECT_NE(first[0].first, second[0].first);
+    EXPECT_NE(first[0].first.find(".Solid1"), std::string::npos);
+    EXPECT_EQ(names(), _names);
+    hold.reset();
+    Part::TopoShape now = _feature->Shape.getShape();
+    now.mergeDeferredElementNames();
+    EXPECT_EQ(names(), _names + 2);
+    EXPECT_EQ(nameOf("Solid1"), first[0]);
+    EXPECT_EQ(nameOf("Solid2"), second[0]);
 }
 
 TEST(ImmutableShapeTest, booleanGoesNonDestructive)

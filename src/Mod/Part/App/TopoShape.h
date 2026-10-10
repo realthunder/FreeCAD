@@ -2525,6 +2525,16 @@ public:
                                          const char *op=nullptr,
                                          const Data::ElementIDRefs *sids=nullptr);
 
+    /** The name setElementComboName() would give the element, made and not
+     * set: nothing of the shape is written. 'sids' gets the strings the
+     * name refers to, on top of what it holds.
+     */
+    Data::MappedName makeElementComboName(const Data::IndexedName & element,
+                                          const std::vector<Data::MappedName> &names,
+                                          const char *marker,
+                                          const char *op,
+                                          Data::ElementIDRefs &sids) const;
+
     std::vector<Data::MappedName> decodeElementComboName(const Data::IndexedName &element,
                                                          const Data::MappedName &name,
                                                          const char *marker=nullptr,

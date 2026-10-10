@@ -528,22 +528,23 @@ Feature::getExportElementName(TopoShape shape, const char *name) const
                     // change the element map inside the Shape property without
                     // recording the change in undo stack.
                     //
-                    // And on another thread that write is one nobody may
-                    // make: the main thread reads and edits this map, and
-                    // so does making the name hash it into the document's
-                    // string table, which has no lock either. There the
-                    // name is made in a map of this call's own, with no
-                    // table -- spelled out, as a shape with no table spells
-                    // its names -- and the property's map is left as it is
-                    // (docs/TransactionLog.md sec 31.29).
-                    if (App::Application::isMainThread()) {
+                    // Not on another thread, where that write is one nobody
+                    // may make, and not while a reader on another thread
+                    // has the map -- the transaction log's worker, saving a
+                    // copy of the shape. Then the name is made and not set:
+                    // it waits beside the map, is found there by whoever
+                    // asks, and is taken in by the main thread once nobody
+                    // holds the map (docs/TransactionLog.md sec 31.31). The
+                    // string table the name is hashed into has a lock.
+                    if (App::Application::isMainThread() && !shape.isElementMapHeld()) {
                         mapped.name = shape.setElementComboName(
                                 mapped.index, names, mapped.index.getType(), op.c_str());
                     }
                     else {
-                        TopoShape own(shape.Tag, App::StringHasherRef(), shape.getShape());
-                        mapped.name = own.setElementComboName(
-                                mapped.index, names, mapped.index.getType(), op.c_str());
+                        Data::ElementIDRefs sids;
+                        mapped.name = shape.makeElementComboName(
+                                mapped.index, names, mapped.index.getType(), op.c_str(), sids);
+                        shape.deferElementName(mapped.index, mapped.name, sids, names);
                     }
                 }
             }

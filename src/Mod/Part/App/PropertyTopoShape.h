@@ -151,6 +151,9 @@ public:
     /// False while the TShapes are not frozen: they are shared, and may be
     /// edited in place (docs/TransactionLog.md sec 27.99).
     bool canSaveOffThread() const override;
+    /// The element map, which every copy of the shape shares
+    /// (docs/TransactionLog.md sec 31.31).
+    std::shared_ptr<void> holdForOffThread() const override;
     unsigned int getMemSize (void) const override;
     //@}
 

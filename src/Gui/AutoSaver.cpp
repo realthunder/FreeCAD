@@ -360,6 +360,7 @@ class RecoveryRunnable : public QRunnable
 public:
     RecoveryRunnable(const std::set<std::string>& modes, const char* dir, const char* file, const App::Property* p)
         : prop(p->Copy())
+        , hold(p->holdForOffThread())
         , writer(dir)
     {
         writer.setModes(modes);
@@ -390,6 +391,8 @@ public:
 
 private:
     App::Property* prop;
+    /// What the copy shares with the live value, held until it is written
+    std::shared_ptr<void> hold;
     Base::FileWriter writer;
     QString dirName;
     QString fileName;

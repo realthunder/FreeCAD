@@ -17105,7 +17105,7 @@ an edit before the handover is no finding, a new shape made of the value
 is none, a name set on a copy of the value afterwards is one. TechDraw's
 own section tests cover the cut.
 
-### 31.29 A solid named off the main thread, and where its name is to wait (user, 2026-10-10; the first part built, the rest proposed)
+### 31.29 A solid named off the main thread, and where its name is to wait (user, 2026-10-10; the first part built, the rest proposed -- and built since, 31.30 and 31.31)
 
 **Ruled (user)**, on 31.28's three: "(a), but check the thread and only do
 that if it is not the main thread. propose a way to cache the name in a
@@ -17270,6 +17270,96 @@ chain recomputed):
 
 **Gates:** 18 Gui checks, Python 3105 with the freeze on and off, ctest
 894 both.
+
+### 31.31 A name made where the map may not be written waits beside it (user, 2026-10-10; built)
+
+31.29's proposal, with its Q1 answered by 31.30 -- the table has a lock,
+so a name made on another thread is the name the main thread would make,
+and there is one spelling -- and Q2, Q3 and Q4 as recommended (the user:
+"yes").
+
+**The rule.** A thread other than the main one reads a shape's element
+map only while the map is held for it. The main thread edits a map in
+place only while nobody holds it. A name made where that does not allow a
+write waits beside the map.
+
+**Held.** `App::Property::holdForOffThread()`: asked on the main thread
+of a value that goes to another thread, it gives back something that
+holds what the value shares until it is let go of, on any thread. A shape
+holds its element map and the maps of its children -- a save writes them
+all -- each counted once (`ComplexGeoData::holdElementMap`, a count in
+the map). The log's `ValueTask` keeps it from the commit until the task
+is gone, which is after the worker wrote it; the auto saver's runnable
+keeps it likewise. 31.28's mark, which was set once and stayed, is this
+count now, and the check (`FC_ELEMENTMAP_CHECK`) reports an edit of a map
+while it is held.
+
+**The list is on the map, not on the shape's cache.** The user's "lock
+free queue in TopoShape" was proposed on `TopoShape::Cache` (31.29). But
+a caller off the main thread is to be given a shape with a cache of its
+own (Q4; asking a shape for its parts writes its cache, 31.27), and such
+a shape shares the map with the property's and not the cache: a list on
+the cache would be one the main thread never sees. The map is also what
+is written. So: one atomic pointer in `Data::ElementMap`.
+
+- *Given* (`ComplexGeoData::deferElementName`, any thread, no lock): a
+  node -- the element, the name, its string ids, and the names it was made
+  of with what each of those named at the time -- is linked to the head
+  the thread saw and swapped in, again if another thread got there first.
+- *Found.* A lookup that misses the map goes through the list, by name
+  and by element: whoever was given the name finds the element by it, and
+  asked again is given the same name. Nodes are only ever added while a
+  map is held, so a reader that holds the map walks the list safely.
+- *Taken in* (`mergePending`, the main thread, nobody holding): the whole
+  list with one exchange, oldest first.
+
+**What is stale is dropped** ("be careful of map clear so as to not merge
+staled value"):
+
+- the element has a name by now;
+- one of the names it was made of is gone from the map, or names another
+  element than it did;
+- the name is another element's (`addName` refuses it);
+- and a map that is replaced -- a new value, `resetElementMap` -- is
+  another object: the list is the old map's and goes with it. A map read
+  again from a file lets go of its list.
+
+**When.** Where a map nobody holds is about to be held (so a value handed
+over has what waited), where the main thread saves it, and when asked
+(`mergeDeferredElementNames`). Not at the next lookup, which Q3 had
+recommended: a lookup finds a waiting name without that, and the three
+moments are the ones where it matters that the map has it.
+
+**The one site** (31.28). `Part::Feature::getExportElementName` sets the
+name in place on the main thread while nobody holds the map, as ever.
+Otherwise -- another thread, or the main one while the log's worker has
+the map -- it makes the name (`TopoShape::makeElementComboName`,
+`setElementComboName` without the set) and gives it to the list. The
+branch of 31.29, a shape of the call's own with no string table, is gone
+with its second spelling.
+
+**Measured.** The gates with the check on: the eight edits of 31.28 are
+none. `race.py` (31.27): three runs of 1500 turns, none died.
+
+**Tests.** gtest `HeldElementMapTest`, six: an edit of a held map is
+counted, and not once the reader is done; a solid named while the map is
+held waits, is found, and goes in when asked; a handover takes in what
+waited; a solid named on another thread waits, and the main thread knows
+the name and makes no other; a stale name is dropped, each of the four
+ways; and eight threads, each with the map held and a shape of its own
+over it, ask for two names a hundred times and the main thread takes in
+two. The last ran 300 times over.
+
+**Left.**
+
+- *What a hold costs is not measured.* It walks the maps of everything
+  the shape was made of, at every handover -- as the save that follows
+  does.
+- *Only names wait.* Any other edit of a held map -- `addChildElements`,
+  an erase -- is still made in place; the check reports it, and found
+  none.
+- *A caller off the main thread* must be given the map held and a shape
+  with its own cache. Nothing is one yet but the last of the tests.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 

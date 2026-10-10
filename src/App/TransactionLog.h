@@ -552,6 +552,10 @@ private:
         /// The hash the worker already wrote this copy under, when the
         /// copy is one it wrote as an after value: not serialised again.
         std::shared_ptr<std::string> hashIn;
+        /// What the copy shares that must not change while the worker reads
+        /// it (Property::holdForOffThread): held from the commit until the
+        /// task is gone, which is after it was written.
+        std::shared_ptr<void> hold;
         void captureNow(const CaptureConfig& config);
     };
 

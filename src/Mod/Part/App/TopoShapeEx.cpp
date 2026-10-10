@@ -4036,6 +4036,21 @@ Data::MappedName TopoShape::setElementComboName(const Data::IndexedName & elemen
                                                 const char *op,
                                                 const Data::ElementIDRefs *_sids)
 {
+    Data::ElementIDRefs sids;
+    if (_sids)
+        sids = *_sids;
+    Data::MappedName newName = makeElementComboName(element, names, marker, op, sids);
+    if (!newName)
+        return newName;
+    return setElementName(element,newName,&sids);
+}
+
+Data::MappedName TopoShape::makeElementComboName(const Data::IndexedName & element,
+                                                 const std::vector<Data::MappedName> &names,
+                                                 const char *marker,
+                                                 const char *op,
+                                                 Data::ElementIDRefs &sids) const
+{
     if(names.empty())
         return Data::MappedName();
     std::string _marker;
@@ -4048,9 +4063,6 @@ Data::MappedName TopoShape::setElementComboName(const Data::IndexedName & elemen
     auto it = names.begin();
     Data::MappedName newName = *it;
     std::ostringstream ss;
-    Data::ElementIDRefs sids;
-    if (_sids)
-        sids = *_sids;
     if(names.size() == 1) 
         ss << marker;
     else {
@@ -4074,7 +4086,7 @@ Data::MappedName TopoShape::setElementComboName(const Data::IndexedName & elemen
         }
     }
     encodeElementName(element[0],newName,ss,&sids,op);
-    return setElementName(element,newName,&sids);
+    return newName;
 }
 
 std::vector<Data::MappedName>
