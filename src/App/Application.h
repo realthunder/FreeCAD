@@ -460,6 +460,13 @@ public:
     static void initTypes();
     static void destruct();
     static void destructObserver();
+    /** Whether the caller is on the main thread: the one the application
+     * was made on, which is the one documents and their objects are used
+     * from. True before there is an application. For code that may write
+     * what only that thread may write -- a shape's element map, the
+     * document's string table (docs/TransactionLog.md sec 31.29).
+     */
+    static bool isMainThread();
     static void processCmdLineFiles();
     static std::list<std::string> getCmdLineFiles();
     static std::list<std::string> processFiles(const std::list<std::string>&);

@@ -17105,6 +17105,115 @@ an edit before the handover is no finding, a new shape made of the value
 is none, a name set on a copy of the value afterwards is one. TechDraw's
 own section tests cover the cut.
 
+### 31.29 A solid named off the main thread, and where its name is to wait (user, 2026-10-10; the first part built, the rest proposed)
+
+**Ruled (user)**, on 31.28's three: "(a), but check the thread and only do
+that if it is not the main thread. propose a way to cache the name in a
+multi thread safe way so that later main thread can merge to cached
+name". And, while it was being built: "maybe add some lock free queue in
+TopoShape to hold the cache. be careful of map clear so as to not merge
+staled value".
+
+**Built.**
+
+- `App::Application::isMainThread()`: the thread the application was made
+  on; true before there is one.
+- `Part::Feature::getExportElementName`, where it sets the name it made:
+  on the main thread as it was, into the shape's map. On any other thread
+  the name is made on a shape of the call's own -- its own cache, its own
+  map, and **no string table**.
+
+**The string table is the second thing that write touches.** Making the
+name hashes its long part into the document's table
+(`setElementComboName`, `Hasher->getID`), and the table has no lock
+either: TechDraw's section cut says so of itself and names on the main
+thread for that reason. So off the main thread the name is spelled out,
+as a shape with no table spells its names.
+
+**Measured** (gtest, the solid of a compound of two boxes):
+
+| | the name |
+| --- | --- |
+| off the main thread | `;Face1;:H1,F;Solid(Face2;:H1,F\|Face3;:H1,F);:H1:1f,S.Solid1` |
+| on the main thread | `;#3;Solid#1;:H1:8,S.Solid1` |
+| the first, asked of the main thread afterwards | the same, with `?Solid1`: **missing** |
+
+Off the main thread the map has the names it had and the table the
+strings it had; on it the map has one more, as ever.
+
+**What this does not do.**
+
+- *31.28's finding is on the main thread*, and stands: the main thread
+  writes the name while the log's worker may be reading the map.
+- *A name made off the main thread is one the main thread does not know.*
+  Kept by its caller -- a reference set on a worker -- it reads as a
+  missing element later. Nothing calls this off the main thread today.
+- *The rest of the function is as it was*: it asks the shape for its
+  parts, which writes the shape's cache (31.27), and reads a map the main
+  thread may be editing.
+
+Those three are what the cache is for.
+
+**Proposed: the names wait on the shape's cache, and the main thread
+takes them in.**
+
+- *Where.* `TopoShape::Cache`, which every copy of a shape shares and
+  which is replaced when the shape is (`initCache`, `isTouched`): one
+  atomic pointer, the head of a list.
+- *Lock free, many givers and one taker.* A giver links its node to the
+  head it saw and swaps it in (compare and exchange, again if it lost).
+  The taker -- the main thread alone -- takes the whole list with one
+  exchange and owns every node from then on. No node is freed while a
+  giver could reach it, and no giver reads another's node, so there is
+  nothing to guard: the same name asked twice is made twice, which costs
+  little and gives the same text.
+- *A node* is the element (`Solid1`), the name as it was given out, the
+  lower names it was made of with the postfix, and **which map it was
+  made against** -- a weak reference to the `ElementMap`, not its
+  address, which another map may get later.
+- *Taking them in* is the main thread's, where it next uses the shape's
+  map through that cache -- `flushElementMap` is called there already --
+  and never while the map is held by a reader on another thread (below).
+  For each node, oldest first:
+  1. **Stale, dropped:** its map is gone, or is not the one the cache
+     holds now (`resetElementMap` gave the shape another; a shape that
+     changed has another cache and never sees the list at all).
+  2. **Stale, dropped:** the main thread makes the name for that element
+     itself, from the map as it is now, by the code that runs today. If
+     the lower names it comes to are not the node's, the map moved on
+     under the name.
+  3. Else the main thread's name goes into the map, hashed, as today --
+     and the name that was given out goes in **beside it, a second name
+     of the same element**, which a map has room for. Whoever kept it
+     finds the element by it.
+  A `resetElementMap` to another map empties the list as it clears the
+  cache's sub-shapes; a giver that pushes after that carries the old
+  map, and falls to 1.
+- *The main thread while a reader holds the map* (31.28's finding). The
+  mark of 31.28 becomes a count, always on: up where a copy is handed
+  over, down when its reader is done, from any thread. The main thread
+  edits a map in place only at zero; otherwise its name -- hashed, the
+  table being its own -- waits in the same list, and is given out from
+  there if asked again. The value the worker saves is then the value as
+  it was handed over, and has one content.
+- *Cost.* A pointer in each cache and a count in each map; nothing is
+  locked and nothing is allocated until a name is made where it cannot be
+  written.
+
+**To be ruled.**
+
+| | Question | Recommended |
+| --- | --- | --- |
+| Q1 | What a caller off the main thread is given | **The spelled out name, kept as a second name at the merge.** The other way is a lock on the string table, so that the name is the main thread's at once: every `getID` on the main thread then pays for it. |
+| Q2 | Whether the main thread's own name waits too while the map is held | **Yes.** It is what closes 31.28, and without it the list only serves callers that do not exist yet. It needs the count taken down when a reader is done, which the worker's task has a place for. |
+| Q3 | When the list is taken in | **At the main thread's next use of the map.** At the end of a recompute or at a commit would be one known moment, and one more thing to remember to call. |
+| Q4 | The shape's cache for a caller off the main thread (the third of the above) | **Not in this.** Such a caller is given a shape whose cache nothing else holds, as the section cut is now (31.28). |
+
+**Tests.** gtest
+`PropertyShapeImmutableTest.aSolidNamedOffTheMainThreadLeavesTheMapAlone`:
+a name is made on another thread, the map and the table are as they
+were; on the main thread it is kept, and found there the next time.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

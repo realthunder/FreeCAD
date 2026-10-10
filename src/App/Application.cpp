@@ -49,6 +49,7 @@
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <thread>
 
 #include <QCoreApplication>
 #include <QDir>
@@ -257,9 +258,18 @@ init_image_module()
     return PyModule_Create(&ImageModuleDef);
 }
 
+/// The thread the application was made on; none before that
+static std::thread::id _mainThreadId;
+
+bool Application::isMainThread()
+{
+    return _mainThreadId == std::thread::id() || _mainThreadId == std::this_thread::get_id();
+}
+
 Application::Application(std::map<std::string,std::string> &mConfig)
   : _mConfig(mConfig)
 {
+    _mainThreadId = std::this_thread::get_id();
     //_hApp = new ApplicationOCC;
     mpcPramManager["System parameter"] = _pcSysParamMngr;
     mpcPramManager["User parameter"] = _pcUserParamMngr;

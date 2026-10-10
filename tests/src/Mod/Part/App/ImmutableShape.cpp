@@ -303,6 +303,47 @@ TEST_F(PropertyShapeImmutableTest, anEditOfAMapTheWorkerHoldsIsCounted)
     EXPECT_EQ(Data::ComplexGeoData::elementMapEditsWhileHeld(), before + 1);
 }
 
+// A solid has no name of its own: asked for one, a feature makes it of its
+// faces' names and keeps it in the shape's element map -- the property's own
+// map, written through a copy of the shape. On the main thread that stands
+// as it was. On any other thread nothing shared is written: the name is made
+// in a map of the call's own and with no string table, and the property's
+// map is as it was (docs/TransactionLog.md sec 31.29).
+TEST_F(PropertyShapeImmutableTest, aSolidNamedOffTheMainThreadLeavesTheMapAlone)
+{
+    ASSERT_TRUE(App::Application::isMainThread());
+    const App::StringHasherRef hasher = _doc->getStringHasher();
+    Part::TopoShape one(1, hasher, BRepPrimAPI_MakeBox(10, 20, 30).Shape());
+    Part::TopoShape two(2, hasher, BRepPrimAPI_MakeBox(1, 2, 3).Shape());
+    Part::TopoShape both(_feature->getID(), hasher);
+    both.makECompound({one, two});
+    _feature->Shape.setValue(both);
+    const std::size_t names = _feature->Shape.getShape().getElementMapSize();
+    ASSERT_GT(names, 0U);
+    const std::size_t strings = hasher->size();
+
+    bool there = true;
+    std::pair<std::string, std::string> made;
+    std::thread other([&]() {
+        there = App::Application::isMainThread();
+        made = _feature->getElementName("Solid1", App::GeoFeature::Export);
+    });
+    other.join();
+    EXPECT_FALSE(there);
+    // A name was made, and neither the map nor the table has it.
+    EXPECT_FALSE(made.first.empty());
+    EXPECT_NE(made.first.find("Solid1"), std::string::npos);
+    EXPECT_EQ(_feature->Shape.getShape().getElementMapSize(), names);
+    EXPECT_EQ(hasher->size(), strings);
+
+    // Here it is kept, as ever, and found there the next time.
+    const auto kept = _feature->getElementName("Solid1", App::GeoFeature::Export);
+    EXPECT_FALSE(kept.first.empty());
+    EXPECT_EQ(_feature->Shape.getShape().getElementMapSize(), names + 1);
+    EXPECT_EQ(_feature->getElementName("Solid1", App::GeoFeature::Export), kept);
+    EXPECT_EQ(_feature->Shape.getShape().getElementMapSize(), names + 1);
+}
+
 TEST(ImmutableShapeTest, booleanGoesNonDestructive)
 {
     TopoDS_Shape a = BRepPrimAPI_MakeBox(2, 2, 2).Shape();

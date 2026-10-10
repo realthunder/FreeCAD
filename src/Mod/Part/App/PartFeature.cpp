@@ -528,8 +528,23 @@ Feature::getExportElementName(TopoShape shape, const char *name) const
                     // change the element map inside the Shape property without
                     // recording the change in undo stack.
                     //
-                    mapped.name = shape.setElementComboName(
-                            mapped.index, names, mapped.index.getType(), op.c_str());
+                    // And on another thread that write is one nobody may
+                    // make: the main thread reads and edits this map, and
+                    // so does making the name hash it into the document's
+                    // string table, which has no lock either. There the
+                    // name is made in a map of this call's own, with no
+                    // table -- spelled out, as a shape with no table spells
+                    // its names -- and the property's map is left as it is
+                    // (docs/TransactionLog.md sec 31.29).
+                    if (App::Application::isMainThread()) {
+                        mapped.name = shape.setElementComboName(
+                                mapped.index, names, mapped.index.getType(), op.c_str());
+                    }
+                    else {
+                        TopoShape own(shape.Tag, App::StringHasherRef(), shape.getShape());
+                        mapped.name = own.setElementComboName(
+                                mapped.index, names, mapped.index.getType(), op.c_str());
+                    }
                 }
             }
         }
