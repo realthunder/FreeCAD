@@ -54,6 +54,7 @@
 # include <QStandardItemModel>
 # include <QTabWidget>
 # include <QScrollBar>
+# include <QSlider>
 # include <QTreeView>
 # include <QTreeWidget>
 # include <QVBoxLayout>
@@ -61,6 +62,8 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <App/DocumentObserver.h>
 #include <App/DocumentParams.h>
 #include <App/FileBlobManager.h>
 #include <App/FileHistory.h>
@@ -73,6 +76,7 @@
 #include "Document.h"
 #include "FileDialog.h"
 #include "SceneRequests.h"
+#include "ViewProviderDocumentObject.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
 
@@ -315,6 +319,133 @@ protected:
 
 } // namespace
 
+/** A value at two states, shown in the 3D view (docs/TransactionLog.md sec
+ * 32.9): which two, where between them, and whether what did not change is
+ * left out. The object's view provider is asked to show it
+ * (ViewProviderDocumentObject::showValueDiff) and says whether it can; what
+ * it shows is taken away when another value is given, or this goes.
+ */
+class Gui::DockWnd::TransactionDiffBar: public QWidget
+{
+public:
+    /// Two values of the property, each by its ref in the log -- empty for
+    /// the one the object has now -- or not `there`.
+    struct Pair
+    {
+        bool there {false};
+        std::string a;
+        std::string b;
+    };
+
+    /// `pairs`: what each pair setValue() is given is called; the choice is
+    /// not shown where there is one only.
+    TransactionDiffBar(QWidget* parent, const QStringList& pairs)
+        : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("TransactionDiffBar"));
+        auto layout = new QHBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(new QLabel(QObject::tr("In the 3D view:"), this));
+        _pair = new QComboBox(this);
+        _pair->setObjectName(QStringLiteral("diffPair"));
+        _pair->addItems(pairs);
+        _pair->addItem(QObject::tr("nothing"));
+        layout->addWidget(_pair);
+        _position = new QSlider(Qt::Horizontal, this);
+        _position->setObjectName(QStringLiteral("diffPosition"));
+        _position->setRange(0, 100);
+        _position->setValue(100);
+        _position->setFixedWidth(120);
+        _position->setToolTip(QObject::tr("From the first of the two to the second"));
+        layout->addWidget(_position);
+        _only = new QCheckBox(QObject::tr("Differences only"), this);
+        _only->setObjectName(QStringLiteral("diffOnly"));
+        layout->addWidget(_only);
+        _said = new QLabel(this);
+        _said->setObjectName(QStringLiteral("diffStatus"));
+        layout->addWidget(_said, 1);
+        QObject::connect(_pair, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                         [this](int) { update(); });
+        QObject::connect(_position, &QSlider::valueChanged, this, [this](int) { update(); });
+        QObject::connect(_only, &QCheckBox::toggled, this, [this](bool) { update(); });
+        update();
+    }
+
+    ~TransactionDiffBar() override
+    {
+        hideShown();
+    }
+
+    /// Property `prop` of object `cid` of `doc`, and its values for each pair.
+    void setValue(App::Document* doc, long cid, const std::string& prop, std::vector<Pair> pairs)
+    {
+        auto obj = doc ? doc->getObjectByID(cid) : nullptr;
+        _object = obj ? App::DocumentObjectT(obj) : App::DocumentObjectT();
+        _prop = prop;
+        _pairs = std::move(pairs);
+        update();
+    }
+
+    void clear()
+    {
+        setValue(nullptr, 0, std::string(), {});
+    }
+
+private:
+    static ViewProviderDocumentObject* viewOf(const App::DocumentObjectT& which)
+    {
+        auto obj = which.getObject();
+        return obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                         Application::Instance->getViewProvider(obj))
+                   : nullptr;
+    }
+
+    void hideShown()
+    {
+        if (auto view = viewOf(_shown))
+            view->hideValueDiff();
+        _shown = App::DocumentObjectT();
+    }
+
+    void update()
+    {
+        const int index = _pair->currentIndex();
+        const Pair* pair = index >= 0 && index < static_cast<int>(_pairs.size()) && _pairs[index].there
+                               ? &_pairs[index] : nullptr;
+        auto view = pair ? viewOf(_object) : nullptr;
+        if (view != viewOf(_shown))
+            hideShown();
+        _said->clear();
+        if (!view)
+            return;
+        if (!view->showValueDiff(_prop.c_str(), pair->a, pair->b, _position->value() / 100.f,
+                                 _only->isChecked())) {
+            hideShown();
+            return;
+        }
+        _shown = _object;
+        const auto shown = view->getValueDiff();
+        auto count = [&](const char* name) {
+            auto it = shown.find(name);
+            return it == shown.end() ? 0 : it->second;
+        };
+        _said->setText(QObject::tr("%1 as they were, %2 changed, %3 new, %4 gone")
+                           .arg(count("same"))
+                           .arg(count("changed") + count("moved"))
+                           .arg(count("added"))
+                           .arg(count("removed")));
+    }
+
+    QComboBox* _pair {nullptr};
+    QSlider* _position {nullptr};
+    QCheckBox* _only {nullptr};
+    QLabel* _said {nullptr};
+    App::DocumentObjectT _object;
+    std::string _prop;
+    std::vector<Pair> _pairs;
+    App::DocumentObjectT _shown;
+};
+
 TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* parent)
     : DockWindow(pcDocument, parent)
     , _graph(std::make_unique<GraphLayout>())
@@ -409,6 +540,9 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
 
     auto splitter = new QSplitter(Qt::Vertical, this);
     layout->addWidget(splitter, 1);
+    // The op selected, before against after, in the 3D view (sec 32.9)
+    _diffBar = new TransactionDiffBar(this, {tr("before against after")});
+    layout->addWidget(_diffBar);
 
     // Two views over the store on the first pane -- the transactions and
     // the versions -- each with its own detail on the second: the ops of
@@ -638,6 +772,7 @@ void TransactionLogView::detach()
     _versions->clear();
     _manifest->clear();
     _value->clear();
+    _diffBar->clear();
     updateStatus();
 }
 
@@ -663,6 +798,7 @@ void TransactionLogView::showEvent(QShowEvent* ev)
 void TransactionLogView::hideEvent(QHideEvent* ev)
 {
     _refreshTimer.stop();
+    _diffBar->clear();
     DockWindow::hideEvent(ev);
 }
 
@@ -932,6 +1068,7 @@ void TransactionLogView::onTransactionSelected()
 {
     _ops->clear();
     _value->clear();
+    _diffBar->clear();
     auto items = _transactions->selectedItems();
     if (items.isEmpty())
         return;
@@ -967,6 +1104,8 @@ void TransactionLogView::showOps(int64_t seq)
             item->setData(OpBefore, Qt::UserRole, QString::fromStdString(op.vbefore));
             item->setData(OpAfter, Qt::UserRole, QString::fromStdString(op.vafter));
             item->setData(OpProp, Qt::UserRole, QString::fromStdString(op.meta));
+            item->setData(OpContainer, Qt::UserRole,
+                          op.ckind == "obj" ? static_cast<qlonglong>(op.cid) : 0);
             if (!op.meta.empty())
                 item->setToolTip(OpProp, QString::fromStdString(op.meta));
             item->setTextAlignment(OpIdx, Qt::AlignRight | Qt::AlignVCenter);
@@ -984,12 +1123,19 @@ void TransactionLogView::showOps(int64_t seq)
 void TransactionLogView::onOpSelected()
 {
     _value->clear();
+    _diffBar->clear();
     auto items = _ops->selectedItems();
     if (items.isEmpty())
         return;
     auto item = items.front();
     QString before = item->data(OpBefore, Qt::UserRole).toString();
     QString after = item->data(OpAfter, Qt::UserRole).toString();
+    // What the op made of the value, over the object as it is now. An op
+    // with no value before made the property, and has nothing to be against.
+    const long cid = static_cast<long>(item->data(OpContainer, Qt::UserRole).toLongLong());
+    if (cid && !before.isEmpty() && !after.isEmpty())
+        _diffBar->setValue(_doc, cid, item->text(OpProp).toStdString(),
+                           {{true, before.toStdString(), after.toStdString()}});
     QString meta = item->data(OpProp, Qt::UserRole).toString();
     QString text;
     if (!meta.isEmpty())
@@ -1345,7 +1491,7 @@ public:
     /// `rows`: the preview is of rows picked out of the log (sec 31.12),
     /// applied here, and not of a branch merged.
     MergeDialog(const App::Document::MergePreview& preview, const QString& ours,
-                App::TransactionLog* log, QWidget* parent, bool rows = false)
+                App::TransactionLog* log, App::Document* doc, QWidget* parent, bool rows = false)
         : QDialog(parent)
     {
         setObjectName(QStringLiteral("TransactionMergeDialog"));
@@ -1404,6 +1550,8 @@ public:
         const QColor quiet = _tree->palette().color(QPalette::Disabled, QPalette::Text);
         for (const auto* c : order) {
             auto item = new QTreeWidgetItem(_tree);
+            item->setData(Object, Qt::UserRole, static_cast<int>(_changes.size()));
+            _changes.push_back(c);
             item->setText(Kind, QString::fromStdString(c->kind + " " + c->op));
             item->setText(Object, c->ckind == "doc" ? QObject::tr("(document)")
                                                     : QString::fromStdString(c->object));
@@ -1493,6 +1641,27 @@ public:
                              _linking = false;
                          });
 
+        // The change selected, in the 3D view (sec 32.9). Ours is what the
+        // document has: an empty ref.
+        _diff = new TransactionDiffBar(this, {QObject::tr("ours against theirs"),
+                                              QObject::tr("base against ours"),
+                                              QObject::tr("base against theirs")});
+        layout->addWidget(_diff);
+        QObject::connect(_tree, &QTreeWidget::itemSelectionChanged, this, [this, doc]() {
+            const auto items = _tree->selectedItems();
+            const App::Document::MergeChange* c =
+                items.isEmpty() ? nullptr
+                                : _changes[items.front()->data(Object, Qt::UserRole).toInt()];
+            if (!c || c->ckind != "obj" || c->prop.empty()) {
+                _diff->clear();
+                return;
+            }
+            _diff->setValue(doc, c->cid, c->prop,
+                            {{!c->theirs.empty(), std::string(), c->theirs},
+                             {!c->base.empty(), c->base, std::string()},
+                             {!c->base.empty() && !c->theirs.empty(), c->base, c->theirs}});
+        });
+
         auto buttons = new QDialogButtonBox(this);
         auto merge = buttons->addButton(rows ? QObject::tr("Apply") : QObject::tr("Merge"),
                                         QDialogButtonBox::AcceptRole);
@@ -1532,6 +1701,9 @@ private:
     }
 
     QTreeWidget* _tree {nullptr};
+    /// The change of each row, by the number the row holds
+    std::vector<const App::Document::MergeChange*> _changes;
+    TransactionDiffBar* _diff {nullptr};
     std::vector<std::pair<std::string, QComboBox*>> _sides;
     std::vector<QComboBox*> _conflicts;
     /// The rows that go in with nothing asked: each may be unticked.
@@ -1586,7 +1758,7 @@ void TransactionLogView::mergeBranch(const QString& name)
         }
         App::LogBranch mine;
         l->store().getBranch(l->branch(), mine);
-        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, this);
+        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, _doc, this);
         if (dialog.exec() != QDialog::Accepted)
             return;
         const auto result = _doc->mergeBranch(name.toStdString(), dialog.picks());
@@ -1662,7 +1834,7 @@ void TransactionLogView::applyRows(const QString& seqs)
         }
         App::LogBranch mine;
         l->store().getBranch(l->branch(), mine);
-        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, this, true);
+        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, _doc, this, true);
         if (dialog.exec() != QDialog::Accepted)
             return;
         const auto result = _doc->pickRows(rows, dialog.picks());

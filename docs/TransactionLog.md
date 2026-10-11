@@ -17872,3 +17872,90 @@ no log.
 
 **Next (32.4):** step 4, the overlay in the 3D view, and its entry from
 the merge dialog and from a row.
+
+### 32.9 Step 4, built: the two states over the object, from a row and from the merge dialog (2026-10-11)
+
+**The entry is the view provider's** (32.3 Q5), so that it is Part's
+first and another's after:
+`ViewProviderDocumentObject::showValueDiff(prop, a, b, position,
+differencesOnly)`, `hideValueDiff()`, `getValueDiff()`, and the same
+three in Python. `a` and `b` are refs of the log; **an empty ref is the
+value the object has now**. False where the view provider shows no such
+thing of that property, or the log does not hold a value. Asked again
+with the same two, only the position and the switch are taken.
+
+**Part's** (`ViewProviderPartExt`, `PartGui::ShapeDiffView`). The two
+shapes are read (32.8) and compared (32.6), faces only. Each kind of
+face is a shape of its own -- a compound of the faces, which are the
+states' own `TShape`s -- drawn by a Part view provider of the object
+that is no view provider of the document, as PartDesign's preview of a
+feature is, in an annotation under the object's root:
+
+| Kind | Whose faces | Colour |
+| --- | --- | --- |
+| as they were | B's | grey, 85% transparent |
+| changed, or moved | A's, and B's | `PreviewDressColor` |
+| gone | A's | `PreviewSubColor` |
+| new | B's | `PreviewAddColor` |
+
+**The position** goes from A, 0, to B, 1: a side's faces are 30%
+transparent at its own end and 80% at the other, so the other state is
+always there as a ghost. **Differences only** leaves the grey out.
+
+It is under the object's root and not in its mode switch: there whether
+the object is shown or not, and moved by whatever the object is in. The
+faces are where each state had them, so the object's own placement is
+taken out above them, and again when the object moves. Where one of the
+two is the object's own shape and that changes, the overlay goes.
+
+**Nothing of the document is touched**, and that had to be made so. A
+Part view provider of an object's own shape has the object's looks
+(docs/ShapeAppearanceDesign.md sec 14.6.3): the first build set the
+overlay's colours after its views were given the object, and each
+showing wrote `MapFaceColor` and `ElementAppearance` to the object --
+an implicit transaction, a row and an undo step. A view is now told it
+shows a given shape (`setGivenShape`) before it has an object, as one of
+another shape property is, and keeps looks of its own. The check counts
+rows and undo steps around every showing.
+
+**Where it is asked for** (`TransactionLogView`, one bar for both:
+which two, a slider, "Differences only", and what was found in words --
+"1 as they were, 6 changed, 0 new, 0 gone"):
+
+- *The panel.* An op of a row selected, where it has a value before
+  and after: before against after. Another op, another row, the panel
+  hidden: gone.
+- *The merge dialog*, and the dialog of rows picked (31.12). A change
+  selected: ours against theirs, base against ours, base against theirs,
+  or nothing. Ours is the document's own shape -- the empty ref -- since
+  a preview's `ours` for a derived value is the base's (32.1). Closed:
+  gone.
+
+**Pictures** (`pic.py` in `~/.cache/txnlog-sd/pic`, under `xvfb-run`): a
+box with two holes, made taller, one hole moved and the other made a
+slot. The offscreen platform the checks run on draws nothing, so what
+is checked there is the nodes and the numbers, and the look was looked
+at here.
+
+**Left.**
+
+- *The dialogs are modal*: the overlay is seen behind one, and the view
+  cannot be turned while it is open. From a row it can. Making the merge
+  dialog not modal is a change to the merge's flow, and a question.
+- *A value the log let go* (32.8): nothing is shown, and nothing says
+  why. The state's document is not yet asked.
+- *Lines are not ghosted*: a kind's edges are drawn full at either end
+  of the slider.
+- *A refresh of the panel drops it*: any commit rebuilds the op list,
+  and the selection with it. So did it before this.
+- Edges and vertices; an object the document does not have; the browser.
+
+**Check.** `scripts/transaction-log-shapediff-check.py` (40): asked of
+the view provider -- what became of each face of a box with a hole made
+taller, the nodes under the root, the two ends of the slider,
+differences only, a face added, what it is not shown of, the object's
+own shape as one of the two and gone when the object moves, no row and
+no undo step written -- then from an op of a row in the panel, and from
+the merge dialog with each pair and closed.
+
+**Next (32.4):** step 5, the versions list and the whole document.

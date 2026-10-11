@@ -146,11 +146,13 @@
 #include <Gui/Renderer/Renderer.h>
 #include <Gui/Renderer/MeshSimplify.h>
 #include <Gui/Renderer/MeshSource.h>
+#include <Mod/Part/App/ShapeDiff.h>
 #include <Mod/Part/App/Tools.h>
 
 #include <unordered_map>
 
 #include "ViewProviderExt.h"
+#include "ShapeDiffView.h"
 #include "MeshLevelSource.h"
 #include "PartParams.h"
 #include "PreMesh.h"
@@ -2117,6 +2119,7 @@ ViewProviderPartExt::ViewProviderPartExt()
 
 ViewProviderPartExt::~ViewProviderPartExt()
 {
+    diffView.reset();
     unregisterMeshLevelSource(faceset, lineset);
     // The pooled visual fill keys its worker job on the coords node
     // (its own token slot); the unregister above cannot cancel it,
@@ -2592,7 +2595,7 @@ std::vector<std::string> ViewProviderPartExt::getDisplayModes() const
 /// getShape() adds around it.
 bool ViewProviderPartExt::shapeStillMissing() const
 {
-    if (!shapeMayStillArrive())
+    if (!shapeMayStillArrive() || hasGivenShape)
         return false;
     if (!isAttachedToDocument() || !getObject())
         return false;
@@ -2607,6 +2610,8 @@ Part::TopoShape ViewProviderPartExt::getShape() const
     Part::TopoShape shape;
     if (!isAttachedToDocument() || !getObject())
         return shape;
+    if (hasGivenShape)
+        return givenShape;
 
     auto prop = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
             getObject()->getPropertyByName(getShapePropertyName()));
@@ -2628,6 +2633,65 @@ void ViewProviderPartExt::setShapePropertyName(const char *propName)
         updateVisual();
     else
         VisualTouched = true;
+}
+
+void ViewProviderPartExt::setGivenShape(const Part::TopoShape &shape)
+{
+    givenShape = shape;
+    hasGivenShape = true;
+    // No property of the object has this name: the looks are this view's own
+    setShapePropertyName("(given)");
+}
+
+bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
+                                        const std::string &b, float position,
+                                        bool differencesOnly)
+{
+    auto obj = getObject();
+    if (!prop || !obj || !obj->getDocument() || hasGivenShape)
+        return false;
+    auto shapeProp = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
+            obj->getPropertyByName(prop));
+    if (!shapeProp)
+        return false;
+    if (!diffView || diffProp != prop || diffA != a || diffB != b) {
+        hideValueDiff();
+        // An empty ref is the value the object has now
+        auto at = [&](const std::string &ref, Part::TopoShape &shape) {
+            if (ref.empty())
+                shape = shapeProp->getShape();
+            else if (!Part::ShapeDiff::valueShape(*obj->getDocument(), ref, obj->getID(), shape))
+                return false;
+            return !shape.isNull();
+        };
+        Part::TopoShape shapeA, shapeB;
+        if (!at(a, shapeA) || !at(b, shapeB))
+            return false;
+        auto view = std::make_unique<ShapeDiffView>(*this);
+        if (!view->show(shapeA, shapeB))
+            return false;
+        diffView = std::move(view);
+        diffProp = prop;
+        diffA = a;
+        diffB = b;
+    }
+    diffView->setOptions(position, differencesOnly);
+    return true;
+}
+
+void ViewProviderPartExt::hideValueDiff()
+{
+    diffView.reset();
+    diffProp.clear();
+    diffA.clear();
+    diffB.clear();
+}
+
+std::map<std::string, int> ViewProviderPartExt::getValueDiff() const
+{
+    if (!diffView)
+        return {};
+    return diffView->summary();
 }
 
 const char * ViewProviderPartExt::getShapePropertyName() const
@@ -4446,6 +4510,14 @@ void ViewProviderPartExt::updateData(const App::Property* prop)
 {
     const char *shapeProp = shapePropName.empty()?"Shape":shapePropName.c_str();
     const char *propName = prop?prop->getName():"";
+    if (diffView && propName) {
+        // The two states stay where they are when the object moves; and one
+        // of them that is the object's own shape is no longer what is shown
+        if (strcmp(propName, "Placement") == 0)
+            diffView->updatePlacement();
+        if (diffProp == propName && (diffA.empty() || diffB.empty()))
+            hideValueDiff();
+    }
     // What the object draws its elements as, and the properties it makes
     // that of, are this view provider's as the object has them
     if(appearanceBound && prop) {
@@ -8535,6 +8607,7 @@ void ViewProviderPartExt::enableFullSelectionHighlight(bool face, bool line, boo
 
 void ViewProviderPartExt::beforeDelete()
 {
+    hideValueDiff();
     setStatus(Gui::Detach, true);
     // Drop any worker-emitted vertex-cache content still waiting for a
     // publish that will never come (docs/WorkerVertexCache.md) -- the

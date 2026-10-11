@@ -25,6 +25,8 @@
 #define GUI_VIEWPROVIDER_DOCUMENTOBJECT_H
 
 #include <Inventor/SoType.h>
+#include <map>
+#include <string>
 
 #include "ViewProvider.h"
 #include <App/DocumentObject.h>
@@ -82,6 +84,30 @@ public:
 
     virtual void attach(App::DocumentObject *pcObject);
     virtual void reattach(App::DocumentObject *);
+
+    /** @name A property at two states, shown over the object
+     *
+     * docs/TransactionLog.md sec 32.9. A value the transaction log holds is
+     * named by its ref -- a row's op has the value before and after it, a
+     * merge's preview the value at the base and at each side -- and an
+     * empty ref is the value the object has now. What is shown is no part of
+     * the document: no object, no property written, no undo step.
+     */
+    //@{
+    /** Show how property \a prop differs between the values \a a, the
+     * earlier, and \a b. \a position is where between the two, 0 at a and 1
+     * at b; \a differencesOnly leaves out what did not change. Asked again
+     * with the same values, only the two options are taken.
+     * @return false where this view provider shows no such thing of that
+     * property, or the log does not hold one of the values.
+     */
+    virtual bool showValueDiff(const char *prop, const std::string &a, const std::string &b,
+                               float position = 1.f, bool differencesOnly = false);
+    /// Take away what showValueDiff() shows
+    virtual void hideValueDiff();
+    /// What showValueDiff() shows now, as numbers by name; empty where nothing is
+    virtual std::map<std::string, int> getValueDiff() const;
+    //@}
     /// Re-read DisplayModeInView from \a view's ObjectDisplayModes
     /// entry for this object (null = no active 3D view, shows "Use
     /// View Mode"). Called when the active view changes or the view's

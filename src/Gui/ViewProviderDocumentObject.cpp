@@ -656,6 +656,21 @@ void ViewProviderDocumentObject::reattach(App::DocumentObject *pcObj) {
     updateChildren();
 }
 
+bool ViewProviderDocumentObject::showValueDiff(const char *, const std::string &,
+                                               const std::string &, float, bool)
+{
+    return false;
+}
+
+void ViewProviderDocumentObject::hideValueDiff()
+{
+}
+
+std::map<std::string, int> ViewProviderDocumentObject::getValueDiff() const
+{
+    return {};
+}
+
 void ViewProviderDocumentObject::update(const App::Property* prop)
 {
     // DocumentObject.ViewObject has been changed to a real property instead of

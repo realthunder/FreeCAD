@@ -70,6 +70,7 @@ class SoBrepFaceSet;
 class SoBrepEdgeSet;
 class SoBrepPointSet;
 class SoFCCoordinate3;
+class ShapeDiffView;
 struct ShapeInstanceRep;
 
 /** DiffuseColor, whose storage is the object's ShapeAppearance
@@ -347,6 +348,23 @@ public:
 
     virtual void setShapePropertyName(const char *propName);
     const char *getShapePropertyName() const;
+    /// Show \a shape, which is no property of the object: another state of
+    /// its shape, drawn over it (ShapeDiffView). The view keeps looks of its
+    /// own, as one of another shape property does.
+    void setGivenShape(const Part::TopoShape &shape);
+
+    /** @name The shape at two states, shown over the object
+     *
+     * docs/TransactionLog.md sec 32.9: a shape property's two values, read
+     * from the log with their names, compared (Part::ShapeDiff) and drawn.
+     * Gone when the object's own shape changes while it is one of the two.
+     */
+    //@{
+    bool showValueDiff(const char *prop, const std::string &a, const std::string &b,
+                       float position = 1.f, bool differencesOnly = false) override;
+    void hideValueDiff() override;
+    std::map<std::string, int> getValueDiff() const override;
+    //@}
 
     void setHighlightFaceEdges(bool enable);
 
@@ -889,6 +907,15 @@ protected:
     bool appliedFaceColorsDivergent = false;
 
     std::string shapePropName;
+    /// The shape shown where it is no property of the object (setGivenShape())
+    Part::TopoShape givenShape;
+    bool hasGivenShape = false;
+
+    /// What showValueDiff() shows, and of what
+    std::unique_ptr<ShapeDiffView> diffView;
+    std::string diffProp;
+    std::string diffA;
+    std::string diffB;
 
     friend class SoFCCoordinate3;
 

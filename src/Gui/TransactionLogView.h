@@ -52,6 +52,8 @@ class TransactionLog;
 namespace Gui {
 namespace DockWnd {
 
+class TransactionDiffBar;
+
 /** The transaction log browser (docs/TransactionLog.md sec 22.2).
  *
  * A dockable, read-only view of the active document's log as the store
@@ -243,6 +245,8 @@ private:
     QTreeWidget* _versions {nullptr};
     QTreeWidget* _manifest {nullptr};
     QPlainTextEdit* _value {nullptr};
+    /// The op selected, before against after, in the 3D view (sec 32.9)
+    TransactionDiffBar* _diffBar {nullptr};
 };
 
 } // namespace DockWnd
