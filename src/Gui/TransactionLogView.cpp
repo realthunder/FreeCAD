@@ -101,6 +101,7 @@ enum OpColumn { OpIdx, OpOp, OpContainer, OpProp, OpType, OpBefore, OpAfter, OpD
 enum VerColumn { VerNum, VerKind, VerName, VerBranch, VerSeq, VerSchema, VerCreated, VerDocXml,
                  VerEntries, VerColumns };
 enum ManColumn { ManEntry, ManSource, ManHash, ManColumns };
+enum ChangeColumn { ChgObject, ChgProp, ChgType, ChgWhat, ChgColumns };
 enum KeptColumn { KeptWhat, KeptObject, KeptProp, KeptRow, KeptValue, KeptColumns };
 enum Tab { TabTransactions, TabVersions, TabKept };
 
@@ -331,12 +332,17 @@ protected:
  * (ViewProviderDocumentObject::showValueDiff) and says whether it can; what
  * they show is taken away when other values are given, or this goes.
  *
- * One value is shown over its object wherever that is. Many -- the whole of
- * a row, of a version, of a merge -- are shown over the objects the view
- * shows: the others are what those are made of, and would be drawn through
- * them.
+ * One value is shown over its object wherever that is. Of many -- the whole
+ * of a row, of a version, of a merge -- those of the objects chosen are
+ * shown (sec 32.13): a file holds what has nothing to do with each other,
+ * and all of it at once says nothing. The objects are chosen as an
+ * attachment's references are: each has a button here, "Add..." takes what
+ * is selected or the next thing picked, and an object's own button picks
+ * it again. What is taken is no longer selected, so that the highlight of
+ * the selection is not drawn over what is shown. They stay chosen from one
+ * row or version to the next.
  */
-class Gui::DockWnd::TransactionDiffBar: public QWidget
+class Gui::DockWnd::TransactionDiffBar: public QWidget, public Gui::SelectionObserver
 {
 public:
     /// Two values of a property, each by its ref in the log -- empty for
@@ -364,8 +370,28 @@ public:
         : QWidget(parent)
     {
         setObjectName(QStringLiteral("TransactionDiffBar"));
-        auto layout = new QHBoxLayout(this);
+        auto rows = new QVBoxLayout(this);
+        rows->setContentsMargins(0, 0, 0, 0);
+        rows->setSpacing(2);
+        auto objects = new QHBoxLayout();
+        objects->setContentsMargins(0, 0, 0, 0);
+        objects->addWidget(new QLabel(QObject::tr("Objects:"), this));
+        _slots = new QHBoxLayout();
+        _slots->setContentsMargins(0, 0, 0, 0);
+        objects->addLayout(_slots);
+        _add = new QPushButton(QObject::tr("Add..."), this);
+        _add->setObjectName(QStringLiteral("diffAdd"));
+        _add->setCheckable(true);
+        _add->setToolTip(QObject::tr("Choose the objects to see the changes of: those selected, "
+                                     "or with none selected the next one picked in the tree or "
+                                     "the view"));
+        objects->addWidget(_add);
+        objects->addStretch(1);
+        rows->addLayout(objects);
+        QObject::connect(_add, &QPushButton::clicked, this, [this]() { pick(Adding); });
+        auto layout = new QHBoxLayout();
         layout->setContentsMargins(0, 0, 0, 0);
+        rows->addLayout(layout);
         layout->addWidget(new QLabel(QObject::tr("In the 3D view:"), this));
         _pair = new QComboBox(this);
         _pair->setObjectName(QStringLiteral("diffPair"));
@@ -391,7 +417,34 @@ public:
                          [this](int) { update(); });
         QObject::connect(_position, &QSlider::valueChanged, this, [this](int) { update(); });
         QObject::connect(_only, &QCheckBox::toggled, this, [this](bool) { update(); });
+        // What is picked is taken once the selection has settled: not from
+        // inside its own signal, which taking it clears
+        _again.setSingleShot(true);
+        _again.setInterval(0);
+        QObject::connect(&_again, &QTimer::timeout, this, [this]() { take(); });
         update();
+    }
+
+    /// The document the objects are chosen of. Those of another go.
+    void setDocument(App::Document* doc)
+    {
+        const std::string name = doc ? doc->getName() : std::string();
+        if (name == _home)
+            return;
+        _home = name;
+        _chosen.clear();
+        pick(NotPicking);
+        showChosen();
+    }
+
+    /// Choose what is selected now, if anything is: for where nothing can
+    /// be picked later -- a dialog that takes the mouse.
+    void chooseSelected()
+    {
+        if (!selected().empty()) {
+            _picking = Adding;
+            take();
+        }
     }
 
     ~TransactionDiffBar() override
@@ -407,17 +460,21 @@ public:
             _pair->setItemText(index, text);
     }
 
-    /** The values to show, of `doc`. With `shownOnly`, over the objects the
-     * view shows and no others. `note` is said after what was found: what
-     * of the two states has no object here to be shown over.
+    /** The values to show, of `doc`. With `chosenOnly`, those of the
+     * objects selected and no others, following the selection. `note` is
+     * said after what was found: what of the two states has no object here
+     * to be shown over.
      */
-    void setValues(App::Document* doc, const std::vector<Value>& values, bool shownOnly,
+    void setValues(App::Document* doc, const std::vector<Value>& values, bool chosenOnly,
                    const QString& note = QString())
     {
         _values.clear();
+        if (doc)
+            setDocument(doc);
+        _chosenOnly = chosenOnly;
         for (const auto& value : values) {
             auto obj = doc ? doc->getObjectByID(value.cid) : nullptr;
-            if (!obj || (shownOnly && !obj->Visibility.getValue()))
+            if (!obj)
                 continue;
             _values.push_back({App::DocumentObjectT(obj), value.prop, value.pairs});
         }
@@ -461,15 +518,144 @@ private:
         _shown.clear();
     }
 
+    enum Picking { NotPicking = -2, Adding = -1 };   // or the place picked again
+
+    std::vector<App::DocumentObject*> selected() const
+    {
+        if (_home.empty())
+            return {};
+        return Selection().getObjectsOfType(App::DocumentObject::getClassTypeId(), _home.c_str());
+    }
+
+    void onSelectionChanged(const SelectionChanges& msg) override
+    {
+        if (_picking == NotPicking)
+            return;
+        if (msg.Type == SelectionChanges::AddSelection
+                || msg.Type == SelectionChanges::SetSelection)
+            _again.start();
+    }
+
+    /// Ask for the objects to add, or for the one at `place` again: taken
+    /// now where something is selected, else when something is. Asked for
+    /// what is being asked already, it is no longer asked.
+    void pick(int place)
+    {
+        _picking = place == _picking ? NotPicking : place;
+        if (_picking != NotPicking && !selected().empty()) {
+            take();
+            return;
+        }
+        showPicking();
+        update();
+    }
+
+    void take()
+    {
+        const auto objects = selected();
+        if (_picking == NotPicking || objects.empty())
+            return;
+        auto has = [this](App::DocumentObject* obj) {
+            for (const auto& chosen : _chosen) {
+                if (chosen.getObject() == obj)
+                    return true;
+            }
+            return false;
+        };
+        if (_picking >= 0 && _picking < static_cast<int>(_chosen.size())) {
+            if (!has(objects.front()))
+                _chosen[_picking] = App::DocumentObjectT(objects.front());
+        }
+        else {
+            for (auto obj : objects) {
+                if (!has(obj))
+                    _chosen.emplace_back(obj);
+            }
+        }
+        _picking = NotPicking;
+        // Not left selected: its highlight would be drawn over what is shown
+        Selection().clearSelection(_home.c_str());
+        showChosen();
+        update();
+    }
+
+    /// A button for each object chosen, picked again by it, and one to let
+    /// it go.
+    void showChosen()
+    {
+        while (auto item = _slots->takeAt(0)) {
+            if (auto widget = item->widget()) {
+                // It may be the one whose click this is: gone from sight
+                // and from being found now, deleted when that returns
+                widget->hide();
+                widget->setObjectName(QString());
+                widget->deleteLater();
+            }
+            delete item;
+        }
+        _buttons.clear();
+        _chosen.erase(std::remove_if(_chosen.begin(), _chosen.end(),
+                                     [](const App::DocumentObjectT& which) {
+                                         return !which.getObject();
+                                     }),
+                      _chosen.end());
+        for (int i = 0; i < static_cast<int>(_chosen.size()); ++i) {
+            auto obj = _chosen[i].getObject();
+            auto again = new QPushButton(QString::fromUtf8(obj->Label.getValue()), this);
+            again->setObjectName(QStringLiteral("diffObject%1").arg(i));
+            again->setCheckable(true);
+            again->setToolTip(QObject::tr("%1: click to choose another in its place")
+                                  .arg(QString::fromUtf8(obj->getNameInDocument())));
+            QObject::connect(again, &QPushButton::clicked, this, [this, i]() { pick(i); });
+            _slots->addWidget(again);
+            _buttons.push_back(again);
+            auto gone = new QPushButton(QStringLiteral("x"), this);
+            gone->setObjectName(QStringLiteral("diffRemove%1").arg(i));
+            gone->setFlat(true);
+            gone->setFixedWidth(gone->fontMetrics().horizontalAdvance(QLatin1Char('x')) * 3);
+            gone->setToolTip(QObject::tr("No longer chosen"));
+            QObject::connect(gone, &QPushButton::clicked, this, [this, i]() {
+                if (i < static_cast<int>(_chosen.size()))
+                    _chosen.erase(_chosen.begin() + i);
+                _picking = NotPicking;
+                showChosen();
+                update();
+            });
+            _slots->addWidget(gone);
+        }
+        showPicking();
+    }
+
+    void showPicking()
+    {
+        _add->setChecked(_picking == Adding);
+        for (int i = 0; i < static_cast<int>(_buttons.size()); ++i)
+            _buttons[i]->setChecked(_picking == i);
+    }
+
     void update()
     {
         const int index = _pair->currentIndex();
         std::vector<App::DocumentObjectT> shown;
         std::set<ViewProviderDocumentObject*> views;
         std::map<std::string, int> found;
+        std::set<App::DocumentObject*> chosen;
+        for (const auto& which : _chosen) {
+            if (auto obj = which.getObject())
+                chosen.insert(obj);
+        }
+        if (chosen.size() != _chosen.size())
+            showChosen();   // one of them is gone
+        std::set<App::DocumentObject*> changed;
         for (const auto& value : _values) {
             if (index < 0 || index >= static_cast<int>(value.pairs.size())
                     || !value.pairs[index].there)
+                continue;
+            auto obj = value.object.getObject();
+            if (!obj)
+                continue;
+            changed.insert(obj);
+            if (_chosenOnly && !chosen.count(obj))
                 continue;
             auto view = viewOf(value.object);
             // One thing of an object at a time: its first value that shows
@@ -501,6 +687,16 @@ private:
             if (_shown.size() > 1)
                 text = QObject::tr("%1 objects: %2").arg(_shown.size()).arg(text);
         }
+        else if (_chosenOnly && !changed.empty()) {
+            // Said of what the pair has, not of what a view could show of it
+            const int count = static_cast<int>(changed.size());
+            text = chosen.empty()
+                       ? QObject::tr("%n object(s) with changes: add one to see it", "", count)
+                       : QObject::tr("No shape of what is chosen changed; %n object(s) have "
+                                     "changes", "", count);
+        }
+        if (_picking != NotPicking)
+            text = QObject::tr("Pick an object in the tree or the view");
         if (!_note.isEmpty() && index >= 0 && index < _pair->count() - 1)
             text += (text.isEmpty() ? QString() : QStringLiteral("; ")) + _note;
         _said->setText(text);
@@ -511,17 +707,43 @@ private:
     QCheckBox* _only {nullptr};
     QLabel* _said {nullptr};
     std::vector<Held> _values;
+    /// The document the objects are chosen of, and those chosen
+    std::string _home;
+    std::vector<App::DocumentObjectT> _chosen;
+    int _picking {NotPicking};
+    QHBoxLayout* _slots {nullptr};
+    QPushButton* _add {nullptr};
+    std::vector<QPushButton*> _buttons;
+    bool _chosenOnly {false};
+    QTimer _again;
     QString _note;
     std::vector<App::DocumentObjectT> _shown;
 };
 
 const char* TransactionDiffBar::NoValue = "-";
 
+/// The whole of the row or the version selected: every value of it, what
+/// the two are called, and what of it has no object here.
+struct TransactionLogView::Whole
+{
+    QString label;
+    std::vector<TransactionDiffBar::Value> values;
+    QString note;
+
+    void clear()
+    {
+        label.clear();
+        values.clear();
+        note.clear();
+    }
+};
+
 TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* parent)
     : DockWindow(pcDocument, parent)
     , _graph(std::make_unique<GraphLayout>())
 {
     setWindowTitle(tr("Transaction log"));
+    _whole = std::make_unique<Whole>();
 
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(2, 2, 2, 2);
@@ -718,8 +940,26 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _ops->header()->setStretchLastSection(false);
     _ops->header()->setSectionResizeMode(OpContainer, QHeaderView::Stretch);
 
-    _manifest = new QTreeWidget(_detail);
-    _detail->addWidget(_manifest);
+    // A version's detail: what is not now as it was there, by object -- the
+    // whole of it is this list, and the view shows the objects chosen
+    // (sec 32.13) -- and the entries of its manifest.
+    auto versionDetail = new QTabWidget(_detail);
+    versionDetail->setDocumentMode(true);
+    _detail->addWidget(versionDetail);
+    _changes = new QTreeWidget(versionDetail);
+    _changes->setObjectName(QStringLiteral("TransactionVersionChanges"));
+    versionDetail->addTab(_changes, tr("Changed since"));
+    _changes->setColumnCount(ChgColumns);
+    _changes->setHeaderLabels({tr("Object"), tr("Property"), tr("Type"), tr("Since the version")});
+    _changes->setRootIsDecorated(false);
+    _changes->setAlternatingRowColors(true);
+    _changes->setUniformRowHeights(true);
+    _changes->setSelectionMode(QAbstractItemView::SingleSelection);
+    _changes->header()->setStretchLastSection(false);
+    _changes->header()->setSectionResizeMode(ChgObject, QHeaderView::Stretch);
+
+    _manifest = new QTreeWidget(versionDetail);
+    versionDetail->addTab(_manifest, tr("Entries"));
     _manifest->setColumnCount(ManColumns);
     _manifest->setHeaderLabels({tr("Entry"), tr("Stored as"), tr("Hash")});
     _manifest->setRootIsDecorated(false);
@@ -756,6 +996,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
             this, &TransactionLogView::onVersionContextMenu);
     connect(_manifest, &QTreeWidget::itemSelectionChanged,
             this, &TransactionLogView::onManifestSelected);
+    connect(_changes, &QTreeWidget::itemSelectionChanged,
+            this, &TransactionLogView::onChangeSelected);
     connect(_kept, &QTreeWidget::itemSelectionChanged, this, &TransactionLogView::onKeptSelected);
     connect(_kept, &QTreeWidget::customContextMenuRequested,
             this, &TransactionLogView::onKeptContextMenu);
@@ -829,6 +1071,7 @@ void TransactionLogView::attach(App::Document* doc)
         return;
     detach();
     _doc = doc;
+    _diffBar->setDocument(_doc);
     if (!_doc) {
         updateStatus();
         return;
@@ -855,6 +1098,7 @@ void TransactionLogView::detach()
 {
     _connections.clear();
     _doc = nullptr;
+    _diffBar->setDocument(nullptr);
     _previewed.clear();
     _previewTimer.stop();
     _requests->clear();
@@ -865,6 +1109,8 @@ void TransactionLogView::detach()
     _ops->clear();
     _versions->clear();
     _manifest->clear();
+    _changes->clear();
+    _whole->clear();
     _kept->clear();
     _keptSaid.clear();
     _tabs->setTabText(TabKept, tr("Kept"));
@@ -905,6 +1151,8 @@ void TransactionLogView::reload()
     _ops->clear();
     _versions->clear();
     _manifest->clear();
+    _changes->clear();
+    _whole->clear();
     _kept->clear();
     _keptSaid.clear();
     _value->clear();
@@ -956,6 +1204,7 @@ void TransactionLogView::refreshVersions()
     _lastVersion = last;
     _versions->clear();
     _manifest->clear();
+    _changes->clear();
     std::map<int64_t, std::string> branches;
     for (const auto& b : l->store().branches())
         branches[b.id] = b.name;
@@ -1248,6 +1497,8 @@ QString TransactionLogView::valueText(const QString& label, const QString& ref) 
 void TransactionLogView::onVersionSelected()
 {
     _manifest->clear();
+    _changes->clear();
+    _whole->clear();
     _value->clear();
     _diffBar->clear();
     auto items = _versions->selectedItems();
@@ -1420,6 +1671,7 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
 void TransactionLogView::onTransactionSelected()
 {
     _ops->clear();
+    _whole->clear();
     _value->clear();
     _diffBar->clear();
     auto items = _transactions->selectedItems();
@@ -1438,18 +1690,22 @@ void TransactionLogView::onTransactionSelected()
 
 void TransactionLogView::showRowDiff(int64_t seq)
 {
-    // What the row made of every value it set, over the objects the view
-    // shows (sec 32.10): the first value before and the last after. A value
-    // with none before was made by the row -- its object, or its property.
+    // What the row made of every value it set (sec 32.10), of which the
+    // view shows the objects chosen (sec 32.13): the first value before and
+    // the last after. A value with none before was made by the row -- its
+    // object, or its property.
     auto l = log();
-    if (!l)
+    if (!l || !_doc)
         return;
     try {
         std::vector<TransactionDiffBar::Value> values;
         std::map<std::pair<long, std::string>, size_t> at;
+        std::set<long> absent;
         for (const auto& op : l->store().ops(seq)) {
             if (op.ckind != "obj" || op.op != "set" || op.vafter.empty())
                 continue;
+            if (!_doc->getObjectByID(op.cid))
+                absent.insert(op.cid);
             auto found = at.find({op.cid, op.prop});
             if (found == at.end()) {
                 at[{op.cid, op.prop}] = values.size();
@@ -1461,25 +1717,62 @@ void TransactionLogView::showRowDiff(int64_t seq)
                 values[found->second].pairs[0].b = op.vafter;
             }
         }
-        _diffBar->setPairLabel(0, tr("before against after"));
-        _diffBar->setValues(_doc, values, true);
+        *_whole = Whole {tr("before against after"), std::move(values),
+                  absent.empty() ? QString()
+                                 : tr("%n object(s) of the row are not in the document", "",
+                                      static_cast<int>(absent.size()))};
+        showWhole();
     }
     catch (Base::Exception& e) {
         FC_ERR("transaction log view: " << e.what());
     }
 }
 
+void TransactionLogView::showWhole()
+{
+    // The whole of what is selected in the list above: of it the view shows
+    // the objects chosen
+    if (_whole->label.isEmpty()) {
+        _diffBar->clear();
+        return;
+    }
+    _diffBar->setPairLabel(0, _whole->label);
+    _diffBar->setValues(_doc, _whole->values, true, _whole->note);
+}
+
 void TransactionLogView::showVersionDiff(int64_t seq)
 {
     // The version against the document as it is (sec 32.10): every value
-    // that is not now what it was at the version's row.
+    // that is not now what it was at the version's row. The list says them
+    // all; the view shows those of the objects chosen (sec 32.13).
     _diffBar->clear();
     if (!_doc || seq <= 0)
         return;
     try {
         std::vector<TransactionDiffBar::Value> values;
         int gone = 0;
+        const QSignalBlocker blocker(_changes);
         for (const auto& c : _doc->compareStates(seq, 0)) {
+            auto item = new QTreeWidgetItem(_changes);
+            QString whose = QStringLiteral("doc");
+            if (c.ckind != "doc") {
+                whose = QStringLiteral("%1:%2").arg(QString::fromStdString(c.ckind)).arg(c.cid);
+                if (!c.object.empty())
+                    whose += QStringLiteral(" %1").arg(QString::fromStdString(c.object));
+            }
+            item->setText(ChgObject, whose);
+            item->setText(ChgProp, QString::fromStdString(c.prop));
+            item->setText(ChgType, QString::fromStdString(c.ptype));
+            item->setText(ChgWhat, c.prop.empty() ? (c.inA ? tr("removed") : tr("made"))
+                                   : c.a.empty() ? (c.derived ? tr("new, by a recompute")
+                                                              : tr("new"))
+                                   : c.b.empty() ? tr("gone")
+                                   : c.derived ? tr("changed, by a recompute") : tr("changed"));
+            item->setData(ChgObject, Qt::UserRole,
+                          c.ckind == "obj" ? static_cast<qlonglong>(c.cid) : 0);
+            item->setData(ChgProp, Qt::UserRole, QString::fromStdString(c.a));
+            item->setData(ChgWhat, Qt::UserRole, QString::fromStdString(c.b));
+            item->setData(ChgType, Qt::UserRole, c.inA && c.inB);
             if (c.ckind != "obj")
                 continue;
             if (c.prop.empty()) {
@@ -1493,15 +1786,43 @@ void TransactionLogView::showVersionDiff(int64_t seq)
                               {{true, c.a.empty() ? TransactionDiffBar::NoValue : c.a,
                                 std::string()}}});
         }
-        _diffBar->setPairLabel(0, tr("the version against now"));
-        _diffBar->setValues(_doc, values, true,
-                            gone ? tr("%n object(s) of the version are not in the document", "",
-                                      gone)
-                                 : QString());
+        for (int c = 0; c < ChgColumns; ++c) {
+            if (c != ChgObject)
+                _changes->resizeColumnToContents(c);
+        }
+        *_whole = Whole {tr("the version against now"), std::move(values),
+                  gone ? tr("%n object(s) of the version are not in the document", "", gone)
+                       : QString()};
+        showWhole();
     }
     catch (Base::Exception& e) {
         _status->setText(tr("Not compared: %1").arg(QString::fromUtf8(e.what())));
     }
+}
+
+void TransactionLogView::onChangeSelected()
+{
+    // One line of what a version is not now: its value there and now, and
+    // over its object in the view. None selected, the objects chosen again.
+    _value->clear();
+    auto items = _changes->selectedItems();
+    if (items.isEmpty()) {
+        showWhole();
+        return;
+    }
+    auto item = items.front();
+    const QString there = item->data(ChgProp, Qt::UserRole).toString();
+    const QString now = item->data(ChgWhat, Qt::UserRole).toString();
+    const long cid = static_cast<long>(item->data(ChgObject, Qt::UserRole).toLongLong());
+    const QString prop = item->text(ChgProp);
+    _diffBar->clear();
+    if (cid && !prop.isEmpty() && !now.isEmpty()) {
+        _diffBar->setPairLabel(0, tr("the version against now"));
+        _diffBar->setValue(_doc, cid, prop.toStdString(),
+                           {{true, there.isEmpty() ? TransactionDiffBar::NoValue
+                                                   : there.toStdString(), std::string()}});
+    }
+    _value->setPlainText(valueText(tr("now"), now) + valueText(tr("at the version"), there));
 }
 
 void TransactionLogView::showOps(int64_t seq)
@@ -1556,8 +1877,10 @@ void TransactionLogView::onOpSelected()
 {
     _value->clear();
     auto items = _ops->selectedItems();
-    if (items.isEmpty())
+    if (items.isEmpty()) {
+        showWhole();
         return;
+    }
     _diffBar->clear();
     auto item = items.front();
     QString before = item->data(OpBefore, Qt::UserRole).toString();
@@ -2096,6 +2419,10 @@ public:
                                   : QString());
         };
         QObject::connect(_tree, &QTreeWidget::itemSelectionChanged, this, show);
+        // Nothing is picked in the view while this takes the mouse: what is
+        // selected as it opens is what is chosen
+        _diff->setDocument(doc);
+        _diff->chooseSelected();
         show();
 
         auto buttons = new QDialogButtonBox(this);

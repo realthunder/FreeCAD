@@ -190,14 +190,15 @@ one needs the image it is named for. A document read at schema 5 has its
 view providers when the event loop has got to them, so the script waits for
 them; `obj.ViewObject` asked for before that makes them.
 
-**A shape at two states.** `scripts/transaction-log-shapediff-check.py` (74
+**A shape at two states.** `scripts/transaction-log-shapediff-check.py` (85
 checks, `$SHAPEDIFFCHECK_OUT`) is a GUI run of its own: a shape property's
 two values of the transaction log shown over the object -- asked of the view
 provider, from an op of a row in the log panel, and from a change in the
 merge dialog -- with what became of each face, the overlay's nodes, and that
 showing writes no row and no undo step (docs/TransactionLog.md sec 32.9);
-and the whole of a row, of a version against now and of a merge, over the
-objects the view shows (sec 32.10); and a shape kept in the file from the
+and of the whole of a row, of a version against now and of a merge, the
+objects chosen in the bar as an attachment's references are (sec 32.10,
+32.13); and a shape kept in the file from the
 panel (sec 32.11), with the panel's list of the kept (sec 32.12).
 The offscreen platform draws nothing: for the look, run
 `~/.cache/txnlog-sd/pic/pic.py` under `xvfb-run` and read the pictures.

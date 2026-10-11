@@ -82,6 +82,7 @@ private Q_SLOTS:
     void onOpSelected();
     void onVersionSelected();
     void onManifestSelected();
+    void onChangeSelected();
     void onKeptSelected();
     void onKeptContextMenu(const QPoint& pos);
     void onTabChanged(int index);
@@ -189,6 +190,9 @@ private:
     /// set, and the version at row `seq` against the document as it is.
     void showRowDiff(int64_t seq);
     void showVersionDiff(int64_t seq);
+    /// The whole of the row or the version selected, to the diff bar: of
+    /// it the view shows the objects chosen (sec 32.13).
+    void showWhole();
     void refreshVersions();
     /// The list of the kept (sec 32.12): each value kept by itself, and
     /// under each object kept the values the log has of it.
@@ -271,12 +275,16 @@ private:
     QTreeWidget* _ops {nullptr};
     QTreeWidget* _versions {nullptr};
     QTreeWidget* _manifest {nullptr};
+    /// What a version is not now, by object and property (sec 32.13)
+    QTreeWidget* _changes {nullptr};
     QTreeWidget* _kept {nullptr};
     /// What the list of the kept says, to rebuild it only when that moves.
     QString _keptSaid;
     QPlainTextEdit* _value {nullptr};
     /// The op selected, before against after, in the 3D view (sec 32.9)
     TransactionDiffBar* _diffBar {nullptr};
+    struct Whole;
+    std::unique_ptr<Whole> _whole;
 };
 
 } // namespace DockWnd

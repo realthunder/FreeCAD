@@ -17980,7 +17980,8 @@ all gone.
 **The whole, and over what.** One value is shown over its object
 wherever that is (32.9). Many are shown **over the objects the view
 shows**, and no others: the rest are what those are made of -- a cut's
-box, the cut under a second cut -- and would be drawn through them. The
+box, the cut under a second cut -- and would be drawn through them.
+*(Changed the same day, 32.13: over the objects chosen in the bar.)* The
 bar asks each object's view provider in turn and adds up what they
 found: "3 objects: 12 as they were, 9 changed, 2 new, 0 gone".
 
@@ -18143,5 +18144,80 @@ Gui check (+11, 74): empty; one value and one object listed; the values
 under the object; a value selected, in the view and in the pane; a value
 of the object selected; let go by its ref with the selection staying;
 let go twice; the object let go; kept and let go from Python.
+
+### 32.13 The objects chosen, and a version's list of changes (2026-10-11)
+
+**Said (user)**, of 32.10's whole of a row, a version or a merge drawn
+over everything the view shows: "does other cad offer whole file diff?
+that sounds impractical. I would image diff of choose object(s). for
+some cad, a file is actually an assembly, unlike fcad, a file can carry
+anything, more like project for other cad".
+
+**What the others do.** Nobody compares a file as a bag. Onshape
+compares one Part Studio, a tab, picked from a list of the document's;
+SolidWorks' Compare Geometry two versions of one part; where two
+assemblies are compared (CATIA's Compare Products, Creo View) the
+assembly is one product, and Creo's answer is a list of components
+marked new, deleted, moved or modified. The whole is a list; the
+geometry is of what is chosen.
+
+**So.** 32.10's "over the objects the view shows" is gone:
+
+- *The list is the whole.* A row has its ops, the merge dialog its
+  changes. A version had no such list and has one now: the version's
+  detail is two tabs, **"Changed since"** -- object, property, type, and
+  made / removed / new / gone / changed, "by a recompute" where it is
+  derived, from the `compareStates()` of 32.10 -- and "Entries", the
+  manifest as before. A line selected shows that value over its object
+  and both values in the pane; none selected, the objects chosen again.
+- *The view shows the objects chosen.* With none: nothing, and "N
+  object(s) with changes: add one to see it". With some of which the
+  row changed no shape: "No shape of what is chosen changed; N object(s)
+  have changes". A row now counts the objects of it the document does
+  not have, as a version and a merge did.
+
+**Chosen how.** First built as the objects selected, following the
+selection. Measured under xvfb: the highlight of the selection is drawn
+on top and takes the overlay's colours with it -- the object chosen was
+the one object whose changes could not be seen. Put to the user, who
+said: "may be do it like how attachment support does, which support
+choosing multiple objects which goes into separate editor widget. then
+you can click a button and re-select an object". SolidWorks' Body
+Compare is the same: two selection boxes, "Source Bodies" and "Compare
+Bodies". So the bar has a row, **"Objects:"**:
+
+- a button for each object chosen, with an "x" beside it that lets it
+  go;
+- **"Add..."**, which takes what is selected, or with nothing selected
+  waits for the next object picked in the tree or the view (the status
+  says "Pick an object in the tree or the view"; pressed again, it no
+  longer waits);
+- an object's own button, which picks another in its place the same
+  way.
+
+What is taken is **no longer selected**, as the attachment editor
+leaves it, so nothing is drawn over what is shown. The objects stay
+chosen from one row, version or tab to the next -- one object followed
+through its history -- and go with the document. The merge dialog takes
+the mouse, so nothing is picked in the view while it is open: what is
+selected as it opens is what is chosen, and a line of its list shows
+that line's object as before.
+
+It is of one object at two states still, however many are chosen. Two
+different objects against each other is not offered; `Shape.diff()`
+takes any two shapes.
+
+**Left.**
+
+- The merge dialog is modal (32.9): the objects cannot be chosen while
+  it is open.
+- The button says the label the object had when it was chosen.
+
+**Tests.** The Gui check (+11, 85): nothing shown and the count with
+none chosen; selecting chooses nothing; added, and no longer selected;
+add with nothing selected asks, and takes the next pick; an object's
+button picks another in its place; let go; a row that changed nothing of
+what is chosen; a version's list, a line of it, none of it; still chosen
+on another tab and row; the dialog with none chosen and with one added.
 
 **Next (32.4):** step 6 -- volumes, the merged result, the stream.

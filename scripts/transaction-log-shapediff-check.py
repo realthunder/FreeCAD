@@ -107,10 +107,16 @@ def drive(seen, cut):
     tree = dialog.findChild(QtWidgets.QTreeWidget)
     diff = bar(dialog)
     seen["bar"] = diff is not None
-    seen["none"] = (cut.ViewObject.getValueDiff(), drawn(cut)[0] is None)
     cut2 = cut.Document.getObject("Cut2")
+    seen["unchosen"] = cut2.ViewObject.getValueDiff()
+    seen["unchosen said"] = part(diff, "diffStatus").text() if diff else None
+    Gui.Selection.addSelection(cut2)
+    part(diff, "diffAdd").click()
+    settle()
+    seen["taken"] = Gui.Selection.getSelection() == []
     seen["whole"] = cut2.ViewObject.getValueDiff()
     seen["whole said"] = part(diff, "diffStatus").text() if diff else None
+    seen["none"] = (cut.ViewObject.getValueDiff(), drawn(cut)[0] is None)
     for i in range(tree.topLevelItemCount()):
         item = tree.topLevelItem(i)
         if item.text(0).startswith("derived") and item.text(1) == "Cut" and item.text(2) == "Shape":
@@ -349,39 +355,87 @@ def run():
                 settle()
                 check("another row selected: gone", view.getValueDiff() == {})
 
-                # A row, the whole of it: over what the view shows
+                # A row, the whole of it: of it, the objects chosen (sec 32.13)
                 def select(row):
                     for i in range(tree.topLevelItemCount()):
                         if tree.topLevelItem(i).text(name) == row:
                             tree.setCurrentItem(tree.topLevelItem(i))
                     settle()
 
+                Gui.Selection.clearSelection()
                 select("wider")
+                said = part(diff, "diffStatus").text()
+                check("a row selected, no object chosen: nothing shown, and how many "
+                      "changed (%r)" % said,
+                      view2.getValueDiff() == {} and view.getValueDiff() == {}
+                      and said.startswith("3 object(s) with changes: add one")
+                      and part(diff, "diffPair").itemText(0) == "before against after")
+                # Chosen as an attachment's references are: what is selected
+                # is taken, and is then no longer selected
+                Gui.Selection.addSelection(cut2)
+                settle()
+                check("selecting chooses nothing by itself", view2.getValueDiff() == {})
+                part(diff, "diffAdd").click()
+                settle()
                 shown2 = view2.getValueDiff()
-                check("a row selected: what it changed of the object shown (%r)"
+                check("added: what the row changed of it, and it is no longer selected (%r)"
                       % part(diff, "diffStatus").text(),
                       shown2.get("changed", 0) + shown2.get("moved", 0) >= 5
                       and shown2.get("by.name") == 8
-                      and part(diff, "diffPair").itemText(0) == "before against after")
-                check("and not of the objects it is made of, which are not shown",
+                      and Gui.Selection.getSelection() == []
+                      and part(diff, "diffObject0").text() == "Cut2")
+                check("and of no other object",
                       view.getValueDiff() == {} and box.ViewObject.getValueDiff() == {})
+                part(diff, "diffAdd").click()
+                settle()
+                check("add, with nothing selected: asks for a pick (%r)"
+                      % part(diff, "diffStatus").text(),
+                      part(diff, "diffStatus").text().startswith("Pick an object")
+                      and part(diff, "diffAdd").isChecked())
+                Gui.Selection.addSelection(cut)
+                settle()
+                check("the next one picked is taken: both shown (%r)"
+                      % part(diff, "diffStatus").text(),
+                      view.getValueDiff().get("by.name") == 7
+                      and view2.getValueDiff().get("by.name") == 8
+                      and part(diff, "diffStatus").text().startswith("2 objects: ")
+                      and Gui.Selection.getSelection() == []
+                      and not part(diff, "diffAdd").isChecked()
+                      and part(diff, "diffObject1").text() == "Cut")
+                part(diff, "diffObject1").click()
+                settle()
+                Gui.Selection.addSelection(box)
+                settle()
+                check("an object's own button picks another in its place",
+                      part(diff, "diffObject1").text() == "Box"
+                      and view.getValueDiff() == {} and bool(box.ViewObject.getValueDiff()))
+                part(diff, "diffRemove1").click()
+                settle()
+                check("and let go: the first alone",
+                      view.getValueDiff() == {} and box.ViewObject.getValueDiff() == {}
+                      and view2.getValueDiff().get("by.name") == 8
+                      and part(diff, "diffObject1") is None)
                 for i in range(ops.topLevelItemCount()):
                     item = ops.topLevelItem(i)
                     if item.text(prop) == "Shape" and str(cut.ID) in item.text(column(ops, "Container")):
                         ops.setCurrentItem(item)
                 settle()
-                check("one of its ops selected: that object alone, shown or not",
+                check("one of its ops selected: that object alone, chosen or not",
                       view.getValueDiff().get("by.name") == 7 and view2.getValueDiff() == {})
                 select("a second hole")
                 shown2 = view2.getValueDiff()
-                check("the row that made an object: all of it is new (%r)"
+                check("the row that made the object chosen: all of it is new (%r)"
                       % part(diff, "diffStatus").text(),
                       shown2.get("added") == 8 and "changed" not in shown2
                       and view.getValueDiff() == {})
                 select("base")
-                check("a row that changed nothing the view shows: nothing",
+                said = part(diff, "diffStatus").text()
+                check("a row that changed nothing of the object chosen: nothing, and said "
+                      "(%r)" % said,
                       view2.getValueDiff() == {} and view.getValueDiff() == {}
-                      and part(diff, "diffStatus").text() == "")
+                      and said.startswith("No shape of what is chosen changed"))
+                part(diff, "diffRemove0").click()
+                settle()
 
                 # A version against the document as it is
                 tabs = dock.findChild(QtWidgets.QTabWidget)
@@ -399,17 +453,63 @@ def run():
                     check("two versions and more (%d)" % len(items), len(items) >= 2)
                     versions.setCurrentItem(items[-1])
                     settle()
+                    changes = dock.findChild(QtWidgets.QTreeWidget, "TransactionVersionChanges")
+                    lines2 = [] if changes is None else [
+                        tuple(changes.topLevelItem(i).text(c) for c in (0, 1, 3))
+                        for i in range(changes.topLevelItemCount())]
+                    said = part(diff, "diffStatus").text()
+                    check("the newest version, no object chosen: nothing shown, and the list "
+                          "of what is not as it was (%d, %r)" % (len(lines2), said),
+                          view2.getValueDiff() == {} and view.getValueDiff() == {}
+                          and "with changes: add one" in said
+                          and ("obj:%d Cut2" % cut2.ID, "Shape", "changed, by a recompute") in lines2
+                          and ("obj:%d Box" % box.ID, "Width", "changed") in lines2
+                          and part(diff, "diffPair").itemText(0) == "the version against now")
+                    Gui.Selection.addSelection(cut2)
+                    part(diff, "diffAdd").click()
+                    settle()
                     shown2 = view2.getValueDiff()
-                    check("the newest version against now: what changed since (%r)"
+                    check("an object chosen: what changed of it since (%r)"
                           % part(diff, "diffStatus").text(),
                           shown2.get("changed", 0) + shown2.get("moved", 0) >= 5
-                          and shown2.get("by.name") == 8 and view.getValueDiff() == {}
-                          and part(diff, "diffPair").itemText(0) == "the version against now")
+                          and shown2.get("by.name") == 8 and view.getValueDiff() == {})
+                    if changes is not None:
+                        for i in range(changes.topLevelItemCount()):
+                            item = changes.topLevelItem(i)
+                            if item.text(0) == "obj:%d Cut" % cut.ID and item.text(1) == "Shape":
+                                changes.setCurrentItem(item)
+                        settle()
+                        pane = [w for w in dock.findChildren(QtWidgets.QPlainTextEdit)][-1]
+                        check("a line of the list selected: that object alone, and its two "
+                              "values",
+                              view.getValueDiff().get("by.name") == 7
+                              and view2.getValueDiff() == {}
+                              and pane.toPlainText().startswith("== now ")
+                              and "== at the version " in pane.toPlainText())
+                        changes.clearSelection()
+                        settle()
+                        check("none selected: the object chosen again",
+                              view.getValueDiff() == {}
+                              and view2.getValueDiff().get("by.name") == 8)
                     versions.setCurrentItem(items[0])
                     settle()
                     shown2 = view2.getValueDiff()
-                    check("the first version, which had no such object: all of it is new",
-                          shown2.get("added") == 8 and "changed" not in shown2)
+                    lines2 = [] if changes is None else [
+                        tuple(changes.topLevelItem(i).text(c) for c in (0, 1, 3))
+                        for i in range(changes.topLevelItemCount())]
+                    check("the first version, which had no such object: all of it is new, "
+                          "and the list says it was made",
+                          shown2.get("added") == 8 and "changed" not in shown2
+                          and ("obj:%d Cut2" % cut2.ID, "", "made") in lines2)
+                    tabs.setCurrentIndex(0)
+                    settle()
+                    select("wider")
+                    check("still chosen on another tab and row",
+                          view2.getValueDiff().get("by.name") == 8)
+                    tabs.setCurrentIndex(1)
+                    settle()
+                    part(diff, "diffRemove0").click()
+                    settle()
                     tabs.setCurrentIndex(0)
                     settle()
                     select("base")
@@ -576,10 +676,15 @@ def run():
             )
             settle()
             check("dialog shown, with the bar", seen.get("found") is True and seen.get("bar"))
-            check("dialog: no change selected, the whole merge over what the view shows (%r)"
+            check("dialog: no change selected and no object chosen: nothing shown (%r)"
+                  % seen.get("unchosen said"),
+                  seen.get("unchosen") == {}
+                  and "with changes: add one" in (seen.get("unchosen said") or ""))
+            check("dialog: an object added, what the merge would change of it (%r)"
                   % seen.get("whole said"),
-                  (seen.get("whole") or {}).get("by.name") == 8 and bool(seen.get("whole said")))
-            check("dialog: and not over an object that is not shown (%r)" % (seen.get("none"),),
+                  (seen.get("whole") or {}).get("by.name") == 8 and bool(seen.get("whole said"))
+                  and seen.get("taken") is True)
+            check("dialog: and of no other object (%r)" % (seen.get("none"),),
                   seen.get("none") == ({}, True))
             check("dialog: a change selected, its object alone",
                   seen.get("whole then") == {})
