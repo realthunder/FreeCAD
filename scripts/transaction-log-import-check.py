@@ -22,6 +22,15 @@ OUT = os.environ["IMPORTCHECK_OUT"]
 lines = []
 
 
+def mergeDialog():
+    # The merge's preview is not modal (docs/TransactionLog.md sec 32.15): it
+    # is found among the windows. Anything modal instead is in its way.
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        if w.objectName() == "TransactionMergeDialog" and w.isVisible():
+            return w
+    return QtWidgets.QApplication.activeModalWidget()
+
+
 def check(what, ok):
     lines.append(("PASS " if ok else "FAIL ") + what)
 
@@ -63,8 +72,9 @@ def column(tree, title):
 
 
 def drive(seen, pick):
-    # The merge dialog is modal: this runs inside its event loop.
-    dialog = QtWidgets.QApplication.activeModalWidget()
+    # The panel waits for the merge dialog in a loop of its own: this runs
+    # inside it.
+    dialog = mergeDialog()
     if dialog is None or dialog.objectName() != "TransactionMergeDialog":
         seen["found"] = False
         if dialog is not None:

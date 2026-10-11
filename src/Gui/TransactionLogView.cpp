@@ -33,6 +33,8 @@
 # include <QDialog>
 # include <QDialogButtonBox>
 # include <QDir>
+# include <QEventLoop>
+# include <QPointer>
 # include <QFile>
 # include <QFileInfo>
 # include <QFontDatabase>
@@ -1097,6 +1099,9 @@ void TransactionLogView::attach(App::Document* doc)
 void TransactionLogView::detach()
 {
     _connections.clear();
+    // A merge being looked at is of the document that leaves
+    if (_mergeDialog)
+        _mergeDialog->reject();
     _doc = nullptr;
     _diffBar->setDocument(nullptr);
     _previewed.clear();
@@ -2419,16 +2424,31 @@ public:
                                   : QString());
         };
         QObject::connect(_tree, &QTreeWidget::itemSelectionChanged, this, show);
-        // Nothing is picked in the view while this takes the mouse: what is
-        // selected as it opens is what is chosen
+        // What is selected as it opens is chosen; more is picked from here,
+        // the document being in reach (sec 32.15)
         _diff->setDocument(doc);
         _diff->chooseSelected();
         show();
+
+        // The document stays in reach while this is open (sec 32.15), and
+        // may be changed under it
+        _stale = new QLabel(QObject::tr("The document has changed, and this is no longer what "
+                                        "would be done. Preview again: the sides picked here "
+                                        "are asked again."), this);
+        _stale->setObjectName(QStringLiteral("stale"));
+        _stale->setWordWrap(true);
+        _stale->hide();
+        layout->addWidget(_stale);
 
         auto buttons = new QDialogButtonBox(this);
         auto merge = buttons->addButton(rows ? QObject::tr("Apply") : QObject::tr("Merge"),
                                         QDialogButtonBox::AcceptRole);
         merge->setObjectName(QStringLiteral("merge"));
+        _merge = merge;
+        _again = buttons->addButton(QObject::tr("Preview again"), QDialogButtonBox::ActionRole);
+        _again->setObjectName(QStringLiteral("again"));
+        _again->hide();
+        QObject::connect(_again, &QPushButton::clicked, this, [this]() { done(Again); });
         buttons->addButton(QDialogButtonBox::Cancel);
         auto allOurs = buttons->addButton(QObject::tr("All ours"), QDialogButtonBox::ActionRole);
         auto allTheirs = buttons->addButton(QObject::tr("All theirs"), QDialogButtonBox::ActionRole);
@@ -2440,6 +2460,34 @@ public:
         QObject::connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
         layout->addWidget(buttons);
         resize(900, 480);
+    }
+
+    /// What exec would not return: the preview is to be made again
+    enum { Again = 2 };
+
+    /// The document changed and the preview is no longer what would be
+    /// done: nothing is merged from here.
+    void setStale()
+    {
+        _merge->setEnabled(false);
+        _stale->show();
+        _again->show();
+    }
+
+    /// What a preview says, to tell whether one made later says another
+    static std::string said(const App::Document::MergePreview& preview)
+    {
+        std::string out = std::to_string(preview.base) + '/'
+                          + std::to_string(preview.forward.size()) + '\n';
+        for (const auto& c : preview.changes) {
+            for (const std::string* part : {&c.kind, &c.op, &c.key, &c.base, &c.ours, &c.theirs,
+                                            &c.merged}) {
+                out += *part;
+                out += '|';
+            }
+            out += '\n';
+        }
+        return out;
     }
 
     /// The side of every conflict, by its key; and `ours` for every change
@@ -2467,6 +2515,9 @@ private:
     /// The change of each row, by the number the row holds
     std::vector<const App::Document::MergeChange*> _changes;
     TransactionDiffBar* _diff {nullptr};
+    QLabel* _stale {nullptr};
+    QPushButton* _merge {nullptr};
+    QPushButton* _again {nullptr};
     std::vector<std::pair<std::string, QComboBox*>> _sides;
     std::vector<QComboBox*> _conflicts;
     /// The rows that go in with nothing asked: each may be unticked.
@@ -2487,6 +2538,72 @@ void TransactionLogView::onOpenBranch()
         FC_ERR("open a branch of " << _doc->getName() << ": " << e.what());
         _status->setText(tr("No branch opened -- the report view says why"));
     }
+}
+
+int TransactionLogView::askBeside(QDialog& dialog, const std::string& said,
+                                  const std::function<std::string()>& preview,
+                                  const std::function<void()>& stale)
+{
+    // Not modal (sec 32.15): the view is turned, objects are picked and the
+    // document is even changed while the preview is open. This waits for
+    // its answer all the same, in a loop of its own, so that whoever asked
+    // goes on from it. What can happen meanwhile: the document changes --
+    // the preview is made again and, where it says another thing, the
+    // dialog is told; the document leaves the panel -- detach() rejects the
+    // dialog; another merge is asked for -- refused where it is asked.
+    QPointer<TransactionLogView> self(this);
+    App::Document* doc = _doc;
+    bool told = false;
+    QTimer check;
+    check.setSingleShot(true);
+    check.setInterval(300);
+    QObject::connect(&check, &QTimer::timeout, &dialog, [&]() {
+        if (told || _doc != doc)
+            return;
+        std::string now;
+        try {
+            now = preview();
+        }
+        catch (Base::Exception&) {
+            // No longer to be had: the branch is gone, or merged
+        }
+        if (now != said) {
+            told = true;
+            stale();
+        }
+    });
+    std::vector<fastsignals::scoped_connection> watch;
+    //NOLINTBEGIN
+    watch.emplace_back(doc->signalCommitTransaction.connect(
+        [&check](const App::Document&) { check.start(); }));
+    watch.emplace_back(doc->signalUndo.connect([&check](const App::Document&) { check.start(); }));
+    watch.emplace_back(doc->signalRedo.connect([&check](const App::Document&) { check.start(); }));
+    watch.emplace_back(doc->signalBranchesChanged.connect(
+        [&check](const App::Document&) { check.start(); }));
+    //NOLINTEND
+    _mergeDialog = &dialog;
+    dialog.setModal(false);
+    dialog.show();
+    dialog.raise();
+    dialog.activateWindow();
+    QEventLoop loop;
+    QObject::connect(&dialog, &QDialog::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+    watch.clear();
+    if (!self)
+        return QDialog::Rejected;
+    _mergeDialog = nullptr;
+    return _doc == doc ? dialog.result() : static_cast<int>(QDialog::Rejected);
+}
+
+bool TransactionLogView::mergeIsOpen()
+{
+    if (!_mergeDialog)
+        return false;
+    _mergeDialog->raise();
+    _mergeDialog->activateWindow();
+    _status->setText(tr("A merge is being looked at already: answer it first"));
+    return true;
 }
 
 void TransactionLogView::onMergeBranch()
@@ -2511,20 +2628,38 @@ void TransactionLogView::onMergeBranch()
 void TransactionLogView::mergeBranch(const QString& name)
 {
     auto l = log();
-    if (!l || !_doc)
+    if (!l || !_doc || mergeIsOpen())
         return;
     try {
-        const auto preview = _doc->previewMerge(name.toStdString());
-        if (preview.changes.empty() && preview.forward.empty()) {
-            _status->setText(tr("Nothing of %1 to merge").arg(name));
-            return;
+        std::map<std::string, std::string> picks;
+        for (;;) {
+            const auto preview = _doc->previewMerge(name.toStdString());
+            if (preview.changes.empty() && preview.forward.empty()) {
+                _status->setText(tr("Nothing of %1 to merge").arg(name));
+                return;
+            }
+            App::LogBranch mine;
+            l->store().getBranch(l->branch(), mine);
+            QPointer<MergeDialog> dialog(
+                new MergeDialog(preview, QString::fromStdString(mine.name), l, _doc, this));
+            const int answer = askBeside(
+                *dialog, MergeDialog::said(preview),
+                [this, name]() { return MergeDialog::said(_doc->previewMerge(name.toStdString())); },
+                [dialog]() {
+                    if (dialog)
+                        dialog->setStale();
+                });
+            if (!dialog)
+                return;   // gone with the panel
+            picks = dialog->picks();
+            delete dialog.data();
+            if (answer == MergeDialog::Again)
+                continue;
+            if (answer != QDialog::Accepted)
+                return;
+            break;
         }
-        App::LogBranch mine;
-        l->store().getBranch(l->branch(), mine);
-        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, _doc, this);
-        if (dialog.exec() != QDialog::Accepted)
-            return;
-        const auto result = _doc->mergeBranch(name.toStdString(), dialog.picks());
+        const auto result = _doc->mergeBranch(name.toStdString(), picks);
         if (!result.unresolved.empty())
             _status->setText(tr("Merge of %1 refused: %2 conflicts have no side")
                                  .arg(name).arg(result.unresolved.size()));
@@ -2583,24 +2718,43 @@ void TransactionLogView::applyRows(const QString& seqs)
     // docs/TransactionLog.md sec 31.12: rows of another branch, picked in
     // the list, applied to this one as a step of its own.
     auto l = log();
-    if (!l || !_doc)
+    if (!l || !_doc || mergeIsOpen())
         return;
     std::vector<int64_t> rows;
     for (const QString& part : seqs.split(QLatin1Char(','), Qt::SkipEmptyParts))
         rows.push_back(part.trimmed().toLongLong());
     try {
-        const auto preview = _doc->previewPick(rows);
-        const QString what = QString::fromStdString(preview.branch);
-        if (preview.changes.empty()) {
-            _status->setText(tr("Nothing of %1 to apply").arg(what));
-            return;
+        std::map<std::string, std::string> picks;
+        QString what;
+        for (;;) {
+            const auto preview = _doc->previewPick(rows);
+            what = QString::fromStdString(preview.branch);
+            if (preview.changes.empty()) {
+                _status->setText(tr("Nothing of %1 to apply").arg(what));
+                return;
+            }
+            App::LogBranch mine;
+            l->store().getBranch(l->branch(), mine);
+            QPointer<MergeDialog> dialog(
+                new MergeDialog(preview, QString::fromStdString(mine.name), l, _doc, this, true));
+            const int answer = askBeside(
+                *dialog, MergeDialog::said(preview),
+                [this, rows]() { return MergeDialog::said(_doc->previewPick(rows)); },
+                [dialog]() {
+                    if (dialog)
+                        dialog->setStale();
+                });
+            if (!dialog)
+                return;   // gone with the panel
+            picks = dialog->picks();
+            delete dialog.data();
+            if (answer == MergeDialog::Again)
+                continue;
+            if (answer != QDialog::Accepted)
+                return;
+            break;
         }
-        App::LogBranch mine;
-        l->store().getBranch(l->branch(), mine);
-        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, _doc, this, true);
-        if (dialog.exec() != QDialog::Accepted)
-            return;
-        const auto result = _doc->pickRows(rows, dialog.picks());
+        const auto result = _doc->pickRows(rows, picks);
         if (!result.unresolved.empty())
             _status->setText(tr("%1 not applied: %2 conflicts have no side")
                                  .arg(what).arg(result.unresolved.size()));

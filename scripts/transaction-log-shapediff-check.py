@@ -10,6 +10,7 @@
 #
 # It writes PASS/FAIL lines to $SHAPEDIFFCHECK_OUT and exits. The log setting
 # is put back before it exits.
+import time
 import os, tempfile, traceback
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -17,6 +18,15 @@ from PySide import QtCore, QtWidgets
 
 OUT = os.environ["SHAPEDIFFCHECK_OUT"]
 lines = []
+
+
+def mergeDialog():
+    # The merge's preview is not modal (docs/TransactionLog.md sec 32.15): it
+    # is found among the windows. Anything modal instead is in its way.
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        if w.objectName() == "TransactionMergeDialog" and w.isVisible():
+            return w
+    return QtWidgets.QApplication.activeModalWidget()
 
 
 def check(what, ok):
@@ -96,8 +106,9 @@ def part(of, name):
 
 
 def drive(seen, cut):
-    # The merge dialog is modal: this runs inside its event loop.
-    dialog = QtWidgets.QApplication.activeModalWidget()
+    # The panel waits for the merge dialog in a loop of its own: this runs
+    # inside it.
+    dialog = mergeDialog()
     if dialog is None or dialog.objectName() != "TransactionMergeDialog":
         seen["found"] = False
         if dialog is not None:
@@ -152,6 +163,69 @@ def drive(seen, cut):
             tree.setCurrentItem(item)
     settle()
     seen["again"] = cut.ViewObject.getValueDiff()
+
+    # Not modal (sec 32.15): the document is in reach while it is open
+    doc = cut.Document
+    seen["not modal"] = (not dialog.isModal()
+                         and QtWidgets.QApplication.activeModalWidget() is None)
+    tree.clearSelection()
+    part(diff, "diffAdd").click()
+    settle()
+    seen["asks"] = part(diff, "diffStatus").text()
+    Gui.Selection.addSelection(cut)
+    settle()
+    seen["picked"] = (cut.ViewObject.getValueDiff().get("by.name"),
+                      Gui.Selection.getSelection() == [])
+    QtCore.QMetaObject.invokeMethod(seen["dock"], "mergeBranch", QtCore.Qt.DirectConnection,
+                                    QtCore.Q_ARG(str, "side"))
+    settle()
+    seen["one at a time"] = len([w for w in QtWidgets.QApplication.topLevelWidgets()
+                                 if w.objectName() == "TransactionMergeDialog" and w.isVisible()])
+
+    def wait():
+        for _ in range(12):
+            time.sleep(0.05)
+            settle()
+
+    def stale():
+        return (part(dialog, "stale").isVisible(), part(dialog, "merge").isEnabled(),
+                part(dialog, "again").isVisible())
+
+    # A change the merge does not see: the preview stands. (Not back to the
+    # 12 the branches left from: with nothing of ours changed since, the
+    # merge is another one, the other taken whole.)
+    doc.openTransaction("main: wider still")
+    doc.getObject("Box").Width = 13
+    doc.recompute()
+    doc.commitTransaction()
+    wait()
+    seen["stands"] = stale()
+    # One it does: theirs set the length, and now ours has too
+    doc.openTransaction("main: longer too")
+    doc.getObject("Box").Length = 15
+    doc.recompute()
+    doc.commitTransaction()
+    wait()
+    seen["stale"] = stale()
+    QtCore.QTimer.singleShot(300, lambda: driveAgain(seen, dialog))
+    part(dialog, "again").click()
+
+
+def driveAgain(seen, before):
+    # The preview made again, in the same wait of the panel
+    dialog = mergeDialog()
+    seen["again found"] = (dialog is not None and dialog is not before
+                           and dialog.objectName() == "TransactionMergeDialog")
+    if dialog is None:
+        return
+    if seen["again found"]:
+        tree = dialog.findChild(QtWidgets.QTreeWidget)
+        seen["again says"] = [
+            tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())
+            if tree.topLevelItem(i).text(1) == "Box" and tree.topLevelItem(i).text(2) == "Length"]
+        seen["again fresh"] = (part(dialog, "stale").isVisible(),
+                               part(dialog, "merge").isEnabled())
+    seen["rows"] = len(seen["doc"].getTransactionLog())
     dialog.reject()
 
 
@@ -669,7 +743,7 @@ def run():
         settle()
         rows = len(doc.getTransactionLog())
         if dock is not None:
-            seen = {}
+            seen = {"dock": dock, "doc": doc}
             QtCore.QTimer.singleShot(300, lambda: drive(seen, cut))
             QtCore.QMetaObject.invokeMethod(
                 dock, "mergeBranch", QtCore.Qt.DirectConnection, QtCore.Q_ARG(str, "side")
@@ -708,7 +782,25 @@ def run():
             check("dialog closed: nothing left in the view",
                   view.getValueDiff() == {} and drawn(cut)[0] is None
                   and doc.getObject("Cut2").ViewObject.getValueDiff() == {})
-            check("dialog cancelled: no row written", len(doc.getTransactionLog()) == rows)
+            check("dialog: not modal, and an object is picked from it (%r, %r)"
+                  % (seen.get("asks"), seen.get("picked")),
+                  seen.get("not modal") is True
+                  and (seen.get("asks") or "").startswith("Pick an object")
+                  and seen.get("picked") == (7, True))
+            check("dialog: a second merge asked for meanwhile opens no second one",
+                  seen.get("one at a time") == 1)
+            check("dialog: a change the merge does not see leaves it standing (%r)"
+                  % (seen.get("stands"),), seen.get("stands") == (False, True, False))
+            check("dialog: one it does makes it stale, and nothing is merged from it (%r)"
+                  % (seen.get("stale"),), seen.get("stale") == (True, False, True))
+            check("dialog: previewed again, the length is a conflict now (%r)"
+                  % (seen.get("again says"),),
+                  seen.get("again found") is True
+                  and [t.split()[0] for t in seen.get("again says") or []] == ["conflict"]
+                  and seen.get("again fresh") == (False, True))
+            check("dialog cancelled: no row written but the two edits (%r)" % seen.get("rows"),
+                  len(doc.getTransactionLog()) == seen.get("rows")
+                  and seen.get("rows", 0) >= rows + 2)
         App.closeDocument(doc.Name)
         settle()
     except Exception:

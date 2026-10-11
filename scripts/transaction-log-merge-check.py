@@ -20,6 +20,15 @@ OUT = os.environ["MERGECHECK_OUT"]
 lines = []
 
 
+def mergeDialog():
+    # The merge's preview is not modal (docs/TransactionLog.md sec 32.15): it
+    # is found among the windows. Anything modal instead is in its way.
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        if w.objectName() == "TransactionMergeDialog" and w.isVisible():
+            return w
+    return QtWidgets.QApplication.activeModalWidget()
+
+
 def check(what, ok):
     lines.append(("PASS " if ok else "FAIL ") + what)
 
@@ -61,8 +70,9 @@ def column(tree, title):
 
 
 def drive(seen):
-    # The merge dialog is modal: this runs inside its event loop.
-    dialog = QtWidgets.QApplication.activeModalWidget()
+    # The panel waits for the merge dialog in a loop of its own: this runs
+    # inside it.
+    dialog = mergeDialog()
     if dialog is None or dialog.objectName() != "TransactionMergeDialog":
         seen["found"] = False
         if dialog is not None:
@@ -297,7 +307,7 @@ def run():
         sdock, _ = panel()
 
         def driveUnit(seen):
-            dialog = QtWidgets.QApplication.activeModalWidget()
+            dialog = mergeDialog()
             if dialog is None or dialog.objectName() != "TransactionMergeDialog":
                 seen["found"] = False
                 if dialog is not None:
@@ -379,7 +389,7 @@ def run():
         edock, _ = panel()
 
         def driveParts(seen):
-            dialog = QtWidgets.QApplication.activeModalWidget()
+            dialog = mergeDialog()
             if dialog is None or dialog.objectName() != "TransactionMergeDialog":
                 seen["found"] = False
                 if dialog is not None:
@@ -504,7 +514,7 @@ def run():
         cdock, _ = panel()
 
         def driveCells(seen):
-            dialog = QtWidgets.QApplication.activeModalWidget()
+            dialog = mergeDialog()
             if dialog is None or dialog.objectName() != "TransactionMergeDialog":
                 seen["found"] = False
                 if dialog is not None:
@@ -575,7 +585,7 @@ def run():
         pdock, _ = panel()
 
         def drivePick(seen, untick=None):
-            dialog = QtWidgets.QApplication.activeModalWidget()
+            dialog = mergeDialog()
             if dialog is None or dialog.objectName() != "TransactionMergeDialog":
                 seen["found"] = False
                 if dialog is not None:

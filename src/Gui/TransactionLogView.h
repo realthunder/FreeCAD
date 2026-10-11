@@ -27,12 +27,15 @@
 #include <string>
 #include <vector>
 #include <fastsignals/signal.h>
+#include <functional>
 #include <memory>
+#include <QPointer>
 #include <QTimer>
 
 #include <Gui/DockWindow.h>
 
 class QCheckBox;
+class QDialog;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -218,6 +221,18 @@ private:
     /// else the current head.
     void createBranch(int64_t version, int64_t seq);
     void showManifest(int64_t num);
+    /** Show a merge's preview beside the document, which stays in reach,
+     * and wait for its answer (docs/TransactionLog.md sec 32.15). `said`
+     * is what the preview says and `preview` makes it again: asked when
+     * the document changes, and where it then says another thing, `stale`
+     * is called. Returns the dialog's result -- rejected where the
+     * document left the panel meanwhile.
+     */
+    int askBeside(QDialog& dialog, const std::string& said,
+                  const std::function<std::string()>& preview,
+                  const std::function<void()>& stale);
+    /// A merge is being looked at: brought to the front, and said.
+    bool mergeIsOpen();
     void updateStatus();
     App::TransactionLog* log() const;
     void scheduleRefresh();
@@ -285,6 +300,8 @@ private:
     TransactionDiffBar* _diffBar {nullptr};
     struct Whole;
     std::unique_ptr<Whole> _whole;
+    /// The merge being looked at, while one is (sec 32.15)
+    QPointer<QDialog> _mergeDialog;
 };
 
 } // namespace DockWnd

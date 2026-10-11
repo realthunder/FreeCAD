@@ -22,6 +22,15 @@ OUT = os.environ["REQUESTCHECK_OUT"]
 lines = []
 
 
+def mergeDialog():
+    # The merge's preview is not modal (docs/TransactionLog.md sec 32.15): it
+    # is found among the windows. Anything modal instead is in its way.
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        if w.objectName() == "TransactionMergeDialog" and w.isVisible():
+            return w
+    return QtWidgets.QApplication.activeModalWidget()
+
+
 def check(what, ok):
     lines.append(("PASS " if ok else "FAIL ") + what)
 
@@ -77,7 +86,7 @@ def send(path, name, client=7, access=None):
 
 
 def drive(seen, pick):
-    dialog = QtWidgets.QApplication.activeModalWidget()
+    dialog = mergeDialog()
     if dialog is None or dialog.objectName() != "TransactionMergeDialog":
         seen["found"] = False
         if dialog is not None:
