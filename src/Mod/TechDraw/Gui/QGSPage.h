@@ -100,6 +100,13 @@ public:
     void addChildrenToPage();
     void fixOrphans(bool force = false);
 
+    /// Make the page's items if nothing has made them yet. See isPopulated().
+    void populate();
+    /// Whether the page's items exist. A page nothing has shown, printed,
+    /// exported or fed to the renderer has none: fixOrphans() and addView()
+    /// make nothing for it, and populate() makes them all at once.
+    bool isPopulated() const { return m_populated; }
+
     void redrawAllViews();
     void redraw1View(TechDraw::DrawView* dView);
 
@@ -155,6 +162,7 @@ protected:
 private:
     QGITemplate* pageTemplate;
     ViewProviderPage* m_vpPage;
+    bool m_populated {false};
 };
 
 }// namespace TechDrawGui

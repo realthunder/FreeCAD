@@ -306,6 +306,9 @@ void PagePrinter::renderPage(ViewProviderPage* vpp, QPainter& painter, QRectF& s
                              QRect& targetRect)
 {
 //    Base::Console().Message("PP::renderPage()\n");
+    // a page nothing has shown yet has no items to print (QGSPage::populate)
+    vpp->getQGSPage()->populate();
+
     //turn off view frames for print
     bool saveState = vpp->getFrameState();
     vpp->setFrameState(false);

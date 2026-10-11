@@ -88,7 +88,8 @@ void ViewProviderTemplate::updateData(const App::Property* prop)
             Gui::ViewProvider* vp =
                 Gui::Application::Instance->getDocument(t->getDocument())->getViewProvider(page);
             TechDrawGui::ViewProviderPage* vpp = dynamic_cast<TechDrawGui::ViewProviderPage*>(vp);
-            if (vpp) {
+            // a page with no items yet gets its template with them (QGSPage::populate)
+            if (vpp && vpp->getQGSPage()->isPopulated()) {
                 vpp->getQGSPage()->attachTemplate(t);
                 vpp->getQGSPage()->matchSceneRectToTemplate();
             }

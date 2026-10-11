@@ -235,6 +235,12 @@ fc_add_gui_test(GuiTechDrawSectionLineClick_tests_run
 fc_add_gui_test(GuiTechDrawColourWithoutOpacity_tests_run
                 techdraw-colour-without-opacity.py --timeout 180)
 
+# A TechDraw page makes its items when it is first shown, printed or
+# exported, not at the load: the load of a document made every page's
+# dimensions and hatches for pages nobody had asked for.
+fc_add_gui_test(GuiTechDrawPageItemsWhenNeeded_tests_run
+                techdraw-page-items-when-needed.py --timeout 180)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view
