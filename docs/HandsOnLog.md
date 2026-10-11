@@ -326,7 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, not pushed; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen; 10 s of them FIXED `ee9583a247` (a folder listed for every edge drawn), not pushed; the pages' work at load is for the reporter; x16win asked for its numbers | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, pushed 2026-10-11 08:10; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen; 10 s of them FIXED `ee9583a247` (a folder listed for every edge drawn), pushed with them; the pages' work at load is for the reporter; x16win's numbers in, 2026-10-11: on a box nobody watches (an older, smaller save of the file, `a810955c86`) the open returns in 7.3 to 9.4 s and the model is there 8 to 11 s after it, whole at 12 s -- the clipboard's cost and the file system's are this box's, the two drains' own 8.6 s are every box's | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5022,7 +5022,7 @@ two agree. Nine more GUI tests take their second view the same way
 (`grep -A4 Std_ViewCreate tests/gui`); they pass, being the first document
 of their run, and are left as they are.
 
-## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe, 14 to 18 s after `24f7c8a2bd`; a close from inside the load crashed on both, FIXED `93fc6cd58a`
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe, 14 to 18 s after `24f7c8a2bd`, 10 s after `ee9583a247`, and 8 to 11 s on a box nobody watches; a close from inside the load crashed on both, FIXED `93fc6cd58a`
 
 **The entry:** once in three sessions the first load's view was empty 13 s
 after opening, the background and the navigation cube only.
@@ -5303,9 +5303,76 @@ and what it says about a function it did not walk to is a lead, not a
 measure. What remains of TechDraw's 13 s is the pages' own work at load,
 which is the question above.
 
-How much of all this another box pays is not known: the 12.6 s were dear
-because each question to the file system is, here. x16win's numbers are
-not in.
+How much of all this another box pays: the 12.6 s were dear because each
+question to the file system is, here. See the next paragraph.
+
+**The same load on a box nobody watches (x16win, 2026-10-11).** A ROG Flow
+X16, 16 threads, 62 GB, Windows 11, not company managed; RelWithDebInfo at
+`a810955c86` -- with the clipboard change, WITHOUT `ee9583a247` and the
+three commits before it. Not the same file: its `scanner.FCStd` is an
+older save (5,516,554 bytes, 615 objects after the open, 8 pages; ours
+6,119,171 bytes, 686 objects, 10 pages). Every run under cdb, with a
+configuration of its own; four loads, the fourth with the log and the
+trace on. The box that asks for a recompute comes up there as here.
+
+| | this box, `a810955c86` | x16win, `a810955c86` |
+|---|---|---|
+| the open returns after | 17.6, 18.6 s | 9.4, 7.3, 7.3, 7.5 s |
+| the model first on the screen, after that | 13.9, 17.2 s | 8 to 11 s (a frame every 2 s: none at 6.3 s, some of it at 8.0 and 8.1 s in two runs, none at 8.4 and 8.8 s in the other two) |
+| the model whole, after that | 12 to 13 s after `ee9583a247`; not read off before it | 12.0 s, all four |
+| from the open to the model | 32 to 35 s | 15 to 19 s, whole at 19 to 21 s |
+| one question to the clipboard | 170 ms, and no answer | 0.1 to 0.2 ms (1.4 ms the session's first), 4 formats |
+| one pass over the commands, the document open | 0.006 s | 0.007 s |
+| the view provider drain | 17 slices, 7.35 s (at the merge) | 44 slices, 5.89 s: update 3.11 s, restore 1.40 s, finish 1.65 s |
+| Part's visual drain | 14 slices, 2.68 s | 12 slices, 2.67 s, the longest 1.21 s |
+| the pre-mesh | 0.66 s | 0.69 s, 152 shapes |
+| TechDraw's results taken on the GUI thread (`QFutureWatcher`) | 6.1 s | 0.25 s in 4 |
+
+What it says:
+
+- The wait is not this box's alone. Where a question to the file system
+  costs nothing and the clipboard answers, the model is still not there
+  for 8 to 11 s after the open, and whole at 12 s. The two drains' own
+  work (5.9 s and 2.7 s) is most of that, and it costs the same on both
+  boxes. Its trace agrees: of the dispatches over 10 ms at depth 0 in that
+  window, 8.2 s are 52 queued calls to the application (the slices), 1.4 s
+  ten timers it could not name (the trace there is before `e7e7454dba`'s
+  names).
+- The clipboard's cost is my sessions'. A box that is granted the
+  clipboard answers in 0.1 to 0.2 ms, so `24f7c8a2bd` is worth about 1 ms
+  a pass there against 0.8 s here. Whether the reporter's own FreeCAD on
+  this laptop is refused the clipboard is still not known; that commit's
+  message calling an older 765 ms pass "never the document" was an
+  inference and is no stronger for this.
+- The file system's cost is this box's. TechDraw's results on the GUI
+  thread are 0.25 s there against 6.1 s here, so `ee9583a247` should give
+  little there. Not measured: that box has not got the commit.
+- The open itself, 7.3 to 9.4 s for the smaller file, is not broken down.
+- Not tried there: copying and pasting objects (it would write that
+  user's clipboard, and nobody on that box asked for it).
+
+The script's count failed there: `geometryPixels` and the average colour
+read -1 in every frame, because the view is multisampled (4) and the
+engine does not read such a depth back (`depthSampleable = samples <= 1`,
+`BGFXViewLifecycle.cpp`). The pictures were good, and x16win counted the
+pixels that differ from the empty frame instead; the times above are from
+that count. The script does that count itself now, for every run
+(`9e1cf7d9f9`): on this box it is 0 where the geometry count stands at
+4839, and jumps and stands at the same frames.
+
+**The same build the morning after, 2026-10-11 08:00.** Four plain loads
+to try the script's new line, six hours after the last ones, nothing
+built between: the open returned after 18.3, 14.5, 15.1 and 14.1 s, and
+the model was first there 13.1, 10.1, 10.1 and 9.4 s after that. So the
+day's first load is dearer by 4 to 5 s at the open and 3 s after it, and
+the three that follow are 0.5 to 1.5 s over last night's 13.3 to 13.6 s.
+I take the first for the box's files not yet read that day; I did not
+look into it. It is the same size as what `ee9583a247` was measured to
+gain, so a single load says nothing about that commit either way: its
+before and after were three loads each within fifteen minutes.
+
+**Pushed** 2026-10-11 08:10 on the reporter's word, `a810955c86` to
+`9e1cf7d9f9`; x16win asked to measure the same load on it.
 
 **The close.** The script closes its document when its last frame is
 taken.
