@@ -60,6 +60,17 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-11 13:02: entry 67 FIXED `39b548048b`; local, not pushed, not
+staged.**
+- A TechDraw page removed outside a transaction no longer walks freed
+  views: the crash's own case, the 229 TechDraw objects removed in the
+  GUI with no transaction, runs through (before: access violation).
+- The new test passes on the old code too, so it is not what shows the
+  fix. A delete by hand with undo off: not tried.
+- Local and waiting for a push: the icon fix (`d38ac38d7b`,
+  `0049176c22`) and this one. origin/LinkVibe is still `9e1cf7d9f9`;
+  nothing staged.
+
 **2026-10-11 12:39: entry 47 -- TechDraw's real share MEASURED on a
 proper control: about ten of the file's 21 to 25 s. A new defect, entry
 67.**
@@ -680,7 +691,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | STAGED 2026-10-10 09:44, fixed `66ccd277b9`: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, fixed `dfdfc04c5c`, staged with it: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, not staged; by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
-| 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FOUND; a fix and a test WRITTEN, being built and run, NOT done (`docs/HandsOnLog.md`, under "47.", `138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
+| 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, local, not pushed, not staged (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -7545,7 +7556,7 @@ dialog's opening NOT measured again.**
 reporter's "Push" of about 08:05, origin/LinkVibe = `9e1cf7d9f9`); not
 staged. The dialog's opening is still NOT measured again.
 
-## 67. Removing a TechDraw page outside a transaction crashes -- FOUND; a fix and a test written, being built and run, NOT done (see `docs/HandsOnLog.md`)
+## 67. Removing a TechDraw page outside a transaction crashes -- FIXED `39b548048b`, not pushed, not staged; a delete by hand with undo off not tried (see `docs/HandsOnLog.md`)
 
 **2026-10-11 12:39, found by the build session on entry 47** and given a
 number here. Not reported by the reporter; the build session asked the
@@ -7570,6 +7581,26 @@ note-taker to place it. Its account is in `docs/HandsOnLog.md`, under
   `DrawViewCollection`, which has the same loop) and a test
   (`TDTest/DrawPageRemoveTest.py`) are WRITTEN and being built and run.
   NOT done; the result is owed.
+
+**2026-10-11 13:02, from the build session: FIXED `39b548048b`; local,
+not pushed, not staged.** The account is in `docs/HandsOnLog.md`
+(`ded8b1139a`); in short:
+- The change: `DrawPage::unsetupObject` and
+  `DrawViewCollection::unsetupObject` collect their views by NAME and
+  look each up again before removing it.
+- The test: `TDTest/DrawPageRemoveTest.py`, 2 cases (a page of one view,
+  twelve dimensions and four balloons removed with no transaction; the
+  view alone before its page). TechDraw's Python tests 9 of 9.
+- "Say it as it is", in the build session's words: the test PASSES ON
+  THE OLD CODE TOO -- in the console the freed pointer threw instead of
+  crashing -- so the test is NOT what shows the fix.
+- What shows it: the page's warning "DP::unsetupObject - Page - error
+  while deleting children" is in the test's log before the change and
+  not after; and the crash's own case run again on the new build -- the
+  229 TechDraw objects removed in the GUI with no transaction: 686 ->
+  457 objects, no exception, no warning (before: access violation).
+- Three TechDraw GUI tests on the build: 34 checks, none failed.
+- A delete by hand with undo switched off: NOT tried.
 
 ## Inbox
 
