@@ -24,6 +24,7 @@
 
 #include <Base/Console.h>
 
+#include "Application.h"
 #include "RenderParams.h"
 #include "TurnBudget.h"
 
@@ -115,7 +116,10 @@ TurnPace::Turn::~Turn()
     account().current = _outer;
     setWorking(_wasWorking, now);
     // Whose turn a slow dispatch was (see TurnPace's constructor)
-    if (RenderParams::getLevelDebug() && RenderParams::getLevelSlowBuildMS() > 0) {
+    // (asked of the parameters, which a process with no application has
+    // none of: a test of the arithmetic alone)
+    if (Application::Instance && RenderParams::getLevelDebug()
+        && RenderParams::getLevelSlowBuildMS() > 0) {
         const double held = seconds(_start, now) * 1000.0;
         if (held >= double(RenderParams::getLevelSlowBuildMS())) {
             Base::Console().Message(

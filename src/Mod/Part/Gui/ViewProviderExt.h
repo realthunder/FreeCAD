@@ -23,8 +23,10 @@
 #ifndef PARTGUI_VIEWPROVIDERPARTEXT_H
 #define PARTGUI_VIEWPROVIDERPARTEXT_H
 
+#include <array>
 #include <map>
 #include <memory>
+#include <set>
 
 #include <App/PropertyUnits.h>
 #include <Gui/ViewProviderGeometryObject.h>
@@ -69,6 +71,7 @@ class SoBrepFaceSet;
 class SoBrepEdgeSet;
 class SoBrepPointSet;
 class SoFCCoordinate3;
+class ShapeDiffView;
 struct ShapeInstanceRep;
 
 /** DiffuseColor, whose storage is the object's ShapeAppearance
@@ -104,9 +107,17 @@ public:
      * appearance stores as empty means the default material's colour
      * instead. Both null until the owner wires them, and the property is a
      * plain colour list until then.
+     *
+     * \a perEntry says what the list's length means. DiffuseColor's is a
+     * face count that one colour may stand in for -- a single colour is
+     * every face's, and none is "back to the object's". A list that holds a
+     * colour for each of some things it counts (MappedColors, a colour for
+     * each named element) is as long as it has colours, one included, and
+     * empty is none of them.
      */
     void setAppearance(App::PropertyAppearanceList *appearance,
-                       const App::PropertyColor *shapeColor);
+                       const App::PropertyColor *shapeColor,
+                       bool perEntry = false);
 
     /** @name Reads, overriding or hiding the base ones
      *
@@ -169,6 +180,7 @@ protected:
 private:
     App::PropertyAppearanceList *_appearance {nullptr};
     const App::PropertyColor *_shapeColor {nullptr};
+    bool _perEntry {false};
     /** Where getValues() resolves the appearance into
      *
      * The appearance stores a base and the faces that override it, so there
@@ -232,7 +244,11 @@ public:
     /// A name over ShapeAppearance's diffuse field, not a second store
     PropertyDiffuseColor DiffuseColor;
 
-    App::PropertyColorList MappedColors;    
+    /// The colours of the elements the object gives a look by name, in
+    /// the order of its names: what a script and a file older than the
+    /// object's store know them by. Taken from the object, and read from
+    /// such a file (docs/ShapeAppearanceDesign.md sec 14.6.6).
+    PropertyDiffuseColor MappedColors;
     App::PropertyBool MapFaceColor;    
     App::PropertyBool MapLineColor;    
     App::PropertyBool MapPointColor;    
@@ -310,6 +326,10 @@ public:
      */
     //@{
     void setElementColors(const std::map<std::string,App::Color> &colors) override;
+    std::map<std::string,App::MaterialAppearance>
+    getElementAppearances(const char *element=nullptr) const override;
+    void setElementAppearances(
+            const std::map<std::string,App::MaterialAppearance> &appearances) override;
     std::map<std::string,App::Color> getElementColors(const char *element=nullptr) const override;
     //@}
 
@@ -335,8 +355,21 @@ public:
         return true;
     }
 
-    static std::vector<App::Color> getShapeColors(const Part::TopoShape &shape, App::Color &defColor,
-            App::Document *sourceDoc=0, bool linkOnly=false);
+    /** @name The looks are the object's
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.3. The Part::Feature shown
+     * keeps what its elements look like and makes what is drawn of them;
+     * this view provider's appearance properties are names over that.
+     */
+    //@{
+    /// The object whose looks these are: the one shown, where it is its own
+    /// shape that is shown. None for a view of another shape of an object
+    /// (setShapePropertyName()), which keeps values of its own.
+    Part::Feature *appearanceStore() const;
+    void applyMaterialAppearance() override;
+    bool canResetAppearanceToMaterial() const override;
+    bool resetAppearanceToMaterial() override;
+    //@}
 
     /** @name Edit methods */
     //@{
@@ -345,6 +378,23 @@ public:
 
     virtual void setShapePropertyName(const char *propName);
     const char *getShapePropertyName() const;
+    /// Show \a shape, which is no property of the object: another state of
+    /// its shape, drawn over it (ShapeDiffView). The view keeps looks of its
+    /// own, as one of another shape property does.
+    void setGivenShape(const Part::TopoShape &shape);
+
+    /** @name The shape at two states, shown over the object
+     *
+     * docs/TransactionLog.md sec 32.9: a shape property's two values, read
+     * from the log with their names, compared (Part::ShapeDiff) and drawn.
+     * Gone when the object's own shape changes while it is one of the two.
+     */
+    //@{
+    bool showValueDiff(const char *prop, const std::string &a, const std::string &b,
+                       float position = 1.f, bool differencesOnly = false) override;
+    void hideValueDiff() override;
+    std::map<std::string, int> getValueDiff() const override;
+    //@}
 
     void setHighlightFaceEdges(bool enable);
 
@@ -396,6 +446,7 @@ protected:
 protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
+    void onBeforeChange(const App::Property* prop) override;
     /// Restore a document written before DiffuseColor became a name over
     /// ShapeAppearance: it kept its name and changed type, so it arrives
     /// here, and the base would drop it without a word.
@@ -843,7 +894,59 @@ protected:
     static void meshingBoundsOf(MeshLadderState *ladder, const TopoDS_Shape &shape,
                                 double &xMin, double &yMin, double &zMin,
                                 double &xMax, double &yMax, double &zMax);
-    bool UpdatingColor;
+    /// Whether the appearance properties are names over the object's
+    bool appearanceBound = false;
+    /// Taking the object's values: no write of them goes back to it
+    bool mirroringAppearance = false;
+    /// What a derived kind of view provider gave itself in its constructor,
+    /// to be the look of an object nobody chose one for
+    enum ClassLook { ClassFace = 1, ClassEdge = 2, ClassVertex = 4, ClassFlags = 8 };
+    int classLooks = 0;
+    void bindAppearance();
+    void unbindAppearance();
+    /// The object's looks and Map* properties into this view provider's
+    void mirrorAppearance();
+    /// A write to ShapeColor, Transparency or ShapeMaterial: the object's
+    /// own look
+    /// Mark the names over the object's looks as that, or as values again
+    void markAppearanceNames(bool on);
+    void writeOwnLook(const App::Property *prop);
+    /// A write to ShapeAppearance taken apart and given to the object
+    void writeFaces(const App::AppearanceList &before, const App::AppearanceList &after);
+    /// A colour for each edge or vertex (an App::PropertyElementAppearance
+    /// kind), each that differs from what is drawn given to the object
+    void writeColours(int kind, const std::vector<App::Color> &values);
+    void giveClassAppearance();
+    void adoptAppearance(Part::Feature *feat);
+    /// After a document is read: the looks taken from the object, or given
+    /// to one that came out of a file with none
+    void finishAppearance();
+
+    /** @name The looks kept here
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.11. A view provider that shows
+     * a shape of no Part::Feature -- a child view provider on a link -- or
+     * another shape of one has no object to keep its looks, and keeps them
+     * as every view provider did before: its properties are values, the
+     * names of the elements given a colour are the object's ColoredElements
+     * where it has that, their colours MappedColors, and what is drawn of
+     * the names and of the sources is made here and written to the lists.
+     */
+    //@{
+    /// The object's names of the elements given a colour; none where the
+    /// looks are an object's, or the object keeps no such names
+    App::PropertyLinkSub *unboundNames() const;
+    void setUnboundElementColors(const std::map<std::string,App::Color> &info);
+    void updateUnboundColors(App::Document *sourceDoc, bool forceColorMap);
+    /// Which elements the names paint, from the names: a file has the
+    /// lists as painted and not which entries the names painted
+    void rememberUnboundPainted();
+    /// By App::PropertyElementAppearance::Kind: the elements the names
+    /// painted the last time, and whether the sources were asked
+    std::array<std::set<int>, 3> unboundPainted;
+    std::array<bool, 3> unboundMapped {{false, false, false}};
+    bool updatingUnboundColors = false;
+    //@}
     bool highlightFaceEdges = false;
 
     /// Whether the last APPLIED per-face materials diverge in value in a
@@ -856,6 +959,15 @@ protected:
     bool appliedFaceColorsDivergent = false;
 
     std::string shapePropName;
+    /// The shape shown where it is no property of the object (setGivenShape())
+    Part::TopoShape givenShape;
+    bool hasGivenShape = false;
+
+    /// What showValueDiff() shows, and of what
+    std::unique_ptr<ShapeDiffView> diffView;
+    std::string diffProp;
+    std::string diffA;
+    std::string diffB;
 
     friend class SoFCCoordinate3;
 
@@ -869,7 +981,6 @@ private:
     static const char* DrawStyleEnums[];
 
     Part::TopoShape cachedShape;
-    fastsignals::scoped_connection conn;
 };
 
 }

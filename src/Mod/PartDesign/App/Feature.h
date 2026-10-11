@@ -74,6 +74,8 @@ public:
      *               Default is false.
      */
     virtual Part::Feature* getBaseObject(bool silent=false) const;
+    /// A feature with one before it in its body is made from that
+    bool hasBaseFeature() const override;
     /// Returns the BaseFeature property's shape (if any)
     virtual TopoShape getBaseShape(bool silent=false, bool force=false, bool checkSolid=true) const;
     const TopoDS_Shape& getBaseShapeOld() const;

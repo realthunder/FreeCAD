@@ -39,6 +39,10 @@
 
 #include "PropertyLinks.h"
 #include "Application.h"
+#include "TransactionValue.h"
+#include "FileHistory.h"
+#include "TransactionLog.h"
+#include "Transactions.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
@@ -283,12 +287,63 @@ PropertyLinkBase::getExternalElementReferences(const Document *doc)
     return res;
 }
 
+namespace {
+/// How _updateElementReference() takes a mapped name the shape does not
+/// have, inside followElementReferences()
+enum class Following {
+    No,     ///< as ever: searched by geometry, else marked missing
+    Names,  ///< left as it is, and said in followMissed
+    Mark,   ///< marked missing, nothing searched
+};
+thread_local Following following = Following::No;
+thread_local bool followMissed = false;
+
+struct FollowingScope
+{
+    explicit FollowingScope(Following how) : before(following) { following = how; }
+    ~FollowingScope() { following = before; }
+    Following before;
+};
+}
+
+void PropertyLinkBase::followElementReferences(const ElementEvidence &evidence)
+{
+    if (!getContainer())
+        return;
+    // Updating one may register or release another
+    const std::vector<DocumentObject*> features(_ElementRefs.begin(), _ElementRefs.end());
+    for (auto feature : features) {
+        if (!feature || !feature->isAttachedToDocument() || !_ElementRefs.count(feature))
+            continue;
+        {
+            FollowingScope byName(Following::Names);
+            followMissed = false;
+            updateElementReference(feature, false, true);
+        }
+        if (!followMissed || !_ElementRefs.count(feature))
+            continue;
+        auto geo = Base::freecad_dynamic_cast<GeoFeature>(feature);
+        if (geo && evidence && evidence(geo, this)) {
+            // The feature has what this was written against: as any
+            // reference whose element went
+            updateElementReference(feature, false, true);
+        }
+        else {
+            FollowingScope marked(Following::Mark);
+            updateElementReference(feature, false, true);
+        }
+    }
+}
+
 void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool reverse) {
     if(!feature || !feature->isAttachedToDocument())
         return;
     auto it = _ElementRefMap.find(feature);
     if(it == _ElementRefMap.end())
         return;
+    // What is written from here on follows the feature's shape: nobody
+    // sets it (docs/TransactionLog.md sec 31.25)
+    TransactionFollowing scope;
     std::vector<PropertyLinkBase*> props;
     props.reserve(it->second.size());
     props.insert(props.end(),it->second.begin(),it->second.end());
@@ -307,10 +362,209 @@ void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool rev
     }
 }
 
+/// The table of the document owning 'container', null for a property no
+/// document owns.
+static StringHasherRef ownerHasher(const PropertyContainer *container)
+{
+    auto owner = dynamic_cast<const DocumentObject*>(container);
+    if (!owner || !owner->getDocument())
+        return {};
+    return owner->getDocument()->getStringHasher();
+}
+
+/// The table the names of 'geo' are in: its geometry's, else its document's.
+static StringHasherRef elementHasher(const GeoFeature *geo)
+{
+    if (!geo)
+        return {};
+    auto prop = geo->getPropertyOfGeometry();
+    auto data = prop ? prop->getComplexData() : nullptr;
+    if (data && data->Hasher)
+        return data->Hasher;
+    return geo->getDocument() ? geo->getDocument()->getStringHasher() : StringHasherRef();
+}
+
+/** The element part of a name, ';<mapped>.<indexed>', with the string ids of
+ * its mapped name rewritten from one table's to another's: imported into
+ * 'to', holding in 'sids' what the new text names, or looked up with 'sids'
+ * null, taking nothing in. False when a string cannot be had, which for a
+ * lookup means the other table has no such name. An element part with no
+ * mapped name comes back as it is.
+ */
+static bool translateElement(const char *element, const StringHasher &from, StringHasher &to,
+                             std::string &out, Data::ElementIDRefs *sids)
+{
+    const char *mapped = Data::isMappedElement(element);
+    if (!mapped) {
+        out = element;
+        return true;
+    }
+    // A mapped name has no dot: the last one starts the indexed name.
+    const char *dot = strrchr(mapped, '.');
+    QByteArray text(mapped, dot ? static_cast<int>(dot - mapped) : static_cast<int>(strlen(mapped)));
+    QByteArray res;
+    StringHasher::ImportMemo memo;
+    QVector<StringIDRef> named;
+    bool ok = sids ? to.importText(text, from, res, &named, memo)
+                   : to.lookupText(text, from, res, memo);
+    if (!ok)
+        return false;
+    out = Data::elementMapPrefix();
+    out.append(res.constData(), res.size());
+    if (dot)
+        out += dot;
+    if (sids)
+        *sids = std::move(named);
+    return true;
+}
+
+/// A reference across tables keeps 'first' imported into the owner's table:
+/// what the file stores (docs/TransactionLog.md sec 27.76 item 5).
+static void storeShadow(PropertyLinkBase::ShadowSub &shadow, StringHasher &owner,
+                        const StringHasher &target)
+{
+    shadow.pending = false;
+    const char *element = Data::findElementName(shadow.first.c_str());
+    if (!element || !Data::isMappedElement(element)
+            || !translateElement(element, target, owner, shadow.stored, &shadow.storedIds)) {
+        shadow.stored.clear();
+        shadow.storedIds.clear();
+    }
+}
+
+/** A restored reference across tables (docs/TransactionLog.md sec 27.76 item
+ * 5) takes its working form, 'first', from what the file stored: the stored
+ * name looked up by content in the target's table, which the target may have
+ * compacted or re-minted since. The ids read are held in the owner's table.
+ * False when the target's table has not got a string the name names: its
+ * current shape has no such element. 'first' is then emptied and the old
+ * style name carries the missing marker, so that nothing resolves the stale
+ * text or adopts the indexed name; the lookup is tried again each time the
+ * reference is updated.
+ */
+static bool lookupShadow(DocumentObject *obj, std::string &sub,
+                         PropertyLinkBase::ShadowSub &shadow, const StringHasherRef &owner)
+{
+    if (!shadow.pending)
+        return true;
+    if (!owner || shadow.stored.empty()) {
+        shadow.pending = false;
+        return true;
+    }
+    const std::string &names = shadow.first.empty() ? shadow.second : shadow.first;
+    const char *element = Data::findElementName(names.c_str());
+    std::string prefix(names.c_str(), element ? element - names.c_str() : names.size());
+    GeoFeature *geo = nullptr;
+    std::pair<std::string, std::string> unused;
+    GeoFeature::resolveElement(obj, prefix.c_str(), unused, false,
+            GeoFeature::ElementNameType::Export, nullptr, nullptr, &geo);
+    StringHasherRef target = elementHasher(geo);
+    if (!target)
+        return true;
+    if (!shadow.savedIds.empty()) {
+        shadow.storedIds.clear();
+        for (long id : shadow.savedIds) {
+            if (auto sid = owner->getID(id))
+                shadow.storedIds.push_back(sid);
+        }
+        shadow.savedIds.clear();
+    }
+    std::string working;
+    if (target == owner) {
+        // One table after all: the stored name is the working one.
+        working = shadow.stored;
+        shadow.sids = shadow.storedIds;
+        shadow.stored.clear();
+        shadow.storedIds.clear();
+    }
+    else if (!translateElement(shadow.stored.c_str(), *owner, *target, working, nullptr)) {
+        const char *dot = strrchr(shadow.stored.c_str(), '.');
+        std::string marked = prefix;
+        const char *indexed = dot ? dot + 1 : shadow.stored.c_str();
+        if (!boost::starts_with(indexed, Data::missingPrefix()))
+            marked += Data::missingPrefix();
+        marked += indexed;
+        // As a missing reference's value reads (_updateElementReference).
+        sub = marked;
+        shadow.second = std::move(marked);
+        shadow.first.clear();
+        return false;
+    }
+    std::string first = prefix + working;
+    if (sub == shadow.first || Data::hasMappedElementName(sub.c_str()))
+        sub = first;
+    shadow.first = std::move(first);
+    shadow.pending = false;
+    return true;
+}
+
+/** Hold the string ids of the element 'shadow' names in 'geo'
+ * (docs/TransactionLog.md sec 27.75). 'element' is the element part of the
+ * resolved new style name, null while the element is missing: a missing
+ * reference keeps what it holds, which is the point. An element the
+ * reference moved to takes the map's ids. Otherwise the ids a file gave are
+ * held first -- numbers of the target document's table, looked up as they
+ * are -- and the map is asked only when nothing is held yet.
+ *
+ * A reference whose names are another table's than the owner's (sec 27.76
+ * item 5) holds the target's ids in memory, and keeps its name imported into
+ * the owner's table as well: that is what a save writes, and what outlives
+ * the target's own saves while this document is closed.
+ */
+static void holdShadowIDs(PropertyLinkBase::ShadowSub &shadow, const GeoFeature *geo,
+                          const char *element, bool moved, const StringHasherRef &owner)
+{
+    if (!geo)
+        return;
+    StringHasherRef target = elementHasher(geo);
+    if (owner && target && owner != target) {
+        // Another table's numbers, as a file before sec 27.76 item 5 wrote
+        // them, say nothing once that table has been saved on its own.
+        shadow.savedIds.clear();
+        if (element && (moved || shadow.sids.empty()))
+            shadow.sids = geo->getElementIDs(element);
+        if (element && (moved || shadow.stored.empty() || shadow.pending))
+            storeShadow(shadow, *owner, *target);
+        return;
+    }
+    shadow.stored.clear();
+    shadow.storedIds.clear();
+    shadow.pending = false;
+    if (moved && element) {
+        shadow.sids = geo->getElementIDs(element);
+        shadow.savedIds.clear();
+        return;
+    }
+    if (!shadow.savedIds.empty()) {
+        if (!target)
+            return;
+        shadow.sids.clear();
+        for (long id : shadow.savedIds) {
+            if (auto sid = target->getID(id))
+                shadow.sids.push_back(sid);
+        }
+        shadow.savedIds.clear();
+        return;
+    }
+    if (shadow.sids.empty() && element)
+        shadow.sids = geo->getElementIDs(element);
+}
+
+/// The element part of a shadow's new style name, null when it has none.
+static const char *shadowElement(const PropertyLinkBase::ShadowSub &shadow)
+{
+    if (shadow.first.empty())
+        return nullptr;
+    const char *element = Data::findElementName(shadow.first.c_str());
+    return element && element[0] ? element : nullptr;
+}
+
 void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::string &sub, ShadowSub &shadow)
 {
     if(!obj || !obj->isAttachedToDocument() || sub.empty())
         return;
+    // Missing by the lookup, 'first' is empty and the branch below takes it.
+    lookupShadow(obj, sub, shadow, ownerHasher(getContainer()));
     // A sub-name carrying the missing marker is asked about again rather
     // than taken as it is: restored with its old shadow, it is the reload
     // request of docs/TopoNamingEnhance.md section 7 (_updateElementReference
@@ -343,6 +597,7 @@ void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::
         return;
     }
 
+    holdShadowIDs(shadow, geo, shadowElement(shadow), false, ownerHasher(getContainer()));
     if(_ElementRefs.insert(geo).second)
         _ElementRefMap[geo].insert(this);
 }
@@ -389,6 +644,11 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         bool reverse, bool notify)
 {
     if(!obj || !obj->isAttachedToDocument()) return false;
+    auto hasher = ownerHasher(getContainer());
+    // Missing by the lookup, 'first' is empty and the old style name carries
+    // the missing marker, which is resolved below as any restored missing
+    // reference is.
+    bool found = lookupShadow(obj, sub, shadow, hasher);
     ShadowSub elementName;
     const char *subname;
     if(shadow.first.size())
@@ -435,17 +695,34 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
             || (owner && owner->getDocument()
                       && owner->getDocument()->testStatus(Document::Restoring)));
     if (!reverse) {
-        if (elementName.first.empty()) {
+        // Missing by the lookup while restoring, it was there when the file
+        // was saved: the target changed while this document was closed, and
+        // the search below is what the restore is for (TopoNamingEnhance.md
+        // 7.16).
+        if (elementName.first.empty() && !(restoring && !found)) {
             shadow.second.swap(elementName.second);
             return false;
         }
         // Unchanged, unless it is a missing reference being restored: the
         // XML pass may have resolved it before the shapes arrived, and the
         // request below is what the restore is for.
-        if(shadow==elementName && !(restoring && missing))
+        if(shadow==elementName && !(restoring && missing)) {
+            holdShadowIDs(shadow, geo, missing ? nullptr : shadowElement(shadow), false, hasher);
             return false;
+        }
     }
-    if ((feature == geo || restoring) && (missing || reverse)) {
+    // A value another branch wrote, taken by its names first
+    // (followElementReferences)
+    if (following == Following::Names && missing) {
+        if (!GeoFeature::hasMissingElement(sub.c_str()))
+            followMissed = true;
+        return false;
+    }
+    // Nor searched where the feature has not the shape it was written
+    // against: its old element is a number in that branch's shape, and
+    // looked up by position in a shape of this feature it is some other
+    // element.
+    if ((feature == geo || restoring) && (missing || reverse) && following != Following::Mark) {
         // If the referenced element is missing, or we are generating element
         // map for the first time, or we are re-generating the element map due
         // to version change, i.e. 'reverse', try search by geometry first
@@ -533,11 +810,13 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         else
             FC_LOG(ss.str());
         shadow.second.swap(elementName.second);
+        holdShadowIDs(shadow, geo, nullptr, false, hasher);
     } else {
         FC_TRACE(propertyName(this) 
                 << " element reference shadow update " << ret->getFullName() << " "
                 << shadow.first << " -> " << elementName.first);
         shadow.swap(elementName);
+        holdShadowIDs(shadow, geo, shadowElement(shadow), true, hasher);
         if(shadow.first.size() && Data::hasMappedElementName(sub.c_str()))
             updateSub(shadow.first);
     }
@@ -915,7 +1194,7 @@ PropertyLinkList::~PropertyLinkList()
 #ifndef USE_OLD_DAG
     //maintain the back link in the DocumentObject class
     if (_pcScope!=LinkScope::Hidden &&
-        !_lValueList.empty() &&
+        !this->getValues().empty() &&
         getContainer() &&
         getContainer()->isDerivedFrom(App::DocumentObject::getClassTypeId()))
     {
@@ -923,7 +1202,7 @@ PropertyLinkList::~PropertyLinkList()
         // before accessing internals make sure the object is not about to be destroyed
         // otherwise the backlink contains dangling pointers
         if (!parent->testStatus(ObjectStatus::Destroy)) {
-            for(auto *obj : _lValueList) {
+            for(auto *obj : this->getValues()) {
                 if (obj)
                     obj->_removeBackLink(parent);
             }
@@ -959,8 +1238,8 @@ void PropertyLinkList::hasSetValue()
 void PropertyLinkList::setSize(int newSize)
 {
     declareUnchangedPrefix(-1);
-    for(int i=newSize;i<(int)_lValueList.size();++i) {
-        auto obj = _lValueList[i];
+    for(int i=newSize;i<(int)this->getValues().size();++i) {
+        auto obj = this->getValues()[i];
         if (!obj || !obj->isAttachedToDocument())
             continue;
         _nameMap.erase(obj->getNameInDocument());
@@ -969,21 +1248,24 @@ void PropertyLinkList::setSize(int newSize)
             obj->_removeBackLink(static_cast<DocumentObject*>(getContainer()));
 #endif
     }
-    _lValueList.resize(newSize);
+    atomic_change guard(*this);
+    mutableValues(guard).resize(newSize);
 }
 
 void PropertyLinkList::setSize(int newSize, const_reference def) {
     auto oldSize = getSize();
+    atomic_change guard(*this);
     setSize(newSize);
+    auto &values = mutableValues(guard);
     for(auto i=oldSize;i<newSize;++i)
-        _lValueList[i] = def;
+        values[i] = def;
 }
 
 void PropertyLinkList::set1Value(int idx, DocumentObject* const &value) {
     declareUnchangedPrefix(-1);
     DocumentObject *obj = nullptr;
-    if(idx>=0 && idx<(int)_lValueList.size()) {
-        obj = _lValueList[idx];
+    if(idx>=0 && idx<(int)this->getValues().size()) {
+        obj = this->getValues()[idx];
         if(obj == value)
             return;
     }
@@ -1033,16 +1315,16 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
     // which arrives here as a new list holding the old one as its prefix. Both
     // the name map and the back links can be carried over in that case; redoing
     // them for the whole list would cost O(size) on every single append.
-    const bool append = lValue.size() >= _lValueList.size()
-        && std::equal(_lValueList.begin(), _lValueList.end(), lValue.begin());
+    const bool append = lValue.size() >= this->getValues().size()
+        && std::equal(this->getValues().begin(), this->getValues().end(), lValue.begin());
 
     // Consumers that keep per-element state can skip the prefix too
-    declareUnchangedPrefix(append ? (int)_lValueList.size() : -1);
+    declareUnchangedPrefix(append ? (int)this->getValues().size() : -1);
 
     // Only a map that is complete for the current list can be extended - an
     // incomplete one is indistinguishable from a stale one to find().
-    if (append && !_nameMap.empty() && _nameMap.size() == _lValueList.size()) {
-        for (int i=(int)_lValueList.size(); i<(int)lValue.size(); ++i) {
+    if (append && !_nameMap.empty() && _nameMap.size() == this->getValues().size()) {
+        for (int i=(int)this->getValues().size(); i<(int)lValue.size(); ++i) {
             auto obj = lValue[i];
             if (obj && obj->isAttachedToDocument())
                 _nameMap[obj->getNameInDocument()] = i;
@@ -1061,9 +1343,9 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
             // leaves the child's in-list unchanged, so skip the common prefix.
             std::size_t begin = 0;
             if (append)
-                begin = _lValueList.size();
+                begin = this->getValues().size();
             else {
-                for(auto *obj : _lValueList) {
+                for(auto *obj : this->getValues()) {
                     if (obj)
                         obj->_removeBackLink(parent);
                 }
@@ -1087,9 +1369,9 @@ PyObject *PropertyLinkList::getPyObject()
     Py::List sequence(count);
 #endif
     for (int i = 0; i<count; i++) {
-        auto obj = _lValueList[i];
+        auto obj = this->getValues()[i];
         if(obj && obj->isAttachedToDocument())
-            sequence.setItem(i, Py::asObject(_lValueList[i]->getPyObject()));
+            sequence.setItem(i, Py::asObject(this->getValues()[i]->getPyObject()));
         else
             sequence.setItem(i, Py::None());
     }
@@ -1109,10 +1391,10 @@ bool PropertyLinkList::isTouched() const {
         return true;
     if(_pcScope == LinkScope::Hidden)
         return false;
-    if(_lValueList.size() != _revisions.size())
+    if(this->getValues().size() != _revisions.size())
         return true;
     int i=0;
-    for(auto l : _lValueList) {
+    for(auto l : this->getValues()) {
         if(linkRevision(l) != _revisions[i++])
             return true;
     }
@@ -1123,9 +1405,9 @@ void PropertyLinkList::purgeTouched() {
     PropertyLinkBase::purgeTouched();
     if(_pcScope == LinkScope::Hidden)
         return;
-    _revisions.resize(_lValueList.size());
+    _revisions.resize(this->getValues().size());
     int i=0;
-    for(auto l : _lValueList)
+    for(auto l : this->getValues())
         _revisions[i++] = linkRevision(l);
 }
 
@@ -1134,7 +1416,7 @@ void PropertyLinkList::Save(Base::Writer &writer) const
     writer.Stream() << writer.ind() << "<LinkList count=\"" << getSize() << "\">\n";
     writer.incInd();
     for (int i = 0; i<getSize(); i++) {
-        DocumentObject* obj = _lValueList[i];
+        DocumentObject* obj = this->getValues()[i];
         if (obj)
             writer.Stream() << writer.ind() << "<Link value=\"" << obj->getExportName() << "\"/>" << endl;
         else
@@ -1143,6 +1425,33 @@ void PropertyLinkList::Save(Base::Writer &writer) const
 
     writer.decInd();
     writer.Stream() << writer.ind() << "</LinkList>\n";
+}
+
+bool PropertyLinkList::splitSaved(const std::string &fragment, SavedElements &elements) const
+{
+    // Save(): `<LinkList count="n">`, a `<Link value="name"/>` each. An
+    // object linked twice, or a place with nothing in it, is a list that is
+    // not a set of objects: one value.
+    if (fragment.find("<LinkList ") == std::string::npos
+            || !savedTags(fragment, "Link", "value", elements))
+        return false;
+    std::set<std::string> seen;
+    for (const auto &e : elements) {
+        if (e.first.empty() || !seen.insert(e.first).second)
+            return false;
+    }
+    return true;
+}
+
+bool PropertyLinkList::joinSaved(const SavedElements &elements, std::string &fragment) const
+{
+    std::ostringstream out;
+    out << "<LinkList count=\"" << elements.size() << "\">\n";
+    for (const auto &e : elements)
+        out << e.second << '\n';
+    out << "</LinkList>\n";
+    fragment = out.str();
+    return true;
 }
 
 void PropertyLinkList::Restore(Base::XMLReader &reader)
@@ -1199,13 +1508,13 @@ Property *PropertyLinkList::CopyOnLinkReplace(const App::DocumentObject *parent,
     std::vector<DocumentObject*> links;
     bool copied = false;
     bool found = false;
-    for(auto it=_lValueList.begin();it!=_lValueList.end();++it) {
+    for(auto it=this->getValues().begin();it!=this->getValues().end();++it) {
         auto res = tryReplaceLink(getContainer(),*it,parent,oldObj,newObj);
         if(res.first) {
             found = true;
             if(!copied) {
                 copied = true;
-                links.insert(links.end(),_lValueList.begin(),it);
+                links.insert(links.end(),this->getValues().begin(),it);
             }
             links.push_back(res.first);
         } else if(*it == newObj) {
@@ -1213,7 +1522,7 @@ Property *PropertyLinkList::CopyOnLinkReplace(const App::DocumentObject *parent,
             // entry, and insert it to take over oldObj's position.
             if(!copied) {
                 copied = true;
-                links.insert(links.end(),_lValueList.begin(),it);
+                links.insert(links.end(),this->getValues().begin(),it);
             }
         }else if(copied)
             links.push_back(*it);
@@ -1221,14 +1530,16 @@ Property *PropertyLinkList::CopyOnLinkReplace(const App::DocumentObject *parent,
     if(!found)
         return nullptr;
     auto p= new PropertyLinkList();
-    p->_lValueList = std::move(links);
+    atomic_change guard(*p);
+    p->mutableValues(guard) = std::move(links);
     return p;
 }
 
 Property *PropertyLinkList::Copy() const
 {
     PropertyLinkList *p = new PropertyLinkList();
-    p->_lValueList = _lValueList;
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
@@ -1237,20 +1548,20 @@ void PropertyLinkList::Paste(const Property &from)
     if(!from.isDerivedFrom(PropertyLinkList::getClassTypeId()))
         THROWM(Base::TypeError, "Incompatible property to paste to")
 
-    setValues(static_cast<const PropertyLinkList&>(from)._lValueList);
+    setValues(static_cast<const PropertyLinkList&>(from).getValues());
 }
 
 unsigned int PropertyLinkList::getMemSize() const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(App::DocumentObject *));
+    return static_cast<unsigned int>(this->getValues().size() * sizeof(App::DocumentObject *));
 }
 
 DocumentObject *PropertyLinkList::find(const char *name, int *pindex) const {
     if (!name)
         return nullptr;
-    if(_lValueList.size() <= 10) {
-        for(int i=0;i<(int)_lValueList.size();++i) {
-            auto obj = _lValueList[i];
+    if(this->getValues().size() <= 10) {
+        for(int i=0;i<(int)this->getValues().size();++i) {
+            auto obj = this->getValues()[i];
             if(obj && obj->isAttachedToDocument()
                    && boost::equals(name, obj->getNameInDocument())) {
                 if(pindex)
@@ -1261,10 +1572,10 @@ DocumentObject *PropertyLinkList::find(const char *name, int *pindex) const {
         return nullptr;
     }
 
-    if(_nameMap.empty() || _nameMap.size()>_lValueList.size()) {
+    if(_nameMap.empty() || _nameMap.size()>this->getValues().size()) {
         _nameMap.clear();
-        for(int i=0;i<(int)_lValueList.size();++i) {
-            auto obj = _lValueList[i];
+        for(int i=0;i<(int)this->getValues().size();++i) {
+            auto obj = this->getValues()[i];
             if(obj && obj->isAttachedToDocument())
                 _nameMap[obj->getNameInDocument()] = i;
         }
@@ -1273,16 +1584,16 @@ DocumentObject *PropertyLinkList::find(const char *name, int *pindex) const {
     if(it == _nameMap.end())
         return nullptr;
     if(pindex) *pindex = it->second;
-    return _lValueList[it->second];
+    return this->getValues()[it->second];
 }
 
 DocumentObject *PropertyLinkList::find(const std::string &name, int *pindex) const {
-    if (_nameMap.size() == _lValueList.size()) {
+    if (_nameMap.size() == this->getValues().size()) {
         auto it = _nameMap.find(name);
         if(it == _nameMap.end())
             return nullptr;
         if(pindex) *pindex = it->second;
-        return _lValueList[it->second];
+        return this->getValues()[it->second];
     }
     return find(name.c_str(), pindex);
 }
@@ -1293,8 +1604,8 @@ void PropertyLinkList::getLinks(std::vector<App::DocumentObject *> &objs,
     (void)subs;
     (void)newStyle;
     if(all||_pcScope!=LinkScope::Hidden) {
-        objs.reserve(objs.size()+_lValueList.size());
-        for(auto obj : _lValueList) {
+        objs.reserve(objs.size()+this->getValues().size());
+        for(auto obj : this->getValues()) {
             if(obj && obj->isAttachedToDocument())
                 objs.push_back(obj);
         }
@@ -1310,7 +1621,7 @@ void PropertyLinkList::getLinksTo(std::vector<App::ObjectIdentifier> &identifier
     if (!obj || (!all && _pcScope == LinkScope::Hidden))
         return;
     int i = -1;
-    for(auto o : _lValueList) {
+    for(auto o : this->getValues()) {
         ++i;
         if (o == obj) {
             identifiers.emplace_back(*this, i);
@@ -1325,12 +1636,12 @@ void PropertyLinkList::breakLink(App::DocumentObject *obj, bool clear) {
         return;
     }
     std::vector<App::DocumentObject*> values;
-    values.reserve(_lValueList.size());
-    for(auto o : _lValueList) {
+    values.reserve(this->getValues().size());
+    for(auto o : this->getValues()) {
         if(o != obj)
             values.push_back(o);
     }
-    if(values.size()!=_lValueList.size())
+    if(values.size()!=this->getValues().size())
         setValues(values);
 }
 
@@ -1627,9 +1938,18 @@ bool PropertyLinkSub::referenceChanged() const {
     return !_mapped.empty();
 }
 
+/// A sub-object path read from a value of another copy of the file names
+/// its element in that copy's string table (docs/TransactionLog.md sec
+/// 30.16): taken into this file's, where a restore is reading one.
+static std::string importSubStrings(std::string sub)
+{
+    auto strings = RestoreStrings::current();
+    return strings ? strings->sub(sub) : sub;
+}
+
 std::string PropertyLinkBase::importSubName(Base::XMLReader &reader, const char *sub, bool &restoreLabel) {
     if(!reader.doNameMapping())
-        return sub;
+        return importSubStrings(sub);
     std::ostringstream str;
     for(const char *dot=strchr(sub,'.');dot;sub=dot+1,dot=strchr(sub,'.')) {
         size_t count = dot-sub;
@@ -1644,7 +1964,7 @@ std::string PropertyLinkBase::importSubName(Base::XMLReader &reader, const char 
         str << reader.getName(std::string(sub,count).c_str()) << tail;
     }
     str << sub;
-    return str.str();
+    return importSubStrings(str.str());
 }
 
 const char *PropertyLinkBase::exportSubName(std::string &output,
@@ -1892,6 +2212,123 @@ void PropertyLinkSub::purgeTouched() {
 #define ATTR_SHADOWED "shadowed"
 #define ATTR_SHADOW "shadow"
 #define ATTR_MAPPED "mapped"
+#define ATTR_SIDS "sids"
+#define ATTR_STORED "stored"
+
+/// Whether every id of 'sids' is one of 'hasher's
+static bool allOf(const Data::ElementIDRefs &sids, const StringHasherRef &hasher)
+{
+    for (const auto &sid : sids) {
+        if (!sid.isFromSameHasher(hasher))
+            return false;
+    }
+    return true;
+}
+
+/** The string ids a shadow holds, written beside it as the element map
+ * writes its own (hex, space separated), and noted for a transaction-log
+ * capture of the value (sec 27.50 item 4): docs/TransactionLog.md sec
+ * 27.75. Ids read and not yet held go out as they came in.
+ *
+ * Only the owner's table's: a reference across tables (sec 27.76 item 5)
+ * writes the name it stored in that table, 'stored=', and the ids of that;
+ * the target's numbers mean nothing once the target is saved on its own.
+ */
+static void saveShadowIDs(Base::Writer &writer, const PropertyLinkBase::ShadowSub &shadow,
+                          const PropertyContainer *container)
+{
+    StringHasherRef hasher = ownerHasher(container);
+    const Data::ElementIDRefs *held = &shadow.sids;
+    if (!shadow.stored.empty() && (!hasher || allOf(shadow.storedIds, hasher))) {
+        writer.Stream() << "\" " ATTR_STORED "=\""
+                        << Base::Persistence::encodeAttribute(shadow.stored);
+        held = &shadow.storedIds;
+    }
+    std::ostringstream ids;
+    ids << std::hex;
+    const char *sep = "";
+    for (const auto &sid : *held) {
+        if (hasher && !sid.isFromSameHasher(hasher))
+            continue;
+        StringIDCollector::take(sid);
+        ids << sep << sid.value();
+        sep = " ";
+    }
+    for (long id : shadow.savedIds) {
+        ids << sep << id;
+        sep = " ";
+    }
+    if (!*sep)
+        return;
+    writer.Stream() << "\" " ATTR_SIDS "=\"" << ids.str();
+}
+
+static void restoreShadowIDs(Base::XMLReader &reader, PropertyLinkBase::ShadowSub &shadow)
+{
+    shadow.sids.clear();
+    shadow.savedIds.clear();
+    shadow.stored.clear();
+    shadow.storedIds.clear();
+    shadow.pending = false;
+    if (auto strings = RestoreStrings::current()) {
+        // A value of another copy of the file (sec 30.16): the name was
+        // taken into this table as it was read (importSubName), and the
+        // numbers written beside it are the other table's. What is held is
+        // what the name now names.
+        shadow.sids = strings->held(shadow.first);
+        if (reader.hasAttribute(ATTR_STORED)) {
+            shadow.stored = strings->element(reader.getAttribute(ATTR_STORED));
+            shadow.storedIds = strings->held(shadow.stored);
+            shadow.pending = !shadow.stored.empty();
+        }
+        return;
+    }
+    if (reader.hasAttribute(ATTR_STORED)) {
+        shadow.stored = reader.getAttribute(ATTR_STORED);
+        shadow.pending = !shadow.stored.empty();
+    }
+    if (!reader.hasAttribute(ATTR_SIDS))
+        return;
+    std::istringstream ids(reader.getAttribute(ATTR_SIDS));
+    ids >> std::hex;
+    long id;
+    while (ids >> id) {
+        if (id > 0)
+            shadow.savedIds.push_back(id);
+    }
+}
+
+/// Marks the ids of the owner's own table the shadows hold, as an element
+/// map marks its own before a save: the ids the saved version uses.
+static void markShadowIDs(const std::vector<PropertyLinkBase::ShadowSub> &shadows,
+                          const PropertyContainer *container)
+{
+    StringHasherRef hasher = ownerHasher(container);
+    if (!hasher)
+        return;
+    for (const auto &shadow : shadows) {
+        for (const auto *sids : {&shadow.sids, &shadow.storedIds}) {
+            for (const auto &sid : *sids) {
+                if (sid.isFromSameHasher(hasher))
+                    sid.mark();
+            }
+        }
+    }
+}
+
+/// Whether a link target is written: in the document, or removed while a
+/// transaction-log capture holds the name it had (docs/TransactionLog.md sec
+/// 24.3, 27.67) -- a value of an object removed with its target.
+static bool isSavedTarget(const DocumentObject* obj)
+{
+    return obj && (obj->isAttachedToDocument() || CaptureNames::find(obj));
+}
+
+void PropertyLinkSub::beforeSave(Base::Writer &writer) const
+{
+    (void)writer;
+    markShadowIDs(_ShadowSubList, getContainer());
+}
 
 void PropertyLinkSub::Save (Base::Writer &writer) const
 {
@@ -1900,7 +2337,7 @@ void PropertyLinkSub::Save (Base::Writer &writer) const
     std::string internal_name;
     // it can happen that the object is still alive but is not part of the document anymore and thus
     // returns 0
-    if (_pcLinkSub && _pcLinkSub->isAttachedToDocument())
+    if (isSavedTarget(_pcLinkSub))
         internal_name = _pcLinkSub->getExportName();
     writer.Stream() << writer.ind() << "<LinkSub value=\""
         <<  internal_name <<"\" count=\"" <<  _cSubList.size();
@@ -1933,6 +2370,7 @@ void PropertyLinkSub::Save (Base::Writer &writer) const
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
             }
+            saveShadowIDs(writer, shadow, getContainer());
         }
         writer.Stream()<<"\"/>\n";
     }
@@ -1967,6 +2405,8 @@ void PropertyLinkSub::Restore(Base::XMLReader &reader)
     std::vector<std::string> values(count);
     std::vector<ShadowSub> shadows(count);
     bool restoreLabel=false;
+    // The paths are elements of this object's, where they name no other.
+    RestoreStrings::Target target(name);
     // Sub may store '.' separated object names, so be aware of the possible mapping when import
     for (int i = 0; i < count; i++) {
         reader.readElement("Sub");
@@ -1979,6 +2419,7 @@ void PropertyLinkSub::Restore(Base::XMLReader &reader)
             if(reader.hasAttribute(ATTR_SHADOW))
                 shadows[i].first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
         }
+        restoreShadowIDs(reader, shadows[i]);
         if(reader.hasAttribute(ATTR_MAPPED))
             mapped.push_back(i);
     }
@@ -2466,17 +2907,17 @@ void PropertyLinkSubList::setValue(DocumentObject* lValue, const std::vector<std
 
     aboutToSetValue();
     std::size_t size = SubList.size();
-    this->_lValueList.clear();
+    _lValueList.clear();
     this->_lSubList.clear();
     if (size == 0) {
         if (lValue) {
-            this->_lValueList.push_back(lValue);
+            _lValueList.push_back(lValue);
             this->_lSubList.emplace_back();
         }
     }
     else {
         this->_lSubList = SubList;
-        this->_lValueList.insert(this->_lValueList.begin(), size, lValue);
+        _lValueList.insert(_lValueList.begin(), size, lValue);
     }
     updateElementReference(nullptr);
     checkLabelReferences(_lSubList);
@@ -2549,9 +2990,9 @@ void PropertyLinkSubList::addValue(App::DocumentObject *obj, const std::vector<s
 
 const string PropertyLinkSubList::getPyReprString() const
 {
-    assert(this->_lValueList.size() == this->_lSubList.size());
+    assert(_lValueList.size() == this->_lSubList.size());
 
-    if (this->_lValueList.empty())
+    if (_lValueList.empty())
         return std::string("None");
 
     std::stringstream strm;
@@ -2561,7 +3002,7 @@ const string PropertyLinkSubList::getPyReprString() const
             strm << ",(";
         else
             strm << "(";
-        App::DocumentObject* obj = this->_lValueList[i];
+        App::DocumentObject* obj = _lValueList[i];
         if (obj) {
             strm << "App.getDocument('" << obj->getDocument()->getName()
                  << "').getObject('" << obj->getNameInDocument() << "')";
@@ -2580,7 +3021,7 @@ DocumentObject *PropertyLinkSubList::getValue() const
 {
     App::DocumentObject* ret = nullptr;
     //FIXME: cache this to avoid iterating each time, to improve speed
-    for (auto i : this->_lValueList) {
+    for (auto i : _lValueList) {
         if (!ret)
             ret = i;
         if (ret != i)
@@ -2591,20 +3032,20 @@ DocumentObject *PropertyLinkSubList::getValue() const
 
 int PropertyLinkSubList::removeValue(App::DocumentObject *lValue)
 {
-    assert(this->_lValueList.size() == this->_lSubList.size());
+    assert(_lValueList.size() == this->_lSubList.size());
 
-    std::size_t num = std::count(this->_lValueList.begin(), this->_lValueList.end(), lValue);
+    std::size_t num = std::count(_lValueList.begin(), _lValueList.end(), lValue);
     if (num == 0)
         return 0;
 
     std::vector<DocumentObject*> links;
     std::vector<std::string> subs;
-    links.reserve(this->_lValueList.size() - num);
+    links.reserve(_lValueList.size() - num);
     subs.reserve(this->_lSubList.size() - num);
 
-    for (std::size_t i=0; i<this->_lValueList.size(); ++i) {
-        if (this->_lValueList[i] != lValue) {
-            links.push_back(this->_lValueList[i]);
+    for (std::size_t i=0; i<_lValueList.size(); ++i) {
+        if (_lValueList[i] != lValue) {
+            links.push_back(_lValueList[i]);
             subs.push_back(this->_lSubList[i]);
         }
     }
@@ -2772,13 +3213,13 @@ void PropertyLinkSubList::updateElementReference(DocumentObject *feature, bool r
     if(!feature) {
         std::vector<PropertyLinkBase::ShadowSub> tmpShadows;
         auto old = this->getOldValue<const PropertyLinkSubList>();
-        if (old && old->_lValueList.size() == old->_ShadowSubList.size()) {
+        if (old && old->getValues().size() == old->_ShadowSubList.size()) {
             for (const auto &sub : _lSubList) {
                 if (GeoFeature::hasMissingElement(sub.c_str())) {
                     int j=0;
                     for (const auto &shadow : old->_ShadowSubList) {
-                        const auto oldValue = old->_lValueList[j++];
-                        if (oldValue == this->_lValueList[i] && shadow.second == sub) {
+                        const auto oldValue = old->getValues()[j++];
+                        if (oldValue == _lValueList[i] && shadow.second == sub) {
                             tmpShadows.resize(this->_lSubList.size());
                             tmpShadows[i] = shadow;
                         }
@@ -2864,13 +3305,19 @@ void PropertyLinkSubList::purgeTouched() {
     }
 }
 
+void PropertyLinkSubList::beforeSave(Base::Writer &writer) const
+{
+    (void)writer;
+    markShadowIDs(_ShadowSubList, getContainer());
+}
+
 void PropertyLinkSubList::Save (Base::Writer &writer) const
 {
     assert(_lSubList.size() == _ShadowSubList.size());
 
     int count = 0;
     for(auto obj : _lValueList) {
-        if(obj && obj->isAttachedToDocument())
+        if(isSavedTarget(obj))
             ++count;
     }
     writer.Stream() << writer.ind() << "<LinkSubList count=\"" << count <<"\">\n";
@@ -2879,7 +3326,7 @@ void PropertyLinkSubList::Save (Base::Writer &writer) const
     bool exporting = owner && owner->isExporting();
     for (int i = 0; i < getSize(); i++) {
         auto obj = _lValueList[i];
-        if(!obj || !obj->isAttachedToDocument())
+        if(!isSavedTarget(obj))
             continue;
         const auto &shadow = _ShadowSubList[i];
         // shadow.second stores the old style element name. For backward
@@ -2906,6 +3353,7 @@ void PropertyLinkSubList::Save (Base::Writer &writer) const
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
             }
+            saveShadowIDs(writer, shadow, getContainer());
         }
         writer.Stream() << "\"/>\n";
     }
@@ -2940,6 +3388,7 @@ void PropertyLinkSubList::Restore(Base::XMLReader &reader)
         // Property not in an object!
         DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
         if (child) {
+            RestoreStrings::Target target(name);
             values.push_back(child);
             shadows.emplace_back();
             auto &shadow = shadows.back();
@@ -2952,6 +3401,7 @@ void PropertyLinkSubList::Restore(Base::XMLReader &reader)
                 if(reader.hasAttribute(ATTR_SHADOW))
                     shadow.first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
             }
+            restoreShadowIDs(reader, shadow);
             if(reader.hasAttribute(ATTR_MAPPED))
                 mapped.push_back(i);
         } else if (reader.isVerbose())
@@ -3161,7 +3611,7 @@ void PropertyLinkSubList::Paste(const Property &from)
     if(!from.isDerivedFrom(PropertyLinkSubList::getClassTypeId()))
         THROWM(Base::TypeError, "Incompatible property to paste to")
     auto &link = static_cast<const PropertyLinkSubList&>(from);
-    setValues(link._lValueList, link._lSubList,
+    setValues(link.getValues(), link._lSubList,
               std::vector<ShadowSub>(link._ShadowSubList));
 }
 
@@ -3312,6 +3762,29 @@ bool PropertyLinkSubList::adjustLink(const std::set<App::DocumentObject*> &inLis
 using DocInfoMap = std::map<QString, DocInfoPtr>;
 DocInfoMap _DocInfoMap;
 
+namespace {
+
+/// The file a link's owner is a document of: its FileName, or the file a
+/// version document is of (docs/TransactionLog.md sec 27.20); empty when
+/// the owner is not saved.
+std::string ownFileOf(const DocumentObject* owner)
+{
+    if (!owner || !owner->getDocument())
+        return {};
+    std::string file = owner->getDocument()->FileName.getStrValue();
+    FileHistory::splitVersion(file);
+    return file;
+}
+
+bool isOwnFile(const DocumentObject* owner, const std::string& file)
+{
+    const std::string own = ownFileOf(owner);
+    return !own.empty() && !file.empty()
+        && FileHistory::canonicalPath(own) == FileHistory::canonicalPath(file);
+}
+
+} // namespace
+
 class App::DocInfo :
     public std::enable_shared_from_this<App::DocInfo>
 {
@@ -3327,6 +3800,33 @@ public:
     std::string myPath;
     App::Document *pcDoc{nullptr};
     std::set<PropertyXLink*> links;
+    /// For a pinned link's DocInfo (docs/TransactionLog.md sec 27.7), keyed
+    /// `<file>@v<num>`: the version, and the file's history, kept open until
+    /// the version's document has it.
+    int64_t version {0};
+    std::shared_ptr<App::FileHistory> history;
+    /// For a live link to a branch (sec 27.23), keyed `<file>@<branch>@`:
+    /// the branch, whose holder is the document.
+    std::string branch;
+
+    /// Whether `doc` is this DocInfo's document: for a branch, the document
+    /// holding it, whichever that is -- the file's own or an editable
+    /// instance; else the document whose file is this one's.
+    bool isDocument(const App::Document* doc) const
+    {
+        if (!doc)
+            return false;
+        if (!branch.empty()) {
+            auto h = FileHistory::find(myPath);
+            if (!h)
+                return false;
+            auto& core = TransactionLogCore::of(*h);
+            LogBranch b;
+            return core.store().findBranch(branch, b) && core.holderOf(b.id) == doc;
+        }
+        QString fullpath(getFullPath());
+        return !fullpath.isEmpty() && getFullPath(doc->getFileName()) == fullpath;
+    }
 
     /** Cross-document links made while the owner or the linked document
      * had no file: setValue() delays their DocInfo till Save(), so no
@@ -3556,19 +4056,78 @@ public:
     static DocInfoPtr get(const char *filename,
             App::Document *pDoc,PropertyXLink *l, const char *objName)
     {
+        // A version document is named `<file>@v<num>` (docs/TransactionLog.md
+        // sec 27.7): a link to it is pinned to that version, and the path it
+        // keeps is the file's.
+        std::string plain(filename ? filename : "");
+        FileHistory::NameParts parts;
+        const bool named = FileHistory::parseName(plain, parts);
+        if (named)
+            plain = parts.file;
+        l->_selfFile = isOwnFile(Base::freecad_dynamic_cast<DocumentObject>(l->getContainer()),
+                                 plain);
+        if (named) {
+            plain = parts.file;
+            if (parts.branch.empty()) {
+                if (l->_pinVersion != parts.version) {
+                    l->_pinVersion = parts.version;
+                    l->_pinUuid.clear();
+                }
+                l->_liveBranch.clear();
+            }
+            else {
+                // An editable instance, or a branch's tip: a live link to the
+                // branch, never a pin -- pinning is the user's act (27.23).
+                l->_liveBranch = parts.branch;
+                l->_pinVersion = 0;
+                l->_pinUuid.clear();
+            }
+        }
         QString fullPath;
-        l->filePath = getDocPath(filename,pDoc,l->getPathResolveMode(),&fullPath);
-        
+        l->filePath = getDocPath(plain.c_str(),pDoc,l->getPathResolveMode(),&fullPath);
+
         FC_LOG("finding doc " << filename);
 
-        auto it = _DocInfoMap.find(fullPath);
+        // Pinned: resolved to the version when it can be found, else to the
+        // file as an unpinned link is, with a warning (27.5 ruling 2); the
+        // pin stays for the next open.
+        QString key = fullPath;
+        std::shared_ptr<FileHistory> history;
+        l->_pinFellBack = false;
+        if (l->_pinVersion > 0 && !fullPath.startsWith(QStringLiteral("https://"))) {
+            std::string reason;
+            const std::string path = fullPath.toUtf8().constData();
+            if (FileHistory::findVersion(path, l->_pinVersion, l->_pinUuid, history, reason)) {
+                key += QStringLiteral("@v") + QString::number(l->_pinVersion);
+                if (l->_pinUuid.empty()) {
+                    LogVersion version;
+                    if (TransactionLogCore::of(*history).store().getVersion(l->_pinVersion, version))
+                        l->_pinUuid = version.uuid;
+                }
+            }
+            else {
+                l->_pinFellBack = true;
+                history.reset();
+                static std::set<std::string> warned;
+                if (warned.insert(path + "@v" + std::to_string(l->_pinVersion)).second)
+                    FC_WARN("link " << l->getFullName() << " is pinned to version "
+                            << l->_pinVersion << " of " << path << ", which cannot be opened ("
+                            << reason << "): it shows the file");
+            }
+        }
+        else if (!l->_liveBranch.empty() && !fullPath.startsWith(QStringLiteral("https://"))) {
+            key += QStringLiteral("@") + QString::fromUtf8(l->_liveBranch.c_str())
+                + QStringLiteral("@");
+        }
+
+        auto it = _DocInfoMap.find(key);
         DocInfoPtr info;
         if(it != _DocInfoMap.end()) {
             info = it->second;
             if(!info->pcDoc) {
                 if (l->testFlag(PropertyLinkBase::LinkSilentRestore) || QFileInfo(fullPath).exists()) {
                     if (auto doc = App::GetApplication().addPendingDocument(
-                                fullPath.toUtf8().constData(),
+                                key.toUtf8().constData(),
                                 objName,
                                 l->testFlag(PropertyLinkBase::LinkAllowPartial))) {
                             info->attach(doc);
@@ -3577,7 +4136,11 @@ public:
             }
         } else {
             info = std::make_shared<DocInfo>();
-            auto ret = _DocInfoMap.insert(std::make_pair(fullPath,info));
+            info->history = history;
+            info->version = key == fullPath || l->_pinVersion <= 0 ? 0 : l->_pinVersion;
+            if (key != fullPath && !info->version)
+                info->branch = l->_liveBranch;
+            auto ret = _DocInfoMap.insert(std::make_pair(key,info));
             info->init(ret.first,objName,l);
         }
 
@@ -3620,6 +4183,12 @@ public:
     void deinit() {
         FC_LOG("deinit " << (pcDoc?pcDoc->getName():filePath()));
         assert(links.empty());
+        // The last pin of a version opened for pins lets go (sec 27.30).
+        App::Document* released = version && pcDoc
+                && pcDoc->testStatus(App::Document::FrozenVersion)
+                && pcDoc->testStatus(App::Document::OpenedForPin)
+                && !App::GetApplication().isClosingAll()
+            ? pcDoc : nullptr;
         connFinishRestoreDocument.disconnect();
         connPendingReloadDocument.disconnect();
         connDeleteDocument.disconnect();
@@ -3631,11 +4200,19 @@ public:
         myPos = _DocInfoMap.end();
         myPath.clear();
         pcDoc = nullptr;
+        if (released) {
+            // Closed later, when the operation that let go has ended (sec
+            // 27.38), unless the Gui handles the signal.
+            App::GetApplication().noteReleasedVersion(*released);
+            released->signalPinsReleased(*released);
+        }
     }
 
     void init(DocInfoMap::iterator pos, const char *objName, PropertyXLink *l) {
         myPos = pos;
         myPath = myPos->first.toUtf8().constData();
+        // A version's key is `<file>@v<num>`; the path is the file's.
+        FileHistory::splitVersion(myPath);
         App::Application &app = App::GetApplication();
         //NOLINTBEGIN
         connFinishRestoreDocument = app.signalFinishRestoreDocument.connect(
@@ -3653,14 +4230,15 @@ public:
             FC_ERR("document not found " << filePath());
         else {
             for(App::Document *doc : App::GetApplication().getDocuments()) {
-                if(getFullPath(doc->getFileName()) == fullpath) {
+                if(isDocument(doc)) {
                     if(doc->testStatus(App::Document::PartialDoc) && !doc->getObject(objName))
                         break;
                     attach(doc);
                     return;
                 }
             }
-            if (l->testFlag(PropertyLinkBase::LinkSilentRestore) && !QFileInfo(fullpath).exists()) {
+            if (l->testFlag(PropertyLinkBase::LinkSilentRestore)
+                    && !QFileInfo(QString::fromUtf8(myPath.c_str())).exists()) {
                 FC_LOG("document file does not exists: " << filePath());
                 return;
             }
@@ -3734,16 +4312,23 @@ public:
 
     static void restoreDocument(const App::Document &doc) {
         auto it = _DocInfoMap.find(getFullPath(doc.FileName.getValue()));
-        if(it==_DocInfoMap.end())
-            return;
-        it->second->slotFinishRestoreDocument(doc);
+        if(it!=_DocInfoMap.end())
+            it->second->slotFinishRestoreDocument(doc);
+        // A branch's DocInfo is keyed by the branch, not by any document's
+        // name: whichever document holds the branch (sec 27.23).
+        std::vector<DocInfoPtr> branches;
+        for (auto& v : _DocInfoMap) {
+            if (v.second && !v.second->branch.empty() && !v.second->pcDoc)
+                branches.push_back(v.second);
+        }
+        for (auto& info : branches)
+            info->slotFinishRestoreDocument(doc);
     }
 
     void slotFinishRestoreDocument(const App::Document &doc) {
         if(pcDoc)
             return;
-        QString fullpath(getFullPath());
-        if(!fullpath.isEmpty() && getFullPath(doc.getFileName())==fullpath)
+        if(isDocument(&doc))
             attach(const_cast<App::Document*>(&doc));
     }
 
@@ -3755,7 +4340,12 @@ public:
         if(&doc!=pcDoc)
             return;
 
+        // A version's or a branch's DocInfo is keyed by what it names, not by
+        // the document's name, which a save of a branch's holder moves (sec
+        // 27.23): nothing to rekey, only the stamp to pass on.
         QFileInfo info(myPos->first);
+        if (version || !branch.empty())
+            info = QFileInfo(getFullPath(doc.getFileName()));
         QString path(info.absoluteFilePath());
         const char *filename = doc.getFileName();
         QString docPath(getFullPath(filename));
@@ -4111,8 +4701,20 @@ void PropertyXLink::setValue(App::DocumentObject *lValue,
         if(lValue->getDocument() != owner->getDocument()) {
             if (!docInfo || lValue->getDocument()!=docInfo->pcDoc) {
                 this->filePath.clear();
+                // An editable instance with no branch yet takes it now: the
+                // link is to the branch, and has to save its name (sec 27.23).
+                Document* linkedDoc = lValue->getDocument();
+                if (linkedDoc->testStatus(Document::VersionDoc)
+                        && !linkedDoc->testStatus(Document::FrozenVersion)) {
+                    if (auto vlog = linkedDoc->getTransactionLog(); vlog && vlog->detached())
+                        vlog->takeBranch();
+                }
                 const char *filename = lValue->getDocument()->getFileName();
                 const char *ownerPath = owner->getDocument()->getFileName();
+                // To the file itself, not to a branch of it (sec 27.23).
+                FileHistory::NameParts parts;
+                if (!filename || !FileHistory::parseName(filename, parts))
+                    _liveBranch.clear();
                 if(!filename || *filename==0 || !ownerPath || *ownerPath==0) {
                     // linked or owner document not saved, delay getting file path till Save()
                 } else {
@@ -4172,6 +4774,15 @@ void PropertyXLink::setValue(std::string &&filename, std::string &&name,
         pObject = owner->getDocument()->getObject(name.c_str());
 
     if(pObject) {
+        // Through the DocInfo just found, not one derived again from the
+        // document's name: a version document saved as its file keeps the
+        // name of the version it was opened at (docs/TransactionLog.md sec
+        // 27.16), and that name would pin the link back to it.
+        if (info && docInfo != info) {
+            if (docInfo)
+                docInfo->remove(this);
+            docInfo = info;
+        }
         setValue(pObject,std::move(subs),std::move(shadows));
         return;
     }
@@ -4212,6 +4823,74 @@ const char *PropertyXLink::getDocumentPath() const {
 
 const char *PropertyXLink::getObjectName() const {
     return objectName.c_str();
+}
+
+void PropertyXLink::setPin(int64_t version, const std::string& uuid)
+{
+    OperationScope scope;   // sec 27.38
+    if (version < 0)
+        version = 0;
+    if (version == _pinVersion && (version == 0 || uuid == _pinUuid))
+        return;
+    auto owner = dynamic_cast<DocumentObject*>(getContainer());
+    if (!owner || !owner->isAttachedToDocument())
+        THROWM(Base::RuntimeError, "invalid container")
+    // The file linked, whatever its document is now -- the file itself, or
+    // a version of it (docs/TransactionLog.md sec 27.7).
+    std::string file;
+    if (docInfo)
+        file = docInfo->myPath;
+    else if (_pcLink && _pcLink->getDocument() != owner->getDocument()) {
+        const char* name = _pcLink->getDocument()->getFileName();
+        file = name ? name : "";
+        FileHistory::splitVersion(file);
+    }
+    else if (_pcLink || !objectName.empty()) {
+        // A local link: pinned to a version of its own file (sec 27.20).
+        file = ownFileOf(owner);
+    }
+    if (file.empty())
+        THROWM(Base::RuntimeError, "a pin needs a link to a saved file")
+    const bool self = isOwnFile(owner, file);
+    std::string name = _pcLink && _pcLink->isAttachedToDocument()
+        ? std::string(_pcLink->getNameInDocument()) : objectName;
+    std::vector<std::string> subs(_SubList);
+    std::vector<ShadowSub> shadows(_ShadowSubList);
+    aboutToSetValue();
+    _pinVersion = version;
+    _pinUuid = version ? uuid : std::string();
+    // A pin names a version, not a branch; unpinned, the link is to the file.
+    _liveBranch.clear();
+    // Resolved again under the pin: a new DocInfo, `<file>@v<num>` or the
+    // file's own.
+    if (docInfo) {
+        docInfo->remove(this);
+        docInfo.reset();
+    }
+    if (self && !version) {
+        // Unpinned, a link to its own file is local again: to the object of
+        // that name in the document, or to none if it is gone (sec 27.20).
+        setValue(owner->getDocument()->getObject(name.c_str()), std::move(subs),
+                 std::move(shadows));
+        hasSetValue();
+        return;
+    }
+    setValue(std::move(file), std::move(name), std::move(subs), std::move(shadows));
+    hasSetValue();
+}
+
+std::vector<PropertyXLink*> PropertyXLink::getPinsTo(const std::string& path)
+{
+    std::vector<PropertyXLink*> pins;
+    const std::string file = FileHistory::canonicalPath(path);
+    for (auto& v : _DocInfoMap) {
+        if (!v.second || !v.second->version)
+            continue;
+        if (FileHistory::canonicalPath(v.second->myPath) != file)
+            continue;
+        pins.insert(pins.end(), v.second->links.begin(), v.second->links.end());
+    }
+    return pins;
 }
 
 bool PropertyXLink::upgrade(Base::XMLReader &reader, const char *typeName) {
@@ -4277,6 +4956,17 @@ int PropertyXLink::checkRestore(std::string *msg) const {
 
 void PropertyXLink::afterRestore() {
     assert(_SubList.size() == _ShadowSubList.size());
+    if (_restoreSelf) {
+        _restoreSelf = false;
+        auto owner = dynamic_cast<DocumentObject*>(getContainer());
+        std::string file = ownFileOf(owner);
+        if (owner && !file.empty()) {
+            std::vector<std::string> subs(_SubList);
+            std::vector<ShadowSub> shadows(_ShadowSubList);
+            setValue(std::move(file), std::string(objectName), std::move(subs),
+                     std::move(shadows));
+        }
+    }
     if(!testFlag(LinkRestoreLabel) || !_pcLink || !_pcLink->isAttachedToDocument())
         return;
     setFlag(LinkRestoreLabel,false);
@@ -4412,20 +5102,31 @@ const char *PropertyXLink::getPathResolveModeName() const
     return it->second.name;
 }
 
+void PropertyXLink::beforeSave(Base::Writer &writer) const
+{
+    (void)writer;
+    markShadowIDs(_ShadowSubList, getContainer());
+}
+
 void PropertyXLink::Save (Base::Writer &writer) const {
     auto owner = dynamic_cast<const DocumentObject *>(getContainer());
-    if(!owner || !owner->getDocument())
+    // A detached copy -- a before value the undo system took, a value the
+    // transaction log copies at commit -- has no owner; it writes relative
+    // to the document the log's capture is for (docs/TransactionLog.md sec
+    // 27.67). It holds no _pcLink, only the names copyTo() kept.
+    const Document* ownerDoc = owner ? owner->getDocument() : capturingDocument();
+    if(!ownerDoc)
         return;
 
     assert(_SubList.size() == _ShadowSubList.size());
 
-    auto exporting = owner->isExporting();
+    auto exporting = owner && owner->isExporting();
     if(_pcLink && exporting && _pcLink->isExporting()) {
         // this means, we are exporting the owner and the linked object together.
         // Lets save the export name
         writer.Stream() << writer.ind() << "<XLink name=\"" << _pcLink->getExportName();
     }else {
-        if (filePath.empty() && _pcLink && _pcLink->getDocument() != owner->getDocument()) {
+        if (owner && filePath.empty() && _pcLink && _pcLink->getDocument() != owner->getDocument()) {
             const char *filename = _pcLink->getDocument()->getFileName();
             if(!filename || *filename == 0) {
                 FC_ERR("Linked document not saved for object " << _pcLink->getFullName());
@@ -4440,6 +5141,21 @@ void PropertyXLink::Save (Base::Writer &writer) const {
 
         const char *path = filePath.c_str();
         std::string _path;
+        if (!owner && filePath.empty() && !docName.empty() && docName != ownerDoc->getName()) {
+            // A copy of a link to another document that was never saved
+            // with its file: the file, as the owner's save would write it.
+            auto doc = GetApplication().getDocument(docName.c_str());
+            const char* filename = doc ? doc->getFileName() : nullptr;
+            if (filename && *filename) {
+                try {
+                    _path = DocInfo::getDocPath(
+                        filename, const_cast<Document*>(ownerDoc), resolveMode);
+                }
+                catch (Base::Exception&) {
+                    _path = filename;
+                }
+            }
+        }
         if(exporting) {
             // docInfo!=nullptr means we are exporting the owner but not exporting the
             // linked object.  Try to use absolute file path for easy transition
@@ -4460,6 +5176,12 @@ void PropertyXLink::Save (Base::Writer &writer) const {
         }
         if(!_path.empty())
             path = _path.c_str();
+        // A pin or a live branch of the owner's own file is saved with no
+        // file: "this document's file", whatever it is called after a Save
+        // As (sec 27.20, 27.21 Q2). A FreeCAD that does not know the pin
+        // reads a local link.
+        if (!exporting && docInfo && (_pinVersion > 0 || !_liveBranch.empty()) && _selfFile)
+            path = "";
         writer.Stream() << writer.ind()
             << "<XLink file=\"" << encodeAttribute(path)
             << "\" stamp=\"" << (docInfo&&docInfo->pcDoc?docInfo->pcDoc->LastModifiedDate.getValue():"")
@@ -4467,6 +5189,17 @@ void PropertyXLink::Save (Base::Writer &writer) const {
 
         if (this->resolveMode != PathResolveMode::Dynamic) {
             writer.Stream() << "\" resolve=\"" << getPathResolveModeName();
+        }
+        // Pinned (docs/TransactionLog.md sec 16.5, 27): absent otherwise,
+        // and a FreeCAD that does not know them resolves the file.
+        if (_pinVersion > 0) {
+            writer.Stream() << "\" version=\"" << _pinVersion;
+            if (!_pinUuid.empty())
+                writer.Stream() << "\" vuuid=\"" << encodeAttribute(_pinUuid);
+        }
+        // Live to a branch of the file (sec 27.23): whatever holds it.
+        else if (!_liveBranch.empty()) {
+            writer.Stream() << "\" branch=\"" << encodeAttribute(_liveBranch);
         }
     }
 
@@ -4493,6 +5226,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
                 else if(!shadowSub.first.empty())
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadowSub.first);
             }
+            saveShadowIDs(writer, shadowSub, getContainer());
         }
         writer.Stream() << "\"/>\n";
     }else {
@@ -4518,6 +5252,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
                     else if(!shadow.first.empty())
                         writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
+                saveShadowIDs(writer, shadow, getContainer());
             }
             writer.Stream()<<"\"/>\n";
         }
@@ -4550,6 +5285,15 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
     setFlag(LinkAllowPartial,
             reader.hasAttribute("partial") &&
             reader.getAttributeAsInteger("partial"));
+    _pinVersion = reader.hasAttribute("version")
+        ? std::atoll(reader.getAttribute("version")) : 0;
+    _pinUuid = reader.hasAttribute("vuuid") ? reader.getAttribute("vuuid") : "";
+    _liveBranch = reader.hasAttribute("branch") ? reader.getAttribute("branch") : "";
+    // No file with a pin or a branch: the owner's own file (sec 27.20). Not
+    // saved (a copy being pasted into a new document): a local link.
+    const bool self = file.empty() && (_pinVersion > 0 || !_liveBranch.empty());
+    if (self)
+        file = ownFileOf(static_cast<DocumentObject*>(getContainer()));
     std::string name;
     if(file.empty())
         name = reader.getName(reader.getAttribute("name"));
@@ -4574,6 +5318,10 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
     std::vector<ShadowSub> shadows;
     std::vector<int> mapped;
     bool restoreLabel = false;
+    // The paths are elements of this object's, where they name no other
+    // and it is of this document.
+    static const std::string none;
+    RestoreStrings::Target target(file.empty() ? name : none);
     if(reader.hasAttribute("sub")) {
         if(reader.hasAttribute(ATTR_MAPPED))
             mapped.push_back(0);
@@ -4589,6 +5337,7 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
             if(reader.hasAttribute(ATTR_SHADOW))
                 shadow.first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
         }
+        restoreShadowIDs(reader, shadow);
     }else if(reader.hasAttribute("count")) {
         int count = reader.getAttributeAsInteger("count");
         subs.resize(count);
@@ -4604,6 +5353,7 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
                 if(reader.hasAttribute(ATTR_SHADOW))
                     shadows[i].first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
             }
+            restoreShadowIDs(reader, shadows[i]);
             if(reader.hasAttribute(ATTR_MAPPED))
                 mapped.push_back(i);
         }
@@ -4613,6 +5363,20 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
 
     if (name.empty()) {
         setValue(nullptr);
+        return;
+    }
+
+    // Its own file's version is in the history the document reads after its
+    // objects: named now, resolved in afterRestore().
+    if (self && !file.empty()) {
+        aboutToSetValue();
+        setFlag(LinkDetached, false);
+        _pcLink = nullptr;
+        _restoreSelf = true;
+        objectName = std::move(name);
+        setSubValues(std::move(subs), std::move(shadows));
+        _mapped = std::move(mapped);
+        hasSetValue();
         return;
     }
 
@@ -4676,7 +5440,10 @@ void PropertyXLink::copyTo(PropertyXLink &other,
         other.docName = linked->getDocument()->getName();
         other.objectName = linked->getNameInDocument();
         other.docInfo.reset();
-        other.filePath.clear();
+        // Kept for Paste(): the document may be gone by then -- a pinned
+        // version is closed when its last pin goes (docs/TransactionLog.md
+        // sec 27.38), and an undo that pins again must find it by file.
+        other.filePath = linked == _pcLink ? filePath : std::string();
     }else{
         other.objectName = objectName;
         other.docName.clear();
@@ -4690,6 +5457,10 @@ void PropertyXLink::copyTo(PropertyXLink &other,
         other._ShadowSubList = _ShadowSubList;
     }
     other._Flags = _Flags;
+    other._pinVersion = _pinVersion;
+    other._pinUuid = _pinUuid;
+    other._liveBranch = _liveBranch;
+    other._selfFile = _selfFile;
 }
 
 void PropertyXLink::getLinkIdentity(std::string &doc, std::string &obj) const
@@ -4717,7 +5488,9 @@ bool PropertyXLink::isSame(const Property &other) const
     o.getLinkIdentity(otherDoc, otherObj);
     return doc == otherDoc && obj == otherObj
         && filePath == o.filePath
-        && _SubList == o._SubList;
+        && _SubList == o._SubList
+        && _pinVersion == o._pinVersion && _pinUuid == o._pinUuid
+        && _liveBranch == o._liveBranch;
 }
 
 Property *PropertyXLink::Copy() const
@@ -4733,8 +5506,13 @@ void PropertyXLink::Paste(const Property &from)
         THROWM(Base::TypeError, "Incompatible property to paste to")
 
     const auto &other = static_cast<const PropertyXLink&>(from);
-    if(!other.docName.empty()) {
-        auto doc = GetApplication().getDocument(other.docName.c_str());
+    // The pin first: resolving the value reads it.
+    _pinVersion = other._pinVersion;
+    _pinUuid = other._pinUuid;
+    _liveBranch = other._liveBranch;
+    _selfFile = other._selfFile;
+    auto doc = other.docName.empty() ? nullptr : GetApplication().getDocument(other.docName.c_str());
+    if(!other.docName.empty() && (doc || other.filePath.empty())) {
         if(!doc) {
             FC_WARN("Document '" << other.docName << "' not found");
             return;
@@ -4747,6 +5525,8 @@ void PropertyXLink::Paste(const Property &from)
         setValue(obj,std::vector<std::string>(other._SubList),
                  std::vector<ShadowSub>(other._ShadowSubList));
     } else
+        // By file: no document was named, or the one named is gone and the
+        // file it was a document of opens it again (a pinned version, 27.38).
         setValue(std::string(other.filePath),std::string(other.objectName),
                 std::vector<std::string>(other._SubList),
                 std::vector<ShadowSub>(other._ShadowSubList));
@@ -4860,6 +5640,7 @@ PyObject *PropertyXLink::getPyObject()
 }
 
 void PropertyXLink::setPyObject(PyObject *value) {
+    OperationScope scope;   // sec 27.38
     if(PySequence_Check(value)) {
         Py::Sequence seq(value);
         if(seq.size()!=2)
@@ -5323,6 +6104,12 @@ void PropertyXLinkSubList::onContainerRestored() {
         l.onContainerRestored();
 }
 
+void PropertyXLinkSubList::followElementReferences(const ElementEvidence &evidence)
+{
+    for(auto &l : _Links)
+        l.followElementReferences(evidence);
+}
+
 void PropertyXLinkSubList::updateElementReference(DocumentObject *feature, bool reverse,bool notify) {
     for(auto &l : _Links)
         l.updateElementReference(feature,reverse,notify);
@@ -5352,6 +6139,12 @@ void PropertyXLinkSubList::purgeTouched() {
     PropertyLinkBase::purgeTouched();
     for(auto &l : _Links)
         l.purgeTouched();
+}
+
+void PropertyXLinkSubList::beforeSave(Base::Writer &writer) const
+{
+    for (const auto &link : _Links)
+        link.beforeSave(writer);
 }
 
 void PropertyXLinkSubList::Save (Base::Writer &writer) const

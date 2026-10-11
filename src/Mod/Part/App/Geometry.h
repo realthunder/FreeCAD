@@ -138,13 +138,23 @@ public:
     void setExtension(std::unique_ptr<GeometryExtension>&& geo);
     void deleteExtension(const Base::Type& type);
     void deleteExtension(const std::string& name);
+    /** A transient extension is no part of the value: it is never saved,
+     * hasSameExtensions() does not compare it, and no hash covers it. So
+     * attaching or dropping one leaves the property that owns this geometry
+     * unchanged, which is why these two are const while setExtension() and
+     * deleteExtension() are not. A persistent extension is refused.
+     */
+    void setTransientExtension(std::unique_ptr<GeometryExtension>&& ext) const;
+    void deleteTransientExtension(const Base::Type& type) const;
 
-    void mirror(const Base::Vector3d& point) const;
-    void mirror(const Base::Vector3d& point, const Base::Vector3d& dir) const;
-    void rotate(const Base::Placement& plm) const;
-    void scale(const Base::Vector3d& vec, double scale) const;
-    void transform(const Base::Matrix4D& mat) const;
-    void translate(const Base::Vector3d& vec) const;
+    // These change the geometry, so they are not const: a property owns its
+    // geometry as const, and a write to it goes through the property.
+    void mirror(const Base::Vector3d& point);
+    void mirror(const Base::Vector3d& point, const Base::Vector3d& dir);
+    void rotate(const Base::Placement& plm);
+    void scale(const Base::Vector3d& vec, double scale);
+    void transform(const Base::Matrix4D& mat);
+    void translate(const Base::Vector3d& vec);
 
     virtual bool reverseIfReversed()
     {

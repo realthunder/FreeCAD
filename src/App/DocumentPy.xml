@@ -36,7 +36,11 @@ segments.</UserDocu>
     </Methode>
     <Methode Name="saveCopy">
       <Documentation>
-        <UserDocu>Save a copy of the document under a new name to disk</UserDocu>
+        <UserDocu>saveCopy(path, withHistory=True)
+
+Save a copy of the document under a new name to disk. withHistory=False
+leaves the embedded transaction log out of the copy
+(docs/TransactionLog.md sec 13.3).</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="load">
@@ -281,6 +285,529 @@ maxCount: to limit the number of links returned
     <Methode Name="supportedTypes">
       <Documentation>
         <UserDocu>A list of supported types of objects</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionLog">
+      <Documentation>
+        <UserDocu>getTransactionLog(fromSeq=0, limit=0) -> list of dict
+
+Transactions of this document's log (docs/TransactionLog.md), each a
+dict with seq, parent, id, kind, origin, name, time, script, inverts
+(the seq an undo or redo inverts, else 0), who wrote it (sec 30.6):
+session, author (the user's name) and author_kind ('local', 'verified',
+'invited', 'declared', or 'fork' for the desktop user of another copy of
+the file whose rows were imported), and uid, what the row is known by in every copy
+of the file: its session's uuid, a colon, and its ordinal in that
+session. Empty when
+the log is off (preference Document/TransactionLog).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionSessions">
+      <Documentation>
+        <UserDocu>getTransactionSessions() -> list of dict
+
+The sessions of this document's log (docs/TransactionLog.md sec 30.6), one
+per login of one user: {'id', 'user', 'kind', 'name', 'access', 'host',
+'opened', 'closed'} -- 'user' the id of the user row, which every login of
+one person shares; 'closed' 0 while the session is open.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="pushTransactionActor" Keyword="true">
+      <Documentation>
+        <UserDocu>pushTransactionActor(kind, name, access='edit', login=0)
+
+Act as someone else from here on in this thread, in every document
+(docs/TransactionLog.md sec 30.3 S.b): the rows of the transactions opened
+until popTransactionActor() name that user as their author. `kind` is
+'verified', 'invited' or 'declared'; `login` tells one connection of the
+user from another, 0 for one session per user. What a served document's
+host does for each client; here for tests and scripts.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="popTransactionActor">
+      <Documentation>
+        <UserDocu>popTransactionActor() -> bool
+
+End the last pushTransactionActor(). False when there was none.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="transactionLogin" Keyword="true">
+      <Documentation>
+        <UserDocu>transactionLogin(kind, name, access='edit', login=0) -> int
+
+Record that a connection was admitted (docs/TransactionLog.md sec 30.6 U2):
+its session is opened and a `login` row, a record with no ops, is written.
+Returns the row's seq, 0 when the log is off.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="transactionLogout" Keyword="true">
+      <Documentation>
+        <UserDocu>transactionLogout(kind, name, login=0) -> bool
+
+The connection left: its session is closed. No row is written.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionOps">
+      <Documentation>
+        <UserDocu>getTransactionOps(seq) -> list of dict
+
+The ops of one logged transaction: op, ckind, cid, cname, ctype, prop,
+ptype, meta, before, after, derived. An empty 'after' on a set op is a
+value not yet resolved (see resolveTransactionLog).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionValue">
+      <Documentation>
+        <UserDocu>getTransactionValue(ref) -> (fragment, {name: bytes})
+
+The XML fragment of a logged value and its attachments, or None.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionVersions">
+      <Documentation>
+        <UserDocu>getTransactionVersions() -> list of dict
+
+The versions of this document's log (docs/TransactionLog.md sec 16.3),
+each a dict with num, uuid, branch, kind, name, seq, env, docxml, schema,
+created, and manifest: a list of (entry, hash).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="snapshotTransactionLog">
+      <Documentation>
+        <UserDocu>snapshotTransactionLog() -> int
+
+Take an unnamed version of the document as it stands into its transaction
+log (docs/TransactionLog.md sec 16.3): a save's serialisation with no
+archive written. Returns the version number, 0 if there is no log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="restoreTransactionVersion">
+      <Documentation>
+        <UserDocu>restoreTransactionVersion(num) -> bool
+
+Restore the document to version `num` of its transaction log
+(docs/TransactionLog.md sec 24.5): one transaction, kind `restore`, makes
+the document what the version was, and is an undo step like any. The
+document is not reloaded; view providers are not restored. False if there
+is no log; raises if the version is missing.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="openTransactionVersion">
+      <Documentation>
+        <UserDocu>openTransactionVersion(num, createView=True) -> Document
+
+Open version `num` of this document's file as a document of its own
+(docs/TransactionLog.md sec 27.5, 27.7): on the file's one log, at that
+version, named after the file with `@vN`, read-only as a partial
+document is. A version open already is returned instead. Its first change
+puts it on a branch: the one whose tip the version is if no document holds
+it, else a new one, `BRANCH@vN`.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="saveVersionAsFile">
+      <Documentation>
+        <UserDocu>saveVersionAsFile() -> int
+
+Save this version document over its file (docs/TransactionLog.md sec
+27.16), which save() refuses: the document takes its branch if it has
+none, as its first change would, and the file is written from it and
+reopens on that branch. The document keeps its name. Returns the version
+the save became.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="saveToLog">
+      <Documentation>
+        <UserDocu>saveToLog(name='Saved to history') -> int
+
+Save the document into its file's history only (docs/TransactionLog.md
+sec 27.22, 27.28): the log records a version, named so it is kept, and the
+file gets the new history -- but what the file opens as is not changed.
+Refused for a pinned version, a document not saved to a file, and a file
+that does not carry its history. Returns the version.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionCursor">
+      <Documentation>
+        <UserDocu>getTransactionCursor() -> dict or None
+
+Where this document is on its file's log (docs/TransactionLog.md sec 27.7):
+branch (its id, 0 for none yet), head (the seq its next row follows),
+detached (a version document not yet changed), version (the version a
+detached one is at), and documents (the names of every document of the
+file). None if there is no log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="undoTransactionFromLog">
+      <Documentation>
+        <UserDocu>undoTransactionFromLog(seq) -> bool
+
+Undo row `seq` of the transaction log though it is not the last step
+(docs/TransactionLog.md sec 24.4): a new transaction, itself an undo step,
+applies the row reversed. Refused -- False, with the conflicts reported --
+when anything done since changed a property the row set, a created object
+is gone, or a removed object's name or id is taken. Derived values are not
+restored; their objects are touched for recompute. False if there is no log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="nameTransactionVersion">
+      <Documentation>
+        <UserDocu>nameTransactionVersion(num, name) -> bool
+
+Name version `num` of the transaction log (docs/TransactionLog.md sec
+16.3): a named version is never evicted. An empty name makes it unnamed
+again. False if there is no log or no such version.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionBranches">
+      <Documentation>
+        <UserDocu>getTransactionBranches() -> list of dict
+
+The branches of the transaction log (docs/TransactionLog.md sec 17, 26):
+id, name, from_version, from_seq, head, id_base, last_id, created, closed,
+and current -- whether the document is on it. Empty without a log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="createTransactionBranch" Keyword="true">
+      <Documentation>
+        <UserDocu>createTransactionBranch(name, version=0, seq=0) -> int
+
+Make branch `name` from version `version`, or else from log row `seq`, or
+else from the current head, and switch the document to it; the version it
+forks from is named if it was not. Returns the branch id, 0 without a log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="switchTransactionBranch">
+      <Documentation>
+        <UserDocu>switchTransactionBranch(name) -> bool
+
+Make the document the head of branch `name`, in place. Not an undo step:
+undo and redo become that branch's own steps since the document was
+opened. False without a log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="renameTransactionBranch">
+      <Documentation>
+        <UserDocu>renameTransactionBranch(name, newName) -> bool
+
+Rename a branch. False without a log; no such branch, or a new name that
+is empty or taken, raises.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="trimTransactionBranch" Keyword="true">
+      <Documentation>
+        <UserDocu>trimTransactionBranch(name, version=0, bridge=True) -> int
+
+Trim a branch (docs/TransactionLog.md sec 16.7): its rows up to `version`,
+else up to the version at its head, and its unnamed versions before it go,
+never a row another branch holds, a named version or one a branch forked
+from. The version kept is named. With `bridge`, where another branch shares
+the history, the rows from the newest shared one up to the kept version
+become one row of their net change instead, so a switch between the two
+still walks rows (sec 27.71). Returns the rows removed.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="deleteTransactionBranch">
+      <Documentation>
+        <UserDocu>deleteTransactionBranch(name) -> int
+
+Delete a branch that the document is not on (sec 16.7): the branch, the
+rows only it holds, its versions but those another branch forked from.
+Returns the rows removed.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="compactFileState">
+      <Documentation>
+        <UserDocu>compactFileState() -> dict
+
+Compact the state the documents of this file share (docs/TransactionLog.md
+sec 27.47): the name and last geometry id of every object nothing refers
+to any more -- no document of the file holds it, no op of the log names
+it, no version has it -- are forgotten, so the name is free again, and the
+strings of the file's hasher nothing holds are dropped. The id counters
+stay. Returns {'names', 'geo_ids', 'strings'}: how many of each went.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="squashTransactionVersions">
+      <Documentation>
+        <UserDocu>squashTransactionVersions(from, to) -> int
+
+Squash the rows between versions `from` and `to` (docs/TransactionLog.md
+sec 16.7) into one transaction of their net change, undone and replayed
+like any; unnamed versions between go. Raises when `from` is not behind
+`to`, or a branch forks, or a named version sits, between them. Returns
+the rows folded.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="openTransactionBranch">
+      <Documentation>
+        <UserDocu>openTransactionBranch(name='', gui=True) -> Document
+
+Make a branch at the head this document is on and open it in a second
+document of the file, this one staying where it is (docs/TransactionLog.md
+sec 30.3) -- `name`, or `&lt;branch&gt;~&lt;n&gt;`. The new branch names this one
+as its target; neither follows the other, and one is merged into the other
+with mergeTransactionBranch(). Raises when the name is taken.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionBranchState">
+      <Documentation>
+        <UserDocu>getTransactionBranchState() -> dict
+
+Where the branch this document is on stands against the branch it was made
+from (docs/TransactionLog.md sec 30.3): {'branch', 'target', 'ahead',
+'behind'} -- the operations here its target does not hold, and those of
+its target not held here. 'target' is empty for a branch with none.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="previewTransactionMerge">
+      <Documentation>
+        <UserDocu>previewTransactionMerge(branch, version=0) -> dict
+
+What merging `branch` into the branch this document is on would do
+(docs/TransactionLog.md sec 28), read only: {'branch', 'ours', 'theirs',
+'base', 'fast_forward', 'conflicts', 'changes'}. `base` is the newest log
+row both histories hold. Each change is {'kind', 'op', 'key', 'ckind',
+'cid', 'object', 'prop', 'type', 'base', 'ours', 'theirs', 'note',
+'derived'}; kind
+is 'take' (ours has not changed it), 'same', 'conflict' (a side must be
+picked, by `key`), 'view' (a view-provider conflict, ours kept unless
+picked) or 'derived' (not merged, recomputed). With `version`, the branch
+is merged up to that version of it. Raises when there is no such branch
+or the two share no history in the log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="mergeTransactionBranch">
+      <Documentation>
+        <UserDocu>mergeTransactionBranch(branch, picks={}, fallback='', version=0) -> dict
+
+Merge `branch` into the branch this document is on (docs/TransactionLog.md
+sec 28): one transaction of kind 'merge', undone like any. `picks` maps a
+conflict's key to 'ours' or 'theirs'; `fallback` is the side of every
+conflict not picked. Returns {'seq', 'unresolved', 'failed', 'preview'}:
+a conflict with no side refuses the merge -- 'seq' is 0, nothing moved,
+and 'unresolved' lists them. 'unchanged' says the merge wrote its row and
+nothing of the document, so is no undo step. 'failed' names the objects whose recompute
+failed on the merged state. The other branch is left as it is.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="previewTransactionRollBack">
+      <Documentation>
+        <UserDocu>previewTransactionRollBack() -> dict or None
+
+The merge undone at the head of this branch, with nothing done since,
+which rollBackTransactionMerge() would take out (docs/TransactionLog.md
+sec 31.21): {'seq', 'before', 'branch', 'rows'} -- the merge's row, the row
+it was made on, the branch it merged, and how many rows it and its undoing
+are. None where the head is anything else, or the rows cannot go: another
+document of the file stands on one, a branch was made from one, or a
+version with a name was taken at one. Read only.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="rollBackTransactionMerge">
+      <Documentation>
+        <UserDocu>rollBackTransactionMerge() -> dict or None
+
+Roll back the merge undone at the head of this branch
+(docs/TransactionLog.md sec 31.21): the branch is put back on the row the
+merge was made on, the rows of the merge and of its undoing leave the log,
+and the other branch is no longer merged -- merging it again asks
+everything again. The document does not change; the merge can no longer be
+redone. Returns what was rolled back, as previewTransactionRollBack() says
+it, or None where there was nothing to roll back.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="compareTransactionStates">
+      <Documentation>
+        <UserDocu>compareTransactionStates(a=0, b=0) -> list of dict
+
+What differs between two rows of the log (docs/TransactionLog.md sec 32.10),
+each by its seq; 0 is the row this document is on. Every property some row on
+the way from a to b set, where it is not at b what it was at a: {'ckind',
+'cid', 'object', 'prop', 'type', 'a', 'b', 'derived', 'inA', 'inB'} -- 'a' and
+'b' the value at each as a ref, empty where it is not there or the log did not
+keep it. An object at one of the two only is an entry with no 'prop', before
+its properties. The two rows may be on different branches. Read only.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionValueAt">
+      <Documentation>
+        <UserDocu>getTransactionValueAt(obj, prop, seq=0) -> str
+
+The value property `prop` of `obj` -- an object, or its id -- has at row `seq`
+of the log, as a ref: what the last row of that row's branch at or before it
+set. 0 is the row this document is on. Empty where no row set it.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="keepTransactionValue" Keyword="true">
+      <Documentation>
+        <UserDocu>keepTransactionValue(obj, prop='', seq=0, keep=True) -> list of str
+
+Keep in the file the value property `prop` of `obj` has at row `seq`
+(docs/TransactionLog.md sec 32.11). A value a recompute wrote -- a shape -- is
+otherwise left out of the history a save writes, unless a version kept reaches
+it. With no `prop`, every property of the object a recompute wrote. `keep`
+False lets it go again. Returns the refs kept, or let go.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getKeptTransactionValues">
+      <Documentation>
+        <UserDocu>getKeptTransactionValues() -> list of dict
+
+The values keepTransactionValue() keeps: {'ref', 'cid', 'object', 'prop',
+'seq'}, the row being the one it was asked for at.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="releaseTransactionValue">
+      <Documentation>
+        <UserDocu>releaseTransactionValue(ref) -> bool
+
+Let go of the kept value `ref`, one of getKeptTransactionValues(), whether a
+row of the log still names it or not. False where it was not kept.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="keepTransactionValuesOf">
+      <Documentation>
+        <UserDocu>keepTransactionValuesOf(obj, keep=True)
+
+Keep in the file every value of `obj` the log has, and will have
+(docs/TransactionLog.md sec 32.11): each shape its recomputes made. The file
+grows by each.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getKeptTransactionObjects">
+      <Documentation>
+        <UserDocu>getKeptTransactionObjects() -> list of int
+
+The ids of the objects keepTransactionValuesOf() keeps the values of.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="previewTransactionPick">
+      <Documentation>
+        <UserDocu>previewTransactionPick(rows) -> dict
+
+What applying `rows` -- a log row's seq, or a sequence of them -- to this
+document would do (docs/TransactionLog.md sec 31.12), read only, as
+previewTransactionMerge() says it: a value the rows set is 'take' where
+the document still has what it had before them, 'same' where it has what
+they made it, and otherwise a 'conflict', or a 'merge' by what it holds.
+Raises for a row of this branch's own history, and for rows that change
+an object this document does not have.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="pickTransactions">
+      <Documentation>
+        <UserDocu>pickTransactions(rows, picks={}, fallback='') -> dict
+
+Apply `rows` of the log here (docs/TransactionLog.md sec 31.12): one
+transaction of kind 'pick', undone like any. No branch is merged by it.
+`picks`, `fallback` and the result as mergeTransactionBranch() has them.
+For both, `picks` may also give 'ours' to the key of a change that asks
+nothing -- a 'take', a 'merge' -- and it is left out.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionForkBranches">
+      <Documentation>
+        <UserDocu>getTransactionForkBranches(path) -> list of dict
+The branches of the copy of this document's file at `path`
+(docs/TransactionLog.md sec 30.13, 30.14), as importTransactionFork() can
+take them: 'name', 'current' (the branch the copy's file reopens on, which
+an import takes when none is named), 'closed', 'base' (the row of this
+file's log the branch parts from, 0 when the two share no history) and
+'ahead' (the operations it has made since). A file that carries no history
+offers one thing, itself, under an empty name (sec 30.19): 'base' the row of
+the save its Version names. 'independent' says the entry shares no history
+with this file and is offered all the same (sec 30.22): 'base' is 0, and
+what the file is now comes as a branch from nothing. Raises when the file
+cannot be read, or is this document's own.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="importTransactionFork">
+      <Documentation>
+        <UserDocu>importTransactionFork(path, branch='', sender='') -> dict
+Bring a branch of another copy of this document's file in as a branch of
+this file's log (docs/TransactionLog.md sec 30.13, 30.14). The copy's rows
+after the newest row both files hold are replayed in a document of their
+own, each committed here under the author and the identity it had; objects
+the copy made come under new ids, and under new names where theirs are
+taken; derived values are left out. `branch` names the copy's branch, the
+one its file reopens on when empty. `sender` is who sent the file, when a
+client of a served document did: the import's record names them. The branch
+here is named after the file, and a second import of the same copy continues
+it. Nothing is merged:
+that is mergeTransactionBranch(). The dict has 'branch', 'from', 'base',
+'rows', 'skipped', 'versions' (the copy's named versions that came as
+versions of the branch), 'extended', 'stopped_at' and 'reason' (a row that could
+not be applied ends the import, the rows before it kept; -1 when it is the
+file as found that could not come), 'renamed' and 'seq' (the import's
+record). A file that carries no history comes as one row, the difference
+between the file and the state at the save its Version names (sec 30.19);
+one whose history is there but is not its tip comes as what the history
+holds, that one row, then what it has done since. A file that shares no
+history with this one -- no row, no save of this log named -- comes too (sec
+30.22): as one row on a branch from nothing, 'independent' true, which
+mergeTransactionBranch() merges by what the two documents hold. Raises when
+the file cannot be read, or a branch asked for by name is not there or
+shares no history.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionRequests">
+      <Documentation>
+        <UserDocu>getTransactionRequests(preview=True) -> list of dict
+The requests (docs/TransactionLog.md sec 30.20, 30.23): the branches an
+import made that the branch this document is on has not taken. Each has
+'branch', 'file', 'from' (the copy's branch), 'authors' (who made its
+rows), 'sender' (who sent the file, when a client did), 'when', 'rows' (the
+operations it has to give), 'conflicts' (what the merge's preview finds, -1
+without `preview` or when it could not be made), 'independent' and
+'stopped_at'. With `preview` a branch that has nothing to give is left out.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="keepTransactionSentFile">
+      <Documentation>
+        <UserDocu>keepTransactionSentFile(path, name='', sender='', kind='') -> int
+Keep the file at `path` in the log as a file someone sent to be merged
+(docs/TransactionLog.md sec 30.28, 30.29): a 'request' row under whoever
+acts, and the bytes as one blob. Nothing of the file is read. `name` is the
+name it is kept under (the file's own when empty), `sender` who sent it and
+`kind` how that name is known. Returns the row's seq.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionSentFiles">
+      <Documentation>
+        <UserDocu>getTransactionSentFiles() -> list of dict
+The sent files the log holds, oldest first: 'seq' (the request row), 'name',
+'hash', 'size', 'sender', 'sender_kind', 'when', and 'branch' -- the branch
+it was brought in to, empty until it is. A file is held until that branch
+is merged into this one or deleted, or until it is dropped.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="dropTransactionSentFile">
+      <Documentation>
+        <UserDocu>dropTransactionSentFile(seq) -> bool
+Let the sent file of row `seq` go, with a record saying so. False when the
+log holds none for that row.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="writeTransactionSentFile">
+      <Documentation>
+        <UserDocu>writeTransactionSentFile(seq, path)
+Write the sent file of row `seq` to `path`, as it came.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="importTransactionSentFile">
+      <Documentation>
+        <UserDocu>importTransactionSentFile(seq, branch='') -> dict
+Bring the sent file of row `seq` in, as importTransactionFork() brings a
+file from a path; the import's record names the row and who sent it. The
+answer is that method's.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="resolveTransactionLog">
+      <Documentation>
+        <UserDocu>resolveTransactionLog() -> int
+
+Serialise the live value behind every pending 'after' ref of the log,
+as a snapshot does. Returns the number of refs still pending.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="getTempFileName">

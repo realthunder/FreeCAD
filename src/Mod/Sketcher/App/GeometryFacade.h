@@ -65,7 +65,7 @@ class GeometryFacadePy;
  *
  * A simple usage example:
  *
- * const std::vector< Part::Geometry * > &vals = getInternalGeometry();
+ * const std::vector<const Part::Geometry*> &vals = getInternalGeometry();
  * auto gf = GeometryFacade::getFacade(vals[GeoId]);
  * id = gf->getId();
  *

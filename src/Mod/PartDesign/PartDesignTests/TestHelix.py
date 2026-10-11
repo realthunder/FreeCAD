@@ -23,6 +23,7 @@
 # ***************************************************************************
 
 from math import pi
+import ArchiveMembers
 import unittest
 
 import FreeCAD
@@ -483,8 +484,7 @@ class TestHelix(unittest.TestCase):
         def rewritten(name, upstream):
             path = os.path.join(folder, name)
             with zipfile.ZipFile(ours) as src, zipfile.ZipFile(path, "w") as dst:
-                for item in src.infolist():
-                    data = src.read(item.filename)
+                for item, data in ArchiveMembers.members(ours):
                     if item.filename == "Document.xml":
                         xml = data.decode("utf-8")
                         start = xml.index('<Object name="SubtractiveHelix"',

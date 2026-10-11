@@ -28,6 +28,8 @@
 
 #include <deque>
 #include <list>
+#include <set>
+#include <string>
 #include <vector>
 
 #include <Base/Parameter.h>
@@ -102,6 +104,13 @@ public:
     std::string getUniqueDocumentName(const char *Name, bool tempDoc=false) const;
     /// Open an existing document from a file
     App::Document* openDocument(const char * FileName=nullptr, bool createView=true);
+    /** Recover the document of a crashed session from the transaction log it
+     * left in its transient directory `transientDir` (docs/TransactionLog.md
+     * sec 25): a new document, rebuilt, that takes the log and the blobs
+     * over. The directory is removed once it is done. Throws when there is
+     * no log there, or the log is off in this session.
+     */
+    App::Document* recoverDocument(const char* transientDir, bool createView=true);
     /** Open multiple documents
      *
      * @param filenames: input file names
@@ -178,6 +187,23 @@ public:
     bool isRestoring() const;
     /// Indicate the application is closing all document
     bool isClosingAll() const;
+    //@}
+
+    /** @name Pinned versions no link pins any more (docs/TransactionLog.md sec 27.38) */
+    //@{
+    /** A frozen version opened for pins lost its last one (DocInfo::deinit).
+     * Noted, not closed: the caller is inside the code that let go. The
+     * outermost OperationScope to end closes it, if nothing handles it.
+     */
+    void noteReleasedVersion(const Document& doc);
+    /** Close the released versions nothing links to any more, when
+     * ClosePinnedVersion says close (1); with ask or keep, forget them.
+     * Does nothing inside an OperationScope. Returns how many it closed.
+     */
+    int closeReleasedVersions();
+    /// The Gui handles released versions itself: it asks, and closes on its
+    /// event loop (sec 27.30).
+    void setReleasedVersionsHandled(bool handled);
     //@}
 
     /** @name Application-wide trandaction setting */
@@ -434,6 +460,13 @@ public:
     static void initTypes();
     static void destruct();
     static void destructObserver();
+    /** Whether the caller is on the main thread: the one the application
+     * was made on, which is the one documents and their objects are used
+     * from. True before there is an application. For code that may write
+     * what only that thread may write -- a shape's element map, the
+     * document's string table (docs/TransactionLog.md sec 31.29).
+     */
+    static bool isMainThread();
     static void processCmdLineFiles();
     static std::list<std::string> getCmdLineFiles();
     static std::list<std::string> processFiles(const std::list<std::string>&);
@@ -528,6 +561,29 @@ protected:
     App::Document* openDocumentPrivate(const char * FileName, const char *propFileName,
             const char *label, bool isMainDoc, bool createView, std::vector<std::string> &&objNames);
 
+public:
+    /** One invocation of the application from outside: a Python call
+     * from the console or a macro, a script file, a recompute. The
+     * boundary at which an implicit transaction (Transaction::Implicit)
+     * is committed, docs/TransactionLog.md sec 9.1. Scopes nest; the
+     * outermost one closes. `origin` is recorded on the transactions the
+     * scope closes.
+     */
+    class AppExport InvocationScope {
+    public:
+        explicit InvocationScope(const char* origin);
+        ~InvocationScope();
+        InvocationScope(const InvocationScope&) = delete;
+        InvocationScope& operator=(const InvocationScope&) = delete;
+        /// Origin of the innermost open scope, empty outside any.
+        static const char* current();
+        static int depth();
+    };
+
+    /// Commit the implicit transaction of every document, if any.
+    void commitImplicitTransactions();
+
+protected:
     /// Helper class for App::Document to signal on close/abort transaction
     class AppExport TransactionSignaller {
     public:
@@ -583,10 +639,13 @@ private:
 
     static PyObject* sLoadFile          (PyObject *self,PyObject *args);
     static PyObject* sOpenDocument      (PyObject *self,PyObject *args, PyObject *kwd);
+    static PyObject* sRecoverDocument   (PyObject *self,PyObject *args);
+    static PyObject* sOpenFileVersion   (PyObject *self,PyObject *args);
     static PyObject* sSaveDocument      (PyObject *self,PyObject *args);
     static PyObject* sSaveDocumentAs    (PyObject *self,PyObject *args);
     static PyObject* sNewDocument       (PyObject *self,PyObject *args, PyObject *kwd);
     static PyObject* sCloseDocument     (PyObject *self,PyObject *args);
+    static PyObject* sCloseReleasedVersions(PyObject *self,PyObject *args);
     static PyObject* sActiveDocument    (PyObject *self,PyObject *args);
     static PyObject* sSetActiveDocument (PyObject *self,PyObject *args);
     static PyObject* sGetDocument       (PyObject *self,PyObject *args);
@@ -606,6 +665,10 @@ private:
     static PyObject *sSetActiveTransaction  (PyObject *self,PyObject *args);
     static PyObject *sGetActiveTransaction  (PyObject *self,PyObject *args);
     static PyObject *sCloseActiveTransaction(PyObject *self,PyObject *args);
+
+    static PyObject *sStartTransactionMeasure(PyObject *self,PyObject *args);
+    static PyObject *sStopTransactionMeasure (PyObject *self,PyObject *args);
+    static PyObject *sMarkTransactionMeasure (PyObject *self,PyObject *args);
 
     static PyObject *sDumpSWIG(PyObject *self,PyObject *args);
 
@@ -670,6 +733,12 @@ private:
     bool _allowPartial{false};
     bool _isClosingAll{false};
 
+    int _operationDepth{0};
+    bool _closingReleased{false};
+    bool _releasedHandled{false};
+    std::set<std::string> _releasedVersions;
+    friend class OperationScope;
+
     // for estimate max link depth
     int _objCount{-1};
 
@@ -678,6 +747,7 @@ private:
     std::string _activeTransactionName;
     int _activeTransactionID{0};
     int _activeTransactionGuard{0};
+    std::vector<const char*> _invocations;
     bool _activeTransactionTmpName{false};
 
     static Base::ConsoleObserverStd  *_pConsoleObserverStd;
@@ -688,6 +758,22 @@ private:
 inline App::Application &GetApplication(){
     return *App::Application::_pcSingleton;
 }
+
+/** One App operation that may let go of a pin: a document closed or opened,
+ * a transaction committed or aborted, an undo or a redo, an object removed,
+ * a recompute, a pin set or cleared, a version restored, a branch changed.
+ * When the outermost one ends, the pinned versions released inside it and
+ * still unpinned are closed (Application::closeReleasedVersions(),
+ * docs/TransactionLog.md sec 27.38).
+ */
+class AppExport OperationScope
+{
+public:
+    OperationScope();
+    ~OperationScope();
+    OperationScope(const OperationScope&) = delete;
+    OperationScope& operator=(const OperationScope&) = delete;
+};
 
 } // namespace App
 

@@ -22,6 +22,12 @@
 
 #include "PreCompiled.h"
 
+namespace Part {
+// AppPartPy.cpp: the OCCT fork's extension version, -1 without the fork.
+// ImmutableShapeValues defaults to it.
+PartExport int initOCCTExtension();
+}
+
 /*[[[cog
 import PartParams
 PartParams.define()
@@ -63,7 +69,12 @@ public:
     bool ShareStoredSubShapes;
     long BorrowBelowFace;
     unsigned long LoftMaxDegree;
+    bool ImmutableShapeValues;
     long WarnUnnamedInput;
+    bool MapFaceColor;
+    bool MapLineColor;
+    bool MapPointColor;
+    bool MapTransparency;
     double MinimumDeviation;
     double MeshDeviation;
     double MeshAngularDeflection;
@@ -166,8 +177,18 @@ public:
         funcs["BorrowBelowFace"] = &PartParamsP::updateBorrowBelowFace;
         LoftMaxDegree = this->handle->GetUnsigned("LoftMaxDegree", 5);
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
+        ImmutableShapeValues = this->handle->GetBool("ImmutableShapeValues", Part::initOCCTExtension() >= 2);
+        funcs["ImmutableShapeValues"] = &PartParamsP::updateImmutableShapeValues;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
+        MapFaceColor = this->handle->GetBool("MapFaceColor", true);
+        funcs["MapFaceColor"] = &PartParamsP::updateMapFaceColor;
+        MapLineColor = this->handle->GetBool("MapLineColor", false);
+        funcs["MapLineColor"] = &PartParamsP::updateMapLineColor;
+        MapPointColor = this->handle->GetBool("MapPointColor", false);
+        funcs["MapPointColor"] = &PartParamsP::updateMapPointColor;
+        MapTransparency = this->handle->GetBool("MapTransparency", false);
+        funcs["MapTransparency"] = &PartParamsP::updateMapTransparency;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
         funcs["MinimumDeviation"] = &PartParamsP::updateMinimumDeviation;
         MeshDeviation = this->handle->GetFloat("MeshDeviation", 0.2);
@@ -347,8 +368,28 @@ public:
         self->LoftMaxDegree = self->handle->GetUnsigned("LoftMaxDegree", 5);
     }
     // Auto generated code (Tools/params_utils.py:314)
+    static void updateImmutableShapeValues(PartParamsP *self) {
+        self->ImmutableShapeValues = self->handle->GetBool("ImmutableShapeValues", Part::initOCCTExtension() >= 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateWarnUnnamedInput(PartParamsP *self) {
         self->WarnUnnamedInput = self->handle->GetInt("WarnUnnamedInput", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapFaceColor(PartParamsP *self) {
+        self->MapFaceColor = self->handle->GetBool("MapFaceColor", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapLineColor(PartParamsP *self) {
+        self->MapLineColor = self->handle->GetBool("MapLineColor", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapPointColor(PartParamsP *self) {
+        self->MapPointColor = self->handle->GetBool("MapPointColor", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapTransparency(PartParamsP *self) {
+        self->MapTransparency = self->handle->GetBool("MapTransparency", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMinimumDeviation(PartParamsP *self) {
@@ -616,11 +657,36 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
         .setTitle("Loft Max Degree")
         .setDoc("Maximum surface degree given to new PartDesign lofts. Kept between\n"
 "2 and the highest degree the kernel supports."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ImmutableShapeValues", "ImmutableShapeValues", App::ParamInfo::Bool, Part::initOCCTExtension() >= 2)
+        .setTitle("Immutable Shape Values")
+        .setDoc("Freeze a shape property's value when it is set: every TShape gets the\n"
+"OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
+"or topology throws instead of changing the value behind the property\n"
+"(docs/TransactionLog.md sec 23.6, 23.12). Unless set, on exactly when\n"
+"the OCCT loaded at run time is the fork at extension version 2 or\n"
+"later, which is where the flag is honoured."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
         .setTitle("Warn Unnamed Input")
         .setDoc("Report shape operations whose inputs carry no element names, so the\n"
 "result cannot be named either. For workbench developers. 0 off, 1 once\n"
 "per operation and recompute, 2 every occurrence."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapFaceColor", "MapFaceColor", App::ParamInfo::Bool, true)
+        .setTitle("Map Face Color")
+        .setDoc("Let new shapes take their face colours from the shapes they were\n"
+"made from. Turn off to give all faces of an object one colour."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapLineColor", "MapLineColor", App::ParamInfo::Bool, false)
+        .setTitle("Map Line Color")
+        .setDoc("Let new shapes take their edge colours from the shapes they were\n"
+"made from. Turn off to give all edges of an object one colour."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapPointColor", "MapPointColor", App::ParamInfo::Bool, false)
+        .setTitle("Map Point Color")
+        .setDoc("Let new shapes take their vertex colours from the shapes they were\n"
+"made from. Turn off to give all vertices of an object one colour."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapTransparency", "MapTransparency", App::ParamInfo::Bool, false)
+        .setTitle("Map Transparency")
+        .setDoc("Let new shapes take the transparency of their faces from the\n"
+"shapes they were made from. Turn off for one transparency per\n"
+"object."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumDeviation", "MinimumDeviation", App::ParamInfo::Float, 0.05)
         .setTitle("Minimum Deviation")
         .setDoc("Lower limit of the tessellation deviation of shapes, in percent of\n"
@@ -1421,6 +1487,39 @@ void PartParams::removeLoftMaxDegree() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docImmutableShapeValues() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Freeze a shape property's value when it is set: every TShape gets the\n"
+"OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
+"or topology throws instead of changing the value behind the property\n"
+"(docs/TransactionLog.md sec 23.6, 23.12). Unless set, on exactly when\n"
+"the OCCT loaded at run time is the fork at extension version 2 or\n"
+"later, which is where the flag is honoured.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getImmutableShapeValues() {
+    return instance()->ImmutableShapeValues;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultImmutableShapeValues() {
+    const static bool def = Part::initOCCTExtension() >= 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setImmutableShapeValues(const bool &v) {
+    instance()->handle->SetBool("ImmutableShapeValues",v);
+    instance()->ImmutableShapeValues = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeImmutableShapeValues() {
+    instance()->handle->RemoveBool("ImmutableShapeValues");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docWarnUnnamedInput() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Report shape operations whose inputs carry no element names, so the\n"
@@ -1448,6 +1547,123 @@ void PartParams::setWarnUnnamedInput(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeWarnUnnamedInput() {
     instance()->handle->RemoveInt("WarnUnnamedInput");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapFaceColor() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take their face colours from the shapes they were\n"
+"made from. Turn off to give all faces of an object one colour.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapFaceColor() {
+    return instance()->MapFaceColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapFaceColor() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapFaceColor(const bool &v) {
+    instance()->handle->SetBool("MapFaceColor",v);
+    instance()->MapFaceColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapFaceColor() {
+    instance()->handle->RemoveBool("MapFaceColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapLineColor() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take their edge colours from the shapes they were\n"
+"made from. Turn off to give all edges of an object one colour.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapLineColor() {
+    return instance()->MapLineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapLineColor() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapLineColor(const bool &v) {
+    instance()->handle->SetBool("MapLineColor",v);
+    instance()->MapLineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapLineColor() {
+    instance()->handle->RemoveBool("MapLineColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapPointColor() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take their vertex colours from the shapes they were\n"
+"made from. Turn off to give all vertices of an object one colour.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapPointColor() {
+    return instance()->MapPointColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapPointColor() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapPointColor(const bool &v) {
+    instance()->handle->SetBool("MapPointColor",v);
+    instance()->MapPointColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapPointColor() {
+    instance()->handle->RemoveBool("MapPointColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapTransparency() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take the transparency of their faces from the\n"
+"shapes they were made from. Turn off for one transparency per\n"
+"object.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapTransparency() {
+    return instance()->MapTransparency;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapTransparency() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapTransparency(const bool &v) {
+    instance()->handle->SetBool("MapTransparency",v);
+    instance()->MapTransparency = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapTransparency() {
+    instance()->handle->RemoveBool("MapTransparency");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

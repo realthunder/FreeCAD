@@ -19,6 +19,28 @@
             </Documentation>
             <Sandbox tier="call"/>
         </Methode>
+        <Methode Name="showValueDiff" Keyword="true">
+            <Documentation>
+                <UserDocu>showValueDiff(prop, a='', b='', position=1.0, differencesOnly=False) -> bool
+
+Show over the object how property 'prop' differs between two values the
+transaction log holds, each by its ref; an empty ref is the value the object has
+now. 'position' is where between the two, 0 at a and 1 at b. False where this
+view provider shows no such thing, or the log does not hold a value.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="hideValueDiff">
+            <Documentation>
+                <UserDocu>hideValueDiff() -- take away what showValueDiff() shows</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getValueDiff">
+            <Documentation>
+                <UserDocu>getValueDiff() -> dict
+
+What showValueDiff() shows now, as numbers by name; empty where nothing is.</UserDocu>
+            </Documentation>
+        </Methode>
 		<Methode Name="isShowable">
 			<Documentation>
 				<UserDocu>isShowable(refresh=False) -- Check if the view object is showable</UserDocu>

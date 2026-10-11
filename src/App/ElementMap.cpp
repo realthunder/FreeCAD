@@ -25,6 +25,8 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <set>
 #include <sstream>
@@ -46,6 +48,10 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/regex.hpp>
 
+#include <QSet>
+#include <mutex>
+#include <unordered_set>
+
 #include "ElementNamingUtils.h"
 
 #include "App/Application.h"
@@ -55,6 +61,7 @@
 #include "App/ComplexGeoData.h"
 #include "App/Document.h"
 #include "App/DocumentObject.h"
+#include "App/TransactionValue.h"
 
 FC_LOG_LEVEL_INIT("ElementMap", true, 2);// NOLINT
 
@@ -72,18 +79,18 @@ struct MemUnit {
 };
 static std::map<int, MemUnit> _MemUnits;
 
+// The minimal allocator interface: std::allocator's pointer typedefs and
+// allocator<void>::const_pointer, which this used, are gone in C++20.
 template<typename T>
-struct MemoryMapAllocator : std::allocator<T> {
-    typedef typename std::allocator<T>::pointer pointer;
-    typedef typename std::allocator<T>::size_type size_type;
-    template<typename U> struct rebind { typedef MemoryMapAllocator<U> other; };
+struct MemoryMapAllocator {
+    using value_type = T;
 
-    MemoryMapAllocator() {}
+    MemoryMapAllocator() = default;
 
     template<typename U>
-    MemoryMapAllocator(const MemoryMapAllocator<U>& u) : std::allocator<T>(u) {}
+    MemoryMapAllocator(const MemoryMapAllocator<U>&) {}
 
-    pointer allocate(size_type size, std::allocator<void>::const_pointer = 0) {
+    T* allocate(std::size_t size) {
         void* p = std::malloc(size * sizeof(T));
         if(p == 0)
             throw std::bad_alloc();
@@ -93,13 +100,18 @@ struct MemoryMapAllocator : std::allocator<T> {
         auto &unit = _MemUnits[sizeof(T)];
         if (++unit.count > unit.maxcount)
             unit.maxcount = unit.count;
-        return static_cast<pointer>(p);
+        return static_cast<T*>(p);
     }
-    void deallocate(pointer p, size_type size) {
+    void deallocate(T* p, std::size_t size) {
         _MemSize -= size * sizeof(T);
         --_MemUnits[sizeof(T)].count;
         std::free(p);
     }
+
+    template<typename U>
+    bool operator==(const MemoryMapAllocator<U>&) const { return true; }
+    template<typename U>
+    bool operator!=(const MemoryMapAllocator<U>&) const { return false; }
 };
 
 #endif
@@ -252,8 +264,202 @@ inline std::ostream & operator << (std::ostream &s, const QByteArray &bytes)
 static std::unordered_map<const ElementMap*, unsigned> ToId;
 static std::unordered_map<unsigned, ElementMapPtr> _IdToElementMap;
 
+namespace {
+thread_local Data::ElementMapIdScope* idScope = nullptr;
+}
+
+Data::ElementMapIdScope::ElementMapIdScope()
+    : _outer(idScope)
+{
+    idScope = this;
+}
+
+Data::ElementMapIdScope::~ElementMapIdScope()
+{
+    idScope = _outer;
+}
+
+Data::ElementMapIdScope* Data::ElementMapIdScope::current()
+{
+    return idScope;
+}
+
+unsigned Data::ElementMapIdScope::idOf(const ElementMap* map)
+{
+    auto res = _toId.emplace(map, 0);
+    if (res.second)
+        res.first->second = static_cast<unsigned>(_toId.size());
+    return res.first->second;
+}
+
+Data::ElementMapPtr& Data::ElementMapIdScope::restored(unsigned id)
+{
+    return _fromId[id];
+}
+
+/// The id a map is written under: its scope's, else the one beforeSave gave.
+static unsigned savedId(const ElementMap* map, unsigned id)
+{
+    if (auto scope = Data::ElementMapIdScope::current())
+        return scope->idOf(map);
+    return id;
+}
+
+/// Where a map restored under `id` is kept: in the scope, else process-wide.
+static ElementMapPtr& restoredMap(unsigned id)
+{
+    if (auto scope = Data::ElementMapIdScope::current())
+        return scope->restored(id);
+    return _IdToElementMap[id];
+}
+
+// A map that a value given to another thread holds -- a shape's copy the
+// transaction log saves on its worker, the auto saver on its pool -- is read
+// there with no lock, and a map is edited in place, with no copy made for
+// whoever else holds it (docs/TransactionLog.md sec 31.28). So a map is
+// counted as held from the handover until its reader is done, and a name
+// made meanwhile waits beside the map and is taken in afterwards (sec
+// 31.31). The check: an edit of a map while it is held is counted and
+// reported. On with FC_ELEMENTMAP_CHECK in the environment ("abort" to stop
+// at the first, for a stack), or by a test.
+static std::atomic<int> _heldMapCheck {-1};
+static std::atomic<unsigned long> _heldMapEdits {0};
+
+static bool checkingHeldMaps()
+{
+    int on = _heldMapCheck.load(std::memory_order_relaxed);
+    if (on < 0) {
+        on = std::getenv("FC_ELEMENTMAP_CHECK") ? 1 : 0;
+        _heldMapCheck = on;
+    }
+    return on > 0;
+}
+
+static void editedWhileHeld(const char *how)
+{
+    const unsigned long n = ++_heldMapEdits;
+    if (n <= 50)
+        FC_ERR("element map edited in place while another holder may read it: " << how);
+    const char *mode = std::getenv("FC_ELEMENTMAP_CHECK");
+    if (mode && boost::equals(mode, "abort"))
+        std::abort();
+}
+
 class ElementMap : public std::enable_shared_from_this<ElementMap> {
 public:
+
+    /// A name made where the map could not be written, waiting to be taken
+    /// in: ComplexGeoData::deferElementName().
+    struct PendingName
+    {
+        IndexedName element;
+        MappedName name;
+        ElementIDRefs sids;
+        /// What the name was made of, and what each of those named then:
+        /// the name is taken in only while they still do.
+        std::vector<std::pair<MappedName, IndexedName>> lower;
+        PendingName *next = nullptr;
+    };
+
+    ~ElementMap()
+    {
+        dropPending();
+    }
+
+    /// Whether a reader on another thread has this map
+    bool held() const
+    {
+        return _holds.load(std::memory_order_acquire) > 0;
+    }
+
+    /** Counts this map and the maps of its children -- a save writes them
+     * all -- as held, each once, and gives them in 'out' for release(). The
+     * main thread's alone. A map nobody held yet first takes in the names
+     * that waited, so the value handed over has them.
+     */
+    void hold(std::vector<std::shared_ptr<const ElementMap>> &out,
+              std::set<const ElementMap*> &seen) const
+    {
+        if (!seen.insert(this).second)
+            return;
+        if (!held())
+            const_cast<ElementMap*>(this)->mergePending();
+        ++_holds;
+        out.push_back(shared_from_this());
+        for (auto &v : this->indexedNames) {
+            for (auto &child : v.second.children) {
+                if (child.second.elementMap)
+                    child.second.elementMap->hold(out, seen);
+            }
+        }
+    }
+
+    /// The reader is done. Any thread's.
+    void release() const
+    {
+        --_holds;
+    }
+
+    /** Puts a name to wait: any thread's, and no lock. The node is linked to
+     * the head this thread saw and swapped in, again if another got there
+     * first. Nobody but the taker ever unlinks or frees one.
+     */
+    void defer(PendingName *node) const
+    {
+        node->next = _pending.load(std::memory_order_relaxed);
+        while (!_pending.compare_exchange_weak(node->next, node,
+                                               std::memory_order_release,
+                                               std::memory_order_relaxed)) {
+        }
+    }
+
+    /** Takes in the names that waited: the main thread's, and only while
+     * nobody holds the map. The whole list is taken with one exchange. A
+     * name goes in unless the map has moved on under it: its element has a
+     * name by now, one of the names it was made of is gone or names another
+     * element, or the name itself is another element's.
+     */
+    void mergePending()
+    {
+        PendingName *list = _pending.exchange(nullptr, std::memory_order_acquire);
+        PendingName *ordered = nullptr;   // oldest first
+        while (list) {
+            PendingName *next = list->next;
+            list->next = ordered;
+            ordered = list;
+            list = next;
+        }
+        while (ordered) {
+            std::unique_ptr<PendingName> node(ordered);
+            ordered = node->next;
+            if (findMapped(node->element))
+                continue;
+            bool stale = false;
+            for (auto &lower : node->lower) {
+                if (!(findMapped(lower.first) == lower.second)) {
+                    stale = true;
+                    break;
+                }
+            }
+            if (stale)
+                continue;
+            IndexedName existing;
+            MappedName name = node->name;
+            addName(name, node->element, node->sids, false, &existing);
+        }
+    }
+
+    /// Lets go of the names that wait: the map is going, or is being read
+    /// again from a file.
+    void dropPending()
+    {
+        PendingName *list = _pending.exchange(nullptr, std::memory_order_acquire);
+        while (list) {
+            PendingName *next = list->next;
+            delete list;
+            list = next;
+        }
+    }
 
     ElementMap()
     {
@@ -380,7 +586,7 @@ public:
               const std::map<const ElementMap*,int> &childMapSet,
               const std::map<QByteArray, int> &postfixMap) const
     {
-        s << "\nElementMap " << index << ' ' << this->_id << ' ' 
+        s << "\nElementMap " << index << ' ' << savedId(this, this->_id) << ' ' 
             << this->indexedNames.size() << '\n';
 
         for (auto & v : this->indexedNames) {
@@ -405,7 +611,7 @@ public:
                     << child.postfix << ' '
                     << '0';
                 for (auto & sid : child.sids) {
-                    if (sid.isMarked())
+                    if (App::StringIDCollector::take(sid))
                         s << '.' << sid.value();
                 }
                 s << '\n';
@@ -438,7 +644,8 @@ public:
                         prefixid = App::StringID::fromString(r->name.dataBytes());
                         if (prefixid.id) {
                             for (auto & sid : r->sids) {
-                                if (sid.isMarked() && sid.value() == prefixid.id) {
+                                if (sid.value() == prefixid.id
+                                        && App::StringIDCollector::take(sid)) {
                                     s << '$' << r->name.dataBytes();
                                     printName = false;
                                     break;
@@ -460,7 +667,7 @@ public:
                         s << '.' << it->second;
                     }
                     for (auto & sid : r->sids) {
-                        if (sid.isMarked() && sid.value() != prefixid.id)
+                        if (sid.value() != prefixid.id && App::StringIDCollector::take(sid))
                             s << '.' << sid.value();
                     }
 
@@ -480,7 +687,7 @@ public:
 
         collectChildMaps(childMapSet, childMaps, postfixMap, postfixes);
 
-        s << this->_id << " PostfixCount " << postfixes.size() << '\n';
+        s << savedId(this, this->_id) << " PostfixCount " << postfixes.size() << '\n';
         for (auto & p : postfixes)
             s << p << '\n';
         int index = 0;
@@ -499,7 +706,7 @@ public:
         if (! (s >> id >> tmp >> count) || tmp != "PostfixCount")
             FC_THROWM(Base::RuntimeError, msg);
 
-        auto & map = _IdToElementMap[id];
+        auto & map = restoredMap(id);
         if (map)
             return map;
 
@@ -509,6 +716,12 @@ public:
             postfixes.emplace_back();
             s >> postfixes.back();
         }
+        // One buffer per saved postfix, which every name ending in it
+        // shares (docs/TransactionLog.md sec 27.77).
+        std::vector<QByteArray> postfixBytes;
+        postfixBytes.reserve(count);
+        for (auto &p : postfixes)
+            postfixBytes.emplace_back(p.c_str(), static_cast<int>(p.size()));
 
         std::vector<ElementMapPtr> childMaps;
         count = 0;
@@ -517,16 +730,17 @@ public:
         childMaps.reserve(count-1);
         for (int i=0; i<count-1; ++i) {
             childMaps.push_back(std::make_shared<ElementMap>()->restore(
-                        hasher, s, childMaps, postfixes));
+                        hasher, s, childMaps, postfixes, postfixBytes));
         }
 
-        return restore(hasher, s, childMaps, postfixes);
+        return restore(hasher, s, childMaps, postfixes, postfixBytes);
     }
 
     ElementMapPtr restore(App::StringHasherRef hasher,
                           std::istream &s,
                           std::vector<ElementMapPtr> &childMaps,
-                          const std::vector<std::string> &postfixes)
+                          const std::vector<std::string> &postfixes,
+                          const std::vector<QByteArray> &postfixBytes)
     {
         const char * msg = "Invalid element map";
         std::string tmp;
@@ -536,7 +750,7 @@ public:
         if (! (s >> tmp >> index >> id >> typeCount) || tmp != "ElementMap")
             FC_THROWM(Base::RuntimeError, msg);
 
-        auto & map = _IdToElementMap[id];
+        auto & map = restoredMap(id);
         if (map) {
             do {
                 if (! std::getline(s, tmp))
@@ -545,6 +759,8 @@ public:
             return map;
         }
         map = shared_from_this();
+        changed("restore");
+        dropPending();
 
         const char *hasherWarn = nullptr;
         const char *hasherIDWarn = nullptr;
@@ -670,7 +886,7 @@ public:
                         if (n <= 0 || n > (int)postfixes.size())
                             postfixWarn = "Invalid element postfix index";
                         else
-                            ref->name += postfixes[n-1];
+                            ref->name += sharedPostfix(postfixBytes[n-1]);
                     }
 
                     this->mappedNames.emplace(ref->name, idx);
@@ -681,7 +897,7 @@ public:
                         continue;
                     }
 
-                    ref->sids.reserve(tokens.size()-offset-1 + prefixid.id?1:0);
+                    ref->sids.reserve(tokens.size()-offset-1 + (prefixid.id?1:0));
                     if (prefixid.id) {
                         auto sid = hasher->getID(prefixid.id);
                         if (!sid)
@@ -715,12 +931,54 @@ public:
         return shared_from_this();
     }
 
-    MappedName addName(MappedName & name,
+    /// This map with `to`'s ids, its names being `from`'s (translateElementMap).
+    ElementMapPtr translate(App::StringHasher &to, const App::StringHasher &from,
+                            App::StringHasher::ImportMemo &memo, int &failed) const;
+
+    /** Whether a name here, or a string one names, carries the external
+     * marker as written before it named its document (`;:X;`, sec 27.76
+     * item 4): a shape that crossed a document boundary when a name kept
+     * the other table's ids as text. `legacy` holds such strings of the
+     * shape's table.
+     */
+    bool hasLegacyCrossing(const App::StringHasher *hasher, const std::unordered_set<long> &legacy,
+                           std::set<const ElementMap*> &visited) const;
+
+    /// The pool's buffer for `postfix`, which takes it in if it has none.
+    const QByteArray &sharedPostfix(const QByteArray &postfix)
+    {
+        return *postfixPool.insert(postfix);
+    }
+
+    /** `name` with the pool's buffer for its postfix.
+     *
+     * A name made by an op gets its postfix from a stream of its own
+     * (encodeElementName), so the names one op gives the same op code and
+     * tag each held a copy -- 51,140 buffers for 6,054 texts on
+     * scanner.FCStd (docs/TransactionLog.md sec 27.77).
+     */
+    MappedName withSharedPostfix(const MappedName &name)
+    {
+        const QByteArray &postfix = name.postfixBytes();
+        if (postfix.isEmpty())
+            return name;
+        const QByteArray &shared = sharedPostfix(postfix);
+        if (shared.constData() == postfix.constData())
+            return name;
+        MappedName res;
+        res.append(name, 0, name.dataBytes().size());
+        res += shared;
+        return res;
+    }
+
+    MappedName addName(MappedName & _name,
                        const IndexedName & idx,
                        const ElementIDRefs &sids,
                        bool overwrite,
                        IndexedName * existing)
     {
+        changed("addName");
+        MappedName name = withSharedPostfix(_name);
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
             if (name.find("#") >= 0
                     && name.findTagInElementName() < 0)
@@ -760,6 +1018,7 @@ public:
         MappedNameRef * ref = findMappedRef(it->second);
         if (!ref)
             return false;
+        changed("erase by name");
         ref->erase(name);
         this->mappedNames.erase(it);
         return true;
@@ -774,13 +1033,46 @@ public:
         if (idx.getIndex() >= (int)indices.names.size())
             return false;
         auto & ref = indices.names[idx.getIndex()];
+        changed("erase by index");
         for (auto *r = &ref; r; r = r->next.get())
             this->mappedNames.erase(r->name);
         ref.clear();
         return true;
     }
 
+    /// A name that waits to be taken in (mergePending) is found as one the
+    /// map has: whoever was given it finds its element by it.
     IndexedName find(const MappedName &name, ElementIDRefs * sids = nullptr) const
+    {
+        IndexedName res = findMapped(name, sids);
+        if (!res) {
+            for (auto *node = _pending.load(std::memory_order_acquire); node; node = node->next) {
+                if (node->name == name) {
+                    if (sids)
+                        *sids += node->sids;
+                    return node->element;
+                }
+            }
+        }
+        return res;
+    }
+
+    MappedName find(const IndexedName &idx, ElementIDRefs * sids = nullptr) const
+    {
+        MappedName res = findMapped(idx, sids);
+        if (!res && idx) {
+            for (auto *node = _pending.load(std::memory_order_acquire); node; node = node->next) {
+                if (node->element == idx) {
+                    if (sids)
+                        *sids += node->sids;
+                    return node->name;
+                }
+            }
+        }
+        return res;
+    }
+
+    IndexedName findMapped(const MappedName &name, ElementIDRefs * sids = nullptr) const
     {
         auto it = mappedNames.find(name);
         if (it == mappedNames.end()) {
@@ -830,7 +1122,7 @@ public:
         return it->second;
     }
 
-    MappedName find(const IndexedName &idx, ElementIDRefs * sids = nullptr) const
+    MappedName findMapped(const IndexedName &idx, ElementIDRefs * sids = nullptr) const
     {
         if (!idx)
             return MappedName();
@@ -955,6 +1247,7 @@ public:
     {
         if (childElements.empty() || !master.Hasher)
             return;
+        changed("hashChildMaps");
         std::ostringstream ss;
         for (auto & v : this->indexedNames) {
             for (auto & vv : v.second.children) {
@@ -982,6 +1275,7 @@ public:
     void addChildElements(ComplexGeoData & master,
                           const std::vector<MappedChildElements> &children)
     {
+        changed("addChildElements");
         std::ostringstream ss;
         ss << std::hex;
 
@@ -1344,18 +1638,285 @@ private:
              ,IndexedName
              ,std::less<MappedName>
 #ifdef _FC_MEM_TRACE
-             ,MemoryMapAllocator<std::pair<MappedName, IndexedName> >
+             ,MemoryMapAllocator<std::pair<const MappedName, IndexedName> >
 #endif
             > mappedNames;
 
     QHash<QByteArray, ChildMapInfo> childElements;
 
+    /// The postfix texts of this map's names, one buffer each.
+    QSet<QByteArray> postfixPool;
+
     std::size_t childElementSize = 0;
 
     mutable unsigned _id = 0;
+
+    /// Counts the changes to the map: what a translation of it is valid for
+    /// (translateElementMap).
+    unsigned long _revision = 0;
+
+    /// How many readers on other threads have this map: see hold().
+    mutable std::atomic<int> _holds {0};
+
+    /// The names that wait: see defer().
+    mutable std::atomic<PendingName*> _pending {nullptr};
+
+    /// Every edit of the map comes through here.
+    void changed(const char *how)
+    {
+        ++_revision;
+        if (_holds.load(std::memory_order_relaxed) > 0 && checkingHeldMaps())
+            editedWhileHeld(how);
+    }
+
+public:
+    unsigned long revision() const
+    {
+        return _revision;
+    }
 };
 
 }
+
+
+namespace {
+
+/// A translation kept while its source and its copy live (sec 27.77).
+struct Translation
+{
+    std::weak_ptr<Data::ElementMap> source;
+    std::weak_ptr<Data::ElementMap> result;
+    unsigned long revision = 0;
+};
+
+std::mutex translationLock;
+// Keyed by the target table's serial, not its address: a table that dies and
+// a new one made where it was would otherwise be handed the dead one's copy.
+std::map<std::pair<const Data::ElementMap*, std::uint64_t>, Translation> translations;
+
+/// The ids `text` names by `#hex`, in order.
+void textIds(const QByteArray &text, std::vector<long> &ids)
+{
+    for (int pos = text.indexOf('#'); pos >= 0; pos = text.indexOf('#', pos + 1)) {
+        int end = pos + 1;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+            ++end;
+        if (end == pos + 1)
+            continue;
+        bool ok = false;
+        long id = text.mid(pos + 1, end - pos - 1).toLong(&ok, 16);
+        if (ok && id > 0)
+            ids.push_back(id);
+    }
+}
+
+bool hasLegacyMarker(const QByteArray &text)
+{
+    static const QByteArray marker = QByteArray(Data::externalTagPostfix().c_str())
+                                     + Data::elementMapPrefix().c_str();
+    return text.contains(marker);
+}
+
+bool namesLegacy(const QByteArray &text, const std::unordered_set<long> &legacy)
+{
+    if (hasLegacyMarker(text))
+        return true;
+    if (legacy.empty())
+        return false;
+    std::vector<long> ids;
+    textIds(text, ids);
+    for (long id : ids) {
+        if (legacy.count(id))
+            return true;
+    }
+    return false;
+}
+
+/// The strings of `hasher` that carry the old marker, or name one that does:
+/// computed once per table as read (sec 27.76 item 4).
+std::shared_ptr<const std::unordered_set<long>> legacyStrings(const App::StringHasher *hasher)
+{
+    static std::mutex lock;
+    static const App::StringHasher *lastHasher = nullptr;
+    static std::size_t lastSize = 0;
+    static long lastId = 0;
+    static std::shared_ptr<const std::unordered_set<long>> last;
+    std::lock_guard<std::mutex> guard(lock);
+    if (last && hasher == lastHasher && hasher->size() == lastSize && hasher->lastID() == lastId)
+        return last;
+    auto res = std::make_shared<std::unordered_set<long>>();
+    // In id order: what a string refers to is below it.
+    for (const auto &v : hasher->getIDMap()) {
+        const auto &sid = v.second.deref();
+        bool tainted = !sid.isBinary() && !sid.isHashed()
+            && (namesLegacy(sid.data(), *res) || namesLegacy(sid.postfix(), *res));
+        for (const auto &r : sid.relatedIDs()) {
+            if (tainted)
+                break;
+            tainted = res->count(r.value()) != 0;
+        }
+        if (tainted)
+            res->insert(v.first);
+    }
+    lastHasher = hasher;
+    lastSize = hasher->size();
+    lastId = hasher->lastID();
+    last = res;
+    return last;
+}
+
+Data::ElementMapPtr translateCached(const Data::ElementMapPtr &map, App::StringHasher &to,
+                                    const App::StringHasher &from,
+                                    App::StringHasher::ImportMemo &memo, int &failed)
+{
+    auto key = std::make_pair(static_cast<const Data::ElementMap*>(map.get()), to.serial());
+    {
+        std::lock_guard<std::mutex> guard(translationLock);
+        auto it = translations.find(key);
+        if (it != translations.end()) {
+            auto source = it->second.source.lock();
+            auto result = it->second.result.lock();
+            if (source == map && result && it->second.revision == map->revision())
+                return result;
+            translations.erase(it);
+        }
+    }
+    auto result = map->translate(to, from, memo, failed);
+    std::lock_guard<std::mutex> guard(translationLock);
+    if (translations.size() > 256) {
+        for (auto it = translations.begin(); it != translations.end();) {
+            if (it->second.source.expired() || it->second.result.expired())
+                it = translations.erase(it);
+            else
+                ++it;
+        }
+    }
+    translations[key] = {map, result, map->revision()};
+    return result;
+}
+
+} // namespace
+
+namespace Data {
+
+ElementMapPtr ElementMap::translate(App::StringHasher &to, const App::StringHasher &from,
+                                    App::StringHasher::ImportMemo &memo, int &failed) const
+{
+    auto res = std::make_shared<ElementMap>();
+    for (auto &v : indexedNames) {
+        auto &indices = res->indexedNames[v.first];
+        indices.names.resize(v.second.names.size());
+        for (std::size_t i = 0; i < v.second.names.size(); ++i) {
+            for (const MappedNameRef *r = &v.second.names[i]; r; r = r->next.get()) {
+                if (!r->name)
+                    continue;
+                MappedName name;
+                ElementIDRefs sids = r->sids;
+                if (!to.importName(r->name, from, name, sids, memo)) {
+                    // An id its own table does not have: kept as it was.
+                    ++failed;
+                    name = r->name;
+                    sids = r->sids;
+                }
+                name = res->withSharedPostfix(name);
+                auto ret = res->mappedNames.emplace(
+                    name, IndexedName::fromConst(v.first, static_cast<int>(i)));
+                if (!ret.second)
+                    continue;
+                ret.first->first.compact();
+                indices.names[i].append(ret.first->first, sids);
+            }
+        }
+        for (auto &c : v.second.children) {
+            MappedChildElements child = c.second;
+            if (child.elementMap)
+                child.elementMap = translateCached(child.elementMap, to, from, memo, failed);
+            // The object it is of, by the id it has here (ImportTags).
+            child.tag = App::StringHasher::ImportTags::map(child.tag);
+            // A child's postfix names ids of the map it is in (hashChildMaps).
+            ElementIDRefs sids;
+            QByteArray postfix;
+            if (to.importText(c.second.postfix, from, postfix, &sids, memo))
+                child.postfix = postfix;
+            else
+                ++failed;
+            for (const auto &sid : c.second.sids) {
+                if (auto here = to.importID(sid, &memo)) {
+                    if (sids.indexOf(here) < 0)
+                        sids.push_back(here);
+                }
+            }
+            child.sids = sids;
+            auto &inserted = indices.children[c.first] = child;
+            auto &info = res->childElements[inserted.postfix];
+            auto src = childElements.constFind(c.second.postfix);
+            if (src != childElements.constEnd())
+                info.index = src->index;
+            info.childMap = &inserted;
+            res->childElementSize += inserted.count;
+        }
+    }
+    return res;
+}
+
+bool ElementMap::hasLegacyCrossing(const App::StringHasher *hasher,
+                                   const std::unordered_set<long> &legacy,
+                                   std::set<const ElementMap*> &visited) const
+{
+    if (!visited.insert(this).second)
+        return false;
+    for (auto &v : this->mappedNames) {
+        if (namesLegacy(v.first.dataBytes(), legacy) || namesLegacy(v.first.postfixBytes(), legacy))
+            return true;
+    }
+    for (auto &v : this->indexedNames) {
+        for (auto &names : v.second.names) {
+            for (const MappedNameRef *r = &names; r; r = r->next.get()) {
+                for (auto &sid : r->sids) {
+                    if (sid.isFromHasher(hasher) && legacy.count(sid.value()))
+                        return true;
+                }
+            }
+        }
+        for (auto &c : v.second.children) {
+            if (namesLegacy(c.second.postfix, legacy))
+                return true;
+            if (c.second.elementMap
+                    && c.second.elementMap->hasLegacyCrossing(hasher, legacy, visited))
+                return true;
+        }
+    }
+    return false;
+}
+
+ElementMapPtr translateElementMap(const ElementMapPtr &map, const App::StringHasherRef &from,
+                                  const App::StringHasherRef &to)
+{
+    if (!map || !from || !to || from == to)
+        return map;
+    App::StringHasher::ImportMemo memo;
+    int failed = 0;
+    auto res = translateCached(map, *to, *from, memo, failed);
+    if (failed)
+        FC_WARN(failed << " element names name a string their table does not have;"
+                          " kept as they were");
+    return res;
+}
+
+bool ComplexGeoData::hasLegacyCrossing() const
+{
+    flushElementMap();
+    if (!_elementMap)
+        return false;
+    std::shared_ptr<const std::unordered_set<long>> legacy;
+    if (Hasher)
+        legacy = legacyStrings(Hasher.get());
+    static const std::unordered_set<long> none;
+    std::set<const ElementMap*> visited;
+    return _elementMap->hasLegacyCrossing(Hasher.get(), legacy ? *legacy : none, visited);
+}
+
+} // namespace Data
 
 std::string ComplexGeoData::getElementMapVersion() const {
     return "4";
@@ -1486,6 +2047,66 @@ ElementMapPtr ComplexGeoData::elementMap(bool flush) const
 
 void ComplexGeoData::flushElementMap() const
 {
+}
+
+namespace {
+/// The maps one handover holds, let go of together
+struct HeldMaps
+{
+    std::vector<std::shared_ptr<const ElementMap>> maps;
+    ~HeldMaps()
+    {
+        for (auto &map : maps)
+            map->release();
+    }
+};
+}
+
+std::shared_ptr<void> ComplexGeoData::holdElementMap() const
+{
+    if (!_elementMap)
+        return {};
+    auto held = std::make_shared<HeldMaps>();
+    std::set<const ElementMap*> seen;
+    _elementMap->hold(held->maps, seen);
+    return held;
+}
+
+bool ComplexGeoData::isElementMapHeld() const
+{
+    return _elementMap && _elementMap->held();
+}
+
+void ComplexGeoData::deferElementName(const IndexedName &element, const MappedName &name,
+                                      const ElementIDRefs &sids,
+                                      const std::vector<MappedName> &lower) const
+{
+    if (!_elementMap || !element || !name)
+        return;
+    auto node = new ElementMap::PendingName;
+    node->element = element;
+    node->name = name;
+    node->sids = sids;
+    node->lower.reserve(lower.size());
+    for (const auto &low : lower)
+        node->lower.emplace_back(low, _elementMap->find(low));
+    _elementMap->defer(node);
+}
+
+void ComplexGeoData::mergeDeferredElementNames()
+{
+    if (_elementMap && !_elementMap->held())
+        _elementMap->mergePending();
+}
+
+void ComplexGeoData::setElementMapCheck(bool on)
+{
+    _heldMapCheck = on ? 1 : 0;
+}
+
+unsigned long ComplexGeoData::elementMapEditsWhileHeld()
+{
+    return _heldMapEdits.load();
 }
 
 void ComplexGeoData::setElementMap(const std::vector<MappedElement> &map) {
@@ -1806,6 +2427,15 @@ void ComplexGeoData::setPersistenceFileName(const char *filename) const {
 
 void ComplexGeoData::Save(Base::Writer &writer) const {
 
+    // The names that waited go into what the main thread saves (sec 31.31).
+    // A save on another thread is of a map that is held, and writes it as
+    // it was handed over.
+    if (App::Application::isMainThread()) {
+        flushElementMap();
+        if (_elementMap && !_elementMap->held())
+            _elementMap->mergePending();
+    }
+
     if(!getElementMapSize()) {
         writer.Stream() << writer.ind() << "<ElementMap/>\n";
         return;
@@ -1832,6 +2462,16 @@ void ComplexGeoData::Save(Base::Writer &writer) const {
     writer.Stream() << writer.ind() << "</ElementMap2>\n" ;
 }
 
+/// The table a map being restored names its ids in: the geometry's own,
+/// 'own' -- or, for a value of another copy of the file
+/// (App::RestoreStrings, docs/TransactionLog.md sec 30.16), that copy's,
+/// from which the map is then taken into 'own' by content.
+static App::StringHasherRef restoreTable(const App::StringHasherRef &own)
+{
+    auto scope = App::RestoreStrings::current();
+    return scope && own && own == scope->to() ? scope->from() : own;
+}
+
 void ComplexGeoData::Restore(Base::XMLReader &reader) {
     resetElementMap();
 
@@ -1855,7 +2495,10 @@ void ComplexGeoData::Restore(Base::XMLReader &reader) {
 
     if (newtag) {
         resetElementMap(std::make_shared<ElementMap>());
-        _elementMap = _elementMap->restore(Hasher, reader.beginCharStream());
+        const App::StringHasherRef table = restoreTable(Hasher);
+        _elementMap = _elementMap->restore(table, reader.beginCharStream());
+        if (table != Hasher)
+            _elementMap = translateElementMap(_elementMap, table, Hasher);
         reader.endCharStream();
         reader.readEndElement("ElementMap2");
         return;
@@ -1972,7 +2615,10 @@ void ComplexGeoData::RestoreDocFile(Base::Reader &reader) {
             FC_WARN("Unknown element map format");
         else {
             resetElementMap(std::make_shared<ElementMap>());
-            _elementMap = _elementMap->restore(Hasher, reader);
+            const App::StringHasherRef table = restoreTable(Hasher);
+            _elementMap = _elementMap->restore(table, reader);
+            if (table != Hasher)
+                _elementMap = translateElementMap(_elementMap, table, Hasher);
             return;
         }
     }

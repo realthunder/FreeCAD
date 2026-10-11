@@ -349,7 +349,7 @@ void Workbench::createLinkMenu(MenuItem *item) {
 
     auto &rMgr = Application::Instance->commandManager();
     const char *cmds[] = {"Std_LinkMakeRelative",nullptr,"Std_LinkUnlink","Std_LinkReplace",
-        "Std_LinkImport","Std_LinkImportAll",nullptr,"Std_LinkCreateInPlace","Std_LinkCreateInContainer",nullptr,
+        "Std_LinkImport","Std_LinkImportAll",nullptr,"Std_LinkPin","Std_LinkUnpin",nullptr,"Std_LinkCreateInPlace","Std_LinkCreateInContainer",nullptr,
         "Std_LinkSelectLinked", "Std_LinkSelectLinkedFinal","Std_LinkSelectAllLinks"};
     bool separator = true;
     for(const auto & it : cmds) {
@@ -681,7 +681,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
     file->setCommand("&File");
     *file << "Std_New" << "Std_Open" << "Std_OpenDirectory" << "Std_RecentFiles" << "Separator" << "Std_CloseActiveWindow"
           << "Std_CloseAllWindows" << "Separator" << "Std_Save" << "Std_SaveAs" << "Std_SaveAsDirectory"
-          << "Std_SaveCopy" << "Std_SaveAll" << "Std_Revert" << "Separator" << "Std_Import"
+          << "Std_SaveCopy" << "Std_SaveToHistory" << "Std_SaveAll" << "Std_Revert" << "Separator" << "Std_Import"
           << "Std_Export" << "Std_MergeProjects" << "Std_ProjectInfo"
           << "Separator" << "Std_Print" << "Std_PrintPreview" << "Std_PrintPdf"
           << "Separator" << "Std_Quit";
@@ -930,6 +930,7 @@ DockWindowItems* StdWorkbench::setupDockWindows() const
     root->addDockWidget("Std_TaskView", Qt::RightDockWidgetArea, true, true);
     root->addDockWidget("Std_ReportView", Qt::BottomDockWidgetArea, true, true);
     root->addDockWidget("Std_PythonView", Qt::BottomDockWidgetArea, true, true);
+    root->addDockWidget("Std_TransactionLogView", Qt::BottomDockWidgetArea, false, true);
 
     //Dagview through parameter.
     ParameterGrp::handle group = App::GetApplication().GetUserParameter().

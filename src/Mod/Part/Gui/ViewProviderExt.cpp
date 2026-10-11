@@ -116,6 +116,7 @@
 #include <map>
 #include <set>
 #include <Base/Console.h>
+#include <Base/OlderTypeName.h>
 #include <Base/Sequencer.h>
 #include <Base/Parameter.h>
 #include <Base/ProgramVersion.h>
@@ -147,18 +148,19 @@
 #include <Gui/Renderer/Renderer.h>
 #include <Gui/Renderer/MeshSimplify.h>
 #include <Gui/Renderer/MeshSource.h>
+#include <Mod/Part/App/ShapeDiff.h>
 #include <Mod/Part/App/Tools.h>
 
 #include <unordered_map>
 
 #include "ViewProviderExt.h"
+#include "ShapeDiffView.h"
 #include "MeshLevelSource.h"
 #include "PartParams.h"
 #include "PreMesh.h"
 #include "SoBrepEdgeSet.h"
 #include "SoBrepFaceSet.h"
 #include "SoBrepPointSet.h"
-#include "TaskFaceColors.h"
 
 
 #include "ViewProviderPartExtPy.h"
@@ -1676,17 +1678,22 @@ void PartGui::PropertyDiffuseColor::init()
     initSubclass(PartGui::PropertyDiffuseColor::classTypeId,
                  "PartGui::_PropertyDiffuseColor", "App::PropertyColorList",
                  &PartGui::PropertyDiffuseColor::create);
+    // What an older build has DiffuseColor as, and reads the face colours as
+    Base::setOlderTypeName(PartGui::PropertyDiffuseColor::classTypeId, "App::PropertyColorList");
 }
 
 void PropertyDiffuseColor::setAppearance(App::PropertyAppearanceList *appearance,
-                                         const App::PropertyColor *shapeColor)
+                                         const App::PropertyColor *shapeColor,
+                                         bool perEntry)
 {
+    // The base list is empty from the constructor's ADD_PROPERTY on (its
+    // default is written before the container is attached, so it signals
+    // nothing), and nothing here writes it: a write would be the first
+    // hasSetValue() the view provider sees, in its constructor, before its
+    // nodes exist. From here on the colours are the appearance's.
     _appearance = appearance;
     _shapeColor = shapeColor;
-    // Whatever the constructor's ADD_PROPERTY put in the base list is a copy
-    // of what the appearance already holds. Drop it rather than leave a
-    // second, stale answer behind where a base-pointer read could find it.
-    _lValueList.clear();
+    _perEntry = perEntry;
 }
 
 const std::vector<Base::Color> &PropertyDiffuseColor::getValues() const
@@ -1713,6 +1720,17 @@ void PropertyDiffuseColor::setValues(std::vector<Base::Color> &&colors)
 {
     if (!_appearance) {
         App::PropertyColorList::setValues(std::move(colors));
+        return;
+    }
+    if (_perEntry) {
+        // As many entries as colours, and each entry its colour. The whole
+        // field write below reads a single colour as every entry's and an
+        // empty list as the default's, and resizes for neither.
+        _appearance->editList([&colors](App::AppearanceList &list) {
+            list.setSize(static_cast<int>(colors.size()));
+            for (std::size_t i = 0; i < colors.size(); ++i)
+                list.setDiffuseColor(static_cast<int>(i), colors[i]);
+        });
         return;
     }
     if (colors.empty() && _shapeColor) {
@@ -2030,7 +2048,6 @@ ViewProviderPartExt::ViewProviderPartExt()
         angDeflectionRange = {PartParams::getMinimumAngularDeflection(),180.0,0.05};
     }
 
-    UpdatingColor = false;
     VisualTouched = true;
     forceUpdateCount = 0;
 
@@ -2079,11 +2096,11 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY_TYPE(LineColor, (lmat.diffuseColor), osgroup, App::Prop_None, "Set object line color.");
     ADD_PROPERTY_TYPE(PointColor, (vmat.diffuseColor), osgroup, App::Prop_None, "Set object point color");
     ADD_PROPERTY_TYPE(PointColorArray, (PointColor.getValue()), osgroup, App::Prop_None, "Object point color array.");
-    ADD_PROPERTY_TYPE(DiffuseColor,(ShapeColor.getValue()), osgroup, App::Prop_None, "Object diffuse color.");
-    // From here on the face colours are the appearance's, which already
-    // holds this same colour as its single entry. Wired after the
-    // ADD_PROPERTY above, whose write must not be redirected into a property
-    // the base class is still setting up.
+    // Empty on purpose: the face colours are the appearance's, which holds
+    // the shape colour as its single entry, and the base list is never a
+    // second answer. Wired after the ADD_PROPERTY, whose write must not be
+    // redirected into a property the base class is still setting up.
+    ADD_PROPERTY_TYPE(DiffuseColor,(std::vector<Base::Color>()), osgroup, App::Prop_None, "Object diffuse color.");
     DiffuseColor.setAppearance(&ShapeAppearance, &ShapeColor);
     ADD_PROPERTY_TYPE(LineColorArray,(LineColor.getValue()), osgroup, App::Prop_None, "Object line color array.");
     ADD_PROPERTY_TYPE(LineWidth,(lwidth), osgroup, App::Prop_None, "Set object line width.");
@@ -2105,7 +2122,9 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY_TYPE(DrawStyle,((long int)0), osgroup, App::Prop_None, "Defines the style of the edges in the 3D view.");
     DrawStyle.setEnums(DrawStyleEnums);
 
-    ADD_PROPERTY_TYPE(MappedColors,(),"",
+    // The colours of the elements the object gives a look by name. Not
+    // wired to an appearance: a plain list, taken from the object's store.
+    ADD_PROPERTY_TYPE(MappedColors,(std::vector<Base::Color>()),"",
             (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly),"");
 
     ADD_PROPERTY(MapFaceColor,(PartParams::getMapFaceColor()));
@@ -2113,6 +2132,8 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY(MapPointColor,(PartParams::getMapPointColor()));
     ADD_PROPERTY(MapTransparency,(PartParams::getMapTransparency()));
     ADD_PROPERTY(ForceMapColors,(false));
+    // What a derived constructor gives from here on is that kind's own look
+    classLooks = 0;
 
     coords = new SoFCCoordinate3();
     static_cast<SoFCCoordinate3*>(coords)->vp = this;
@@ -2183,6 +2204,7 @@ ViewProviderPartExt::~ViewProviderPartExt()
 {
     // The selection node knows an overlay by its root's address.
     Gui::SoFCUnifiedSelection::setCoplanarOverlay(pcRoot, false);
+    diffView.reset();
     unregisterMeshLevelSource(faceset, lineset);
     // The pooled visual fill keys its worker job on the coords node
     // (its own token slot); the unregister above cannot cancel it,
@@ -2225,6 +2247,13 @@ void ViewProviderPartExt::handleChangedPropertyType(Base::XMLReader &reader,
         DiffuseColor.Restore(reader);
         return;
     }
+    // MappedColors the same: a document older than the object's store has
+    // the named elements' colours here and nowhere else.
+    if (prop == &MappedColors
+            && strcmp(TypeName, App::PropertyColorList::getClassTypeId().getName()) == 0) {
+        MappedColors.Restore(reader);
+        return;
+    }
     inherited::handleChangedPropertyType(reader, TypeName, prop);
 }
 
@@ -2232,32 +2261,62 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
 {
     Gui::ColorUpdater colorUpdater;
 
-    if (prop == &MappedColors ||
-        prop == &MapFaceColor ||
-        prop == &MapLineColor ||
-        prop == &MapPointColor ||
-        prop == &MapTransparency || 
-        prop == &ForceMapColors) 
-    {
-        if(!prop->testStatus(App::Property::User3)) {
-            if(prop == &MapFaceColor) {
-                if(!MapFaceColor.getValue()) {
-                    ShapeColor.touch();
-                    return;
-                }
-            }else if(prop == &MapLineColor) {
-                if(!MapLineColor.getValue()) {
-                    LineColor.touch();
-                    return;
-                }
-            }else if(prop == &MapPointColor) {
-                if(!MapPointColor.getValue()) {
-                    PointColor.touch();
-                    return;
-                }
-            }
+    const bool mapFlag = prop == &MapFaceColor || prop == &MapLineColor
+        || prop == &MapPointColor || prop == &MapTransparency || prop == &ForceMapColors;
+    if (!pcObject) {
+        // Shows nothing yet: what a kind of view provider gives itself in
+        // its constructor, noted for the object it comes to show
+        // (giveClassAppearance())
+        if (prop == &ShapeAppearance || prop == &ShapeColor || prop == &Transparency
+                || prop == &ShapeMaterial || prop == &DiffuseColor)
+            classLooks |= ClassFace;
+        else if (prop == &LineColor || prop == &LineMaterial)
+            classLooks |= ClassEdge;
+        else if (prop == &PointColor || prop == &PointMaterial)
+            classLooks |= ClassVertex;
+        else if (mapFlag)
+            classLooks |= ClassFlags;
+    }
+    // The object's own way of telling whether what is written to this view
+    // provider is the object's to keep: it is, where the looks are the
+    // object's, and not while they are being taken from it or read
+    const bool giving = appearanceBound && !mirroringAppearance && !isRestoring();
+    using Looks = App::PropertyElementAppearance;
+
+    if (prop == &MappedColors) {
+        // The colours of the names, where they are kept here
+        if (!appearanceBound && !prop->testStatus(App::Property::User3))
             updateColors();
+        return;
+    }
+    if (appearanceBound
+            && (prop == &ShapeColor || prop == &Transparency || prop == &ShapeMaterial)) {
+        // The object's own look, by the names it has always had. Not
+        // through the list of the faces: where every face states the same
+        // look the list keeps that as its base, and it is not the object's
+        // (docs/ShapeAppearanceDesign.md sec 14.2).
+        if (giving)
+            writeOwnLook(prop);
+        Gui::ViewProviderDragger::onChanged(prop);
+        return;
+    }
+    if (mapFlag) {
+        // The object's, which reads them where the looks are made
+        if (giving) {
+            if (auto feat = appearanceStore()) {
+                auto give = [](App::PropertyBool &its, const App::PropertyBool &mine) {
+                    if (its.getValue() != mine.getValue())
+                        its.setValue(mine.getValue());
+                };
+                give(feat->MapFaceColor, MapFaceColor);
+                give(feat->MapLineColor, MapLineColor);
+                give(feat->MapPointColor, MapPointColor);
+                give(feat->MapTransparency, MapTransparency);
+                give(feat->ForceMapColors, ForceMapColors);
+            }
         }
+        else if (!appearanceBound && !prop->testStatus(App::Property::User3))
+            updateColors();
         return;
     }
     
@@ -2315,18 +2374,26 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         pcLineMaterial->diffuseColor.setValue(c.r,c.g,c.b);
         if (c != LineMaterial.getValue().diffuseColor)
             LineMaterial.setDiffuseColor(c);
-        LineColorArray.setValue(LineColor.getValue());
-        if(!prop->testStatus(App::Property::User3))
-            updateColors();
+        if (!appearanceBound) {
+            LineColorArray.setValue(LineColor.getValue());
+            if (!prop->testStatus(App::Property::User3))
+                updateColors();
+        }
+        else if (giving)
+            writeColours(Looks::Edge, {LineColor.getValue()});
     }
     else if (prop == &PointColor) {
         const App::Color& c = PointColor.getValue();
         pcPointMaterial->diffuseColor.setValue(c.r,c.g,c.b);
         if (c != PointMaterial.getValue().diffuseColor)
             PointMaterial.setDiffuseColor(c);
-        PointColorArray.setValue(PointColor.getValue());
-        if(!prop->testStatus(App::Property::User3))
-            updateColors();
+        if (!appearanceBound) {
+            PointColorArray.setValue(PointColor.getValue());
+            if (!prop->testStatus(App::Property::User3))
+                updateColors();
+        }
+        else if (giving)
+            writeColours(Looks::Vertex, {PointColor.getValue()});
     }
     else if (prop == &LineMaterial) {
         const App::MaterialAppearance& Mat = LineMaterial.getValue();
@@ -2338,6 +2405,10 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         pcLineMaterial->emissiveColor.setValue(Mat.emissiveColor.r,Mat.emissiveColor.g,Mat.emissiveColor.b);
         pcLineMaterial->shininess.setValue(Mat.shininess);
         pcLineMaterial->transparency.setValue(Mat.transparency);
+        if (giving) {
+            if (auto feat = appearanceStore())
+                feat->ElementAppearance.setBase(Looks::Edge, Mat);
+        }
     }
     else if (prop == &PointMaterial) {
         const App::MaterialAppearance& Mat = PointMaterial.getValue();
@@ -2349,20 +2420,31 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         pcPointMaterial->emissiveColor.setValue(Mat.emissiveColor.r,Mat.emissiveColor.g,Mat.emissiveColor.b);
         pcPointMaterial->shininess.setValue(Mat.shininess);
         pcPointMaterial->transparency.setValue(Mat.transparency);
+        if (giving) {
+            if (auto feat = appearanceStore())
+                feat->ElementAppearance.setBase(Looks::Vertex, Mat);
+        }
     }
     else if (prop == &PointColorArray) {
+        if (giving)
+            writeColours(Looks::Vertex, PointColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValues());
-        Gui::ColorUpdater::addObject(getObject());
+        if (!appearanceBound)
+            Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &LineColorArray) {
+        if (giving)
+            writeColours(Looks::Edge, LineColorArray.getValues());
         setHighlightedEdges(LineColorArray.getValues());
-        Gui::ColorUpdater::addObject(getObject());
+        if (!appearanceBound)
+            Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &DiffuseColor) {
         // Only a touch() reaches this now -- a write to DiffuseColor lands in
         // ShapeAppearance and is announced there, by the branch below.
         applyShapeAppearance();
-        Gui::ColorUpdater::addObject(getObject());
+        if (!appearanceBound)
+            Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &ShapeAppearance) {
         // The appearance changed, whichever name it arrived under. The
@@ -2371,8 +2453,15 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         // arrays, which is what applyShapeAppearance fills in -- colours
         // alone while diffuse is the only varying field, whole materials
         // once any other field varies per face.
+        //
+        // A named element is the object in the name's colour, and in this
+        // list holds only what of that the object has not: where the names
+        // are kept here they are laid in again ahead of the draw.
+        if (!appearanceBound && MappedColors.getSize() && !isRestoring())
+            updateColors();
         applyShapeAppearance();
-        Gui::ColorUpdater::addObject(getObject());
+        if (!appearanceBound)
+            Gui::ColorUpdater::addObject(getObject());
     }
     else if(prop == &ShapeColor) {
         if(!ShapeColor.testStatus(App::Property::User3)) {
@@ -2386,7 +2475,8 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
             // mirror only refreshed on a uniform list, and destructive now
             // that it follows the base whatever the faces hold.
             ViewProviderGeometryObject::onChanged(prop);
-            updateColors();
+            if (!appearanceBound)
+                updateColors();
         }
         return;
     }
@@ -2401,7 +2491,7 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
             // without the other seeing, then push DiffuseColor by hand --
             // the duplication that store paid for, and the reason it is gone.
             ShapeAppearance.setTransparency(trans);
-            if(!prop->testStatus(App::Property::User3)
+            if (!appearanceBound && !prop->testStatus(App::Property::User3)
                     && (MapTransparency.getValue() || MappedColors.getSize()))
                 updateColors();
         }
@@ -2442,12 +2532,6 @@ void ViewProviderPartExt::attach(App::DocumentObject *pcFeat)
 {
     // call parent attach method
     ViewProviderGeometryObject::attach(pcFeat);
-
-    if (auto feat = Base::freecad_dynamic_cast<Part::Feature>(pcFeat)) {
-        conn = feat->signalMapShapeColors.connect([this](App::Document *doc) {
-            updateColors(doc, true);
-        });
-    }
 
     // Workaround for #0000433, i.e. use SoSeparator instead of SoGroup
     auto* pcNormalRoot = new SoSeparator();
@@ -2539,6 +2623,23 @@ void ViewProviderPartExt::attach(App::DocumentObject *pcFeat)
     pEdgeRoot = pcWireframeRoot;
     addDisplayMaskMode(pcPointsRoot, "Points");
     pVertexRoot = pcPointsRoot;
+
+    // The looks are the object's (docs/ShapeAppearanceDesign.md sec 14.6.3).
+    // In a document being read they are in the file, and are taken when
+    // the read of this object is done (finishAppearance()). The document's
+    // own read, that is: an object the log puts back while it moves along
+    // its rows is made as any other, and nothing tells its view provider
+    // that a read is over.
+    if (auto feat = appearanceStore()) {
+        auto doc = feat->getDocument();
+        if (!isRestoring() && doc && !doc->testStatus(App::Document::Restoring)) {
+            // Not for an object an undo brings back: it has what it had
+            if (!doc->isPerformingTransaction())
+                giveClassAppearance();
+            bindAppearance();
+            mirrorAppearance();
+        }
+    }
 }
 
 void ViewProviderPartExt::setDisplayMode(const char* ModeName)
@@ -2579,7 +2680,7 @@ std::vector<std::string> ViewProviderPartExt::getDisplayModes() const
 /// getShape() adds around it.
 bool ViewProviderPartExt::shapeStillMissing() const
 {
-    if (!shapeMayStillArrive())
+    if (!shapeMayStillArrive() || hasGivenShape)
         return false;
     if (!isAttachedToDocument() || !getObject())
         return false;
@@ -2594,6 +2695,8 @@ Part::TopoShape ViewProviderPartExt::getShape() const
     Part::TopoShape shape;
     if (!isAttachedToDocument() || !getObject())
         return shape;
+    if (hasGivenShape)
+        return givenShape;
 
     auto prop = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
             getObject()->getPropertyByName(getShapePropertyName()));
@@ -2608,10 +2711,75 @@ void ViewProviderPartExt::setShapePropertyName(const char *propName)
         shapePropName = propName;
     else
         shapePropName.clear();
+    // A view of another shape of the object keeps values of its own
+    if(!appearanceStore())
+        unbindAppearance();
     if (isUpdateForced()||Visibility.getValue())
         updateVisual();
     else
         VisualTouched = true;
+}
+
+void ViewProviderPartExt::setGivenShape(const Part::TopoShape &shape)
+{
+    givenShape = shape;
+    hasGivenShape = true;
+    // No property of the object has this name: the looks are this view's own
+    setShapePropertyName("(given)");
+}
+
+bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
+                                        const std::string &b, float position,
+                                        bool differencesOnly)
+{
+    auto obj = getObject();
+    if (!prop || !obj || !obj->getDocument() || hasGivenShape)
+        return false;
+    auto shapeProp = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
+            obj->getPropertyByName(prop));
+    if (!shapeProp)
+        return false;
+    if (!diffView || diffProp != prop || diffA != a || diffB != b) {
+        hideValueDiff();
+        // An empty ref is the value the object has now, and "-" none: no
+        // shape, against which all of the other is new, or gone
+        auto at = [&](const std::string &ref, Part::TopoShape &shape) {
+            if (ref == "-")
+                return true;
+            if (ref.empty())
+                shape = shapeProp->getShape();
+            else if (!Part::ShapeDiff::valueShape(*obj->getDocument(), ref, obj->getID(), shape))
+                return false;
+            return !shape.isNull();
+        };
+        Part::TopoShape shapeA, shapeB;
+        if (!at(a, shapeA) || !at(b, shapeB) || (shapeA.isNull() && shapeB.isNull()))
+            return false;
+        auto view = std::make_unique<ShapeDiffView>(*this);
+        if (!view->show(shapeA, shapeB))
+            return false;
+        diffView = std::move(view);
+        diffProp = prop;
+        diffA = a;
+        diffB = b;
+    }
+    diffView->setOptions(position, differencesOnly);
+    return true;
+}
+
+void ViewProviderPartExt::hideValueDiff()
+{
+    diffView.reset();
+    diffProp.clear();
+    diffA.clear();
+    diffB.clear();
+}
+
+std::map<std::string, int> ViewProviderPartExt::getValueDiff() const
+{
+    if (!diffView)
+        return {};
+    return diffView->summary();
 }
 
 const char * ViewProviderPartExt::getShapePropertyName() const
@@ -3278,13 +3446,6 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::MaterialApp
     pcShapeMaterial->transparency.setValue(material.transparency);
 }
 
-static inline App::PropertyLinkSub *getColoredElements(const App::DocumentObject *obj) {
-    if(!obj || !obj->getNameInDocument())
-        return 0;
-    return Base::freecad_dynamic_cast<App::PropertyLinkSub>(
-            obj->getPropertyByName("ColoredElements"));
-}
-
 std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const char *element) const {
     std::map<std::string,App::Color> ret;
 
@@ -3295,13 +3456,19 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
         ret["Edge"] = LineColor.getValue();
         ret["Vertex"] = PointColor.getValue();
 
-        auto prop = getColoredElements(pcObject);
-        if(prop && prop->getValue()==pcObject) {
-            const auto &subs = prop->getSubValues();
+        // What is stated of the elements, by name and by number, each as
+        // the shape counts it now
+        if(auto feat = appearanceStore()) {
+            for(const auto &v : feat->ElementAppearance.getStatedLooks())
+                ret.emplace(v.first, App::AppearanceList::storedDiffuse(v.second));
+        }
+        else if(auto names = unboundNames()) {
+            // Kept here: the object's names, in the colours of MappedColors
+            const auto &subs = names->getSubValues();
             const auto &colors = MappedColors.getValues();
-            if(subs.size()==colors.size()) {
+            if(names->getValue()==pcObject && subs.size()==colors.size()) {
                 for(size_t i=0;i<subs.size();++i)
-                    ret.emplace(subs[i],colors[i]);
+                    ret[subs[i]] = colors[i];
             }
         }
         return ret;
@@ -3396,53 +3563,125 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
     return ret;
 }
 
-void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color> &info) 
+std::map<std::string,App::MaterialAppearance>
+ViewProviderPartExt::getElementAppearances(const char *element) const
 {
-    auto propColoredElements = getColoredElements(pcObject);
-    if(!propColoredElements)
+    std::map<std::string,App::MaterialAppearance> ret;
+    if(!element || !element[0]) {
+        ret["Face"] = ShapeAppearance.getBase();
+        ret["Edge"] = LineMaterial.getValue();
+        ret["Vertex"] = PointMaterial.getValue();
+        if(auto feat = appearanceStore()) {
+            for(const auto &v : feat->ElementAppearance.getStatedLooks())
+                ret.emplace(v.first, v.second);
+        }
+        else if(auto names = unboundNames()) {
+            // Kept here, where a name has a colour and no more of a look:
+            // the object in that colour
+            const auto &subs = names->getSubValues();
+            const auto &colors = MappedColors.getValues();
+            if(names->getValue()==pcObject && subs.size()==colors.size()) {
+                for(size_t i=0;i<subs.size();++i) {
+                    App::MaterialAppearance mat = ShapeAppearance.getBase();
+                    mat.diffuseColor = colors[i];
+                    mat.transparency = colors[i].transparency();
+                    ret[subs[i]] = mat;
+                }
+            }
+        }
+        return ret;
+    }
+    // Which elements, and their colours, as the colours are asked: the
+    // looks are the faces' as drawn, with those colours.
+    for(auto &v : getElementColors(element)) {
+        App::MaterialAppearance mat;
+        if(boost::starts_with(v.first,"Face")) {
+            int idx = atoi(v.first.c_str()+4);
+            if(idx>0 && idx<=ShapeAppearance.getSize())
+                mat = ShapeAppearance.getMaterial(idx-1);
+            else
+                mat = ShapeAppearance.getBase();
+        } else if(boost::starts_with(v.first,"Edge"))
+            mat = LineMaterial.getValue();
+        else if(boost::starts_with(v.first,"Vertex"))
+            mat = PointMaterial.getValue();
+        mat.diffuseColor = v.second;
+        mat.transparency = v.second.transparency();
+        ret.emplace(v.first,mat);
+    }
+    return ret;
+}
+
+namespace {
+
+void reportUnknownElements(const std::vector<std::string> &names)
+{
+    for(const auto &name : names)
+        Base::ValueError("'" + name + "' names no element").ReportException();
+}
+
+} // namespace
+
+void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color> &info)
+{
+    auto feat = appearanceStore();
+    if(!feat) {
+        setUnboundElementColors(info);
         return;
-    std::vector<App::Color> colors;
-    std::vector<std::string> subs;
-    colors.reserve(info.size());
-    subs.reserve(info.size());
-    bool touched = false;
+    }
+    // The object's own first: a name is laid over the object as this call
+    // leaves it
     for(auto &v : info) {
         if(v.first == "Face") {
-            if(ShapeColor.getValue()!=v.second) {
-                touched = true;
+            if(ShapeColor.getValue()!=v.second)
                 ShapeColor.setValue(v.second);
-            }
-            if(v.second.transparency()*100 != Transparency.getValue()) {
+            if(v.second.transparency()*100 != Transparency.getValue())
                 Transparency.setValue(v.second.transparency()*100);
-                touched = true;
-            }
         } else if(v.first == "Edge") {
-            if(LineColor.getValue()!=v.second) {
+            if(LineColor.getValue()!=v.second)
                 LineColor.setValue(v.second);
-                touched = true;
-            }
         } else if(v.first == "Vertex"){
-            if(PointColor.getValue()!=v.second) {
+            if(PointColor.getValue()!=v.second)
                 PointColor.setValue(v.second);
-                touched = true;
-            }
-        } else {
-            subs.push_back(v.first);
-            colors.push_back(v.second);
         }
     }
-    if(colors!=MappedColors.getValues()) {
-        touched = true;
-        Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
-                App::Property::User3, &MappedColors);
-        MappedColors.setValues(colors);
+    // What is stated of the elements is what the call names and no more.
+    // An element that has a look keeps it and changes colour; a new one is
+    // the object in that colour, as the object comes to be.
+    // All of them at once: a name at a time is every element gone over for
+    // every element
+    std::vector<std::string> unknown;
+    feat->ElementAppearance.setStatedColors(info, &unknown);
+    reportUnknownElements(unknown);
+}
+
+void ViewProviderPartExt::setElementAppearances(
+        const std::map<std::string,App::MaterialAppearance> &info)
+{
+    auto feat = appearanceStore();
+    if(!feat) {
+        // Kept here, where a name has a colour and no more of a look
+        std::map<std::string,App::Color> colors;
+        for(auto &v : info)
+            colors.emplace(v.first, App::AppearanceList::storedDiffuse(v.second));
+        setUnboundElementColors(colors);
+        return;
     }
-    if(subs.empty())
-        propColoredElements->setValue(0);
-    else if(subs!=propColoredElements->getSubValues())
-        propColoredElements->setValue(pcObject,subs);
-    else if(touched)
-        updateColors();
+    using Store = App::PropertyElementAppearance;
+    Store &store = feat->ElementAppearance;
+    Store::Edit edit(store);
+    for(auto &v : info) {
+        if(v.first == "Face")
+            store.setBase(Store::Face, v.second);
+        else if(v.first == "Edge")
+            store.setBase(Store::Edge, v.second);
+        else if(v.first == "Vertex")
+            store.setBase(Store::Vertex, v.second);
+    }
+    // The whole of each is the element's own
+    std::vector<std::string> unknown;
+    store.setStatedLooks(info, &unknown);
+    reportUnknownElements(unknown);
 }
 
 void ViewProviderPartExt::unsetHighlightedFaces()
@@ -3600,89 +3839,6 @@ void ViewProviderPartExt::reload(bool applyTessellation)
     updateVisual();
 }
 
-namespace {
-
-/** One of the three per-element colour arrays, picked by element type
- *
- * The two places below want "the colour list for this kind of element" and
- * do not care which one it is. They used to hold an App::PropertyColorList
- * pointer to one of DiffuseColor, LineColorArray and PointColorArray, which
- * stops being safe the moment DiffuseColor keeps its colours somewhere else
- * than the base list does: the reads would come back empty, for faces only
- * and without a word. So the branch lives here instead, once, and every
- * access goes through the property's own static type.
- */
-class ElementColors
-{
-public:
-    ElementColors() = default;
-    ElementColors(TopAbs_ShapeEnum type, ViewProviderPartExt *vp)
-        : _type(type), _vp(vp)
-    {}
-
-    explicit operator bool() const { return _vp != nullptr; }
-
-    int getSize() const
-    {
-        switch (_type) {
-        case TopAbs_VERTEX:
-            return _vp->PointColorArray.getSize();
-        case TopAbs_EDGE:
-            return _vp->LineColorArray.getSize();
-        default:
-            return _vp->DiffuseColor.getSize();
-        }
-    }
-
-    const std::vector<App::Color> &getValues() const
-    {
-        switch (_type) {
-        case TopAbs_VERTEX:
-            return _vp->PointColorArray.getValues();
-        case TopAbs_EDGE:
-            return _vp->LineColorArray.getValues();
-        default:
-            return _vp->DiffuseColor.getValues();
-        }
-    }
-
-    void setValues(const std::vector<App::Color> &colors)
-    {
-        switch (_type) {
-        case TopAbs_VERTEX:
-            _vp->PointColorArray.setValue(colors);
-            break;
-        case TopAbs_EDGE:
-            _vp->LineColorArray.setValue(colors);
-            break;
-        default:
-            _vp->DiffuseColor.setValue(colors);
-            break;
-        }
-    }
-
-    void touch()
-    {
-        switch (_type) {
-        case TopAbs_VERTEX:
-            _vp->PointColorArray.touch();
-            break;
-        case TopAbs_EDGE:
-            _vp->LineColorArray.touch();
-            break;
-        default:
-            _vp->DiffuseColor.touch();
-            break;
-        }
-    }
-
-private:
-    TopAbs_ShapeEnum _type = TopAbs_FACE;
-    ViewProviderPartExt *_vp = nullptr;
-};
-
-}  // namespace
-
 static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&obj,
         ViewProviderPartExt *&svp, App::Color &color)
 {
@@ -3739,361 +3895,778 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
     return colorFound;
 }
 
-struct ElementCache
+namespace {
+
+/** What a link lays over an element of what it shows, to the object
+ *
+ * The looks of an object's elements are made by the object
+ * (Part::Feature::updateAppearance()), which knows no view provider, and
+ * what a link lays over what it shows is its view provider's still. This
+ * answers for it until a link holds that itself, and goes then
+ * (docs/ShapeAppearanceDesign.md sec 14.6.9 step C).
+ */
+bool linkLookForObject(const Data::MappedName &mapped, App::DocumentObject *&obj,
+                       const App::PropertyContainer *&shown, App::Color &color)
 {
-    Part::TopoShape shape;
-    ViewProviderPartExt *vp;
-    bool inited = false;
-};
-
-static App::Color getElementColor(App::Color color, 
-                                  const Part::TopoShape &shape,
-                                  App::Document *doc,
-                                  int type,
-                                  const Data::MappedName &name,
-                                  std::map<App::DocumentObject*, ElementCache> &caches)
-{
-    if (!name)
-        return color;
-
-    Data::MappedName mapped(name);
-    bool colorFound = false;
-    std::vector<Data::MappedName> history;
-    std::vector<Data::MappedName> prevHistory;
-    Data::MappedName original;
-    long tag = shape.getElementHistory(mapped,&original,&prevHistory);
-    while(1) {
-        if(!tag)
-            return color;
-        auto obj = doc->getObjectByID(std::abs(tag));
-        if(!obj || !obj->getNameInDocument())
-            return color;
-        auto & cache = caches[obj];
-        if (!cache.inited) {
-            cache.inited = true;
-            cache.shape = Part::Feature::getTopoShape(obj);
-            cache.vp = Base::freecad_dynamic_cast<ViewProviderPartExt>(
-                    Gui::Application::Instance->getViewProvider(obj));
-        }
-        const Part::TopoShape & shape = cache.shape;
-        ViewProviderPartExt *vp = cache.vp;
-        if(shape.isNull() || getLinkColor(original,obj,vp,color) || !obj)
-            return color;
-        if(!vp) {
-            // Not a part view provider. No problem, just trace deeper into the
-            // history until we find one.
-            doc = obj->getDocument();
-            mapped = original;
-            prevHistory.clear();
-            tag = shape.getElementHistory(mapped,&original,&prevHistory);
-            continue;
-        }
-
-        if(colorFound)
-            return color;
-
-        // A colour that is only display state goes no further: the shape
-        // made from it keeps its own.
-        if (!vp->mapsElementColors(type))
-            return color;
-
-        float trans = vp->Transparency.getValue()/100.0;
-        ElementColors prop((TopAbs_ShapeEnum)type, vp);
-        if(prop.getSize()==0)
-            return color;
-
-        mapped = original;
-        // Normally, TopoShape::getElementHistory() returns the mapped element
-        // name of the previous step (in 'original'), and tag is the ID of the
-        // previous feature. 'mapped' is the mapped element name of the next
-        // modeling step in shape history.
-        //
-        // However, if there are intermediate modeling steps, things get a bit
-        // tricky. getElementHistory() returns intermediate element names in
-        // 'history', but the last entry of 'history' may actually contain the real
-        // mapped element name of the 'current' modeling step. That's why we are
-        // calling getElementHistory() for previous modeling step now, before
-        // retrieving the element for the current step using getElementName(),
-        // because we need to check intermediate history names of the previous
-        // model step. The 'original' returned by getElementHistory() here may
-        // or may not contain a valid element name for the previous step. We can
-        // only decide after another loop hits here.
-        std::swap(history, prevHistory);
-        prevHistory.clear();
-        tag = shape.getElementHistory(mapped,&original,&prevHistory);
-        Data::IndexedName indexedName = shape.getIndexedName(mapped);
-        if (!indexedName && !history.empty())
-           indexedName = shape.getIndexedName(history.back());
-        auto idx = Part::TopoShape::shapeTypeAndIndex(indexedName);
-        if(idx.second>0 && idx.second<=(int)shape.countSubShapes(idx.first)) {
-            if(idx.first==type) {
-                if(prop.getSize()==1) {
-                    color = prop.getValues()[0];
-                    color.setTransparency(trans);
-                }
-                else if(idx.second<=prop.getSize())
-                    return prop.getValues()[idx.second-1];
-            }else{
-                // This means the element is generated from a different type of source element,
-                // e.g. face generated by an edge.
-                auto aidx = shape.findAncestor(shape.findShape(idx.first,idx.second),(TopAbs_ShapeEnum)type);
-                if(aidx>0) {
-                    if(prop.getSize()==1) {
-                        color = prop.getValues()[0];
-                        color.setTransparency(trans);
-                    }
-                    else if(aidx<=prop.getSize())
-                        return prop.getValues()[aidx-1];
-                }
-            }
-        }
-        return color;
-    }
+    if(!Gui::Application::Instance)
+        return false;
+    ViewProviderPartExt *svp = nullptr;
+    const bool found = getLinkColor(mapped, obj, svp, color);
+    if(svp)
+        shown = svp;
+    return found;
 }
 
-std::vector<App::Color> ViewProviderPartExt::getShapeColors(const Part::TopoShape &shape, 
-        App::Color &defColor, App::Document *sourceDoc, bool linkOnly)
+/** Whether an object's looks of an element type may be mapped, to the object
+ *
+ * The object that makes a shape's looks asks its sources', and a source's
+ * view provider may say its colours are display state only
+ * (mapsElementColors()): a sketch's under AutoColor.
+ */
+bool mapsLooksOfObject(const App::DocumentObject *obj, int type)
 {
-    defColor.setPackedValue(Gui::ViewParams::getDefaultShapeColor());
-    defColor.a = 1.0f;  // opaque whatever the preference's alpha byte says
-
-    if(!sourceDoc) {
-        sourceDoc = App::GetApplication().getActiveDocument();
-        if(!sourceDoc)
-            return {};
-    }
-    size_t count = shape.countSubShapes(TopAbs_FACE);
-    if(!count)
-        return {};
-
-    Data::MappedName mapped = shape.getMappedName(
-            Data::IndexedName::fromConst("Face", 1), true);
-
-    ViewProviderPartExt *vp=0;
-    auto obj = sourceDoc->getObjectByID(shape.Tag);
-    if(getLinkColor(mapped,obj,vp,defColor))
-        return {defColor};
-    else if(linkOnly || !obj)
-        return {};
-
-    if(!vp)
-        vp = Base::freecad_dynamic_cast<ViewProviderPartExt>(
-                Gui::Application::Instance->getViewProvider(obj));
-    if(vp) {
-        defColor = vp->ShapeColor.getValue();
-        defColor.setTransparency(vp->Transparency.getValue()/100.0f);
-        return vp->DiffuseColor.getValues();
-    }
-
-    std::vector<App::Color> colors(count,defColor);
-    bool touched = false;
-    std::map<App::DocumentObject*,ElementCache> caches;
-    for(size_t i=0;i<=count;++i) {
-        mapped = shape.getMappedName(Data::IndexedName::fromConst("Face", i+1));
-        if (mapped) {
-            auto color = getElementColor(defColor,shape,sourceDoc,TopAbs_FACE,mapped,caches);
-            if(color!=defColor) {
-                colors[i] = color;
-                touched = true;
-            }
-        }
-    }
-    if(!touched)
-        return {};
-    return colors;
+    if(!Gui::Application::Instance)
+        return true;
+    auto vp = Base::freecad_dynamic_cast<ViewProviderPartExt>(
+            Gui::Application::Instance->getViewProvider(obj));
+    return !vp || vp->mapsElementColors(type);
 }
+
+const struct LinkLookForObject
+{
+    LinkLookForObject()
+    {
+        Part::Feature::setLinkLookFunc(linkLookForObject);
+        Part::Feature::setMapsLooksFunc(mapsLooksOfObject);
+    }
+} linkLookForObjectGiven;
+
+}  // namespace
 
 bool ViewProviderPartExt::hasBaseFeature() const {
     return !claimChildren().empty();
 }
 
-struct ColorInfo {
-    TopAbs_ShapeEnum type;
-    ElementColors prop;
-    App::Color defaultColor;
-    std::map<int,App::Color> colors;
-    bool mapColor;
+/** @name The looks are the object's (docs/ShapeAppearanceDesign.md sec 14.6.3)
+ *
+ * What a Part::Feature's faces, edges and vertices are drawn as is made by
+ * the object and kept in its ElementAppearance. A view provider that shows
+ * that object's own shape draws it: ShapeAppearance, LineColorArray and
+ * PointColorArray are what the object made, LineColor and PointColor its
+ * own looks of edges and vertices, the Map* properties its own. A write to
+ * any of them is given to the object, and what the object makes of it
+ * comes back by updateData().
+ */
+//@{
 
-    void init(TopAbs_ShapeEnum t, ViewProviderPartExt *vp) {
-        type = t;
-        prop = ElementColors(t, vp);
-        switch(type) {
-        case TopAbs_VERTEX:
-            defaultColor = vp->PointColor.getValue();
-            mapColor = vp->MapPointColor.getValue();
-            break;
-        case TopAbs_EDGE:
-            defaultColor = vp->LineColor.getValue();
-            mapColor = vp->MapLineColor.getValue();
-            break;
-        case TopAbs_FACE:
-            defaultColor = vp->ShapeColor.getValue();
-            defaultColor.setTransparency(vp->Transparency.getValue()/100.0f);
-            mapColor = vp->MapFaceColor.getValue();
-            break;
-        default:
-            assert(0);
+namespace {
+
+using Store = App::PropertyElementAppearance;
+
+/// Field by field: App::MaterialAppearance::operator== calls two that name
+/// one card the same whatever their colours say
+bool sameLook(const App::MaterialAppearance &a, const App::MaterialAppearance &b)
+{
+    return Store::differingFields(a, b) == Store::OwnNone;
+}
+
+bool sameRGB(const App::Color &a, const App::Color &b)
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+
+/// The view providers whose objects' looks were taken from them, in a
+/// document being read, and are made once the read is done with them all
+std::set<App::DocumentObjectT> _AdoptedObjects;
+
+}  // namespace
+
+namespace {
+
+/** The looks of what was taken from an older file, made once more when the
+ * document has been read
+ *
+ * Each is made as its view provider finishes (finishAppearance()), which is
+ * inside the read and one object at a time: a flag another view provider
+ * sets after that, or a source that is taken later, changes nothing then,
+ * since nothing is made while a document is read. A body's tip read from a
+ * file upstream had saved was drawn in the colours of the feature before it
+ * with its own look saying another colour. So, with every view provider
+ * done: each again, what the others are made from first.
+ */
+void settleAdopted(const App::Document &doc)
+{
+    std::vector<App::DocumentObject*> objs;
+    for(auto it = _AdoptedObjects.begin(); it != _AdoptedObjects.end();) {
+        if(it->getDocumentName() != doc.getName()) {
+            ++it;
+            continue;
+        }
+        if(auto obj = it->getObject())
+            objs.push_back(obj);
+        it = _AdoptedObjects.erase(it);
+    }
+    if(objs.empty() || doc.testStatus(App::Document::Restoring))
+        return;
+    const std::set<App::DocumentObject*> adopted(objs.begin(), objs.end());
+    try {
+        // Sorted with what an object is made from before it
+        for(auto obj : App::Document::getDependencyList(objs, App::Document::DepSort)) {
+            if(!adopted.count(obj))
+                continue;
+            if(auto feat = Base::freecad_dynamic_cast<Part::Feature>(obj))
+                feat->updateAppearance();
         }
     }
-};
+    catch (Base::Exception &e) {
+        e.ReportException();
+    }
+}
+
+void settleAdoptedWhenRead()
+{
+    static bool connected = false;
+    if(connected)
+        return;
+    connected = true;
+    App::GetApplication().signalFinishRestoreDocument.connect(settleAdopted);
+    App::GetApplication().signalDeleteDocument.connect([](const App::Document &doc) {
+        for(auto it = _AdoptedObjects.begin(); it != _AdoptedObjects.end();) {
+            if(it->getDocumentName() == doc.getName())
+                it = _AdoptedObjects.erase(it);
+            else
+                ++it;
+        }
+    });
+}
+
+}  // namespace
+
+Part::Feature *ViewProviderPartExt::appearanceStore() const
+{
+    if(!shapePropName.empty() && shapePropName != "Shape")
+        return nullptr;
+    auto feat = Base::freecad_dynamic_cast<Part::Feature>(pcObject);
+    return feat && feat->getNameInDocument() ? feat : nullptr;
+}
+
+void ViewProviderPartExt::bindAppearance()
+{
+    if(appearanceBound || !appearanceStore())
+        return;
+    appearanceBound = true;
+    ShapeAppearance.setWriter([this](const App::AppearanceList &before,
+                                     const App::AppearanceList &after, int) {
+        writeFaces(before, after);
+    });
+    markAppearanceNames(true);
+}
+
+void ViewProviderPartExt::markAppearanceNames(bool on)
+{
+    // Each is a name over the object's value from here on, and says so
+    // (App::Property::Legacy): no undo holds it and no row of the log is
+    // made for it or put back into it -- the object's is, and a row of a
+    // name put back after that was a write to the object of what the name
+    // said when the row was made. ShapeMaterial is one whoever shows it.
+    for(App::Property *prop : std::initializer_list<App::Property*>{
+            &ShapeAppearance, &ShapeColor, &Transparency, &DiffuseColor,
+            &LineColor, &LineMaterial, &LineColorArray,
+            &PointColor, &PointMaterial, &PointColorArray, &MappedColors,
+            &MapFaceColor, &MapLineColor, &MapPointColor, &MapTransparency,
+            &ForceMapColors})
+        prop->setStatus(App::Property::Legacy, on);
+}
+
+void ViewProviderPartExt::unbindAppearance()
+{
+    if(!appearanceBound)
+        return;
+    appearanceBound = false;
+    ShapeAppearance.setWriter(nullptr);
+    markAppearanceNames(false);
+}
+
+void ViewProviderPartExt::onBeforeChange(const App::Property *prop)
+{
+    // What is taken from the object is no change of this view provider's:
+    // nothing to undo, and no row of the log
+    if(mirroringAppearance)
+        return;
+    inherited::onBeforeChange(prop);
+}
+
+void ViewProviderPartExt::mirrorAppearance()
+{
+    auto feat = appearanceStore();
+    if(!feat || !appearanceBound || mirroringAppearance)
+        return;
+    Base::StateLocker lock(mirroringAppearance);
+    const Store &store = feat->ElementAppearance;
+
+    auto flag = [](App::PropertyBool &mine, const App::PropertyBool &its) {
+        if(mine.getValue() != its.getValue())
+            mine.setValue(its.getValue());
+    };
+    flag(MapFaceColor, feat->MapFaceColor);
+    flag(MapLineColor, feat->MapLineColor);
+    flag(MapPointColor, feat->MapPointColor);
+    flag(MapTransparency, feat->MapTransparency);
+    flag(ForceMapColors, feat->ForceMapColors);
+
+    // The faces: the same storage, not a copy
+    App::AppearanceList faces;
+    feat->getDrawnAppearance(Store::Face, faces);
+    ShapeAppearance.mirrorList(faces);
+    // The object's own look under its own names: from the object, and not
+    // from what the list of the faces keeps as its base
+    {
+        const App::MaterialAppearance own = store.getBase(Store::Face);
+        const long percent = std::lround(own.transparency * 100.0F);
+        if(Transparency.getValue() != percent)
+            Transparency.setValue(percent);
+        ShapeColor.mirrorValue(App::AppearanceList::storedDiffuse(own));
+        ShapeMaterial.mirrorValue(own);
+    }
+
+    auto colours = [&](Store::Kind kind, App::PropertyColor &color,
+                       App::PropertyAppearance &material, App::PropertyColorList &array) {
+        const App::MaterialAppearance own = store.getBase(kind);
+        App::Color rgb = own.diffuseColor;
+        rgb.a = color.getValue().a;
+        if(!sameLook(material.getValue(), own))
+            material.setValue(own);
+        if(color.getValue() != rgb)
+            color.setValue(rgb);
+        const App::AppearanceList &drawn = store.getDrawn(kind);
+        std::vector<App::Color> values;
+        if(drawn.getSize() > 1)
+            values = drawn.getDiffuseColors();
+        else
+            values.push_back(color.getValue());
+        if(array.getValues() != values)
+            array.setValues(values);
+    };
+    colours(Store::Edge, LineColor, LineMaterial, LineColorArray);
+    colours(Store::Vertex, PointColor, PointMaterial, PointColorArray);
+
+    // The colours of the names, under the name an older script knows
+    std::vector<App::Color> named;
+    named.reserve(static_cast<std::size_t>(store.getNamedCount()));
+    for(int i=0; i<store.getNamedCount(); ++i)
+        named.push_back(App::AppearanceList::storedDiffuse(store.getNamedLook(i)));
+    if(MappedColors.getValues() != named)
+        MappedColors.setValues(named);
+}
+
+void ViewProviderPartExt::writeFaces(const App::AppearanceList &before,
+                                     const App::AppearanceList &after)
+{
+    auto feat = appearanceStore();
+    if(feat && !mirroringAppearance)
+        feat->writeFaces(before, after);
+}
+
+void ViewProviderPartExt::writeOwnLook(const App::Property *prop)
+{
+    auto feat = appearanceStore();
+    if(!feat || mirroringAppearance)
+        return;
+    if(prop == &ShapeColor)
+        feat->writeOwnColor(ShapeColor.getValue());
+    else if(prop == &Transparency)
+        feat->writeOwnTransparency(Transparency.getValue());
+    else if(prop == &ShapeMaterial)
+        feat->writeOwnMaterial(ShapeMaterial.getValue());
+}
+
+void ViewProviderPartExt::writeColours(int kind, const std::vector<App::Color> &values)
+{
+    auto feat = appearanceStore();
+    if(feat && !mirroringAppearance)
+        feat->writeColors(kind, values);
+}
+
+void ViewProviderPartExt::giveClassAppearance()
+{
+    auto feat = appearanceStore();
+    if(!feat || !classLooks)
+        return;
+    // The look a kind of view provider gives what it shows -- a datum's
+    // colour, a binder's -- where nobody chose one for the object: it is
+    // the object's from here on, as a look somebody chose is.
+    Store &store = feat->ElementAppearance;
+    Store::Edit edit(store);
+    if((classLooks & ClassFace) && store.isFollowingMaterial(Store::Face))
+        store.setBase(Store::Face, ShapeAppearance.getBase());
+    if((classLooks & ClassEdge) && store.isFollowingMaterial(Store::Edge)) {
+        App::MaterialAppearance look = LineMaterial.getValue();
+        look.diffuseColor = LineColor.getValue();
+        store.setBase(Store::Edge, look);
+    }
+    if((classLooks & ClassVertex) && store.isFollowingMaterial(Store::Vertex)) {
+        App::MaterialAppearance look = PointMaterial.getValue();
+        look.diffuseColor = PointColor.getValue();
+        store.setBase(Store::Vertex, look);
+    }
+    if(classLooks & ClassFlags) {
+        feat->MapFaceColor.setValue(MapFaceColor.getValue());
+        feat->MapLineColor.setValue(MapLineColor.getValue());
+        feat->MapPointColor.setValue(MapPointColor.getValue());
+        feat->MapTransparency.setValue(MapTransparency.getValue());
+        feat->ForceMapColors.setValue(ForceMapColors.getValue());
+    }
+}
+
+/** Take into the object what a file older than its store has of its looks
+ *
+ * The view provider's, as a script's write would be
+ * (docs/ShapeAppearanceDesign.md sec 14.6.6): the Map* properties, the own
+ * looks, the names -- which the object read out of ColoredElements, with no
+ * looks -- in the colours of MappedColors, and what is coloured by its
+ * number where the view provider did not make it from the sources.
+ */
+void ViewProviderPartExt::adoptAppearance(Part::Feature *feat)
+{
+    Store &store = feat->ElementAppearance;
+    feat->MapFaceColor.setValue(MapFaceColor.getValue());
+    feat->MapLineColor.setValue(MapLineColor.getValue());
+    feat->MapPointColor.setValue(MapPointColor.getValue());
+    feat->MapTransparency.setValue(MapTransparency.getValue());
+    feat->ForceMapColors.setValue(ForceMapColors.getValue());
+
+    Store::Edit edit(store);
+    const App::MaterialAppearance base = ShapeAppearance.getBase();
+    if(ShapeAppearance.isFollowingMaterial())
+        store.followMaterial(Store::Face, base);
+    else
+        store.setBase(Store::Face, base);
+    App::MaterialAppearance line = LineMaterial.getValue();
+    line.diffuseColor = LineColor.getValue();
+    store.setBase(Store::Edge, line);
+    App::MaterialAppearance point = PointMaterial.getValue();
+    point.diffuseColor = PointColor.getValue();
+    store.setBase(Store::Vertex, point);
+
+    // The names, each the object in its colour
+    const int names = store.getNamedCount();
+    if(names) {
+        const std::vector<App::Color> &colors = MappedColors.getValues();
+        std::vector<std::string> subs = store.getSubValues();
+        if(static_cast<int>(colors.size()) == names) {
+            App::AppearanceList looks;
+            looks.setPBR(ShapeAppearance.isPBR());
+            looks.setSize(names, base);
+            for(int i=0; i<names; ++i)
+                looks.setDiffuseColor(i, colors[static_cast<std::size_t>(i)]);
+            looks.setFollowMaterial(false);
+            store.setNamed(std::move(subs), looks,
+                           std::vector<uint16_t>(static_cast<std::size_t>(names),
+                                                 Store::OwnDiffuse));
+        }
+        else {
+            // Names with no colours paint nothing
+            store.setNamed({}, App::AppearanceList());
+        }
+    }
+
+    const bool sources = ForceMapColors.getValue() || hasBaseFeature();
+    const Part::TopoShape shape = feat->Shape.getShape();
+    const App::AppearanceList &faces = ShapeAppearance.getList();
+    if(!(sources && MapFaceColor.getValue()) && faces.getSize() > 1
+            && faces.getSize() == static_cast<int>(shape.countSubShapes(TopAbs_FACE))) {
+        if(!names && shape.getElementMapSize() == 0) {
+            // An import: no name for any face, and the list as it is
+            store.setNumbered(Store::Face, faces);
+        }
+        else {
+            const std::vector<uint32_t> held = faces.getOverrides();
+            for(uint32_t idx : held) {
+                const int i = static_cast<int>(idx);
+                if(store.isStated(Store::Face, i))
+                    continue;
+                const App::MaterialAppearance look = faces.getMaterial(i);
+                store.setLook(Store::Face, i, look, Store::differingFields(look, base));
+            }
+        }
+    }
+    auto byNumber = [&](Store::Kind kind, TopAbs_ShapeEnum type, bool mapped,
+                        const App::PropertyColorList &array, const App::Color &own) {
+        const std::vector<App::Color> &values = array.getValues();
+        if((sources && mapped) || values.size() <= 1
+                || values.size() != shape.countSubShapes(type))
+            return;
+        for(std::size_t i=0; i<values.size(); ++i) {
+            if(sameRGB(values[i], own) || store.isStated(kind, static_cast<int>(i)))
+                continue;
+            App::Color color = values[i];
+            color.a = own.a;
+            store.setColor(kind, static_cast<int>(i), color);
+        }
+    };
+    byNumber(Store::Edge, TopAbs_EDGE, MapLineColor.getValue(), LineColorArray,
+             LineColor.getValue());
+    byNumber(Store::Vertex, TopAbs_VERTEX, MapPointColor.getValue(), PointColorArray,
+             PointColor.getValue());
+}
+
+void ViewProviderPartExt::finishAppearance()
+{
+    auto feat = appearanceStore();
+    if(!feat)
+        return;
+    const bool adopted = !feat->ElementAppearance.wasRestored();
+    if(adopted) {
+        try {
+            adoptAppearance(feat);
+        }
+        catch (Base::Exception &e) {
+            e.ReportException();
+        }
+    }
+    bindAppearance();
+    if(adopted) {
+        // What is drawn is made of what was taken, and what was made from
+        // this object and taken before it is made again: the view providers
+        // of a document are not read in the order of what they show. Asked
+        // for by name, since this is inside the read, where nothing is made
+        // otherwise -- and nothing was: a cut read from an older file was
+        // drawn in one colour, an import's faces from upstream's in the first.
+        feat->updateAppearance(nullptr, false, true);
+        _AdoptedObjects.emplace(feat);
+        settleAdoptedWhenRead();
+        std::set<App::DocumentObject*> inset;
+        feat->getInListEx(inset, true);
+        std::vector<App::DocumentObject*> objs(inset.begin(), inset.end());
+        for(auto obj : App::Document::getDependencyList(objs, App::Document::DepSort)) {
+            if(!inset.count(obj) || !_AdoptedObjects.count(App::DocumentObjectT(obj)))
+                continue;
+            if(auto other = Base::freecad_dynamic_cast<Part::Feature>(obj))
+                other->updateAppearance(nullptr, false, true);
+        }
+    }
+    mirrorAppearance();
+}
+
+void ViewProviderPartExt::applyMaterialAppearance()
+{
+    auto feat = appearanceStore();
+    if(!feat) {
+        inherited::applyMaterialAppearance();
+        return;
+    }
+    // The look is the object's, and the object takes its card's
+    // (Part::Feature::applyMaterialAppearance()). What a card says of
+    // rendering is this view provider's still, where the card is followed.
+    if(App::Document::isAnyRestoring())
+        return;
+    if(feat->getMaterialAppearance() == App::MaterialAppearance())
+        return;
+    if(feat->ElementAppearance.isFollowingMaterial(Store::Face))
+        Gui::applyMaterialRenderProperties(this, feat->getMaterialRenderProperties());
+}
+
+bool ViewProviderPartExt::canResetAppearanceToMaterial() const
+{
+    if(auto feat = appearanceStore())
+        return feat->canResetAppearanceToMaterial();
+    return inherited::canResetAppearanceToMaterial();
+}
+
+bool ViewProviderPartExt::resetAppearanceToMaterial()
+{
+    auto feat = appearanceStore();
+    if(!feat)
+        return inherited::resetAppearanceToMaterial();
+    if(!feat->resetAppearanceToMaterial())
+        return false;
+    Gui::applyMaterialRenderProperties(this, feat->getMaterialRenderProperties());
+    return true;
+}
 
 void ViewProviderPartExt::checkColorUpdate()
 {
-    if (MapFaceColor.getValue()
-            || MapLineColor.getValue()
-            || MapPointColor.getValue()
-            || MapTransparency.getValue())
+    // A link in the way was given another colour: what it lays over what
+    // it shows is its view provider's, and nothing told the object
+    if(auto feat = appearanceStore())
+        feat->onSourceAppearanceChanged();
+    else if(MapFaceColor.getValue() || MapLineColor.getValue()
+            || MapPointColor.getValue() || MapTransparency.getValue())
+        updateUnboundColors(nullptr, false);
+}
+
+void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColorMap)
+{
+    if(auto feat = appearanceStore())
+        feat->updateAppearance(sourceDoc, forceColorMap);
+    else
+        updateUnboundColors(sourceDoc, forceColorMap);
+}
+
+/** @name The looks kept here (docs/ShapeAppearanceDesign.md sec 14.6.11)
+ *
+ * Where no Part::Feature keeps them: see the header.
+ */
+//@{
+
+App::PropertyLinkSub *ViewProviderPartExt::unboundNames() const
+{
+    if(appearanceStore() || !pcObject || !pcObject->getNameInDocument())
+        return nullptr;
+    return Base::freecad_dynamic_cast<App::PropertyLinkSub>(
+            pcObject->getPropertyByName("ColoredElements"));
+}
+
+void ViewProviderPartExt::setUnboundElementColors(const std::map<std::string,App::Color> &info)
+{
+    bool touched = false;
+    std::vector<App::Color> colors;
+    std::vector<std::string> subs;
+    colors.reserve(info.size());
+    subs.reserve(info.size());
+    for(auto &v : info) {
+        if(v.first == "Face") {
+            if(ShapeColor.getValue()!=v.second) {
+                touched = true;
+                ShapeColor.setValue(v.second);
+            }
+            if(v.second.transparency()*100 != Transparency.getValue()) {
+                Transparency.setValue(v.second.transparency()*100);
+                touched = true;
+            }
+        } else if(v.first == "Edge") {
+            if(LineColor.getValue()!=v.second) {
+                LineColor.setValue(v.second);
+                touched = true;
+            }
+        } else if(v.first == "Vertex") {
+            if(PointColor.getValue()!=v.second) {
+                PointColor.setValue(v.second);
+                touched = true;
+            }
+        } else {
+            subs.push_back(v.first);
+            colors.push_back(v.second);
+        }
+    }
+    // The names are the object's to keep, and one that keeps none has no
+    // element given a colour by its name
+    auto names = unboundNames();
+    if(!names)
+        return;
+    if(colors != MappedColors.getValues()) {
+        touched = true;
+        // The names follow: what is drawn is made when both are there
+        Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
+                App::Property::User3, &MappedColors);
+        MappedColors.setValues(colors);
+    }
+    if(subs.empty()) {
+        if(names->getValue() || !names->getSubValues().empty())
+            names->setValue(nullptr);
+        else if(touched)
+            updateColors();
+    }
+    else if(names->getValue() != pcObject || subs != names->getSubValues())
+        names->setValue(pcObject, subs);
+    else if(touched)
         updateColors();
 }
 
-void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColorMap) 
+void ViewProviderPartExt::rememberUnboundPainted()
 {
-    // Not while restoring -- the document, or the object alone: a shape
-    // served after the load (a deferred archive entry, a blob faulted in by
-    // the visual build) lands as a property change under the object's
-    // Restore status, and mapping the inputs' colours then wrote over the
-    // colour the file saved, which an eager load, landing every shape inside
-    // the restore, never did.
-    if (UpdatingColor
-            || !getObject()
-            || !getObject()->getDocument()
-            || getObject()->getDocument()->testStatus(App::Document::Restoring)
-            || getObject()->isRestoring())
+    using Kinds = App::PropertyElementAppearance;
+    for(auto &painted : unboundPainted)
+        painted.clear();
+    const bool sources = ForceMapColors.getValue() || hasBaseFeature();
+    unboundMapped = {{sources && MapFaceColor.getValue(), sources && MapLineColor.getValue(),
+                      sources && MapPointColor.getValue()}};
+    auto names = unboundNames();
+    if(!names || names->getSubValues().empty())
         return;
-
-    auto geoFeature = Base::freecad_dynamic_cast<App::GeoFeature>(pcObject);
-
-    Base::FlagToggler<> flag(UpdatingColor);
-    auto prop = getColoredElements(pcObject);
-    if(prop && prop->getSubValues().size()!=(size_t)MappedColors.getSize()) {
-        if(prop->getSubValues().size()<(size_t)MappedColors.getSize())
-            MappedColors.setSize(prop->getSubValues().size());
-        else {
-            auto subs = prop->getSubValues();
-            subs.resize(MappedColors.getSize());
-            prop->setValue(pcObject,subs);
-        }
-        return;
-    }
-
-    auto shape = getShape();
+    const Part::TopoShape shape = getShape();
     if(shape.isNull())
         return;
+    Part::Feature::ElementLooks looks;
+    Part::Feature::mapElementLooks(pcObject, shape, names->getShadowSubs(), nullptr, looks);
+    for(int k=0; k<Kinds::KindCount; ++k) {
+        for(auto &v : looks.named[k])
+            unboundPainted[k].insert(v.first);
+    }
+}
 
+void ViewProviderPartExt::updateUnboundColors(App::Document *sourceDoc, bool forceColorMap)
+{
+    // Not while this is read, whether or not its document still is: a file
+    // has the lists as they were drawn, and half of what they are made of
+    // may not be here yet
+    if(updatingUnboundColors || appearanceStore() || isRestoring()
+            || !pcObject || !pcObject->getNameInDocument() || !pcObject->getDocument()
+            || pcObject->getDocument()->testStatus(App::Document::Restoring)
+            // or the object alone: a shape served after the load (a deferred
+            // archive entry, a blob faulted in by the visual build) lands as
+            // a property change under the object's Restore status
+            || pcObject->isRestoring())
+        return;
+    using Kinds = App::PropertyElementAppearance;
+
+    // The painted elements and their colours are one list held in two
+    // properties: the names on the object, the colours here. The two do not
+    // change at once, and between the two they differ in length: the other
+    // half is on its way, and its change comes back here.
+    static const std::vector<App::PropertyLinkBase::ShadowSub> none;
+    auto names = unboundNames();
+    const auto &subs = names ? names->getShadowSubs() : none;
+    const std::vector<App::Color> colors = MappedColors.getValues();
+    if(subs.size() != colors.size())
+        return;
+
+    const bool mapKind[Kinds::KindCount] = {MapFaceColor.getValue(), MapLineColor.getValue(),
+                                            MapPointColor.getValue()};
+    bool anything = !subs.empty();
+    for(int k=0; k<Kinds::KindCount && !anything; ++k)
+        anything = mapKind[k] || unboundMapped[k] || !unboundPainted[k].empty();
+    if(!anything)
+        return;   // nothing a name or a source could change, as most are
+
+    const Part::TopoShape shape = getShape();
+    if(shape.isNull())
+        return;
+    Base::StateLocker guard(updatingUnboundColors);
     if(!sourceDoc)
         sourceDoc = pcObject->getDocument();
 
-    std::vector<std::pair<std::string,std::string> > _subs;
-    const auto &subs = prop?prop->getShadowSubs():_subs;
+    const bool noMap = !ForceMapColors.getValue() && !forceColorMap && !hasBaseFeature();
+    Part::Feature::ElementLooks looks;
+    looks.own[Kinds::Face] = ShapeAppearance.getBase();
+    looks.own[Kinds::Edge] = LineMaterial.getValue();
+    looks.own[Kinds::Edge].diffuseColor = LineColor.getValue();
+    looks.own[Kinds::Vertex] = PointMaterial.getValue();
+    looks.own[Kinds::Vertex].diffuseColor = PointColor.getValue();
+    for(int k=0; k<Kinds::KindCount; ++k)
+        looks.fromSources[k] = !noMap && mapKind[k];
+    looks.sourceTransparency = MapTransparency.getValue();
+    Part::Feature::mapElementLooks(pcObject, shape, subs, sourceDoc, looks);
 
-    std::array<ColorInfo,TopAbs_SHAPE> infos;
-    infos[TopAbs_VERTEX].init(TopAbs_VERTEX,this);
-    infos[TopAbs_EDGE].init(TopAbs_EDGE,this);
-    infos[TopAbs_FACE].init(TopAbs_FACE,this);
-    bool noColorMap = !ForceMapColors.getValue() && !forceColorMap && !hasBaseFeature();
-
-    std::set<Data::MappedName> subMap;
-    for(auto &v : subs) {
-        if(v.first.size())
-            subMap.insert(shape.getElementName(v.first.c_str()).name);
-    }
-    int i=-1;
-    for(auto &v : subs) {
-        ++i;
-        Data::IndexedName element;
-        if (v.first.size())
-            element = shape.getElementName(v.first.c_str()).index;
-        else
-            element = Data::IndexedName(v.second.c_str());
-        auto idx = shape.shapeTypeAndIndex(element);
-        if(idx.second) {
-            infos[idx.first].colors[idx.second-1] = MappedColors[i];
+    static const TopAbs_ShapeEnum types[Kinds::KindCount] = {TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX};
+    for(int k=0; k<Kinds::KindCount; ++k) {
+        const int count = static_cast<int>(shape.countSubShapes(types[k]));
+        const std::map<int,int> &named = looks.named[k];
+        const std::map<int,App::MaterialAppearance> &handedOn = looks.handedOn[k];
+        // What the names painted the last time and paint no more goes back
+        // to the object's look. The list written to does not say which
+        // those are: an element coloured by its number -- a script's, an
+        // import's -- is in it too, and is not the names' to take back.
+        std::set<int> &painted = unboundPainted[k];
+        std::vector<int> unpainted;
+        for(int idx : painted) {
+            if(idx < count && !named.count(idx))
+                unpainted.push_back(idx);
+        }
+        painted.clear();
+        for(auto &v : named) {
+            if(v.first < count)
+                painted.insert(v.first);
+        }
+        // With the sources asked, what no name paints is what its source
+        // makes it and no more: the list is made anew, as it is when the
+        // sources are asked no longer
+        const bool anew = looks.fromSources[k] || unboundMapped[k];
+        unboundMapped[k] = looks.fromSources[k];
+        if(!anew && named.empty() && unpainted.empty())
             continue;
-        }else if(v.first.empty())
-            continue;
 
-        for(auto &names : Part::Feature::getRelatedElements(pcObject,v.first.c_str())) {
-            if(!subMap.insert(names.name).second)
-                continue;
-            auto idx = Part::TopoShape::shapeTypeAndIndex(names.index);
-            if(idx.second>0)
-                infos[idx.first].colors[idx.second-1] = MappedColors[i];
-        }
-    }
-    std::map<App::DocumentObject*,ElementCache> caches;
-    for(auto &info : infos) {
-        if(!info.prop) continue;
-        if(noColorMap || !info.mapColor) {
-            if(info.colors.empty())
-                info.prop.touch();
-            else {
-                auto colors = info.prop.getValues();
-                if(colors.size()!=shape.countSubShapes(info.type)) {
-                    colors.clear();
-                    colors.resize(shape.countSubShapes(info.type),info.defaultColor);
-                }
-                for(auto &v : info.colors) {
-                    if(v.first>=(int)colors.size())
-                        break;
-                    colors[v.first] = v.second;
-                }
-                info.prop.setValues(colors);
+        if(k == Kinds::Face) {
+            const App::MaterialAppearance base = ShapeAppearance.getBase();
+            App::AppearanceList list = ShapeAppearance.getList();
+            if(anew || list.getSize() != count) {
+                list = App::AppearanceList();
+                list.setSize(count, base);
             }
+            for(int idx : unpainted)
+                list.set1Value(idx, base);
+            for(auto &v : handedOn) {
+                if(v.first < count)
+                    list.set1Value(v.first, v.second);
+            }
+            for(auto &v : named) {
+                if(v.first >= count)
+                    continue;
+                App::MaterialAppearance look = base;
+                look.diffuseColor = colors[v.second];
+                look.transparency = colors[v.second].transparency();
+                list.set1Value(v.first, look);
+            }
+            // Every face given one look is the object given it, however it
+            // is written, and written a face at a time the list does not
+            // end its follow of a material card as a whole write does
+            if(!named.empty() || !handedOn.empty())
+                list.setFollowMaterial(false);
+            if(!ShapeAppearance.getList().isSame(list))
+                ShapeAppearance.setList(list);
             continue;
         }
-        int count = shape.countSubShapes(info.type);
-        bool touched = false;
-        std::vector<App::Color> colors(count,info.defaultColor);
-        auto it = info.colors.begin();
-        const char * typeName = shape.shapeName(info.type).c_str();
-        float trans = Transparency.getValue()/100.0f;
-        for(int i=0;i<count;++i) {
-            if(it!=info.colors.end() && i==it->first) {
-                if(colors[i]!=it->second) {
-                    touched = true;
-                    colors[i] = it->second;
-                }
-                ++it;
-                continue;
-            }
-            Data::MappedName mapped = shape.getMappedName(
-                    Data::IndexedName::fromConst(typeName, i+1));
-            if(!mapped)
-                continue;
 
-            App::Document *doc = sourceDoc;
-            if(geoFeature) {
-                auto owner = geoFeature->getElementOwner(mapped);
-                if(owner)
-                    doc = owner->getDocument();
-            }
-            auto color = getElementColor(info.defaultColor, shape, doc,info.type,mapped,caches);
-            if(!MapTransparency.getValue())
-                color.setTransparency(trans);
-            if(color != colors[i]) {
-                touched = true;
-                colors[i] = color;
-            }
+        App::PropertyColorList &array = k == Kinds::Edge ? LineColorArray : PointColorArray;
+        const App::Color own = k == Kinds::Edge ? LineColor.getValue() : PointColor.getValue();
+        std::vector<App::Color> values = array.getValues();
+        if(anew || static_cast<int>(values.size()) != count)
+            values.assign(count, own);
+        for(int idx : unpainted)
+            values[idx] = own;
+        for(auto &v : handedOn) {
+            if(v.first < count)
+                values[v.first] = App::AppearanceList::storedDiffuse(v.second);
         }
-        if(!touched) {
-            colors.clear();
-            colors.push_back(info.defaultColor);
+        for(auto &v : named) {
+            if(v.first < count)
+                values[v.first] = colors[v.second];
         }
-        info.prop.setValues(colors);
+        if(std::all_of(values.begin(), values.end(),
+                       [&](const App::Color &c) { return c == own; }))
+            values.assign(1, own);
+        if(array.getValues() != values)
+            array.setValues(values);
     }
 }
+
+//@}
+
+//@}
 
 void ViewProviderPartExt::updateData(const App::Property* prop)
 {
     const char *shapeProp = shapePropName.empty()?"Shape":shapePropName.c_str();
     const char *propName = prop?prop->getName():"";
-    if(strcmp(propName,"ColoredElements")==0
-            || strcmp(propName,shapeProp)==0
+    if (diffView && propName) {
+        // The two states stay where they are when the object moves; and one
+        // of them that is the object's own shape is no longer what is shown
+        if (strcmp(propName, "Placement") == 0)
+            diffView->updatePlacement();
+        if (diffProp == propName && (diffA.empty() || diffB.empty()))
+            hideValueDiff();
+    }
+    // What the object draws its elements as, and the properties it makes
+    // that of, are this view provider's as the object has them
+    if(appearanceBound && prop) {
+        if(auto feat = appearanceStore()) {
+            if(prop == &feat->ElementAppearance || prop == &feat->MapFaceColor
+                    || prop == &feat->MapLineColor || prop == &feat->MapPointColor
+                    || prop == &feat->MapTransparency || prop == &feat->ForceMapColors)
+                mirrorAppearance();
+        }
+    }
+    // The names of the elements given a colour, where the looks are kept
+    // here: the colours are MappedColors, and what is drawn is made of both
+    if(!appearanceBound && strcmp(propName,"ColoredElements")==0)
+        updateColors();
+    if(strcmp(propName,shapeProp)==0
             || strstr(propName,"Touched")!=0)
     {
         TopoDS_Shape cShape = getShape().getShape();
         if(cachedShape.getShape().IsPartner(cShape)) {
-            updateColors();
+            if(!appearanceBound)
+                updateColors();
             Gui::ViewProviderGeometryObject::updateData(prop);
             return;
         }
@@ -4104,7 +4677,18 @@ void ViewProviderPartExt::updateData(const App::Property* prop)
         else
             VisualTouched = true;
 
-        updateColors();
+        // Kept here, what is drawn of the new shape is made here
+        if(!appearanceBound)
+            updateColors();
+
+        // The visual made again is drawn in what is held: what the object
+        // makes of the new shape comes by its own change, if it changes
+        {
+            Base::StateLocker lock(mirroringAppearance);
+            DiffuseColor.touch();
+            LineColorArray.touch();
+            PointColorArray.touch();
+        }
 
         if (!VisualTouched) {
             if (this->faceset->partIndex.getNum() >
@@ -4148,10 +4732,8 @@ bool ViewProviderPartExt::setEdit(int ModNum)
             return false;
         }
 
-        // TaskFaceColors is replaced by TaskElementColors, and is inited in 
-        // setEditViewer() in order to handle editing context
-        //
-        // Gui::Control().showDialog(new TaskFaceColors(this));
+        // The panel is Gui::TaskElementColors, opened by setEditViewer(),
+        // which has the editing context
         return true;
     }
     else {
@@ -8420,6 +9002,7 @@ void ViewProviderPartExt::enableFullSelectionHighlight(bool face, bool line, boo
 
 void ViewProviderPartExt::beforeDelete()
 {
+    hideValueDiff();
     setStatus(Gui::Detach, true);
     // Drop any worker-emitted vertex-cache content still waiting for a
     // publish that will never come (docs/WorkerVertexCache.md) -- the
@@ -8467,6 +9050,9 @@ bool ViewProviderPartExt::getFaceWeights(std::vector<double> &weights) const
 void ViewProviderPartExt::finishRestoring()
 {
     inherited::finishRestoring();
+    // The looks are the object's: taken from it, or given to one whose file
+    // had none. Before the materials below are put on the nodes.
+    finishAppearance();
 
     auto syncMaterial = [](const App::MaterialAppearance &Mat, SoMaterial *pcMaterial) {
         pcMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);
@@ -8488,8 +9074,17 @@ void ViewProviderPartExt::finishRestoring()
     if (auto obj = getObject())
         preMeshUndeferredLoad(obj->getDocument());
 
+    if(!appearanceBound)
+        rememberUnboundPainted();
+
     if(VisualTouched && (isUpdateForced() || Visibility.getValue()))
         updateVisual();
+    else if(!VisualTouched && appearanceBound) {
+        // What was taken from the object while reading was not drawn
+        applyShapeAppearance();
+        setHighlightedEdges(LineColorArray.getValues());
+        setHighlightedPoints(PointColorArray.getValues());
+    }
 }
 
 Base::BoundBox3d

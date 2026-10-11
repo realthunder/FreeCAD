@@ -63,6 +63,7 @@ private:
     /// Add the selected elements under the edited object with \a marker
     /// (ViewProvider::hiddenMarker() or shownMarker()) and apply.
     void addVisibilityMarker(const std::string &marker);
+    void onEditMaterialClicked();
 
 protected:
     void onSelectionChanged(const SelectionChanges& msg) override;

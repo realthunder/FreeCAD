@@ -490,6 +490,8 @@ public:
     static PyObject* sIsLiveImport             (PyObject *self,PyObject *args);
     static PyObject* sIsBuildingVisuals        (PyObject *self,PyObject *args);
     static PyObject* sServeClients             (PyObject *self,PyObject *args);
+    static PyObject* sServeRequests            (PyObject *self,PyObject *args);
+    static PyObject* sServeDropRequest         (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientMode       (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientSelection  (PyObject *self,PyObject *args);
     static PyObject* sServeKickClient          (PyObject *self,PyObject *args);
@@ -497,6 +499,8 @@ public:
     static PyObject* sCyclesRenderTest         (PyObject *self,PyObject *args,PyObject *kwd);
     static PyObject* sServeGrants              (PyObject *self,PyObject *args);
     static PyObject* sServeSetGrants           (PyObject *self,PyObject *args);
+    static PyObject* sServeDevices             (PyObject *self,PyObject *args);
+    static PyObject* sServeSetDevices          (PyObject *self,PyObject *args);
     static PyObject* sServeStop                (PyObject *self,PyObject *args);
     static PyObject* sUpdateLocale             (PyObject *self,PyObject *args);
     static PyObject* sGetLocale                (PyObject *self,PyObject *args);

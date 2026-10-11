@@ -366,7 +366,7 @@ private:
         }
     }
 
-    void getOffsetGeos(std::vector<Part::Geometry*>& geometriesToAdd, std::vector<int>& listOfOffsetGeoIds)
+    void getOffsetGeos(std::vector<const Part::Geometry*>& geometriesToAdd, std::vector<int>& listOfOffsetGeoIds)
     {
         TopoDS_Shape offsetShape = makeOffsetShape();
         if (offsetShape.IsNull()) {
@@ -397,7 +397,7 @@ private:
     void drawOffsetPreview()
     {
         try {
-            std::vector<Part::Geometry*> geometriesToAdd;
+            std::vector<const Part::Geometry*> geometriesToAdd;
             std::vector<int> listOfOffsetGeoIds;
             getOffsetGeos(geometriesToAdd, listOfOffsetGeoIds);
 
@@ -410,7 +410,7 @@ private:
 
     void createOffset()
     {
-        std::vector<Part::Geometry*> geometriesToAdd;
+        std::vector<const Part::Geometry*> geometriesToAdd;
         std::vector<int> listOfOffsetGeoIds;
         getOffsetGeos(geometriesToAdd, listOfOffsetGeoIds);
 
@@ -585,7 +585,7 @@ private:
 
         int newCurveCounter = 0;
         int prevCurveCounter = 0;
-        std::vector<Part::Geometry*> geometriesToAdd;
+        std::vector<const Part::Geometry*> geometriesToAdd;
         for (auto& curve : vCCO) {
             // Check if curve is closed. Note as we use pipe it should always be closed but in case
             // we enable 'Skin' in the future.

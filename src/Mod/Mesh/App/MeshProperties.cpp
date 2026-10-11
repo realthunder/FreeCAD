@@ -69,7 +69,7 @@ void PropertyNormalList::transformGeometry(const Base::Matrix4D &mat)
 
     atomic_change guard(*this);
     // Rotate the normal vectors
-    for(auto &v : _lValueList)
+    for(auto &v : mutableValues(guard))
         v = rot * v;
     this->_touchList.clear();
     guard.tryInvoke();
@@ -148,7 +148,7 @@ void PropertyCurvatureList::transformGeometry(const Base::Matrix4D& mat)
 
     atomic_change guard(*this);
     // Rotate the principal directions
-    for(auto &v : _lValueList) {
+    for(auto &v : mutableValues(guard)) {
         CurvatureInfo ci = v;
         ci.cMaxCurvDir = rot * ci.cMaxCurvDir;
         ci.cMinCurvDir = rot * ci.cMinCurvDir;
@@ -161,7 +161,7 @@ void PropertyCurvatureList::transformGeometry(const Base::Matrix4D& mat)
 bool PropertyCurvatureList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">" << std::endl;
-    for(auto &v : _lValueList)
+    for(auto &v : this->getValues())
         writer.Stream() << v.fMaxCurvature << ' '
                         << v.fMinCurvature << ' '
                         << v.cMaxCurvDir.x << ' '
@@ -195,7 +195,7 @@ void PropertyCurvatureList::restoreXML(Base::XMLReader &reader)
 
 void PropertyCurvatureList::saveStream(Base::OutputStream &str) const
 {
-    for (std::vector<CurvatureInfo>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
+    for (std::vector<CurvatureInfo>::const_iterator it = this->getValues().begin(); it != this->getValues().end(); ++it) {
         str << it->fMaxCurvature << it->fMinCurvature;
         str << it->cMaxCurvDir.x << it->cMaxCurvDir.y << it->cMaxCurvDir.z;
         str << it->cMinCurvDir.x << it->cMinCurvDir.y << it->cMinCurvDir.z;
@@ -216,7 +216,7 @@ void PropertyCurvatureList::restoreStream(Base::InputStream &str, unsigned uCt)
 PyObject* PropertyCurvatureList::getPyObject()
 {
     Py::List list;
-    for (const auto& it : _lValueList) {
+    for (const auto& it : this->getValues()) {
         Py::Tuple tuple(4);
         tuple.setItem(0, Py::Float(it.fMaxCurvature));
         tuple.setItem(1, Py::Float(it.fMinCurvature));
@@ -244,13 +244,14 @@ CurvatureInfo PropertyCurvatureList::getPyValue(PyObject* /*value*/) const
 App::Property* PropertyCurvatureList::Copy() const
 {
     PropertyCurvatureList* p = new PropertyCurvatureList();
-    p->_lValueList = _lValueList;
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyCurvatureList::Paste(const App::Property& from)
 {
-    setValues(dynamic_cast<const PropertyCurvatureList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyCurvatureList&>(from).getValues());
 }
 
 // ----------------------------------------------------------------------------

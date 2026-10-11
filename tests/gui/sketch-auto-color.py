@@ -14,6 +14,7 @@ GuiDocument.xml, the shared defaults block included: a value the fork's
 save elided comes back from there, and must not read as an old file.
 """
 import os
+import ArchiveMembers
 import re
 import traceback
 import zipfile
@@ -97,8 +98,7 @@ def strip_auto_color(src, dst):
         return m.group(1) + str(int(m.group(2)) - n).encode() + body
 
     with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
-        for item in zin.infolist():
-            data = zin.read(item.filename)
+        for item, data in ArchiveMembers.members(src):
             if item.filename == "GuiDocument.xml":
                 data = block.sub(fix, data)
             zout.writestr(item, data)

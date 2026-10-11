@@ -59,9 +59,13 @@ PropertyGeometryList::~PropertyGeometryList()
 
 void PropertyGeometryList::setSize(int newSize)
 {
+    if (newSize == static_cast<int>(_lValueList.size()))
+        return;
+    aboutToSetValue();
     for (unsigned int i = newSize; i < _lValueList.size(); i++)
         delete _lValueList[i];
     _lValueList.resize(newSize);
+    hasSetValue();
 }
 
 int PropertyGeometryList::getSize() const
@@ -101,7 +105,7 @@ void PropertyGeometryList::setValue(const Geometry* lValue)
     }
 }
 
-void PropertyGeometryList::setValues(const std::vector<Geometry*>& lValue)
+void PropertyGeometryList::setValues(const std::vector<const Geometry*>& lValue)
 {
     auto copy = lValue;
     aboutToSetValue();
@@ -121,7 +125,7 @@ void PropertyGeometryList::setValues(const std::vector<Geometry*>& lValue)
     hasSetValue();
 }
 
-void PropertyGeometryList::setValues(std::vector<Geometry*> &&lValue)
+void PropertyGeometryList::setValues(std::vector<const Geometry*> &&lValue)
 {
     // Unlike above, the moved version of setValues() indicates the caller want
     // us to manager the memory of the passed in values. So no need clone.
@@ -156,8 +160,12 @@ void PropertyGeometryList::set1Value(int idx, std::unique_ptr<Geometry> &&lValue
 PyObject *PropertyGeometryList::getPyObject()
 {
     PyObject* list = PyList_New(getSize());
-    for (int i = 0; i < getSize(); i++)
-        PyList_SetItem( list, i, _lValueList[i]->getPyObject());
+    for (int i = 0; i < getSize(); i++) {
+        // getPyObject() is not const on Base::BaseClass, but every
+        // geometry class clones for its Python object, so the Python side
+        // never holds the value itself.
+        PyList_SetItem( list, i, const_cast<Geometry*>(_lValueList[i])->getPyObject());
+    }
     return list;
 }
 
@@ -168,7 +176,7 @@ void PropertyGeometryList::setPyObject(PyObject *value)
 
     if (PySequence_Check(value)) {
         Py_ssize_t nSize = PySequence_Size(value);
-        std::vector<Geometry*> values;
+        std::vector<const Geometry*> values;
         values.resize(nSize);
 
         for (Py_ssize_t i=0; i < nSize; ++i) {
@@ -199,7 +207,7 @@ void PropertyGeometryList::setPyObject(PyObject *value)
     }
 }
 
-void PropertyGeometryList::trySaveGeometry(Geometry * geom, Base::Writer &writer) const
+void PropertyGeometryList::trySaveGeometry(const Geometry * geom, Base::Writer &writer) const
 {
     // Not all geometry classes implement Save() and throw an exception instead
     try {
@@ -269,7 +277,7 @@ void PropertyGeometryList::Restore(Base::XMLReader &reader)
     reader.readElement("GeometryList");
     // get the value of my attribute
     int count = reader.getAttributeAsInteger("count");
-    std::vector<Geometry*> values;
+    std::vector<const Geometry*> values;
     values.reserve(count);
     for (int i = 0; i < count; i++) {
         reader.readElement("Geometry");

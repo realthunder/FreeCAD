@@ -107,7 +107,14 @@ def build():
             finish()
             return
         check("a second document is served", FreeCADGui.serveDocument(doc2, port))
-        FreeCADGui.serveSetGrants([{"token": TOKEN}])
+        # The page writes, so it is someone (docs/TransactionLog.md sec 30.6
+        # U4, U6): the token is an invitation issued to the name the page
+        # says in its hello -- the panel's own, with " (console)" after it
+        # -- and an open invitation to look for its plain
+        # fetches, which are made before any name is said.
+        FreeCADGui.serveSetGrants(
+            [{"token": TOKEN, "client": "console-panel-test (console)"}, {"token": TOKEN, "access": 1}]
+        )
         url = "http://127.0.0.1:%d/web/console-panel-test.html?token=%s&doc=%s&doc2=%s&drive=1" % (
             port,
             TOKEN,

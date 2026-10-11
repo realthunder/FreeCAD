@@ -37,16 +37,21 @@
                       documents resolved against (sec 7.13): kept by the
                       referring document, rebuilt at every save, served when
                       the reference comes back missing
+  ShapeStableBytesCases  a shape's stored bytes are the shape's alone, not
+                      what was built on it (docs/TransactionLog.md 23.12)
 
 Run headless with:  FreeCADCmd -t ShapeStorage
 """
 
+import math
 import os
 import re
 import shutil
 import tempfile
 import unittest
 import zipfile
+
+import ArchiveMembers
 from xml.etree import ElementTree
 
 import FreeCAD
@@ -70,6 +75,7 @@ class ShapeTestCase(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="fc_shape_test_")
         self.docs = []
         self.stateSaveMaterialCards(False)
+        self.history = ArchiveMembers.HistoryLeftOut()
 
     def tearDown(self):
         for name in list(self.docs):
@@ -77,6 +83,7 @@ class ShapeTestCase(unittest.TestCase):
                 FreeCAD.closeDocument(name)
         shutil.rmtree(self.tmp, ignore_errors=True)
         self.restoreSaveMaterialCards()
+        self.history.release()
 
     # -- settings this case depends on -------------------------------------
 
@@ -187,7 +194,7 @@ class ShapeTestCase(unittest.TestCase):
         if os.path.isdir(project):
             with open(os.path.join(project, BLOB_DIR, name), "rb") as handle:
                 return handle.read()
-        return zipfile.ZipFile(project).read("%s/%s" % (BLOB_DIR, name))
+        return ArchiveMembers.readFile(project, "%s/%s" % (BLOB_DIR, name))
 
     def blobIndex(self, project):
         """The content index: name -> (hash, referrer tokens)."""
@@ -319,7 +326,10 @@ class ShapeLocationCases(ShapeTestCase):
         self.assertEqual(xml.count(' loc="'), 1)
         self.assertIn('loc="1 0 0 11 0 1 0 -22.5 0 0 1 3.25"', xml)
         # Round numbers stay round: the shortest text that reads back exactly.
-        self.assertNotIn("-22.500000", xml)
+        # Read in the attribute alone -- property values around it are
+        # written in the fixed float format (docs/TransactionLog.md 23.9).
+        for loc in re.findall(r' loc="([^"]*)"', xml):
+            self.assertNotIn("-22.500000", loc)
         # And with the location gone, the two boxes are the same geometry --
         # which, geometry being stored by content, is one file.
         self.assertEqual(len(self.storedGeometry(project)), 1)
@@ -438,9 +448,10 @@ class ShapeLocationCases(ShapeTestCase):
 
         reopened = self.openDocument(project)
         self.assertPlacement(reopened.getObject("Moved"), wanted)
-        # And the file's own format comes back with it: a document restored
-        # from upstream's format is not converted by the next save.
-        self.assertEqual(reopened.SaveSchemaVersion, 4)
+        # Opened, it is this fork's own format from then on (user, 2026-09-28,
+        # docs/TransactionLog.md sec 27.62): the next plain save writes the
+        # current schema, and the open says so. Save As keeps the old one.
+        self.assertEqual(reopened.SaveSchemaVersion, 5)
 
 
 @unittest.skipUnless(HAS_PART, "Part module not available")
@@ -497,6 +508,64 @@ class ShapeBlobCases(ShapeTestCase):
         self.assertTrue(first.isPartner(second), "the two shapes are not one TShape")
         # And they are still where they belong.
         self.assertPlacement(reopened.getObject("Box001"), self.placement(50, 0, 0))
+
+    def testTwoFilesWithTheSameGeometryShareItsParse(self):
+        """Two files holding the same bytes have two blobs; with shape values
+        frozen, the second finds the first's parse by the content hash and
+        the two documents share one TShape (docs/TransactionLog.md sec 27.25
+        item 4). Not frozen, each file parses its own."""
+        part = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
+        had = "ImmutableShapeValues" in part.GetBools()
+        kept = part.GetBool("ImmutableShapeValues", True)
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        doc.recompute()
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        copies = []
+        for name in ("copy1.FCStd", "copy2.FCStd"):
+            copies.append(os.path.join(self.tmp, name))
+            shutil.copyfile(project, copies[-1])
+        try:
+            part.SetBool("ImmutableShapeValues", True)
+            first = self.openDocument(project).getObject("Box").Shape
+            second = self.openDocument(copies[0]).getObject("Box").Shape
+            self.assertTrue(first.isPartner(second), "two files, same bytes, two TShapes")
+            part.SetBool("ImmutableShapeValues", False)
+            third = self.openDocument(copies[1]).getObject("Box").Shape
+            self.assertFalse(first.isPartner(third))
+        finally:
+            if had:
+                part.SetBool("ImmutableShapeValues", kept)
+            else:
+                part.RemBool("ImmutableShapeValues")
+
+    def testAReleasedParseIsKeptForAWhile(self):
+        """A file closed and opened again finds its shapes' parses kept, with
+        shape values frozen: the same TShape comes back, nothing is parsed
+        (docs/TransactionLog.md sec 27.25 item 5)."""
+        part = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
+        had = "ImmutableShapeValues" in part.GetBools()
+        kept = part.GetBool("ImmutableShapeValues", True)
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        doc.recompute()
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        try:
+            part.SetBool("ImmutableShapeValues", True)
+            doc = self.openDocument(project)
+            first = doc.getObject("Box").Shape
+            FreeCAD.closeDocument(doc.Name)
+            again = self.openDocument(project).getObject("Box").Shape
+            self.assertTrue(first.isPartner(again), "parsed again after a close")
+        finally:
+            if had:
+                part.SetBool("ImmutableShapeValues", kept)
+            else:
+                part.RemBool("ImmutableShapeValues")
 
     def testUnchangedGeometryIsNotRewritten(self):
         doc = self.newDocument()
@@ -642,6 +711,55 @@ class ShapeRefCases(ShapeTestCase):
         self.assertTrue(leaf.isPartner(reopened.getObject("BoxA").Shape))
         self.assertAlmostEqual(reopened.getObject("Comp").Shape.Volume, volume, places=6)
         self.assertEqual(len(reopened.getObject("Comp").Shape.Faces), 12)
+
+    def testABorrowersParseIsKeptWithItsSources(self):
+        """A parse kept after its file was closed is kept with the parses it
+        borrowed from (docs/TransactionLog.md sec 31.9).
+
+        The compound's parse holds the box's TShape. Kept while the box's own
+        parse was swept, it came back on the next open over a box that the box
+        object, parsed again, no longer had. So: open the file and read only
+        the compound, again and again, with enough other shapes read between
+        to sweep the cache more than once -- the compound is always among the
+        parses used last, the box never.
+        """
+        part = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
+        had = "ImmutableShapeValues" in part.GetBools()
+        kept = part.GetBool("ImmutableShapeValues", True)
+        doc, _ = self.sharedDocument()
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        try:
+            part.SetBool("ImmutableShapeValues", True)
+            for batch in range(8):
+                reopened = self.openDocument(project)
+                self.assertEqual(len(reopened.getObject("Comp").Shape.Solids), 2)
+                FreeCAD.closeDocument(reopened.Name)
+
+                other = self.newDocument("Others")
+                for i in range(31):
+                    feature = other.addObject("Part::Feature", "F%d" % i)
+                    feature.Shape = Part.makeBox(1 + batch, 1 + i, 1)
+                path = self.projectPath("others%d.FCStd" % batch)
+                other.saveAs(path)
+                FreeCAD.closeDocument(other.Name)
+                other = self.openDocument(path)
+                for obj in other.Objects:
+                    self.assertFalse(obj.Shape.isNull())
+                FreeCAD.closeDocument(other.Name)
+
+            reopened = self.openDocument(project)
+            leaf = reopened.getObject("Comp").Shape.Solids[0]
+            self.assertTrue(
+                leaf.isPartner(reopened.getObject("BoxA").Shape),
+                "the compound's parse was kept and the box's was not",
+            )
+        finally:
+            if had:
+                part.SetBool("ImmutableShapeValues", kept)
+            else:
+                part.RemBool("ImmutableShapeValues")
 
     def testResaveOfABorrowingProjectChangesNothing(self):
         doc, _ = self.sharedDocument()
@@ -872,6 +990,108 @@ class ShapeCongruenceCases(ShapeTestCase):
                 1e-8,
                 "%s came back in the wrong place" % name,
             )
+
+    def testMovedInstancesShareTheirFaces(self):
+        """The motion goes one level down: two instances of one part come back
+        with every face the same TShape, and so with one mesh between them
+        (docs/TransactionLog.md sec 27.25 item 3)."""
+        project, volumes, _ = self.savedWith(True, "CongFaces")
+        doc = self.openDocument(project)
+        second = doc.getObject("Second").Shape
+        third = doc.getObject("Third").Shape
+        self.assertFalse(second.isPartner(third), "the tops are the instances' own")
+        self.assertEqual(len(second.Faces), len(third.Faces))
+        for a, b in zip(second.Faces, third.Faces):
+            self.assertTrue(a.isPartner(b), "an instance's face is a copy")
+        self.assertAlmostEqual(second.Volume, volumes[1], delta=abs(volumes[1]) * 1e-9)
+
+    def testMovedFaceTopsShareTheirSurface(self):
+        """A face on top holds its own surface: the instance's top is a new
+        TShape whose surface is placed by the motion, and its wires are the
+        shared ones (docs/TransactionLog.md sec 27.37). Every pcurve must
+        still be found where the motion put the surface."""
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCongruentShapes", True)
+        group.SetBool("DedupCongruentShapes", True)
+        try:
+            doc = self.newDocument("CongTops")
+            face = Part.makePlane(20, 30).cut(
+                Part.makeCylinder(3, 5, FreeCAD.Vector(5, 10, -1))
+            ).Faces[0]
+            one = FreeCAD.Matrix()
+            one.rotateZ(0.7)
+            one.move(FreeCAD.Vector(100, 50, 25))
+            two = FreeCAD.Matrix()
+            two.rotateX(1.3)
+            two.move(FreeCAD.Vector(-40, 5, 9))
+            expected = {}
+            for name, motion in (("FaceA", one), ("FaceB", two)):
+                obj = doc.addObject("Part::Feature", name)
+                obj.Shape = face.transformGeometry(motion)
+                expected[name] = (obj.Shape.Area, self.centre(obj.Shape))
+            doc.recompute()
+            project = self.directoryPath("CongTops_dir")
+            doc.saveAs(project)
+            FreeCAD.closeDocument(doc.Name)
+            self.docs.remove("CongTops")
+        finally:
+            group.SetBool("DedupCongruentShapes", previous)
+        self.assertEqual(len([n for n in self.blobNames(project) if n.endswith(".brp")]), 1,
+                         "the two instances should be stored once")
+        doc = self.openDocument(project)
+        for name, (area, centre) in expected.items():
+            shape = doc.getObject(name).Shape
+            self.assertEqual(shape.ShapeType, "Face")
+            self.assertTrue(shape.isValid(), name)
+            self.assertAlmostEqual(shape.Area, area, delta=area * 1e-9, msg=name)
+            self.assertLess((self.centre(shape) - centre).Length, 1e-8, name)
+            for e in shape.Edges:
+                self.assertIsNotNone(shape.curveOnSurface(e), "a pcurve is lost")
+        a, b = doc.FaceA.Shape, doc.FaceB.Shape
+        self.assertFalse(a.isPartner(b), "the tops are the instances' own")
+        self.assertEqual(len(a.Wires), len(b.Wires))
+        for x, y in zip(a.Wires, b.Wires):
+            self.assertTrue(x.isPartner(y), "an instance's wire is a copy")
+
+    def testAMovedReversedFaceKeepsItsWires(self):
+        """A face held reversed comes back as it went: the instance's new top
+        takes the orientation after its wires are in, or they are turned with
+        it -- the outer wire running the wrong way, the face invalid and its
+        area negative (docs/TransactionLog.md sec 27.85)."""
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCongruentShapes", True)
+        group.SetBool("DedupCongruentShapes", True)
+        try:
+            doc = self.newDocument("CongReversed")
+            face = Part.makePlane(4, 3, FreeCAD.Vector(1, 2, 0))
+            one = FreeCAD.Matrix()
+            one.move(FreeCAD.Vector(-2, 1, 0))
+            two = FreeCAD.Matrix()
+            two.rotateZ(0.7)
+            two.move(FreeCAD.Vector(10, 5, 3))
+            expected = {}
+            for name, motion in (("Here", one), ("There", two)):
+                obj = doc.addObject("Part::Feature", name)
+                obj.Shape = face.transformGeometry(motion).reversed()
+                s = obj.Shape
+                expected[name] = (s.Area, self.centre(s), s.Faces[0].normalAt(1, 1))
+            doc.recompute()
+            project = self.directoryPath("CongReversed_dir")
+            doc.saveAs(project)
+            FreeCAD.closeDocument(doc.Name)
+            self.docs.remove("CongReversed")
+        finally:
+            group.SetBool("DedupCongruentShapes", previous)
+        self.assertEqual(len([n for n in self.blobNames(project) if n.endswith(".brp")]), 1,
+                         "the two instances should be stored once")
+        doc = self.openDocument(project)
+        for name, (area, centre, normal) in expected.items():
+            shape = doc.getObject(name).Shape
+            self.assertEqual(shape.Orientation, "Reversed", name)
+            self.assertTrue(shape.isValid(), name)
+            self.assertAlmostEqual(shape.Area, area, delta=area * 1e-9, msg=name)
+            self.assertLess((self.centre(shape) - centre).Length, 1e-8, name)
+            self.assertLess((shape.Faces[0].normalAt(1, 1) - normal).Length, 1e-9, name)
 
     def testPlacementIsNotUsedToCarryTheMotion(self):
         """The motion goes into the geometry, never into the placement.
@@ -1709,9 +1929,8 @@ class ForeignBaseShapeCases(ShapeTestCase):
         self.assertIn('ElementMap="%s"' % version, xml)
         xml = xml.replace(version, older)
         tmp = path + ".tmp"
-        with zipfile.ZipFile(path) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
-            for info in zin.infolist():
-                data = zin.read(info.filename)
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info, data in ArchiveMembers.members(path):
                 if info.filename == "Document.xml":
                     data = xml.encode("utf-8")
                 zout.writestr(info, data)
@@ -1733,3 +1952,66 @@ class ForeignBaseShapeCases(ShapeTestCase):
         self.assertNotIn(self.SHAPES, asm.PropertiesList)
         self.assertNotIn(self.REFS, asm.PropertiesList)
         self.assertNotIn("_ForeignBaseShape", self.documentXml(asmPath))
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class ShapeStableBytesCases(ShapeTestCase):
+    """A shape's stored bytes are the shape's alone (docs/TransactionLog.md 23.12).
+
+    Extruding a face gives the face's edges a 2D curve on each side face, and
+    an edge is shared, so those curves used to be saved with the face that
+    was extruded: the same face stored different bytes depending on what had
+    been built on it.
+    """
+
+    PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+    def tearDown(self):
+        FreeCAD.ParamGet(self.PARAMS).RemBool("StableShapeBytes")
+        super().tearDown()
+
+    def baseFace(self, doc):
+        v = FreeCAD.Vector
+        arc = Part.ArcOfCircle(Part.Circle(v(0, 2.5, 0), v(0, 0, 1), 2.5), math.pi / 2, 1.5 * math.pi)
+        edges = [
+            Part.makeLine(v(0, 0, 0), v(10, 0, 0)),
+            Part.makeLine(v(10, 0, 0), v(10, 5, 0)),
+            Part.makeLine(v(10, 5, 0), v(0, 5, 0)),
+            arc.toShape(),
+        ]
+        obj = doc.addObject("Part::Feature", "Base")
+        obj.Shape = Part.Face(Part.Wire(edges))
+        return obj
+
+    def baseBytes(self, extrude, tag):
+        """The stored geometry of a document holding the face, and an extrusion
+        of it when asked, keyed by content."""
+        doc = self.newDocument("Stable%s" % tag)
+        base = self.baseFace(doc)
+        if extrude:
+            # Built on the face's own edges, the way a script or a Python
+            # feature does. Part::Extrusion is no test of this: it extrudes a
+            # copy, so nothing it builds is shared with the face.
+            ext = doc.addObject("Part::Feature", "Extruded")
+            ext.Shape = base.Shape.extrude(FreeCAD.Vector(0, 0, 3))
+            shared = [e for e in base.Shape.Edges if any(e.isSame(x) for x in ext.Shape.Edges)]
+            self.assertEqual(len(shared), 4)
+            self.assertTrue(ext.Shape.isValid())
+        doc.recompute()
+        project = self.directoryPath("stable_%s" % tag)
+        doc.saveAs(project)
+        return set(self.storedGeometry(project))
+
+    def testTheFaceStoresTheSameBytesWhateverIsBuiltOnIt(self):
+        alone = self.baseBytes(False, "alone")
+        self.assertEqual(len(alone), 1)
+        built = self.baseBytes(True, "built")
+        self.assertEqual(len(built), 2)
+        self.assertTrue(alone <= built, "the face stored other bytes once extruded")
+
+    def testSwitchedOffTheExtrusionLeaksIntoTheFace(self):
+        """The control: without it, the same face does not store the same bytes."""
+        FreeCAD.ParamGet(self.PARAMS).SetBool("StableShapeBytes", False)
+        alone = self.baseBytes(False, "alone_off")
+        built = self.baseBytes(True, "built_off")
+        self.assertFalse(alone <= built)

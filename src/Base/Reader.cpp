@@ -288,6 +288,26 @@ const std::string *Base::XMLReader::findAttribute(const char* AttrName) const
     return nullptr;
 }
 
+void Base::XMLReader::serveEntry(Base::Reader& entry, Base::Persistence* object,
+                                 const std::string& name)
+{
+    if (!_entrySink) {
+        object->RestoreDocFile(entry);
+        return;
+    }
+    std::string bytes;
+    entry.beginTap([&bytes](const char* p, std::size_t n) { bytes.append(p, n); });
+    try {
+        object->RestoreDocFile(entry);
+    }
+    catch (...) {
+        entry.endTap();
+        throw;
+    }
+    entry.endTap();
+    _entrySink(name, std::move(bytes));
+}
+
 void Base::XMLReader::read()
 {
     if(ReadType == EndDocument)
@@ -977,6 +997,92 @@ Base::Reader::Reader(const std::string& name, Base::XMLReader *parent)
 {
 }
 
+// The input side of Writer::TapBuf: forwards every get to the stream's own
+// buffer and shows the sink what came back. istream::read() arrives as
+// xsgetn; the one-byte get area serves the character-at-a-time calls.
+class Base::Reader::TapBuf : public std::streambuf
+{
+public:
+    TapBuf(std::streambuf* inner, TapSink sink)
+        : inner(inner), sink(std::move(sink))
+    {}
+
+    /// Everything the inner buffer still holds, into the sink.
+    void drain()
+    {
+        char buf[16 * 1024];
+        for (;;) {
+            std::streamsize n = inner->sgetn(buf, sizeof(buf));
+            if (n <= 0)
+                break;
+            sink(buf, static_cast<std::size_t>(n));
+        }
+    }
+
+protected:
+    int underflow() override
+    {
+        if (gptr() < egptr())
+            return traits_type::to_int_type(*gptr());
+        int c = inner->sbumpc();
+        if (c == traits_type::eof())
+            return c;
+        ch = traits_type::to_char_type(c);
+        sink(&ch, 1);
+        setg(&ch, &ch, &ch + 1);
+        return c;
+    }
+    std::streamsize xsgetn(char* s, std::streamsize n) override
+    {
+        std::streamsize got = 0;
+        if (gptr() < egptr() && n > 0) {
+            *s = *gptr();
+            gbump(1);
+            got = 1;
+        }
+        if (n > got) {
+            std::streamsize m = inner->sgetn(s + got, n - got);
+            if (m > 0) {
+                sink(s + got, static_cast<std::size_t>(m));
+                got += m;
+            }
+        }
+        return got;
+    }
+
+private:
+    std::streambuf* inner;
+    TapSink sink;
+    char ch {0};
+};
+
+void Base::Reader::beginTap(TapSink sink)
+{
+    if (_tapBuf)
+        THROWM(Base::RuntimeError, "Reader::beginTap(): a tap is already open")
+    _tappedBuf = rdbuf();
+    if (!_tappedBuf)
+        THROWM(Base::RuntimeError, "Reader::beginTap(): no stream")
+    _tapBuf = std::make_unique<TapBuf>(_tappedBuf, std::move(sink));
+    rdbuf(_tapBuf.get());
+}
+
+void Base::Reader::endTap()
+{
+    if (!_tapBuf)
+        return;
+    _tapBuf->drain();
+    rdbuf(_tappedBuf);
+    _tappedBuf = nullptr;
+    _tapBuf.reset();
+}
+
+// After TapBuf is complete: the unique_ptr's deleter is instantiated here.
+Base::Reader::~Reader()
+{
+    _tapBuf.reset();
+}
+
 const std::string &Base::Reader::getFileName() const
 {
     return this->_name;
@@ -1081,7 +1187,7 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
             FC_DURATION_PLUS(dAdvance, tAdvance);
             try {
                 Base::ZipReader zipreader(_stream, FileList[jt].FileName, &xmlReader);
-                FileList[jt].Object->RestoreDocFile(zipreader);
+                xmlReader.serveEntry(zipreader, FileList[jt].Object, FileList[jt].FileName);
             } catch(Base::AbortException &e) {
                 e.ReportException();
                 FC_ERR("User abort when reading embedded file: " << FileList[jt].FileName);
@@ -1234,7 +1340,7 @@ void Base::ZipFileReader::readFiles(XMLReader &xmlReader)
             // which is what the forward-only walk did by construction.
             auto stream = openEntry(entry.FileName);
             Base::ZipReader zipreader(*stream, entry.FileName, &xmlReader);
-            entry.Object->RestoreDocFile(zipreader);
+            xmlReader.serveEntry(zipreader, entry.Object, entry.FileName);
         } catch(Base::AbortException &e) {
             e.ReportException();
             FC_ERR("User abort when reading embedded file: " << entry.FileName);
@@ -1293,7 +1399,7 @@ void Base::FileReader::readFiles(Base::XMLReader &xmlReader) {
                 FC_ERR(msg);
                 entry.Object->SetRestoreError(msg.c_str());
             } else
-                entry.Object->RestoreDocFile(freader);
+                xmlReader.serveEntry(freader, entry.Object, entry.FileName);
         } catch(Base::AbortException &e) {
             e.ReportException();
             FC_ERR("User abort when reading: " << fi.filePath());

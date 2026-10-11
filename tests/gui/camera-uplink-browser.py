@@ -50,7 +50,13 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtCore
 
+import wsclient
 from wsclient import free_port
+
+# The browser acts on the document, so it is someone: the holder of an
+# invitation issued to its name (docs/TransactionLog.md sec 30.6 U4, U6).
+TOKEN = "camup-browser-invite"
+CLIENT = "camup-browser"
 
 clock = time.perf_counter
 
@@ -215,6 +221,7 @@ def build():
             return
         state["http"] = serve_viewer()
         note("viewer on %d, scene on %d" % (state["http"], port))
+        FreeCADGui.serveSetGrants(wsclient.invitation(TOKEN, CLIENT))
         next_policy()
     except Exception:
         note("FAIL build:\n" + traceback.format_exc())
@@ -229,8 +236,8 @@ EXTRA = os.environ.get("CAMUP_EXTRA", "")
 
 def url_for(policy):
     return ("http://127.0.0.1:%d/fcviewer.html?scene=http://127.0.0.1:%d"
-            "&camup=%s&camuphz=10%s"
-            % (state["http"], state["port"], policy, EXTRA))
+            "&token=%s&client=%s&camup=%s&camuphz=10%s"
+            % (state["http"], state["port"], TOKEN, CLIENT, policy, EXTRA))
 
 
 def next_policy():

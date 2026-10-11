@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenerateModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="generateMetaModel_Module.xsd">
+    <PythonExport
+        Father="PyObjectBase"
+        Name="ElementAppearancePy"
+        PythonName="App.ElementAppearance"
+        TwinPointer="PropertyElementAppearance"
+        Twin="PropertyElementAppearance"
+        Include="App/PropertyElementAppearance.h"
+        Namespace="App"
+        FatherInclude="Base/PyObjectBase.h"
+        FatherNamespace="Base"
+        Constructor="false"
+        Initialization="true"
+        Delete="false">
+        <Documentation>
+            <Author Licence="LGPL" Name="Zheng, Lei" EMail="realthunder.dev@gmail.com" />
+            <UserDocu>What the elements of an object's shape look like, held by the object.
+
+A view of the property it was read from, not a copy: a write to it changes
+the object and is one step to undo.
+
+An element is named as the shape counts it ('Face3'), by its mapped name, or
+by its number as a list of faces counts it (2). 'Face', 'Edge' and 'Vertex'
+are the object's own look, which every element has that states nothing.
+
+    ea = obj.ElementAppearance
+    ea['Face3'] = material         # all of it is the face's own
+    ea['Face3'] = (1.0, 0.0, 0.0)  # its colour; the rest follows the object
+    ea[2]                          # the same face, as it is drawn
+    del ea['Face3']                # back to the object's look
+    ea.Face = material             # the object's own look
+
+A look is held by the element's name where the shape has a mapped name for
+it, and follows the element through a recompute; where the shape has none it
+is held by the number.
+            </UserDocu>
+        </Documentation>
+        <Methode Name="keys">
+            <Documentation>
+                <UserDocu>keys() -> list: the elements something is stated of, the named ones first.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="items">
+            <Documentation>
+                <UserDocu>items() -> list of (name, Material): what is stated, each as it is drawn.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="update">
+            <Documentation>
+                <UserDocu>update(dict) -> None: every entry written, as one change.
+
+A key is an element as indexing takes it; a value a Material or a colour.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setLook">
+            <Documentation>
+                <UserDocu>setLook(element, material, own=None) -> None
+
+Give an element a look. own names the fields that are the element's own,
+as App.Material spells them -- ('DiffuseColor', 'Shininess') -- and the rest
+follow the object; left out, all of the material is the element's.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setColor">
+            <Documentation>
+                <UserDocu>setColor(element, color) -> None: the colour alone; the rest follows the object.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="own">
+            <Documentation>
+                <UserDocu>own(element) -> tuple: the fields the element states, empty if it states nothing.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="isNamed">
+            <Documentation>
+                <UserDocu>isNamed(element) -> bool: whether its look is held by its name and not its number.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="remove">
+            <Documentation>
+                <UserDocu>remove(element) -> bool: back to the object's look; False if nothing was stated of it.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="clear">
+            <Documentation>
+                <UserDocu>clear() -> None: nothing stated, the object's own look included.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Attribute Name="Face" ReadOnly="false">
+            <Documentation>
+                <UserDocu>The object's own look: every face's that states nothing.</UserDocu>
+            </Documentation>
+            <Parameter Name="Face" Type="Object"/>
+        </Attribute>
+        <Attribute Name="Edge" ReadOnly="false">
+            <Documentation>
+                <UserDocu>The look of the object's edges.</UserDocu>
+            </Documentation>
+            <Parameter Name="Edge" Type="Object"/>
+        </Attribute>
+        <Attribute Name="Vertex" ReadOnly="false">
+            <Documentation>
+                <UserDocu>The look of the object's vertices.</UserDocu>
+            </Documentation>
+            <Parameter Name="Vertex" Type="Object"/>
+        </Attribute>
+        <Attribute Name="Names" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The elements held by name, as the shape counts them now.</UserDocu>
+            </Documentation>
+            <Parameter Name="Names" Type="Tuple"/>
+        </Attribute>
+        <Attribute Name="Faces" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The faces as they are drawn, an App.MaterialList that shares the storage.</UserDocu>
+            </Documentation>
+            <Parameter Name="Faces" Type="Object"/>
+        </Attribute>
+        <Attribute Name="Edges" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The edges as they are drawn.</UserDocu>
+            </Documentation>
+            <Parameter Name="Edges" Type="Object"/>
+        </Attribute>
+        <Attribute Name="Vertices" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The vertices as they are drawn.</UserDocu>
+            </Documentation>
+            <Parameter Name="Vertices" Type="Object"/>
+        </Attribute>
+        <Attribute Name="Object" ReadOnly="true">
+            <Documentation>
+                <UserDocu>The object this is the appearance of.</UserDocu>
+            </Documentation>
+            <Parameter Name="Object" Type="Object"/>
+        </Attribute>
+        <Sequence
+            sq_length="true"
+            sq_concat="false"
+            sq_repeat="false"
+            sq_item="false"
+            mp_subscript="true"
+            sq_ass_item="false"
+            mp_ass_subscript="true"
+            sq_contains="true"
+            sq_inplace_concat="false"
+            sq_inplace_repeat="false">
+        </Sequence>
+        <ClassDeclarations>public:
+    /// Every entry of \a dict written to \a prop, as indexing writes one
+    static void update(PropertyElementAppearance &amp;prop, PyObject *dict);
+
+private:
+    /// The property, or null with ReferenceError set once it is gone
+    PropertyElementAppearance *live() const;
+    PyObject *listOf(int kind) const;
+        </ClassDeclarations>
+    </PythonExport>
+</GenerateModel>

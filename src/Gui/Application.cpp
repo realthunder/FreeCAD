@@ -66,6 +66,7 @@
 #include <QLoggingCategory>
 
 #include <App/Document.h>
+#include <App/ViewObjectRequest.h>
 #include <App/DocumentObjectPy.h>
 #include <App/DocumentParams.h>
 #include <App/UnitsParams.h>
@@ -512,6 +513,14 @@ void Application::initStyleParameterManager()
 Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
+    // obj.ViewObject asked for before a progressive load has made it: what
+    // the load parked is made now (App/ViewObjectRequest.h)
+    App::setViewObjectRequest([](const App::DocumentObject &obj) {
+        if (!Application::Instance)
+            return;
+        if (auto doc = Application::Instance->getDocument(obj.getDocument()))
+            doc->flushDeferredRestore();
+    });
     if (GUIenabled) {
         // The unit settings are followed when they change, wherever that
         // was done -- the preferences, the status bar, the omni search or
@@ -544,6 +553,9 @@ Application::Application(bool GUIenabled)
         // the sandbox guest's FreeCADGui reaches the host through the
         // gui.* bridge ops (docs/Sandbox.md 7.9)
         SandboxGui::registerOps();
+        // A released pinned version is the Gui's: it asks, and closes on
+        // its event loop (Gui::Document::slotPinsReleased, sec 27.30).
+        App::GetApplication().setReleasedVersionsHandled(true);
         //NOLINTBEGIN
         App::GetApplication().signalNewDocument.connect(
             std::bind(&Gui::Application::slotNewDocument, this, sp::_1, sp::_2));
@@ -558,6 +570,26 @@ Application::Application(bool GUIenabled)
         App::GetApplication().signalShowHidden.connect(
             std::bind(&Gui::Application::slotShowHidden, this, sp::_1));
         //NOLINTEND
+
+        // How the transaction log reaches a view provider from App, for a
+        // cold undo or a restore to a version (docs/TransactionLog.md 24.9).
+        App::Document::setViewResolver([](const App::DocumentObject* obj) -> App::PropertyContainer* {
+            auto self = Application::Instance;
+            return self ? self->getViewProvider(obj) : nullptr;
+        });
+        // An implicit transaction a GUI event opened outside any command
+        // closes once control is back in the event loop (sec 24.10): one
+        // event, one step.
+        App::Document::setImplicitCloser([]() {
+            static bool posted = false;
+            if (posted)
+                return;
+            posted = true;
+            QTimer::singleShot(0, []() {
+                posted = false;
+                App::GetApplication().commitImplicitTransactions();
+            });
+        });
 
         App::GetApplication().signalFinishOpenDocument.connect([]() {
             std::vector<App::Document*> docs;
@@ -766,6 +798,8 @@ Application::Application(bool GUIenabled)
 Application::~Application()
 {
     Base::Console().Log("Destruct Gui::Application\n");
+    App::Document::setViewResolver({});
+    App::Document::setImplicitCloser({});
     // A path tracer session released by a closing view is destroyed by
     // a worker, not where it was released (docs/CyclesIntegration.md
     // sec 5.12). Wait for those here: past this point the process
@@ -2222,6 +2256,12 @@ struct LiveLoad
     /// bit is cleared on exactly the ones that were claimed -- a document
     /// that had it set by an actual import must keep it.
     std::set<std::string> claimed;
+    /// The documents whose load a running command started: a link's
+    /// target, a pinned link's version (docs/TransactionLog.md sec 27.16).
+    /// The command's own doing, like an import into an open document, so
+    /// not claimed while that command runs -- claimed, the load's own
+    /// writes aborted it, and the document was left empty.
+    std::set<std::string> commandLoads;
 };
 
 LiveLoad& liveLoad()
@@ -2240,6 +2280,9 @@ void Application::refreshLiveLoad(const App::Document* starting)
     // behind. A stuck claim is not cosmetic: it refuses every AlterDoc
     // command for the rest of the session.
     std::set<std::string> loading;
+    if (starting && App::Document::isUserEditing()) {
+        live.commandLoads.insert(starting->getName());
+    }
     if (starting) {
         // Its Restoring bit is not set yet -- the signal that brings us here
         // is emitted one line before it -- so this is the only evidence that
@@ -2277,6 +2320,18 @@ void Application::refreshLiveLoad(const App::Document* starting)
             if (App::GetApplication().getDocument(name.c_str())) {
                 loading.insert(name);
             }
+        }
+    }
+
+    for (auto it = live.commandLoads.begin(); it != live.commandLoads.end();) {
+        if (!loading.count(*it)) {
+            it = live.commandLoads.erase(it);
+        }
+        else {
+            if (App::Document::isUserEditing()) {
+                loading.erase(*it);
+            }
+            ++it;
         }
     }
 

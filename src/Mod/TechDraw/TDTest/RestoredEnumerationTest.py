@@ -1,4 +1,5 @@
 import os
+import ArchiveMembers
 import re
 import shutil
 import tempfile
@@ -56,8 +57,7 @@ class RestoredEnumerationTest(unittest.TestCase):
 
         # the same file, with indexes no list has
         with zipfile.ZipFile(good) as src, zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as dst:
-            for item in src.infolist():
-                data = src.read(item.filename)
+            for item, data in ArchiveMembers.members(good):
                 if item.filename == "Document.xml":
                     text = data.decode("utf-8")
                     for name, prop, index in self.CASES:

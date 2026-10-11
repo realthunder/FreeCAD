@@ -903,6 +903,7 @@ with a real prefix whose module is missing -- a document from an addon that
 is not installed -- still pays two `sys.path` walks per object (8.6 ms per
 `importModule("Nope::X")`), since a failed import is not remembered.
 
+
 ## 15. A pack store: no file per blob (design, 2026-09-24)
 
 Status: **design, not built.** Asked for by the user on 2026-09-24 after a
@@ -930,22 +931,11 @@ Where loose blob files still come from:
 - **Included files made in the session**: imports, materials, MaterialX
   manifests, TechDraw templates -- every `insertFile()` / `adoptFile()` /
   `adoptBytes()` call site.
-- **The transaction log, as built -- fewer than its design implies.**
-  (Corrected 2026-09-24 from the `oplab` session's reply; the first draft of
-  this bullet read sec 23.1's "large as a file" literally.) That branch was
-  never built: every entity is inline in `log.db` (`entity.data`, zstd or a
-  reverse-delta patch), unsaved shape geometry included, and `enc=file`
-  entities (TransactionLog.md sec 23.16) only reference blobs that already
-  exist here, holding a `FileBlobHandle` on each. The files the log does cause:
-  (a) the snapshot cadence runs the save's `collectFileBlobs` ->
-  `storeBlob`, one file per changed shape, like a save (off by default while
-  the log is staging); (b) a cold undo whose shape blob the log keeps only as
-  a delta decodes it and calls `adoptBytes()`, one file per re-adopted blob
-  (TransactionLog.md sec 24.3); (c) the embedded copy of `log.db`
-  (`Document::embedHistory` -> `adoptFile(copy, "db")`); (d) the checkout
-  writes every entry under `history/checkout/`, copying held blobs by
-  `blob->path()`. A pack store removes (a) and (b) outright; (d) should stream
-  by `read()` instead of `path()`.
+- **The transaction log, as designed.** `docs/TransactionLog.md` sec 13.2 and
+  23.1 keep values over a threshold (64 KB to start) as files in this store,
+  and version snapshots add more. Every commit that touches a large shape adds
+  a file, and a long session with many versions multiplies them. Reverse
+  deltas (23.2) shrink the bytes, not the number of files.
 
 What the loose files then cost, besides the creates:
 
@@ -963,10 +953,7 @@ What the loose files then cost, besides the creates:
   orphans found on 2026-09-24 were empty directories of that kind.
 
 The recovery bugs are fixed separately; they are bugs whatever the store
-does. (Fixed 2026-09-24, `80070f4b21`: the cleaner clears read-only first,
-a lock stays until its directories are gone, deletes run off the GUI
-thread, and lockless orphans are found by PID liveness and start time.)
-This section is about the store.
+does. This section is about the store.
 
 ### 15.2 The design
 
@@ -982,8 +969,8 @@ large files.
   rewritten in place.
 - **The index in SQLite.** The `Transaction` branch already puts a SQLite
   database in the transient directory (`history/log.db`, WAL,
-  `synchronous=NORMAL`). The blob index is a SQLite database of the same form
-  -- `blobs/index.db`, not a table in `log.db`, is the lean (15.5) -- keyed by
+  `synchronous=NORMAL`). The blob index is a table in it -- or in a
+  `blobs/index.db` of the same form if the log is not built yet -- keyed by
   hash, with segment, offset, length, encoding (`raw`, `zstd`) and extension.
   Small blobs, under a threshold to be measured (sec 15.4), are stored inline
   in the row and never touch a segment.
@@ -1020,14 +1007,20 @@ large files.
 
 ### 15.3 What it changes for the transaction log
 
-Less than the first draft of this section said (see 15.1): the log keeps its
-own entities inline in `log.db` and only references blobs this store already
-holds. What it uses of the store is `FileBlobHandle` and its refcount,
-`FileBlob::read()` (through `readBytes`), `adoptBytes()`, and -- for the
-checkout -- `path()`. **If those keep their meaning over segments, the log needs
-no change.** That is the API contract (15.6). The store then removes the log's
-two per-blob file costs, the snapshot's `storeBlob` and cold undo's
-`adoptBytes()`, without the log noticing.
+`docs/TransactionLog.md` sec 23.1 says where an entity's bytes live is "a
+backend detail chosen by size: small inline in `data`, large as a file in the
+document's `FileBlobManager`". With this store the large case is a range in a
+segment, not a file. Two consequences:
+
+- **The file-versus-inline threshold goes away.** Section 13.1 cites SQLite's
+  guidance that blobs up to about 100 KB are faster inside the database than as
+  files. On this laptop the crossover would be far higher, since a file costs
+  milliseconds. With a pack store no value is ever a loose file, so the only
+  choice left is inline row versus segment range, which is about SQLite page
+  churn, not the filesystem.
+- **One store, one collector.** Entities and blobs share the index and the
+  segment space; trimming (23.5) and blob refcounting both end in the same
+  compaction pass.
 
 ### 15.4 To measure before building (phase 0)
 
@@ -1047,32 +1040,16 @@ slower.
 
 ### 15.5 Open questions
 
-Input from the `oplab` session (the `Transaction` branch), 2026-09-24. The
-rulings are the user's.
-
-- **Where the blob index lives.** First draft: possibly a table in the log's
-  `log.db`. `oplab` argues against, concretely: the log *replaces* its
-  database at runtime (`TransactionLog::adoptStore` swaps in an embedded copy
-  on open, TransactionLog.md sec 16.4; `embed()` copies with `VACUUM INTO` and
-  then drops unnamed versions and the cache tier), so an index inside it would
-  travel into every embedded copy and be lost on adopt unless both paths learn
-  to strip and merge it. The log's connection is owned by its writer thread,
-  while save and restore make blobs on the main thread, and `ATTACH` gives no
-  atomic commit across two databases in WAL mode. Their lean: **its own
-  `blobs/index.db`** with the same schema conventions, the log referring to
-  blobs by hash as it does now. Atomicity across the two is not needed: the log
-  only records blobs that already exist, and the collector and refcounts
-  tolerate either order.
-- **Encoding in the segment.** Independent of the log, which already zstds and
-  delta-encodes its own entities inside SQLite. Measured deltas for shape blobs
-  are 5-9% of full on parameter edits and 41-47% on topology changes
-  (TransactionLog.md sec 23.16). With raw ranges in the segments the log keeps
-  its blob deltas in `log.db` as now; a per-row encoding column (`raw`, `zstd`)
-  in the index covers both choices.
-- **A copy of the saved archive as the new read-only segment**, making save and
-  restore symmetric at one file copy per save. No objection from the log:
-  version manifests name blobs by hash plus archive entry name, so where the
-  bytes live does not matter to it.
+- Whether the blob index lives in the log's database or in its own. Shared
+  means one transaction covers a log commit and the blobs it names; separate
+  means the store works without the log. Decide with the `Transaction` branch.
+- Encoding: shapes are text BREP by default and compress about 4:1 with zstd
+  (`docs/TransactionLog.md` sec 20.1). Compress in the segment, or keep them raw
+  so a range can be handed to a reader without inflating?
+- Whether a save could make a copy of the **saved archive** the new read-only
+  segment, as restore does, instead of appending the shapes it just wrote.
+  Save and restore would then be fully symmetric, at the cost of one file copy
+  per save.
 
 ### 15.6 The API contract to keep
 
@@ -1086,3 +1063,394 @@ What code outside the store relies on, and must mean the same over segments:
   decoded blobs through it.
 - `path()` materializes a real file on demand. Callers that only want the bytes
   should move to `read()`; the log's checkout (`history/checkout/`) is one.
+### 15.7 As ruled (user, 2026-09-25) -- built on branch Transaction
+
+Settled with the user in the `Transaction` session, which builds it (the
+log is the store's largest client). Where this disagrees with 15.2-15.5,
+this wins. The other session's refinements of 15.1-15.6 (`804c13dfb8`, not
+in this repository yet) merge in when the branches meet.
+
+**The answers to 15.5.**
+
+- The index is its own database, `blobs/index.db`: the log replaces its own
+  database at run time (an embedded copy is adopted, `docs/TransactionLog.md`
+  16.4) and would take a blob index with it.
+- New content is **zstd**. What a segment holds is a zip member, so each
+  member carries its own method: zstd (zip method 93) for content this
+  store writes, deflate for members that arrived in an opened archive.
+- The third question -- adopt the saved archive as a segment -- is withdrawn:
+  it would move blobs, and under the scheme below nothing ever moves.
+
+**Segments are zip files, and a blob never leaves its segment.** Members
+are named by content hash. The index maps a hash to its segment id (with
+extension and size) and nothing else: where a member sits is the
+segment's own central directory's business. Since a blob stays where it
+was first written, an index row never changes after it is made. The
+archive copy of an opened document (sec 14) is simply the first segment.
+
+**A segment is rewritten, never modified: generations.** Appending new
+members and dropping dead ones is one pass:
+
+1. Stream segment N's live members, raw -- a member record is copied as
+   bytes, never inflated or re-compressed -- into a temporary file, append
+   the new members, write the central directory, flush.
+2. Rename the temporary file to `seg-N.<g+1>`.
+3. Try to delete `seg-N.<g>`. If it cannot be deleted -- on Windows, a file
+   another handle has open -- leave it.
+
+A reader never sees a file change under it: whoever holds `seg-N.<g>` keeps
+reading it, its offsets valid, because generations are immutable once
+named. New opens take the highest generation on disk; inside the process
+the writer bumps a generation counter, and a reader that needs a member
+newer than its generation reopens. Old generations and leftover temporary
+files are deleted when they can be -- at the next rewrite, at close, on
+open. A crash leaves at worst an incomplete temporary file, which is never
+a generation and is deleted on open. Local headers carry the member sizes
+(no data descriptors), so a segment can still be rebuilt by a scan if a
+central directory is ever found missing.
+
+**Repack rides the rewrite.** Every rewrite drops the dead members it
+passes over, so a segment that is written to shrinks as it goes, and new
+content can go into a shrunken segment. A segment nothing is written to
+is rewritten once its dead fraction passes a threshold; a segment with
+nothing live is deleted. Segments are never merged, so their number falls
+only as they empty -- measured before any merge is considered.
+
+**Appends are batched.** A rewrite copies the segment, so new content is
+written per batch -- a commit group, a save, a snapshot -- one rewrite per
+segment per batch, not per blob; segments are capped (64 MB to start,
+measured) and a new one opened when the current is full.
+
+**Order of writes.** The segment first, the index second; on open the two
+are reconciled: an index row naming a member that is gone was a dead
+blob's and is dropped; a member no row names is dead space for the next
+rewrite.
+
+**Save.** At schema 5 the document's blob entries are copied raw from the
+segments into the FCStd -- zstd members stay zstd, so a blob is compressed
+once in its life and a save re-compresses nothing. That needs a writer
+that can add a member as raw bytes, which `zipios::ZipOutputStream` cannot;
+ours sits beside the random-access reader of sec 14, which gains the
+zstd method. Schema 4 is upstream's format and has no blob manager: each
+property writes its own entry, reading through `FileBlob::read()` (which
+decodes), and zipios deflates it, as today. The price of zstd members:
+schema 5 is readable only by this fork already, and a stock zip tool may
+not open a schema 5 file's blob entries.
+
+**Unchanged.** `FileBlobHandle` as reference and refcount as lifetime,
+`read()` returning bytes wherever they live, `adoptBytes()` storing by
+hash, `path()` materialising on demand (15.6 on the other side). The
+transaction log relies on nothing else (`docs/TransactionLog.md` 23.1,
+note of 2026-09-24).
+
+**Next: phase 0 (15.4) on this box** -- file per blob, everything in SQLite,
+and this layout, for create, random read and deleting the store, plus the
+rewrite cost at the cap -- then the laptop's rows, which motivated all of
+it.
+
+### 15.8 No index database; merges through an in-memory redirection (user, 2026-09-25)
+
+Refines 15.7, and where they disagree this wins.
+
+**The central directories are the index.** A segment is a zip whose
+central directory lists its members by name, and a member's name is
+`<hash>.<ext>`: that is the hash-to-segment mapping, the extension, and
+(from the directory) the size and the method. On open the store reads the
+directories of its few segments -- sec 14 already reads the opened
+archive's this way -- and builds the hash-to-segment map in memory; every
+write updates it in memory. Liveness was never persisted: it is the
+handles' refcount, in memory. After a crash every member counts as live
+until the restored document has claimed what it references; the next
+rewrite drops the rest. `blobs/index.db` of 15.7 is therefore withdrawn:
+nothing it would hold is not already in the segments or in memory.
+
+**Nothing persisted names a segment.** The segments' directories name
+members by hash; the saved FCStd names blob entries without segments; the
+transaction log names a blob by its hash (`enc = file` is "the store's copy
+of this hash", `docs/TransactionLog.md` 23.16). Where a blob lives is always
+answered by looking, never by a stored pointer.
+
+**Merges are allowed, occasionally.** Several segments each under a small
+live size (a quarter of the cap to start) are merged on the worker thread,
+never during a save: their live members are streamed raw into a new
+segment through the usual temporary file and rename (15.7), then the old
+segments are deleted if they can be.
+
+**The redirection is in memory only.** A live `FileBlob` remembers its
+segment so that a read needs no lookup -- which is what a merge would have
+to rewrite blob by blob. Instead a handle names a *logical* segment, and a
+small table maps logical segments to the file that holds them now; a merge
+of A and B into C sets `A -> C` and `B -> C`, two entries whatever the
+number of blobs, under the lock the log's worker respects. The table is
+for handles alive in this process and dies with them: on the next open
+there are no handles to redirect, and the directories say where every
+blob is. So it is never saved, and it needs no crash safety of its own:
+
+| Crash | On disk | Next open |
+| --- | --- | --- |
+| while C is the temporary file | A, B, an incomplete temporary | the temporary is deleted; blobs found in A and B |
+| after C is renamed, before A and B go | A, B, C, all complete | each merged blob found twice, identical bytes (content-addressed); C, the newest, is chosen; A's and B's copies are dead space for their next rewrite |
+| after A and B are deleted | C | blobs found in C |
+
+The same rule covers a generation that could not be deleted (15.7): a
+duplicate is harmless because it is the same bytes, and the newest copy
+wins.
+
+**Phase 0 changes accordingly:** file per blob against this layout; the
+SQLite leg goes with the index database.
+
+**When the directories are read, and duplicates** (user, 2026-09-25).
+Only a recovery reads more than one: a normal open starts a fresh store
+whose single segment is the archive copy (sec 14), whose directory is read
+already, and within a session the map is kept in memory as segments are
+written, never rescanned. Recovery reopens a leftover transient directory
+and reads each segment's directory -- one seek to the end and one read,
+about 80 bytes a member (some 400 KB for MiSTer's 5400 blobs), a few
+segments at the cap. Segment numbers only grow, and a merge's output gets
+a higher number than its inputs; building the map, a hash already seen
+keeps the higher-numbered segment, one comparison per duplicate. (Not the
+segment with more members: a later rewrite may leave the merged segment
+with fewer.) The same pass finishes a merge the crash interrupted: a
+segment whose every member is held by a higher-numbered one, or referenced
+by nothing the recovery restores, is deleted there and then.
+
+**The one ordering rule between two files.** The log and the store are two
+files, and the hazard between them is a log row naming a blob whose bytes
+never reached the disk. So a blob's segment generation is renamed and
+flushed (the directory entry with it) before any log row that names the
+blob commits. The log's writer already stores a value's blob entities
+before it appends the row; the rule adds one flush there, and only when a
+commit brings a new blob.
+
+### 15.9 Phase 0 on Linux (2026-09-25)
+
+`scripts/archbench.py` with the pack store's legs: `segments` (zstd members
+at level 3 in zip segments, each written as a temporary file, flushed and
+renamed; open = read the central directories; a generation rewrite with
+half the members dead and 5 % new; a merge) and `save` (the blob half of
+a save: deflating every blob at the save's level 3, against copying the
+zstd members raw). Run on this box's ext4 home, in `~/.cache/FreeCAD`,
+twice, identical to the millisecond. MiSTer is not on this box, so the
+document is synthetic at its scale: 5402 Part solids (boxes, holes,
+fillets), one blob each, 53.1 MB raw, 12.1 MB deflated in the archive.
+
+| leg | create s | index s | read all, random s | delete the store s |
+| --- | --- | --- | --- | --- |
+| A archive copy, inflate on read | 0.00 | 0.015 | 0.12 | -- |
+| D file per blob (today) | 0.09 | -- | 0.03 | 0.036 |
+| E segments, zstd | 0.27 | 0.002 | 0.10 | 0.000 |
+
+- zstd level 3 holds the blobs in **10.8 MB**, against 12.1 MB deflated in
+  the archive and 12.7 MB at the save's deflate level 3.
+- **Save: 0.46 s deflating every blob, 0.02 s copying the zstd members
+  raw.** The compression E pays at create (most of its 0.27 s) is the
+  compression a save pays today every time, paid once per blob instead.
+- A generation rewrite of a 10.8 MB segment, half dead and 5 % new: 0.015 s;
+  of a 2 MB segment (a 2 MB cap, 6 segments): 0.005 s; a merge of two
+  quartered 2 MB segments: 0.003 s.
+- Reads cost zstd decoding, 0.10 s for all 5402, less than inflating the
+  archive copy (0.12 s); a BRep parse dwarfs either.
+
+Linux does not have the problem: a file per blob costs 0.09 s to write and
+0.036 s to delete here, against 23 s and ~9 ms a file on the monitored
+laptop (14.2, 15.1). What this run shows is that the pack store does not
+make Linux slower where it matters -- save drops by 0.44 s, deleting the
+store to nothing -- and costs it compression once per new blob. The rows
+that decide are the laptop's, on MiSTer, with the same script (legs
+`files,segments,save`).
+
+**The laptop's rows** (2026-09-25, the `PartDesignPort` session on the
+monitored Windows laptop, `archbench.py` at `205c1dd511` with the split
+leg G of 15.10, in `getUserCachePath()`, conda Python 3.12). MiSTer: 5401
+entries, 87.3 MB raw, 19.0 MB deflated. Two runs at the 64 MB cap agreed:
+
+| leg | create s | index s | read all, random s | delete the store s |
+| --- | --- | --- | --- | --- |
+| D file per blob (today) | 16.24 | -- | 13.1-15.9 | 14.1 |
+| E segments, zstd | 1.00 | 0.012 | 0.30 | 0.005 |
+| G split on open (64 MB cap: 1 segment) | 0.82-0.86 | 0.032 | 0.28 | 0.010 |
+
+- zstd holds MiSTer in 16.1 MB against 19.0 MB deflated.
+- **Save's blob half: 1.75-2.25 s deflating, 0.48-0.51 s copying zstd
+  members raw.**
+- The split on open: 0.56-0.61 s for the raw copy, 0.82-0.86 s with the
+  decode and hash the restore pays anyway, against 0.04 s for the single
+  copy of sec 14. Against the 2.4 s open of 14.5 that is about a third more.
+- **A stall in the second segment write.** The rewrite of seg-0 took
+  10.3 s, the merge 10.7 s, and at a 16 MB cap the split's second segment
+  11 s. Timed inside the writer: the write and the fsync take milliseconds,
+  and about 10 s goes to close plus rename, not scaling with size (a
+  5-member segment took 2.2 s). The first segment in a run is always fast.
+  **Pinned down by bisection on the laptop:** renaming a file that is a zip
+  of under about 10 MB (between 9.9 and 10.7 MB) blocks the rename for
+  3-11 s, growing with the member count (5 members 3 s, 270 5 s, 2700 or
+  more about 10 s) -- presumably the endpoint scanner unpacking archives
+  under a size cap. Over the cap a rename costs 0.02 s, a non-zip of the
+  same size 0.05 s, and a junk prefix before the zip does not hide it.
+  **The same bytes written straight to their final name are never
+  charged**, and reading them afterwards is no slower (0.15 s for every
+  member). Close is always free. So the store writes a generation to its
+  final name, not through a `.tmp` and a rename (15.11).
+
+### 15.10 Names, and the opened archive split on open (user, 2026-09-25) -- design finished
+
+**Names.** A segment is `blobs/seg-<N>.<g>` in the store directory: `N` the
+segment number, growing per store and never reused (what makes "the
+newest wins" of 15.8 hold), `g` its generation, growing from 1. A write in
+progress is `seg-<N>.<g+1>.tmp` and is renamed when complete, so a file
+whose extension is a bare number is always a complete segment and a
+`.tmp` is debris. Opening a store takes the highest `g` of each `N` and
+deletes the lower generations and the `.tmp` files it can.
+
+**The opened archive is split on open.** Sec 14 copies the opened
+document into the store as one file, which would make it one giant
+segment -- far over the cap for a large document, and a rewrite of all of
+it whenever its dead fraction made it worth shrinking. Instead the open
+splits the archive's blob members into capped segments, `seg-1.1` to
+`seg-K.1`, copying each member raw, never inflating it. It writes the same
+bytes the copy does (fewer: the XML entries stay out) plus K file creates,
+about 8 for 500 MB; every segment is then capped, so every rewrite,
+shrink and merge is bounded, and the store has one kind of segment. The
+members that arrive this way keep their deflate method beside the zstd
+members written later. The reason sec 14 copies at all -- the next save
+replaces the file whose content is still referred to -- is met the same
+way.
+
+**Phase 0 adds a row:** splitting MiSTer into capped segments on open,
+against the single copy (0.05 s on the laptop, 14.2).
+
+**The design is finished.** Implementation starts in the next session, in
+the order of the plan: the laptop's phase 0 rows (with the split row
+added), then the store -- the raw-member zip writer, the zstd method in
+the reader, segments by generation with the in-memory map and
+redirection, the split on open, the schema 5 save copying members raw,
+repack and merge, and the ordering rule against the log.
+
+### 15.11 As built (2026-09-25)
+
+Built on branch `Transaction` in the 15.10 order. What the design left open,
+and how it was settled:
+
+- **zstd in zipios, not only in the store.** zipios' forward reader throws
+  on a method it does not know, and it throws in `getNextEntry()`, so one
+  zstd member would have lost every entry after it. `ZipInputStreambuf`
+  decodes method 93 by streaming (`ZSTANDARD` in `StorageMethod`), so the
+  forward-only walk, the random-access reader and anything else reading an
+  archive through zipios reads a schema 5 file. zstd is optional in the
+  build (`FC_HAVE_ZSTD`, now found by Base as well as App): without it new
+  members are deflated, and a zstd member cannot be read.
+- **The raw-member writer is zipios' own.**
+  `ZipOutputStream::putRawEntry()` writes a whole member whose bytes are
+  already compressed, headers from the caller's method, CRC and size, and
+  `Base::Writer::putRawEntry()` exposes it: `ZipWriter` takes it (below
+  4 GB), every other writer answers false and is handed the content
+  decoded -- a project directory gets plain files as before.
+- **Segments are written by the store's own zip writer**
+  (`SegmentWriter`): no data descriptors, one fixed timestamp so the same
+  members make the same bytes, at most 65535 members (no zip64 records),
+  `fflush` + `fsync` (`_commit` on Windows), and on POSIX the directory
+  fsynced for the new entry. Every segment write is durable, so the
+  ordering rule of 15.8 reduces to "flush the batch before the row".
+- **No `.tmp` and no rename -- a departure from 15.7 and 15.10, forced by
+  the laptop** (15.9: renaming a zip under about 10 MB costs it 3-11 s),
+  and accepted by the user (2026-09-25).
+  A generation is written straight to `seg-<N>.<g>`. The rename bought no
+  atomicity: the name has never existed, and no reader opens a generation
+  before the store installs it, which is after the file is complete and
+  flushed. What changes is the crash rule: a file whose name ends in a
+  bare number may now be incomplete, so recovery takes a segment only if
+  its end-of-central-directory record is there and the directory it points
+  at checks out, and deletes the rest as it deleted a `.tmp`.
+- **What a blob knows.** `FileBlob` keeps `_packed` and a logical segment
+  number, 0 while its member is only in memory. The manager keeps the
+  hash-to-segment map of 15.8 (`_where`, live and dead members alike), the
+  live segments by number, the merge redirection, and the batch
+  (`_unflushed`, members compressed at adopt time). Content the store
+  still has -- on disk or in memory -- is taken back by hash without a
+  write, so a shape changed and changed back, or an undo past the
+  content's release, costs nothing.
+- **Batches.** A save (after its blob entries), the end of a restore, a
+  segment's worth gathered in memory, and the transaction log's commit
+  (`makeDurable()`, one flush for all the blobs a commit names). The batch
+  goes into the segment last written while it has room, whose next
+  generation drops its dead members on the way; the rest into new
+  segments.
+- **Maintenance on a worker thread** (`FileBlobManager::workerLoop`),
+  started the first time a segment member dies, settling 200 ms so a burst
+  of deletes is one pass, and standing aside while a save writes blobs.
+  It deletes segments with nothing live, rewrites those more than half
+  dead, and merges those under a quarter of the cap into a new, higher
+  number. `Document` holds segment writes across the transient directory
+  rename (after closing the log's store, whose worker writes here) and
+  stops the worker before deleting the directory.
+- **Loose files remain** for content over a quarter of the cap
+  (`BlobSegmentSize`, 64 MB, so 16 MB), for the store with no document
+  (`defaultManager()`), and with `ArchiveBlobStore` off. `adoptFile()`
+  packs the content and keeps the file it was handed as the blob's own:
+  its callers usually want a path next, and the file exists already.
+  `insertFile()` packs and writes nothing. Shapes are serialised in memory
+  (`PropertyPartShape::storeBlob()` -> `adoptBytes()`), so the first save
+  of an import is no longer a file per shape.
+- **The split on open** reads the opened archive in place, decodes and
+  hashes each blob member as the restore always did, and hands the member
+  raw to the batch, which writes capped segments as they fill.
+- **Tests read zstd members through `Mod/Test/ArchiveMembers.py`**: Python
+  3.12's zipfile cannot (3.14's can, and the helper defers to it).
+
+**Measured on this box (Linux, ext4)**, headless, the synthetic 5402-solid
+document of 15.9, two runs each, the pack store against `ArchiveBlobStore`
+off (a file per blob -- sec 14's single archive copy is gone):
+
+| step | pack store | a file per blob |
+| --- | --- | --- |
+| open | 1.27-1.29 s, 1 file in the store | 1.37-1.40 s, 5400 files |
+| parse every shape | 4.28-4.43 s | 4.05-4.08 s |
+| save-as | 0.66-0.73 s | 1.07-1.09 s |
+| first save of an import (5402 new shapes) | 2.68-2.70 s, 2 files | 2.79-2.83 s, 5401 files |
+| save it again | 1.08-1.12 s | 1.43-1.49 s |
+| close both documents | 0.23 s | 0.39-0.40 s |
+
+The parse pays about 0.3 s for inflating out of the segment where Linux
+reads a plain file for nothing; the monitored laptop is the other way
+round by two orders (15.9). Everything a file per blob costs in creates and
+deletes is gone, and the import's first save compresses every shape with
+zstd and still finishes sooner. The second file after a save is a material
+card, which comes in through `adoptFile()` and keeps its file. The laptop's
+rows, on MiSTer in the real application, are the next measurement.
+
+**Measured on the Windows laptop (the dwin session, 2026-09-25)**,
+headless, `MiSTer.FCStd` (17800 objects, 17058 shapes), `Transaction` at
+`6c97f88c83` against OCCT `84c8abc4da`, a fresh `FREECAD_USER_HOME` per
+run, `ArchiveBlobStore` set before the open, seconds, two runs each:
+
+| step | pack store | a file per blob |
+| --- | --- | --- |
+| open | 65.4 / 58.6, 1 file | 90.8 / 83.2, 5399 files |
+| parse every shape | 2.8 / 2.9 | 18.3 / 16.4 |
+| save-as | 8.5 / 9.7, 2 files | 71.4 / 61.4, 5400 files |
+| save it again | 8.3 / 9.2 | 29.6 / 26.4 |
+| close | 0.19 / 0.18 | 35.8 / 29.6 |
+
+The saved file is about 20.9 MB either way, and the transient directory is
+gone after every close. A same-day baseline of the main build (sec 14's
+single archive copy, OCCT `d58f0d2fa5`) gave open 59.4, parse 2.6,
+save-as 9.0, save 8.8, close 0.18 with its store on, and 93.7 / 28.7 /
+88.1 / 43.2 / 41.2 with it off. **The pack store matches sec 14's archive
+store at every step and beats a file per blob everywhere** -- save-as
+about 7x, close about 170x. The one-minute open is not the store's: the
+main build opens as slowly. It differs from sec 14.5 (open 2.4 s, parse
+22.9 s) because the shape work now happens inside the open, on both
+branches; not chased.
+
+The GUI leg, `render-bench.py` at sec 14.5's settings (bgfx on OpenGL,
+1280x720, no vsync), store on, one run each: the pack store loads in
+31.9 s, settles in 9.4 s (10 frames) and draws a frame in 217 ms; the
+archive store 34.3 s, 8.8 s (9 frames), 221 ms -- the same scene (45903
+draws, 17.9 M primitives), the difference inside one run's noise. The
+headless open taking about 60 s on both builds, twice the whole GUI load,
+is serial work in the `FreeCADCmd` path that sec 14.5 did not see; open.
+
+Not built yet: the recovery pass of 15.8 (reading several segments'
+directories, the newest number winning, finishing an interrupted merge) --
+that is phase 7 with the log's session recovery; a store opens fresh
+today and numbers its segments past any it finds.

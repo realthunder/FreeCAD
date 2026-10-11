@@ -100,6 +100,9 @@ protected:
     void slotFinishRestoreObject(const App::DocumentObject &obj);
     void slotRecomputed(const App::Document&, const std::vector<App::DocumentObject*> &);
     void slotSkipRecompute(const App::Document &doc, const std::vector<App::DocumentObject*> &objs);
+    /// The last pin of this pinned version let go (docs/TransactionLog.md
+    /// sec 27.30): close it, keep it, or ask, per ClosePinnedVersion.
+    void slotPinsReleased(const App::Document&);
     void slotTouchedObject(const App::DocumentObject &);
     void slotChangePropertyEditor(const App::Document&, const App::Property &);
     //@}

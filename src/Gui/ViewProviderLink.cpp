@@ -1963,6 +1963,14 @@ ViewProviderLink::ViewProviderLink()
     mat.diffuseColor.setPackedValue(ViewParams::getDefaultLinkColor());
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), " Link", App::Prop_None, 0);
     ShapeAppearance.setStatus(App::Property::MaterialEdit, true);
+    // The name a link's look had, and has upstream. A file written for
+    // upstream said ShapeAppearance alone, which upstream has not on a link:
+    // a link given a colour here was the default colour there. Legacy and
+    // not Hidden: a status is written with its property, and upstream would
+    // hide its own ShapeMaterial.
+    ADD_PROPERTY_TYPE(ShapeMaterial, (mat), " Link", App::Prop_None,
+                      "Retired: the look of ShapeAppearance under its former name");
+    ShapeMaterial.setStatus(App::Property::Legacy, true);
 
     ADD_PROPERTY_TYPE(DrawStyle,((long int)0), " Link", App::Prop_None, "");
     static const char* DrawStyleEnums[]= {"None","Solid","Dashed","Dotted","Dashdot",nullptr};
@@ -1982,6 +1990,15 @@ ViewProviderLink::ViewProviderLink()
 
     ADD_PROPERTY(OverrideMaterialList,());
     ADD_PROPERTY(OverrideColorList,());
+
+    // What the link lays over what it shows is the link's, and these are
+    // names over it where it holds any (docs/ShapeAppearanceDesign.md sec
+    // 14.6.4)
+    looks.overrideMaterial = &OverrideMaterial;
+    looks.shapeAppearance = &ShapeAppearance;
+    looks.overrideColorList = &OverrideColorList;
+    looks.materialList = &MaterialList;
+    looks.overrideMaterialList = &OverrideMaterialList;
 
     ADD_PROPERTY(ChildViewProvider, (""));
     ChildViewProvider.setStatus(App::Property::Hidden,true);
@@ -2045,6 +2062,14 @@ void ViewProviderLink::attach(App::DocumentObject *pcObj) {
     if(pcObj->isDerivedFrom(App::LinkElement::getClassTypeId()))
         hide();
     linkView->setOwner(this);
+
+    // In a document being read the looks are in the file, and are taken
+    // when the read of this object is done (finishRestoring()). The
+    // document's own read, that is: a link the log puts back is made as any
+    // other.
+    auto doc = pcObj->getDocument();
+    if(!isRestoring() && doc && !doc->testStatus(App::Document::Restoring))
+        looks.bind(pcObj, false);
 }
 
 void ViewProviderLink::setDisplayMode(const char* ModeName)
@@ -2102,6 +2127,20 @@ QPixmap ViewProviderLink::getOverlayPixmap() const {
 
 void ViewProviderLink::onChanged(const App::Property* prop) {
     Gui::ColorUpdater colorUpdater;
+
+    // The look under its former name, each way
+    if (prop == &ShapeMaterial) {
+        if (!(ShapeAppearance.getBase() == ShapeMaterial.getValue())) {
+            ShapeAppearance.setValue(ShapeMaterial.getValue());
+        }
+        return;
+    }
+    if (prop == &ShapeAppearance && !(ShapeMaterial.getValue() == ShapeAppearance.getBase())) {
+        ShapeMaterial.setValue(ShapeAppearance.getBase());
+    }
+
+    // A write to a name over what the link holds is the link's
+    looks.onChanged(prop, isRestoring());
 
     if(prop==&ChildViewProvider) {
         childVp = freecad_dynamic_cast<ViewProviderDocumentObject>(ChildViewProvider.getObject().get());
@@ -2256,6 +2295,7 @@ const App::LinkBaseExtension *ViewProviderLink::getLinkExtension() const{
 void ViewProviderLink::updateData(const App::Property *prop) {
     if(childVp)
         childVp->updateData(prop);
+    looks.updateData(prop);
     if(!isRestoring() && !pcObject->isRestoring()) {
         auto ext = getLinkExtension();
         if(ext) {
@@ -2495,7 +2535,13 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
 
 void ViewProviderLink::updateElementList(App::LinkBaseExtension *ext) {
     const auto &elements = ext->_getElementListValue();
-    if(OverrideMaterialList.getSize() || MaterialList.getSize()) {
+    // The looks of the elements of an array are its elements' where it has
+    // elements, and are handed to them. Collapsed it has none, and the two
+    // lists are where the looks are: handed to nobody and cleared, which is
+    // what this did whenever it ran with none -- when the array was
+    // collapsed, a moment after the lists were filled, and every time its
+    // file was read -- an array lost the looks of its elements.
+    if(!elements.empty() && (OverrideMaterialList.getSize() || MaterialList.getSize())) {
         int i=-1;
         for(auto obj : elements) {
             ++i;
@@ -2546,8 +2592,12 @@ void ViewProviderLink::handleChangedPropertyName(Base::XMLReader &reader,
                                                  const char *TypeName,
                                                  const char *PropName)
 {
+    // By the type the name resolves to, not by its spelling: the file of an
+    // older build, and of upstream, says App::PropertyMaterial, which is the
+    // former name of this type (Base::Type::addLegacyName). Compared as
+    // strings since the rename, the look a link was given was dropped.
     if (strcmp(PropName, "ShapeMaterial") == 0
-            && strcmp(TypeName, App::PropertyAppearance::getClassTypeId().getName()) == 0) {
+            && Base::Type::fromName(TypeName) == App::PropertyAppearance::getClassTypeId()) {
         App::PropertyAppearance prop;
         prop.Restore(reader);
         ShapeAppearance.setValue(prop.getValue());
@@ -2584,6 +2634,9 @@ void ViewProviderLink::finishRestoring() {
     auto ext = getLinkExtension();
     if(!ext)
         return;
+    // The looks are the link's: its own where the file has them, else
+    // what this view provider read, taken into it
+    looks.bind(getObject(), true);
     linkView->setDrawStyle(DrawStyle.getValue(),LineWidth.getValue(),PointSize.getValue());
     updateDataPrivate(ext,ext->getLinkedObjectProperty());
     if(ext->getLinkPlacementProperty())
@@ -4087,6 +4140,7 @@ void ViewProviderLink::beforeDelete()
 {
     if (childVp)
         childVp->beforeDelete();
+    looks.unbind();
     inherited::beforeDelete();
 }
 

@@ -36,6 +36,7 @@
 
 #include <bitset>
 #include <functional>
+#include <map>
 #include <fastsignals/signal.h>
 #include <unordered_map>
 
@@ -188,6 +189,16 @@ public:
     bool mustRecompute() const;
     /// reset this document object touched
     void purgeTouched();
+    /** The touched state as the transaction log records it
+     * (docs/TransactionLog.md sec 27.58), packed: a property's own Touched
+     * bit, the object's Touch and Enforce bits, and an explicit request to
+     * recompute (touch(), enforceRecompute()).
+     */
+    enum LogTouchedBit { LogPropTouched = 1, LogTouch = 2, LogEnforce = 4, LogRequested = 8 };
+    /// The object's bits of the above; LogPropTouched is never set.
+    int getLogTouchedBits() const;
+    /// Set the object's bits to `bits`, signalling a change of Touch.
+    void setLogTouchedBits(int bits);
     /// set this feature to error
     bool isError() const {return  StatusBits.test(ObjectStatus::Error);}
     bool isValid() const {return !StatusBits.test(ObjectStatus::Error);}
@@ -519,6 +530,117 @@ public:
 
     /* Return true to cause PropertyView to show linked object's property */
     virtual bool canLinkProperties() const {return true;}
+
+    /** The properties of this object a merge takes or leaves together
+     * (docs/TransactionLog.md sec 31.5), `prop` being one of them: what
+     * is one thing said in several properties, each meaning nothing
+     * without the others -- a sketch's constraints name its geometry by
+     * its place in the list. The first is the one the unit is known by.
+     * Empty for a property that stands alone, which is every property
+     * unless an object says otherwise.
+     */
+    virtual std::vector<std::string> getMergeUnit(const char* prop) const;
+
+    /// A merge unit at one moment: each of its properties as it is saved.
+    using MergeUnitState = std::map<std::string, std::string>;
+    /// What one branch made of a unit since the two parted.
+    struct MergeUnitSide
+    {
+        /// The unit where the branch ends.
+        MergeUnitState at;
+        /// The unit after each of the branch's rows that wrote any of it,
+        /// oldest first, with the row's time: what says who wrote a thing
+        /// last. Read from the log when asked, and only then.
+        std::function<std::vector<std::pair<double, MergeUnitState>>()> rows;
+    };
+    /// What became of one thing of a unit the other branch changed.
+    struct MergeUnitNote
+    {
+        std::string prop;     ///< the property it is a thing of
+        std::string key;      ///< what it is known by
+        /// `added`, `changed` or `removed` by theirs; `dropped`: left out
+        /// because what it stands on is gone.
+        std::string change;
+        std::string side;     ///< whose it is in the merge
+        bool byTime {false};  ///< both changed it, and the later was kept
+    };
+    /** A unit both branches changed, merged by what it holds
+     * (docs/TransactionLog.md sec 31.10): `merged` is each property as it
+     * goes in, `notes` what was done to the things theirs changed. False
+     * where the object cannot, or will not -- the result is not one it
+     * would stand behind -- and the unit is then one question, a side for
+     * the whole of it (sec 31.5). Nothing of the object is changed here:
+     * this is asked for a preview too.
+     */
+    virtual bool mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
+                           const MergeUnitSide& theirs, MergeUnitState& merged,
+                           std::vector<MergeUnitNote>& notes) const;
+
+    /// One place of a list an expression may name a thing of by number.
+    struct MergePlace
+    {
+        /// What stands there, by something that is the same wherever it
+        /// stands: a constraint by its type and the geometry it is on.
+        std::string key;
+        std::string name;      ///< the name it has, if it has one
+        std::string autoName;  ///< a name made of the key, for one that has none
+    };
+    /** The places of a unit an expression may name a thing by -- a
+     * sketch's `Constraints[3]` -- in one state of it: `prop` is the list.
+     * A merge moves things to other places, and an expression that says a
+     * place then says another thing; so before a merge every thing named
+     * by its place is given a name, and the expressions say the name
+     * (docs/TransactionLog.md sec 31.11). False where there are none.
+     */
+    virtual bool getMergePlaces(const MergeUnitState& at, std::string& prop,
+                                std::vector<MergePlace>& places) const;
+    /** The same state with its places named: `names` has one for each
+     * place, empty for a thing that stays without. False where it cannot.
+     */
+    virtual bool nameMergePlaces(MergeUnitState& at, const std::vector<std::string>& names) const;
+
+    /** The numbers this object gives the things it holds, where another
+     * copy of its file gave them (docs/TransactionLog.md sec 31.14). Two
+     * copies of a file number on from one counter, so a number the copy
+     * gave since they parted is not the thing this file gave it to.
+     * `fragment` is `prop` as the copy saved it, and is given back saying
+     * this file's numbers; `ids` is the copy's numbers to this file's for
+     * this object, kept by the import from row to row. A number the map
+     * has not got is a thing the copy made: it gets a new one here, and
+     * goes into the map. With `seed` -- the first the import sees of the
+     * object -- what the object holds now is put in the map as itself
+     * first, whatever `prop` is: the two were one where they parted. Not
+     * a number the map already says is another of the copy's (sec 31.15).
+     * False when `prop` holds no such numbers.
+     */
+    virtual bool importMintedIds(const char* prop, std::string& fragment,
+                                 std::map<long, long>& ids, bool seed);
+    /** A name of an element of this object as the copy wrote it --
+     * `g5;SKT` -- with the number this file has for the thing. False
+     * when it says none the map changes.
+     */
+    virtual bool importMintedName(std::string& name, const std::map<long, long>& ids) const;
+    /** One value of `prop` as two copies of the file hold it, each under
+     * its own numbers (docs/TransactionLog.md sec 31.15): `theirs` as the
+     * copy saved it in a row, `ours` as this file saved it in the same
+     * row -- one of the two replayed the other's. What the two say of
+     * each other's numbers goes into `ids`, the copy's to this file's; a
+     * number `ids` has is left as it is. False, and nothing added, when
+     * `prop` holds no such numbers or the two are not one value.
+     */
+    virtual bool pairMintedIds(const char* prop, const std::string& theirs,
+                               const std::string& ours, std::map<long, long>& ids) const;
+
+    /** Whether `prop` of this object is merged by the things it holds
+     * (Property::splitSaved, docs/TransactionLog.md sec 31.8) where two
+     * branches both changed it. A property that takes its values apart by
+     * something of their own -- cells, expressions -- always may. A list
+     * of links may only where the object says its order means nothing: a
+     * merge puts what the other branch added at the end, and a loft's
+     * sections are not a group's members. A group's `Group` is such a
+     * list.
+     */
+    virtual bool isMergedByElement(const Property* prop) const;
 
     /* Return true to bypass duplicate label checking */
     virtual bool allowDuplicateLabel() const {return false;}

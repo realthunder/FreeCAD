@@ -34,6 +34,7 @@ count that stops at an odd number with no word of why reads as a defect.
   - the panel of an array within the limit carries none.
 """
 import os
+import ArchiveMembers
 import re
 import time
 import traceback
@@ -84,8 +85,7 @@ def make():
     doc.saveAs(src)
     FreeCAD.closeDocument(doc.Name)
     with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, "w") as zo:
-        for item in zi.infolist():
-            data = zi.read(item.filename)
+        for item, data in ArchiveMembers.members(src):
             if item.filename == "Document.xml":
                 xml = data.decode("utf-8")
                 start = xml.index('<Object name="Array"')

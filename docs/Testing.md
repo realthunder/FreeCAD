@@ -169,9 +169,10 @@ which need `xcb` under Xvfb and a guest runtime. `ViewProviderHooks` and
 `ViewProviderChain` are the exceptions and run on `offscreen` with neither:
 between them they are the only cover the tree has for
 `ViewProviderFeaturePythonImp`, every hook of which is invisible to both
-suites above. `ViewProviderHooks` (8 cases) pins which hook each view query
+suites above. `ViewProviderHooks` (10 cases) pins which hook each view query
 reaches and what arguments the Proxy is handed, per the table in
-`docs/ProxyChain.md` sec 3; `ViewProviderChain` (17) is the view half of the
+`docs/ProxyChain.md` sec 3, and what a Gui document observer is handed while
+a view provider is made (docs/TransactionLog.md sec 27.19); `ViewProviderChain` (17) is the view half of the
 proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
 spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
 `FeaturePythonChain`, is headless and rides the Python suite.
@@ -181,6 +182,48 @@ Xvfb, `FCX_PYODIDE` set), is **70 cases in 13 modules, OK, none skipped**
 (2026-10-05, SketcherPort at `28e600293c`, 73 s; 70 tests, OK again on 2026-10-09 at `164bd7b71e`, 52 s, the drains' turn and the take-in of edge sets, at `224d452194`, 52 s, the hold by document, at `789831d57e`, 52 s, a boxed shape meshed out of view, at `7a0e26be94`, 52 s, the landing pump's turn, at `fc74256a24`, 52 s, first pictures before refinements, on 2026-10-08 at `e8c60bacfc`, 52 s, the progressive drains keeping their budget, at `8549ea72e2`, 53 s, the pre-mesh and the level-of-detail refine on private twins, at `f07e17dc68`, 56 s, the view following a selection, on 2026-10-07 at `052fea82aa`, 55 s, a pre-mesh claim over its shape's faces and the exit with a document open, at `fbd65293ac`, 53 s, the pre-mesh claims that survive a clear, at `865c94a0b2`, 54 s, a spreadsheet's view named for its object, at `0a95038b3d`, 54 s, clear of the overlaid docks and kept for a view that is no 3D view, at `7a45fa84b4`, a task panel over its view as an overlaid dock, at `50560fcf27`, a task panel beside its view, and at `c969119033`, 53 s, where a task panel goes as a state of its view -- run with the panels in the combo view, as every run of it so far; on 2026-10-06 at `68f95d11fd`, 73 s, where the panel mirror's listener to `Control().signalShowDialog` takes the dialog's owner, and at `e81747aafd`, 58 s, a selection per view; and at `03c509ac9a`, 55 s, where a dialog's page is shown only while its view is active and `Control` keeps a record per dialog; and on 2026-10-07 at `0c5cb84070`, 55 s, where a page can stand in its view -- run with the panels in the combo view, the default: the panel mirror with a panel IN its view was not run). **Run it with the `FREECAD_USER_HOME` the header names, an existing one.** With a fresh home the document-recovery dialog comes up at start -- the gate does not isolate the cache, and whatever recoverable document an earlier crash left there is offered -- and the panel mirror takes it for a top-level dialog: two `SandboxPanelMirror` cases fail on seven widgets left over and a third waits for ever. A gate killed by its timeout leaves a lock and a document directory in the real cache for the next run to find. Neither suite above runs
 any of it, so a merge that touches the panel or tool bar mirror is not
 verified until this has run.
+
+**What another FreeCAD wrote, read here.** `scripts/appearance-files-check.py`
+(96 checks, `$FILESCHECK_OUT`) is a GUI run of its own, like the
+`transaction-log-*-check.py` scripts: it reads
+`data/tests/LooksByUpstream114.FCStd` and `data/tests/LooksByFork2025.FCStd`
+-- written by upstream's 1.1.4 release image and by this fork's of
+2025-10-15, each running `scripts/appearance-files-make.py` -- against what
+each of those builds showed of its own file, saves each at schema 4 and at 5
+and reads it again, and writes to a body's and a link's view provider as a
+script written for any FreeCAD does (docs/ShapeAppearanceDesign.md sec
+14.6.10, step E). The two files are data, not fixtures to make again: a new
+one needs the image it is named for. A document read at schema 5 has its
+view providers when the event loop has got to them, so the script waits for
+them; `obj.ViewObject` asked for before that makes them.
+
+**A shape at two states.** `scripts/transaction-log-shapediff-check.py` (90
+checks, `$SHAPEDIFFCHECK_OUT`) is a GUI run of its own: a shape property's
+two values of the transaction log shown over the object -- asked of the view
+provider, from an op of a row in the log panel, and from a change in the
+merge dialog -- with what became of each face, the overlay's nodes, and that
+showing writes no row and no undo step (docs/TransactionLog.md sec 32.9);
+and of the whole of a row, of a version against now and of a merge, the
+objects chosen in the bar as an attachment's references are (sec 32.10,
+32.13); and a shape kept in the file from the
+panel (sec 32.11), with the panel's list of the kept (sec 32.12); and the
+merge's preview open beside the document, not modal (sec 32.15).
+The offscreen platform draws nothing: for the look, run
+`~/.cache/txnlog-sd/pic/pic.py` under `xvfb-run` and read the pictures.
+
+**A child view provider.** `scripts/appearance-child-check.py` (28 checks,
+`$CHILDCHECK_OUT`) is a GUI run of its own too: a `Part::FeaturePython`
+that is a link, made with its proxy as FreeCAD_assembly3 makes its part
+group, and a child view provider on it mapped from its parts; and a child on
+a plain `App::Link`, which has no object to keep its looks and keeps them
+itself -- names, an edge, the faces of what the link shows, a list by number
+-- each read back at schema 5 and at 4 (docs/ShapeAppearanceDesign.md sec
+14.6.11). What it expects is what this fork's release image of 2025-10-15
+showed of the same steps, where that was one thing. Assembly3 itself is not
+in the gates: it is cloned beside this tree (`~/works/sw/FreeCAD_assembly3`)
+and run with `~/.cache/txnlog-e/tools/probe_asm3.py`. Do not let the event
+loop run with it loaded and no solver installed -- `Gui.updateGui()` opens
+its "install a solver" prompt, modal, and the run waits for an answer.
 
 **Editing a test module means copying it into the build tree.** The modules
 are installed, not read from `src/`, so an edit to `src/Mod/Test/<M>.py` does
@@ -629,7 +672,7 @@ Counting individual test cases instead, across all 32 binaries, gives
 | `src/Mod/Part/ShapeRefSet_tests_run` | 13 | |
 | `src/Gui/CullBenefit_tests_run` | 11 | |
 | `src/Gui/ProxyStore_tests_run` | 11 | |
-| `src/Base/ProgramVersion_tests_run` | 10 | |
+| `src/Base/ProgramVersion_tests_run` | 11 | |
 | `Mesh_tests_run` | 7 | |
 | `src/App/RestoreDrain_tests_run` | 7 | |
 | `src/Base/Stream_tests_run` | 6 | |
@@ -828,6 +871,17 @@ The golden render scenes (`scripts/render-test-scene.py`,
 
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
+
+**A test's client is someone (2026-10-04).** Only a user who is known may act on a
+served document -- a pick, an input event, a mutating op (docs/ShareAccess.md sec 2.3,
+docs/TransactionLog.md sec 30.11) -- so a client nobody vouched for is view-only and a
+test written against one fails on its first pick. `tests/gui/wsclient.py` makes its `WS`
+someone by default: it sends the header a front door would
+(`X-Forwarded-Email: tester@example.com`) and sets `FC_SERVE_TRUST_PROXY` on import, which
+the server reads when it is first made; pass `headers=""` for a client that is nobody. A
+browser page cannot send that header, so the browser tests issue an invitation to the
+page's name instead, `wsclient.invitation(token, name)`, and put `&token=...&client=...`
+on the viewer's URL. The C++ wire tests use `known()`.
 
 **Nine of them are not registered, and are meant not to be**:
 `camera-uplink-browser.py`, `serve-edit-browser.py`,

@@ -740,6 +740,7 @@ SET(Dock_Windows_CPP_SRCS
     DockWindow.cpp
     PropertyView.cpp
     ReportView.cpp
+    TransactionLogView.cpp
     PieMenu.cpp
     ToolBox.cpp
     Tree.cpp
@@ -756,6 +757,7 @@ SET(Dock_Windows_HPP_SRCS
     DockWindow.h
     PropertyView.h
     ReportView.h
+    TransactionLogView.h
     PieMenu.h
     ToolBox.h
     Tree.h
@@ -971,6 +973,7 @@ SET(View3D_CPP_SRCS
     SceneControl.cpp
     SceneContextMenu.cpp
     SceneWidgets.cpp
+    SceneRequests.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
     CoinRiftWidget.cpp
@@ -1008,6 +1011,7 @@ SET(View3D_SRCS
     SceneControl.h
     SceneContextMenu.h
     SceneWidgets.h
+    SceneRequests.h
     SceneControlP.h
     View3DInventorRiftViewer.h
     View3DSettings.h
@@ -1052,6 +1056,8 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderSuppressibleExtension.cpp
     ViewProviderGeoFeatureGroupExtension.cpp
     ViewProviderOriginGroupExtension.cpp
+    AppearanceNames.cpp
+    LinkLooks.cpp
     ViewProviderAnnotation.cpp
     ViewProviderDocumentObject.cpp
     ViewProviderDocumentObjectGroup.cpp
@@ -1100,6 +1106,8 @@ SET(Viewprovider_SRCS
     ViewProviderGeoFeatureGroupExtension.h
     ViewProviderOriginGroupExtension.h
     ViewProviderAnnotation.h
+    AppearanceNames.h
+    LinkLooks.h
     ViewProviderDocumentObject.h
     ViewProviderDocumentObjectGroup.h
     ViewProviderDragger.h
@@ -1186,6 +1194,7 @@ SET(Inventor_CPP_SRCS
     SoFCSelection.cpp
     ObjectMetaFeed.cpp
     SceneServeSource.cpp
+    SceneActors.cpp
     SandboxRemote.cpp
     SandboxServe.cpp
     ShareDocument.cpp
@@ -1257,6 +1266,7 @@ SET(Inventor_SRCS
     SoFCSelection.h
     ObjectMetaFeed.h
     SceneServeSource.h
+    SceneActors.h
     SandboxRemote.h
     SandboxServe.h
     ShareDocument.h

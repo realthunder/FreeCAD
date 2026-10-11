@@ -34,6 +34,7 @@
 #include <QJsonValue>
 #include <QSet>
 
+#include <App/Actor.h>
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
@@ -55,6 +56,7 @@
 #include "OmniControl.h"
 #include "OmniSearch.h"
 #include "SceneContextMenu.h"
+#include "SceneActors.h"
 #include "SceneControl.h"
 #include "SceneWidgets.h"
 #include "SceneControlP.h"
@@ -1214,12 +1216,19 @@ QJsonObject undoRedoOp(const QJsonObject &req, const std::string &boundDoc, bool
                           QStringLiteral("grouped transactions in other documents "
                                          "need the desktop user's answer"));
 
+    // The steps are this connection's user's own (docs/TransactionLog.md
+    // sec 30.10): the counts above, the steps taken and the stacks told
+    // back, all under the actor the request runs as.
     if (redo)
         gdoc->redo(steps);
     else
         gdoc->undo(steps);
     if (SceneServeSource *source = SceneServeSource::sourceFor(doc))
         source->clearClientSelections();
+    // Refused: someone else has since written what the step left (sec
+    // 30.4 P2), and the reason names what and by which row.
+    if (!doc->undoRefusal().empty())
+        return errorReply(id, "Refused", QString::fromStdString(doc->undoRefusal()));
 
     QJsonObject reply;
     reply[QLatin1String("id")] = id;
@@ -1342,6 +1351,10 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             std::max(mutating ? Render::ClientAccess::Edit : Render::ClientAccess::View,
                      OmniControl::requiredAccess(op));
         AccessScope scope(access);
+        // What a connection's op writes is the connection's
+        // (docs/TransactionLog.md sec 30.3 S.b); a request with no
+        // connection behind it is the desktop's own.
+        App::ActorScope actor(client ? SceneActors::of(client) : nullptr);
         if (access < required && access == Render::ClientAccess::View)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));

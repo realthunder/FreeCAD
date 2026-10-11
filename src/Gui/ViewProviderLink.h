@@ -25,6 +25,7 @@
 
 #include <App/Link.h>
 
+#include "LinkLooks.h"
 #include "SoFCUnifiedSelection.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderExtension.h"
@@ -209,6 +210,10 @@ class GuiExport ViewProviderLink : public ViewProviderDocumentObject
 public:
     App::PropertyBool OverrideMaterial;
     App::PropertyAppearanceList ShapeAppearance;
+    /// ShapeAppearance's look under the name upstream and an older build of
+    /// this fork know it by: what their scripts write, and what a file below
+    /// schema 5 says for them. A name, with no value of its own.
+    App::PropertyAppearance ShapeMaterial;
     App::PropertyEnumeration DrawStyle;
     App::PropertyFloatConstraint LineWidth;
     App::PropertyFloatConstraint PointSize;
@@ -389,6 +394,9 @@ protected:
     bool useCenterballDragger;
     bool prevColorOverride = false;
     bool linkingMenu = false;
+    /// OverrideMaterial, ShapeAppearance, OverrideColorList, MaterialList
+    /// and OverrideMaterialList as names over what the link holds
+    LinkLooks looks;
 
     struct DraggerContext{
         Base::Matrix4D preTransform;

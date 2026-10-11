@@ -102,7 +102,7 @@ Base::Axis Part2DObject::getAxis(int axId) const
     return {};
 }
 
-bool Part2DObject::seekTrimPoints(const std::vector<Geometry *> &geomlist,
+bool Part2DObject::seekTrimPoints(const std::vector<const Geometry*> &geomlist,
                                   int geometryIndex, const Base::Vector3d &point,
                                   int &geometryIndex1, Base::Vector3d &intersect1,
                                   int &geometryIndex2, Base::Vector3d &intersect2)
@@ -159,7 +159,7 @@ bool Part2DObject::seekTrimPoints(const std::vector<Geometry *> &geomlist,
                 // https://tracker.dev.opencascade.org/view.php?id=30217
                 if (geomlist[id]->isDerivedFrom<Part::GeomBoundedCurve>()) {
 
-                    Part::GeomBoundedCurve * bcurve = static_cast<Part::GeomBoundedCurve *>(geomlist[id]);
+                    auto bcurve = static_cast<const Part::GeomBoundedCurve *>(geomlist[id]);
 
                     points.emplace_back(bcurve->getStartPoint().x,bcurve->getStartPoint().y);
                     points.emplace_back(bcurve->getEndPoint().x,bcurve->getEndPoint().y);
@@ -278,6 +278,10 @@ void Part2DObject::handleChangedPropertyName(Base::XMLReader &reader,
                                              const char * TypeName,
                                              const char *PropName)
 {
+    if (PropName && strcmp(PropName, "ColoredElements") == 0) {
+        Part::Feature::handleChangedPropertyName(reader, TypeName, PropName);
+        return;
+    }
     extHandleChangedPropertyName(reader, TypeName, PropName); // AttachExtension
 }
 

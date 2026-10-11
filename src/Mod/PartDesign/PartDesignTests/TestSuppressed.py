@@ -28,6 +28,7 @@ it. Run the Gui half with FreeCAD -t TestPartDesignGui.
 """
 
 import os
+import ArchiveMembers
 import tempfile
 import time
 import unittest
@@ -125,8 +126,7 @@ class TestSuppressed(unittest.TestCase):
         theirs = os.path.join(tmpdir, "theirs.FCStd")
         self.Doc.saveCopy(ours)
         with zipfile.ZipFile(ours) as zin, zipfile.ZipFile(theirs, "w", zipfile.ZIP_DEFLATED) as zout:
-            for item in zin.infolist():
-                data = zin.read(item.filename)
+            for item, data in ArchiveMembers.members(ours):
                 if item.filename == "Document.xml":
                     self.assertIn(b'name="Suppress" type="App::PropertyBool"', data)
                     data = data.replace(b'name="Suppress" type="App::PropertyBool"',

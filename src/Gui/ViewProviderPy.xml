@@ -266,6 +266,28 @@ colors: dict
     Color dictionary of the form {elementName:(r,g,b,a)}.</UserDocu>
             </Documentation>
         </Methode>
+        <Methode Name="getElementAppearances">
+            <Documentation>
+                <UserDocu>getElementAppearances(elementName) -> dict
+
+Get a dictionary of the form {elementName : material}: getElementColors()
+with the whole look of each element where that has its colour.
+If no element name is given a dictionary with all the elements is returned.
+
+elementName : str
+    Name of the element. Optional.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="setElementAppearances">
+            <Documentation>
+                <UserDocu>setElementAppearances(appearances) -> None
+
+Set the look of elements, each a whole material.
+
+appearances: dict
+    Dictionary of the form {elementName : material}.</UserDocu>
+            </Documentation>
+        </Methode>
         <Methode Name="getElementPicked" Const="true">
             <Documentation>
                 <UserDocu>getElementPicked(pickPoint) -> str

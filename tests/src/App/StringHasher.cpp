@@ -7,12 +7,20 @@
 #include <App/StringHasher.h>
 #include <App/StringHasherPy.h>
 #include <App/StringIDPy.h>
+#include <Base/Reader.h>
+#include <Base/Writer.h>
+#include <src/App/InitApplication.h>
 
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 
 #include <QCryptographicHash>
+#include <algorithm>
 #include <array>
+#include <chrono>
+#include <iostream>
+#include <string>
+#include <vector>
 #include <sstream>
 
 class StringIDTest: public ::testing::Test
@@ -1075,6 +1083,13 @@ TEST_F(StringIDRefTest, setPersistent)  // NOLINT
 class StringHasherTest: public ::testing::Test
 {
 protected:
+    // getID() reads DocumentParams, which needs the application: without
+    // this a suite run on its own crashed on a null Application.
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+
     void SetUp() override
     {
         Py_Initialize();
@@ -1744,4 +1759,369 @@ TEST_F(StringHasherTest, compact)  // NOLINT
 
     // Assert
     EXPECT_EQ(0, Hasher()->count());
+}
+
+TEST_F(StringHasherTest, mergeTakesInAnotherTable)  // NOLINT
+{
+    // docs/TransactionLog.md sec 27.40 item 2: a table read on its own
+    // joins the file's under its own ids, references remapped.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    auto a = other->getID("A");
+    auto b = other->getID("B");
+    QVector<App::StringIDRef> sids {a, b};
+    auto c = other->getID(Data::MappedName("C"), sids);
+    auto here = Hasher()->getID("A");
+    ASSERT_EQ(here.value(), a.value());
+
+    std::size_t aliased = 1;
+    EXPECT_TRUE(Hasher()->merge(*other, &aliased));
+    EXPECT_EQ(aliased, 0u);
+    EXPECT_EQ(Hasher()->getID(a.value()), here);   // shared, not replaced
+    auto c2 = Hasher()->getID(c.value());
+    ASSERT_TRUE(c2);
+    EXPECT_EQ(c2.dataToText(), c.dataToText());
+    auto related = c2.relatedIDs();
+    ASSERT_EQ(related.size(), 2);
+    EXPECT_TRUE(related[0].isFromSameHasher(Hasher()));
+    EXPECT_EQ(related[1].value(), b.value());
+    // New ids go on past everything taken in.
+    EXPECT_GT(Hasher()->getID("D").value(), c.value());
+}
+
+TEST_F(StringHasherTest, mergeRefusesAnIdThatMeansSomethingElse)  // NOLINT
+{
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    other->getID("A");
+    other->getID("B");
+    Hasher()->getID("A");
+    Hasher()->getID("X");   // id 2 is "X" here, "B" there
+    const auto size = Hasher()->size();
+    EXPECT_FALSE(Hasher()->merge(*other));
+    EXPECT_EQ(Hasher()->size(), size);
+}
+
+TEST_F(StringHasherTest, mergeKeepsOneStringUnderTwoIds)  // NOLINT
+{
+    // Sec 27.41 Q2: a string this table has under another id comes in
+    // under its own as well; both find it.
+    Hasher()->getID("A");
+    Hasher()->getID("W");
+    auto b3 = Hasher()->getID("B");   // 3 here
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    auto a = other->getID("A");
+    auto w = other->getID("W");
+    other->getID("Q");                // 3 there, dropped below
+    auto b4 = other->getID("B");      // 4 there
+    other->compact();
+    ASSERT_FALSE(other->getID(3));
+    std::size_t aliased = 0;
+    EXPECT_TRUE(Hasher()->merge(*other, &aliased));
+    EXPECT_EQ(aliased, 1u);
+    EXPECT_EQ(Hasher()->getID(b4.value()).dataToText(), "B");
+    EXPECT_EQ(Hasher()->getID(b3.value()).dataToText(), "B");
+    EXPECT_EQ(Hasher()->getID("B").dataToText(), "B");
+}
+
+TEST_F(StringHasherTest, lastIdSurvivesASave)  // NOLINT
+{
+    // Sec 27.40 item 2: an id the saved state no longer uses is not handed
+    // out again after a restore.
+    Hasher()->getID("kept").mark();
+    const long dropped = Hasher()->getID("dropped").value();
+    Base::StringWriter writer;
+    writer.Stream() << "<Root>\n";
+    Hasher()->Save(writer);
+    writer.Stream() << "</Root>\n";
+    std::istringstream stream(writer.getString());
+    Base::XMLReader reader("hasher", stream);
+    reader.readElement("Root");
+    Base::Reference<App::StringHasher> restored(new App::StringHasher);
+    restored->Restore(reader);
+    EXPECT_EQ(restored->size(), 1u);
+    EXPECT_GT(restored->getID("new").value(), dropped);
+}
+
+TEST_F(StringHasherTest, wholeTableRoundTrips)  // NOLINT
+{
+    // docs/TransactionLog.md sec 27.50 item 1: the file's member holds
+    // every string, marked or not, and reads back under the same ids.
+    auto a = Hasher()->getID("A");
+    auto b = Hasher()->getID("B");
+    QVector<App::StringIDRef> sids {a, b};
+    auto c = Hasher()->getID(Data::MappedName("Edge1;:H1,E"), sids);
+    Hasher()->getID("unmarked, unheld").mark();
+    const std::string bytes = Hasher()->saveTable();
+    std::istringstream in(bytes);
+    Base::Reference<App::StringHasher> restored(new App::StringHasher);
+    restored->restoreTable(in);
+    ASSERT_EQ(restored->size(), Hasher()->size());
+    for (const auto& v : Hasher()->getIDMap()) {
+        auto there = restored->getID(v.first);
+        ASSERT_TRUE(there);
+        EXPECT_EQ(there.dataToText(), v.second.dataToText());
+        EXPECT_EQ(there.relatedIDs().size(), v.second.relatedIDs().size());
+    }
+    EXPECT_EQ(restored->getID(c.value()).relatedIDs()[0].value(),
+              c.relatedIDs()[0].value());
+}
+
+TEST_F(StringHasherTest, rowsTakenInElsewhere)  // NOLINT
+{
+    // Sec 27.50 item 2: the rows the log keeps give back the same strings,
+    // and a row already held is left alone -- or counted when it differs.
+    auto a = Hasher()->getID("A");
+    auto b = Hasher()->getID("B");
+    QVector<App::StringIDRef> sids {a, b};
+    auto c = Hasher()->getID(Data::MappedName("Face2;:M#1;FUS"), sids);
+    const auto rows = Hasher()->rows();
+    ASSERT_EQ(rows.size(), Hasher()->size());
+    EXPECT_EQ(Hasher()->rows(a.value()).size(), rows.size() - 1);
+
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    std::size_t conflicts = 1;
+    EXPECT_EQ(other->insertRows(rows, &conflicts), rows.size());
+    EXPECT_EQ(conflicts, 0u);
+    EXPECT_EQ(other->getID(c.value()).dataToText(), c.dataToText());
+    EXPECT_EQ(other->insertRows(rows, &conflicts), 0u);
+    EXPECT_EQ(conflicts, 0u);
+    auto changed = rows;
+    changed.front().data = "Z";
+    other->insertRows(changed, &conflicts);
+    EXPECT_EQ(conflicts, 1u);
+    EXPECT_GT(other->getID("new").value(), c.value());
+}
+
+TEST_F(StringHasherTest, compactKeepsWhatHistoryUses)  // NOLINT
+{
+    // Sec 27.50 item 4: a string nothing in memory holds stays when the
+    // history uses it, and so does what it is built from; the rest goes.
+    long a = 0, b = 0, c = 0, d = 0;
+    {
+        auto ra = Hasher()->getID("A");
+        auto rb = Hasher()->getID("B");
+        QVector<App::StringIDRef> sids {ra, rb};
+        auto rc = Hasher()->getID(Data::MappedName("Edge3;:H2,E"), sids);
+        auto rd = Hasher()->getID("D");
+        a = ra.value();
+        b = rb.value();
+        c = rc.value();
+        d = rd.value();
+    }
+    const auto dropped = Hasher()->compact([c](long id) { return id == c; });
+    EXPECT_TRUE(Hasher()->hasID(c));
+    EXPECT_TRUE(Hasher()->hasID(a));
+    EXPECT_TRUE(Hasher()->hasID(b));
+    EXPECT_FALSE(Hasher()->hasID(d));
+    EXPECT_NE(std::find(dropped.begin(), dropped.end(), d), dropped.end());
+    Hasher()->compact();
+    EXPECT_EQ(Hasher()->size(), 0u);
+    EXPECT_GT(Hasher()->getID("new").value(), d);
+}
+
+TEST_F(StringHasherTest, collectorListsItsHashersIds)  // NOLINT
+{
+    // Sec 27.49, 27.50 item 4: with a collector on the thread, an element
+    // map lists the ids of the collector's hasher, marked or not.
+    auto a = Hasher()->getID("A");
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    auto foreign = other->getID("F");
+    foreign.mark();
+    EXPECT_FALSE(App::StringIDCollector::take(a));
+    EXPECT_TRUE(App::StringIDCollector::take(foreign));
+    App::StringIDCollector collector(Hasher());
+    EXPECT_TRUE(App::StringIDCollector::take(a));
+    EXPECT_TRUE(App::StringIDCollector::take(a));
+    EXPECT_FALSE(App::StringIDCollector::take(foreign));
+    EXPECT_EQ(collector.sortedIds(), std::vector<long> {a.value()});
+}
+
+TEST_F(StringHasherTest, usedRangesRoundTrip)  // NOLINT
+{
+    // Sec 27.50 item 4: the ids a save marked, on the element naming the
+    // table, as ranges; read back by the version a later open records.
+    Base::StringWriter writer;
+    Hasher()->saveReference(writer, "StringTable.txt", "abc", 9, {1, 2, 3, 7, 9, 10});
+    std::vector<std::pair<long, long>> ranges;
+    ASSERT_TRUE(App::StringHasher::parseUsed(writer.getString(), ranges));
+    EXPECT_EQ(ranges, (std::vector<std::pair<long, long>> {{1, 3}, {7, 7}, {9, 10}}));
+    Base::StringWriter none;
+    Hasher()->saveReference(none, "StringTable.txt", "", 0, {});
+    ASSERT_TRUE(App::StringHasher::parseUsed(none.getString(), ranges));
+    EXPECT_TRUE(ranges.empty());
+    EXPECT_FALSE(App::StringHasher::parseUsed("<StringHasher2 count=\"3\">", ranges));
+}
+
+namespace
+{
+/// `text` with every `#id` replaced by what `hasher` holds under it, all the
+/// way down: what a string says, whichever table it is in.
+std::string expandIds(const App::StringHasherRef& hasher, const QByteArray& text)
+{
+    std::string out;
+    for (int i = 0; i < text.size();) {
+        if (text[i] != '#') {
+            out += text[i++];
+            continue;
+        }
+        int end = i + 1;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end]))) {
+            ++end;
+        }
+        if (end == i + 1) {
+            out += text[i++];
+            continue;
+        }
+        long id = text.mid(i + 1, end - i - 1).toLong(nullptr, 16);
+        auto sid = hasher->getID(id);
+        out += sid ? expandIds(hasher, sid.deref().data() + sid.deref().postfix())
+                   : std::string("<missing>");
+        i = end;
+    }
+    return out;
+}
+}  // namespace
+
+TEST_F(StringHasherTest, importRewritesEveryIdItsTextNames)  // NOLINT
+{
+    // Sec 27.76 item 1, 27.77: a string of another table comes in by
+    // content, and an id is rewritten wherever its text names one -- the
+    // prefix reference, a '#' inside a postfix, the names of a combo string,
+    // which has no related ids at all.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    // Ids here are not the other's, so a copied number would name another
+    // string.
+    for (const char* s : {"one", "two", "three", "four"}) {
+        Hasher()->getID(s);
+    }
+    Data::MappedName first("Edge1");
+    first += ";:G;XTR;:H12:7";
+    Data::ElementIDRefs sids;
+    Data::MappedName hashed = first.hashElementName(other, sids);
+    auto combo = other->getID(("(" + hashed.toString() + ";:K2;:H5,E)").c_str());
+    Data::MappedName second = hashed;
+    second += (";:M" + combo.toString() + ";FLT;:H13:9").c_str();
+    sids.push_back(combo);
+    Data::MappedName top = second.hashElementName(other, sids);
+    auto theirs = other->getID(App::StringID::fromString(top.toRawBytes()));
+    ASSERT_TRUE(theirs);
+
+    auto before = Hasher()->size();
+    EXPECT_FALSE(Hasher()->lookupID(theirs));
+    EXPECT_EQ(Hasher()->size(), before);
+
+    auto here = Hasher()->importID(theirs);
+    ASSERT_TRUE(here);
+    EXPECT_TRUE(here.isFromSameHasher(Hasher()));
+    auto say = [](const App::StringIDRef& sid) {
+        return sid.deref().data() + sid.deref().postfix();
+    };
+    EXPECT_EQ(expandIds(Hasher(), say(here)), expandIds(other, say(theirs)));
+    EXPECT_EQ(expandIds(Hasher(), say(here)).find("<missing>"), std::string::npos);
+    // The strings it names are here, and held by it.
+    for (const auto& sid : here.relatedIDs()) {
+        EXPECT_TRUE(sid.isFromSameHasher(Hasher()));
+    }
+    // Once in, the same string: import and lookup both find it.
+    EXPECT_EQ(Hasher()->importID(theirs), here);
+    EXPECT_EQ(Hasher()->lookupID(theirs), here);
+    // A name comes across with its text and its ids.
+    Data::MappedName name = top;
+    name += ";:H14,E";
+    Data::ElementIDRefs nameIds {theirs};
+    Data::MappedName imported;
+    App::StringHasher::ImportMemo memo;
+    ASSERT_TRUE(Hasher()->importName(name, *other, imported, nameIds, memo));
+    EXPECT_EQ(expandIds(Hasher(), imported.toBytes()), expandIds(other, name.toBytes()));
+    ASSERT_FALSE(nameIds.isEmpty());
+    for (const auto& sid : nameIds) {
+        EXPECT_TRUE(sid.isFromSameHasher(Hasher()));
+    }
+}
+
+TEST_F(StringHasherTest, importFailsOnAnIdItsTableLacks)  // NOLINT
+{
+    // A text naming an id its own table does not have cannot be imported:
+    // any number copied would mean something else here.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    auto broken = other->getID("(#7f;:K2;:H5,E)");
+    EXPECT_FALSE(Hasher()->importID(broken));
+    EXPECT_EQ(Hasher()->size(), 0U);
+}
+
+TEST_F(StringHasherTest, lookupTextFindsByContentAndTakesNothingIn)  // NOLINT
+{
+    // A reference into another document stores its name in its own table
+    // and looks it up in the target's (docs/TransactionLog.md sec 27.76 item
+    // 5): the text comes back in the target's ids when the target has every
+    // string it names, and the lookup never adds one.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    Data::MappedName first("Edge1");
+    first += ";:G;XTR;:H12:7";
+    Data::ElementIDRefs sids;
+    Data::MappedName hashed = first.hashElementName(other, sids);
+    QByteArray text = (hashed.toString() + ";:M;FLT;:H13:7,F").c_str();
+
+    QByteArray stored;
+    QVector<App::StringIDRef> held;
+    App::StringHasher::ImportMemo memo;
+    ASSERT_TRUE(Hasher()->importText(text, *other, stored, &held, memo));
+    ASSERT_FALSE(held.isEmpty());
+
+    // Back into the table it came from: the same text.
+    QByteArray working;
+    App::StringHasher::ImportMemo lookup;
+    ASSERT_TRUE(other->lookupText(stored, *Hasher(), working, lookup));
+    EXPECT_EQ(working, text);
+
+    // A table without the string: no text, nothing taken in.
+    Base::Reference<App::StringHasher> fresh(new App::StringHasher);
+    App::StringHasher::ImportMemo none;
+    EXPECT_FALSE(fresh->lookupText(stored, *Hasher(), working, none));
+    EXPECT_EQ(fresh->size(), 0U);
+}
+
+// Not a check: the cost of one call into the table, for a decision
+// (docs/TransactionLog.md sec 31.30). Run with
+// --gtest_also_run_disabled_tests --gtest_filter='StringHasherCost.*'.
+TEST(StringHasherCost, DISABLED_aCallIntoTheTable)  // NOLINT
+{
+    using Clock = std::chrono::steady_clock;
+    constexpr int count = 200000;
+    constexpr int rounds = 5;
+    Base::Reference<App::StringHasher> hasher(new App::StringHasher);
+    std::vector<std::string> texts;
+    texts.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        texts.push_back("Face" + std::to_string(i) + ";:M;CUT;:H1a:7,F");
+    }
+    std::vector<App::StringIDRef> held;
+    held.reserve(count);
+    auto start = Clock::now();
+    for (const auto& text : texts) {
+        held.push_back(hasher->getID(text.c_str(), static_cast<int>(text.size())));
+    }
+    const double made =
+        std::chrono::duration<double, std::nano>(Clock::now() - start).count() / count;
+    double found = 1e30;
+    double byId = 1e30;
+    long sum = 0;
+    for (int round = 0; round < rounds; ++round) {
+        start = Clock::now();
+        for (const auto& text : texts) {
+            sum += hasher->getID(text.c_str(), static_cast<int>(text.size())).value();
+        }
+        found = std::min(
+            found,
+            std::chrono::duration<double, std::nano>(Clock::now() - start).count() / count);
+        start = Clock::now();
+        for (int i = 1; i <= count; ++i) {
+            sum += hasher->getID(static_cast<long>(i)).value();
+        }
+        byId = std::min(
+            byId,
+            std::chrono::duration<double, std::nano>(Clock::now() - start).count() / count);
+    }
+    std::cout << "COST new string " << made << " ns, string found " << found << " ns, by id "
+              << byId << " ns (" << sum << ")\n";
+    EXPECT_EQ(hasher->size(), static_cast<std::size_t>(count));
 }

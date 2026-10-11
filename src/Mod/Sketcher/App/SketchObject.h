@@ -123,6 +123,29 @@ public:
     /** @name methods override Feature */
     //@{
     short mustExecute() const override;
+    /// The geometry, the constraints that name it by its place, and the
+    /// external geometry they name the same way: one thing to a merge.
+    std::vector<std::string> getMergeUnit(const char* prop) const override;
+    /// A sketch two branches both changed: geometry by its id, constraints
+    /// by what they say of which geometry, and the result one that solves
+    /// (SketchMerge.cpp, docs/TransactionLog.md sec 31.10).
+    bool mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
+                   const MergeUnitSide& theirs, MergeUnitState& merged,
+                   std::vector<MergeUnitNote>& notes) const override;
+    /// `Constraints`: each constraint by what it says of which geometry,
+    /// with its name and one made of that.
+    bool getMergePlaces(const MergeUnitState& at, std::string& prop,
+                        std::vector<MergePlace>& places) const override;
+    bool nameMergePlaces(MergeUnitState& at, const std::vector<std::string>& names) const override;
+    /// `Geometry` and `ExternalGeo`: each geometry's id, the copy's new
+    /// ones given ids of this file (docs/TransactionLog.md sec 31.14).
+    bool importMintedIds(const char* prop, std::string& fragment, std::map<long, long>& ids,
+                         bool seed) override;
+    /// `g5;SKT`, `g5v1;SKT`, `e7;SKT`: the id in an element's name.
+    bool importMintedName(std::string& name, const std::map<long, long>& ids) const override;
+    /// The same list in two copies' numbers: geometry by geometry (sec 31.15).
+    bool pairMintedIds(const char* prop, const std::string& theirs, const std::string& ours,
+                       std::map<long, long>& ids) const override;
     /// recalculate the Feature (if no recompute is needed see also solve() and solverNeedsUpdate
     /// boolean)
     App::DocumentObjectExecReturn* execute() override;
@@ -193,7 +216,13 @@ public:
      \param construction - true for construction lines
      \retval int - GeoId of last added element
      */
-    int addGeometry(const std::vector<Part::Geometry*>& geoList, bool construction = false);
+    int addGeometry(const std::vector<const Part::Geometry*>& geoList, bool construction = false);
+    /// The same, for a caller holding the geometry it made as non-const
+    int addGeometry(const std::vector<Part::Geometry*>& geoList, bool construction = false)
+    {
+        return addGeometry(std::vector<const Part::Geometry*>(geoList.begin(), geoList.end()),
+                           construction);
+    }
     /*!
      \brief Deletes indicated geometry (by geoid).
      \param GeoId - the geometry to delete
@@ -292,12 +321,12 @@ public:
     std::unique_ptr<const GeometryFacade> getGeometryFacade(int GeoId) const;
 
     /// returns a list of all internal geometries
-    const std::vector<Part::Geometry*>& getInternalGeometry() const
+    const std::vector<const Part::Geometry*>& getInternalGeometry() const
     {
         return Geometry.getValues();
     }
     /// returns a list of projected external geometries
-    const std::vector<Part::Geometry*>& getExternalGeometry() const
+    const std::vector<const Part::Geometry*>& getExternalGeometry() const
     {
         return ExternalGeo.getValues();
     }
@@ -312,7 +341,7 @@ public:
     void fixExternalGeometry(const std::vector<int> &geoIds = {});
 
     /// retrieves a vector containing both normal and external Geometry (including the sketch axes)
-    std::vector<Part::Geometry*> getCompleteGeometry() const;
+    std::vector<const Part::Geometry*> getCompleteGeometry() const;
 
     GeoListFacade getGeoListFacade() const;
 
@@ -1044,11 +1073,15 @@ protected:
      \param geoList - the geometry list
      \retval list - the supported geometry list
      */
-    std::vector<Part::Geometry*>
-    supportedGeometry(const std::vector<Part::Geometry*>& geoList) const;
+    std::vector<const Part::Geometry*>
+    supportedGeometry(const std::vector<const Part::Geometry*>& geoList) const;
 
     void updateGeoHistory();
     void generateId(Part::Geometry *geo);
+    /// A geometry id never given in this sketch, in any version or branch
+    /// of its file (docs/TransactionLog.md sec 27.40 item 4); moves
+    /// geoLastId to it.
+    long newGeoId();
 
     /// Helper functions for `deleteUnusedInternalGeometry` by cases
     /// two foci for ellipses and arcs of ellipses and hyperbolas
@@ -1061,7 +1094,7 @@ protected:
     /// Internal helper method for exposeInternalGeometryForType
     /// Add geometry and constraints to `this`, then delete the geometry and constraints in the
     /// vectors Note that the contents of the two vectors are invalid after this call.
-    void addAndCleanup(std::vector<Part::Geometry*> igeo, std::vector<Constraint*> icon);
+    void addAndCleanup(std::vector<const Part::Geometry*> igeo, std::vector<Constraint*> icon);
 
     // refactoring functions
     // check whether constraint may be changed driving status
@@ -1216,8 +1249,8 @@ private:
     // 3. Functionality removing constraints (of the relevant type) calls removeGeometryState to
     // remove the status
     // 4. Save mechanism will ensure persistence.
-    void addGeometryState(const Constraint* cstr) const;
-    void removeGeometryState(const Constraint* cstr) const;
+    void addGeometryState(const Constraint* cstr);
+    void removeGeometryState(const Constraint* cstr);
 
     SketchAnalysis* analyser;
 

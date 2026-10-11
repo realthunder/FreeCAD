@@ -1485,6 +1485,12 @@ Four things the code settled that section 7 left implicit:
   two edits -- should pass the mapped name; `getSubTopoShape` already
   resolves either form, so that is a caller change, not a cache change.
   Noted for V3.
+  *Since (2026-10-09, docs/TransactionLog.md sec 31.22):* a request that
+  names its referrer is answered only from a generation retained for that
+  referrer, where there is one. A merge gives a feature the other branch's
+  shape as a generation (`retainElementEvidence`), and a number of that
+  shape is a position in it and in no shape of the feature's own. A
+  referrer recorded on no generation walks them newest first, as above.
 
 Gate, all in one session, on `build/win-relwithdebinfo-801`:
 

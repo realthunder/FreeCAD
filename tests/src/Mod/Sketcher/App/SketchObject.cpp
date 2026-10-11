@@ -4,6 +4,7 @@
 #include <FCConfig.h>
 
 #include <algorithm>
+#include <numbers>
 
 #include <App/Application.h>
 #include <App/Document.h>

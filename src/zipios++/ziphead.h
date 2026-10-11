@@ -35,6 +35,8 @@ public:
   }
 
   void setDefaultExtract() ;
+  /// The version needed to extract: 63 for a Zstandard entry, APPNOTE 4.4.3.
+  void setExtractVersion( uint16 version ) { extract_version = version ; }
   //inline ZipLocalEntry &operator=( const class ZipLocalEntry &src ) ;
   virtual string getComment() const ;
   virtual uint32 getCompressedSize() const ;

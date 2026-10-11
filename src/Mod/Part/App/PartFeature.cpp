@@ -34,6 +34,7 @@
 # include <BRepAlgoAPI_Common.hxx>
 # include <BRepBndLib.hxx>
 # include <BRepBuilderAPI_MakeShape.hxx>
+# include <TopoDS_LockedShape.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
 # include <BRepGProp.hxx>
 # include <BRepIntCurveSurface_Inter.hxx>
@@ -71,12 +72,14 @@ typedef boost::iterator_range<const char*> CharRange;
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <App/Application.h>
+#include <App/AppearanceUpdater.h>
 #include <App/Document.h>
 #include <App/FeaturePythonPyImp.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Link.h>
 #include <App/OriginFeature.h>
 #include <App/Placement.h>
+#include <App/Transactions.h>
 #include <Base/Console.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Exception.h>
@@ -240,8 +243,9 @@ static int baseShapeOrdinal(const char *name)
 Feature::Feature()
 {
     ADD_PROPERTY(Shape, (TopoDS_Shape()));
+    static const char *appearances = "Appearances";
     auto mat = Materials::MaterialManager::defaultMaterial();
-    ADD_PROPERTY_TYPE(ShapeMaterial, (*mat), "", App::Prop_None,
+    ADD_PROPERTY_TYPE(ShapeMaterial, (*mat), appearances, App::Prop_None,
             "The physical material assigned to this shape");
     ADD_PROPERTY_TYPE(ValidateShape, (false), "", App::Prop_None,
             "Validate shape content and warn about invalid shape");
@@ -254,12 +258,53 @@ Feature::Feature()
             "Always: always try to fix shape without validating first.\n");
     static const char *FixShapeEnum[] = {"Disabled", "Enabled", "Always", nullptr};
     FixShape.setEnums(FixShapeEnum);
-    ADD_PROPERTY_TYPE(ColoredElements, (0), "",
-            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output),"");
+
+    // What the object looks like, made here and drawn by a view provider
+    // (docs/ShapeAppearanceDesign.md sec 14.6). None of it is a reason to
+    // make the shape again.
+    ADD_PROPERTY_TYPE(ElementAppearance, (0), appearances,
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_Output),
+            "The looks of the object and of its faces, edges and vertices");
+    // The names the looks have always had, over ElementAppearance: no value
+    // of their own, nothing in a file, no reason to make the shape again
+    // (docs/ShapeAppearanceDesign.md sec 14.6.1)
+    const auto name = (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute);
+    ADD_PROPERTY_TYPE(ShapeColor, (App::Color()), appearances, name,
+            "The colour of the object");
+    ADD_PROPERTY_TYPE(Transparency, (0), appearances, name,
+            "How far the object is seen through, in percent");
+    ADD_PROPERTY_TYPE(LineColor, (App::Color()), appearances, name,
+            "The colour of the edges");
+    ADD_PROPERTY_TYPE(PointColor, (App::Color()), appearances, name,
+            "The colour of the vertices");
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), appearances, name,
+            "The looks of the faces as they are drawn");
+    ADD_PROPERTY_TYPE(MapFaceColor, (PartParams::getMapFaceColor()), appearances, App::Prop_Output,
+            "A face takes the look of the face it was made from");
+    ADD_PROPERTY_TYPE(MapLineColor, (PartParams::getMapLineColor()), appearances, App::Prop_Output,
+            "An edge takes the colour of the edge it was made from");
+    ADD_PROPERTY_TYPE(MapPointColor, (PartParams::getMapPointColor()), appearances, App::Prop_Output,
+            "A vertex takes the colour of the vertex it was made from");
+    ADD_PROPERTY_TYPE(MapTransparency, (PartParams::getMapTransparency()), appearances, App::Prop_Output,
+            "A face takes the transparency of the face it was made from with its colour");
+    ADD_PROPERTY_TYPE(ForceMapColors, (false), appearances, App::Prop_Output,
+            "Take the looks of the elements the shape was made from\n"
+            "though the object links to nothing");
+    ShapeAppearance.setWriter([this](const App::AppearanceList &before,
+                                     const App::AppearanceList &after, int) {
+        writeFaces(before, after);
+    });
 }
 
 Feature::~Feature()
 {
+    // The references into this feature are gone with it, and its own are
+    // among them: a property of this feature that names its elements
+    // (ElementAppearance) is destroyed after this body, and
+    // would tell a feature half destroyed that its references were released
+    // (onElementReferenceReleased()) -- which keeps the feature for the next
+    // recompute to ask, by a pointer to nothing
+    App::PropertyLinkBase::clearElementReferences(this);
     if (auto doc = getDocument()) {
         auto it = _pendingRelease.find(doc);
         if (it != _pendingRelease.end()) {
@@ -320,15 +365,32 @@ short Feature::mustExecute() const
 
 App::DocumentObjectExecReturn *Feature::recompute()
 {
-    try {
-        return App::GeoFeature::recompute();
-    }
-    catch (Standard_Failure& e) {
+    auto once = [this]() -> App::DocumentObjectExecReturn* {
+        try {
+            return App::GeoFeature::recompute();
+        }
+        catch (Standard_Failure& e) {
 
-        App::DocumentObjectExecReturn* ret = new App::DocumentObjectExecReturn(e.GetMessageString());
-        if (ret->Why.empty()) ret->Why = "Unknown OCC exception";
+            App::DocumentObjectExecReturn* ret = new App::DocumentObjectExecReturn(e.GetMessageString());
+            if (ret->Why.empty()) ret->Why = "Unknown OCC exception";
+            return ret;
+        }
+    };
+    // An algorithm refused to change a frozen input, and the feature took
+    // it as a failure (most turn the OCCT exception into an error message):
+    // once more, on copies of the inputs, which are the algorithm's to
+    // change (docs/TransactionLog.md sec 27.82). Counted, not caught: the
+    // refusal seldom reaches here as an exception.
+    const unsigned int refused = TopoDS_LockedShape::Raised();
+    App::DocumentObjectExecReturn* ret = once();
+    if (ret == App::DocumentObject::StdReturn || ThawInputs::active()
+            || TopoDS_LockedShape::Raised() == refused)
         return ret;
-    }
+    FC_LOG(getFullName() << ": a frozen input was refused (" << ret->Why
+                         << "), recomputing on copies");
+    delete ret;
+    ThawInputs thaw;
+    return once();
 }
 
 App::DocumentObjectExecReturn *Feature::execute()
@@ -387,25 +449,33 @@ Feature::getExportElementName(TopoShape shape, const char *name) const
         // chosen elements are not enough to disambiguate the higher element,
         // we'll include an index for disambiguation.
 
-        auto subshape = shape.getSubTopoShape(res.first, res.second, true);
         TopAbs_ShapeEnum lower;
         Data::IndexedName idxName;
+        switch(res.first) {
+        case TopAbs_WIRE:
+            lower = TopAbs_EDGE;
+            idxName = Data::IndexedName::fromConst("Edge", 1);
+            break;
+        case TopAbs_SHELL:
+        case TopAbs_SOLID:
+        case TopAbs_COMPOUND:
+        case TopAbs_COMPSOLID:
+            lower = TopAbs_FACE;
+            idxName = Data::IndexedName::fromConst("Face", 1);
+            break;
+        default:
+            lower = TopAbs_SHAPE;
+        }
+        // A face, an edge or a vertex has nothing lower to be named by, and
+        // its sub shape is not made to find that out: the shape keeps every
+        // one it is asked for, some 6 KB each, and a reference to an element
+        // of a shape without names -- an import's, a primitive's -- asks for
+        // it each time the shape is made (docs/ShapeAppearanceDesign.md sec
+        // 14.1: 780 MB for 120,000 faces held by name).
+        TopoShape subshape;
+        if (lower != TopAbs_SHAPE)
+            subshape = shape.getSubTopoShape(res.first, res.second, true);
         if (!subshape.isNull()) {
-            switch(res.first) {
-            case TopAbs_WIRE:
-                lower = TopAbs_EDGE;
-                idxName = Data::IndexedName::fromConst("Edge", 1);
-                break;
-            case TopAbs_SHELL:
-            case TopAbs_SOLID:
-            case TopAbs_COMPOUND:
-            case TopAbs_COMPSOLID:
-                lower = TopAbs_FACE;
-                idxName = Data::IndexedName::fromConst("Face", 1);
-                break;
-            default:
-                lower = TopAbs_SHAPE;
-            }
             if (lower != TopAbs_SHAPE) {
                 typedef std::pair<size_t, std::vector<int>> NameEntry;
                 std::vector<NameEntry> indices;
@@ -479,8 +549,24 @@ Feature::getExportElementName(TopoShape shape, const char *name) const
                     // change the element map inside the Shape property without
                     // recording the change in undo stack.
                     //
-                    mapped.name = shape.setElementComboName(
-                            mapped.index, names, mapped.index.getType(), op.c_str());
+                    // Not on another thread, where that write is one nobody
+                    // may make, and not while a reader on another thread
+                    // has the map -- the transaction log's worker, saving a
+                    // copy of the shape. Then the name is made and not set:
+                    // it waits beside the map, is found there by whoever
+                    // asks, and is taken in by the main thread once nobody
+                    // holds the map (docs/TransactionLog.md sec 31.31). The
+                    // string table the name is hashed into has a lock.
+                    if (App::Application::isMainThread() && !shape.isElementMapHeld()) {
+                        mapped.name = shape.setElementComboName(
+                                mapped.index, names, mapped.index.getType(), op.c_str());
+                    }
+                    else {
+                        Data::ElementIDRefs sids;
+                        mapped.name = shape.makeElementComboName(
+                                mapped.index, names, mapped.index.getType(), op.c_str(), sids);
+                        shape.deferElementName(mapped.index, mapped.name, sids, names);
+                    }
                 }
             }
         }
@@ -1071,6 +1157,9 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
     }
 
     auto canCache = [&](const App::DocumentObject *o) {
+        // Copies handed out for a retry on thawed inputs are not cached.
+        if (ThawInputs::active())
+            return false;
         return !lastLink || 
             (hiddens.empty() && !App::GeoFeatureGroupExtension::isNonGeoGroup(o));
     };
@@ -1195,7 +1284,9 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
         if(canCache(owner) && PropertyShapeCache::getShape(owner,shape)) {
             bool scaled = shape.transformShape(mat,false,true);
             if(owner->getDocument()!=obj->getDocument()) {
-                shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher());
+                shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher(),
+                        owner->getDocument()->externalTagPostfix(
+                            obj->getDocument()->getStringHasher()).c_str());
                 PropertyShapeCache::setShape(obj,shape,subname);
             } else if(scaled || (linked != owner && linkMat.hasScale() != Base::ScaleType::NoScaling))
                 PropertyShapeCache::setShape(obj,shape,subname);
@@ -1229,7 +1320,13 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
             shape.transformShape(mat*linkMat,false,true);
         else
             shape.transformShape(linkMat,false,true);
-        shape.reTagElementMap(tag,hasher);
+        // A crossing names its document (docs/TransactionLog.md sec 27.76
+        // item 4).
+        if (linked->getDocument() != owner->getDocument())
+            shape.reTagElementMap(tag, hasher,
+                    linked->getDocument()->externalTagPostfix(hasher).c_str());
+        else
+            shape.reTagElementMap(tag,hasher);
 
     } else {
         // Construct a compound of sub objects
@@ -1245,8 +1342,16 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
             linked = link->getTrueLinkedObject(false,&baseMat);
             if(linked && linked!=owner) {
                 baseShape = Feature::getTopoShape(linked,nullptr,false,nullptr,nullptr,false,false);
-                if(!link->getShowElementValue())
-                    baseShape.reTagElementMap(owner->getID(),owner->getDocument()->getStringHasher());
+                if(!link->getShowElementValue()) {
+                    if (linked->getDocument() != owner->getDocument())
+                        baseShape.reTagElementMap(owner->getID(),
+                                owner->getDocument()->getStringHasher(),
+                                linked->getDocument()->externalTagPostfix(
+                                    owner->getDocument()->getStringHasher()).c_str());
+                    else
+                        baseShape.reTagElementMap(owner->getID(),
+                                owner->getDocument()->getStringHasher());
+                }
             }
         }
         for(auto &sub : owner->getSubObjects()) {
@@ -1291,7 +1396,14 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
                     shape = baseShape.makETransform(mat,(Data::indexPostfix()+childName).c_str());
                 else {
                     shape = baseShape.makETransform(mat);
-                    shape.reTagElementMap(subObj->getID(),subObj->getDocument()->getStringHasher());
+                    if (linked->getDocument() != subObj->getDocument())
+                        shape.reTagElementMap(subObj->getID(),
+                                subObj->getDocument()->getStringHasher(),
+                                linked->getDocument()->externalTagPostfix(
+                                    subObj->getDocument()->getStringHasher()).c_str());
+                    else
+                        shape.reTagElementMap(subObj->getID(),
+                                subObj->getDocument()->getStringHasher());
                 }
             }
             shapes.push_back(shape);
@@ -1310,7 +1422,9 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
     if(owner!=obj) {
         bool scaled = shape.transformShape(mat,false,true);
         if(owner->getDocument()!=obj->getDocument()) {
-            shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher());
+            shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher(),
+                    owner->getDocument()->externalTagPostfix(
+                        obj->getDocument()->getStringHasher()).c_str());
             scaled = true; // force cache
         }
         if(canCache(obj) && scaled)
@@ -1452,7 +1566,19 @@ PropertyPartShape *Feature::shapePropertyOfElement(const char *element,
     return const_cast<PropertyPartShape*>(&Shape);
 }
 
+const Data::ComplexGeoData* Feature::getElementGeometry(const char*& element) const
+{
+    const std::string *prefix = nullptr;
+    auto prop = shapePropertyOfElement(element, &prefix);
+    if (prefix)
+        element += prefix->size();
+    return prop->getComplexData();
+}
+
 void Feature::onBeforeChange(const App::Property *prop) {
+    // A name over ElementAppearance: the write to that is what an undo holds
+    if (isLookName(prop))
+        return;
     PropertyPartShape *propShape = nullptr;
     const std::string *prefix = nullptr;
     if (prop == &Shape)
@@ -1604,6 +1730,69 @@ void Feature::adoptShapeVersions()
         _shapeVersions.push_back(std::move(v.second));
 }
 
+App::Property *Feature::retainElementEvidence(const App::PropertyLinkBase *referrer,
+                                              App::Property *evidence)
+{
+    if (!referrer || !getDocument())
+        return nullptr;
+    const std::string key = referrerKey(referrer, getDocument());
+    if (key.empty())
+        return nullptr;
+    adoptShapeVersions();
+    PropertyPartShape *prop = nullptr;
+    if (evidence) {
+        for (const auto &version : _shapeVersions) {
+            if (version.materialized == evidence)
+                prop = version.materialized;
+        }
+        if (!prop)
+            return nullptr;
+    }
+    else {
+        int next = 0;
+        std::map<std::string, App::Property*> props;
+        getPropertyMap(props);
+        for (const auto &v : props)
+            next = std::max(next, baseShapeOrdinal(v.first.c_str()));
+        std::string name = baseShapePrefix() + std::to_string(++next);
+        prop = Base::freecad_dynamic_cast<PropertyPartShape>(addDynamicProperty(
+                "Part::PropertyPartShape", name.c_str(), "BaseShape",
+                "The Shape another branch had, kept for the references taken "
+                "from that branch that have been missing since",
+                App::Prop_Hidden | App::Prop_ReadOnly | App::Prop_Output | App::Prop_NoRecompute));
+        if (!prop) {
+            FC_ERR("Failed to add " << name << " to " << getFullName());
+            return nullptr;
+        }
+        prop->_publishes = false;
+        bool listed = false;
+        for (const auto &version : _shapeVersions)
+            listed = listed || version.materialized == prop;
+        if (!listed) {
+            // Last, though the list is newest first: it is no shape this
+            // feature had, and answers nobody but the referrers recorded
+            // on it (searchElementCache). The newest of the feature's own
+            // stays the newest.
+            ShapeVersion version;
+            version.prop = &Shape;
+            version.materialized = prop;
+            _shapeVersions.push_back(std::move(version));
+        }
+    }
+    // A referrer holds one generation
+    for (auto &version : _shapeVersions) {
+        if (version.materialized == prop)
+            version.referrers.insert(key);
+        else if (version.prop == &Shape)
+            version.referrers.erase(key);
+    }
+    writeShapeVersionRefs();
+    // Found again by what is kept here, the reference needs it no longer:
+    // asked as for a referrer released
+    _pendingRelease[getDocument()].insert(this);
+    return prop;
+}
+
 void Feature::materializeShapeVersions()
 {
     int next = 0;
@@ -1732,6 +1921,10 @@ void Feature::reconcileShapeVersions(bool materialize)
 
 void Feature::onChanged(const App::Property* prop)
 {
+    // What was made from this object is told when it is drawn differently,
+    // once, when the change that set it off is done
+    App::AppearanceUpdater appearances;
+
     // if the placement has changed apply the change to the point data as well
     if (prop == &this->Placement
             || (getDocument()
@@ -1748,6 +1941,9 @@ void Feature::onChanged(const App::Property* prop)
         shape.setTransform(this->Placement.getValue().toMatrix());
         Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(
                 App::Property::NoRecompute, &this->Shape);
+        // Nobody sets this shape: it follows the property just written
+        // (docs/TransactionLog.md sec 31.26)
+        App::TransactionFollowing following;
         this->Shape.setValue(shape);
     }
     // if the point data has changed check and adjust the transformation as well
@@ -1778,6 +1974,8 @@ void Feature::onChanged(const App::Property* prop)
             && !getDocument()->testStatus(App::Document::Restoring)
             && !getDocument()->isPerformingTransaction())
         reconcileShapeVersions(/*materialize*/true);
+
+    onAppearanceChanged(prop);
 }
 
 bool Feature::shouldApplyPlacement()
@@ -1831,8 +2029,21 @@ Feature::searchElementCache(const std::string &element,
         return none;
     const std::string *prefix = nullptr;
     auto propShape = shapePropertyOfElement(element.c_str(), &prefix);
+    // The generation a referrer is retained on is the one it was resolved
+    // against: the element's number is a position in that one alone
+    std::string key;
+    if (referrer && getDocument()) {
+        key = referrerKey(referrer, getDocument());
+        bool held = false;
+        for (const auto &version : _shapeVersions)
+            held = held || (version.prop == propShape && version.referrers.count(key));
+        if (!held)
+            key.clear();
+    }
     for (const auto &version : _shapeVersions) {
         if (version.prop != propShape)
+            continue;
+        if (!key.empty() && !version.referrers.count(key))
             continue;
         auto res = version.searched.emplace(element, std::vector<std::string>());
         auto &names = res.first->second;
@@ -2028,7 +2239,7 @@ import PartParams
 PartParams.define_properties()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:1410)
+// Auto generated code (Tools/params_utils.py:1432)
 App::PropertyLinkList *Part::Feature::getShapeContentsProperty(bool force)
 {
     auto obj = this;
@@ -2046,7 +2257,7 @@ App::PropertyLinkList *Part::Feature::getShapeContentsProperty(bool force)
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:1410)
+// Auto generated code (Tools/params_utils.py:1432)
 App::PropertyBool *Part::Feature::getShapeContentSuppressedProperty(bool force)
 {
     auto obj = this;
@@ -2064,7 +2275,7 @@ App::PropertyBool *Part::Feature::getShapeContentSuppressedProperty(bool force)
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:1410)
+// Auto generated code (Tools/params_utils.py:1432)
 App::PropertyLinkHidden *Part::Feature::getShapeContentReplacementProperty(bool force)
 {
     auto obj = this;
@@ -2082,7 +2293,7 @@ App::PropertyLinkHidden *Part::Feature::getShapeContentReplacementProperty(bool 
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:1410)
+// Auto generated code (Tools/params_utils.py:1432)
 App::PropertyBool *Part::Feature::getShapeContentReplacementSuppressedProperty(bool force)
 {
     auto obj = this;
@@ -2100,7 +2311,7 @@ App::PropertyBool *Part::Feature::getShapeContentReplacementSuppressedProperty(b
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:1410)
+// Auto generated code (Tools/params_utils.py:1432)
 App::PropertyBool *Part::Feature::getShapeContentDetachedProperty(bool force)
 {
     auto obj = this;
@@ -2118,7 +2329,7 @@ App::PropertyBool *Part::Feature::getShapeContentDetachedProperty(bool force)
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:1410)
+// Auto generated code (Tools/params_utils.py:1432)
 App::PropertyLinkHidden *Part::Feature::get_ShapeContentOwnerProperty(bool force)
 {
     auto obj = this;
@@ -2269,6 +2480,22 @@ void Feature::onDocumentRestored() {
     // at the next save.
     adoptShapeVersions();
     App::GeoFeature::onDocumentRestored();
+    // Out of a file older than the looks being the object's, it has none
+    // until a view provider gives it what it read -- and one that shows it
+    // as a link does gives none: a part group of Assembly3 came out with no
+    // look at all, and that was the colour of a view provider made on it
+    // later. So it has what a new object has, for a view provider to give
+    // it another (docs/ShapeAppearanceDesign.md sec 14.6.11).
+    if (!ElementAppearance.hasBase(App::PropertyElementAppearance::Face)) {
+        try {
+            giveDefaultAppearance();
+        }
+        catch (Base::Exception &e) {
+            FC_ERR(getFullName() << ": no look was given: " << e.what());
+        }
+    }
+    // The names over the looks are in no file: they take what the file has
+    mirrorLooks();
 }
 
 void Feature::restoreShapeContents() {

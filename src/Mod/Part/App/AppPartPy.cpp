@@ -83,6 +83,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
+#include <App/DocumentPy.h>
 #include <App/DocumentObserver.h>
 #include <App/ExpressionParser.h>
 #include <App/ElementNamingUtils.h>
@@ -105,6 +106,7 @@
 #include "modelRefine.h"
 #include "OCCError.h"
 #include "PartFeature.h"
+#include "ShapeDiff.h"
 #include "PartPyCXX.h"
 #include "SubShapeBinder.h"
 #include "Tools.h"
@@ -404,9 +406,18 @@ PartExport int initOCCTExtension()
             setFuncShowTopoShape = (FuncSetFuncShowTopoShape)GetProcAddress(hModule, "SetFuncShowTopoShape");
         }
 #else
-        void *hModule = dlopen ("libTKBRep.so", RTLD_LAZY);
-        if (hModule) {
-            setFuncShowTopoShape = (FuncSetFuncShowTopoShape)dlsym(hModule, "SetFuncShowTopoShape");
+        // Looked up among the libraries already loaded first: Part links
+        // TKBRep, so it is there under whatever file name it has, where the
+        // name below is the development symlink -- absent from a runtime-only
+        // install, and never the name on macOS.
+        setFuncShowTopoShape =
+            (FuncSetFuncShowTopoShape)dlsym(RTLD_DEFAULT, "SetFuncShowTopoShape");
+        if (!setFuncShowTopoShape) {
+            void *hModule = dlopen ("libTKBRep.so", RTLD_LAZY);
+            if (hModule) {
+                setFuncShowTopoShape =
+                    (FuncSetFuncShowTopoShape)dlsym(hModule, "SetFuncShowTopoShape");
+            }
         }
 #endif
         if (setFuncShowTopoShape) {
@@ -713,6 +724,13 @@ public:
         add_varargs_method("getRelatedElements",&Module::getRelatedElements,
             "getRelatedElements(obj,name,[sameType=True]):\n"
             "Return a list of tuple(mapped_name, element_name) that are related to the input 'name'"
+        );
+        add_varargs_method("getTransactionShape",&Module::getTransactionShape,
+            "getTransactionShape(doc,ref,tag=0) -> Shape or None\n"
+            "A shape value the transaction log of 'doc' holds, by its ref -- what a row's\n"
+            "op or a merge preview's change names -- with its element names, and nothing\n"
+            "of the document touched. 'tag' is the id of the object the value is of. None\n"
+            "where the log does not hold the value, or it is no shape."
         );
         add_varargs_method("getElementHistory",&Module::getElementHistory,
             "getElementHistory(obj,name,recursive=True,sameType=False)\n"
@@ -1030,7 +1048,7 @@ private:
         Part::Feature *pcFeature = static_cast<Part::Feature*>(pcDoc->addObject("Part::Feature", name));
         // copy the data
         pcFeature->Shape.setValue(shape);
-        pcFeature->signalMapShapeColors(pcSrcDoc);
+        pcFeature->updateAppearance(pcSrcDoc, true);
         pcFeature->purgeTouched();
         return Py::asObject(pcFeature->getPyObject());
     }
@@ -2679,6 +2697,19 @@ private:
             list.append(Py::TupleN(Py::String(tmp2),Py::String(tmp)));
         }
         return list;
+    }
+
+    Py::Object getTransactionShape(const Py::Tuple& args) {
+        PyObject *pydoc;
+        const char *ref;
+        long tag = 0;
+        if (!PyArg_ParseTuple(args.ptr(), "O!s|l",&App::DocumentPy::Type,&pydoc,&ref,&tag))
+            throw Py::Exception();
+        auto doc = static_cast<App::DocumentPy*>(pydoc)->getDocumentPtr();
+        TopoShape shape;
+        if (!ShapeDiff::valueShape(*doc, ref, tag, shape))
+            return Py::None();
+        return shape2pyshape(shape);
     }
 
     Py::Object getElementHistory(const Py::Tuple& args) {

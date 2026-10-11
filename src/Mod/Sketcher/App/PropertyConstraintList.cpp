@@ -94,6 +94,9 @@ App::ObjectIdentifier PropertyConstraintList::makePath(int idx, const Constraint
 
 void PropertyConstraintList::setSize(int newSize)
 {
+    if (newSize == static_cast<int>(_lValueList.size()))
+        return;
+    aboutToSetValue();
     std::set<App::ObjectIdentifier> removed;
 
     /* Collect information about erased elements */
@@ -114,6 +117,7 @@ void PropertyConstraintList::setSize(int newSize)
 
     /* Resize array to new size */
     _lValueList.resize(newSize);
+    hasSetValue();
 }
 
 int PropertyConstraintList::getSize() const
@@ -372,6 +376,15 @@ void PropertyConstraintList::Restore(Base::XMLReader& reader)
 
     reader.readEndElement("ConstraintList");
 
+    // A value read is the whole value, as one pasted is: every constraint
+    // read has a tag of its own, so against a list that was there each of
+    // its constraints would count as removed -- and the sketch takes the
+    // expressions bound to a removed constraint away. A value put back from
+    // the transaction log (a branch switched to, an undo past the hot
+    // window, a merge) then lost every binding the sketch had; what is
+    // bound is the expression engine's to say, which is put back by its own
+    // value (docs/TransactionLog.md sec 31.14).
+    Base::StateLocker lock(restoreFromTransaction, true);
     // assignment
     setValues(std::move(values));
 }
@@ -400,7 +413,7 @@ unsigned int PropertyConstraintList::getMemSize() const
     return size;
 }
 
-void PropertyConstraintList::acceptGeometry(const std::vector<Part::Geometry*>& GeoList)
+void PropertyConstraintList::acceptGeometry(const std::vector<const Part::Geometry*>& GeoList)
 {
     aboutToSetValue();
     validGeometryKeys.clear();
@@ -417,7 +430,7 @@ void PropertyConstraintList::applyValidGeometryKeys(const std::vector<unsigned i
     validGeometryKeys = keys;
 }
 
-bool PropertyConstraintList::checkGeometry(const std::vector<Part::Geometry*>& GeoList)
+bool PropertyConstraintList::checkGeometry(const std::vector<const Part::Geometry*>& GeoList)
 {
     if (!scanGeometry(GeoList)) {
         invalidGeometry = true;
@@ -478,14 +491,14 @@ bool PropertyConstraintList::checkConstraintIndices(int geomax, int geomin)
  * \param GeoList - new geometry list to be checked
  * \return false, if the types have changed.
  */
-bool PropertyConstraintList::scanGeometry(const std::vector<Part::Geometry*>& GeoList) const
+bool PropertyConstraintList::scanGeometry(const std::vector<const Part::Geometry*>& GeoList) const
 {
     if (validGeometryKeys.size() != GeoList.size()) {
         return false;
     }
 
     unsigned int i = 0;
-    for (std::vector<Part::Geometry*>::const_iterator it = GeoList.begin(); it != GeoList.end();
+    for (std::vector<const Part::Geometry*>::const_iterator it = GeoList.begin(); it != GeoList.end();
          ++it, i++) {
         if (validGeometryKeys[i] != (*it)->getTypeId().getKey()) {
             return false;

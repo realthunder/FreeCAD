@@ -32,6 +32,8 @@
 #include <App/DocumentObserver.h>
 #include <App/StringHasher.h>
 #include <App/FileBlobManager.h>
+#include <App/FileHistory.h>
+#include <App/TransactionLog.h>
 #include <Base/Reader.h>
 #include <Base/Sequencer.h>
 #include <CXX/Objects.hxx>
@@ -39,6 +41,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/bimap.hpp>
 #include <chrono>
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -71,12 +74,24 @@ struct DocumentP
     // Array to preserve the creation order of created objects
     std::vector<DocumentObject*> objectArray;
     std::unordered_set<App::DocumentObject*> touchedObjs;
+    /// The ids of the objects the last restore read as touched -- the
+    /// `Touched` attribute as saved, before the restore touched anything
+    /// of its own (docs/TransactionLog.md sec 27.60).
+    std::set<long> savedTouched;
+    /// A file in an older format was opened: its version is taken once the
+    /// restore is over, at the current schema (sec 27.62).
+    bool openVersionPending = false;
     std::unordered_map<std::string, DocumentObject*> objectMap;
     std::unordered_map<long, DocumentObject*> objectIdMap;
     std::unordered_map<std::string, bool> partialLoadObjects;
     std::vector<DocumentObjectT> pendingRemove;
     std::vector<App::DocumentObject*> skippedObjs;
     long lastObjectId;
+    /// The id readObjects restores the next object under, 0 for a new one.
+    long restoringId = 0;
+    /// The last geometry id of each object while the document has no file
+    /// history; the history takes them when it comes (sec 27.40 item 4).
+    std::unordered_map<long, long> lastGeoIds;
     mutable std::pair<long, long> treeRanks = std::make_pair(0,0);
     long treeRankRevision = 0;
     long revision = 0; // will increase on object add or remove
@@ -96,7 +111,80 @@ struct DocumentP
     std::string programVersion;
     mutable HasherMap hashers;
     /// Lifetime of the files behind this document's PropertyFileIncluded.
-    mutable std::unique_ptr<App::FileBlobManager> fileBlobs;
+    /// The file's history (docs/TransactionLog.md sec 27.7): its blob store
+    /// and directory, shared with the other documents of the file.
+    mutable std::shared_ptr<App::FileHistory> history;
+    /// The transaction log (docs/TransactionLog.md), when the mode is not off.
+    std::unique_ptr<App::TransactionLog> transactionLog;
+    /// Whether the mode was looked at for this document yet.
+    bool transactionLogChecked {false};
+    /// The document's own bookkeeping being written -- a save's stamps, the
+    /// file name and label Save As gives it, the log's History, Version and
+    /// Branch: never a transaction, never an undo step (docs/TransactionLog.md
+    /// sec 16.4, 27.5).
+    bool bookkeeping {false};
+    /// This document joined a file history another document of the file
+    /// made (docs/TransactionLog.md sec 27.7): its restore does not start
+    /// or adopt a history, the log has one.
+    bool joinedHistory {false};
+    /// A version document's name parts (docs/TransactionLog.md sec 27.23):
+    /// the file and the label it is named after, and the version its name
+    /// ends in -- the one it was opened at, then the one it last saved.
+    std::string versionFile;
+    std::string versionLabel;
+    int64_t versionTail {0};
+    /// Document.xml as the reader saw it, tapped by restore(const char*)
+    /// for the log's version 1 (docs/TransactionLog.md sec 16.6); empty
+    /// when no tap was installed.
+    std::string restoreDocXml;
+    bool restoreTapped {false};
+    /// The XML entries the reader served during the restore in progress
+    /// (GuiDocument.xml, split object files), through its entry sink, for
+    /// the version manifest.
+    std::vector<std::pair<std::string, std::string>> fileEntries;
+    /// The same for a save or snapshot: every entry as the writer captured
+    /// it (docs/TransactionLog.md 23.3), Document.xml first.
+    TransactionLog::Captures captures;
+    /// The cadence of unnamed versions (sec 16.3): commits since the last
+    /// version, and when it was taken (steady clock seconds).
+    long commitsSinceVersion {0};
+    double lastVersionTime {0};
+    bool snapshotting {false};
+    /// The save in progress writes the string table as a member of its own
+    /// (docs/TransactionLog.md sec 27.50 item 1) -- or, snapshotting, names
+    /// the log's table and writes none; `tableMember` is what the writer
+    /// writes it from, `tableEntry` the name it got.
+    bool tableAsMember {false};
+    std::unique_ptr<Base::Persistence> tableMember;
+    std::string tableEntry;
+    /// A restoreVersion() in progress: the restore takes no version 1.
+    bool checkingOut {false};
+    /// The scratch document a restore to a version reads the version into
+    /// (docs/TransactionLog.md sec 24.5): it keeps no log of its own.
+    bool noLog {false};
+    /// The document is being destroyed: what is still open is not logged
+    /// (Document::~Document).
+    bool closing {false};
+    /// A crash recovery rebuilding the document from its log (sec 25.2):
+    /// what it writes is in the log already, and is no transaction.
+    bool replaying {false};
+    /// The log's last seq when the document was opened: undo reaches no
+    /// further back on any branch (docs/TransactionLog.md sec 26.4).
+    int64_t undoFloor {0};
+    /// The state the document's values are in, as its undo steps know it
+    /// (docs/TransactionLog.md sec 30.10): a new token for every change,
+    /// the old one back when a step is applied from its copies.
+    int64_t stateToken {1};
+    int64_t stateCounter {1};
+    /// Why the last undo or redo was refused, empty when it was not.
+    std::string undoRefusal;
+    /// A saveCopy() without history: the copy embeds nothing, and the
+    /// History property the live document had is put back afterwards.
+    bool savingWithoutHistory {false};
+    /// The sent file importFork() is bringing in (sec 30.29), by its hash,
+    /// for the import's record to name; empty for a file from a path.
+    std::string importingRequest;
+    std::function<void()> restoreHistory;
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;
@@ -195,9 +283,13 @@ struct DocumentP
     DocumentP();
 
     long addObject(App::DocumentObject *pcObject) {
-        int id = pcObject->getID();
+        long id = pcObject->getID();
+        if (!id)
+            id = restoringId;
         for (;;) {
-            auto &entry = this->objectIdMap[id ? id : ++this->lastObjectId];
+            if (!id)
+                id = nextObjectId();
+            auto &entry = this->objectIdMap[id];
             if (entry) {
                 id = 0;
                 continue;
@@ -205,9 +297,36 @@ struct DocumentP
             entry = pcObject;
             break;
         }
+        noteObjectId(id);
         ++revision;
         this->objectArray.push_back(pcObject);
-        return id ? id : this->lastObjectId;
+        return id;
+    }
+
+    /// A new object's id: from the file's counter when the document has a
+    /// history (docs/TransactionLog.md sec 27.40 item 1), else its own.
+    long nextObjectId() {
+        if (history) {
+            history->noteObjectId(lastObjectId);
+            lastObjectId = history->nextObjectId();
+        }
+        else
+            ++lastObjectId;
+        return lastObjectId;
+    }
+
+    /// `id` has `name`, in the file's name table (sec 27.40 item 3).
+    void noteObjectName(const std::string& name, long id) {
+        if (history)
+            history->noteObjectName(name, id);
+    }
+
+    /// An id in use: neither counter hands it out again.
+    void noteObjectId(long id) {
+        if (id > lastObjectId)
+            lastObjectId = id;
+        if (history)
+            history->noteObjectId(id);
     }
 
     void addRecomputeLog(const char *why, App::DocumentObject *obj) {

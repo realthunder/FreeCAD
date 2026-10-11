@@ -845,7 +845,7 @@ PyObject *PropertyIntegerList::getPyObject()
 {
     PyObject* list = PyList_New(getSize());
     for(int i = 0;i<getSize(); i++)
-        PyList_SetItem( list, i, PyLong_FromLong(_lValueList[i]));
+        PyList_SetItem( list, i, PyLong_FromLong(this->getValues()[i]));
     return list;
 }
 
@@ -861,10 +861,10 @@ bool PropertyIntegerList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
     if(writer.getFileVersion()>1) {
-        for(auto &v : _lValueList)
+        for(auto &v : this->getValues())
             writer.Stream() << v << '\n';
     } else {
-        for(auto &v : _lValueList)
+        for(auto &v : this->getValues())
             writer.Stream() << "<I v=\"" <<  v <<"\"/>\n";
     }
     return false;
@@ -892,14 +892,15 @@ void PropertyIntegerList::restoreXML(Base::XMLReader &reader)
 
 Property *PropertyIntegerList::Copy() const
 {
-    PropertyIntegerList *p= new PropertyIntegerList();
-    p->_lValueList = _lValueList;
+    PropertyIntegerList *p = new PropertyIntegerList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyIntegerList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyIntegerList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyIntegerList&>(from).getValues());
 }
 
 void PropertyIntegerList::interpolateValue(int index, const long &from, const long &to, float t)
@@ -921,8 +922,8 @@ PyObject* PropertyIntPairList::getPyObject()
     Py::List result(getSize());
     for (int i = 0; i < getSize(); ++i) {
         Py::Tuple pair(2);
-        pair.setItem(0, Py::Long(_lValueList[i].first));
-        pair.setItem(1, Py::Long(_lValueList[i].second));
+        pair.setItem(0, Py::Long(getValues()[i].first));
+        pair.setItem(1, Py::Long(getValues()[i].second));
         result.setItem(i, pair);
     }
     return Py::new_reference_to(result);
@@ -959,7 +960,7 @@ bool PropertyIntPairList::saveXML(Base::Writer& writer) const
 {
     writer.Stream() << ">\n";
     writer.incInd();
-    for (const auto& [first, second] : _lValueList) {
+    for (const auto& [first, second] : getValues()) {
         writer.Stream() << writer.ind() << "<Pair first=\"" << first << "\" second=\"" << second
                         << "\"/>\n";
     }
@@ -987,18 +988,19 @@ void PropertyIntPairList::restoreXML(Base::XMLReader& reader)
 Property* PropertyIntPairList::Copy() const
 {
     auto* copy = new PropertyIntPairList();
-    copy->_lValueList = _lValueList;
+    atomic_change guard(*copy);
+    copy->mutableValues(guard) = getValues();
     return copy;
 }
 
 void PropertyIntPairList::Paste(const Property& from)
 {
-    setValues(dynamic_cast<const PropertyIntPairList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyIntPairList&>(from).getValues());
 }
 
 unsigned int PropertyIntPairList::getMemSize() const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(IntPair));
+    return static_cast<unsigned int>(getValues().size() * sizeof(IntPair));
 }
 
 //**************************************************************************
@@ -1489,7 +1491,7 @@ PyObject *PropertyFloatList::getPyObject()
 {
     PyObject* list = PyList_New(getSize());
     for (int i = 0;i<getSize(); i++)
-         PyList_SetItem( list, i, PyFloat_FromDouble(_lValueList[i]));
+         PyList_SetItem( list, i, PyFloat_FromDouble(this->getValues()[i]));
     return list;
 }
 
@@ -1508,7 +1510,7 @@ double PropertyFloatList::getPyValue(PyObject *item) const {
 bool PropertyFloatList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(auto &v : _lValueList)
+    for(auto &v : this->getValues())
         writer.Stream() << v << '\n';
     return false;
 }
@@ -1526,12 +1528,12 @@ void PropertyFloatList::restoreXML(Base::XMLReader &reader)
 void PropertyFloatList::saveStream(Base::OutputStream &str) const
 {
     if (!isSinglePrecision()) {
-        for (double it : _lValueList) {
+        for (double it : this->getValues()) {
             str << it;
         }
     }
     else {
-        for (double it : _lValueList) {
+        for (double it : this->getValues()) {
             float v = static_cast<float>(it);
             str << v;
         }
@@ -1558,14 +1560,15 @@ void PropertyFloatList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *PropertyFloatList::Copy() const
 {
-    PropertyFloatList *p= new PropertyFloatList();
-    p->_lValueList = _lValueList;
+    PropertyFloatList *p = new PropertyFloatList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyFloatList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyFloatList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyFloatList&>(from).getValues());
 }
 
 void PropertyFloatList::interpolateValue(int index, const double &from, const double &to, float t)
@@ -1584,7 +1587,7 @@ PyObject *_PropertyFloatList::getPyObject(void)
 {
     PyObject* list = PyList_New(getSize());
     for (int i = 0;i<getSize(); i++)
-         PyList_SetItem( list, i, PyFloat_FromDouble(_lValueList[i]));
+         PyList_SetItem( list, i, PyFloat_FromDouble(this->getValues()[i]));
     return list;
 }
 
@@ -1603,7 +1606,7 @@ float _PropertyFloatList::getPyValue(PyObject *item) const {
 bool _PropertyFloatList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(auto &v : _lValueList)
+    for(auto &v : this->getValues())
         writer.Stream() << v << '\n';
     return false;
 }
@@ -1619,7 +1622,7 @@ void _PropertyFloatList::restoreXML(Base::XMLReader &reader)
 }
 
 void _PropertyFloatList::saveStream(Base::OutputStream &str) const {
-    for (auto &v : _lValueList)
+    for (auto &v : this->getValues())
         str << v;
 }
 
@@ -1633,14 +1636,15 @@ void _PropertyFloatList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *_PropertyFloatList::Copy(void) const
 {
-    _PropertyFloatList *p= new _PropertyFloatList();
-    p->_lValueList = _lValueList;
+    _PropertyFloatList *p = new _PropertyFloatList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void _PropertyFloatList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const _PropertyFloatList&>(from)._lValueList);
+    setValues(dynamic_cast<const _PropertyFloatList&>(from).getValues());
 }
 
 void _PropertyFloatList::interpolateValue(int index, const float &from, const float &to, float t)
@@ -2117,7 +2121,7 @@ PyObject *PropertyStringList::getPyObject()
     PyObject* list = PyList_New(getSize());
 
     for (int i = 0;i<getSize(); i++) {
-        PyObject* item = PyUnicode_DecodeUTF8(_lValueList[i].c_str(), _lValueList[i].size(), nullptr);
+        PyObject* item = PyUnicode_DecodeUTF8(this->getValues()[i].c_str(), this->getValues()[i].size(), nullptr);
         if (!item) {
             Py_DECREF(list);
             THROWM(Base::UnicodeError, "UTF8 conversion failure at PropertyStringList::getPyObject()")
@@ -2147,7 +2151,7 @@ unsigned int PropertyStringList::getMemSize () const
 {
     size_t size=0;
     for(int i = 0;i<getSize(); i++)
-        size += _lValueList[i].size();
+        size += this->getValues()[i].size();
     return static_cast<unsigned int>(size);
 }
 
@@ -2155,7 +2159,7 @@ bool PropertyStringList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
     for(int i = 0;i<getSize(); i++) {
-        std::string val = encodeAttribute(_lValueList[i]);
+        std::string val = encodeAttribute(this->getValues()[i]);
         writer.Stream() << "<String value=\"" <<  val <<"\"/>\n";
     }
     return false;
@@ -2176,14 +2180,15 @@ void PropertyStringList::restoreXML(Base::XMLReader &reader)
 
 Property *PropertyStringList::Copy() const
 {
-    PropertyStringList *p= new PropertyStringList();
-    p->_lValueList = _lValueList;
+    PropertyStringList *p = new PropertyStringList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyStringList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyStringList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyStringList&>(from).getValues());
 }
 
 
@@ -2377,7 +2382,7 @@ Property *PropertyMap::Copy() const
 void PropertyMap::Paste(const Property &from)
 {
     aboutToSetValue();
-    _lValueList = dynamic_cast<const PropertyMap&>(from)._lValueList;
+    _lValueList = dynamic_cast<const PropertyMap&>(from).getValues();
     hasSetValue();
 }
 
@@ -2530,7 +2535,7 @@ PyObject *PropertyBoolList::getPyObject()
 {
     PyObject* tuple = PyTuple_New(getSize());
     for(int i = 0;i<getSize(); i++) {
-        bool v = _lValueList[i];
+        bool v = this->getValues()[i];
         if (v) {
             PyTuple_SetItem(tuple, i, PyBool_FromLong(1));
         }
@@ -2569,7 +2574,7 @@ void PropertyBoolList::Save (Base::Writer &writer) const
 {
     writer.Stream() << writer.ind() << "<BoolList value=\"" ;
     std::string bitset;
-    boost::to_string(_lValueList, bitset);
+    boost::to_string(this->getValues(), bitset);
     writer.Stream() << bitset <<"\"/>" ;
     writer.Stream() << '\n';
 }
@@ -2586,19 +2591,20 @@ void PropertyBoolList::Restore(Base::XMLReader &reader)
 
 Property *PropertyBoolList::Copy() const
 {
-    PropertyBoolList *p= new PropertyBoolList();
-    p->_lValueList = _lValueList;
+    PropertyBoolList *p = new PropertyBoolList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyBoolList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyBoolList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyBoolList&>(from).getValues());
 }
 
 unsigned int PropertyBoolList::getMemSize () const
 {
-    return static_cast<unsigned int>(_lValueList.size());
+    return static_cast<unsigned int>(this->getValues().size());
 }
 
 //**************************************************************************
@@ -2861,10 +2867,10 @@ PyObject *PropertyColorList::getPyObject()
 
     for(int i = 0;i<getSize(); i++) {
         PyObject* rgba = PyTuple_New(4);
-        PyObject* r = PyFloat_FromDouble(_lValueList[i].r);
-        PyObject* g = PyFloat_FromDouble(_lValueList[i].g);
-        PyObject* b = PyFloat_FromDouble(_lValueList[i].b);
-        PyObject* a = PyFloat_FromDouble(_lValueList[i].a);
+        PyObject* r = PyFloat_FromDouble(this->getValues()[i].r);
+        PyObject* g = PyFloat_FromDouble(this->getValues()[i].g);
+        PyObject* b = PyFloat_FromDouble(this->getValues()[i].b);
+        PyObject* a = PyFloat_FromDouble(this->getValues()[i].a);
 
         PyTuple_SetItem(rgba, 0, r);
         PyTuple_SetItem(rgba, 1, g);
@@ -2887,7 +2893,7 @@ bool PropertyColorList::saveXML(Base::Writer &writer) const
 {
     const bool convert = saveConverts();
     writer.Stream() << ">\n" << std::hex;
-    for(const auto &c : _lValueList) {
+    for(const auto &c : this->getValues()) {
         unsigned long packed = c.getPackedValue();
         if (convert)
             packed = convertPackedAlpha(packed);
@@ -2938,7 +2944,7 @@ void PropertyColorList::RestoreDocFile(Base::Reader &reader)
 void PropertyColorList::saveStream(Base::OutputStream &str) const
 {
     const bool convert = saveConverts();
-    for (auto it : _lValueList) {
+    for (auto it : this->getValues()) {
         unsigned long packed = it.getPackedValue();
         str << static_cast<uint32_t>(convert ? convertPackedAlpha(packed) : packed);
     }
@@ -2957,14 +2963,15 @@ void PropertyColorList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *PropertyColorList::Copy() const
 {
-    PropertyColorList *p= new PropertyColorList();
-    p->_lValueList = _lValueList;
+    PropertyColorList *p = new PropertyColorList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyColorList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyColorList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyColorList&>(from).getValues());
 }
 
 void PropertyColorList::interpolateValue(int index, const Color &from, const Color &to, float t)
@@ -3226,6 +3233,12 @@ void PropertyAppearanceList::change(Op &&op, int touched)
     }
     const AppearanceList after = _list;
     _list = before;
+    if (_writer) {
+        // A name over a value kept elsewhere: the write is the keeper's to
+        // make, and comes back through mirrorList()
+        _writer(before, after, touched);
+        return;
+    }
     atomic_change guard(*this);
     _list = after;
     if (touched >= 0) {
@@ -3235,6 +3248,57 @@ void PropertyAppearanceList::change(Op &&op, int touched)
         _touchList.clear();
     }
     guard.tryInvoke();
+}
+
+void PropertyAppearanceList::setHolder(Property *holder, const char *name)
+{
+    _holder = holder;
+    setNameInHolder(name);
+    setContainer(holder ? holder->getContainer() : nullptr);
+    // Only for a list that names stored content. Asking for the document's
+    // blob store makes it, and the file's history with it: every object
+    // that keeps the looks of its elements would have one made as soon as
+    // it was -- from when a removed object's name is not given again.
+    if (_list.hasTexture() || _list.hasMaterialX()) {
+        _list.setBlobManager(&blobManager());
+    }
+}
+
+void PropertyAppearanceList::aboutToSetValue()
+{
+    if (!_holder) {
+        PropertyLists::aboutToSetValue();
+    }
+}
+
+void PropertyAppearanceList::hasSetValue()
+{
+    if (!_holder) {
+        PropertyLists::hasSetValue();
+    }
+}
+
+void PropertyAppearanceList::setWriter(Writer writer)
+{
+    _writer = std::move(writer);
+}
+
+void PropertyAppearanceList::mirrorList(const AppearanceList &list)
+{
+    if (_list.isSameData(list)) {
+        return;
+    }
+    const bool same = _list.isSame(list);
+    // The same storage, whether or not it says anything new
+    _list = list;
+    if (_list.hasTexture() || _list.hasMaterialX()) {
+        _list.setBlobManager(&blobManager());
+    }
+    if (same) {
+        return;
+    }
+    _touchList.clear();
+    touch();
 }
 
 void PropertyAppearanceList::setList(const AppearanceList &list)
@@ -3684,14 +3748,9 @@ void PropertyAppearanceList::assignRestoredBlob(const FileBlobHandle &blob)
 
 FileBlobManager &PropertyAppearanceList::blobManager() const
 {
-    if (auto container = getContainer()) {
-        // A view provider answers with the document of the object it
-        // presents, which is where its appearance belongs
-        if (auto doc = container->getOwnerDocument()) {
-            return doc->getFileBlobManager();
-        }
-    }
-    return FileBlobManager::defaultManager();
+    // A view provider answers with the document of the object it presents,
+    // which is where its appearance belongs
+    return FileBlobManager::managerFor(getContainer());
 }
 
 
@@ -4069,6 +4128,13 @@ void PropertyAppearanceList::Save(Base::Writer &writer) const
                         << "\" version=\"3\"/>\n";
         return;
     }
+    if (writer.getSchemaVersion() >= 5) {
+        // Noted again here, as the other referrers do: it costs nothing,
+        // and it is how a capture of this value -- the transaction log's,
+        // under a BlobRecorder -- learns which textures the value names
+        // (docs/TransactionLog.md sec 23.16).
+        _list.noteTextureBlobs(blobManager(), FileBlobManager::referrerOf(this));
+    }
     PropertyLists::Save(writer);
 }
 
@@ -4416,7 +4482,30 @@ enum FieldRunType : uint8_t {
     /// A string field that carries its base value ahead of the column, for
     /// a field RunBase cannot hold (see ExtMaterialX)
     RunStringsBase = 9,
+    /** RunBase, the overriding faces stated as ranges
+     *
+     * How many ranges, a first face and a length for each, then the base as
+     * RunBase has it. An import gives every face a look, or one span of
+     * them after another, and stated a face at a time their numbers were
+     * half of what its looks cost in the file: 4 bytes a face beside the 4
+     * of its colour (docs/ShapeAppearanceDesign.md 14.6.10). Written where
+     * it is the shorter of the two.
+     */
+    RunBaseRanges = 10,
 };
+
+/// The overriding faces as ranges: a first face and how many follow on
+std::vector<std::pair<uint32_t, uint32_t>> overrideRanges(const std::vector<uint32_t> &overrides)
+{
+    std::vector<std::pair<uint32_t, uint32_t>> ranges;
+    for (uint32_t idx : overrides) {
+        if (!ranges.empty() && ranges.back().first + ranges.back().second == idx)
+            ++ranges.back().second;
+        else
+            ranges.emplace_back(idx, 1U);
+    }
+    return ranges;
+}
 
 /// The records of one finish run. Shared by the material list's per field
 /// stream and by PropertySurfaceFinishList, so the two cannot drift apart.
@@ -4905,9 +4994,24 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
     // The flags ride the PAYLOAD rather than a bit of the mask because the
     // mask has sixteen bits in all and this run already has to be present
     // for anything the flags could say about the base.
-    writeRun(RunBase, d.overrides.size(), [&d, convert](Base::OutputStream &run) {
-        for (uint32_t idx : d.overrides)
-            run << idx;
+    //
+    // The faces a face at a time, or as ranges where that is shorter: two
+    // numbers a range and one to say how many, against one a face.
+    const std::vector<std::pair<uint32_t, uint32_t>> ranges = overrideRanges(d.overrides);
+    const bool ranged = ranges.size() * 2 + 1 < d.overrides.size();
+    writeRun(ranged ? RunBaseRanges : RunBase, d.overrides.size(),
+             [&d, &ranges, ranged, convert](Base::OutputStream &run) {
+        if (ranged) {
+            run << static_cast<uint32_t>(ranges.size());
+            for (const auto &range : ranges) {
+                run << range.first;
+                run << range.second;
+            }
+        }
+        else {
+            for (uint32_t idx : d.overrides)
+                run << idx;
+        }
         run << packedForSave(d.base.ambientColor, convert);
         run << packedForSave(d.base.diffuseColor, convert);
         run << packedForSave(d.base.specularColor, convert);
@@ -5040,10 +5144,36 @@ void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned
         case RunExtension:
             str >> ext;   // which extended runs follow the sixteen
             break;
-        case RunBase: {
-            indices.resize(count);
-            for (auto &value : indices)
-                str >> value;
+        case RunBase:
+        case RunBaseRanges: {
+            if (type == RunBaseRanges) {
+                // Both numbers came out of a file: no more faces than the
+                // list has entries, and the ranges are what the head said
+                if (count > uCt)
+                    throw Base::FileException("more overriding faces than the list has entries");
+                uint32_t rangeCount = 0;
+                str >> rangeCount;
+                if (rangeCount > count)
+                    throw Base::FileException("more ranges of overriding faces than faces");
+                indices.reserve(count);
+                for (uint32_t i = 0; i < rangeCount; ++i) {
+                    uint32_t first = 0;
+                    uint32_t length = 0;
+                    str >> first;
+                    str >> length;
+                    if (length > count - indices.size())
+                        throw Base::FileException("ranges of overriding faces overrun their count");
+                    for (uint32_t k = 0; k < length; ++k)
+                        indices.push_back(first + k);
+                }
+                if (indices.size() != count)
+                    throw Base::FileException("ranges of overriding faces fall short of their count");
+            }
+            else {
+                indices.resize(count);
+                for (auto &value : indices)
+                    str >> value;
+            }
             uint32_t packed = 0;
             str >> packed;
             base.ambientColor.setPackedValue(packed);

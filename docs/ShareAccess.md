@@ -126,6 +126,130 @@ refused; an editor's commands off the browser allowlist are. The omni box offers
 `/param` mode to anyone: the host's preferences are not a browser's to change, whatever
 its level.
 
+### 2.3 Who may write: someone known
+
+Added 2026-10-04, with the transaction log's authors (docs/TransactionLog.md sec 30.6
+U4 and U6, 30.9, 30.11). What a connection writes is recorded under who it is, so a
+connection that is nobody does not write. **Sec 2.2's rule for a host, extended to
+edit:**
+
+- **A connection may edit when it is known**, one of two ways:
+  - a **verified identity** -- the front door asserted one (sec 4);
+  - an **invitation issued to its one name** -- the grant that admits it has a token,
+    which is a secret, and a name written out in full rather than a pattern, which is
+    the host saying whose it is, and the connection gives that name. Logged as
+    `invited`, so the record shows no sign-in stood behind it.
+- **Anyone else a grant admits may look**, whatever access the grant says: an edit or a
+  full-control grant matched on a name pattern, an address, or nothing but a token; and
+  the shared token, or no token at all, which is an open invitation. A view-only
+  connection's picks are dropped and its mutating ops are answered `ViewOnly`, as they
+  were.
+- **An invitation is to the name it names.** A client that renames itself is whoever it
+  now says it is: it keeps its place and goes view-only, and the log has it as another
+  user from there on. The easing a rename mints (sec 2) never invites.
+- **The shared token can be issued to one person too.** With no grant list, the host
+  may say whose the shared token is (`SceneStreamServer::setTokenInvitee`, or
+  `FC_SERVE_INVITE=<name>` beside `FC_SERVE_TOKEN`): the token is then an invitation to
+  that one name, and the connection that presents it and gives that name may edit,
+  logged as `invited`. Under any other name it admits to look, as before. It does
+  nothing without a token -- a name with no secret behind it invites nobody -- and
+  nothing while a grant list is the door.
+- **By hand, the same.** The host cannot make an unknown connection an editor from the
+  roster (`SceneStreamServer::setClientAccess`, `Gui.serveSetClientMode(id, 'edit')`
+  answer false); the panel's "Can edit" is disabled for it and says why.
+- **One function decides** (`writerRule` in `SceneServer.cpp`), applied wherever a
+  level is: at the upgrade, at every hello, when the grant list changes, at a rename,
+  at a hand change. The roster says which (`SceneClientInfo::invited`,
+  `Gui.serveClients()[i]["invited"]`).
+
+**What it costs.** Sharing with no front door -- a LAN, a tunnel with a bare token --
+is view-only for everyone but the desktop, until the host invites by name: a grant
+with the token and the person's name, and a link carrying both (`?token=...&client=
+...`; the viewer says `?client=` in its hello). A page that fetches before it has said
+a name is admitted for those fetches by the same token as an open invitation to look
+beside the named one; the most specific match judges the socket's hello. For the one
+person a served scene is started for -- the demo recipes of `docs/Sandbox.md`, a quick
+tunnel -- `FC_SERVE_INVITE=<name>` does the same with no grant list: the link is
+`?token=<secret>&client=<name>`.
+
+**From the sharing panel** (2026-10-05, docs/TransactionLog.md sec 30.26, 30.32). The
+Invite row follows the door. Behind a sign-in door it takes an identity, as it did.
+Behind none it takes a name and a count of browsers, and makes a grant with a token of
+its own that counts them (sec 2.5); the link that carries the token is put on the
+clipboard. A pattern is refused, a share with no token is refused, and full control is
+not offered. Every grant with a link of its own -- one that counts, or a token with a
+name written out -- has a **Link** button on its row. An invitation by name on the
+share's own token, which this row made for a day, still works where one is stored: a
+name is not a secret, and whoever holds the plain link and gives that name gets what
+the name gets.
+
+### 2.5 A grant that counts its browsers
+
+Added 2026-10-05 (docs/TransactionLog.md sec 30.32; numbered after 2.4, read with
+2.3). **A token is half of who its holder is; the browser keeps the other half.** The
+viewer makes an id once, keeps it (`localStorage`), and says it in every hello. The
+host knows a browser by a hash of that id, and keeps a **record** of every browser an
+admitted hello came from, under whatever token or sign-in -- so one browser is the
+same row under another link.
+
+A grant may say **how many browsers it is for** (`maxUsers`; 0, as every grant was,
+counts none). Such a grant admits a hello only with a browser's id, **enrols** the
+first so many, and refuses any other -- or leaves it to a lesser grant on the same
+token. A browser enrolled is someone known in the sense of sec 2.3: it may edit where
+the grant says so, and what it writes is recorded under it (`enrolled`, named
+`<name>~<start of its key>`). A name is a label there: renaming does not make it
+anyone else. The host names a browser, turns it off (out, and kept out) or forgets it
+(out, and enrolled again if it comes back while there is room), from the grant's
+**Users...** or the panel's **Browsers...**.
+
+The panel's Invite row, behind a door that signs nobody in, makes such a grant: a
+token of its own, for one browser unless the count beside the name says more, and
+the link that carries it. A grant that names whom a door signed in can count its
+browsers the same way.
+
+Nobody verified who sits at a browser. What holds: the link works in the browsers it
+was first opened in and in no other, each is a row the host can act on, and each
+one's writes are its own. A plain request -- the first load, the polling route, a
+blob -- says which browser it is in a header, `X-FC-Device`, and is judged as a hello
+is: a browser the grant has, or has room for, reads; one that says nothing, and one
+past the count, reads nothing of the scene (docs/TransactionLog.md sec 30.40).
+
+### 2.4 What a client may send: files
+
+Added 2026-10-05 (docs/TransactionLog.md sec 30.23). Two control ops carry
+a file from a browser to the host, and both go one way only: the client
+sends a name and bytes, the host alone decides where they land, and no op
+lists a directory, reads a host file or takes a path from a client.
+
+- **`widgets.upload`** -- a mirrored task panel's file chooser
+  (docs/Sandbox.md 7.22). The answer is the path the host wrote, which the
+  panel's field then names.
+- **`requests.send`** -- a copy of the served document, to be merged. The
+  host keeps it and reads nothing of it; it is listed in the transaction
+  log panel with who sent it, and is opened only when the owner brings it
+  in. The answer has no path. It is kept in the document's transaction
+  log -- a row under the sender and the bytes as one blob, saved with the
+  history, so it waits across a restart -- and let go once the branch it
+  was brought in to is merged or deleted, or when it is dropped unread
+  (docs/TransactionLog.md sec 30.29).
+
+Both are for a connection that may edit (sec 2.3), and both are under one
+limit: **the preference `UploadLimitMB`** of `BaseApp/Preferences/SceneShare`,
+16 unless set, preset for a headless serve by **`FC_SERVE_UPLOAD_MB`**. It is
+read at each upload. It cannot be raised past 46 MB, which is what one
+frame of the socket carries once the bytes are base64.
+
+The dialog that starts a share and the sharing panel both have the control
+("Clients may send up to"); the panel's holds from the next upload. While
+the environment holds the limit the control shows it and is disabled.
+
+**What waits is bounded too.** The copies sent to one document and not yet
+merged or deleted may together be at most **`RequestsTotalMB`**, 64 unless
+set, preset by **`FC_SERVE_REQUESTS_MB`**; one that would take it past is
+refused, `TooMany`. A waiting copy is in the document's history and is
+saved with it, so this is also the most a client can make the file grow
+by. The control is beside the upload limit's.
+
 ## 3. Prior art
 
 - **Ticket exchange** — a long-lived credential buys a short-lived, often single-use
@@ -162,6 +286,25 @@ origin in a header:
 
 **They all reduce to one origin-side contract: a trusted front door asserts an identity
 in a header.** Build to that and the front door is swappable.
+
+**Only a door that signs people in is believed about who they are** (2026-10-05,
+docs/TransactionLog.md sec 30.26). Trusting the proxy is two things: its word for the
+client's address, and its word for the client's identity. A quick tunnel, or a reverse
+proxy that only carries traffic, passes on whatever headers the client wrote, so a
+client that sends `X-Forwarded-Email` itself would be a verified identity -- an editor
+under the shared token, and whoever an identity grant names. `SceneStreamServer::
+setIdentityDoor(false)` keeps the first and drops the second: no header is taken for an
+identity. The Share dialog sets it from its door ("Viewers sign in at this door").
+
+**It is off unless someone says otherwise** (user, 2026-10-05). A serve started by
+script or the environment says so with `FC_SERVE_IDENTITY_DOOR=1`, or by naming the
+door's header in `FC_SERVE_IDENTITY_HEADER`; `FC_SERVE_TRUST_PROXY=1` alone believes
+the address and nothing else. `scripts/share-edge.sh` prints the pair for its two
+doors that sign people in (`access`, `caddy`) and not for `quick`.
+
+A door of one's own that signs people in may name its header in the dialog ("Identity
+header", kept with the door): for one that uses none of the three above. Empty reads
+those; a name is the only one read.
 
 What it does to §2:
 
@@ -287,8 +430,8 @@ Through this door a share link is **tokenless** and carries only the doc group:
 
 Cloudflare Access authenticates the visitor (one-time PIN, Google, or GitHub — §4), the
 grant list authorizes: only an identity a grant covers gets scene bytes, everyone else is
-refused after login. The backend must be launched with `FC_SERVE_TRUST_PROXY=1` (tunnel
-doors force it for the session when started from the dialog) and serves the viewer bundle
+refused after login. The backend must be launched with `FC_SERVE_TRUST_PROXY=1` and
+`FC_SERVE_IDENTITY_DOOR=1` (the dialog sets both for the session from its door) and serves the viewer bundle
 itself from `FC_BGFX_VIEWER_BUILD`, so the one hostname carries page, stream and blobs.
 Headless serves register no doc group by themselves — `Gui.serveDocument(doc)` (a
 Document object, not a name) is what puts `?doc=` on the map.

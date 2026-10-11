@@ -6,6 +6,7 @@ Run with FreeCADCmd -t TestLinkArray.
 """
 
 import math
+import ArchiveMembers
 import os
 import tempfile
 import unittest
@@ -296,8 +297,7 @@ class TestLinkArray(unittest.TestCase):
         self.doc.saveAs(src)
         App.closeDocument(self.doc.Name)
         with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, "w") as zo:
-            for item in zi.infolist():
-                data = zi.read(item.filename)
+            for item, data in ArchiveMembers.members(src):
                 if item.filename == "Document.xml":
                     xml = data.decode("utf-8")
                     start = xml.index('<Object name="Array"')

@@ -359,6 +359,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ImmutableShapeValues
+    ///
+    /// Freeze a shape property's value when it is set: every TShape gets the
+    /// OCCT fork's Immutable flag, so a later edit of its geometry, tolerance
+    /// or topology throws instead of changing the value behind the property
+    /// (docs/TransactionLog.md sec 23.6, 23.12). Unless set, on exactly when
+    /// the OCCT loaded at run time is the fork at extension version 2 or
+    /// later, which is where the flag is honoured.
+    static const bool & getImmutableShapeValues();
+    static const bool & defaultImmutableShapeValues();
+    static void removeImmutableShapeValues();
+    static void setImmutableShapeValues(const bool &v);
+    static const char *docImmutableShapeValues();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter WarnUnnamedInput
     ///
     /// Report shape operations whose inputs carry no element names, so the
@@ -369,6 +386,59 @@ public:
     static void removeWarnUnnamedInput();
     static void setWarnUnnamedInput(const long &v);
     static const char *docWarnUnnamedInput();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MapFaceColor
+    ///
+    /// Let new shapes take their face colours from the shapes they were
+    /// made from. Turn off to give all faces of an object one colour.
+    static const bool & getMapFaceColor();
+    static const bool & defaultMapFaceColor();
+    static void removeMapFaceColor();
+    static void setMapFaceColor(const bool &v);
+    static const char *docMapFaceColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MapLineColor
+    ///
+    /// Let new shapes take their edge colours from the shapes they were
+    /// made from. Turn off to give all edges of an object one colour.
+    static const bool & getMapLineColor();
+    static const bool & defaultMapLineColor();
+    static void removeMapLineColor();
+    static void setMapLineColor(const bool &v);
+    static const char *docMapLineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MapPointColor
+    ///
+    /// Let new shapes take their vertex colours from the shapes they were
+    /// made from. Turn off to give all vertices of an object one colour.
+    static const bool & getMapPointColor();
+    static const bool & defaultMapPointColor();
+    static void removeMapPointColor();
+    static void setMapPointColor(const bool &v);
+    static const char *docMapPointColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MapTransparency
+    ///
+    /// Let new shapes take the transparency of their faces from the
+    /// shapes they were made from. Turn off for one transparency per
+    /// object.
+    static const bool & getMapTransparency();
+    static const bool & defaultMapTransparency();
+    static void removeMapTransparency();
+    static void setMapTransparency(const bool &v);
+    static const char *docMapTransparency();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

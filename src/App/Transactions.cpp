@@ -29,6 +29,7 @@
 #endif
 
 #include <atomic>
+#include <cstdlib>
 #include <Base/Console.h>
 #include <Base/ExceptionSafeCall.h>
 #include <Base/Tools.h>
@@ -36,6 +37,8 @@
 #include <Base/Writer.h>
 
 #include "Transactions.h"
+#include "Actor.h"
+#include "PropertyLinks.h"
 
 #include "Application.h"
 #include "Document.h"
@@ -48,6 +51,26 @@ FC_LOG_LEVEL_INIT("App",true,true)
 using namespace App;
 using namespace std;
 
+namespace {
+/// How deep this thread is in TransactionFollowing
+thread_local int followingDepth = 0;
+}
+
+TransactionFollowing::TransactionFollowing()
+{
+    ++followingDepth;
+}
+
+TransactionFollowing::~TransactionFollowing()
+{
+    --followingDepth;
+}
+
+bool TransactionFollowing::active()
+{
+    return followingDepth > 0;
+}
+
 TYPESYSTEM_SOURCE(App::Transaction, Base::Persistence)
 
 //**************************************************************************
@@ -57,6 +80,7 @@ Transaction::Transaction(int id)
 {
     if(!id) id = getNewID();
     transID = id;
+    Author = ActorScope::current();
 }
 
 /**
@@ -138,6 +162,64 @@ bool Transaction::isEmpty() const
     return _Objects.empty();
 }
 
+bool Transaction::destroysObjects() const
+{
+    for (auto& info : _Objects.get<0>()) {
+        if (info.second->status == TransactionObject::New && info.first
+                && !info.first->isAttachedToDocument())
+            return true;
+    }
+    return false;
+}
+
+Transaction* Transaction::coldCopy(const Transaction& t)
+{
+    auto stub = new Transaction(t.getID());
+    stub->Name = t.Name;
+    stub->Implicit = t.Implicit;
+    stub->Origin = t.Origin;
+    stub->LogSeq = t.LogSeq;
+    stub->Author = t.Author;   // the step's, not whoever trims the window
+    stub->StateBefore = t.StateBefore;
+    stub->StateAfter = t.StateAfter;
+    stub->Cold = true;
+    return stub;
+}
+
+void Transaction::inheritDerived(const Transaction& from)
+{
+    auto& byObject = from._Objects.get<1>();
+    for (auto& info : _Objects.get<0>()) {
+        auto it = byObject.find(info.first);
+        if (it == byObject.end())
+            continue;
+        const auto& theirs = it->second->_PropChangeMap;
+        for (auto& kv : info.second->_PropChangeMap) {
+            auto found = theirs.find(kv.first);
+            if (found != theirs.end()) {
+                kv.second.derived = found->second.derived;
+                kv.second.followed = found->second.followed;
+            }
+        }
+    }
+}
+
+void Transaction::inheritDerived(
+    const std::function<bool(const TransactionalObject*, const Property*)>& derived,
+    const std::function<bool(const TransactionalObject*, const Property*)>& followed)
+{
+    for (auto& info : _Objects.get<0>()) {
+        for (auto& kv : info.second->_PropChangeMap) {
+            if (!kv.second.propertyOrig)
+                continue;
+            if (derived(info.first, kv.second.propertyOrig))
+                kv.second.derived = true;
+            else if (followed(info.first, kv.second.propertyOrig))
+                kv.second.followed = true;
+        }
+    }
+}
+
 bool Transaction::hasObject(const TransactionalObject *Obj) const
 {
     return !!_Objects.get<1>().count(Obj);
@@ -180,6 +262,7 @@ static std::unordered_map<Property*, int> _PendingProps;
 static std::vector<TransactionalObject *> _PendingRemove;
 static std::set<std::string> _TransactionDocs;
 static int _PendingPropIndex;
+static std::vector<std::function<void()>> _AfterTouches;
 
 TransactionGuard::TransactionGuard(TransactionType type)
     :transactionType(type)
@@ -246,6 +329,16 @@ TransactionGuard::~TransactionGuard()
         }
     }
 
+    auto after = std::move(_AfterTouches);
+    _AfterTouches.clear();
+    for (auto& fn : after) {
+        Base::exceptionSafeCall(errMsg, fn);
+        if (errMsg.size()) {
+            FC_ERR("Exception on finishing transaction: " << errMsg);
+            errMsg.clear();
+        }
+    }
+
     switch (transactionType) {
     case Undo:
         for (auto &docName : _TransactionDocs) {
@@ -291,6 +384,15 @@ TransactionGuard::~TransactionGuard()
     _TransactionDocs.clear();
 }
 
+void TransactionGuard::afterTouches(std::function<void()> fn)
+{
+    if (!_TransactionActive || _FlushingProps) {
+        fn();
+        return;
+    }
+    _AfterTouches.push_back(std::move(fn));
+}
+
 bool TransactionGuard::addPendingRemove(TransactionalObject *obj)
 {
     if(!_TransactionActive && !_FlushingProps)
@@ -329,6 +431,72 @@ bool Transaction::isApplying(Property *prop)
 void Transaction::removePendingProperty(Property *prop)
 {
     _PendingProps.erase(prop);
+}
+
+namespace {
+std::unordered_map<int64_t, TransactionCopyCache::Entry>& copyCache()
+{
+    static std::unordered_map<int64_t, TransactionCopyCache::Entry> cache;
+    return cache;
+}
+}
+
+void TransactionCopyCache::put(int64_t id, Entry entry)
+{
+    // The entry replaced dies after the map is consistent again: a copy's
+    // destructor calls drop() for its own id.
+    Entry old;
+    auto& slot = copyCache()[id];
+    std::swap(old, slot);
+    slot = std::move(entry);
+}
+
+TransactionCopyCache::Entry TransactionCopyCache::take(int64_t id)
+{
+    Entry entry;
+    auto& cache = copyCache();
+    if (cache.empty())
+        return entry;
+    auto it = cache.find(id);
+    if (it == cache.end())
+        return entry;
+    entry = std::move(it->second);
+    cache.erase(it);
+    return entry;
+}
+
+void TransactionCopyCache::dropSlow(int64_t id)
+{
+    Entry gone = take(id);
+}
+
+void TransactionCopyCache::dropOwner(const void* owner)
+{
+    std::vector<Entry> gone;
+    auto& cache = copyCache();
+    for (auto it = cache.begin(); it != cache.end();) {
+        if (it->second.owner == owner) {
+            gone.push_back(std::move(it->second));
+            it = cache.erase(it);
+        }
+        else
+            ++it;
+    }
+}
+
+unsigned long TransactionCopyCache::statusOf(const Property& live)
+{
+    return live.getStatus() & ~(1ul << Property::Touched);
+}
+
+bool TransactionCopyCache::empty()
+{
+    return copyCache().empty();
+}
+
+std::size_t TransactionCopyCache::size()
+{
+    return copyCache().size();
 }
 
 void Transaction::apply(Document &Doc, bool forward)
@@ -474,8 +642,10 @@ TransactionObject::TransactionObject() = default;
  */
 TransactionObject::~TransactionObject()
 {
-    for(auto &v : _PropChangeMap)
-        delete v.second.property;
+    for(auto &v : _PropChangeMap) {
+        if (!v.second.shared)
+            delete v.second.property;
+    }
 }
 
 void TransactionObject::applyDel(Document & /*Doc*/, TransactionalObject * /*pcObj*/)
@@ -589,13 +759,64 @@ void TransactionObject::setFrozen(bool wasFrozen)
 void TransactionObject::setProperty(const Property* pcProp)
 {
     auto &data = _PropChangeMap[pcProp->getID()];
+    if (data.followed && !TransactionFollowing::active()) {
+        // Followed first and now written outside any following (sec
+        // 31.25): somebody set it after all. Not by its owner's own
+        // recompute, which decides no more than the following did.
+        auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer());
+        if (!obj || !obj->isRecomputing())
+            data.followed = false;
+    }
     if(!data.property && data.name.empty()) {
         static_cast<DynamicProperty::PropData&>(data) = 
             pcProp->getContainer()->getDynamicPropertyData(pcProp);
         data.propertyOrig = pcProp;
-        data.property = pcProp->Copy();
+        // The log's copy of the value at its last commit, when this is the
+        // first write since (docs/TransactionLog.md sec 25.4). A status
+        // changed since, `Touched` aside, means a fresh copy: the cached one
+        // is shared with the log's worker and is not written to.
+        auto cached = TransactionCopyCache::take(pcProp->getID());
+        if (cached.copy && cached.copy->getTypeId() == pcProp->getTypeId()
+                && cached.status == TransactionCopyCache::statusOf(*pcProp)) {
+            // FC_TXNLOG_CHECK_COPIES: the copy must still be the live value,
+            // or a write escaped aboutToSetValue (sec 23.6).
+            static const bool check = std::getenv("FC_TXNLOG_CHECK_COPIES") != nullptr;
+            // Not for a link: isSame reads the targets a detached copy names.
+            // isSame alone is not enough: some types answer "different" for
+            // any copy (PropertyPath always, PropertyTopoShapeList deep-copies
+            // its shapes), so the serialised values decide.
+            if (check && !dynamic_cast<const PropertyLinkBase*>(pcProp)
+                    && !cached.copy->isSame(*pcProp) && !cached.copy->isSameContent(*pcProp))
+                FC_ERR("stale log copy of " << pcProp->getFullName()
+                       << ": a write escaped aboutToSetValue");
+            data.shared = std::move(cached.copy);
+            data.property = data.shared.get();
+            data.logHash = std::move(cached.hash);
+        }
+        else {
+            data.property = pcProp->Copy();
+            data.property->setStatusValue(pcProp->getStatus());
+        }
         data.propertyType = pcProp->getTypeId();
-        data.property->setStatusValue(pcProp->getStatus());
+        if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer())) {
+            data.derived = obj->isRecomputing();
+            // Sec 31.25: written because another value changed -- the
+            // shape a reference names, the placement of a shape's object.
+            data.followed = !data.derived && TransactionFollowing::active();
+            // The touched state before this write, for the log (sec 27.58):
+            // the object's as it was before the transaction first wrote to
+            // it, so every op of the object in the row says the same. None
+            // for a write a recompute makes -- derived or not: a binder
+            // refreshed from its source, a feature's flags set as another
+            // runs -- whose state is the recompute record's.
+            auto doc = obj->getDocument();
+            if (!doc || !doc->testStatus(Document::Recomputing)) {
+                if (_objectBitsBefore < 0)
+                    _objectBitsBefore = obj->getLogTouchedBits();
+                data.touchedBefore = _objectBitsBefore
+                    | (pcProp->hasTouchedBit() ? DocumentObject::LogPropTouched : 0);
+            }
+        }
     }
 }
 
@@ -615,17 +836,22 @@ void TransactionObject::addOrRemoveProperty(const Property* pcProp, bool add)
         return;
     }
     if(data.property) {
-        delete data.property;
+        if (!data.shared)
+            delete data.property;
+        data.shared.reset();
         data.property = nullptr;
     }
     data.propertyOrig = pcProp;
     static_cast<DynamicProperty::PropData&>(data) = 
         pcProp->getContainer()->getDynamicPropertyData(pcProp);
+    // The type of an added property too: the transaction log names it in
+    // the op, and a row that said `BadType` could not be replayed
+    // (docs/TransactionLog.md sec 30.18).
+    data.propertyType = pcProp->getTypeId();
     if(add) 
         data.property = nullptr;
     else {
         data.property = pcProp->Copy();
-        data.propertyType = pcProp->getTypeId();
         data.property->setStatusValue(pcProp->getStatus());
     }
 }

@@ -20,6 +20,7 @@
 #***************************************************************************
 
 import math
+import ArchiveMembers
 import os
 import tempfile
 import unittest
@@ -149,8 +150,7 @@ class TestPipe(unittest.TestCase):
         oldpath = os.path.join(tmp, 'auxspine-old.FCStd')
         with zipfile.ZipFile(path) as zin, \
                 zipfile.ZipFile(oldpath, 'w', zipfile.ZIP_DEFLATED) as zout:
-            for item in zin.infolist():
-                data = zin.read(item.filename)
+            for item, data in ArchiveMembers.members(path):
                 if item.filename == 'Document.xml':
                     self.assertIn(b'name="AuxiliarySpine"', data)
                     for new, old in ((b'AuxiliarySpine"', b'AuxillerySpine"'),

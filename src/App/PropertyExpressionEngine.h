@@ -125,6 +125,7 @@ public:
     void Paste(const Property &from) override;
 
     void Save (Base::Writer & writer) const override;
+    void beforeSave(Base::Writer &writer) const override;
 
     void Restore(Base::XMLReader &reader) override;
 
@@ -206,7 +207,20 @@ public:
     fastsignals::signal<void (const App::ObjectIdentifier &)> expressionChanged;
 
     void afterRestore() override;
+    /// Ahead of afterRestore(), for a value read into a live engine among
+    /// others (RestoreBatch): let go of every expression the value read
+    /// does not hold as it is. The engines of a batch are installed one by
+    /// one, and what another still holds of the state being left reads as
+    /// a cycle that neither state has (docs/TransactionLog.md sec 31.6).
+    void releaseBeforeRestore();
+    /// By the path an expression is bound to (docs/TransactionLog.md sec
+    /// 31.8).
+    bool splitSaved(const std::string &fragment, SavedElements &elements) const override;
+    bool joinSaved(const SavedElements &elements, std::string &fragment) const override;
     void onContainerRestored() override;
+    /// An external target restored after this document (its file loaded
+    /// later): the element paths into it register now (sec 27.82).
+    void hasSetChildValue(Property &prop) override;
 
     virtual void getLinksTo(std::vector<App::ObjectIdentifier> &identifiers,
                             App::DocumentObject *obj,
@@ -273,6 +287,16 @@ private:
         std::string path;
         std::string expr;
         std::string comment;
+        /// What the element paths hold, by their order in a visit
+        /// (docs/TransactionLog.md sec 27.77): the string ids, and for a
+        /// path into another table its shadow and stored name (sec 27.82).
+        struct PathIds {
+            int ref;
+            std::vector<long> ids;
+            std::string shadow;
+            std::string stored;
+        };
+        std::vector<PathIds> ids;
     };
     /**< Expressions are read from file to this map first before they are validated and inserted into the actual map */
     std::unique_ptr<std::vector<RestoredExpression> > restoredExpressions;

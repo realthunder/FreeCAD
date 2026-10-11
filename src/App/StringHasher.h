@@ -26,7 +26,12 @@
 #include <FCConfig.h>
 
 #include <bitset>
+#include <cstdint>
+#include <functional>
+#include <map>
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
 #include <QByteArray>
 #include <QVector>
@@ -164,6 +169,12 @@ public:
     bool isFromSameHasher(const StringHasherRef& hasher) const
     {
         return this->_hasher == hasher;
+    }
+
+    /// Checks if this StringID is `hasher`'s; a pointer compare, safe on any thread
+    bool isFromHasher(const StringHasher* hasher) const
+    {
+        return hasher && this->_hasher == hasher;
     }
 
     /// Returns the owner hasher
@@ -590,6 +601,12 @@ public:
         return _sid && _sid->isFromSameHasher(hasher);// NOLINT
     }
 
+    /// Whether the string is `hasher`'s; a pointer compare, safe on any thread.
+    bool isFromHasher(const StringHasher* hasher) const
+    {
+        return _sid && _sid->isFromHasher(hasher);// NOLINT
+    }
+
     StringHasherRef getHasher() const
     {
         if (_sid) {
@@ -750,8 +767,9 @@ public:
 
     /** Enable/disable saving all string ID
      *
-     * If saveAll is true, then compact() does nothing even when called explicitly. Setting
-     * saveAll it to false causes compact() to be run immediately.
+     * If saveAll is true, then compact() does nothing even when called explicitly, and a save
+     * keeps every string (docs/TransactionLog.md sec 27.51). Setting it to false compacts
+     * nothing by itself: the next save does.
      */
     void setSaveAll(bool enable);
     bool getSaveAll() const;
@@ -784,16 +802,173 @@ public:
      */
     void clearMarks() const;
 
-    /// Compact string storage by eliminating unused strings from the table.
-    void compact();
+    /** Compact string storage by eliminating unused strings from the table.
+     *
+     * @param keep: ids to keep although nothing in memory holds them -- what
+     *              the file's retained history uses (docs/TransactionLog.md
+     *              sec 27.50 item 4). What a kept string is built from stays
+     *              with it.
+     * @return the ids dropped.
+     */
+    std::vector<long> compact(const std::function<bool(long)>& keep = {});
+
+    /** The whole table as the file's own member (docs/TransactionLog.md sec
+     * 27.50 item 1): every id, whatever is marked, in the format
+     * restoreTable() reads.
+     */
+    std::string saveTable() const;
+    /** The SHA-1 (lowercase hex) of what saveTable() writes, cached until the
+     * entries change: what a save names the member by, and a snapshot for
+     * the log names the same table by without writing it.
+     */
+    const std::string& contentHash() const;
+    /** Replace the table with the one `stream` holds (saveTable()'s format,
+     * or a count and the entries as SaveDocFile() wrote before it). Throws on
+     * a table that does not parse.
+     */
+    void restoreTable(std::istream& stream);
+
+    /** One string as the transaction log keeps it (docs/TransactionLog.md
+     * sec 27.50 item 2): its id, its flags, the ids (and indices) it refers
+     * to, and its two byte parts as they are held.
+     */
+    struct Row
+    {
+        long id {0};
+        int flags {0};
+        std::vector<std::pair<long, int>> sids;
+        QByteArray data;
+        QByteArray postfix;
+    };
+    /// Every string whose id is above `after` and that `want` accepts (all,
+    /// when it is empty), in id order.
+    std::vector<Row> rows(long after = 0, const std::function<bool(long)>& want = {}) const;
+    /** Take in `rows`, in id order, each under its own id. A row whose id is
+     * held already is skipped, and counted in `conflicts` when the string
+     * there is another; one that refers to an id held neither here nor
+     * before it in `rows` is skipped as well. Returns how many came in.
+     */
+    std::size_t insertRows(const std::vector<Row>& rows, std::size_t* conflicts = nullptr);
+    /// Whether `id` is held.
+    bool hasID(long id) const;
+    /// The ids a save marked, with the persistent ones, in order: what a
+    /// version uses (docs/TransactionLog.md sec 27.50 item 4).
+    std::vector<long> markedIDs() const;
+    /// The last id handed out or read; none is handed out again.
+    long lastID() const;
+    /// A number of this table's own, never given to another in the process:
+    /// what a cache of its strings is keyed by, where an address may be
+    /// reused by a table made after this one dies.
+    std::uint64_t serial() const
+    {
+        return _serial;
+    }
+
+    /** Write the elements naming the table as the member `file`, with content
+     * `hash` and `count` strings (docs/TransactionLog.md sec 27.50 item 1),
+     * where Save() writes the entries; a version the log keeps names the
+     * same and has no member, the log's table standing for it (item 2).
+     * `used`, sorted, is what the save marked, written as ranges: the ids the
+     * document as written uses (item 4).
+     */
+    void saveReference(Base::Writer& writer, const std::string& file, const std::string& hash,
+                       std::size_t count, const std::vector<long>& used) const;
+    /** The ids the save that wrote `xml`, a document's XML, marked -- the
+     * `used` ranges of its table element (sec 27.50 item 4). False when it
+     * names none.
+     */
+    static bool parseUsed(const std::string& xml, std::vector<std::pair<long, long>>& ranges);
+    /// The member the last Restore() was referred to, and its content hash;
+    /// both empty when the entries were inline.
+    const std::string& tableFile() const
+    {
+        return _tableFile;
+    }
+    const std::string& tableHash() const
+    {
+        return _tableHash;
+    }
+
+    /** Take in `other`'s table (docs/TransactionLog.md sec 27.40 item 2):
+     * each id it has that this one has not, under the same id. False, with
+     * nothing changed, when an id means something else here. `aliased`
+     * gets how many strings came in that this table already had under
+     * another id (sec 27.41 Q2).
+     */
+    bool merge(const StringHasher& other, std::size_t* aliased = nullptr);
+
+    /// What the calls of one import have found or taken in, by the other
+    /// table's string, so each is visited once (null: it cannot be had).
+    using ImportMemo = std::unordered_map<const StringID*, StringIDRef>;
+
+    /** Find or take in `foreign`, a string of another table, by content
+     * (docs/TransactionLog.md sec 27.76 item 1, 27.77). What it is built
+     * from comes first, the same way, and every id its text names -- a
+     * prefix reference, a `#` inside a postfix, the names of a combo string
+     * -- is rewritten to this table's, the string it names taken in as
+     * well. The index of `foreign` is kept; of two equal strings here the
+     * lower id is taken. Null when `foreign` belongs to no table or names an
+     * id its own table does not have.
+     */
+    StringIDRef importID(const StringIDRef& foreign, ImportMemo* memo = nullptr);
+    /// importID() taking nothing in: null when this table has not got it.
+    StringIDRef lookupID(const StringIDRef& foreign, ImportMemo* memo = nullptr) const;
+    /** `text` with every `#id` of `from`'s rewritten to this table's, each
+     * string it names taken in and added to `sids` when given. False, with
+     * `out` undefined, when one cannot be had.
+     */
+    bool importText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                    QVector<StringIDRef>* sids, ImportMemo& memo);
+    /// importText() taking nothing in: false when this table has not got
+    /// a string the text names.
+    bool lookupText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                    ImportMemo& memo) const;
+    /** `name`, a name of `from`'s table, as this table would have it (sec
+     * 27.76 item 2): its text rewritten, and `sids` -- the ids it holds, of
+     * any table -- replaced by this table's, with every string the new text
+     * names. False when its text names an id that cannot be had.
+     */
+    bool importName(const Data::MappedName& name, const StringHasher& from,
+                    Data::MappedName& out, QVector<StringIDRef>& sids, ImportMemo& memo);
+
+    /** The object ids an import by content rewrites (docs/TransactionLog.md
+     * sec 30.16). An element name says which object made each step of it by
+     * a tag, `;:H<hex id>`, in its own text and in the strings it names.
+     * Values of another copy of the file name that copy's objects, and the
+     * ones it made since the two parted have other ids here. While one of
+     * these lives on a thread, every text importText(), importName() and
+     * importID() take in has the tags the map names rewritten -- so a name
+     * comes as this file would have made it, and the same string is found,
+     * not made again, when the object is recomputed here.
+     */
+    class AppExport ImportTags
+    {
+    public:
+        explicit ImportTags(const std::map<long, long>& tags);
+        ~ImportTags();
+        ImportTags(const ImportTags&) = delete;
+        ImportTags& operator=(const ImportTags&) = delete;
+        /// What `tag` is here: itself, unless a scope on this thread maps it.
+        /// The sign, which an element name may give a tag, is kept.
+        static long map(long tag);
+
+    private:
+        const std::map<long, long>* _outer;
+    };
 
     class HashMap;
     friend class StringID;
 
 protected:
     StringID* insert(const StringIDRef& sid);
-    long lastID() const;
-    void saveStream(std::ostream& stream) const;
+    StringIDRef importOne(const StringIDRef& foreign, ImportMemo& memo, bool take);
+    /// `said`, when given, is what the string says here in place of its
+    /// own text: an element's name as this file numbers it (RestoreMinted).
+    StringIDRef importNew(const StringID& foreign, const StringHasher& from, ImportMemo& memo,
+                          bool take, const QByteArray* said = nullptr);
+    bool rewriteIds(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                    QVector<StringIDRef>* sids, ImportMemo& memo, bool take);
+    void saveStream(std::ostream& stream, bool all = false) const;
     void restoreStream(std::istream& stream, std::size_t count);
     void restoreStreamNew(std::istream& stream, std::size_t count);
     /// Decide the mode of a table restored without one from its entries
@@ -802,7 +977,39 @@ protected:
 private:
     std::unique_ptr<HashMap> _hashes;///< Bidirectional map of StringID and its index (a long int).
     mutable std::string _filename;
+    std::string _tableFile;
+    std::string _tableHash;
+    mutable std::string _contentHash;
+    mutable uint64_t _hashRevision {0};
+    std::uint64_t _serial;
 };
+/** The ids an element map written on this thread uses (docs/TransactionLog.md
+ * sec 27.49, 27.50 item 4). While one lives, an element map lists after each
+ * name every id of `hasher` the name refers to -- not the ones the last save
+ * marked, which another thread may be marking -- and each goes into `ids`:
+ * what a value captured for the log refers to, by the capture's own walk.
+ */
+class AppExport StringIDCollector
+{
+public:
+    explicit StringIDCollector(const StringHasher* hasher);
+    ~StringIDCollector();
+    StringIDCollector(const StringIDCollector&) = delete;
+    StringIDCollector& operator=(const StringIDCollector&) = delete;
+
+    /// Whether an element map writes `sid`: one of the innermost collector's
+    /// hasher (noted), or with none on this thread, one a save marked.
+    static bool take(const StringIDRef& sid);
+    /// The ids noted, sorted, each once.
+    std::vector<long> sortedIds() const;
+
+    const StringHasher* hasher;
+    std::vector<long> ids;
+
+private:
+    StringIDCollector* _outer;
+};
+
 }// namespace App
 
 ENABLE_BITMASK_OPERATORS(App::StringID::Flag)

@@ -41,6 +41,9 @@
 #include "DocumentObserverPython.h"
 #include "DocumentObjectPy.h"
 #include "ParamRegistry.h"
+#include "TransactionMeasure.h"
+#include "ExpressionSecurityRuntime.h"
+#include "FileHistory.h"
 
 
 //using Base::GetConsole;
@@ -114,6 +117,19 @@ PyMethodDef Application::Methods[] = {
      "* If no module exists to load the file an exception will be raised."},
     {"open",   reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( Application::sOpenDocument )), METH_VARARGS|METH_KEYWORDS,
      "See openDocument(string)"},
+    {"recoverDocument", (PyCFunction) Application::sRecoverDocument, METH_VARARGS,
+     "recoverDocument(transientDir) -> object\n"
+     "Recover the document of a crashed session from the transaction log left\n"
+     "in its transient directory (docs/TransactionLog.md sec 25): a new\n"
+     "document, its newest version with the log's tail replayed over it, that\n"
+     "takes the log over. The directory is removed once it is done."},
+    {"openFileVersion", (PyCFunction) Application::sOpenFileVersion, METH_VARARGS,
+     "openFileVersion(path, num, createView=True) -> Document\n"
+     "Open version `num` of the file at `path` as a document of its own\n"
+     "(docs/TransactionLog.md sec 27.7, 27.13), whether or not the file is\n"
+     "open: its history is read straight out of the archive when it is not.\n"
+     "A version open already is returned. Raises when the file has no such\n"
+     "version, or no history."},
     {"openDocument",   reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( Application::sOpenDocument )), METH_VARARGS|METH_KEYWORDS,
      "openDocument(filepath,hidden=False) -> object\n"
      "Create a document and load the project file into the document.\n\n"
@@ -134,6 +150,11 @@ PyMethodDef Application::Methods[] = {
     {"closeDocument",  (PyCFunction) Application::sCloseDocument, METH_VARARGS,
      "closeDocument(string) -> None\n\n"
      "Close the document with a given name."},
+    {"closeReleasedVersions", (PyCFunction) Application::sCloseReleasedVersions, METH_VARARGS,
+     "closeReleasedVersions() -> int\n\n"
+     "Close the pinned versions no link pins any more, now, when the ClosePinnedVersion\n"
+     "preference says close. Also done when an operation that released one ends\n"
+     "(docs/TransactionLog.md sec 27.38). Returns how many were closed."},
     {"activeDocument", (PyCFunction) Application::sActiveDocument, METH_VARARGS,
      "activeDocument() -> object or None\n\n"
      "Return the active document or None if there is no one."},
@@ -183,6 +204,14 @@ PyMethodDef Application::Methods[] = {
      "getActiveTransaction() -> (name,id) return the current active transaction name and ID"},
     {"closeActiveTransaction", (PyCFunction) Application::sCloseActiveTransaction, METH_VARARGS,
      "closeActiveTransaction(abort=False) -- commit or abort current active transaction"},
+    {"startTransactionMeasure", (PyCFunction) Application::sStartTransactionMeasure, METH_VARARGS,
+     "startTransactionMeasure(csvPath) -- measure what each transaction commit would log\n\n"
+     "Phase 0 of docs/TransactionLog.md: every commit serialises the values it would\n"
+     "write and appends bytes, hashes, compressed sizes and timings to the CSV."},
+    {"stopTransactionMeasure", (PyCFunction) Application::sStopTransactionMeasure, METH_VARARGS,
+     "stopTransactionMeasure() -- stop measuring transaction commits"},
+    {"markTransactionMeasure", (PyCFunction) Application::sMarkTransactionMeasure, METH_VARARGS,
+     "markTransactionMeasure(label) -- write a marker row into the measurement CSV"},
     {"isRestoring", (PyCFunction) Application::sIsRestoring, METH_VARARGS,
      "isRestoring() -> Bool -- Test if the application is opening some document"},
     {"dumpSWIG", (PyCFunction) Application::sDumpSWIG, METH_VARARGS,
@@ -301,6 +330,33 @@ PyObject* Application::sLoadFile(PyObject * /*self*/, PyObject *args)
     } PY_CATCH
 }
 
+PyObject* Application::sStartTransactionMeasure(PyObject * /*self*/, PyObject *args)
+{
+    const char *path = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &path))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Boolean(TransactionMeasure::start(path)));
+    } PY_CATCH;
+}
+
+PyObject* Application::sStopTransactionMeasure(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    TransactionMeasure::stop();
+    Py_Return;
+}
+
+PyObject* Application::sMarkTransactionMeasure(PyObject * /*self*/, PyObject *args)
+{
+    const char *label = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &label))
+        return nullptr;
+    TransactionMeasure::mark(label);
+    Py_Return;
+}
+
 PyObject* Application::sIsRestoring(PyObject * /*self*/, PyObject *args) {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -321,6 +377,38 @@ PyObject* Application::sOpenDocument(PyObject * /*self*/, PyObject *args, PyObje
     try {
         // return new document
         return (GetApplication().openDocument(EncodedName.c_str(),!PyObject_IsTrue(hidden))->getPyObject());
+    } PY_CATCH
+}
+
+PyObject* Application::sRecoverDocument(PyObject * /*self*/, PyObject *args)
+{
+    char* dir;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &dir))
+        return nullptr;
+    std::string path(dir);
+    PyMem_Free(dir);
+    PY_TRY {
+        return GetApplication().recoverDocument(path.c_str())->getPyObject();
+    } PY_CATCH
+}
+
+PyObject* Application::sOpenFileVersion(PyObject * /*self*/, PyObject *args)
+{
+    char* file;
+    long long num;
+    PyObject* createView = Py_True;
+    if (!PyArg_ParseTuple(args, "etL|O!", "utf-8", &file, &num, &PyBool_Type, &createView))
+        return nullptr;
+    std::string path(file);
+    PyMem_Free(file);
+    PY_TRY {
+        // Reading a host file, as opening it is (docs/Sandbox.md 7.29).
+        ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsRead, path);
+        std::string reason;
+        auto history = FileHistory::openFile(path, &reason);
+        if (!history)
+            throw Base::FileException(("no history in " + path + ": " + reason).c_str());
+        return Document::openFileVersion(history, num, Base::asBoolean(createView))->getPyObject();
     } PY_CATCH
 }
 
@@ -354,6 +442,15 @@ PyObject* Application::sSetActiveDocument(PyObject * /*self*/, PyObject *args)
         GetApplication().setActiveDocument(pstr);
     } PY_CATCH
     Py_Return;
+}
+
+PyObject* Application::sCloseReleasedVersions(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Long(GetApplication().closeReleasedVersions()));
+    } PY_CATCH;
 }
 
 PyObject* Application::sCloseDocument(PyObject * /*self*/, PyObject *args)

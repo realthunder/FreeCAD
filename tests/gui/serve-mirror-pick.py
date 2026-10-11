@@ -71,6 +71,14 @@ TOP_Z = 10.0
 DEPTH = EYE[2] - TOP_Z
 TH = math.tan(0.5 * HEIGHT_ANGLE)
 
+def plain(sub):
+    """A picked element as the shape counts it: `Box.;Top.Face6` is
+    `Box.Face6`. A shape that has names for its elements -- a box has, by
+    what each is to it -- is told by them, and what is checked here is which
+    element it was."""
+    at = sub.find(";") if sub else -1
+    return sub if at < 0 else sub[:at] + sub[sub.rindex(".") + 1:]
+
 
 def units_per_px(eye=None):
     """World units per pixel where the geometry is: the half-width of the
@@ -166,7 +174,7 @@ class Client(threading.Thread):
         for it in items:
             byobj.setdefault(it["obj"], [])
             if it["sub"]:
-                byobj[it["obj"]].append(it["sub"])
+                byobj[it["obj"]].append(plain(it["sub"]))
         sel = sorted((obj, tuple(sorted(subs))) for obj, subs in byobj.items())
         self.told.append(sel)
         return sel

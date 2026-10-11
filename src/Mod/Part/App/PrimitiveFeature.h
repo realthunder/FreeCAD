@@ -48,6 +48,9 @@ public:
 
 protected:
     void onChanged (const App::Property* prop) override;
+    /// A primitive out of an older file is asked to be made again: its
+    /// elements have no names yet (PrimitiveNames)
+    void onDocumentRestored() override;
     void handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName) override;
     void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
 };

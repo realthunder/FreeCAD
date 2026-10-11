@@ -102,7 +102,13 @@ def build():
         ):
             finish()
             return
-        FreeCADGui.serveSetGrants([{"token": TOKEN}])
+        # The page writes, so it is someone (docs/TransactionLog.md sec 30.6
+        # U4, U6): the token is an invitation issued to the name the page
+        # says in its hello, and an open invitation to look for its plain
+        # fetches, which are made before any name is said.
+        FreeCADGui.serveSetGrants(
+            [{"token": TOKEN, "client": "sandbox-bridge-test"}, {"token": TOKEN, "access": 1}]
+        )
         url = "http://127.0.0.1:%d/web/bridge-test.html?token=%s&doc=%s" % (port, TOKEN, DOC)
         note("NOTE " + url)
         log = open(os.path.join(OUT, "drive.log"), "w")

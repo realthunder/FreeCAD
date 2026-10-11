@@ -20,6 +20,7 @@
 #***************************************************************************
 
 import unittest
+import ArchiveMembers
 
 import FreeCAD
 import TestSketcherApp
@@ -353,8 +354,7 @@ class TestLinearPattern(unittest.TestCase):
         dst = os.path.join(tmp, 'PDWholeShapeUpstream.FCStd')
         self.Doc.saveAs(src)
         with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zo:
-            for item in zi.infolist():
-                data = zi.read(item.filename)
+            for item, data in ArchiveMembers.members(src):
                 if item.filename == 'Document.xml':
                     xml = data.decode('utf-8')
                     m = re.search(r'<Object name="Pattern"[^>]*>\s*<Properties Count="(\d+)', xml)

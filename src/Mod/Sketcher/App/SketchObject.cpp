@@ -24,6 +24,7 @@
 
 #include "SketcherParams.h"
 #include <memory>
+#include <unordered_map>
 #ifndef _PreComp_
 #include <cmath>
 #include <vector>
@@ -253,6 +254,20 @@ void SketchObject::setupObject()
     ExternalBSplineTolerance.setValue(Sketcher::SketcherParams::getExternalBSplineTolerance());
     MakeInternals.setValue(Sketcher::SketcherParams::getMakeInternals());
     inherited::setupObject();
+}
+
+std::vector<std::string> SketchObject::getMergeUnit(const char* prop) const
+{
+    // A constraint says which geometry it is on by a place in Geometry, or
+    // in ExternalGeo below zero. A merge that took one side's Constraints
+    // and kept the other's Geometry left a constraint on a line that is
+    // gone, or on the line that moved into its place
+    // (docs/TransactionLog.md sec 31.1).
+    static const std::vector<std::string> unit {"Geometry", "Constraints", "ExternalGeo",
+                                                "ExternalGeometry"};
+    if (prop && std::find(unit.begin(), unit.end(), prop) != unit.end())
+        return unit;
+    return Part::Part2DObject::getMergeUnit(prop);
 }
 
 short SketchObject::mustExecute() const
@@ -638,9 +653,15 @@ void SketchObject::updateGeoHistory() {
     FC_TIME_LOG(t,"update geometry history (" << geoHistory->size() << ", " << geoMap.size()<<')');
 }
 
+long SketchObject::newGeoId() {
+    auto doc = getDocument();
+    geoLastId = doc ? doc->nextGeoId(*this, geoLastId) : geoLastId + 1;
+    return geoLastId;
+}
+
 void SketchObject::generateId(Part::Geometry *geo) {
     if(!geoHistoryLevel) {
-        GeometryFacade::setId(geo, ++geoLastId);
+        GeometryFacade::setId(geo, newGeoId());
         geoMap[GeometryFacade::getId(geo)] = (long)Geometry.getSize();
         return;
     }
@@ -665,7 +686,7 @@ void SketchObject::generateId(Part::Geometry *geo) {
 
     if(geoHistoryLevel<=1 && (it==geoHistory->end() || it2==it)) {
         // level<=1 means we only reuse id if both start and end matches
-        newId = ++geoLastId;
+        newId = newGeoId();
         goto END;
     }
 
@@ -707,7 +728,7 @@ void SketchObject::generateId(Part::Geometry *geo) {
         FC_TRACE("found " << found.front());
         newId = found.front();
     }else
-        newId = ++geoLastId;
+        newId = newGeoId();
 END:
     GeometryFacade::setId(geo, newId);
     geoMap[newId] = (long)Geometry.getSize();
@@ -802,7 +823,7 @@ SketchSolveStatus SketchObject::setTextAndFont(int ConstrId,
 
     int lastGeoId = getHighestCurveIndex();
 
-    std::vector<Part::Geometry*> rawGeos;
+    std::vector<const Part::Geometry*> rawGeos;
     rawGeos.reserve(newGeos.size());
     for (const auto& geo : newGeos) {
         if (isConstruction) {
@@ -917,11 +938,10 @@ unsigned int SketchObject::getMemSize() const
 
 void SketchObject::Save(Writer& writer) const
 {
-    int index = -1;
-    auto &geos = const_cast<Part::PropertyGeometryList&>(ExternalGeo).getValues();
-    for(auto geo : geos)
-        ExternalGeometryFacade::getFacade(geo)->setRefIndex(-1);
-
+    // A save writes the value as it is (docs/TransactionLog.md 23.6). The
+    // RefIndex an export needs is not written into the geometry: it rides on
+    // the writer for the duration of this Save, and the extension asks for it.
+    std::unique_ptr<ExternalGeometryExtension::ExportRefIndex> exportIndex;
     if(isExporting()) {
         // We cannot export shape with the new topological naming, because it
         // uses hasher indices that are unique only within its owner document.
@@ -936,17 +956,12 @@ void SketchObject::Save(Writer& writer) const
         // same as if we are opening a legacy file without new names.
         // updateGeometryRefs() will know how to handle the name change thanks
         // to a flag setup in onUpdateElementReference().
-        for(auto &key : externalGeoRef) {
-            ++index;
-            auto iter = externalGeoRefMap.find(key);
-            if(iter == externalGeoRefMap.end())
-                continue;
-            for(auto id : iter->second) {
-                auto it = externalGeoMap.find(id);
-                if(it != externalGeoMap.end())
-                    ExternalGeometryFacade::getFacade(geos[it->second])->setRefIndex(index);
-            }
-        }
+        std::unordered_map<std::string, int> indexByRef;
+        int index = -1;
+        for(auto &key : externalGeoRef)
+            indexByRef[key] = ++index;
+        exportIndex = std::make_unique<ExternalGeometryExtension::ExportRefIndex>(
+            writer, std::move(indexByRef));
     }
 
     // save the father classes
@@ -1003,14 +1018,23 @@ void SketchObject::onChanged(const App::Property* prop)
         groupIndex.reset();
     }
     if (prop == &Geometry) {
+        // What is written to the geometry below -- migrated state, a missing
+        // id -- is a change to the value, so it goes through the property
+        // (docs/TransactionLog.md 23.6). The guard marks the property on the
+        // first write only; a nested change inside hasSetValue() folds into
+        // the change that is being signalled.
+        Part::PropertyGeometryList::atomic_change guard(Geometry, false);
         if (isRestoring() && checkMigration(Geometry)) {
             // Construction migration to extension
+            int idx = -1;
             for( auto g : Geometry.getValues()) {
+                ++idx;
                 if(g->hasExtension(Part::GeometryMigrationExtension::getClassTypeId())) {
-                    auto ext = std::static_pointer_cast<Part::GeometryMigrationExtension>(
+                    auto ext = std::static_pointer_cast<const Part::GeometryMigrationExtension>(
                                     g->getExtension(Part::GeometryMigrationExtension::getClassTypeId()).lock());
 
-                    auto gf = GeometryFacade::getFacade(g); // at this point IA geometry is already migrated
+                    // at this point IA geometry is already migrated
+                    auto gf = GeometryFacade::getFacade(Geometry.mutableValue(guard, idx));
 
                     if(ext->testMigrationType(Part::GeometryMigrationExtension::Construction)) {
                         bool oldconstr =  ext->getConstruction();
@@ -1027,14 +1051,17 @@ void SketchObject::onChanged(const App::Property* prop)
         const auto &vals = getInternalGeometry();
         for(long i=0;i<(long)vals.size();++i) {
             auto geo = vals[i];
-            auto gf = GeometryFacade::getFacade(geo);
-            if(!gf->getId())
-                gf->setId(++geoLastId);
-            else if(gf->getId() > geoLastId)
-                geoLastId = gf->getId();
-            while(!geoMap.insert(std::make_pair(gf->getId(),i)).second) {
-                FC_WARN("duplicate geometry id " << gf->getId() << " -> " << geoLastId+1);
-                gf->setId(++geoLastId);
+            long id = GeometryFacade::getId(geo);
+            if(!id) {
+                id = newGeoId();
+                GeometryFacade::setId(Geometry.mutableValue(guard, i), id);
+            }
+            else if(id > geoLastId)
+                geoLastId = id;
+            while(!geoMap.insert(std::make_pair(id,i)).second) {
+                FC_WARN("duplicate geometry id " << id << " -> " << geoLastId+1);
+                id = newGeoId();
+                GeometryFacade::setId(Geometry.mutableValue(guard, i), id);
             }
         }
         updateGeoHistory();
@@ -1113,20 +1140,25 @@ void SketchObject::onChanged(const App::Property* prop)
         if(doc && doc->isPerformingTransaction())
             setStatus(App::PendingTransactionUpdate, true);
 
+        // As for Geometry above: a write to the external geometry is a change
+        // to the property, made through its guard.
+        Part::PropertyGeometryList::atomic_change guard(ExternalGeo, false);
         if (isRestoring() && checkMigration(ExternalGeo)) {
+            int idx = -1;
             for( auto g : ExternalGeo.getValues()) {
+                ++idx;
                 if(g->hasExtension(Part::GeometryMigrationExtension::getClassTypeId())) {
-                    auto ext = std::static_pointer_cast<Part::GeometryMigrationExtension>(
+                    auto ext = std::static_pointer_cast<const Part::GeometryMigrationExtension>(
                                     g->getExtension(Part::GeometryMigrationExtension::getClassTypeId()).lock());
                     std::unique_ptr<ExternalGeometryFacade> egf;
                     if(ext->testMigrationType(Part::GeometryMigrationExtension::GeometryId)) {
-                        egf = ExternalGeometryFacade::getFacade(g);
+                        egf = ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, idx));
                         egf->setId(ext->getId());
                     }
 
                     if(ext->testMigrationType(Part::GeometryMigrationExtension::ExternalReference)) {
                         if (!egf)
-                            egf = ExternalGeometryFacade::getFacade(g);
+                            egf = ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, idx));
                         egf->setRef(ext->getRef());
                         egf->setRefIndex(ext->getRefIndex());
                         egf->setFlags(ext->getFlags());
@@ -1141,18 +1173,19 @@ void SketchObject::onChanged(const App::Property* prop)
             auto geo = ExternalGeo[i];
             auto egf = ExternalGeometryFacade::getFacade(geo);
             if(egf->testFlag(ExternalGeometryExtension::Detached)) {
+                auto mut = ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, i));
                 if(egf->getRef().size()) {
                     detached.insert(egf->getRef());
-                    egf->setRef(std::string());
+                    mut->setRef(std::string());
                 }
-                egf->setFlag(ExternalGeometryExtension::Detached,false);
-                egf->setFlag(ExternalGeometryExtension::Missing,false);
+                mut->setFlag(ExternalGeometryExtension::Detached,false);
+                mut->setFlag(ExternalGeometryExtension::Missing,false);
             }
             if(egf->getId() > geoLastId)
                 geoLastId = egf->getId();
             if(!externalGeoMap.emplace(egf->getId(),i).second) {
                 FC_WARN("duplicate geometry id " << egf->getId() << " -> " << geoLastId+1);
-                egf->setId(++geoLastId);
+                ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, i))->setId(newGeoId());
                 externalGeoMap[egf->getId()] = i;
             }
             if(egf->getRef().size())
@@ -1174,8 +1207,8 @@ void SketchObject::onChanged(const App::Property* prop)
                     for(long id : refs) {
                         auto it = externalGeoMap.find(id);
                         if(it!=externalGeoMap.end()) {
-                            auto geo = ExternalGeo[it->second];
-                            ExternalGeometryFacade::getFacade(geo)->setRef(std::string());
+                            ExternalGeometryFacade::getFacade(
+                                ExternalGeo.mutableValue(guard, it->second))->setRef(std::string());
                         }
                     }
                     refs.clear();
@@ -1269,7 +1302,8 @@ void SketchObject::onUndoRedoFinished()
 
 void SketchObject::synchroniseGeometryState()
 {
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
+    Part::PropertyGeometryList::atomic_change guard(Geometry, false);
 
     for (size_t i = 0; i < vals.size(); i++) {
         auto gf = GeometryFacade::getFacade(vals[i]);
@@ -1288,10 +1322,12 @@ void SketchObject::synchroniseGeometryState()
         }
 
         if (constraintInternalAlignment != facadeInternalAlignment)
-            gf->setInternalType(constraintInternalAlignment);
+            GeometryFacade::getFacade(Geometry.mutableValue(guard, i))
+                ->setInternalType(constraintInternalAlignment);
 
         if (constraintBlockedState != facadeBlockedState)
-            gf->setBlocked(constraintBlockedState);
+            GeometryFacade::getFacade(Geometry.mutableValue(guard, i))
+                ->setBlocked(constraintBlockedState);
     }
 }
 
@@ -1456,16 +1492,17 @@ void SketchObject::migrateSketch()
         }
     }
 
+    // The migration marker is transient, so dropping it is not a change
     for (auto g : Geometry.getValues())
-        g->deleteExtension(Part::GeometryMigrationExtension::getClassTypeId());
+        g->deleteTransientExtension(Part::GeometryMigrationExtension::getClassTypeId());
     for (auto g : ExternalGeo.getValues())
-        g->deleteExtension(Part::GeometryMigrationExtension::getClassTypeId());
+        g->deleteTransientExtension(Part::GeometryMigrationExtension::getClassTypeId());
 
     /* parabola axis as internal geometry */
     auto constraints = Constraints.getValues();
     auto geometries = getInternalGeometry();
 
-    auto parabolafound = std::find_if(geometries.begin(), geometries.end(), [](Part::Geometry* g) {
+    auto parabolafound = std::find_if(geometries.begin(), geometries.end(), [](const Part::Geometry* g) {
         return g->is<Part::GeomArcOfParabola>();
     });
 

@@ -296,7 +296,7 @@ void LocalCoordinateSystem::initObjects() const
     // either impossible or would corrupt what is in flight.
     if (testStatus(App::ObjectStatus::Remove) || !getDocument()
         || getDocument()->testStatus(App::Document::Restoring)
-        || getDocument()->isPerformingTransaction()) {
+        || getDocument()->isPerformingTransaction() || getDocument()->isReplaying()) {
         return;
     }
 

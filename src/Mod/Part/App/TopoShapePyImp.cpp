@@ -87,6 +87,7 @@
 #include <App/StringHasherPy.h>
 #include <App/ExpressionParser.h>
 
+#include "ShapeDiff.h"
 #include "ShapeList.h"
 #include "TopoShape.h"
 #include "TopoShapeOpCode.h"
@@ -2911,6 +2912,100 @@ PyObject *TopoShapePy::searchSubShape(PyObject *args, PyObject *keywds) const
             for(auto &s : getTopoShapePtr()->searchSubShape(shape,nullptr,options,tol,atol)) {
                 res.append(shape2pyshape(s));
             }
+        }
+        return Py::new_reference_to(res);
+    } PY_CATCH_OCC
+}
+
+PyObject *TopoShapePy::diffMaterial(PyObject *args, PyObject *keywds) const
+{
+    static char *kwlist[] = {"other", "fuzzy", nullptr};
+    PyObject *pyobj;
+    double fuzzy = 0.;
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "O!|d", kwlist, &Type, &pyobj, &fuzzy))
+        return nullptr;
+
+    try {
+        ShapeDiff::Material material;
+        if (!ShapeDiff::material(*getTopoShapePtr(),
+                                 *static_cast<TopoShapePy*>(pyobj)->getTopoShapePtr(),
+                                 material, fuzzy))
+            Py_Return;
+        auto shapeOf = [](const TopoDS_Shape &shape) -> Py::Object {
+            if (shape.IsNull())
+                return Py::None();
+            return shape2pyshape(shape);
+        };
+        Py::Dict res;
+        res.setItem("removed", shapeOf(material.removed));
+        res.setItem("added", shapeOf(material.added));
+        res.setItem("common", shapeOf(material.common));
+        res.setItem("removedVolume", Py::Float(material.removedVolume));
+        res.setItem("addedVolume", Py::Float(material.addedVolume));
+        res.setItem("commonVolume", Py::Float(material.commonVolume));
+        res.setItem("seconds", Py::Float(material.seconds));
+        return Py::new_reference_to(res);
+    } PY_CATCH_OCC
+}
+
+PyObject *TopoShapePy::diff(PyObject *args, PyObject *keywds) const
+{
+    static char *kwlist[] = {"other", "edges", "vertices", "geometry", "around", "tol", nullptr};
+    PyObject *pyobj;
+    PyObject *edges = Py_False;
+    PyObject *vertices = Py_False;
+    PyObject *geometry = Py_True;
+    PyObject *around = Py_True;
+    double tol = 1e-7;
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "O!|OOOOd", kwlist,
+                                    &Type,&pyobj,&edges,&vertices,&geometry,&around,&tol))
+        return nullptr;
+
+    try {
+        ShapeDiff::Options options;
+        options.edges = PyObject_IsTrue(edges);
+        options.vertices = PyObject_IsTrue(vertices);
+        options.geometry = PyObject_IsTrue(geometry);
+        options.around = PyObject_IsTrue(around);
+        options.tolerance = tol;
+        ShapeDiff diff(*getTopoShapePtr(),
+                       *static_cast<TopoShapePy*>(pyobj)->getTopoShapePtr(), options);
+
+        Py::Dict res;
+        res.setItem("same", Py::Boolean(diff.same()));
+        res.setItem("moved", Py::Boolean(diff.moved()));
+        if (diff.moved()) {
+            Base::Matrix4D mat;
+            TopoShape::convertToMatrix(diff.motion(), mat);
+            res.setItem("motion", Py::asObject(new Base::MatrixPy(new Base::Matrix4D(mat))));
+        }
+        Py::Dict cost;
+        cost.setItem("read", Py::Float(diff.cost().read));
+        cost.setItem("whole", Py::Float(diff.cost().whole));
+        cost.setItem("names", Py::Float(diff.cost().names));
+        cost.setItem("steps", Py::Float(diff.cost().steps));
+        cost.setItem("geometry", Py::Float(diff.cost().geometry));
+        cost.setItem("around", Py::Float(diff.cost().around));
+        cost.setItem("what", Py::Float(diff.cost().what));
+        res.setItem("cost", cost);
+        static const TopAbs_ShapeEnum types[] = {TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX};
+        static const char *names[] = {"Face", "Edge", "Vertex"};
+        const bool wanted[] = {true, options.edges, options.vertices};
+        for (int t = 0; t < 3; ++t) {
+            if (!wanted[t])
+                continue;
+            auto nameOf = [&](int index) -> Py::Object {
+                if (!index)
+                    return Py::None();
+                return Py::String(std::string(names[t]) + std::to_string(index));
+            };
+            Py::List list;
+            for (const auto &element : diff.elements(types[t])) {
+                list.append(Py::TupleN(nameOf(element.a), nameOf(element.b),
+                                       Py::String(ShapeDiff::name(element.by)),
+                                       Py::String(ShapeDiff::name(element.what))));
+            }
+            res.setItem(names[t], list);
         }
         return Py::new_reference_to(res);
     } PY_CATCH_OCC

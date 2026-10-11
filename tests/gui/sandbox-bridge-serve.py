@@ -59,10 +59,16 @@ DOC = "SandboxBridgeServe"
 OTHER = "SandboxBridgeOther"
 EDIT = "c2-bridge-edit"
 EDIT2 = "c3-bridge-edit-two"
+# Only a user who is known may write (docs/TransactionLog.md sec 30.6 U4,
+# U6): an edit token alone is an open invitation and admits to look. These
+# two are invitations issued to one name each, which is what lets a client
+# with no verified identity write.
+NAMES = {EDIT: "bridge-one", EDIT2: "bridge-two"}
 IDENTITY = "carol@example.com"
 # The door believes a front door's identity header only with trust on and
 # a loopback peer; the server reads this when it is first made.
 os.environ["FC_SERVE_TRUST_PROXY"] = "1"
+os.environ["FC_SERVE_IDENTITY_DOOR"] = "1"
 VIEW = "c2-bridge-view"
 RUN_WAIT_S = 120
 
@@ -220,7 +226,11 @@ def fixed_get_attr(handle, name):
 
 class Bridge:
     def __init__(self, port, token, doc, headers=""):
-        self.ws = wsclient.WS(port, "/scene?token=%s&doc=%s" % (token, doc), headers)
+        name = NAMES.get(token)
+        path = "/scene?token=%s&doc=%s" % (token, doc)
+        if name:
+            path += "&client=" + name
+        self.ws = wsclient.WS(port, path, headers)
         self.seq = 0
         self.stray = []
 
@@ -494,7 +504,13 @@ def build():
         ):
             finish()
             return
-        FreeCADGui.serveSetGrants([{"token": EDIT}, {"token": EDIT2}, {"token": VIEW, "access": 1}])
+        FreeCADGui.serveSetGrants(
+            [
+                {"token": EDIT, "client": NAMES[EDIT]},
+                {"token": EDIT2, "client": NAMES[EDIT2]},
+                {"token": VIEW, "access": 1},
+            ]
+        )
         state["grants"] = {g["token"]: g["id"] for g in FreeCADGui.serveGrants()}
         try:
             state["audit_at"] = os.path.getsize(audit_path())

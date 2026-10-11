@@ -203,12 +203,15 @@ SET(Features_SRCS
     ForeignBaseShapes.h
     PartFeature.cpp
     PartFeature.h
+    PartFeatureAppearance.cpp
     PartFeatureReference.cpp
     PartFeatureReference.h
     Part2DObject.cpp
     Part2DObject.h
     PrimitiveFeature.cpp
     PrimitiveFeature.h
+    PrimitiveNames.cpp
+    PrimitiveNames.h
     FeatureGeometrySet.h
     FeatureGeometrySet.cpp
     CustomFeature.cpp
@@ -240,6 +243,8 @@ SOURCE_GROUP("Features" FILES ${Features_SRCS})
 SET(Properties_SRCS
     ShapeCongruence.cpp
     ShapeCongruence.h
+    ShapeDiff.cpp
+    ShapeDiff.h
     ShapeRefSet.cpp
     ShapeRefSet.h
     PropertyShapeStore.cpp

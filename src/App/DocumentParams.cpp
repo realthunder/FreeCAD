@@ -59,9 +59,11 @@ public:
         signalParamChanged("InlineListSize");
         signalParamChanged("ArchiveRandomAccess");
         signalParamChanged("ArchiveBlobStore");
+        signalParamChanged("BlobSegmentSize");
         signalParamChanged("DeferShapeLoad");
         signalParamChanged("SaveMaterialCards");
         signalParamChanged("DedupShapePCurves");
+        signalParamChanged("StableShapeBytes");
         signalParamChanged("DedupCongruentShapes");
         signalParamChanged("DedupCrossFileGeometry");
         signalParamChanged("AutoRemoveFile");
@@ -84,6 +86,16 @@ public:
         signalParamChanged("ThumbnailSize");
         signalParamChanged("DuplicateLabels");
         signalParamChanged("TransactionOnRecompute");
+        signalParamChanged("TransactionLog");
+        signalParamChanged("TransactionLogIdentity");
+        signalParamChanged("TransactionLogDerived");
+        signalParamChanged("TransactionLogSnapshotTransactions");
+        signalParamChanged("TransactionLogKeepVersions");
+        signalParamChanged("TransactionLogCompactSize");
+        signalParamChanged("ClosePinnedVersion");
+        signalParamChanged("TransactionLogDeltaHops");
+        signalParamChanged("TransactionLogDeltaRatio");
+        signalParamChanged("TransactionLogVerify");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
@@ -117,9 +129,11 @@ public:
     long InlineListSize;
     bool ArchiveRandomAccess;
     bool ArchiveBlobStore;
+    long BlobSegmentSize;
     bool DeferShapeLoad;
     bool SaveMaterialCards;
     bool DedupShapePCurves;
+    bool StableShapeBytes;
     bool DedupCongruentShapes;
     bool DedupCrossFileGeometry;
     bool AutoRemoveFile;
@@ -142,6 +156,16 @@ public:
     long ThumbnailSize;
     bool DuplicateLabels;
     bool TransactionOnRecompute;
+    long TransactionLog;
+    bool TransactionLogIdentity;
+    long TransactionLogDerived;
+    long TransactionLogSnapshotTransactions;
+    long TransactionLogKeepVersions;
+    long TransactionLogCompactSize;
+    long ClosePinnedVersion;
+    long TransactionLogDeltaHops;
+    long TransactionLogDeltaRatio;
+    bool TransactionLogVerify;
     bool RelativeStringID;
     bool HashIndexedName;
     bool EnableMaterialEdit;
@@ -191,12 +215,16 @@ public:
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
         ArchiveBlobStore = this->handle->GetBool("ArchiveBlobStore", true);
         funcs["ArchiveBlobStore"] = &DocumentParamsP::updateArchiveBlobStore;
+        BlobSegmentSize = this->handle->GetInt("BlobSegmentSize", 65536);
+        funcs["BlobSegmentSize"] = &DocumentParamsP::updateBlobSegmentSize;
         DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
         funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
         SaveMaterialCards = this->handle->GetBool("SaveMaterialCards", true);
         funcs["SaveMaterialCards"] = &DocumentParamsP::updateSaveMaterialCards;
         DedupShapePCurves = this->handle->GetBool("DedupShapePCurves", true);
         funcs["DedupShapePCurves"] = &DocumentParamsP::updateDedupShapePCurves;
+        StableShapeBytes = this->handle->GetBool("StableShapeBytes", true);
+        funcs["StableShapeBytes"] = &DocumentParamsP::updateStableShapeBytes;
         DedupCongruentShapes = this->handle->GetBool("DedupCongruentShapes", true);
         funcs["DedupCongruentShapes"] = &DocumentParamsP::updateDedupCongruentShapes;
         DedupCrossFileGeometry = this->handle->GetBool("DedupCrossFileGeometry", false);
@@ -241,6 +269,26 @@ public:
         funcs["DuplicateLabels"] = &DocumentParamsP::updateDuplicateLabels;
         TransactionOnRecompute = this->handle->GetBool("TransactionOnRecompute", false);
         funcs["TransactionOnRecompute"] = &DocumentParamsP::updateTransactionOnRecompute;
+        TransactionLog = this->handle->GetInt("TransactionLog", 2);
+        funcs["TransactionLog"] = &DocumentParamsP::updateTransactionLog;
+        TransactionLogIdentity = this->handle->GetBool("TransactionLogIdentity", false);
+        funcs["TransactionLogIdentity"] = &DocumentParamsP::updateTransactionLogIdentity;
+        TransactionLogDerived = this->handle->GetInt("TransactionLogDerived", 1);
+        funcs["TransactionLogDerived"] = &DocumentParamsP::updateTransactionLogDerived;
+        TransactionLogSnapshotTransactions = this->handle->GetInt("TransactionLogSnapshotTransactions", 200);
+        funcs["TransactionLogSnapshotTransactions"] = &DocumentParamsP::updateTransactionLogSnapshotTransactions;
+        TransactionLogKeepVersions = this->handle->GetInt("TransactionLogKeepVersions", 0);
+        funcs["TransactionLogKeepVersions"] = &DocumentParamsP::updateTransactionLogKeepVersions;
+        TransactionLogCompactSize = this->handle->GetInt("TransactionLogCompactSize", 256);
+        funcs["TransactionLogCompactSize"] = &DocumentParamsP::updateTransactionLogCompactSize;
+        ClosePinnedVersion = this->handle->GetInt("ClosePinnedVersion", 0);
+        funcs["ClosePinnedVersion"] = &DocumentParamsP::updateClosePinnedVersion;
+        TransactionLogDeltaHops = this->handle->GetInt("TransactionLogDeltaHops", 8);
+        funcs["TransactionLogDeltaHops"] = &DocumentParamsP::updateTransactionLogDeltaHops;
+        TransactionLogDeltaRatio = this->handle->GetInt("TransactionLogDeltaRatio", 50);
+        funcs["TransactionLogDeltaRatio"] = &DocumentParamsP::updateTransactionLogDeltaRatio;
+        TransactionLogVerify = this->handle->GetBool("TransactionLogVerify", false);
+        funcs["TransactionLogVerify"] = &DocumentParamsP::updateTransactionLogVerify;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
         HashIndexedName = this->handle->GetBool("HashIndexedName", true);
@@ -345,6 +393,10 @@ public:
         self->ArchiveBlobStore = self->handle->GetBool("ArchiveBlobStore", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
+    static void updateBlobSegmentSize(DocumentParamsP *self) {
+        self->BlobSegmentSize = self->handle->GetInt("BlobSegmentSize", 65536);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateDeferShapeLoad(DocumentParamsP *self) {
         self->DeferShapeLoad = self->handle->GetBool("DeferShapeLoad", true);
     }
@@ -355,6 +407,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDedupShapePCurves(DocumentParamsP *self) {
         self->DedupShapePCurves = self->handle->GetBool("DedupShapePCurves", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateStableShapeBytes(DocumentParamsP *self) {
+        self->StableShapeBytes = self->handle->GetBool("StableShapeBytes", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDedupCongruentShapes(DocumentParamsP *self) {
@@ -443,6 +499,46 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionOnRecompute(DocumentParamsP *self) {
         self->TransactionOnRecompute = self->handle->GetBool("TransactionOnRecompute", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLog(DocumentParamsP *self) {
+        self->TransactionLog = self->handle->GetInt("TransactionLog", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogIdentity(DocumentParamsP *self) {
+        self->TransactionLogIdentity = self->handle->GetBool("TransactionLogIdentity", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogDerived(DocumentParamsP *self) {
+        self->TransactionLogDerived = self->handle->GetInt("TransactionLogDerived", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogSnapshotTransactions(DocumentParamsP *self) {
+        self->TransactionLogSnapshotTransactions = self->handle->GetInt("TransactionLogSnapshotTransactions", 200);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogKeepVersions(DocumentParamsP *self) {
+        self->TransactionLogKeepVersions = self->handle->GetInt("TransactionLogKeepVersions", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogCompactSize(DocumentParamsP *self) {
+        self->TransactionLogCompactSize = self->handle->GetInt("TransactionLogCompactSize", 256);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateClosePinnedVersion(DocumentParamsP *self) {
+        self->ClosePinnedVersion = self->handle->GetInt("ClosePinnedVersion", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogDeltaHops(DocumentParamsP *self) {
+        self->TransactionLogDeltaHops = self->handle->GetInt("TransactionLogDeltaHops", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogDeltaRatio(DocumentParamsP *self) {
+        self->TransactionLogDeltaRatio = self->handle->GetInt("TransactionLogDeltaRatio", 50);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogVerify(DocumentParamsP *self) {
+        self->TransactionLogVerify = self->handle->GetBool("TransactionLogVerify", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateRelativeStringID(DocumentParamsP *self) {
@@ -586,12 +682,16 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "fall back to the forward-only walk."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ArchiveBlobStore", "ArchiveBlobStore", App::ParamInfo::Bool, true)
         .setTitle("Archive Blob Store")
-        .setDoc("Serve the included files of a document archive out of one copy\n"
-"of the archive in the transient directory, and give each its own\n"
-"file only when something asks for a path. Requires\n"
-"ArchiveRandomAccess. Turn off to write every included file out\n"
-"during the restore, which on a monitored filesystem costs a file\n"
-"create per entry."),
+        .setDoc("Keep a document's included files in a pack store: a few zip\n"
+"segment files in the transient directory instead of a file per\n"
+"blob. A blob gets a file of its own only when something asks for\n"
+"a path. Turn off for a file per blob."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "BlobSegmentSize", "BlobSegmentSize", App::ParamInfo::Int, 65536)
+        .setTitle("Blob Segment Size")
+        .setDoc("Cap of one pack store segment, in KB. A segment is rewritten\n"
+"whole when content is added to it or dropped from it, so this\n"
+"bounds the cost of every such rewrite. Content over a quarter of\n"
+"it is kept as a file of its own."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DeferShapeLoad", "DeferShapeLoad", App::ParamInfo::Bool, true)
         .setTitle("Defer Shape Load")
         .setDoc("When opening a document, read each shape on first use instead of\n"
@@ -609,6 +709,13 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("Write each 2D curve of a shape once, and leave out those on planar\n"
 "faces, which are computed again on reading. The geometry read back is\n"
 "the same. Applies to shapes written as ASCII BRep."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "StableShapeBytes", "StableShapeBytes", App::ParamInfo::Bool, true)
+        .setTitle("Stable Shape Bytes")
+        .setDoc("Write a shape's file from the shape alone, not from what was\n"
+"done with it: 2D curves on surfaces no face of the saved shape\n"
+"carries are left out, so an unchanged shape saves to the same\n"
+"bytes. Nothing the shape needs is lost. Needs the realthunder OCCT\n"
+"fork; ignored without it."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DedupCongruentShapes", "DedupCongruentShapes", App::ParamInfo::Bool, true)
         .setTitle("Dedup Congruent Shapes")
         .setDoc("Store one shape file for parts that are the same shape in different\n"
@@ -711,6 +818,64 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("Transaction On Recompute")
         .setDoc("Record a recompute started with the Refresh command as an undo step.\n"
 "When off, refreshing leaves the undo and redo history alone."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLog", "TransactionLog", App::ParamInfo::Int, 2)
+        .setTitle("Transaction Log")
+        .setDoc("Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The\n"
+"log is always on; what this chooses is whether a save writes the\n"
+"history into the file: 2 (the default) writes it, 1 keeps it in\n"
+"the document transient directory only, where it dies with the\n"
+"session. 0 switches the log off, for A/B checks."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogIdentity", "TransactionLogIdentity", App::ParamInfo::Bool, false)
+        .setTitle("Transaction Log Identity")
+        .setDoc("Record the user and host name in the transaction log session\n"
+"row (sec 13.3, privacy). Off by default."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDerived", "TransactionLogDerived", App::ParamInfo::Int, 1)
+        .setTitle("Transaction Log Derived")
+        .setDoc("What the transaction log does with derived values, i.e. values\n"
+"written by their own object recompute (sec 10): 0 none (the op\n"
+"notes the change, no value), 1 cache (evictable tier), 2 full."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogSnapshotTransactions", "TransactionLogSnapshotTransactions", App::ParamInfo::Int, 200)
+        .setTitle("Transaction Log Snapshot Transactions")
+        .setDoc("The transaction log takes an unnamed version (sec 16.3) every\n"
+"this many committed transactions since the last version; 0 for\n"
+"none. A snapshot serialises the document like a save, without\n"
+"writing an archive. With the time rule of AutoSaveTimeout, it\n"
+"bounds how much a crash recovery replays (sec 25.3)."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogKeepVersions", "TransactionLogKeepVersions", App::ParamInfo::Int, 0)
+        .setTitle("Transaction Log Keep Versions")
+        .setDoc("How many unnamed versions the transaction log keeps (sec 16.3):\n"
+"when a version is added, the oldest unnamed ones over this count\n"
+"are evicted -- never a named one, never the newest. 0 keeps all."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogCompactSize", "TransactionLogCompactSize", App::ParamInfo::Int, 256)
+        .setTitle("Transaction Log Compact Size")
+        .setDoc("When the file-scope state of the transaction log is compacted on\n"
+"its own (docs/TransactionLog.md sec 27.48, 27.49), in KB: after a\n"
+"trim, a branch deletion or a squash, once the names estimated to be\n"
+"referred to by nothing and the strings of the file hasher nothing\n"
+"holds come to this many bytes together. 0 never."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ClosePinnedVersion", "ClosePinnedVersion", App::ParamInfo::Int, 0)
+        .setTitle("Close Pinned Version")
+        .setDoc("When the last link pinned to a version of a file goes, what\n"
+"happens to the document that showed it (docs/TransactionLog.md\n"
+"sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to\n"
+"ask, 0 keeps it open."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDeltaHops", "TransactionLogDeltaHops", App::ParamInfo::Int, 8)
+        .setTitle("Transaction Log Delta Hops")
+        .setDoc("How long a reverse-delta chain the transaction log allows (sec\n"
+"23.2): an entity superseded by a newer one is re-encoded as a\n"
+"patch against it unless the chain below it would then be this\n"
+"many hops from a full entity. 0 stores everything full."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDeltaRatio", "TransactionLogDeltaRatio", App::ParamInfo::Int, 50)
+        .setTitle("Transaction Log Delta Ratio")
+        .setDoc("The largest patch the transaction log keeps, as a percent of the\n"
+"full compressed size (sec 23.2); a patch over it means the codec\n"
+"found nothing to share and the entity stays full."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogVerify", "TransactionLogVerify", App::ParamInfo::Bool, false)
+        .setTitle("Transaction Log Verify")
+        .setDoc("A composed snapshot (sec 23.3) serialises the properties it\n"
+"would have taken from the log anyway and compares: a mismatch\n"
+"names a value changed without aboutToSetValue (sec 23.6). Always\n"
+"on in a debug build."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID")
         .setDoc("Write the ids in a document's string table as differences from the\n"
@@ -1170,12 +1335,10 @@ void DocumentParams::removeArchiveRandomAccess() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docArchiveBlobStore() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Serve the included files of a document archive out of one copy\n"
-"of the archive in the transient directory, and give each its own\n"
-"file only when something asks for a path. Requires\n"
-"ArchiveRandomAccess. Turn off to write every included file out\n"
-"during the restore, which on a monitored filesystem costs a file\n"
-"create per entry.");
+"Keep a document's included files in a pack store: a few zip\n"
+"segment files in the transient directory instead of a file per\n"
+"blob. A blob gets a file of its own only when something asks for\n"
+"a path. Turn off for a file per blob.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1198,6 +1361,37 @@ void DocumentParams::setArchiveBlobStore(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeArchiveBlobStore() {
     instance()->handle->RemoveBool("ArchiveBlobStore");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docBlobSegmentSize() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Cap of one pack store segment, in KB. A segment is rewritten\n"
+"whole when content is added to it or dropped from it, so this\n"
+"bounds the cost of every such rewrite. Content over a quarter of\n"
+"it is kept as a file of its own.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getBlobSegmentSize() {
+    return instance()->BlobSegmentSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultBlobSegmentSize() {
+    const static long def = 65536;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setBlobSegmentSize(const long &v) {
+    instance()->handle->SetInt("BlobSegmentSize",v);
+    instance()->BlobSegmentSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeBlobSegmentSize() {
+    instance()->handle->RemoveInt("BlobSegmentSize");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1290,6 +1484,38 @@ void DocumentParams::setDedupShapePCurves(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeDedupShapePCurves() {
     instance()->handle->RemoveBool("DedupShapePCurves");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docStableShapeBytes() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write a shape's file from the shape alone, not from what was\n"
+"done with it: 2D curves on surfaces no face of the saved shape\n"
+"carries are left out, so an unchanged shape saves to the same\n"
+"bytes. Nothing the shape needs is lost. Needs the realthunder OCCT\n"
+"fork; ignored without it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getStableShapeBytes() {
+    return instance()->StableShapeBytes;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultStableShapeBytes() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setStableShapeBytes(const bool &v) {
+    instance()->handle->SetBool("StableShapeBytes",v);
+    instance()->StableShapeBytes = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeStableShapeBytes() {
+    instance()->handle->RemoveBool("StableShapeBytes");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1942,6 +2168,314 @@ void DocumentParams::setTransactionOnRecompute(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionOnRecompute() {
     instance()->handle->RemoveBool("TransactionOnRecompute");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLog() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The\n"
+"log is always on; what this chooses is whether a save writes the\n"
+"history into the file: 2 (the default) writes it, 1 keeps it in\n"
+"the document transient directory only, where it dies with the\n"
+"session. 0 switches the log off, for A/B checks.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLog() {
+    return instance()->TransactionLog;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLog() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLog(const long &v) {
+    instance()->handle->SetInt("TransactionLog",v);
+    instance()->TransactionLog = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLog() {
+    instance()->handle->RemoveInt("TransactionLog");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogIdentity() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Record the user and host name in the transaction log session\n"
+"row (sec 13.3, privacy). Off by default.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getTransactionLogIdentity() {
+    return instance()->TransactionLogIdentity;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultTransactionLogIdentity() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogIdentity(const bool &v) {
+    instance()->handle->SetBool("TransactionLogIdentity",v);
+    instance()->TransactionLogIdentity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogIdentity() {
+    instance()->handle->RemoveBool("TransactionLogIdentity");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogDerived() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"What the transaction log does with derived values, i.e. values\n"
+"written by their own object recompute (sec 10): 0 none (the op\n"
+"notes the change, no value), 1 cache (evictable tier), 2 full.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogDerived() {
+    return instance()->TransactionLogDerived;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogDerived() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogDerived(const long &v) {
+    instance()->handle->SetInt("TransactionLogDerived",v);
+    instance()->TransactionLogDerived = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogDerived() {
+    instance()->handle->RemoveInt("TransactionLogDerived");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogSnapshotTransactions() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The transaction log takes an unnamed version (sec 16.3) every\n"
+"this many committed transactions since the last version; 0 for\n"
+"none. A snapshot serialises the document like a save, without\n"
+"writing an archive. With the time rule of AutoSaveTimeout, it\n"
+"bounds how much a crash recovery replays (sec 25.3).");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogSnapshotTransactions() {
+    return instance()->TransactionLogSnapshotTransactions;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogSnapshotTransactions() {
+    const static long def = 200;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogSnapshotTransactions(const long &v) {
+    instance()->handle->SetInt("TransactionLogSnapshotTransactions",v);
+    instance()->TransactionLogSnapshotTransactions = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogSnapshotTransactions() {
+    instance()->handle->RemoveInt("TransactionLogSnapshotTransactions");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogKeepVersions() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"How many unnamed versions the transaction log keeps (sec 16.3):\n"
+"when a version is added, the oldest unnamed ones over this count\n"
+"are evicted -- never a named one, never the newest. 0 keeps all.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogKeepVersions() {
+    return instance()->TransactionLogKeepVersions;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogKeepVersions() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogKeepVersions(const long &v) {
+    instance()->handle->SetInt("TransactionLogKeepVersions",v);
+    instance()->TransactionLogKeepVersions = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogKeepVersions() {
+    instance()->handle->RemoveInt("TransactionLogKeepVersions");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogCompactSize() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"When the file-scope state of the transaction log is compacted on\n"
+"its own (docs/TransactionLog.md sec 27.48, 27.49), in KB: after a\n"
+"trim, a branch deletion or a squash, once the names estimated to be\n"
+"referred to by nothing and the strings of the file hasher nothing\n"
+"holds come to this many bytes together. 0 never.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogCompactSize() {
+    return instance()->TransactionLogCompactSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogCompactSize() {
+    const static long def = 256;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogCompactSize(const long &v) {
+    instance()->handle->SetInt("TransactionLogCompactSize",v);
+    instance()->TransactionLogCompactSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogCompactSize() {
+    instance()->handle->RemoveInt("TransactionLogCompactSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docClosePinnedVersion() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"When the last link pinned to a version of a file goes, what\n"
+"happens to the document that showed it (docs/TransactionLog.md\n"
+"sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to\n"
+"ask, 0 keeps it open.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getClosePinnedVersion() {
+    return instance()->ClosePinnedVersion;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultClosePinnedVersion() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setClosePinnedVersion(const long &v) {
+    instance()->handle->SetInt("ClosePinnedVersion",v);
+    instance()->ClosePinnedVersion = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeClosePinnedVersion() {
+    instance()->handle->RemoveInt("ClosePinnedVersion");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogDeltaHops() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"How long a reverse-delta chain the transaction log allows (sec\n"
+"23.2): an entity superseded by a newer one is re-encoded as a\n"
+"patch against it unless the chain below it would then be this\n"
+"many hops from a full entity. 0 stores everything full.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogDeltaHops() {
+    return instance()->TransactionLogDeltaHops;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogDeltaHops() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogDeltaHops(const long &v) {
+    instance()->handle->SetInt("TransactionLogDeltaHops",v);
+    instance()->TransactionLogDeltaHops = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogDeltaHops() {
+    instance()->handle->RemoveInt("TransactionLogDeltaHops");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogDeltaRatio() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The largest patch the transaction log keeps, as a percent of the\n"
+"full compressed size (sec 23.2); a patch over it means the codec\n"
+"found nothing to share and the entity stays full.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogDeltaRatio() {
+    return instance()->TransactionLogDeltaRatio;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogDeltaRatio() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogDeltaRatio(const long &v) {
+    instance()->handle->SetInt("TransactionLogDeltaRatio",v);
+    instance()->TransactionLogDeltaRatio = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogDeltaRatio() {
+    instance()->handle->RemoveInt("TransactionLogDeltaRatio");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogVerify() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"A composed snapshot (sec 23.3) serialises the properties it\n"
+"would have taken from the log anyway and compares: a mismatch\n"
+"names a value changed without aboutToSetValue (sec 23.6). Always\n"
+"on in a debug build.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getTransactionLogVerify() {
+    return instance()->TransactionLogVerify;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultTransactionLogVerify() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogVerify(const bool &v) {
+    instance()->handle->SetBool("TransactionLogVerify",v);
+    instance()->TransactionLogVerify = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogVerify() {
+    instance()->handle->RemoveBool("TransactionLogVerify");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

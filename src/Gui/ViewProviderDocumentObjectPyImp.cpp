@@ -27,6 +27,7 @@
 #endif
 
 #include <App/DocumentObjectPy.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include "Application.h"
 #include "Document.h"
 
@@ -56,6 +57,47 @@ PyObject* ViewProviderDocumentObjectPy::update(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* ViewProviderDocumentObjectPy::showValueDiff(PyObject *args, PyObject *kwds)
+{
+    const char *prop;
+    const char *a = "";
+    const char *b = "";
+    double position = 1.0;
+    PyObject *differencesOnly = Py_False;
+    static const std::array<const char *, 6> kwlist {"prop", "a", "b", "position",
+                                                     "differencesOnly", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|ssdO", kwlist, &prop, &a, &b,
+                                             &position, &differencesOnly))
+        return nullptr;
+    PY_TRY {
+        bool shown = getViewProviderDocumentObjectPtr()->showValueDiff(
+            prop, a, b, static_cast<float>(position), Base::asBoolean(differencesOnly));
+        return Py::new_reference_to(Py::Boolean(shown));
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderDocumentObjectPy::hideValueDiff(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        getViewProviderDocumentObjectPtr()->hideValueDiff();
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderDocumentObjectPy::getValueDiff(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::Dict dict;
+        for (const auto &v : getViewProviderDocumentObjectPtr()->getValueDiff())
+            dict.setItem(v.first, Py::Long(v.second));
+        return Py::new_reference_to(dict);
+    } PY_CATCH;
+}
+
 PyObject* ViewProviderDocumentObjectPy::isShowable(PyObject *args)
 {
     PyObject *refresh = Py_False;
@@ -70,6 +112,9 @@ PyObject* ViewProviderDocumentObjectPy::isShowable(PyObject *args)
 Py::Object ViewProviderDocumentObjectPy::getObject() const
 {
     App::DocumentObject* obj = getViewProviderDocumentObjectPtr()->getObject();
+    if (!obj) {
+        return Py::None();
+    }
     return Py::Object(obj->getPyObject(), true); // do not inc'ref twice
 }
 

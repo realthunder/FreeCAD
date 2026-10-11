@@ -300,11 +300,30 @@ class AppExport VariableExpression : public Expression {
 public:
     static ExpressionPtr create(const App::DocumentObject *owner, ObjectIdentifier &&var);
 
+    /// The variables of \a expr that name a sub-object, in the order a visit
+    /// meets them: what is saved beside an expression for each is keyed by
+    /// its place here (docs/TransactionLog.md sec 27.77, 31.22).
+    static std::vector<VariableExpression*> elementPaths(Expression &expr);
+
     bool isTouched() const override;
 
     std::string name() const;
 
     const ObjectIdentifier &getPath() const;
+
+    /// The ids a file gave for the element path's shadow
+    /// (docs/TransactionLog.md sec 27.77).
+    void setSavedShadowIds(std::vector<long> ids) {
+        var.setSavedShadowIds(std::move(ids));
+    }
+    /// And for a path into another table, its shadow and stored name (sec 27.82)
+    void setSavedShadow(std::string first, std::string stored, std::vector<long> ids) {
+        var.setSavedShadow(std::move(first), std::move(stored), std::move(ids));
+    }
+    /// The mapped name a file gave for a path within one table (sec 31.22)
+    void setGivenShadow(std::string first) {
+        var.setGivenShadow(std::move(first));
+    }
 
     void addComponent(ComponentPtr &&component) override;
 

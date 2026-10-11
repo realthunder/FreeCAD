@@ -44,6 +44,7 @@
 #include "PythonConsolePy.h"
 #include "PythonConsoleParams.h"
 #include "PythonTracing.h"
+#include <App/Application.h>
 #include "Application.h"
 #include "CallTips.h"
 #include "EditorParams.h"
@@ -269,6 +270,8 @@ int InteractiveInterpreter::compileCommand(const char* source) const
 bool InteractiveInterpreter::runSource(const char* source) const
 {
     Base::PyGILStateLocker lock;
+    // One console line is one invocation (docs/TransactionLog.md sec 9.1).
+    App::Application::InvocationScope scope("console");
     PyObject* code;
     try {
         code = compile(source);

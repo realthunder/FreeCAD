@@ -4,6 +4,7 @@ SET(Test_SRCS
     Init.py
     BaseTests.py
     Document.py
+    ArchiveMembers.py
     FileBlobs.py
     InputProperty.py
     ShapeStorage.py
