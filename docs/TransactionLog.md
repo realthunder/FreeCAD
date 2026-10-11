@@ -18015,4 +18015,79 @@ and not what it is made of; one of its ops; the row that made an
 object; a version against now, and one from before the object; the
 merge dialog as it opens.
 
+### 32.11 A shape kept in the file: one value, or all of an object's (2026-10-11)
+
+**Asked (user):** "Is it possible to add a flag to pin a version of just
+one object to prevent shape from being dropped", and of the two ways put
+to them, one value or a standing flag on an object: "Offer both kind of
+pin".
+
+**What is dropped, measured** (`keep0.py`, `keep1.py` in
+`~/.cache/txnlog-sd`). A shape is a derived value, of the cache tier
+(sec 10). The log beside an open document has every one. The copy a
+save writes into the file (`dropTier`, 13.3) leaves out a cache-tier
+value that no kept version's manifest reaches **and that no kept delta
+is based on** -- and a value is stored as a delta on the one after it.
+So a save does not take a run of shapes at once: of a cut made taller
+four times, saved, closed and opened, the first is gone and the other
+three are there; the box's four are all there. Each save and reopen
+takes the oldest again. A trim takes them all.
+
+**Kept** is the log's word for it; a link is *pinned* to a version
+(27.16), which is another thing. Two tables of the store:
+
+- `keepvalue(hash, cid, prop, seq)`: one value, by its hash, with whose
+  it is and the row it was asked for at.
+- `keepobject(cid)`: an object, every value of whose ops is kept --
+  those the log has and those it will have.
+
+Both are listed with what a manifest reaches when the copy drops the
+tier, so they stay with what they reach: the geometry file, the string
+ids their names use (27.50), and the deltas between them and the full
+value they decode through. A value kept by its hash is a root of the
+collector as well: **it stays when its row goes**, in a trim or a
+squash, and is then read by its ref from the list of the kept.
+
+It is the log's and not the document's: no property, no undo step, no
+row. It travels because the store does.
+
+**The value at a row.** `Document::logValueAt(seq, cid, prop)`, Python
+`getTransactionValueAt(obj, prop, seq=0)`: what the last row of that
+row's branch, by its parents, at or before it set. What a merge took of
+another branch is an op of the merge's row.
+
+**Asked for.**
+
+- `Document::keepLogValue(cid, prop, seq, keep)`, Python
+  `keepTransactionValue(obj, prop='', seq=0, keep=True)`: the value at
+  that row; with no property, every property of the object a recompute
+  wrote. `keptLogValues()` / `getKeptTransactionValues()`.
+- `Document::keepLogValuesOf(cid, keep)`, Python
+  `keepTransactionValuesOf(obj, keep=True)`; `keptLogObjects()` /
+  `getKeptTransactionObjects()`.
+- *The panel.* An op's menu: "Keep this value in the file", "Keep every
+  value of obj:N in the file", each ticked where it is so. A version's
+  menu: "Keep the selected objects as they are at version N", and to let
+  them go. An op of a kept value says "yes, kept" where it said "yes".
+
+**What it costs.** A value kept alone keeps the deltas from it to the
+newest of its run; an object kept, every shape its recomputes make.
+
+**Left.**
+
+- No list of the kept in the panel: what a row no longer names is found
+  from Python only.
+- A kept object that is removed stays in `keepobject`.
+- The document is not marked modified by keeping; what is kept is
+  written by the next save all the same.
+- 32.9's "a value the log let go" stands: nothing says why nothing is
+  shown, and the state's document is not asked.
+
+**Tests.** `parttests.ShapeDiffTest.KeptShapesTest` (+5): left out when
+not kept; kept and read back with its names after the file is closed and
+opened, then let go and gone; every property a recompute wrote; every
+shape of an object, through three saves, and made after; a kept value
+when its row is trimmed. The Gui check (+8, 63): the three entries of
+the panel and what an op says.
+
 **Next (32.4):** step 6 -- volumes, the merged result, the stream.

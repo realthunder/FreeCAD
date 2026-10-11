@@ -179,6 +179,16 @@ struct LogRef
     std::string name;
 };
 
+/// A value kept by its hash (TransactionStore::keepValue()): whose it is,
+/// and the row it was asked for at -- what a list of the kept says of it.
+struct LogKept
+{
+    std::string hash;
+    long cid {0};
+    std::string prop;
+    int64_t seq {0};
+};
+
 /** A stored entity (table `entity`, sec 23.1): anything the log holds
  * bytes for -- a property's fragment (`prop`), a file it handed to
  * addFile() (`attach`), a file of the document's blob store (`blob`), an
@@ -473,7 +483,32 @@ public:
     /// Rewrite the store without its free pages (SQLite's VACUUM): what
     /// the embedded copy does once retention has emptied them (sec 27.53).
     virtual void vacuum() = 0;
-    /// Drop every entity of `tier` that no manifest reaches and no delta
+    /** @name Kept values (docs/TransactionLog.md sec 32.11)
+     *
+     * A derived value -- a shape -- is of the cache tier, which the copy
+     * that travels in the file leaves out (dropTier()). One kept is left
+     * in, with what it reaches: by its own hash, where it is one value of
+     * one object that was asked for; or as any value of an object all of
+     * whose values are kept. A value kept by its hash is a root of its own
+     * as well: it stays when its row goes.
+     */
+    //@{
+    virtual void keepValue(const LogKept& kept) = 0;
+    /// False where `hash` was not kept.
+    virtual bool releaseValue(const std::string& hash) = 0;
+    virtual std::vector<LogKept> keptValues() = 0;
+    virtual void keepObject(long cid, bool keep) = 0;
+    virtual std::vector<long> keptObjects() = 0;
+    /// The rows that set property `prop` of object `cid`, each with the
+    /// value its last set left, in row order.
+    virtual std::vector<std::pair<int64_t, std::string>> valuesOf(long cid,
+                                                                  const std::string& prop) = 0;
+    /// The properties of object `cid` that some row set as its recompute's.
+    virtual std::vector<std::string> derivedPropsOf(long cid) = 0;
+    //@}
+
+    /// Drop every entity of `tier` that no manifest reaches, that is not
+    /// kept (keepValue(), keepObject()) and that no delta
     /// is based on (the embedded copy carries no cache tier, sec 13.3).
     /// The ops' refs stay; the entity goes. The versions `evict` go first,
     /// as evictVersions() would take them, in the same collection -- the

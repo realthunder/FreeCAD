@@ -1588,6 +1588,93 @@ PyObject* DocumentPy::compareTransactionStates(PyObject *args)
     } PY_CATCH;
 }
 
+namespace {
+/// An object of `doc` given as itself or by its id; 0 where it is neither.
+long logObjectId(PyObject* which)
+{
+    if (PyObject_TypeCheck(which, &App::DocumentObjectPy::Type))
+        return static_cast<App::DocumentObjectPy*>(which)->getDocumentObjectPtr()->getID();
+    if (PyLong_Check(which))
+        return PyLong_AsLong(which);
+    throw Base::TypeError("expects an object of the document, or its id");
+}
+}  // namespace
+
+PyObject* DocumentPy::getTransactionValueAt(PyObject *args)
+{
+    PyObject* which = nullptr;
+    const char* prop = "";
+    long long seq = 0;
+    if (!PyArg_ParseTuple(args, "Os|L", &which, &prop, &seq))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            Py::String(getDocumentPtr()->logValueAt(seq, logObjectId(which), prop)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::keepTransactionValue(PyObject *args, PyObject *kwds)
+{
+    PyObject* which = nullptr;
+    const char* prop = "";
+    long long seq = 0;
+    PyObject* keep = Py_True;
+    static const std::array<const char*, 5> kwlist {"obj", "prop", "seq", "keep", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "O|sLO", kwlist, &which, &prop, &seq,
+                                             &keep))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        for (const auto& ref : getDocumentPtr()->keepLogValue(logObjectId(which), prop, seq,
+                                                              Base::asBoolean(keep)))
+            list.append(Py::String(ref));
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getKeptTransactionValues(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        for (const auto& v : getDocumentPtr()->keptLogValues()) {
+            Py::Dict d;
+            d.setItem("ref", Py::String(v.ref));
+            d.setItem("cid", Py::Long(v.cid));
+            d.setItem("object", Py::String(v.object));
+            d.setItem("prop", Py::String(v.prop));
+            d.setItem("seq", Py::Long(static_cast<long long>(v.seq)));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::keepTransactionValuesOf(PyObject *args)
+{
+    PyObject* which = nullptr;
+    PyObject* keep = Py_True;
+    if (!PyArg_ParseTuple(args, "O|O", &which, &keep))
+        return nullptr;
+    PY_TRY {
+        getDocumentPtr()->keepLogValuesOf(logObjectId(which), Base::asBoolean(keep));
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getKeptTransactionObjects(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        for (long cid : getDocumentPtr()->keptLogObjects())
+            list.append(Py::Long(cid));
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::previewTransactionPick(PyObject *args)
 {
     PyObject* pyRows = nullptr;

@@ -213,6 +213,16 @@ public:
     std::vector<long> objectIdsInOps() override { return inner().objectIdsInOps(); }
     void removeObjectState(const std::vector<long>& ids) override
     { inner().removeObjectState(ids); }
+    void keepValue(const LogKept& kept) override { inner().keepValue(kept); }
+    bool releaseValue(const std::string& hash) override { return inner().releaseValue(hash); }
+    std::vector<LogKept> keptValues() override { return inner().keptValues(); }
+    void keepObject(long cid, bool keep) override { inner().keepObject(cid, keep); }
+    std::vector<long> keptObjects() override { return inner().keptObjects(); }
+    std::vector<std::pair<int64_t, std::string>> valuesOf(long cid,
+                                                          const std::string& prop) override
+    { return inner().valuesOf(cid, prop); }
+    std::vector<std::string> derivedPropsOf(long cid) override
+    { return inner().derivedPropsOf(cid); }
     void addStrings(const std::vector<LogString>& strings) override
     { inner().addStrings(strings); }
     std::vector<LogString> strings(const std::vector<long>& ids) override

@@ -79,6 +79,7 @@
 #include "Document.h"
 #include "FileDialog.h"
 #include "SceneRequests.h"
+#include "Selection.h"
 #include "ViewProviderDocumentObject.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
@@ -692,6 +693,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _ops->setAlternatingRowColors(true);
     _ops->setUniformRowHeights(true);
     _ops->setSelectionMode(QAbstractItemView::SingleSelection);
+    _ops->setContextMenuPolicy(Qt::CustomContextMenu);
     _ops->header()->setStretchLastSection(false);
     _ops->header()->setSectionResizeMode(OpContainer, QHeaderView::Stretch);
 
@@ -725,6 +727,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_transactions, &QTreeWidget::customContextMenuRequested,
             this, &TransactionLogView::onTransactionContextMenu);
     connect(_ops, &QTreeWidget::itemSelectionChanged, this, &TransactionLogView::onOpSelected);
+    connect(_ops, &QTreeWidget::customContextMenuRequested,
+            this, &TransactionLogView::onOpContextMenu);
     connect(_versions, &QTreeWidget::itemSelectionChanged,
             this, &TransactionLogView::onVersionSelected);
     connect(_versions, &QTreeWidget::customContextMenuRequested,
@@ -1225,6 +1229,12 @@ void TransactionLogView::showOps(int64_t seq)
     if (!l)
         return;
     try {
+        // What a save keeps of the values a recompute wrote (sec 32.11)
+        std::set<std::string> keptValues;
+        for (const auto& kept : l->store().keptValues())
+            keptValues.insert(kept.hash);
+        const auto all = l->store().keptObjects();
+        const std::set<long> keptObjects(all.begin(), all.end());
         for (const auto& op : l->store().ops(seq)) {
             auto item = new QTreeWidgetItem(_ops);
             item->setText(OpIdx, QString::number(op.idx));
@@ -1237,7 +1247,10 @@ void TransactionLogView::showOps(int64_t seq)
             item->setText(OpBefore, shortRef(op.vbefore));
             item->setText(OpAfter, op.op == "set" && op.vafter.empty()
                                        ? tr("pending") : shortRef(op.vafter));
-            item->setText(OpDerived, op.derived ? QStringLiteral("yes")
+            const bool kept = op.derived && op.ckind == "obj"
+                              && (keptValues.count(op.vafter) || keptObjects.count(op.cid));
+            item->setText(OpDerived, kept ? tr("yes, kept")
+                                         : op.derived ? QStringLiteral("yes")
                                          : op.followed ? tr("followed") : QString());
             item->setData(OpBefore, Qt::UserRole, QString::fromStdString(op.vbefore));
             item->setData(OpAfter, Qt::UserRole, QString::fromStdString(op.vafter));
@@ -2698,6 +2711,109 @@ void TransactionLogView::squashTo(qlonglong version)
     }
 }
 
+void TransactionLogView::keepValue(qlonglong seq, qlonglong cid, const QString& prop, bool keep)
+{
+    if (!_doc)
+        return;
+    try {
+        const auto refs = _doc->keepLogValue(static_cast<long>(cid), prop.toStdString(), seq, keep);
+        if (refs.empty())
+            _status->setText(keep ? tr("Nothing kept: the log holds no such value")
+                                  : tr("Nothing let go: no such value was kept"));
+        else
+            _status->setText(keep ? tr("%n value(s) kept: a save writes them into the file", "",
+                                       static_cast<int>(refs.size()))
+                                  : tr("%n value(s) let go", "", static_cast<int>(refs.size())));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("keep a value: " << e.what());
+    }
+    onTransactionSelected();
+}
+
+void TransactionLogView::keepObject(qlonglong cid, bool keep)
+{
+    if (!_doc)
+        return;
+    try {
+        _doc->keepLogValuesOf(static_cast<long>(cid), keep);
+        auto obj = _doc->getObjectByID(static_cast<long>(cid));
+        const QString name = obj ? QString::fromUtf8(obj->Label.getValue())
+                                 : QStringLiteral("obj:%1").arg(cid);
+        _status->setText(keep ? tr("Every value of %1 is kept: a save writes them into the file")
+                                    .arg(name)
+                              : tr("The values of %1 are no longer kept").arg(name));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("keep an object's values: " << e.what());
+    }
+    onTransactionSelected();
+}
+
+void TransactionLogView::keepSelectedAt(qlonglong seq, bool keep)
+{
+    if (!_doc)
+        return;
+    const auto objects = Selection().getObjectsOfType(App::DocumentObject::getClassTypeId(),
+                                                      _doc->getName());
+    if (objects.empty()) {
+        _status->setText(tr("Nothing is selected: select the objects to keep as they are there"));
+        return;
+    }
+    size_t values = 0;
+    try {
+        for (auto obj : objects)
+            values += _doc->keepLogValue(obj->getID(), std::string(), seq, keep).size();
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("keep the selected objects: " << e.what());
+    }
+    _status->setText(keep ? tr("%1 values of %2 objects kept as they are at row %3")
+                                .arg(values).arg(objects.size()).arg(seq)
+                          : tr("%1 values of %2 objects let go").arg(values).arg(objects.size()));
+}
+
+void TransactionLogView::onOpContextMenu(const QPoint& pos)
+{
+    auto item = _ops->itemAt(pos);
+    auto rows = _transactions->selectedItems();
+    auto l = log();
+    if (!item || !_doc || !l || rows.size() != 1)
+        return;
+    const qlonglong cid = item->data(OpContainer, Qt::UserRole).toLongLong();
+    const QString after = item->data(OpAfter, Qt::UserRole).toString();
+    if (!cid || after.isEmpty())
+        return;
+    const qlonglong seq = rows.front()->data(TxnSeq, Qt::UserRole).toLongLong();
+    bool valueKept = false;
+    bool objectKept = false;
+    try {
+        for (const auto& kept : l->store().keptValues())
+            valueKept = valueKept || kept.hash == after.toStdString();
+        for (long id : l->store().keptObjects())
+            objectKept = objectKept || id == cid;
+    }
+    catch (Base::Exception&) {
+    }
+    QMenu menu(this);
+    auto value = menu.addAction(tr("Keep this value in the file"));
+    value->setCheckable(true);
+    value->setChecked(valueKept);
+    value->setToolTip(tr("A value a recompute wrote is left out of the history a save writes, "
+                         "unless a version kept reaches it (sec 32.11)"));
+    auto object = menu.addAction(tr("Keep every value of %1 in the file").arg(item->text(OpContainer)));
+    object->setCheckable(true);
+    object->setChecked(objectKept);
+    object->setToolTip(tr("Each shape its recomputes made, and will make: the file grows by "
+                          "each"));
+    const QString prop = item->text(OpProp);
+    auto chosen = menu.exec(_ops->viewport()->mapToGlobal(pos));
+    if (chosen == value)
+        keepValue(seq, cid, prop, !valueKept);
+    else if (chosen == object)
+        keepObject(cid, !objectKept);
+}
+
 void TransactionLogView::onVersionContextMenu(const QPoint& pos)
 {
     auto item = _versions->itemAt(pos);
@@ -2737,9 +2853,21 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     catch (Base::Exception&) {
     }
     squash->setEnabled(anyBehind);
+    menu.addSeparator();
+    auto keepHere = menu.addAction(tr("Keep the selected objects as they are at version %1")
+                                       .arg(num));
+    keepHere->setToolTip(tr("What a recompute made of them there -- their shapes -- is written "
+                            "into the file by a save, though the version is not kept "
+                            "(sec 32.11)"));
+    auto letGoHere = menu.addAction(tr("Let go of the selected objects as they are at "
+                                       "version %1").arg(num));
     auto chosen = menu.exec(_versions->viewport()->mapToGlobal(pos));
     if (!chosen)
         return;
+    if (chosen == keepHere || chosen == letGoHere) {
+        keepSelectedAt(item->text(VerSeq).toLongLong(), chosen == keepHere);
+        return;
+    }
     if (chosen == squash) {
         squashTo(num);
         return;

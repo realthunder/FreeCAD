@@ -10188,6 +10188,95 @@ std::vector<Document::StateChange> Document::compareStates(int64_t a, int64_t b)
     return out;
 }
 
+std::string Document::logValueAt(int64_t seq, long cid, const std::string& prop)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return {};
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    log->resolvePending();
+    auto& store = log->store();
+    if (seq <= 0)
+        seq = log->head();
+    // The row's own branch, by its parents: what a merge took of another is
+    // an op of the merge's row.
+    std::set<int64_t> mine;
+    for (const auto& t : store.chain(seq))
+        mine.insert(t.seq);
+    std::string ref;
+    for (const auto& set : store.valuesOf(cid, prop)) {
+        if (mine.count(set.first))
+            ref = set.second;
+    }
+    return ref;
+}
+
+std::vector<std::string> Document::keepLogValue(long cid, const std::string& prop, int64_t seq,
+                                                bool keep)
+{
+    std::vector<std::string> out;
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return out;
+    auto& store = log->store();
+    if (seq <= 0)
+        seq = log->head();
+    const std::vector<std::string> props = prop.empty() ? store.derivedPropsOf(cid)
+                                                        : std::vector<std::string> {prop};
+    for (const auto& name : props) {
+        const std::string ref = logValueAt(seq, cid, name);
+        if (ref.empty() || !store.hasEntity(ref))
+            continue;
+        if (keep) {
+            LogKept kept;
+            kept.hash = ref;
+            kept.cid = cid;
+            kept.prop = name;
+            kept.seq = seq;
+            store.keepValue(kept);
+        }
+        else if (!store.releaseValue(ref)) {
+            continue;
+        }
+        out.push_back(ref);
+    }
+    return out;
+}
+
+std::vector<Document::KeptValue> Document::keptLogValues()
+{
+    std::vector<KeptValue> out;
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return out;
+    for (const auto& kept : log->store().keptValues()) {
+        KeptValue v;
+        v.ref = kept.hash;
+        v.cid = kept.cid;
+        v.prop = kept.prop;
+        v.seq = kept.seq;
+        if (auto obj = getObjectByID(kept.cid)) {
+            if (obj->getNameInDocument())
+                v.object = obj->getNameInDocument();
+        }
+        out.push_back(std::move(v));
+    }
+    return out;
+}
+
+void Document::keepLogValuesOf(long cid, bool keep)
+{
+    if (TransactionLog* log = getTransactionLog())
+        log->store().keepObject(cid, keep);
+}
+
+std::vector<long> Document::keptLogObjects()
+{
+    TransactionLog* log = getTransactionLog();
+    return log ? log->store().keptObjects() : std::vector<long>();
+}
+
 namespace {
 std::string pickLabel(const std::vector<int64_t>& rows)
 {

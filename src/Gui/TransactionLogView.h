@@ -88,6 +88,7 @@ private Q_SLOTS:
     void onSnapshot();
     void onTransactionContextMenu(const QPoint& pos);
     void onVersionContextMenu(const QPoint& pos);
+    void onOpContextMenu(const QPoint& pos);
     void onBranchChosen(int index);
     void onNewBranch();
     void onDeleteBranch();
@@ -158,6 +159,16 @@ public Q_SLOTS:
      * `from` is the copy's branch it came from.
      */
     void bringAgain(const QString& branch, const QString& from);
+    /** Keep in the file a value a recompute wrote, which a save otherwise
+     * leaves out of the history (docs/TransactionLog.md sec 32.11): the one
+     * property `prop` of object `cid` has at row `seq` -- every such
+     * property of it where `prop` is empty -- or let it go again.
+     */
+    void keepValue(qlonglong seq, qlonglong cid, const QString& prop, bool keep);
+    /// Keep every value of object `cid` the log has and will have, or stop.
+    void keepObject(qlonglong cid, bool keep);
+    /// keepValue() of every object selected, as each is at row `seq`.
+    void keepSelectedAt(qlonglong seq, bool keep);
 
 protected:
     void showEvent(QShowEvent*) override;

@@ -175,6 +175,10 @@ public:
         // record again under a new one (sec 30.4 P1).
         exec("CREATE TABLE IF NOT EXISTS heldfile(session INTEGER, ord INTEGER, file BLOB,"
              " branch INTEGER DEFAULT 0, PRIMARY KEY(session, ord)) WITHOUT ROWID");
+        // Sec 32.11: the values kept, one by one and by their object.
+        exec("CREATE TABLE IF NOT EXISTS keepvalue(hash BLOB PRIMARY KEY, cid INTEGER,"
+             " prop TEXT, seq INTEGER) WITHOUT ROWID");
+        exec("CREATE TABLE IF NOT EXISTS keepobject(cid INTEGER PRIMARY KEY)");
         if (!hasRow("SELECT 1 FROM branch WHERE id=1"))
             exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
                  "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
@@ -737,6 +741,90 @@ public:
         return out;
     }
 
+    void keepValue(const LogKept& kept) override
+    {
+        auto s = prepare("INSERT OR REPLACE INTO keepvalue(hash,cid,prop,seq) VALUES(?,?,?,?)");
+        bindHash(s, 1, kept.hash);
+        sqlite3_bind_int64(s, 2, kept.cid);
+        bindText(s, 3, kept.prop);
+        sqlite3_bind_int64(s, 4, kept.seq);
+        step(s);
+    }
+
+    bool releaseValue(const std::string& hash) override
+    {
+        auto s = prepare("DELETE FROM keepvalue WHERE hash=?");
+        bindHash(s, 1, hash);
+        step(s);
+        return sqlite3_changes(db) > 0;
+    }
+
+    std::vector<LogKept> keptValues() override
+    {
+        auto s = prepare("SELECT hash,cid,prop,seq FROM keepvalue ORDER BY seq, cid, prop");
+        std::vector<LogKept> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogKept kept;
+            kept.hash = columnHash(s, 0);
+            kept.cid = static_cast<long>(sqlite3_column_int64(s, 1));
+            kept.prop = text(s, 2);
+            kept.seq = sqlite3_column_int64(s, 3);
+            out.push_back(std::move(kept));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    void keepObject(long cid, bool keep) override
+    {
+        auto s = prepare(keep ? "INSERT OR IGNORE INTO keepobject(cid) VALUES(?)"
+                              : "DELETE FROM keepobject WHERE cid=?");
+        sqlite3_bind_int64(s, 1, cid);
+        step(s);
+    }
+
+    std::vector<long> keptObjects() override
+    {
+        auto s = prepare("SELECT cid FROM keepobject ORDER BY cid");
+        std::vector<long> out;
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(static_cast<long>(sqlite3_column_int64(s, 0)));
+        sqlite3_reset(s);
+        return out;
+    }
+
+    std::vector<std::pair<int64_t, std::string>> valuesOf(long cid,
+                                                          const std::string& prop) override
+    {
+        auto s = prepare("SELECT txn,vafter FROM op WHERE cid=? AND prop=? AND ckind='obj'"
+                         " AND op='set' ORDER BY txn, idx");
+        sqlite3_bind_int64(s, 1, cid);
+        bindText(s, 2, prop);
+        std::vector<std::pair<int64_t, std::string>> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            const int64_t txn = sqlite3_column_int64(s, 0);
+            if (!out.empty() && out.back().first == txn)
+                out.back().second = text(s, 1);
+            else
+                out.emplace_back(txn, text(s, 1));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    std::vector<std::string> derivedPropsOf(long cid) override
+    {
+        auto s = prepare("SELECT DISTINCT prop FROM op WHERE cid=? AND ckind='obj' AND op='set'"
+                         " AND derived=? ORDER BY prop");
+        sqlite3_bind_int64(s, 1, cid);
+        sqlite3_bind_int(s, 2, OpDerived);
+        std::vector<std::string> out;
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(text(s, 0));
+        sqlite3_reset(s);
+        return out;
+    }
+
     void removeObjectState(const std::vector<long>& ids) override
     {
         exec("BEGIN");
@@ -1169,6 +1257,7 @@ public:
         addRoots(g, opRoots, roots);
         addRoots(g, manifestRoots, roots);
         addRoots(g, fileRoots, roots);
+        addRoots(g, keptValueRoots, roots);
         std::vector<char> held;
         if (walk(g, roots, nullptr, held))
             sweep(g, held);
@@ -1181,6 +1270,14 @@ public:
     static constexpr const char* manifestRoots =
         "SELECT manifest FROM version WHERE manifest IS NOT NULL";
     static constexpr const char* fileRoots = "SELECT file FROM heldfile";
+    /// Sec 32.11. A value kept by its hash is held whether a row names it
+    /// or not; the values of a kept object are the ones its ops name.
+    static constexpr const char* keptValueRoots = "SELECT hash FROM keepvalue";
+    static constexpr const char* keptObjectRoots =
+        "SELECT vbefore FROM op WHERE ckind='obj' AND vbefore<>''"
+        " AND cid IN (SELECT cid FROM keepobject)"
+        " UNION ALL SELECT vafter FROM op WHERE ckind='obj' AND vafter<>''"
+        " AND cid IN (SELECT cid FROM keepobject)";
 
     /** What the collector walks: every hash the ref edges, the roots and the
      * composites' and manifests' own data name, numbered, with the edges of
@@ -1442,6 +1539,10 @@ public:
             loadGraph(g);
             std::vector<uint32_t> manifests, roots;
             addRoots(g, manifestRoots, manifests);
+            // What is kept is listed as what a manifest reaches is: it
+            // stays, of whatever tier, with what it reaches (sec 32.11).
+            addRoots(g, keptValueRoots, manifests);
+            addRoots(g, keptObjectRoots, manifests);
             addRoots(g, opRoots, roots);
             addRoots(g, fileRoots, roots);
             roots.insert(roots.end(), manifests.begin(), manifests.end());

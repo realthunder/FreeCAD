@@ -629,6 +629,50 @@ keep it. An object at one of the two only is an entry with no 'prop', before
 its properties. The two rows may be on different branches. Read only.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getTransactionValueAt">
+      <Documentation>
+        <UserDocu>getTransactionValueAt(obj, prop, seq=0) -> str
+
+The value property `prop` of `obj` -- an object, or its id -- has at row `seq`
+of the log, as a ref: what the last row of that row's branch at or before it
+set. 0 is the row this document is on. Empty where no row set it.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="keepTransactionValue" Keyword="true">
+      <Documentation>
+        <UserDocu>keepTransactionValue(obj, prop='', seq=0, keep=True) -> list of str
+
+Keep in the file the value property `prop` of `obj` has at row `seq`
+(docs/TransactionLog.md sec 32.11). A value a recompute wrote -- a shape -- is
+otherwise left out of the history a save writes, unless a version kept reaches
+it. With no `prop`, every property of the object a recompute wrote. `keep`
+False lets it go again. Returns the refs kept, or let go.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getKeptTransactionValues">
+      <Documentation>
+        <UserDocu>getKeptTransactionValues() -> list of dict
+
+The values keepTransactionValue() keeps: {'ref', 'cid', 'object', 'prop',
+'seq'}, the row being the one it was asked for at.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="keepTransactionValuesOf">
+      <Documentation>
+        <UserDocu>keepTransactionValuesOf(obj, keep=True)
+
+Keep in the file every value of `obj` the log has, and will have
+(docs/TransactionLog.md sec 32.11): each shape its recomputes made. The file
+grows by each.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getKeptTransactionObjects">
+      <Documentation>
+        <UserDocu>getKeptTransactionObjects() -> list of int
+
+The ids of the objects keepTransactionValuesOf() keeps the values of.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="previewTransactionPick">
       <Documentation>
         <UserDocu>previewTransactionPick(rows) -> dict

@@ -414,6 +414,58 @@ def run():
                     settle()
                     select("base")
                     check("back on the rows: gone", view2.getValueDiff() == {})
+
+                # Kept in the file (sec 32.11): one value, an object's, and
+                # the objects selected as they are at a row
+                derived = column(ops, "Derived")
+                container = column(ops, "Container")
+
+                def said(cid):
+                    for i in range(ops.topLevelItemCount()):
+                        item = ops.topLevelItem(i)
+                        if item.text(prop) == "Shape" and str(cid) in item.text(container):
+                            return item.text(derived)
+                    return None
+
+                def call(slot, *args):
+                    QtCore.QMetaObject.invokeMethod(dock, slot, QtCore.Qt.DirectConnection, *args)
+                    settle()
+
+                wider = [r for r in doc.getTransactionLog() if r["name"] == "wider"][-1]["seq"]
+                select("wider")
+                check("a shape a recompute made says so (%r)" % said(cut2.ID), said(cut2.ID) == "yes")
+                call("keepValue", QtCore.Q_ARG("qlonglong", wider),
+                     QtCore.Q_ARG("qlonglong", cut2.ID), QtCore.Q_ARG(str, "Shape"),
+                     QtCore.Q_ARG(bool, True))
+                kept = doc.getKeptTransactionValues()
+                check("one value kept: listed, and its op says kept (%r)" % said(cut2.ID),
+                      [(k["object"], k["prop"], k["seq"]) for k in kept] == [("Cut2", "Shape", wider)]
+                      and said(cut2.ID) == "yes, kept" and said(cut.ID) == "yes")
+                call("keepValue", QtCore.Q_ARG("qlonglong", wider),
+                     QtCore.Q_ARG("qlonglong", cut2.ID), QtCore.Q_ARG(str, "Shape"),
+                     QtCore.Q_ARG(bool, False))
+                check("let go again", doc.getKeptTransactionValues() == []
+                      and said(cut2.ID) == "yes")
+                call("keepObject", QtCore.Q_ARG("qlonglong", cut.ID), QtCore.Q_ARG(bool, True))
+                check("an object's values kept: every op of it says so",
+                      doc.getKeptTransactionObjects() == [cut.ID]
+                      and said(cut.ID) == "yes, kept" and said(cut2.ID) == "yes")
+                call("keepObject", QtCore.Q_ARG("qlonglong", cut.ID), QtCore.Q_ARG(bool, False))
+                check("and no longer", doc.getKeptTransactionObjects() == [])
+                Gui.Selection.clearSelection()
+                call("keepSelectedAt", QtCore.Q_ARG("qlonglong", wider), QtCore.Q_ARG(bool, True))
+                check("nothing selected: nothing kept", doc.getKeptTransactionValues() == [])
+                Gui.Selection.addSelection(cut2)
+                call("keepSelectedAt", QtCore.Q_ARG("qlonglong", wider), QtCore.Q_ARG(bool, True))
+                kept = doc.getKeptTransactionValues()
+                check("the object selected, kept as it is at a row (%r)"
+                      % [(k["object"], k["prop"]) for k in kept],
+                      bool(kept) and {k["object"] for k in kept} == {"Cut2"}
+                      and "Shape" in {k["prop"] for k in kept})
+                call("keepSelectedAt", QtCore.Q_ARG("qlonglong", wider), QtCore.Q_ARG(bool, False))
+                check("and let go", doc.getKeptTransactionValues() == [])
+                Gui.Selection.clearSelection()
+                select("base")
                 check("shown from the panel: no row written (%d)" % len(doc.getTransactionLog()),
                       len(doc.getTransactionLog()) == panelRows)
 

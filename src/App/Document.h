@@ -660,6 +660,40 @@ public:
      * where the log has no way between the two.
      */
     std::vector<StateChange> compareStates(int64_t a = 0, int64_t b = 0);
+
+    /** @name Values kept in the file (docs/TransactionLog.md sec 32.11)
+     *
+     * What a recompute wrote -- a shape -- is in the log while the document
+     * is open, and is left out of the history a save writes unless a version
+     * kept reaches it. A value kept is written. Kept one by one, or all of
+     * an object's. This is the log's, not the document's: no property, no
+     * undo step.
+     */
+    //@{
+    /// The value property `prop` of object `cid` has at row `seq` (0: the
+    /// row the document is on), as a ref: what the last row of that row's
+    /// branch at or before it set. Empty where no row did.
+    std::string logValueAt(int64_t seq, long cid, const std::string& prop);
+    /** Keep the value property `prop` of object `cid` has at row `seq`, or
+     * with `keep` false let it go. With no `prop`, every property of the
+     * object a recompute wrote. Returns the refs kept or let go: none where
+     * the log holds no such value.
+     */
+    std::vector<std::string> keepLogValue(long cid, const std::string& prop = std::string(),
+                                          int64_t seq = 0, bool keep = true);
+    struct KeptValue
+    {
+        std::string ref;
+        long cid {0};
+        std::string object;   ///< the object's name, where the document has it
+        std::string prop;
+        int64_t seq {0};      ///< the row it was asked for at
+    };
+    std::vector<KeptValue> keptLogValues();
+    /// Keep every value of object `cid` the log has and will have.
+    void keepLogValuesOf(long cid, bool keep = true);
+    std::vector<long> keptLogObjects();
+    //@}
     /** Merge branch `branch` into the one this document is on (sec 28):
      * one transaction of kind `merge`, undone like any, whose second parent
      * is the head merged in. `picks` names a side, `ours` or `theirs`, per
