@@ -5455,6 +5455,36 @@ icons): 80 checks, none failed. Not pushed. What a status update of a
 tree item cost while working on such a document -- the same search, per
 item -- I did not measure apart from the first row.
 
+**Why the icon is missing (the reporter, 2026-10-11: "Why the icon is
+missing. Chase that.").** It was never there, and was not meant to be.
+`ViewProviderAddSub::getIcon` is from `d0e314ea97` (2021-07-29,
+"PartDesign: rename 'Common' operation to 'Intersecting', add more
+icons"): the plain icon is the feature's natural kind -- `PartDesign_Pad`
+an additive pad, `PartDesign_Pocket` a subtractive pocket -- and artwork
+was drawn only for the other kinds (`SubtractivePad`, `IntersectingPad`,
+`AdditiveHole`, `AdditiveGroove`, `SubtractiveRevolution`, ...). The
+function asks for the kind's own name every time and takes the plain
+icon when the answer is nothing. `2a66c17138` (2021-09-14, "fix feature
+pocket icon") renamed `SubtractivePocket.svg` to `AdditivePocket.svg`
+for that reason: the drawing was the unusual pocket's. Nothing was
+deleted since (no deletion of such a file in the history), the resource
+list and the folder agree (one stray, `Part_Slice.svg`, on disk and not
+listed; PartDesign names it only as a command), and no "Cannot find icon" is in any
+of today's logs. So no feature shows a wrong icon; what was wrong is
+what the nothing cost:
+
+- every view provider under `ViewProviderAddSub` asks, also those that
+  have no kinds at all -- the dress-ups (`PartDesign_AdditiveFillet`),
+  the patterns, the Boolean;
+- in 2021 the ask was one `pixmap(name, true)`; `iconFromTheme` took its
+  place in `5403a4484c` (2022), and since `ea6f80d7ac` (2026-08-04, our
+  own artwork before Qt's theme) that function searches ours first and
+  again last, so the miss was searched for twice;
+- the factory has never kept a miss.
+
+It is the only caller in the tree that looks a name up silently and
+expects not to find it.
+
 **The close.** The script closes its document when its last frame is
 taken.
 
