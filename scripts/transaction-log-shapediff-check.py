@@ -465,6 +465,89 @@ def run():
                 call("keepSelectedAt", QtCore.Q_ARG("qlonglong", wider), QtCore.Q_ARG(bool, False))
                 check("and let go", doc.getKeptTransactionValues() == [])
                 Gui.Selection.clearSelection()
+
+                # The list of the kept (sec 32.12)
+                keptList = dock.findChild(QtWidgets.QTreeWidget, "TransactionKept")
+                check("the list of the kept: there, and empty",
+                      keptList is not None and keptList.topLevelItemCount() == 0
+                      and tabs.tabText(2) == "Kept")
+                if keptList is not None:
+                    what, whose = column(keptList, "Kept"), column(keptList, "Object")
+                    which, at = column(keptList, "Property"), column(keptList, "Row")
+
+                    def tops():
+                        return [keptList.topLevelItem(i)
+                                for i in range(keptList.topLevelItemCount())]
+
+                    call("keepValue", QtCore.Q_ARG("qlonglong", wider),
+                         QtCore.Q_ARG("qlonglong", cut2.ID), QtCore.Q_ARG(str, "Shape"),
+                         QtCore.Q_ARG(bool, True))
+                    call("keepObject", QtCore.Q_ARG("qlonglong", cut.ID), QtCore.Q_ARG(bool, True))
+                    tabs.setCurrentIndex(2)
+                    settle()
+                    said2 = [(t.text(what), t.text(whose), t.text(which), t.text(at)) for t in tops()]
+                    check("one value and one object listed (%r)" % said2,
+                          said2 == [("one value", "obj:%d Cut2" % cut2.ID, "Shape", str(wider)),
+                                    ("every value", "obj:%d Cut" % cut.ID, "", "")]
+                          and tabs.tabText(2) == "Kept (2)")
+                    # The wrappers held: a child's goes with its parent's
+                    listed = tops()
+                    under = [listed[1].child(i) for i in range(listed[1].childCount())]
+                    check("under the object, each shape the log has of it (%d)" % len(under),
+                          len(under) >= 2 and all(c.text(which) == "Shape" for c in under)
+                          and len({c.text(at) for c in under}) == len(under)
+                          and all(len(c.toolTip(column(keptList, "Value"))) == 40 for c in under))
+                    keptList.setCurrentItem(listed[0])
+                    settle()
+                    pane = [w for w in dock.findChildren(QtWidgets.QPlainTextEdit)][-1]
+                    # Cut2 is still what the row left it: all eight as they were
+                    check("a kept value selected: against now in the view, and its text (%r)"
+                          % part(diff, "diffStatus").text(),
+                          part(diff, "diffPair").itemText(0) == "the kept value against now"
+                          and view2.getValueDiff().get("same") == 8
+                          and view.getValueDiff() == {}
+                          and pane.toPlainText().startswith("== kept "))
+                    keptList.setCurrentItem(under[0])
+                    settle()
+                    shown = view.getValueDiff()
+                    check("a value of the kept object selected: its first shape, over that "
+                          "object (%r)" % part(diff, "diffStatus").text(),
+                          shown.get("changed", 0) + shown.get("moved", 0) + shown.get("added", 0) > 0
+                          and view2.getValueDiff() == {})
+                    del listed, under   # the list is made again below
+                    ref = doc.getKeptTransactionValues()[0]["ref"]
+                    call("releaseValue", QtCore.Q_ARG(str, ref))
+                    check("the one value let go by its ref: what was selected stays so",
+                          doc.getKeptTransactionValues() == [] and tabs.tabText(2) == "Kept (1)"
+                          and [t.text(what) for t in tops()] == ["every value"]
+                          and len(keptList.selectedItems()) == 1
+                          and bool(view.getValueDiff()))
+                    call("releaseValue", QtCore.Q_ARG(str, ref))
+                    check("let go twice: said, and nothing moved",
+                          any("Nothing let go" in w.text()
+                              for w in dock.findChildren(QtWidgets.QLabel))
+                          and tabs.tabText(2) == "Kept (1)")
+                    call("keepObject", QtCore.Q_ARG("qlonglong", cut.ID), QtCore.Q_ARG(bool, False))
+                    check("the object no longer kept: the list is empty and nothing is shown",
+                          tops() == [] and tabs.tabText(2) == "Kept" and view.getValueDiff() == {})
+                    # Kept from Python: no signal says so, the tab asks again
+                    tabs.setCurrentIndex(0)
+                    settle()
+                    refs = doc.keepTransactionValue(cut2, "Shape", wider)
+                    tabs.setCurrentIndex(2)
+                    settle()
+                    check("kept from Python: listed when the tab is shown",
+                          len(refs) == 1 and [t.text(what) for t in tops()] == ["one value"])
+                    check("let go from Python by its ref, once",
+                          doc.releaseTransactionValue(refs[0]) is True
+                          and doc.releaseTransactionValue(refs[0]) is False)
+                    tabs.setCurrentIndex(0)
+                    settle()
+                    tabs.setCurrentIndex(2)
+                    settle()
+                    check("and gone from the list", tops() == [])
+                    tabs.setCurrentIndex(0)
+                    settle()
                 select("base")
                 check("shown from the panel: no row written (%d)" % len(doc.getTransactionLog()),
                       len(doc.getTransactionLog()) == panelRows)

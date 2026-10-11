@@ -18076,8 +18076,9 @@ newest of its run; an object kept, every shape its recomputes make.
 **Left.**
 
 - No list of the kept in the panel: what a row no longer names is found
-  from Python only.
-- A kept object that is removed stays in `keepobject`.
+  from Python only. *(Built: 32.12.)*
+- A kept object that is removed stays in `keepobject`. *(Let go from
+  the list: 32.12.)*
 - The document is not marked modified by keeping; what is kept is
   written by the next save all the same.
 - 32.9's "a value the log let go" stands: nothing says why nothing is
@@ -18089,5 +18090,58 @@ opened, then let go and gone; every property a recompute wrote; every
 shape of an object, through three saves, and made after; a kept value
 when its row is trimmed. The Gui check (+8, 63): the three entries of
 the panel and what an op says.
+
+### 32.12 The list of the kept (2026-10-11)
+
+**Asked (user):** "add option to show list of kept values".
+
+**A third tab of the panel, "Kept"**, beside the transactions and the
+versions; its title carries the count, "Kept (2)", so that something
+kept is seen without the tab being opened. Two kinds of line:
+
+- *one value*: a value kept by itself -- its object, its property, the
+  row it was kept at, its ref. A row no longer in the log reads
+  "N, gone": the value is there all the same (32.11), and this list is
+  now where it is found.
+- *every value*: an object kept, and under it each value the log has of
+  it now, by property and row. An object the document no longer has
+  reads "obj:N, not in the document", and can be let go from here --
+  which answers 32.11's "a kept object that is removed stays".
+
+**Selected**, a value is shown over its object against what the object
+has now (the diff bar's pair reads "the kept value against now"), and
+its text is in the value pane, as an op's is. The pane of ops and
+manifests is folded away while the tab shows: the kept have no detail
+but the value.
+
+**The menu.** "Let go of this value" on a value kept by itself; "Stop
+keeping every value of obj:N" on an object; on a value under an object
+"Keep this value by itself", ticked where it is so -- what holds it past
+a trim, since an object's values are kept by the rows that made them;
+and "Show row N" where the row is still in the log.
+
+**Let go by its ref.** `keepTransactionValue(obj, prop, seq, False)`
+finds the value by its row, and a row trimmed is not found: a value kept
+past its row could be listed and not let go. Added:
+`Document::releaseLogValue(ref)`, Python `releaseTransactionValue(ref)
+-> bool`, the panel's slot `releaseValue(ref)`.
+
+**When it is asked again.** With every refresh of the panel (a commit, a
+recompute, an undo), after each of the panel's own keep slots, and when
+the tab is shown -- keeping from Python raises no signal. It is rebuilt
+only when what it says has moved, and what was selected is selected
+again where it is still listed.
+
+**Left.**
+
+- The document is still not marked modified by keeping or letting go.
+- The list is of the document the panel is on; nothing says what a file
+  not open keeps.
+
+**Tests.** `KeptShapesTest.testLetGoByItsRefWhenItsRowIsGone` (+1). The
+Gui check (+11, 74): empty; one value and one object listed; the values
+under the object; a value selected, in the view and in the pane; a value
+of the object selected; let go by its ref with the selection staying;
+let go twice; the object let go; kept and let go from Python.
 
 **Next (32.4):** step 6 -- volumes, the merged result, the stream.

@@ -82,6 +82,8 @@ private Q_SLOTS:
     void onOpSelected();
     void onVersionSelected();
     void onManifestSelected();
+    void onKeptSelected();
+    void onKeptContextMenu(const QPoint& pos);
     void onTabChanged(int index);
     void onFilterChanged(const QString& text);
     void onResolvePending();
@@ -169,6 +171,9 @@ public Q_SLOTS:
     void keepObject(qlonglong cid, bool keep);
     /// keepValue() of every object selected, as each is at row `seq`.
     void keepSelectedAt(qlonglong seq, bool keep);
+    /// Let go of the kept value `ref`, as the list of the kept names it:
+    /// whether a row still names it or not.
+    void releaseValue(const QString& ref);
 
 protected:
     void showEvent(QShowEvent*) override;
@@ -185,6 +190,13 @@ private:
     void showRowDiff(int64_t seq);
     void showVersionDiff(int64_t seq);
     void refreshVersions();
+    /// The list of the kept (sec 32.12): each value kept by itself, and
+    /// under each object kept the values the log has of it.
+    void refreshKept();
+    /// refreshKept(), and what the tab shown says of what is selected.
+    void keptChanged();
+    /// The value behind `ref` as the store holds it, under `label`.
+    QString valueText(const QString& label, const QString& ref) const;
     /// The branch switcher's items (docs/TransactionLog.md sec 26).
     void refreshBranches();
     /// The request list (sec 30.20 H2): files sent and not read, and the
@@ -259,6 +271,9 @@ private:
     QTreeWidget* _ops {nullptr};
     QTreeWidget* _versions {nullptr};
     QTreeWidget* _manifest {nullptr};
+    QTreeWidget* _kept {nullptr};
+    /// What the list of the kept says, to rebuild it only when that moves.
+    QString _keptSaid;
     QPlainTextEdit* _value {nullptr};
     /// The op selected, before against after, in the 3D view (sec 32.9)
     TransactionDiffBar* _diffBar {nullptr};

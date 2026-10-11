@@ -10265,6 +10265,12 @@ std::vector<Document::KeptValue> Document::keptLogValues()
     return out;
 }
 
+bool Document::releaseLogValue(const std::string& ref)
+{
+    TransactionLog* log = getTransactionLog();
+    return log && log->store().releaseValue(ref);
+}
+
 void Document::keepLogValuesOf(long cid, bool keep)
 {
     if (TransactionLog* log = getTransactionLog())

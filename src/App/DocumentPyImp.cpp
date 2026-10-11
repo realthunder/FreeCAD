@@ -1651,6 +1651,16 @@ PyObject* DocumentPy::getKeptTransactionValues(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::releaseTransactionValue(PyObject *args)
+{
+    const char* ref = "";
+    if (!PyArg_ParseTuple(args, "s", &ref))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->releaseLogValue(ref)));
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::keepTransactionValuesOf(PyObject *args)
 {
     PyObject* which = nullptr;

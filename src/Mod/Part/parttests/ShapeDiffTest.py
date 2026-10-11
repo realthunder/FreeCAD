@@ -431,3 +431,18 @@ class KeptShapesTest(unittest.TestCase):
         self.reopened()
         self.assertIsTheShapeOf(first, "taller 12")
 
+    def testLetGoByItsRefWhenItsRowIsGone(self):
+        doc = self.doc
+        first, seq = self.made("taller 12", self.cut), self.seq("taller 12")
+        doc.keepTransactionValue(self.cut, "Shape", seq)
+        doc.save()
+        self.assertGreater(doc.trimTransactionBranch("main"), 0)
+        # The row is gone, and the value is no longer found by it
+        self.assertEqual(doc.keepTransactionValue(self.cut, "Shape", seq, False), [])
+        self.assertEqual([k["ref"] for k in doc.getKeptTransactionValues()], [first])
+        self.assertTrue(doc.releaseTransactionValue(first))
+        self.assertFalse(doc.releaseTransactionValue(first))
+        self.assertEqual(doc.getKeptTransactionValues(), [])
+        self.reopened()
+        self.assertIsNone(self.read(first))
+

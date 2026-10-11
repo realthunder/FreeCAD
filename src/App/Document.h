@@ -690,6 +690,9 @@ public:
         int64_t seq {0};      ///< the row it was asked for at
     };
     std::vector<KeptValue> keptLogValues();
+    /// Let go of the kept value `ref`, whether a row still names it or not:
+    /// false where it was not kept.
+    bool releaseLogValue(const std::string& ref);
     /// Keep every value of object `cid` the log has and will have.
     void keepLogValuesOf(long cid, bool keep = true);
     std::vector<long> keptLogObjects();

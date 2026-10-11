@@ -657,6 +657,14 @@ The values keepTransactionValue() keeps: {'ref', 'cid', 'object', 'prop',
 'seq'}, the row being the one it was asked for at.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="releaseTransactionValue">
+      <Documentation>
+        <UserDocu>releaseTransactionValue(ref) -> bool
+
+Let go of the kept value `ref`, one of getKeptTransactionValues(), whether a
+row of the log still names it or not. False where it was not kept.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="keepTransactionValuesOf">
       <Documentation>
         <UserDocu>keepTransactionValuesOf(obj, keep=True)

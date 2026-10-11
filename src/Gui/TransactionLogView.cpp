@@ -101,6 +101,8 @@ enum OpColumn { OpIdx, OpOp, OpContainer, OpProp, OpType, OpBefore, OpAfter, OpD
 enum VerColumn { VerNum, VerKind, VerName, VerBranch, VerSeq, VerSchema, VerCreated, VerDocXml,
                  VerEntries, VerColumns };
 enum ManColumn { ManEntry, ManSource, ManHash, ManColumns };
+enum KeptColumn { KeptWhat, KeptObject, KeptProp, KeptRow, KeptValue, KeptColumns };
+enum Tab { TabTransactions, TabVersions, TabKept };
 
 QString shortRef(const std::string& ref)
 {
@@ -369,6 +371,8 @@ public:
         _pair->setObjectName(QStringLiteral("diffPair"));
         _pair->addItems(pairs);
         _pair->addItem(QObject::tr("nothing"));
+        // A pair is named again by setPairLabel(): as wide as what it says
+        _pair->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         layout->addWidget(_pair);
         _position = new QSlider(Qt::Horizontal, this);
         _position->setObjectName(QStringLiteral("diffPosition"));
@@ -683,6 +687,23 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _versions->header()->setStretchLastSection(false);
     _versions->header()->setSectionResizeMode(VerName, QHeaderView::Stretch);
 
+    // What a save keeps of the values a recompute wrote (sec 32.12)
+    _kept = new QTreeWidget(_tabs);
+    _kept->setObjectName(QStringLiteral("TransactionKept"));
+    _tabs->addTab(_kept, tr("Kept"));
+    _tabs->setTabToolTip(TabKept, tr("The values a recompute wrote -- shapes -- that a save "
+                                     "writes into the file though no kept version reaches "
+                                     "them: each one kept by itself, and every one of an "
+                                     "object kept (sec 32.11)"));
+    _kept->setColumnCount(KeptColumns);
+    _kept->setHeaderLabels({tr("Kept"), tr("Object"), tr("Property"), tr("Row"), tr("Value")});
+    _kept->setAlternatingRowColors(true);
+    _kept->setUniformRowHeights(true);
+    _kept->setSelectionMode(QAbstractItemView::SingleSelection);
+    _kept->setContextMenuPolicy(Qt::CustomContextMenu);
+    _kept->header()->setStretchLastSection(false);
+    _kept->header()->setSectionResizeMode(KeptObject, QHeaderView::Stretch);
+
     _detail = new QStackedWidget(splitter);
     _ops = new QTreeWidget(_detail);
     _detail->addWidget(_ops);
@@ -735,6 +756,9 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
             this, &TransactionLogView::onVersionContextMenu);
     connect(_manifest, &QTreeWidget::itemSelectionChanged,
             this, &TransactionLogView::onManifestSelected);
+    connect(_kept, &QTreeWidget::itemSelectionChanged, this, &TransactionLogView::onKeptSelected);
+    connect(_kept, &QTreeWidget::customContextMenuRequested,
+            this, &TransactionLogView::onKeptContextMenu);
     connect(_tabs, &QTabWidget::currentChanged, this, &TransactionLogView::onTabChanged);
     connect(_filter, &QLineEdit::textChanged, this, &TransactionLogView::onFilterChanged);
     connect(_resolve, &QPushButton::clicked, this, &TransactionLogView::onResolvePending);
@@ -841,6 +865,9 @@ void TransactionLogView::detach()
     _ops->clear();
     _versions->clear();
     _manifest->clear();
+    _kept->clear();
+    _keptSaid.clear();
+    _tabs->setTabText(TabKept, tr("Kept"));
     _value->clear();
     _diffBar->clear();
     updateStatus();
@@ -878,6 +905,8 @@ void TransactionLogView::reload()
     _ops->clear();
     _versions->clear();
     _manifest->clear();
+    _kept->clear();
+    _keptSaid.clear();
     _value->clear();
     _lastSeq = 0;
     _lastVersion = 0;
@@ -903,6 +932,7 @@ void TransactionLogView::refresh()
             appendTransactions(_lastSeq + 1);
         _lastSeq = last;
         refreshVersions();
+        refreshKept();
         refreshBranches();
         refreshRequests();
         applyVisibility();
@@ -956,12 +986,263 @@ void TransactionLogView::refreshVersions()
 
 void TransactionLogView::onTabChanged(int index)
 {
-    _detail->setCurrentIndex(index == 0 ? 0 : 1);
+    // The kept have no detail of their own: the value pane says it all
+    _detail->setVisible(index != TabKept);
+    _detail->setCurrentIndex(index == TabVersions ? 1 : 0);
     _value->clear();
-    if (index == 0)
+    if (index == TabTransactions) {
         onTransactionSelected();
-    else
+    }
+    else if (index == TabVersions) {
         onVersionSelected();
+    }
+    else {
+        // Asked of the store again: what Python kept, no signal said
+        refreshKept();
+        onKeptSelected();
+    }
+}
+
+void TransactionLogView::refreshKept()
+{
+    // Each value kept by itself, and under each object kept the values the
+    // log has of it (sec 32.12). Few rows: rebuilt whole, and only when
+    // what they say has moved, so that what is selected stays so.
+    auto l = log();
+    if (!l || !_doc)
+        return;
+    struct Line
+    {
+        bool under {false};   // a value of the object kept above it
+        QString what;
+        long cid {0};
+        QString prop;
+        int64_t seq {0};      // the row it is of
+        bool rowThere {false};
+        std::string ref;      // none: an object kept
+        QString value;
+    };
+    std::vector<Line> lines;
+    int kept = 0;
+    try {
+        auto& store = l->store();
+        auto rowThere = [&store](int64_t seq) {
+            const auto rows = store.transactions(seq, 1);
+            return !rows.empty() && rows.front().seq == seq;
+        };
+        for (const auto& value : store.keptValues()) {
+            lines.push_back({false, tr("one value"), value.cid, QString::fromStdString(value.prop),
+                             value.seq, rowThere(value.seq), value.hash, shortRef(value.hash)});
+            ++kept;
+        }
+        for (long cid : store.keptObjects()) {
+            std::vector<Line> values;
+            for (const auto& prop : store.derivedPropsOf(cid)) {
+                for (const auto& set : store.valuesOf(cid, prop)) {
+                    if (set.second.empty() || !store.hasEntity(set.second))
+                        continue;
+                    values.push_back({true, QString(), cid, QString::fromStdString(prop),
+                                      set.first, true, set.second, shortRef(set.second)});
+                }
+            }
+            lines.push_back({false, tr("every value"), cid, QString(), 0, false, std::string(),
+                             tr("%n value(s)", "", static_cast<int>(values.size()))});
+            lines.insert(lines.end(), values.begin(), values.end());
+            ++kept;
+        }
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log view: " << e.what());
+        return;
+    }
+    auto objectText = [this](long cid) {
+        auto obj = _doc->getObjectByID(cid);
+        return obj && obj->getNameInDocument()
+                   ? QStringLiteral("obj:%1 %2").arg(cid).arg(
+                         QString::fromUtf8(obj->getNameInDocument()))
+                   : tr("obj:%1, not in the document").arg(cid);
+    };
+    QString said;
+    for (const auto& line : lines) {
+        said += QStringLiteral("%1|%2|%3|%4|%5|%6\n")
+                    .arg(line.under ? 1 : 0).arg(objectText(line.cid), line.prop)
+                    .arg(line.seq).arg(line.rowThere ? 1 : 0)
+                    .arg(QString::fromStdString(line.ref) + line.value);
+    }
+    if (said == _keptSaid && (_kept->topLevelItemCount() > 0) == !lines.empty())
+        return;
+    _keptSaid = said;
+
+    QString selected;
+    qlonglong selectedSeq = 0;
+    bool wasSelected = false;
+    if (auto items = _kept->selectedItems(); !items.isEmpty()) {
+        wasSelected = true;
+        selected = items.front()->data(KeptWhat, Qt::UserRole).toString()
+                   + QLatin1Char('@') + items.front()->data(KeptObject, Qt::UserRole).toString();
+        selectedSeq = items.front()->data(KeptRow, Qt::UserRole).toLongLong();
+    }
+    const QSignalBlocker blocker(_kept);
+    _kept->clear();
+    QTreeWidgetItem* object = nullptr;
+    QTreeWidgetItem* again = nullptr;
+    for (const auto& line : lines) {
+        auto item = line.under && object ? new QTreeWidgetItem(object)
+                                         : new QTreeWidgetItem(_kept);
+        if (!line.under)
+            object = line.ref.empty() ? item : nullptr;
+        item->setText(KeptWhat, line.what);
+        item->setText(KeptObject, objectText(line.cid));
+        item->setText(KeptProp, line.prop);
+        if (line.seq)
+            item->setText(KeptRow, line.rowThere ? QString::number(line.seq)
+                                                 : tr("%1, gone").arg(line.seq));
+        item->setText(KeptValue, line.value);
+        if (!line.ref.empty())
+            item->setToolTip(KeptValue, QString::fromStdString(line.ref));
+        if (line.seq && !line.rowThere)
+            item->setToolTip(KeptRow, tr("The row it was kept at is no longer in the log; "
+                                         "the value is"));
+        item->setData(KeptWhat, Qt::UserRole, QString::fromStdString(line.ref));
+        item->setData(KeptObject, Qt::UserRole, static_cast<qlonglong>(line.cid));
+        item->setData(KeptRow, Qt::UserRole,
+                      static_cast<qlonglong>(line.rowThere ? line.seq : 0));
+        item->setTextAlignment(KeptRow, Qt::AlignRight | Qt::AlignVCenter);
+        if (wasSelected && !again && selectedSeq == item->data(KeptRow, Qt::UserRole).toLongLong()
+                && selected == item->data(KeptWhat, Qt::UserRole).toString() + QLatin1Char('@')
+                                   + item->data(KeptObject, Qt::UserRole).toString())
+            again = item;
+    }
+    _kept->expandAll();
+    for (int c = 0; c < KeptColumns; ++c) {
+        if (c != KeptObject)
+            _kept->resizeColumnToContents(c);
+    }
+    _tabs->setTabText(TabKept, kept ? tr("Kept (%1)").arg(kept) : tr("Kept"));
+    if (again)
+        _kept->setCurrentItem(again);
+    else if (wasSelected && _tabs->currentIndex() == TabKept)
+        QTimer::singleShot(0, this, &TransactionLogView::onKeptSelected);
+}
+
+void TransactionLogView::keptChanged()
+{
+    refreshKept();
+    onTabChanged(_tabs->currentIndex());
+}
+
+void TransactionLogView::onKeptSelected()
+{
+    _value->clear();
+    _diffBar->clear();
+    auto items = _kept->selectedItems();
+    if (items.isEmpty() || !_doc || _tabs->currentIndex() != TabKept)
+        return;
+    auto item = items.front();
+    const QString ref = item->data(KeptWhat, Qt::UserRole).toString();
+    if (ref.isEmpty()) {
+        _value->setPlainText(tr("Every value a recompute writes of this object is written into "
+                                "the file by a save: those the log has now are listed under "
+                                "it, and each one to come is kept as it is made.\n\nThey are "
+                                "kept by the rows that made them: a row trimmed or squashed "
+                                "takes its value with it. Keep one by itself to hold it past "
+                                "that."));
+        return;
+    }
+    // The value kept, over the object as it is now (sec 32.9)
+    const long cid = static_cast<long>(item->data(KeptObject, Qt::UserRole).toLongLong());
+    _diffBar->setPairLabel(0, tr("the kept value against now"));
+    _diffBar->setValue(_doc, cid, item->text(KeptProp).toStdString(),
+                       {{true, ref.toStdString(), std::string()}});
+    _value->setPlainText(valueText(tr("kept"), ref));
+}
+
+void TransactionLogView::onKeptContextMenu(const QPoint& pos)
+{
+    auto item = _kept->itemAt(pos);
+    auto l = log();
+    if (!item || !_doc || !l)
+        return;
+    const QString ref = item->data(KeptWhat, Qt::UserRole).toString();
+    const qlonglong cid = item->data(KeptObject, Qt::UserRole).toLongLong();
+    const qlonglong seq = item->data(KeptRow, Qt::UserRole).toLongLong();
+    const QString prop = item->text(KeptProp);
+    QMenu menu(this);
+    QAction* letGo = nullptr;
+    QAction* stop = nullptr;
+    QAction* alone = nullptr;
+    QAction* row = nullptr;
+    bool keptAlone = false;
+    if (ref.isEmpty()) {
+        stop = menu.addAction(tr("Stop keeping every value of %1").arg(item->text(KeptObject)));
+        stop->setToolTip(tr("Those kept by themselves stay kept"));
+    }
+    else if (!item->parent()) {
+        letGo = menu.addAction(tr("Let go of this value"));
+        letGo->setToolTip(tr("A save then leaves it out of the file, unless a kept version "
+                             "reaches it or its object is kept"));
+    }
+    else {
+        try {
+            for (const auto& kept : l->store().keptValues())
+                keptAlone = keptAlone || kept.hash == ref.toStdString();
+        }
+        catch (Base::Exception&) {
+        }
+        alone = menu.addAction(tr("Keep this value by itself"));
+        alone->setCheckable(true);
+        alone->setChecked(keptAlone);
+        alone->setToolTip(tr("It then stays when its row goes, in a trim or a squash, and "
+                             "when the object is no longer kept"));
+    }
+    if (seq)
+        row = menu.addAction(tr("Show row %1").arg(seq));
+    auto chosen = menu.exec(_kept->viewport()->mapToGlobal(pos));
+    if (!chosen)
+        return;
+    if (chosen == letGo) {
+        releaseValue(ref);
+    }
+    else if (chosen == stop) {
+        keepObject(cid, false);
+    }
+    else if (chosen == alone) {
+        keepValue(seq, cid, prop, !keptAlone);
+    }
+    else if (chosen == row) {
+        for (int i = 0; i < _transactions->topLevelItemCount(); ++i) {
+            auto found = _transactions->topLevelItem(i);
+            if (found->data(TxnSeq, Qt::UserRole).toLongLong() != seq)
+                continue;
+            _tabs->setCurrentIndex(TabTransactions);
+            _transactions->setCurrentItem(found);
+            _transactions->scrollToItem(found);
+            break;
+        }
+    }
+}
+
+QString TransactionLogView::valueText(const QString& label, const QString& ref) const
+{
+    QString text;
+    if (ref.isEmpty())
+        return text;
+    text += QStringLiteral("== %1 %2\n").arg(label, ref);
+    App::CapturedValue v;
+    auto l = log();
+    if (l && l->readValue(ref.toStdString(), v)) {
+        text += QString::fromStdString(v.fragment);
+        if (!text.endsWith(QLatin1Char('\n')))
+            text += QLatin1Char('\n');
+        for (const auto& a : v.attachments)
+            text += tr("-- attachment %1: %2 bytes\n")
+                        .arg(QString::fromStdString(a.name)).arg(a.bytes.size());
+    }
+    else {
+        text += tr("(value not in store)\n");
+    }
+    text += QLatin1Char('\n');
+    return text;
 }
 
 void TransactionLogView::onVersionSelected()
@@ -1295,27 +1576,8 @@ void TransactionLogView::onOpSelected()
         text += tr("meta: %1\n\n").arg(meta);
     // The after value is what the property became; show it first, the
     // before value after it, each under its full ref.
-    auto section = [this, &text](const QString& label, const QString& ref) {
-        if (ref.isEmpty())
-            return;
-        text += QStringLiteral("== %1 %2\n").arg(label, ref);
-        App::CapturedValue v;
-        auto l = log();
-        if (l && l->readValue(ref.toStdString(), v)) {
-            text += QString::fromStdString(v.fragment);
-            if (!text.endsWith(QLatin1Char('\n')))
-                text += QLatin1Char('\n');
-            for (const auto& a : v.attachments)
-                text += tr("-- attachment %1: %2 bytes\n")
-                            .arg(QString::fromStdString(a.name)).arg(a.bytes.size());
-        }
-        else {
-            text += tr("(value not in store)\n");
-        }
-        text += QLatin1Char('\n');
-    };
-    section(QStringLiteral("after"), after);
-    section(QStringLiteral("before"), before);
+    text += valueText(QStringLiteral("after"), after);
+    text += valueText(QStringLiteral("before"), before);
     _value->setPlainText(text);
 }
 
@@ -2728,7 +2990,7 @@ void TransactionLogView::keepValue(qlonglong seq, qlonglong cid, const QString& 
     catch (Base::Exception& e) {
         FC_ERR("keep a value: " << e.what());
     }
-    onTransactionSelected();
+    keptChanged();
 }
 
 void TransactionLogView::keepObject(qlonglong cid, bool keep)
@@ -2747,7 +3009,7 @@ void TransactionLogView::keepObject(qlonglong cid, bool keep)
     catch (Base::Exception& e) {
         FC_ERR("keep an object's values: " << e.what());
     }
-    onTransactionSelected();
+    keptChanged();
 }
 
 void TransactionLogView::keepSelectedAt(qlonglong seq, bool keep)
@@ -2771,6 +3033,22 @@ void TransactionLogView::keepSelectedAt(qlonglong seq, bool keep)
     _status->setText(keep ? tr("%1 values of %2 objects kept as they are at row %3")
                                 .arg(values).arg(objects.size()).arg(seq)
                           : tr("%1 values of %2 objects let go").arg(values).arg(objects.size()));
+    refreshKept();
+}
+
+void TransactionLogView::releaseValue(const QString& ref)
+{
+    if (!_doc)
+        return;
+    try {
+        _status->setText(_doc->releaseLogValue(ref.toStdString())
+                             ? tr("%n value(s) let go", "", 1)
+                             : tr("Nothing let go: no such value was kept"));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("let go of a value: " << e.what());
+    }
+    keptChanged();
 }
 
 void TransactionLogView::onOpContextMenu(const QPoint& pos)
