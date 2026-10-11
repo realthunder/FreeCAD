@@ -19,7 +19,11 @@ What it reports, in this order:
    many pixels the geometry covers and the frame's average colour. A view that shows the
    background and the navigation cube alone covers a few thousand pixels; the times at which
    the count jumps and then stands are when the model is first there and when it is complete.
-5. The pass over the commands again, with the document open.
+   The count is -1 where the view is multisampled (its depth is not read back), so:
+5. The frames compared, when all are taken: how many pixels of each differ from the earliest
+   frame of the last one's size. Edges and lines count here, so it is not the number of 4,
+   but it jumps and stands at the same times.
+6. The pass over the commands again, with the document open.
 
 With LOAD_LOG=1 the Gui and Part log is on, and the session's log has the load's own account:
 "progressive restore <doc>: N view providers in S slices, T s ..." (Gui::Document's drain),
@@ -40,7 +44,7 @@ import traceback
 
 import FreeCAD
 import FreeCADGui
-from PySide import QtCore, QtWidgets
+from PySide import QtCore, QtGui, QtWidgets
 
 SRC = os.environ.get("LOAD_SRC", "")
 OUT = os.environ.get("LOAD_OUT") or os.environ.get("GT_OUT") or tempfile.mkdtemp(prefix="load-")
@@ -145,6 +149,7 @@ def sample():
         v = FreeCADGui.getDocument(STATE["doc"]).mdiViewsOfType("Gui::View3DInventor")[0]
         shot = os.path.join(OUT, "t%05.1f.png" % at)
         v.saveRenderDump(shot)
+        STATE.setdefault("shots", []).append((at, shot))
         with open(shot + ".json", encoding="utf-8") as f:
             stats = json.load(f)["stats"]
         note("%5.1f s: geometry pixels %s of %d; average colour %s" % (
@@ -155,8 +160,43 @@ def sample():
     schedule()
 
 
+def differing(ref, cur):
+    """Pixels of two RGB32 frames that differ by more than 8 of 255 in a channel."""
+    try:
+        import numpy
+        a = numpy.frombuffer(ref, dtype=numpy.uint8).reshape(-1, 4)[:, :3].astype(numpy.int16)
+        b = numpy.frombuffer(cur, dtype=numpy.uint8).reshape(-1, 4)[:, :3].astype(numpy.int16)
+        return int((numpy.abs(a - b).max(axis=1) > 8).sum())
+    except ImportError:
+        return sum(1 for i in range(0, len(ref), 4)
+                   if max(abs(ref[i] - cur[i]), abs(ref[i + 1] - cur[i + 1]),
+                          abs(ref[i + 2] - cur[i + 2])) > 8)
+
+
+def changed():
+    """The frames against the earliest one of the last one's size, when all are taken."""
+    frames = []
+    for at, shot in STATE.get("shots", []):
+        img = QtGui.QImage(shot)
+        if img.isNull():
+            continue
+        img = img.convertToFormat(QtGui.QImage.Format_RGB32)
+        frames.append((at, img.width(), img.height(), bytes(img.constBits())))
+    if not frames:
+        return
+    size = frames[-1][1:3]
+    frames = [f for f in frames if f[1:3] == size]
+    note("pixels changed since %.1f s, of %d: %s" % (
+        frames[0][0], size[0] * size[1],
+        ", ".join("%.1f s %d" % (f[0], differing(frames[0][3], f[3])) for f in frames[1:])))
+
+
 def finish():
     SWEEPER.stop()
+    try:
+        changed()
+    except Exception:
+        note("changed: " + " | ".join(traceback.format_exc().splitlines()))
     try:
         commands("the document open")
         for name in list(FreeCAD.listDocuments()):
