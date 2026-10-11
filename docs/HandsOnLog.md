@@ -5240,6 +5240,13 @@ the drain, by class, of the steps slow enough to be logged:
 | `TechDrawGui::ViewProviderViewSection` (9) | 0.13 s | 0.64 s | 0.19 s |
 | PartDesign's Pocket, Pad, Pattern, Fillet, Hole, Helix | 1.2 s | | 1.6 s |
 
+**WITHDRAWN 2026-10-11: the comparison that follows, its "22 s of the 33"
+and its "none of which is on the screen".** The copy was saved by
+`FreeCADCmd` and so has no `GuiDocument.xml`: it lacks every view
+provider record, not TechDraw's alone. And five of the ten pages are
+saved visible and open as views at the load. Measured properly further
+down ("TechDraw's share, with a control that is one"). Left as written:
+
 And the file without its 229 TechDraw objects (`mk-notd.py`: a copy, the
 objects removed, saved; 457 objects, 5.0 MB), plain runs, two each,
 alternating:
@@ -5484,6 +5491,58 @@ what the nothing cost:
 
 It is the only caller in the tree that looks a name up silently and
 expects not to find it.
+
+**TechDraw's share, with a control that is one (2026-10-11; the reporter:
+"Then the techdraw one").** Starting on the pages I read the archive of
+the copy "without TechDraw" that the 22 s came from: it has no
+`GuiDocument.xml`. `mk-notd.py` ran in `FreeCADCmd`, and a console save
+writes no view provider records at all, so that copy differed from the
+file in two things at once. What the records are in the original: 357 of
+677 name a colour file (`DiffuseColor`, `LineColorArray`,
+`PointColorArray`, `MappedColors`, `OverrideColorList`, `MaterialList`)
+-- every Part, PartDesign, Link and Sketch object and not one of the 229
+of TechDraw -- and a record that names a file cannot be parked for the
+drain (`Gui::Document::RestoreDocFile`): its view provider is made, its
+shape read and its update run inside the open. Also wrong in what I
+wrote: five of the ten pages are saved visible (`Page001`, `002`, `003`,
+`008`, `009`), so five page views are opened by the load; the 3D view is
+halved by it, which the frames' size had been saying all along.
+
+The control, made in the GUI this time (`e47g.py`): a copy opened, and
+when its load was over saved as it is (`ctl\scanner-resaved.FCStd`, 686
+objects, 686 records, the same 357 naming a file), then its TechDraw
+objects removed and saved again (`ctl\scanner-resaved-notd.FCStd`, 457
+objects and records). Plain loads, two rounds of the three:
+
+| | the original | re-saved | re-saved, no TechDraw |
+|---|---|---|---|
+| the open returns after | 14.8, 13.7 s | 13.8, 12.4 s | 8.4, 7.3 s |
+| the model first on the screen, after that | 10.4, 9.1 s | 9.1, 8.1 s (part of it), all but the last change a second later | by 4.1, 4.0 s -- there at the first frame compared |
+| from the open to the model | 23 to 25 s | 20.5 to 23 s | 11.3 to 12.5 s at most |
+
+So the TechDraw objects are about 5 s of the open and 5 s or more of the
+wait after it: ten of this file's 21 to 25 seconds. Next to the
+withdrawn figure -- 22 of 33, of which `ee9583a247` has since taken ten
+-- that is the same size, and it stood on a comparison that could not
+show it. The re-save by itself is worth a second or two (the pages'
+projections are stored by this build and not made again).
+
+**A crash found on the way: a page removed outside a transaction.** The
+first run of the control script removed the 229 objects with
+`doc.removeObject` and no transaction, and the session died: access
+violation, executing an address in a string table, in
+`TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under
+`App::Document::removeObject` (`q2\crash-drawpage`). The function takes
+the page's list of views and removes them one by one; a part view
+removes its dimensions and balloons as it goes, those stand in the
+page's list too, and outside a transaction a removed object is deleted
+at once -- so the loop came to a freed pointer and asked it
+`isAttachedToDocument()`. Inside a transaction the object lives on,
+which is why deleting a page by hand does not do this; a script does,
+and so would a delete with undo off. Changed to go by name
+(`DrawPage`, and `DrawViewCollection` which has the same loop), with a
+test (`TDTest/DrawPageRemoveTest.py`). NOT BUILT OR RUN YET as this is
+written.
 
 **The close.** The script closes its document when its last frame is
 taken.
