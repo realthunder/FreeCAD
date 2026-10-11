@@ -18312,3 +18312,106 @@ the windows where they asked for the modal one
 
 **Next (32.4):** step 6 goes on -- the material drawn, the merged
 result, the stream.
+
+### 32.16 Step 6, second part: the material drawn, and not waited for (2026-10-11)
+
+**Built.** The bar has a second list, **Material** and **Faces**, and
+Material is what it starts with: the solid only the later state has in
+the colour of what is added, the solid only the earlier has in that of
+what is removed, what both have thin and grey -- the kinds of 32.9 with
+two of them empty, so the slider and "Differences only" do what they
+did. The status line says the three volumes, in one unit, that of what
+changed: a unit goes by a volume's size, and three of them each in its
+own are not compared at a glance. Anything that is not two solids -- a
+shell, a value against none -- is shown by its faces whichever is asked,
+and the line says so: "not two solids, by the faces: ...".
+
+The view provider is asked by name: `showValueDiff(prop, a, b, position,
+differencesOnly, mode)`, `mode` one of the ways it has and empty for its
+first; of a shape "faces" and "material". `getValueDiff()` is numbers
+that are not all counts now (`volume.added` ...), `material` 1 or 0 for
+which is drawn, `material.none`, `material.pending`, `material.kept`; in
+Python a whole number is an int still.
+
+**Measured, and what it changed.** Plates with a grid of holes, one
+made taller and one with a hole moved (`~/.cache/txnlog-sd/big/big.py`;
+"faces" is `Shape.diff()`, "material" `Shape.diffMaterial()`):
+
+| faces | change | made in | faces | material |
+|---|---|---|---|---|
+| 70 | taller | 0.03 s | 0.003 s | 0.07 s |
+| 70 | a hole moved | 0.03 s | 0.005 s | 0.10 s |
+| 262 | taller | 0.14 s | 0.020 s | 0.57 s |
+| 262 | a hole moved | 0.14 s | 0.050 s | 0.75 s |
+| 1030 | taller | 0.80 s | 0.29 s | 7.6 s |
+| 1030 | a hole moved | 0.80 s | 0.79 s | 11.1 s |
+| 2031 | taller | 2.4 s | 1.2 s | 34.8 s |
+| 2031 | a hole moved | 2.4 s | 3.0 s | 51.4 s |
+
+Four times the faces is thirteen times the seconds, and at a thousand
+faces and more the fuse of two states is ten to twenty times the cut
+that made either. All of it is
+the fuse's intersection (`Perform`: 6.18 of 6.61 s at 1030 faces; the
+three parts taken out of it, 0.3 s together): two states of one solid
+lie on each other over nearly all of their faces, which is the case
+that costs it most. Tried:
+
+- *in parallel*, as the kernel's other fuses are run: 7.6 -> 6.6 s and
+  11.1 -> 9.1 s. Kept.
+- *oriented boxes* (`SetUseOBB`): nothing, 6.7 s. Not kept.
+- *the glue* (`BOPAlgo_GlueShift`), which is for arguments that touch
+  and do not cross: 1.1 s, and right for the plate made taller -- and
+  for the hole moved 447660 added and as much removed, the two taken
+  for strangers. Nothing cheap says which case two states are. Not
+  kept.
+
+So the fuse is not waited for. Of two solids of more than 300 faces
+together (`Mod/Part/ShapeDiffInlineFaces`) it runs on a thread of its
+own, on copies made before it starts -- nothing it reads is anything
+the document, a recompute or the view has. Meanwhile the faces are
+drawn and the line says "working out the material; the faces meanwhile";
+the thread says in the main one when it is done, the view draws the
+material in the faces' place, and the bar, which asks five times a
+second while something is pending, says the volumes. A view that goes
+-- another row, another pair, the document closed -- leaves, and a fuse
+nobody waits for is told to stop through the progress it is run with
+(`material()` takes a `Message_ProgressRange` now). The application
+going stops and joins what runs. The last eight pairs are kept, by the
+refs of their values and, for the value an object has now, by the shape
+it is: going back to a row is not paid for again.
+
+On the 1030-face plate in the Gui (`~/.cache/txnlog-sd/big/gui.py`):
+shown in 1.8 s -- the two values read, their faces paired and drawn,
+which was so before this --, the material there 7.6 s after the click
+with the event loop turned 94 times meanwhile; asked again, 0.10 s;
+left after a second, 0.09 s of CPU in the three seconds after, where
+not left it is 3.0; and with a fuse started as the application quits,
+gone 0.4 s later, exit 0.
+
+**Left.**
+- A fuse that fails is said as "not two solids".
+- The 1.8 s of the faces at a thousand of them is waited for, as it
+  was.
+- What two states share is not told the fuse. Faces that 32.6 finds
+  as they were are one surface with one boundary in both, and a fuse
+  given them as one face would have nothing to intersect there; that
+  is the edges of one solid put under the faces of another, and was
+  not tried.
+- Objects the document does not have are counted and not drawn, as
+  before.
+
+**Tests.** The Gui check (+24, 114): by its material asked of the view
+provider -- the slab of a box made taller and its volume, what is
+drawn and how thin, differences only, the same two by their faces
+again in the same overlay, kept the second time, the other way round,
+against no value, the value the object has now and that known again by
+its shape, a way there is not; two solids made heavy by the setting --
+the faces at once, the material when it is there, there already when
+asked again, nothing shown later when left, worked out again after;
+from the panel -- the two ways and which is first, the volumes said,
+differences only, the faces again, a row that made the object, a heavy
+one said to be worked out and then there; from the merge dialog, ours
+against theirs by the material. The guide's pictures are taken again,
+with one more, the same change by its faces.
+
+**Next (32.4):** step 6 goes on -- the merged result, the stream.

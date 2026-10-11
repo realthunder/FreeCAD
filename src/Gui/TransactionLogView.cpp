@@ -74,7 +74,9 @@
 #include <App/FileHistory.h>
 #include <App/TransactionLog.h>
 #include <Base/Console.h>
+#include <Base/Quantity.h>
 #include <Base/Tools.h>
+#include <Base/UnitsApi.h>
 
 #include "TransactionLogView.h"
 #include "Application.h"
@@ -343,6 +345,11 @@ protected:
  * it again. What is taken is no longer selected, so that the highlight of
  * the selection is not drawn over what is shown. They stay chosen from one
  * row or version to the next.
+ *
+ * A shape is shown one of two ways (sec 32.16), and which is asked of the
+ * view provider by name: by its material -- the solid only one of the two
+ * states has, which is where it changed -- or by its faces, which of them
+ * changed. Anything that is not two solids is shown by its faces.
  */
 class Gui::DockWnd::TransactionDiffBar: public QWidget, public Gui::SelectionObserver
 {
@@ -402,6 +409,15 @@ public:
         // A pair is named again by setPairLabel(): as wide as what it says
         _pair->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         layout->addWidget(_pair);
+        _mode = new QComboBox(this);
+        _mode->setObjectName(QStringLiteral("diffMode"));
+        _mode->addItem(QObject::tr("Material"), QStringLiteral("material"));
+        _mode->addItem(QObject::tr("Faces"), QStringLiteral("faces"));
+        _mode->setToolTip(QObject::tr("Material: the solid only one of the two has, and what "
+                                      "both have.\nFaces: what became of each face -- as it "
+                                      "was, changed, new or gone. It is what is shown of "
+                                      "anything that is not two solids."));
+        layout->addWidget(_mode);
         _position = new QSlider(Qt::Horizontal, this);
         _position->setObjectName(QStringLiteral("diffPosition"));
         _position->setRange(0, 100);
@@ -417,6 +433,8 @@ public:
         layout->addWidget(_said, 1);
         QObject::connect(_pair, qOverload<int>(&QComboBox::currentIndexChanged), this,
                          [this](int) { update(); });
+        QObject::connect(_mode, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                         [this](int) { update(); });
         QObject::connect(_position, &QSlider::valueChanged, this, [this](int) { update(); });
         QObject::connect(_only, &QCheckBox::toggled, this, [this](bool) { update(); });
         // What is picked is taken once the selection has settled: not from
@@ -424,6 +442,24 @@ public:
         _again.setSingleShot(true);
         _again.setInterval(0);
         QObject::connect(&_again, &QTimer::timeout, this, [this]() { take(); });
+        // The material of two heavy solids is not waited for (sec 32.16):
+        // their view says when it is there, and is asked now and then
+        _pending.setSingleShot(true);
+        _pending.setInterval(200);
+        QObject::connect(&_pending, &QTimer::timeout, this, [this]() {
+            for (const auto& shown : _shown) {
+                auto view = viewOf(shown);
+                if (!view)
+                    continue;
+                const auto said = view->getValueDiff();
+                auto it = said.find("material.pending");
+                if (it != said.end() && it->second > 0) {
+                    _pending.start();
+                    return;
+                }
+            }
+            update();
+        });
         update();
     }
 
@@ -640,7 +676,8 @@ private:
         const int index = _pair->currentIndex();
         std::vector<App::DocumentObjectT> shown;
         std::set<ViewProviderDocumentObject*> views;
-        std::map<std::string, int> found;
+        std::map<std::string, double> found;
+        const std::string mode = _mode->currentData().toString().toStdString();
         std::set<App::DocumentObject*> chosen;
         for (const auto& which : _chosen) {
             if (auto obj = which.getObject())
@@ -665,7 +702,7 @@ private:
                 continue;
             const Pair& pair = value.pairs[index];
             if (!view->showValueDiff(value.prop.c_str(), pair.a, pair.b,
-                                     _position->value() / 100.f, _only->isChecked()))
+                                     _position->value() / 100.f, _only->isChecked(), mode))
                 continue;
             views.insert(view);
             shown.push_back(value.object);
@@ -681,11 +718,43 @@ private:
 
         QString text;
         if (!_shown.empty()) {
-            text = QObject::tr("%1 as they were, %2 changed, %3 new, %4 gone")
-                       .arg(found["same"])
-                       .arg(found["changed"] + found["moved"])
-                       .arg(found["added"])
-                       .arg(found["removed"]);
+            // Each object says which it is shown by: the material is of two
+            // solids, and of anything else it is the faces
+            const int solids = static_cast<int>(found["material"]);
+            QStringList parts;
+            if (solids > 0) {
+                // The three in one unit, that of what changed: the unit a
+                // volume is said in goes by its size, and three of them
+                // each in its own are not compared at a glance
+                double factor = 1.;
+                std::string unit;
+                const double changed = std::max(found["volume.added"], found["volume.removed"]);
+                Base::Quantity(changed > 0. ? changed : found["volume.common"],
+                               Base::Unit::Volume).getUserString(factor, unit);
+                auto volume = [&](double value) {
+                    return QStringLiteral("%1 %2").arg(
+                        QLocale().toString(value / (factor != 0. ? factor : 1.), 'f',
+                                           Base::UnitsApi::getDecimals()),
+                        QString::fromStdString(unit));
+                };
+                parts << QObject::tr("%1 added, %2 removed, %3 in both")
+                             .arg(volume(found["volume.added"]), volume(found["volume.removed"]),
+                                  volume(found["volume.common"]));
+            }
+            if (solids < static_cast<int>(_shown.size())) {
+                QString faces = QObject::tr("%1 as they were, %2 changed, %3 new, %4 gone")
+                                    .arg(static_cast<int>(found["same"]))
+                                    .arg(static_cast<int>(found["changed"] + found["moved"]))
+                                    .arg(static_cast<int>(found["added"]))
+                                    .arg(static_cast<int>(found["removed"]));
+                if (found["material.pending"] > 0)
+                    faces = QObject::tr("working out the material; the faces meanwhile: %1")
+                                .arg(faces);
+                else if (found["material.none"] > 0)
+                    faces = QObject::tr("not two solids, by the faces: %1").arg(faces);
+                parts << faces;
+            }
+            text = parts.join(QStringLiteral("; "));
             if (_shown.size() > 1)
                 text = QObject::tr("%1 objects: %2").arg(_shown.size()).arg(text);
         }
@@ -697,6 +766,10 @@ private:
                        : QObject::tr("No shape of what is chosen changed; %n object(s) have "
                                      "changes", "", count);
         }
+        if (found["material.pending"] > 0)
+            _pending.start();
+        else
+            _pending.stop();
         if (_picking != NotPicking)
             text = QObject::tr("Pick an object in the tree or the view");
         if (!_note.isEmpty() && index >= 0 && index < _pair->count() - 1)
@@ -705,6 +778,7 @@ private:
     }
 
     QComboBox* _pair {nullptr};
+    QComboBox* _mode {nullptr};
     QSlider* _position {nullptr};
     QCheckBox* _only {nullptr};
     QLabel* _said {nullptr};
@@ -718,6 +792,7 @@ private:
     std::vector<QPushButton*> _buttons;
     bool _chosenOnly {false};
     QTimer _again;
+    QTimer _pending;
     QString _note;
     std::vector<App::DocumentObjectT> _shown;
 };

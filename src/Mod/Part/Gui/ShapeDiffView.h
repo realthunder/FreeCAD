@@ -28,6 +28,7 @@
 #include <string>
 
 #include <Gui/InventorBase.h>
+#include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/PartGlobal.h>
 
 class SoSwitch;
@@ -36,11 +37,6 @@ class SoTransform;
 namespace Gui
 {
 class SoFCPathAnnotation;
-}
-
-namespace Part
-{
-class TopoShape;
 }
 
 namespace PartGui
@@ -61,6 +57,11 @@ class ViewProviderPartExt;
  * and thin; what changed is drawn as it is in each; what only B has and what
  * only A has, each in a colour of its own. The position goes from A, 0, to
  * B, 1: the side it is at is drawn full and the other ghosted.
+ *
+ * Or the two are drawn by their material (sec 32.16): the solid only A has,
+ * the solid only B has, and thin and grey what both have. The faces say
+ * which of them changed and this says where; it is what two solids have,
+ * and of anything else the faces are drawn.
  */
 class PartGuiExport ShapeDiffView
 {
@@ -71,20 +72,49 @@ public:
     ShapeDiffView(const ShapeDiffView&) = delete;
     ShapeDiffView& operator=(const ShapeDiffView&) = delete;
 
-    /// Draw \a a against \a b; false where neither has a face
-    bool show(const Part::TopoShape& a, const Part::TopoShape& b);
+    /// What of the two states is drawn
+    enum class Mode
+    {
+        Faces,    ///< what became of each face
+        Material, ///< the material only one of them has; the faces where
+                  ///< either is no solid
+    };
+
+    /** Draw \a a against \a b; false where neither has a face.
+     *
+     * \a refA and \a refB are what each is known by -- its ref in the log
+     * -- and empty for one known by nothing but itself. Taking two solids
+     * apart is a fuse of them, and what it gave is kept by what the two are
+     * known by: going back to a row is not paid for again.
+     *
+     * Of two heavy solids the fuse is long, and is not waited for: their
+     * faces are drawn, and the material in their place when it is there.
+     */
+    bool show(const Part::TopoShape& a, const Part::TopoShape& b, Mode mode = Mode::Faces,
+              const std::string& refA = std::string(), const std::string& refB = std::string());
+    /// The same two another way
+    void setMode(Mode mode);
     /// Where between A and B, and whether what did not change is left out
     void setOptions(float position, bool differencesOnly);
     /// The object moved: the two states stay where they are
     void updatePlacement();
 
-    /** What is shown: how many faces are `same`, `moved`, `changed`,
-     * `added` and `removed`, how many were paired by each of
-     * Part::ShapeDiff's stages (`by.name` ...), `position` in percent,
-     * `differencesOnly`, and for each kind drawn whether it is to be seen
-     * (`shown.same` ...) and how transparent (`transparency.same` ...).
+    /** What is shown. `material` is 1 where it is the material and 0 where
+     * the faces; `material.none` is 1 where the material was asked for and
+     * the two are not both solids, and `material.pending` 1 where it is
+     * being worked out and the faces are shown meanwhile.
+     *
+     * Of the faces: how many are `same`, `moved`, `changed`, `added` and
+     * `removed`, and how many were paired by each of Part::ShapeDiff's
+     * stages (`by.name` ...). Of the material: `volume.removed`,
+     * `volume.added` and `volume.common`, and `material.kept`, 1 where the
+     * two were not fused for this but had been.
+     *
+     * Of either: `position` in percent, `differencesOnly`, and for each
+     * kind drawn whether it is to be seen (`shown.same` ...) and how
+     * transparent (`transparency.same` ...).
      */
-    const std::map<std::string, int>& summary() const
+    const std::map<std::string, double>& summary() const
     {
         return _summary;
     }
@@ -93,7 +123,7 @@ private:
     /// The kinds of faces drawn, each a shape of its own
     enum Kind
     {
-        Same,     ///< B's, as they were in A
+        Same,     ///< B's, as they were in A; the material of both
         ChangedA, ///< A's that are other in B, or elsewhere
         ChangedB, ///< the same, as B has them
         Removed,  ///< A's alone
@@ -101,6 +131,7 @@ private:
         Kinds
     };
     static const char* name(Kind kind);
+    bool build();
     void apply();
 
     ViewProviderPartExt& _owner;
@@ -108,9 +139,15 @@ private:
     Gui::CoinPtr<SoTransform> _transform;
     Gui::CoinPtr<SoSwitch> _switch[Kinds];
     std::unique_ptr<ViewProviderPartExt> _view[Kinds];
+    Part::TopoShape _a;
+    Part::TopoShape _b;
+    std::string _refA;
+    std::string _refB;
+    Mode _mode = Mode::Faces;
+    bool _arrived = false;
     float _position = 1.f;
     bool _differencesOnly = false;
-    std::map<std::string, int> _summary;
+    std::map<std::string, double> _summary;
 };
 
 }  // namespace PartGui
