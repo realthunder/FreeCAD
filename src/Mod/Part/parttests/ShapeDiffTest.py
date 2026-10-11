@@ -88,6 +88,88 @@ class ShapeDiffTest(unittest.TestCase):
         self.assertEqual([e for e in diff["Face"] if e[3] == "removed"], [])
 
 
+class ShapeMaterialTest(unittest.TestCase):
+    """Two states of a solid taken apart by their material
+    (docs/TransactionLog.md sec 32.14)."""
+
+    def holed(self, x, height=10):
+        tool = Part.makeCylinder(3, 100, App.Vector(x, 10, -50))
+        return Part.makeBox(40, 20, height).cut(tool)
+
+    def testTaller(self):
+        before, after = Part.makeBox(40, 20, 10), Part.makeBox(40, 20, 14)
+        material = before.diffMaterial(after)
+        self.assertIsNone(material["removed"])
+        self.assertAlmostEqual(material["removedVolume"], 0.0)
+        self.assertAlmostEqual(material["addedVolume"], 40 * 20 * 4, places=6)
+        self.assertAlmostEqual(material["commonVolume"], 40 * 20 * 10, places=6)
+        # The slab, and nothing of the walls between the cells it was cut in
+        self.assertEqual(len(material["added"].Solids), 1)
+        self.assertEqual(len(material["added"].Faces), 6)
+        box = material["added"].BoundBox
+        self.assertAlmostEqual(box.ZMin, 10.0)
+        self.assertAlmostEqual(box.ZMax, 14.0)
+        # The other way round it is taken away
+        back = after.diffMaterial(before)
+        self.assertIsNone(back["added"])
+        self.assertAlmostEqual(back["removedVolume"], 40 * 20 * 4, places=6)
+
+    def testAHoleMoved(self):
+        before, after = self.holed(10), self.holed(14)
+        material = before.diffMaterial(after)
+        # What the hole left is filled, and as much is drilled: two slivers
+        # of the two cylinders
+        self.assertGreater(material["addedVolume"], 1.0)
+        self.assertAlmostEqual(material["addedVolume"], material["removedVolume"], places=6)
+        self.assertAlmostEqual(
+            material["commonVolume"] + material["removedVolume"], before.Volume, places=6
+        )
+        self.assertAlmostEqual(
+            material["commonVolume"] + material["addedVolume"], after.Volume, places=6
+        )
+        # The two holes, 7 to 13 and 11 to 17, cross at 12
+        self.assertAlmostEqual(material["added"].BoundBox.XMin, 7.0, places=6)
+        self.assertAlmostEqual(material["added"].BoundBox.XMax, 12.0, places=6)
+        self.assertAlmostEqual(material["removed"].BoundBox.XMin, 12.0, places=6)
+        self.assertAlmostEqual(material["removed"].BoundBox.XMax, 17.0, places=6)
+
+    def testTheSameShapeAndNothingShared(self):
+        shape = self.holed(10)
+        same = shape.diffMaterial(shape)
+        self.assertIsNone(same["added"])
+        self.assertIsNone(same["removed"])
+        self.assertAlmostEqual(same["commonVolume"], shape.Volume, places=6)
+        # A copy elsewhere shares nothing with it
+        away = shape.copy()
+        away.translate(App.Vector(100, 0, 0))
+        apart = shape.diffMaterial(away)
+        self.assertIsNone(apart["common"])
+        self.assertAlmostEqual(apart["removedVolume"], shape.Volume, places=6)
+        self.assertAlmostEqual(apart["addedVolume"], shape.Volume, places=6)
+
+    def testSeveralSolids(self):
+        other = Part.makeBox(5, 5, 5, App.Vector(60, 0, 0))
+        before = Part.makeCompound([Part.makeBox(40, 20, 10), other])
+        after = Part.makeCompound([Part.makeBox(40, 20, 14), other])
+        material = before.diffMaterial(after)
+        self.assertIsNone(material["removed"])
+        self.assertAlmostEqual(material["addedVolume"], 40 * 20 * 4, places=6)
+        self.assertAlmostEqual(material["commonVolume"], 40 * 20 * 10 + 125, places=6)
+
+    def testWhatIsNoSolidAndWhatIsLeftAlone(self):
+        box = Part.makeBox(40, 20, 10)
+        self.assertIsNone(box.Faces[0].diffMaterial(box))
+        self.assertIsNone(box.diffMaterial(box.Shells[0]))
+        before, after = self.holed(10), self.holed(14)
+        faces = len(before.Faces), len(after.Faces), before.Volume, after.Volume
+        before.diffMaterial(after)
+        self.assertEqual(
+            (len(before.Faces), len(after.Faces), before.Volume, after.Volume), faces
+        )
+        self.assertTrue(before.isValid())
+        self.assertTrue(after.isValid())
+
+
 class ShapeAtAStateTest(unittest.TestCase):
     """Part.getTransactionShape(): a shape the log holds, read with its names
     (docs/TransactionLog.md sec 32.7)."""

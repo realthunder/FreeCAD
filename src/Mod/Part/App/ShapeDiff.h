@@ -28,6 +28,7 @@
 #include <vector>
 
 #include <TopAbs_ShapeEnum.hxx>
+#include <TopoDS_Shape.hxx>
 #include <gp_Trsf.hxx>
 
 #include <Mod/Part/PartGlobal.h>
@@ -174,6 +175,35 @@ public:
      * Public for its tests.
      */
     static std::string nameWithoutSteps(const std::string& spelled, const std::set<long>& tags);
+
+    /// The material two states of a solid do not share, and what they do
+    struct Material
+    {
+        TopoDS_Shape removed; ///< in A and not in B: solids; null where none
+        TopoDS_Shape added;   ///< in B and not in A
+        TopoDS_Shape common;  ///< in both
+        double removedVolume = 0.;
+        double addedVolume = 0.;
+        double commonVolume = 0.;
+        double seconds = 0.; ///< what it took
+    };
+
+    /** Two states of a solid taken apart by their material
+     * (docs/TransactionLog.md sec 32.14): one general fuse of the two, and
+     * of its cells those that only A has, those that only B has, and those
+     * of both. Where the faces of a shape say which of them changed, this
+     * says where: a box made taller is four faces changed and one moved,
+     * and one slab added.
+     *
+     * Neither shape is touched. A piece smaller than a billionth of the
+     * larger of the two is what two faces that should be one left between
+     * them, and is dropped. \a fuzzy is the fuse's own tolerance, 0 for
+     * what the shapes carry.
+     *
+     * False where either has no solid, or the fuse fails.
+     */
+    static bool material(const TopoShape& a, const TopoShape& b, Material& out,
+                         double fuzzy = 0.);
 
     /** A shape value the transaction log of \a doc holds, by its ref, as a
      * shape with its element names (docs/TransactionLog.md sec 32.7): what an

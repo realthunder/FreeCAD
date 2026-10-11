@@ -23,6 +23,8 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <BOPAlgo_CellsBuilder.hxx>
+#include <BRep_Builder.hxx>
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepGProp.hxx>
@@ -30,10 +32,12 @@
 #include <GProp_GProps.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Vertex.hxx>
@@ -1142,6 +1146,84 @@ ShapeDiff::ShapeDiff(const TopoShape& shapeA, const TopoShape& shapeB, const Opt
             }
         }
     }
+}
+
+bool ShapeDiff::material(const TopoShape& a, const TopoShape& b, Material& out, double fuzzy)
+{
+    out = Material();
+    const auto start = std::chrono::steady_clock::now();
+    const TopoDS_Shape& sa = a.getShape();
+    const TopoDS_Shape& sb = b.getShape();
+    auto volumeOf = [](const TopoDS_Shape& shape) {
+        double volume = 0.;
+        for (TopExp_Explorer it(shape, TopAbs_SOLID); it.More(); it.Next()) {
+            GProp_GProps props;
+            BRepGProp::VolumeProperties(it.Current(), props);
+            volume += props.Mass();
+        }
+        return volume;
+    };
+    auto solid = [](const TopoDS_Shape& shape) {
+        return !shape.IsNull() && TopExp_Explorer(shape, TopAbs_SOLID).More();
+    };
+    if (!solid(sa) || !solid(sb))
+        return false;
+    try {
+        const double least = 1e-9 * std::max(volumeOf(sa), volumeOf(sb));
+        // The solids of a result that are more than what two faces meant to
+        // be one leave between them
+        auto solids = [&](const TopoDS_Shape& from, TopoDS_Shape& shape, double& volume) {
+            BRep_Builder builder;
+            TopoDS_Compound all;
+            builder.MakeCompound(all);
+            int count = 0;
+            for (TopExp_Explorer it(from, TopAbs_SOLID); it.More(); it.Next()) {
+                GProp_GProps props;
+                BRepGProp::VolumeProperties(it.Current(), props);
+                if (props.Mass() <= least)
+                    continue;
+                builder.Add(all, it.Current());
+                volume += props.Mass();
+                ++count;
+            }
+            if (count)
+                shape = all;
+        };
+        if (sa.IsEqual(sb)) {
+            // One shape in one place: all of it is of both
+            solids(sa, out.common, out.commonVolume);
+        }
+        else {
+            BOPAlgo_CellsBuilder cells;
+            cells.AddArgument(sa);
+            cells.AddArgument(sb);
+            cells.SetNonDestructive(true);
+            if (fuzzy > 0.)
+                cells.SetFuzzyValue(fuzzy);
+            cells.Perform();
+            if (cells.HasErrors())
+                return false;
+            auto part = [&](bool inA, bool inB, TopoDS_Shape& shape, double& volume) {
+                TopTools_ListOfShape take;
+                TopTools_ListOfShape avoid;
+                (inA ? take : avoid).Append(sa);
+                (inB ? take : avoid).Append(sb);
+                cells.RemoveAllFromResult();
+                // One material: the walls between its cells are taken out
+                cells.AddToResult(take, avoid, 1);
+                cells.RemoveInternalBoundaries();
+                solids(cells.Shape(), shape, volume);
+            };
+            part(true, false, out.removed, out.removedVolume);
+            part(false, true, out.added, out.addedVolume);
+            part(true, true, out.common, out.commonVolume);
+        }
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+    out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    return true;
 }
 
 bool ShapeDiff::valueShape(const App::Document& doc, const std::string& ref, long tag,

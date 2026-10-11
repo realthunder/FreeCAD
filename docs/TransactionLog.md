@@ -18210,7 +18210,7 @@ takes any two shapes.
 **Left.**
 
 - The merge dialog is modal (32.9): the objects cannot be chosen while
-  it is open.
+  it is open. *(No longer: 32.15.)*
 - The button says the label the object had when it was chosen.
 
 **Tests.** The Gui check (+11, 85): nothing shown and the count with
@@ -18220,4 +18220,95 @@ button picks another in its place; let go; a row that changed nothing of
 what is chosen; a version's list, a line of it, none of it; still chosen
 on another tab and row; the dialog with none chosen and with one added.
 
-**Next (32.4):** step 6 -- volumes, the merged result, the stream.
+### 32.14 Step 6, first part: two states taken apart by their material (2026-10-11)
+
+**Why (user):** "with current overlay mode, it is difficult to tell how
+the object changed", and asked how the difference alone would be shown:
+"is it going to be shader only like section mode or what".
+
+**What the faces cannot say.** The unit of 32.6 is a face. A box made
+4 mm taller is four side faces changed and the top moved: all of it
+tinted, where what changed is a slab on top. "Differences only" drops
+the faces that are as they were, and the two pictures are next to the
+same.
+
+**Not a shader.** The section's stencil decides one closed solid
+against a plane. Here each surface is to be decided against the other
+solid, and the two lie on each other over most of their area -- where
+depth and stencil decide nothing. It would be written three times (the
+Coin path, bgfx, the browser's viewer), where geometry goes through all
+three and the stream as meshes. And it gives pixels: no volume, nothing
+to a run without a view. What it would give is an answer at once that
+cannot fail; said to the user, who did not ask for it.
+
+**Built, the kernel's side.** `Part::ShapeDiff::material(a, b, out)`:
+one general fuse of the two (`BOPAlgo_CellsBuilder`, not destructive),
+and of its cells those only A has -- **removed** --, those only B has
+-- **added** --, and those of both, each as solids with the walls
+between its cells taken out, and each with its volume. A piece under a
+billionth of the larger of the two is what two faces meant to be one
+left between them, and is dropped. False where either has no solid or
+the fuse fails: the faces are then what there is. Python:
+`Shape.diffMaterial(other, fuzzy=0.0) -> dict or None`.
+
+**Measured** on the scanner model's 65-face body, before the code was
+written (`~/.cache/txnlog-sd/gf.py`, `Shape.generalFuse` and the pieces
+told apart by a point inside): 0.10 to 0.29 s for one fuse, half of two
+cuts, the volumes those of the cuts to three decimals -- between a
+feature half way and the tip, 38.912 added and 78.043 removed.
+
+**Left.** Drawn nowhere yet: the overlay's second mode, the status
+line's volumes, and the result kept by the two values' hashes, are the
+next part. Not measured on a solid of thousands of faces.
+
+**Tests.** `parttests.ShapeDiffTest.ShapeMaterialTest` (+5): a box made
+taller, each way, the slab alone with no wall in it; a hole moved, as
+much filled as drilled and where; the same shape, and one that shares
+nothing; several solids; what is no solid, and both shapes left as they
+were.
+
+### 32.15 The merge's preview is not modal (2026-10-11)
+
+**Asked (user):** "make the merge dialog non-modal" -- open since 32.9,
+and in the way since 32.13: an object cannot be picked in a view the
+dialog keeps the mouse from.
+
+**How.** The dialog is shown, not executed, and the panel waits for its
+answer in an event loop of its own (`TransactionLogView::askBeside`), so
+that whoever asked -- the button, a request brought in, a file imported,
+rows applied -- goes on from the answer as before. Meanwhile the
+document is in reach: the view is turned, objects are picked into the
+bar, and the document can be changed. What that opens, and what is done
+about each:
+
+- *The document changes under the preview.* A commit, an undo, a redo
+  or the branches moving has the preview made again, 300 ms later; where
+  it no longer says what it said (`MergeDialog::said`: every change's
+  kind, operation, key and its four refs, the base and the rows of a
+  fast-forward), the dialog is **stale**: it says so, "Merge" is
+  disabled, and **"Preview again"** makes the dialog anew in the same
+  wait -- the sides picked are asked again. A change the merge does not
+  see leaves it standing: hiding an object is a row of the log, and no
+  reason to ask everything again. Measured by the check, and it found
+  its own mistake: a width put back to what the branches left from makes
+  the merge a fast-forward -- another merge, rightly stale.
+- *The document leaves the panel* -- closed, or another made the active
+  one: `detach()` rejects the dialog.
+- *Another merge is asked for:* refused where it is asked, the open one
+  brought to the front and "A merge is being looked at already" said.
+- *The panel goes* with the application: the dialog is the panel's
+  child and held by a `QPointer`; nothing of either is touched after.
+
+**Left.** The preview is not refreshed in place: stale, it is made
+again whole.
+
+**Tests.** The Gui check (+5, 90): not modal, and an object picked from
+the dialog; a second merge meanwhile opens no second dialog; a change
+the merge does not see; one it does; previewed again, with the conflict
+that is now there. The four checks that drive the dialog find it among
+the windows where they asked for the modal one
+(`transaction-log-merge-check.py`, `-import-check.py`,
+`-request-check.py`, `-shapediff-check.py`), unchanged in number.
+
+**Next (32.4):** step 6 goes on -- the material drawn, the merged
+result, the stream.

@@ -2918,6 +2918,37 @@ PyObject *TopoShapePy::searchSubShape(PyObject *args, PyObject *keywds) const
     } PY_CATCH_OCC
 }
 
+PyObject *TopoShapePy::diffMaterial(PyObject *args, PyObject *keywds) const
+{
+    static char *kwlist[] = {"other", "fuzzy", nullptr};
+    PyObject *pyobj;
+    double fuzzy = 0.;
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "O!|d", kwlist, &Type, &pyobj, &fuzzy))
+        return nullptr;
+
+    try {
+        ShapeDiff::Material material;
+        if (!ShapeDiff::material(*getTopoShapePtr(),
+                                 *static_cast<TopoShapePy*>(pyobj)->getTopoShapePtr(),
+                                 material, fuzzy))
+            Py_Return;
+        auto shapeOf = [](const TopoDS_Shape &shape) -> Py::Object {
+            if (shape.IsNull())
+                return Py::None();
+            return shape2pyshape(shape);
+        };
+        Py::Dict res;
+        res.setItem("removed", shapeOf(material.removed));
+        res.setItem("added", shapeOf(material.added));
+        res.setItem("common", shapeOf(material.common));
+        res.setItem("removedVolume", Py::Float(material.removedVolume));
+        res.setItem("addedVolume", Py::Float(material.addedVolume));
+        res.setItem("commonVolume", Py::Float(material.commonVolume));
+        res.setItem("seconds", Py::Float(material.seconds));
+        return Py::new_reference_to(res);
+    } PY_CATCH_OCC
+}
+
 PyObject *TopoShapePy::diff(PyObject *args, PyObject *keywds) const
 {
     static char *kwlist[] = {"other", "edges", "vertices", "geometry", "around", "tol", nullptr};

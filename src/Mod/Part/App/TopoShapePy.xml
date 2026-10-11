@@ -1112,6 +1112,24 @@ Returns a dict:
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="diffMaterial" Const="true" Keyword="true">
+      <Documentation>
+        <UserDocu>
+diffMaterial(other, fuzzy=0.0) -> dict or None
+
+Two states of a solid, this one before and `other` after: one general fuse of
+the two, and of its cells those only this has, those only the other has, and
+those of both (docs/TransactionLog.md sec 32.14).
+
+{'removed': Shape or None, 'added': Shape or None, 'common': Shape or None,
+ 'removedVolume': float, 'addedVolume': float, 'commonVolume': float,
+ 'seconds': float}
+
+Neither shape is touched. `fuzzy` is the fuse's own tolerance, 0 for what the
+shapes carry. None where either has no solid, or the fuse fails.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getChildShapes" Const="true">
       <Documentation>
           <UserDocu>
