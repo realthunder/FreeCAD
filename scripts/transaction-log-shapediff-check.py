@@ -108,12 +108,16 @@ def drive(seen, cut):
     diff = bar(dialog)
     seen["bar"] = diff is not None
     seen["none"] = (cut.ViewObject.getValueDiff(), drawn(cut)[0] is None)
+    cut2 = cut.Document.getObject("Cut2")
+    seen["whole"] = cut2.ViewObject.getValueDiff()
+    seen["whole said"] = part(diff, "diffStatus").text() if diff else None
     for i in range(tree.topLevelItemCount()):
         item = tree.topLevelItem(i)
         if item.text(0).startswith("derived") and item.text(1) == "Cut" and item.text(2) == "Shape":
             tree.setCurrentItem(item)
     settle()
     seen["theirs"] = cut.ViewObject.getValueDiff()
+    seen["whole then"] = cut2.ViewObject.getValueDiff()
     seen["theirs said"] = part(diff, "diffStatus").text() if diff else None
     seen["theirs drawn"] = drawn(cut)[1]
     if diff:
@@ -238,6 +242,17 @@ def run():
               and view.getValueDiff().get("shown.added") == 1)
         view.hideValueDiff()
 
+        # No value at one of the two: all of the other is new, or gone
+        check("against no value, every face is new",
+              view.showValueDiff("Shape", "-", taller["after"]) is True
+              and view.getValueDiff().get("added") == 7
+              and "changed" not in view.getValueDiff())
+        check("and against none after, every face is gone",
+              view.showValueDiff("Shape", taller["after"], "-") is True
+              and view.getValueDiff().get("removed") == 7)
+        check("not of no value twice", view.showValueDiff("Shape", "-", "-") is False)
+        view.hideValueDiff()
+
         # What it is not shown of
         check("not of a length", box.ViewObject.showValueDiff(
             "Length", op("taller", box, "Height")["before"], op("taller", box, "Height")["after"])
@@ -274,6 +289,15 @@ def run():
         doc.recompute()
         view.hideValueDiff()
         settle()
+
+        # A version here, and a row after it that changes what the view shows
+        doc.save()
+        doc.openTransaction("wider")
+        box.Width = 12
+        doc.recompute()
+        doc.commitTransaction()
+        settle()
+        view2 = cut2.ViewObject
 
         # From the log panel: an op of a row
         dock, tree, ops = panel()
@@ -324,6 +348,72 @@ def run():
                         tree.setCurrentItem(tree.topLevelItem(i))
                 settle()
                 check("another row selected: gone", view.getValueDiff() == {})
+
+                # A row, the whole of it: over what the view shows
+                def select(row):
+                    for i in range(tree.topLevelItemCount()):
+                        if tree.topLevelItem(i).text(name) == row:
+                            tree.setCurrentItem(tree.topLevelItem(i))
+                    settle()
+
+                select("wider")
+                shown2 = view2.getValueDiff()
+                check("a row selected: what it changed of the object shown (%r)"
+                      % part(diff, "diffStatus").text(),
+                      shown2.get("changed", 0) + shown2.get("moved", 0) >= 5
+                      and shown2.get("by.name") == 8
+                      and part(diff, "diffPair").itemText(0) == "before against after")
+                check("and not of the objects it is made of, which are not shown",
+                      view.getValueDiff() == {} and box.ViewObject.getValueDiff() == {})
+                for i in range(ops.topLevelItemCount()):
+                    item = ops.topLevelItem(i)
+                    if item.text(prop) == "Shape" and str(cut.ID) in item.text(column(ops, "Container")):
+                        ops.setCurrentItem(item)
+                settle()
+                check("one of its ops selected: that object alone, shown or not",
+                      view.getValueDiff().get("by.name") == 7 and view2.getValueDiff() == {})
+                select("a second hole")
+                shown2 = view2.getValueDiff()
+                check("the row that made an object: all of it is new (%r)"
+                      % part(diff, "diffStatus").text(),
+                      shown2.get("added") == 8 and "changed" not in shown2
+                      and view.getValueDiff() == {})
+                select("base")
+                check("a row that changed nothing the view shows: nothing",
+                      view2.getValueDiff() == {} and view.getValueDiff() == {}
+                      and part(diff, "diffStatus").text() == "")
+
+                # A version against the document as it is
+                tabs = dock.findChild(QtWidgets.QTabWidget)
+                versions = None
+                for w in dock.findChildren(QtWidgets.QTreeWidget):
+                    if w.headerItem().text(1) == "Kind" and w.headerItem().text(0) == "Num":
+                        versions = w
+                check("the versions list found", tabs is not None and versions is not None)
+                if tabs is not None and versions is not None:
+                    tabs.setCurrentIndex(1)
+                    settle()
+                    seq = column(versions, "Seq")
+                    items = sorted((versions.topLevelItem(i) for i in range(versions.topLevelItemCount())),
+                                   key=lambda item: int(item.text(seq)))
+                    check("two versions and more (%d)" % len(items), len(items) >= 2)
+                    versions.setCurrentItem(items[-1])
+                    settle()
+                    shown2 = view2.getValueDiff()
+                    check("the newest version against now: what changed since (%r)"
+                          % part(diff, "diffStatus").text(),
+                          shown2.get("changed", 0) + shown2.get("moved", 0) >= 5
+                          and shown2.get("by.name") == 8 and view.getValueDiff() == {}
+                          and part(diff, "diffPair").itemText(0) == "the version against now")
+                    versions.setCurrentItem(items[0])
+                    settle()
+                    shown2 = view2.getValueDiff()
+                    check("the first version, which had no such object: all of it is new",
+                          shown2.get("added") == 8 and "changed" not in shown2)
+                    tabs.setCurrentIndex(0)
+                    settle()
+                    select("base")
+                    check("back on the rows: gone", view2.getValueDiff() == {})
                 check("shown from the panel: no row written (%d)" % len(doc.getTransactionLog()),
                       len(doc.getTransactionLog()) == panelRows)
 
@@ -351,8 +441,13 @@ def run():
             )
             settle()
             check("dialog shown, with the bar", seen.get("found") is True and seen.get("bar"))
-            check("dialog: nothing shown before a change is selected (%r)" % (seen.get("none"),),
+            check("dialog: no change selected, the whole merge over what the view shows (%r)"
+                  % seen.get("whole said"),
+                  (seen.get("whole") or {}).get("by.name") == 8 and bool(seen.get("whole said")))
+            check("dialog: and not over an object that is not shown (%r)" % (seen.get("none"),),
                   seen.get("none") == ({}, True))
+            check("dialog: a change selected, its object alone",
+                  seen.get("whole then") == {})
             theirs = seen.get("theirs") or {}
             check("dialog: the cut's shape selected, ours against theirs (%r)"
                   % seen.get("theirs said"),
@@ -371,7 +466,8 @@ def run():
             check("dialog: a length selected shows nothing", seen.get("a length") == {})
             check("dialog: the shape again", (seen.get("again") or {}).get("by.name") == 7)
             check("dialog closed: nothing left in the view",
-                  view.getValueDiff() == {} and drawn(cut)[0] is None)
+                  view.getValueDiff() == {} and drawn(cut)[0] is None
+                  and doc.getObject("Cut2").ViewObject.getValueDiff() == {})
             check("dialog cancelled: no row written", len(doc.getTransactionLog()) == rows)
         App.closeDocument(doc.Name)
         settle()

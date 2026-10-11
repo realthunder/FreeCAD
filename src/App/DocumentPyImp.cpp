@@ -1562,6 +1562,32 @@ PyObject* DocumentPy::rollBackTransactionMerge(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::compareTransactionStates(PyObject *args)
+{
+    long long a = 0;
+    long long b = 0;
+    if (!PyArg_ParseTuple(args, "|LL", &a, &b))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        for (const auto& c : getDocumentPtr()->compareStates(a, b)) {
+            Py::Dict d;
+            d.setItem("ckind", Py::String(c.ckind));
+            d.setItem("cid", Py::Long(c.cid));
+            d.setItem("object", Py::String(c.object));
+            d.setItem("prop", Py::String(c.prop));
+            d.setItem("type", Py::String(c.ptype));
+            d.setItem("a", Py::String(c.a));
+            d.setItem("b", Py::String(c.b));
+            d.setItem("derived", Py::Boolean(c.derived));
+            d.setItem("inA", Py::Boolean(c.inA));
+            d.setItem("inB", Py::Boolean(c.inB));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::previewTransactionPick(PyObject *args)
 {
     PyObject* pyRows = nullptr;

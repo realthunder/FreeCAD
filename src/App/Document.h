@@ -632,6 +632,34 @@ public:
      * share no history in the log's rows.
      */
     MergePreview previewMerge(const std::string& branch, int64_t version = 0);
+    /** What one property, or one object, is at two rows of the log
+     * (docs/TransactionLog.md sec 32.10). */
+    struct StateChange
+    {
+        std::string ckind;    ///< `doc`, `obj` or `view`
+        long cid {0};
+        std::string object;   ///< the object's name; empty for the document's own
+        /// Empty for an object that is at one of the two only, said once
+        /// before its properties.
+        std::string prop;
+        std::string ptype;
+        /// The value at each, as entity refs; empty where the property is
+        /// not there, or is a derived value the log did not keep.
+        std::string a, b;
+        bool derived {false};   ///< a value a recompute wrote
+        bool inA {true};        ///< the object is there at a
+        bool inB {true};        ///< and at b
+    };
+    /** What differs between two rows of the log, `a` and `b`: every
+     * property some row on the way from the one to the other set, where it
+     * is not at b what it was at a, and every object made or removed on
+     * the way. 0 is the row this document is on. The two may be on
+     * different branches: the way goes back from a to where the two
+     * histories meet and on to b. Read only, but for an implicit
+     * transaction, which is committed as previewMerge() commits one. Throws
+     * where the log has no way between the two.
+     */
+    std::vector<StateChange> compareStates(int64_t a = 0, int64_t b = 0);
     /** Merge branch `branch` into the one this document is on (sec 28):
      * one transaction of kind `merge`, undone like any, whose second parent
      * is the head merged in. `picks` names a side, `ours` or `theirs`, per

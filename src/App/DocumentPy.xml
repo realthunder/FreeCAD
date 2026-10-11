@@ -616,6 +616,19 @@ redone. Returns what was rolled back, as previewTransactionRollBack() says
 it, or None where there was nothing to roll back.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="compareTransactionStates">
+      <Documentation>
+        <UserDocu>compareTransactionStates(a=0, b=0) -> list of dict
+
+What differs between two rows of the log (docs/TransactionLog.md sec 32.10),
+each by its seq; 0 is the row this document is on. Every property some row on
+the way from a to b set, where it is not at b what it was at a: {'ckind',
+'cid', 'object', 'prop', 'type', 'a', 'b', 'derived', 'inA', 'inB'} -- 'a' and
+'b' the value at each as a ref, empty where it is not there or the log did not
+keep it. An object at one of the two only is an entry with no 'prop', before
+its properties. The two rows may be on different branches. Read only.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="previewTransactionPick">
       <Documentation>
         <UserDocu>previewTransactionPick(rows) -> dict

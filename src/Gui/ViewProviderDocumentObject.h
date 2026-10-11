@@ -90,8 +90,10 @@ public:
      * docs/TransactionLog.md sec 32.9. A value the transaction log holds is
      * named by its ref -- a row's op has the value before and after it, a
      * merge's preview the value at the base and at each side -- and an
-     * empty ref is the value the object has now. What is shown is no part of
-     * the document: no object, no property written, no undo step.
+     * empty ref is the value the object has now. The ref "-" is no value:
+     * the property, or its object, was not there, and all of the other
+     * value is new or gone. What is shown is no part of the document: no
+     * object, no property written, no undo step.
      */
     //@{
     /** Show how property \a prop differs between the values \a a, the

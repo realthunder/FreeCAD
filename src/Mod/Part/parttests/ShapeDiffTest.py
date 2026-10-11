@@ -194,3 +194,73 @@ class ShapeAtAStateTest(unittest.TestCase):
             self.assertIsNone(Part.getTransactionShape(plain, "0" * 40))
         finally:
             App.closeDocument(plain.Name)
+
+    def seq(self, name):
+        return [r for r in self.doc.getTransactionLog() if r["name"] == name][-1]["seq"]
+
+    def testTwoStatesCompared(self):
+        doc, cut = self.doc, self.cut
+        before = cut.Shape.copy(), dict(cut.Shape.ElementReverseMap)
+        base = self.seq("base")
+        self.assertEqual(doc.compareTransactionStates(base, base), [])
+        after = self.edit("taller", Height=12)
+        changes = {(c["object"], c["prop"]): c for c in doc.compareTransactionStates(base)}
+        # What was set by hand, and what the recompute made of it
+        height = changes[("Box", "Height")]
+        self.assertFalse(height["derived"])
+        self.assertIn("10", doc.getTransactionValue(height["a"])[0])
+        self.assertIn("12", doc.getTransactionValue(height["b"])[0])
+        shape = changes[("Cut", "Shape")]
+        self.assertTrue(shape["derived"])
+        self.assertEqual((shape["ckind"], shape["cid"]), ("obj", cut.ID))
+        self.assertIsThatShape(Part.getTransactionShape(doc, shape["a"], cut.ID), *before)
+        self.assertIsThatShape(Part.getTransactionShape(doc, shape["b"], cut.ID), *after)
+        # What no row between the two set is not said
+        self.assertNotIn(("Cyl", "Radius"), changes)
+        self.assertNotIn(("Box", "Length"), changes)
+        # The other way round, the two values change places
+        back = {(c["object"], c["prop"]): c for c in doc.compareTransactionStates(0, base)}
+        self.assertEqual((back[("Cut", "Shape")]["a"], back[("Cut", "Shape")]["b"]),
+                         (shape["b"], shape["a"]))
+
+    def testAnObjectMadeBetweenTheTwo(self):
+        doc = self.doc
+        base = self.seq("base")
+        doc.openTransaction("a ball")
+        ball = doc.addObject("Part::Sphere", "Ball")
+        doc.recompute()
+        doc.commitTransaction()
+        changes = doc.compareTransactionStates(base)
+        made = [c for c in changes if c["object"] == "Ball" and not c["prop"]]
+        self.assertEqual(len(made), 1)
+        self.assertEqual((made[0]["inA"], made[0]["inB"], made[0]["cid"]), (False, True, ball.ID))
+        self.assertLess(changes.index(made[0]),
+                        min(i for i, c in enumerate(changes)
+                            if c["object"] == "Ball" and c["prop"]))
+        shape = [c for c in changes if c["object"] == "Ball" and c["prop"] == "Shape"][0]
+        self.assertEqual(shape["a"], "")
+        self.assertFalse(shape["inA"])
+        read = Part.getTransactionShape(doc, shape["b"], ball.ID)
+        self.assertAlmostEqual(read.Volume, ball.Shape.Volume)
+        # And from now back to the base it is there at a and not at b
+        gone = [c for c in doc.compareTransactionStates(0, base)
+                if c["object"] == "Ball" and not c["prop"]]
+        self.assertEqual((gone[0]["inA"], gone[0]["inB"]), (True, False))
+
+    def testTwoBranchesCompared(self):
+        doc, cut = self.doc, self.cut
+        doc.createTransactionBranch("side")
+        theirs = self.edit("side: longer", Length=14)
+        side = self.seq("side: longer")
+        doc.switchTransactionBranch("main")
+        ours = self.edit("main: taller", Height=12)
+        changes = {(c["object"], c["prop"]): c for c in doc.compareTransactionStates(side)}
+        # Back from the side's row to where the two parted, and on to here
+        self.assertIn(("Box", "Length"), changes)
+        self.assertIn(("Box", "Height"), changes)
+        shape = changes[("Cut", "Shape")]
+        self.assertIsThatShape(Part.getTransactionShape(doc, shape["a"], cut.ID), *theirs)
+        self.assertIsThatShape(Part.getTransactionShape(doc, shape["b"], cut.ID), *ours)
+        with self.assertRaises(Exception):
+            doc.compareTransactionStates(10**9)
+

@@ -60,6 +60,9 @@
 # include <QVBoxLayout>
 #endif
 
+#include <map>
+#include <set>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
@@ -319,26 +322,41 @@ protected:
 
 } // namespace
 
-/** A value at two states, shown in the 3D view (docs/TransactionLog.md sec
- * 32.9): which two, where between them, and whether what did not change is
- * left out. The object's view provider is asked to show it
+/** Values at two states, shown in the 3D view (docs/TransactionLog.md sec
+ * 32.9, 32.10): which two, where between them, and whether what did not
+ * change is left out. Each object's view provider is asked to show its own
  * (ViewProviderDocumentObject::showValueDiff) and says whether it can; what
- * it shows is taken away when another value is given, or this goes.
+ * they show is taken away when other values are given, or this goes.
+ *
+ * One value is shown over its object wherever that is. Many -- the whole of
+ * a row, of a version, of a merge -- are shown over the objects the view
+ * shows: the others are what those are made of, and would be drawn through
+ * them.
  */
 class Gui::DockWnd::TransactionDiffBar: public QWidget
 {
 public:
-    /// Two values of the property, each by its ref in the log -- empty for
-    /// the one the object has now -- or not `there`.
+    /// Two values of a property, each by its ref in the log -- empty for
+    /// the one the object has now, NoValue where there was none -- or not
+    /// `there`.
     struct Pair
     {
         bool there {false};
         std::string a;
         std::string b;
     };
+    /// Property `prop` of object `cid`, and its values for each pair.
+    struct Value
+    {
+        long cid {0};
+        std::string prop;
+        std::vector<Pair> pairs;
+    };
+    /// The ref of a property that was not there: everything of the other
+    /// value is new, or gone.
+    static const char* NoValue;
 
-    /// `pairs`: what each pair setValue() is given is called; the choice is
-    /// not shown where there is one only.
+    /// `pairs`: what each pair setValues() is given is called.
     TransactionDiffBar(QWidget* parent, const QStringList& pairs)
         : QWidget(parent)
     {
@@ -373,25 +391,54 @@ public:
 
     ~TransactionDiffBar() override
     {
-        hideShown();
+        hideAll();
     }
 
-    /// Property `prop` of object `cid` of `doc`, and its values for each pair.
+    /// What pair `index` is called: the panel's one pair is a row's before
+    /// against after, or a version against now.
+    void setPairLabel(int index, const QString& text)
+    {
+        if (_pair->itemText(index) != text)
+            _pair->setItemText(index, text);
+    }
+
+    /** The values to show, of `doc`. With `shownOnly`, over the objects the
+     * view shows and no others. `note` is said after what was found: what
+     * of the two states has no object here to be shown over.
+     */
+    void setValues(App::Document* doc, const std::vector<Value>& values, bool shownOnly,
+                   const QString& note = QString())
+    {
+        _values.clear();
+        for (const auto& value : values) {
+            auto obj = doc ? doc->getObjectByID(value.cid) : nullptr;
+            if (!obj || (shownOnly && !obj->Visibility.getValue()))
+                continue;
+            _values.push_back({App::DocumentObjectT(obj), value.prop, value.pairs});
+        }
+        _note = note;
+        update();
+    }
+
+    /// One value, shown over its object wherever that is
     void setValue(App::Document* doc, long cid, const std::string& prop, std::vector<Pair> pairs)
     {
-        auto obj = doc ? doc->getObjectByID(cid) : nullptr;
-        _object = obj ? App::DocumentObjectT(obj) : App::DocumentObjectT();
-        _prop = prop;
-        _pairs = std::move(pairs);
-        update();
+        setValues(doc, {{cid, prop, std::move(pairs)}}, false);
     }
 
     void clear()
     {
-        setValue(nullptr, 0, std::string(), {});
+        setValues(nullptr, {}, false);
     }
 
 private:
+    struct Held
+    {
+        App::DocumentObjectT object;
+        std::string prop;
+        std::vector<Pair> pairs;
+    };
+
     static ViewProviderDocumentObject* viewOf(const App::DocumentObjectT& which)
     {
         auto obj = which.getObject();
@@ -400,51 +447,70 @@ private:
                    : nullptr;
     }
 
-    void hideShown()
+    void hideAll()
     {
-        if (auto view = viewOf(_shown))
-            view->hideValueDiff();
-        _shown = App::DocumentObjectT();
+        for (const auto& shown : _shown) {
+            if (auto view = viewOf(shown))
+                view->hideValueDiff();
+        }
+        _shown.clear();
     }
 
     void update()
     {
         const int index = _pair->currentIndex();
-        const Pair* pair = index >= 0 && index < static_cast<int>(_pairs.size()) && _pairs[index].there
-                               ? &_pairs[index] : nullptr;
-        auto view = pair ? viewOf(_object) : nullptr;
-        if (view != viewOf(_shown))
-            hideShown();
-        _said->clear();
-        if (!view)
-            return;
-        if (!view->showValueDiff(_prop.c_str(), pair->a, pair->b, _position->value() / 100.f,
-                                 _only->isChecked())) {
-            hideShown();
-            return;
+        std::vector<App::DocumentObjectT> shown;
+        std::set<ViewProviderDocumentObject*> views;
+        std::map<std::string, int> found;
+        for (const auto& value : _values) {
+            if (index < 0 || index >= static_cast<int>(value.pairs.size())
+                    || !value.pairs[index].there)
+                continue;
+            auto view = viewOf(value.object);
+            // One thing of an object at a time: its first value that shows
+            if (!view || views.count(view))
+                continue;
+            const Pair& pair = value.pairs[index];
+            if (!view->showValueDiff(value.prop.c_str(), pair.a, pair.b,
+                                     _position->value() / 100.f, _only->isChecked()))
+                continue;
+            views.insert(view);
+            shown.push_back(value.object);
+            for (const auto& count : view->getValueDiff())
+                found[count.first] += count.second;
         }
-        _shown = _object;
-        const auto shown = view->getValueDiff();
-        auto count = [&](const char* name) {
-            auto it = shown.find(name);
-            return it == shown.end() ? 0 : it->second;
-        };
-        _said->setText(QObject::tr("%1 as they were, %2 changed, %3 new, %4 gone")
-                           .arg(count("same"))
-                           .arg(count("changed") + count("moved"))
-                           .arg(count("added"))
-                           .arg(count("removed")));
+        for (const auto& was : _shown) {
+            auto view = viewOf(was);
+            if (view && !views.count(view))
+                view->hideValueDiff();
+        }
+        _shown = std::move(shown);
+
+        QString text;
+        if (!_shown.empty()) {
+            text = QObject::tr("%1 as they were, %2 changed, %3 new, %4 gone")
+                       .arg(found["same"])
+                       .arg(found["changed"] + found["moved"])
+                       .arg(found["added"])
+                       .arg(found["removed"]);
+            if (_shown.size() > 1)
+                text = QObject::tr("%1 objects: %2").arg(_shown.size()).arg(text);
+        }
+        if (!_note.isEmpty() && index >= 0 && index < _pair->count() - 1)
+            text += (text.isEmpty() ? QString() : QStringLiteral("; ")) + _note;
+        _said->setText(text);
     }
 
     QComboBox* _pair {nullptr};
     QSlider* _position {nullptr};
     QCheckBox* _only {nullptr};
     QLabel* _said {nullptr};
-    App::DocumentObjectT _object;
-    std::string _prop;
-    std::vector<Pair> _pairs;
-    App::DocumentObjectT _shown;
+    std::vector<Held> _values;
+    QString _note;
+    std::vector<App::DocumentObjectT> _shown;
 };
+
+const char* TransactionDiffBar::NoValue = "-";
 
 TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* parent)
     : DockWindow(pcDocument, parent)
@@ -898,10 +964,12 @@ void TransactionLogView::onVersionSelected()
 {
     _manifest->clear();
     _value->clear();
+    _diffBar->clear();
     auto items = _versions->selectedItems();
     if (items.isEmpty())
         return;
     showManifest(items.front()->data(VerNum, Qt::UserRole).toLongLong());
+    showVersionDiff(items.front()->text(VerSeq).toLongLong());
 }
 
 void TransactionLogView::showManifest(int64_t num)
@@ -1075,10 +1143,80 @@ void TransactionLogView::onTransactionSelected()
     auto item = items.front();
     int64_t seq = item->data(TxnSeq, Qt::UserRole).toLongLong();
     showOps(seq);
+    if (items.size() == 1)
+        showRowDiff(seq);
     // A transaction with no ops -- the recompute record -- carries its
     // payload in the script column; show it where a value would go.
     if (_ops->topLevelItemCount() == 0)
         _value->setPlainText(item->data(TxnName, Qt::UserRole).toString());
+}
+
+void TransactionLogView::showRowDiff(int64_t seq)
+{
+    // What the row made of every value it set, over the objects the view
+    // shows (sec 32.10): the first value before and the last after. A value
+    // with none before was made by the row -- its object, or its property.
+    auto l = log();
+    if (!l)
+        return;
+    try {
+        std::vector<TransactionDiffBar::Value> values;
+        std::map<std::pair<long, std::string>, size_t> at;
+        for (const auto& op : l->store().ops(seq)) {
+            if (op.ckind != "obj" || op.op != "set" || op.vafter.empty())
+                continue;
+            auto found = at.find({op.cid, op.prop});
+            if (found == at.end()) {
+                at[{op.cid, op.prop}] = values.size();
+                values.push_back({op.cid, op.prop,
+                                  {{true, op.vbefore.empty() ? TransactionDiffBar::NoValue
+                                                             : op.vbefore, op.vafter}}});
+            }
+            else {
+                values[found->second].pairs[0].b = op.vafter;
+            }
+        }
+        _diffBar->setPairLabel(0, tr("before against after"));
+        _diffBar->setValues(_doc, values, true);
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log view: " << e.what());
+    }
+}
+
+void TransactionLogView::showVersionDiff(int64_t seq)
+{
+    // The version against the document as it is (sec 32.10): every value
+    // that is not now what it was at the version's row.
+    _diffBar->clear();
+    if (!_doc || seq <= 0)
+        return;
+    try {
+        std::vector<TransactionDiffBar::Value> values;
+        int gone = 0;
+        for (const auto& c : _doc->compareStates(seq, 0)) {
+            if (c.ckind != "obj")
+                continue;
+            if (c.prop.empty()) {
+                gone += c.inA && !c.inB ? 1 : 0;
+                continue;
+            }
+            if (!c.inB || (c.a.empty() && c.inA))
+                continue;
+            // Now is what the object has: the empty ref
+            values.push_back({c.cid, c.prop,
+                              {{true, c.a.empty() ? TransactionDiffBar::NoValue : c.a,
+                                std::string()}}});
+        }
+        _diffBar->setPairLabel(0, tr("the version against now"));
+        _diffBar->setValues(_doc, values, true,
+                            gone ? tr("%n object(s) of the version are not in the document", "",
+                                      gone)
+                                 : QString());
+    }
+    catch (Base::Exception& e) {
+        _status->setText(tr("Not compared: %1").arg(QString::fromUtf8(e.what())));
+    }
 }
 
 void TransactionLogView::showOps(int64_t seq)
@@ -1123,19 +1261,21 @@ void TransactionLogView::showOps(int64_t seq)
 void TransactionLogView::onOpSelected()
 {
     _value->clear();
-    _diffBar->clear();
     auto items = _ops->selectedItems();
     if (items.isEmpty())
         return;
+    _diffBar->clear();
     auto item = items.front();
     QString before = item->data(OpBefore, Qt::UserRole).toString();
     QString after = item->data(OpAfter, Qt::UserRole).toString();
     // What the op made of the value, over the object as it is now. An op
     // with no value before made the property, and has nothing to be against.
     const long cid = static_cast<long>(item->data(OpContainer, Qt::UserRole).toLongLong());
-    if (cid && !before.isEmpty() && !after.isEmpty())
+    if (cid && !before.isEmpty() && !after.isEmpty()) {
+        _diffBar->setPairLabel(0, tr("before against after"));
         _diffBar->setValue(_doc, cid, item->text(OpProp).toStdString(),
                            {{true, before.toStdString(), after.toStdString()}});
+    }
     QString meta = item->data(OpProp, Qt::UserRole).toString();
     QString text;
     if (!meta.isEmpty())
@@ -1647,20 +1787,41 @@ public:
                                               QObject::tr("base against ours"),
                                               QObject::tr("base against theirs")});
         layout->addWidget(_diff);
-        QObject::connect(_tree, &QTreeWidget::itemSelectionChanged, this, [this, doc]() {
+        auto pairsOf = [](const App::Document::MergeChange& c) {
+            return std::vector<TransactionDiffBar::Pair> {
+                {!c.theirs.empty(), std::string(), c.theirs},
+                {!c.base.empty(), c.base, std::string()},
+                {!c.base.empty() && !c.theirs.empty(), c.base, c.theirs}};
+        };
+        auto show = [this, doc, pairsOf]() {
             const auto items = _tree->selectedItems();
-            const App::Document::MergeChange* c =
-                items.isEmpty() ? nullptr
-                                : _changes[items.front()->data(Object, Qt::UserRole).toInt()];
-            if (!c || c->ckind != "obj" || c->prop.empty()) {
-                _diff->clear();
+            if (!items.isEmpty()) {
+                const auto* c = _changes[items.front()->data(Object, Qt::UserRole).toInt()];
+                if (c->ckind != "obj" || c->prop.empty())
+                    _diff->clear();
+                else
+                    _diff->setValue(doc, c->cid, c->prop, pairsOf(*c));
                 return;
             }
-            _diff->setValue(doc, c->cid, c->prop,
-                            {{!c->theirs.empty(), std::string(), c->theirs},
-                             {!c->base.empty(), c->base, std::string()},
-                             {!c->base.empty() && !c->theirs.empty(), c->base, c->theirs}});
-        });
+            // No change selected: all of them, over what the view shows
+            // (sec 32.10). What theirs made has no object here.
+            std::vector<TransactionDiffBar::Value> values;
+            int made = 0;
+            for (const auto* c : _changes) {
+                if (c->ckind != "obj")
+                    continue;
+                if (c->prop.empty())
+                    made += c->op == "create" ? 1 : 0;
+                else
+                    values.push_back({c->cid, c->prop, pairsOf(*c)});
+            }
+            _diff->setValues(doc, values, true,
+                             made ? QObject::tr("%n object(s) of theirs are not in the document",
+                                                "", made)
+                                  : QString());
+        };
+        QObject::connect(_tree, &QTreeWidget::itemSelectionChanged, this, show);
+        show();
 
         auto buttons = new QDialogButtonBox(this);
         auto merge = buttons->addButton(rows ? QObject::tr("Apply") : QObject::tr("Merge"),

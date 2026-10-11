@@ -2656,8 +2656,11 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
         return false;
     if (!diffView || diffProp != prop || diffA != a || diffB != b) {
         hideValueDiff();
-        // An empty ref is the value the object has now
+        // An empty ref is the value the object has now, and "-" none: no
+        // shape, against which all of the other is new, or gone
         auto at = [&](const std::string &ref, Part::TopoShape &shape) {
+            if (ref == "-")
+                return true;
             if (ref.empty())
                 shape = shapeProp->getShape();
             else if (!Part::ShapeDiff::valueShape(*obj->getDocument(), ref, obj->getID(), shape))
@@ -2665,7 +2668,7 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
             return !shape.isNull();
         };
         Part::TopoShape shapeA, shapeB;
-        if (!at(a, shapeA) || !at(b, shapeB))
+        if (!at(a, shapeA) || !at(b, shapeB) || (shapeA.isNull() && shapeB.isNull()))
             return false;
         auto view = std::make_unique<ShapeDiffView>(*this);
         if (!view->show(shapeA, shapeB))

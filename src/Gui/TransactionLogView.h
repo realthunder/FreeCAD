@@ -169,6 +169,10 @@ private:
     void reload();
     void appendTransactions(int64_t fromSeq);
     void showOps(int64_t seq);
+    /// In the 3D view (sec 32.10): what row `seq` made of every value it
+    /// set, and the version at row `seq` against the document as it is.
+    void showRowDiff(int64_t seq);
+    void showVersionDiff(int64_t seq);
     void refreshVersions();
     /// The branch switcher's items (docs/TransactionLog.md sec 26).
     void refreshBranches();

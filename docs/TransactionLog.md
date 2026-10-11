@@ -17959,3 +17959,60 @@ no undo step written -- then from an op of a row in the panel, and from
 the merge dialog with each pair and closed.
 
 **Next (32.4):** step 5, the versions list and the whole document.
+
+### 32.10 Step 5, built: a version against now, and the whole of a row, a version or a merge (2026-10-11)
+
+**What differs between two rows.** `Document::compareStates(a, b)`,
+Python `compareTransactionStates(a=0, b=0)`; 0 is the row the document
+is on. The net change of the way from the one to the other -- back from
+`a` to where the two histories meet and on to `b` (`diffRows`, which a
+merge's two sides are read with) -- as a list: every property some row
+on the way set, where it is not at `b` what it was at `a`, with its
+value at each as a ref; and before its properties, an object that is at
+one of the two only (`inA`, `inB`). The two rows may be on different
+branches. A value the log did not keep is an empty ref.
+
+**No value.** A property that was not there has no ref, and the empty
+ref is taken: it is the value the object has now (32.9). The ref `-` is
+none. Part's view provider draws a shape against none as all new, or
+all gone.
+
+**The whole, and over what.** One value is shown over its object
+wherever that is (32.9). Many are shown **over the objects the view
+shows**, and no others: the rest are what those are made of -- a cut's
+box, the cut under a second cut -- and would be drawn through them. The
+bar asks each object's view provider in turn and adds up what they
+found: "3 objects: 12 as they were, 9 changed, 2 new, 0 gone".
+
+- *A row selected*, and no op of it: what the row made of every value it
+  set, the first before against the last after. A value with none
+  before -- the row made the object -- against none.
+- *A version selected* in the versions list: the version against the
+  document as it is, `compareStates(its row, 0)`; now is the empty ref.
+  An object made since is all new. Objects of the version that the
+  document has no longer are counted, and said.
+- *The merge dialog with no change selected*, which is how it opens:
+  every change of the preview. What theirs made has no object here, and
+  is counted and said.
+
+An op, or a change, selected is that one value again, shown or not.
+
+**Left.**
+
+- *An object the document does not have* -- theirs made it, or it is
+  gone since the version -- has no view provider to be drawn by. Counted
+  only.
+- *A large document*: every object shown is read, compared and drawn
+  when a row is clicked. On the scanner's body that is 2 ms to read and
+  5 ms to compare (32.8); drawing is the object's own cost again. Not
+  measured on an assembly.
+- The rest of 32.9's.
+
+**Tests.** `parttests.ShapeDiffTest.ShapeAtAStateTest` (+3): two rows
+compared, each way; an object made between the two; two branches. The
+Gui check (+15, 55): against no value; a row selected, the object shown
+and not what it is made of; one of its ops; the row that made an
+object; a version against now, and one from before the object; the
+merge dialog as it opens.
+
+**Next (32.4):** step 6 -- volumes, the merged result, the stream.

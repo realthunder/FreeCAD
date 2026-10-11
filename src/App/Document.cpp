@@ -10126,6 +10126,68 @@ Document::MergePreview Document::previewMerge(const std::string& branch, int64_t
     return plan.preview;
 }
 
+std::vector<Document::StateChange> Document::compareStates(int64_t a, int64_t b)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document has no transaction log");
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    log->resolvePending();
+    auto& store = log->store();
+    if (a <= 0)
+        a = log->head();
+    if (b <= 0)
+        b = log->head();
+    std::vector<StateChange> out;
+    if (a == b)
+        return out;
+    NetChange net;
+    std::string why;
+    if (!diffRows(store, store.versions(), a, b, net, why))
+        THROWM(Base::ValueError, "cannot compare rows " + std::to_string(a) + " and "
+                                     + std::to_string(b) + ": " + why);
+    auto fill = [&](StateChange& c, const std::string& ckind, long cid) {
+        c.ckind = ckind;
+        c.cid = cid;
+        auto found = net.objects.find(cid);
+        if (ckind != "doc" && found != net.objects.end()) {
+            c.inA = !found->second.born;
+            c.inB = found->second.alive;
+            c.object = found->second.cname;
+        }
+        if (ckind != "doc") {
+            if (auto obj = getObjectByID(cid)) {
+                if (obj->getNameInDocument())
+                    c.object = obj->getNameInDocument();
+            }
+        }
+    };
+    for (long cid : net.objectOrder) {
+        const auto& obj = net.objects[cid];
+        if (obj.born != obj.alive)   // there at both, or at neither
+            continue;
+        StateChange c;
+        fill(c, "obj", cid);
+        c.ptype = obj.ctype;
+        out.push_back(std::move(c));
+    }
+    for (const auto& key : net.valueOrder) {
+        const auto& v = net.values[key];
+        if (!netChanged(v))
+            continue;
+        StateChange c;
+        fill(c, std::get<0>(key), std::get<1>(key));
+        c.prop = std::get<2>(key);
+        c.ptype = v.ptype;
+        c.a = v.atStart ? v.before : std::string();
+        c.b = v.atEnd ? v.after : std::string();
+        c.derived = v.derived;
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
 namespace {
 std::string pickLabel(const std::vector<int64_t>& rows)
 {
