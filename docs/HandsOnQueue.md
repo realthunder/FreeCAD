@@ -5160,6 +5160,14 @@ design is changed yet.
 to the reporter before changing TechDraw's design; whether it was put to
 the reporter is not said in this message. The reporter has it from the
 note-taker at 12:39.)
+(2026-10-11 12:41, the build session on that count: the real share WAS
+put to the reporter in its session, about 12:35, before any change to
+TechDraw. Its words to them: "Measured with proper controls: the TechDraw
+objects cost about 5 s of the open and 5 s of the wait after it, roughly
+ten of this file's 21 to 25 seconds. So TechDraw is still about half, and
+your go-ahead stands on a real number now." The reporter has NOT answered
+it. Nothing of TechDraw's design is changed; the build session is at the
+profile.)
 
 **A new defect found on the way -- a crash on removing a TechDraw page
 outside a transaction -- is entry 67.**
