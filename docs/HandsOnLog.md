@@ -326,7 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, pushed 2026-10-11 08:10; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen; 10 s of them FIXED `ee9583a247` (a folder listed for every edge drawn), pushed with them; the pages' work at load is for the reporter; x16win's numbers in, 2026-10-11: on a box nobody watches (an older, smaller save of the file, `a810955c86`) the open returns in 7.3 to 9.4 s and the model is there 8 to 11 s after it, whole at 12 s -- the clipboard's cost and the file system's are this box's, the two drains' own 8.6 s are every box's | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, pushed 2026-10-11 08:10; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen; 10 s of them FIXED `ee9583a247` (a folder listed for every edge drawn), pushed with them; the pages' work at load is for the reporter; x16win's numbers in, 2026-10-11: on a box nobody watches (an older, smaller save of the file, `a810955c86`) the open returns in 7.3 to 9.4 s and the model is there 8 to 11 s after it, whole at 12 s -- the clipboard's cost and the file system's are this box's, the two drains' own 8.6 s are every box's; on the same file and the pushed head x16win waits the same 10 s after the open as this box; the 1 s pass after the drain was PartDesign looking for icons that do not exist, FIXED `d38ac38d7b` `0049176c22`, not pushed | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5418,6 +5418,42 @@ Its fourth load, the log and the trace on (10 ms):
 
 `tests/gui/close-during-view-provider-drain.py` there, under cdb: 7 of 7,
 no exception.
+
+**The pass after the drain is the tree's items, and icons that are not
+there -- FIXED `d38ac38d7b`, `0049176c22`.** In the profile of the night
+before, all 14 samples under `MainWindow::_updateActions` have the same
+stack: a command's `isActive()` (`linkConvertible`) asks the tree for its
+selection, `TreeWidget::getSelection` runs the tree's pending update, and
+that makes the new document's items. 11 of the 14 are in
+`PartDesignGui::ViewProviderAddSub::getIcon` -> `iconFromTheme` ->
+`loadPixmap`: the function builds an icon name for the feature's kind
+(`PartDesign_AdditivePad`, `PartDesign_SubtractivePocket`), and for the
+commonest features there is no such artwork -- only the other
+combinations have their own. The icon factory keeps what it finds and
+nothing of what it does not, so every ask tried the name as a path, in
+the icon paths, and under every image format Qt reads, and did all of it
+twice (`iconFromTheme` repeated a failed lookup to have it reported, for
+a caller that wants no report too). The tree asks when it makes an item
+and on every status update of it.
+
+The names not found are remembered, and the silent repeat is gone.
+Measured together, on this file (161 PartDesign objects of 686):
+
+| | before | after |
+|---|---|---|
+| `ViewObject.Icon` of every object, three turns | 0.59, 1.03, 0.91 s -- 5 to 9 ms each for 49 pads, 37 pockets, 12 fillets, 7 holes, 5 patterns | 0.010, 0.005, 0.005 s |
+| null icons | 0 | 0 |
+| the dispatch to `activityTimer` after the drain, two traced loads | 1032, 869 ms | 347, 106 ms |
+| the open returns after, three plain loads | 14.1 to 15.1 s that morning | 13.2 to 13.4 s |
+| the model first on the screen, after that | 9.4 to 10.1 s | 9.0 to 9.3 s |
+
+The open's 13.2 to 13.4 s is last night's figure again and not this
+change's (nothing of it runs before the open returns); the half second
+to a second off the model's arrival is. Four GUI tests on it (close
+during the drain, PartDesign's GUI defects and port fixes, tooltip
+icons): 80 checks, none failed. Not pushed. What a status update of a
+tree item cost while working on such a document -- the same search, per
+item -- I did not measure apart from the first row.
 
 **The close.** The script closes its document when its last frame is
 taken.
