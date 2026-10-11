@@ -5374,6 +5374,51 @@ before and after were three loads each within fifteen minutes.
 **Pushed** 2026-10-11 08:10 on the reporter's word, `a810955c86` to
 `9e1cf7d9f9`; x16win asked to measure the same load on it.
 
+**x16win on `9e1cf7d9f9`, and on this very file (2026-10-11).** The
+reporter had the file fetched to that box: 6,119,171 bytes, the same
+SHA-256 as ours. Same conditions as its first runs (cdb, a configuration
+of its own, Direct3D 11 with 4 samples, so the times are from the frames
+compared). Three plain loads, a frame every 2 s:
+
+| | this box, `ee9583a247` | x16win, `9e1cf7d9f9` |
+|---|---|---|
+| the open returns after | 13.3 to 13.6 s (six loads that night), 14.1 to 15.1 s (three the morning after) | 8.3, 8.1, 8.1 s |
+| the model first on the screen, after that | 9.4 to 10.7 s | 10.0, 10.1 s (a third of it in the frame), and between 10.1 and 12.7 s in the third load |
+| all of it but the last change | 10.1 to 10.7 s | 12.3 to 12.7 s |
+| whole | 12 to 13 s | by 14.0 s |
+| from the open to the model | 23 to 25 s | 18 s, whole by 22 s |
+
+So with the same file the wait AFTER the open is the same ten seconds on
+both boxes; what this box pays more is at the open, 5 to 7 s. And
+`ee9583a247` buys nothing there, as expected: its older file, one load at
+the new head, opened in 7.1 s with the model first at 10.6 s and whole at
+12.0 s, inside the spread of its three loads at `a810955c86` (9.4, 7.3,
+7.3 s; 8.1 to 10.9 s; 12.0 s).
+
+Its fourth load, the log and the trace on (10 ms):
+
+- the view provider drain: 320 view providers in 56 slices, 7.36 s, the
+  longest 0.64 s -- update 3.50 s, restore 1.90 s, finish 1.88 s (the
+  sweep 2.61 s of the finishing), attach 0.22 s, instantiate 0.14 s;
+- Part's visual drain: 275 visuals in 11 slices, 2.74 s, the longest
+  1.20 s; the pre-mesh 166 shapes in 0.77 s;
+- "slow turn" by name: view provider drain 56 turns, 8.05 s (the longest
+  918 ms = work 637 + yielded 281, budget 500); visual drain 11 turns,
+  3.12 s; none of "deferred files" or "level landing";
+- the dispatches to a `QTimer` without a name, which its first report
+  could not place: four have a turn of the view provider drain run inside
+  them (two of those with a paint of the 3D view: the script's own sample,
+  whose frame dump lets the loop run), so their time is the drain's and
+  must not be added to it; the rest are paints, and 496 ms and 321 ms in
+  the visual drain;
+- ONE dispatch to `activityTimer`, 692 ms, the first after the drain's
+  last line. On that box a pass over every command's `isActive()` is
+  7 ms, so it is not that. This is the "one pass of about 1 s after the
+  drain" left unnamed here, and it is every box's.
+
+`tests/gui/close-during-view-provider-drain.py` there, under cdb: 7 of 7,
+no exception.
+
 **The close.** The script closes its document when its last frame is
 taken.
 
