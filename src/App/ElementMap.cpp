@@ -1158,6 +1158,10 @@ public:
                 name = MappedName(childIdx);
             if (name) {
                 name += child.postfix;
+                // What the postfix names is held by the child (sec 27.76
+                // item 4), and so by a name read through it.
+                if (sids)
+                    *sids += child.sids;
                 return name;
             }
         }
@@ -1201,10 +1205,12 @@ public:
             IndexedName childIdx(idx.getType(), idx.getIndex() - child.offset);
             if (child.elementMap) {
                 res = child.elementMap->findAll(childIdx);
-                for (auto &v : res)
+                for (auto &v : res) {
                     v.first += child.postfix;
+                    v.second += child.sids;
+                }
             } else 
-                res.emplace_back(MappedName(childIdx) + child.postfix, ElementIDRefs());
+                res.emplace_back(MappedName(childIdx) + child.postfix, child.sids);
         }
 
         return res;
@@ -1394,6 +1400,9 @@ public:
                 for (int i=0; i<child.count; ++i, ++childIdx, ++idx) {
                     ElementIDRefs sids;
                     MappedName name = child.elementMap->find(childIdx, &sids);
+                    // Written down one by one, the names hold what the
+                    // child's postfix names: the child is not kept.
+                    sids += child.sids;
                     if (!name) {
                         if (!child.tag || child.tag == master.Tag) {
                             if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))

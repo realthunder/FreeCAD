@@ -831,9 +831,15 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
     // one that was there; it holds one under two ids now (sec 27.41 Q2) and
     // takes anything, so the look is made here. Without it every hash of a
     // name made a string, and a shape made again had other names.
-    auto kept = _hashes->left.find(&newStringID);
-    if (kept != _hashes->left.end()) {
-        return {kept->first, indexed.getIndex()};
+    // The lowest of the ids it is under, as importOne() takes.
+    StringID* kept = nullptr;
+    auto range = _hashes->left.equal_range(&newStringID);
+    for (auto i = range.first; i != range.second; ++i) {
+        if (!kept || i->first->_id < kept->_id)
+            kept = i->first;
+    }
+    if (kept) {
+        return {kept, indexed.getIndex()};
     }
 
     return {insert(newStringIDRef), indexed.getIndex()};
@@ -1024,6 +1030,61 @@ bool mintedText(const App::StringIDRef& prefix, const QByteArray& after, QByteAr
     said = QByteArray(text.c_str(), static_cast<int>(text.size()) - tail.size());
     return true;
 }
+
+/** The same for a name whose number is in the reference and not in the
+ * string (a table that indexes names): `#c:5;:G;XTR;:H24:7,F` is `#c` --
+ * `g;SKT` -- with 5, the name `g5;SKT`. `own` is what of the string's own
+ * postfix belongs to the name, `after` what holds the tag. Where the object
+ * numbers the thing otherwise here, `index` is its number here: the string
+ * is the same one, only the reference changes. False where it comes as it
+ * is, which a name whose text changes otherwise does too.
+ */
+bool mintedIndex(const App::StringID& name, const QByteArray& own, const QByteArray& after,
+                 int& index)
+{
+    const auto minted = App::RestoreMinted::current();
+    if (!minted || index <= 0)
+        return false;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    long tag = 0;
+    if (!tagAt(after, after.indexOf(marker), tag))
+        return false;
+    // A name of its own, not one built on another.
+    if (name.isBinary() || name.isHashed() || name.data().contains('#') || own.contains('#'))
+        return false;
+    std::string text(name.data().constData(), static_cast<std::size_t>(name.data().size()));
+    text += std::to_string(index);
+    text.append(own.constData(), static_cast<std::size_t>(own.size()));
+    if (!minted->byId(tagHere(tag), text) || text.size() < static_cast<std::size_t>(own.size())
+            || text.compare(text.size() - own.size(), std::string::npos, own.constData(),
+                            own.size()) != 0)
+        return false;
+    const Data::IndexedName here(
+        QByteArray(text.c_str(), static_cast<int>(text.size()) - own.size()));
+    if (!here || here.getIndex() <= 0 || name.data() != here.getType())
+        return false;
+    index = here.getIndex();
+    return true;
+}
+
+/// mintedIndex() for the reference `index` of `theirs`, a string of `from`:
+/// a name with its tag in its own postfix (`g` + `;SKT;:H24,E`), or one
+/// built on a name, the tag in what it adds (`#c:` + `;:H24,E`).
+bool mintedReference(const App::StringID& theirs, const App::StringHasher& from, int& index)
+{
+    if (index <= 0 || !App::RestoreMinted::current() || theirs.isBinary() || theirs.isHashed())
+        return false;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    const QByteArray tail = theirs.postfix();
+    if (theirs.data().startsWith('#')) {
+        const auto head = App::StringID::fromString(theirs.data(), false);
+        App::StringIDRef prefix = head.id > 0 && head.index == 0 ? from.getID(head.id)
+                                                                 : App::StringIDRef();
+        return prefix && mintedIndex(prefix.deref(), prefix.deref().postfix(), tail, index);
+    }
+    const int pos = tail.indexOf(marker);
+    return pos >= 0 && mintedIndex(theirs, tail.left(pos), tail.mid(pos), index);
+}
 }  // namespace
 
 StringHasher::ImportTags::ImportTags(const std::map<long, long>& tags)
@@ -1072,6 +1133,30 @@ bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, 
         StringIDRef theirs = ok ? from.getID(id) : StringIDRef();
         if (!theirs)
             return false;
+        // The number a table that indexes names keeps in the reference,
+        // `#c:5`: where this file numbers the thing otherwise the string is
+        // the same and the number is the one here.
+        if (pos == 0 && end < text.size() && text[end] == ':') {
+            int stop = end + 1;
+            while (stop < text.size() && std::isxdigit(static_cast<unsigned char>(text[stop])))
+                ++stop;
+            int index = stop > end + 1 ? text.mid(end + 1, stop - end - 1).toInt(&ok, 16) : 0;
+            if (index > 0 && ok
+                    && mintedIndex(theirs.deref(), theirs.deref().postfix(), text.mid(stop), index)) {
+                StringIDRef here = importOne(theirs, memo, take);
+                if (!here)
+                    return false;
+                if (sids && sids->indexOf(here) < 0)
+                    sids->push_back(here);
+                res.append(text.constData() + last, pos + 1 - last);
+                res.append(QByteArray::number(static_cast<qlonglong>(here.value()), 16));
+                res.append(':');
+                res.append(QByteArray::number(index, 16));
+                last = stop;
+                pos = text.indexOf('#', stop);
+                continue;
+            }
+        }
         // The name the text is built on, as this file numbers the thing
         // (sec 31.14): not the string it comes as anywhere else, so not
         // through the memo.
@@ -1113,7 +1198,11 @@ StringIDRef StringHasher::importOne(const StringIDRef& foreign, ImportMemo& memo
     }
     if (!it->second)
         return {};
-    return {it->second, foreign._index};
+    // A name numbered in the reference, as this file numbers the thing
+    // (sec 31.14): the string is the one imported, the number the one here.
+    int index = foreign._index;
+    mintedReference(*theirs, *from, index);
+    return {it->second, index};
 }
 
 StringIDRef StringHasher::importNew(const StringID& theirs, const StringHasher& from,
