@@ -3240,7 +3240,8 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertTrue(link.LinkedObject.Document.FileName.endswith("@v%d" % onDisk))
         asm.redo()
         self.assertIsNone(link.getLinkPin("LinkedObject"))
-        self.assertEqual(link.LinkedObject.Document.FileName, partPath)
+        self.assertEqual(os.path.normpath(link.LinkedObject.Document.FileName),
+                         os.path.normpath(partPath))
 
     def testReleasedPinnedVersionClosesHeadless(self):
         # Sec 27.30, 27.38: with ClosePinnedVersion at close, a version
@@ -3474,7 +3475,8 @@ class TransactionBranchCases(unittest.TestCase):
         doc.UndoMode = 1
         link = doc.getObject("L")
         self.track(link.LinkedObject.Document)
-        self.assertEqual(link.LinkedObject.Document.FileName, path2 + "@v%d" % first)
+        self.assertEqual(os.path.normpath(link.LinkedObject.Document.FileName),
+                         os.path.normpath(path2 + "@v%d" % first))
         self.assertEqual(link.LinkedObject.Integer, 1)
 
         # Unpinned: the object of that name in the document; undone: pinned.
@@ -7085,7 +7087,8 @@ class TransactionBranchCases(unittest.TestCase):
             (state["branch"], state["target"], state["ahead"], state["behind"]),
             ("desk", "main", 0, 0),
         )
-        self.assertTrue(other.FileName.startswith(path + "@desk@v"), other.FileName)
+        self.assertTrue(os.path.normpath(other.FileName).startswith(os.path.normpath(path) + "@desk@v"),
+                        other.FileName)
         branches = self.branches(doc)
         self.assertEqual(branches["desk"]["target"], branches["main"]["id"])
         with self.assertRaises(ValueError):
