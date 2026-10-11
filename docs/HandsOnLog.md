@@ -326,7 +326,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, pushed 2026-10-11 08:10; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen; 10 s of them FIXED `ee9583a247` (a folder listed for every edge drawn), pushed with them; the pages' work at load is for the reporter; x16win's numbers in, 2026-10-11: on a box nobody watches (an older, smaller save of the file, `a810955c86`) the open returns in 7.3 to 9.4 s and the model is there 8 to 11 s after it, whole at 12 s -- the clipboard's cost and the file system's are this box's, the two drains' own 8.6 s are every box's; on the same file and the pushed head x16win waits the same 10 s after the open as this box; the 1 s pass after the drain was PartDesign looking for icons that do not exist, FIXED `d38ac38d7b` `0049176c22`, not pushed | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, pushed 2026-10-11 08:10; the rest of the wait MEASURED (a first "22 s of the 33 are the TechDraw pages', none on the screen" WITHDRAWN, its control had no `GuiDocument.xml`): on a control made in the GUI TechDraw is about 10 s of 21 to 25, paid whether a page shows or not, and the largest part of it was not TechDraw's -- every included file restored through a staging file, FIXED `5c45b43220` (one to two seconds off the open here), not pushed; of the earlier figure 10 s FIXED `ee9583a247` (a folder listed for every edge drawn), pushed with them; the pages' work at load is for the reporter; x16win's numbers in, 2026-10-11: on a box nobody watches (an older, smaller save of the file, `a810955c86`) the open returns in 7.3 to 9.4 s and the model is there 8 to 11 s after it, whole at 12 s -- the clipboard's cost and the file system's are this box's, the two drains' own 8.6 s are every box's; on the same file and the pushed head x16win waits the same 10 s after the open as this box; the 1 s pass after the drain was PartDesign looking for icons that do not exist, FIXED `d38ac38d7b` `0049176c22`, not pushed; a page's items made and drawn at load for a page nobody shows (about 2 s) NOT yet changed | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5550,6 +5550,97 @@ and the crash's own case, the 229 objects removed in the GUI with no
 transaction: 686 -> 457 objects, no exception, no warning. TechDraw's
 Python tests 9 of 9, three of its GUI tests 34 checks. Not tried: a
 delete by hand with undo switched off. Not pushed.
+
+**What TechDraw's ten seconds are: not the pages on the screen, and
+mostly not drawing.** Two things measured before touching its design.
+
+First, the same file with every page hidden (`e47h.py`,
+`ctl\scanner-resaved-hidden.FCStd`: the five visible pages' `Visibility`
+set false, saved), two rounds:
+
+| | five pages shown | all pages hidden | no TechDraw |
+|---|---|---|---|
+| the open returns after | 13.9, 12.4 s | 12.2, 12.5 s | 7.2, 7.2 s |
+| the model first on the screen, after that | 7.3, 8.1 s | 7.2, 7.1 s | by 4.0, 4.1 s (not at 3.2, 3.0 s) |
+| the model whole | 9.0, 9.1 s | 9.0, 9.0 s | 5.0 s |
+
+A page being on the screen costs half a second at most. The ten seconds
+are paid by a document that shows no page at all.
+
+Second, a profile that can be read. The sampler lost most of its stacks
+last night and again this morning, and the hook was only part of why:
+`dbghelp` walks a frame by its module's unwind tables and knows the
+modules that were loaded when it was last told, so a session sampled from
+its start broke in every module loaded after -- nearly all of FreeCAD's.
+`stacksample.py` now refreshes the module list as it goes, and where a
+walk does stop in a hook's frame takes it up again from the raw stack (a
+value pointing into code tried as a return address, kept if the walk from
+there ends at the thread's start): 943 of 1074 samples whole. Two loads
+sampled, pages hidden and no TechDraw (`loadprof5`, `loadprof6`;
+`profdiff.py` sets the two side by side, `tdprof.py` lists TechDraw's
+frames). The sampled load is about 1.3 times slower than a plain one; in
+sampled seconds, what the TechDraw objects add:
+
+| | s | what |
+|---|---|---|
+| `App::PropertyFileIncluded::RestoreDocFile` | 4.8 | the included files -- ten templates, ten images, the hatch patterns: each written to a staging file, read back to be hashed, then renamed into the store (2.95 s) or, the store having that content already, deleted (1.33 s). All of it calls to the file system. None in the file without TechDraw: nothing else there includes a file |
+| the pages' items made and drawn in the view provider drain | 2.6 | `QGIViewDimension::updateDim` 0.8, section faces and their SVG hatch 0.55, `QGSPage::fixOrphans` adding dimensions 0.53, the views' frames and captions 0.56, preferences read at each (`Preferences::getPreferenceGroup` 0.49) -- for pages no view shows |
+| `serveDeferredFiles` | 1.4 | entries served in the drain, 1.3 s of it closing the stream each was opened with: the archive opened and closed once per entry |
+| `DrawProjGroupItem::onDocumentRestored` | 1.0 | projection group items projecting again at the restore (`makeGeometryForShape`, `findCentroid`) where their projection was stored |
+| `PropertyGeomFormatList::Restore` | 0.5 | a `LineFormat` made by default opens a file (the line standard) |
+
+So a page doing its drawing when first shown is worth the second row,
+about two plain seconds, on any box. The first row is the largest and is
+this laptop's: the same calls cost nearly nothing where no watcher sits
+on the file system (x16win opens this file in 8.2 s, this box in 13).
+It is also not TechDraw's: any document with included files pays it.
+`FileBlobManager::readBlobEntry` already holds an entry in memory for
+that reason ("on Windows 61 ms of the 85 an entry took, all of it
+filesystem round trips"); the per-property entry of a schema 4 save --
+what this build writes by default -- still went through the staging file.
+
+**The included files restored out of memory (`5c45b43220`).**
+`PropertyFileIncluded::RestoreDocFile` reads the entry into memory and
+hands it to `adoptBytes()`, as `readBlobEntry()` does; over 16 MB it is
+staged as before. Content the store holds costs no file operation, new
+content its one write. A test in `FileBlobs.py`
+(`testSchemaFourRestoreKeepsOneFileAndStagesNone`: six properties with
+the same content, one with another, a schema 4 save, reopened -- two
+stored files, nothing left staged). It passes on the old code too: the
+old code was slow, not wrong.
+
+Sampled again on the hidden-pages control (`loadprof7`, against
+`loadprof5`): `RestoreDocFile` 4.83 -> 0.00 s, `adoptFile` 4.63 -> 0,
+`wsopen_s` 3.87 -> 0.64, the open 16.2 -> 13.3 sampled seconds. Plain
+loads, seconds, the open and then the model's first pixels after it (a
+picture each second, so the second figure is a bracket):
+
+| | open, before | open, now | model after, before | now |
+|---|---|---|---|---|
+| the original | 13.7, 14.8 | 11.7, 12.5, 12.9, 15.7 | 9.1, 10.4 | 8-9, 9-10, 9-10, 11-12 |
+| re-saved, pages hidden | 12.2, 12.5 | 10.2, 10.6, 11.5 | 7.1, 7.2 | 7-8, 7-8, 7-8 |
+| re-saved, no TechDraw | 7.2, 7.2 | 7.2, 7.9, 8.0 | about 4 | 3-4, 3-4, 3-5 |
+
+So one to two seconds off the open of a document with included files,
+on this laptop; the control without any moved by 0.7 s on its own, and
+one load of the original took 15.7 s, so the gain on the original is
+not separable from the scatter by these four runs -- the profile is the
+evidence that the work is gone. The wait after the open is untouched,
+as it should be. Less than the 4.8 sampled seconds promised: the
+sampler charges a file-system call more than 1.3 times.
+
+App's C++ tests 32 of 32, the Python suite 3414 with the two known
+thickness failures.
+
+Two traps of this run. (1) `ctestr.cmd` gave a fresh app data directory
+and no `FCX_PYODIDE`, so three sandbox tests failed with "expression
+sandbox image is not available" -- the launcher's, not the change's;
+`fullctest.cmd` names the runtime and `ctestr.cmd` does now. (2) The
+chain hung twice in `run.cmd`'s `chcp 65001`, for two and a half hours
+the first time: `chcp.com` had exited, its process object stayed, and
+`cmd` waited on it for ever; the run's `run.log` stays held, so the same
+tag cannot be used again. `gui.cmd` now goes through `q2\runq.cmd`, a
+copy of `run.cmd` without the `chcp` (which only a compile needs).
 
 **The close.** The script closes its document when its last frame is
 taken.
