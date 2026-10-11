@@ -472,7 +472,43 @@ void PropertyFileIncluded::RestoreDocFile(Base::Reader &reader)
     }
     const std::string path = _pendingPath;
     _pendingPath.clear();
+    const std::string ext = Base::FileInfo(_BaseFileName).extension();
 
+    // Held in memory rather than staged in a file, as
+    // FileBlobManager::readBlobEntry() does for an entry named by its hash,
+    // and for the same reason: the bytes decide whether anything has to be
+    // written at all. Staged, every included file cost a file created and
+    // written, read back to be hashed, and then renamed into the store or --
+    // being content the store already had -- deleted, with a permission change
+    // or two; ten pages with the same template paid that ten times to keep one
+    // file. Now content the store holds costs no file operation and new
+    // content costs its one write.
+    //
+    // Read with sgetn(), not extracted: extraction skips leading whitespace,
+    // so content that starts with any came back short.
+    constexpr std::size_t inMemoryCap = 16u * 1024u * 1024u;
+    std::streambuf* source = reader.rdbuf();
+    std::vector<char> chunk(64u * 1024u);
+    std::string bytes;
+    std::streamsize got = 0;
+    while (bytes.size() <= inMemoryCap
+           && (got = source->sgetn(chunk.data(),
+                                   static_cast<std::streamsize>(chunk.size()))) > 0) {
+        bytes.append(chunk.data(), static_cast<std::size_t>(got));
+    }
+
+    if (bytes.size() <= inMemoryCap) {
+        aboutToSetValue();
+        // Two objects referencing identical content -- copy&paste inside a
+        // document, for instance -- collapse onto one blob here.
+        _blob = blobManager().adoptBytes(bytes, ext.c_str());
+        hasSetValue();
+        return;
+    }
+
+    // An included file may be any size, and one too large to hold is staged
+    // as before: what was read goes out first and the rest streams after it,
+    // then adoptFile() hashes the file and moves it into the store.
     Base::FileInfo fi(path);
     Base::ofstream to(fi, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!to) {
@@ -482,20 +518,11 @@ void PropertyFileIncluded::RestoreDocFile(Base::Reader &reader)
         THROWM(Base::FileSystemError, str.str())
     }
 
-    // copy plain data
     aboutToSetValue();
-
-    // Written, not extracted: extraction skips leading whitespace, so content
-    // that starts with any came back short. See readBlobEntry() for the same
-    // fix and what content addressing turns that into.
-    to << reader.rdbuf();
+    to.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    to << source;
     to.close();
-
-    // Hand the file to the store. Two objects referencing identical content --
-    // copy&paste inside a document, for instance -- collapse onto one blob
-    // here, which is what the old read-only sentinel check used to approximate.
-    _blob = blobManager().adoptFile(path.c_str(),
-                                    Base::FileInfo(_BaseFileName).extension().c_str());
+    _blob = blobManager().adoptFile(path.c_str(), ext.c_str());
     hasSetValue();
 }
 
