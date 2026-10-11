@@ -382,6 +382,7 @@ QIcon BitmapFactoryInst::iconFromTheme(const char* name, bool silent, const QIco
     std::string _name;
     adjustIconName(_name, name);
 
+    bool searched = false;
     auto it = d->xpmCache.find(name);
     if (it != d->xpmCache.end()) {
         it->second.checkContext();
@@ -393,6 +394,7 @@ QIcon BitmapFactoryInst::iconFromTheme(const char* name, bool silent, const QIco
             return it->second.xpm;
     }
     else {
+        searched = true;
         // Our own artwork wins over the desktop icon theme. Since Qt 6.7 QIcon::fromTheme()
         // answers out of a theme built into QtGui even when no desktop theme is configured -
         // on Windows themeName() and fallbackThemeName() are both empty and it still returns
@@ -411,7 +413,11 @@ QIcon BitmapFactoryInst::iconFromTheme(const char* name, bool silent, const QIco
     if (!icon.isNull())
         return icon;
 
-    // Neither ours nor themed. Repeat the lookup so a miss is reported as it used to be.
+    // Neither ours nor themed. Repeat the lookup so a miss is reported as it used to be --
+    // but not for a caller that wants no report and whose name was searched for a moment
+    // ago: the search goes through every icon path under every image format.
+    if (silent && searched)
+        return QIcon();
     return pixmap(name, silent);
 }
 
