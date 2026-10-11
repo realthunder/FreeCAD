@@ -5541,8 +5541,15 @@ at once -- so the loop came to a freed pointer and asked it
 which is why deleting a page by hand does not do this; a script does,
 and so would a delete with undo off. Changed to go by name
 (`DrawPage`, and `DrawViewCollection` which has the same loop), with a
-test (`TDTest/DrawPageRemoveTest.py`). NOT BUILT OR RUN YET as this is
-written.
+test (`TDTest/DrawPageRemoveTest.py`): FIXED `39b548048b` (the notes
+session's entry 67). The test passes on the old code as well -- in the
+console the freed pointer threw instead of crashing, and the page said
+"DP::unsetupObject - Page - error while deleting children" -- so what
+shows the change is that line, in the test's log before and not after;
+and the crash's own case, the 229 objects removed in the GUI with no
+transaction: 686 -> 457 objects, no exception, no warning. TechDraw's
+Python tests 9 of 9, three of its GUI tests 34 checks. Not tried: a
+delete by hand with undo switched off. Not pushed.
 
 **The close.** The script closes its document when its last frame is
 taken.
