@@ -381,14 +381,22 @@ App::DocumentObjectExecReturn *Feature::recompute()
     // once more, on copies of the inputs, which are the algorithm's to
     // change (docs/TransactionLog.md sec 27.82). Counted, not caught: the
     // refusal seldom reaches here as an exception.
+    //
+    // A feature that reports no error is run again as well. The refusal was
+    // caught inside and worked around -- another face maker, the retry of an
+    // extrusion, a refine that left faces apart -- and the shape that gave
+    // is not the one the feature makes of inputs it may change: a pad up to
+    // a shape came out four times its volume, a loft kept its end faces
+    // inside the solid, and no error said so.
     const unsigned int refused = TopoDS_LockedShape::Raised();
     App::DocumentObjectExecReturn* ret = once();
-    if (ret == App::DocumentObject::StdReturn || ThawInputs::active()
-            || TopoDS_LockedShape::Raised() == refused)
+    if (ThawInputs::active() || TopoDS_LockedShape::Raised() == refused)
         return ret;
-    FC_LOG(getFullName() << ": a frozen input was refused (" << ret->Why
+    FC_LOG(getFullName() << ": a frozen input was refused ("
+                         << (ret == App::DocumentObject::StdReturn ? "worked around" : ret->Why.c_str())
                          << "), recomputing on copies");
-    delete ret;
+    if (ret != App::DocumentObject::StdReturn)
+        delete ret;
     ThawInputs thaw;
     return once();
 }

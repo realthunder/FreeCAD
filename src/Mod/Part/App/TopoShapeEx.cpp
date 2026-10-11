@@ -123,6 +123,7 @@
 # include <TopoDS.hxx>
 # include <TopoDS_Compound.hxx>
 # include <TopoDS_Iterator.hxx>
+# include <TopoDS_LockedShape.hxx>
 # include <TopoDS_Solid.hxx>
 # include <TopoDS_Vertex.hxx>
 # include <TopExp.hxx>
@@ -206,6 +207,7 @@
 #include "PartFeature.h"
 
 #include "PartPyCXX.h"
+#include "PropertyTopoShape.h"
 #include "TopoShape.h"
 #include "TopoShapeOpCode.h"
 #include "HLRProjector.h"
@@ -2575,6 +2577,15 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
     // if (!uptoface.isNull() && !this->findShape(uptoface.getShape()))
     //     srcShapes.push_back(uptoface);
 
+    // A frozen input the algorithm refused to change is no failure of this
+    // extrusion to work around: retrying on the original until face, or on
+    // a base of our own, gave a prism up to the wrong place. It is passed
+    // on, and the feature recomputes on copies (Part::Feature::recompute(),
+    // docs/TransactionLog.md sec 27.82).
+    auto refusedFrozen = [refused = TopoDS_LockedShape::Raised()]() {
+        return !ThawInputs::active() && TopoDS_LockedShape::Raised() != refused;
+    };
+
     std::vector<TopoShape> results;
     for (;;) {
         results.clear();
@@ -2600,12 +2611,12 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             }
             break;
         } catch (const Base::Exception &e) {
-            if (!retry()) {
+            if (refusedFrozen() || !retry()) {
                 throw;
             }
             FC_WARN("Retry extrusion on error: " << e.what());
         } catch (const Standard_Failure &e) {
-            if (!retry()) {
+            if (refusedFrozen() || !retry()) {
                 throw;
             }
             FC_WARN("Retry extrusion on error: " << e.GetMessageString());
