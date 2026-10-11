@@ -1166,14 +1166,16 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         plane.Length = 10
         plane.Width = 10
         self.Doc.recompute()
-        self.assertEqual(plane.Shape.ElementMapSize, 0)
+        # A primitive names its elements (Part's PrimitiveNames): the face,
+        # its four edges and four vertices. It had no names.
+        self.assertEqual(plane.Shape.ElementMapSize, 9)
         pad = self.Doc.addObject("PartDesign::Pad", "Pad")
         pad.Profile = plane
         self.Doc.recompute()
         if pad.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Assert
-        self.assertEqual(plane.Shape.ElementMapSize, 0)
+        self.assertEqual(plane.Shape.ElementMapSize, 9)
         self.assertEqual(pad.Shape.ElementMapSize, 26)
 
     def testChangeSketch(self):
