@@ -5,6 +5,8 @@
 # is given.
 
 import collections
+import os
+import tempfile
 import unittest
 
 import FreeCAD as App
@@ -84,3 +86,111 @@ class ShapeDiffTest(unittest.TestCase):
         self.assertGreater(by["steps"], 0)
         self.assertEqual(by["name"] + by["steps"], 8)
         self.assertEqual([e for e in diff["Face"] if e[3] == "removed"], [])
+
+
+class ShapeAtAStateTest(unittest.TestCase):
+    """Part.getTransactionShape(): a shape the log holds, read with its names
+    (docs/TransactionLog.md sec 32.7)."""
+
+    def setUp(self):
+        self.setting = App.ParamGet("User parameter:BaseApp/Preferences/Document")
+        self.log = self.setting.GetInt("TransactionLog", 2)
+        self.setting.SetInt("TransactionLog", 2)
+        self.doc = App.newDocument("ShapeAtAState")
+        self.doc.UndoMode = 1
+        self.doc.openTransaction("base")
+        self.box = self.doc.addObject("Part::Box", "Box")
+        self.cyl = self.doc.addObject("Part::Cylinder", "Cyl")
+        self.cyl.Radius, self.cyl.Height = 2, 30
+        self.cyl.Placement.Base = App.Vector(5, 5, -10)
+        self.cut = self.doc.addObject("Part::Cut", "Cut")
+        self.cut.Base, self.cut.Tool = self.box, self.cyl
+        self.doc.recompute()
+        self.doc.commitTransaction()
+        self.doc.saveAs(os.path.join(tempfile.mkdtemp(prefix="fc-sd-state-"), "state.FCStd"))
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+        self.setting.SetInt("TransactionLog", self.log)
+
+    def edit(self, name, **values):
+        self.doc.openTransaction(name)
+        for prop, value in values.items():
+            setattr(self.box, prop, value)
+        self.doc.recompute()
+        self.doc.commitTransaction()
+        return self.cut.Shape.copy(), dict(self.cut.Shape.ElementReverseMap)
+
+    def assertIsThatShape(self, read, shape, names):
+        self.assertIsNotNone(read)
+        self.assertEqual(dict(read.ElementReverseMap), names)
+        self.assertEqual(read.Tag, self.cut.ID)
+        self.assertAlmostEqual(read.Volume, shape.Volume)
+        # One shape in one place, though not one TShape: a parse of its own
+        self.assertTrue(shape.diff(read)["same"])
+
+    def testTheSidesOfAMerge(self):
+        doc, cut = self.doc, self.cut
+        base = cut.Shape.copy(), dict(cut.Shape.ElementReverseMap)
+        doc.createTransactionBranch("side")
+        theirs = self.edit("side: longer", Length=14)
+        doc.switchTransactionBranch("main")
+        ours = self.edit("main: taller", Height=12)
+        states = [(o.Name, tuple(o.State)) for o in doc.Objects]
+        change = [
+            c for c in doc.previewTransactionMerge("side")["changes"] if c["key"] == "Cut.Shape"
+        ][0]
+        self.assertEqual(change["kind"], "derived")
+        self.assertEqual(change["cid"], cut.ID)
+        self.assertIsThatShape(Part.getTransactionShape(doc, change["base"], cut.ID), *base)
+        read = Part.getTransactionShape(doc, change["theirs"], cut.ID)
+        self.assertIsThatShape(read, *theirs)
+        # The document is as it was: nothing of it was read into
+        self.assertEqual(states, [(o.Name, tuple(o.State)) for o in doc.Objects])
+        self.assertAlmostEqual(cut.Shape.Volume, ours[0].Volume)
+        # And the two sides against each other: every face is the same face
+        diff = cut.Shape.diff(read)
+        self.assertEqual({e[2] for e in diff["Face"]}, {"name"})
+        self.assertIn("changed", {e[3] for e in diff["Face"]})
+
+    def testARowsBeforeAndAfter(self):
+        doc, cut = self.doc, self.cut
+        before = cut.Shape.copy(), dict(cut.Shape.ElementReverseMap)
+        after = self.edit("taller", Height=12)
+        row = [r for r in doc.getTransactionLog() if r["name"] == "taller"][0]
+        op = [
+            o
+            for o in doc.getTransactionOps(row["seq"])
+            if o["prop"] == "Shape" and o["cid"] == cut.ID
+        ][0]
+        self.assertIsThatShape(Part.getTransactionShape(doc, op["before"], cut.ID), *before)
+        self.assertIsThatShape(Part.getTransactionShape(doc, op["after"], cut.ID), *after)
+
+    def testOneValueReadTwiceIsOneShape(self):
+        doc, cut = self.doc, self.cut
+        self.edit("taller", Height=12)
+        row = [r for r in doc.getTransactionLog() if r["name"] == "taller"][0]
+        op = [
+            o
+            for o in doc.getTransactionOps(row["seq"])
+            if o["prop"] == "Shape" and o["cid"] == cut.ID
+        ][0]
+        one = Part.getTransactionShape(doc, op["before"], cut.ID)
+        two = Part.getTransactionShape(doc, op["before"], cut.ID)
+        self.assertTrue(one.isPartner(two))
+        self.assertTrue(one.diff(two)["same"])
+
+    def testWhatIsNoShapeIsNone(self):
+        doc = self.doc
+        self.assertIsNone(Part.getTransactionShape(doc, "0" * 40))
+        self.assertIsNone(Part.getTransactionShape(doc, ""))
+        self.edit("taller", Height=12)
+        row = [r for r in doc.getTransactionLog() if r["name"] == "taller"][0]
+        op = [o for o in doc.getTransactionOps(row["seq"]) if o["prop"] == "Height"][0]
+        self.assertTrue(op["after"])
+        self.assertIsNone(Part.getTransactionShape(doc, op["after"], self.box.ID))
+        plain = App.newDocument("ShapeAtAStateNoLog")
+        try:
+            self.assertIsNone(Part.getTransactionShape(plain, "0" * 40))
+        finally:
+            App.closeDocument(plain.Name)

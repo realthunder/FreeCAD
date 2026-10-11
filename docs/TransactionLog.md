@@ -17759,3 +17759,116 @@ null). Python `parttests.ShapeDiffTest`, 4, for what the dict is.
 **Next (32.4):** step 3, a value at a state as a shape -- the log's value
 into a `TopoShape` with its names -- so that the two shapes to diff can
 be had from a row, a branch or a version.
+
+### 32.7 Why a feature put in early renames what passes it; reuse measured and left (2026-10-11)
+
+**Asked (user):** "Find out why 'A feature put in or taken out early
+renames most faces'" (32.5).
+
+**Why.** An object that takes an element from its input unchanged does
+not keep the name as it is: it adds a step with no operation and the
+input's tag -- `;:H4e5,F` -- and hashes the name so far.
+`TopoShape::mapSubElement` writes it for every element the builder does
+not report (`encodeElementName`, `ElementMap.cpp`, which leaves a name
+alone only where it ends in that tag already). So a face has one such
+step for every object it passed, each over the hash of all before it,
+and an object put in between writes its step into the middle of every
+name that passes it. A name that lists such a name -- `:M(...)`,
+`:G2(...)` -- changes with it.
+
+Measured on the scanner's `Body`, 15 features (`why.py` in
+`~/.cache/txnlog-sd`):
+
+- A face the first pad makes gains one step in each of the next 12
+  features.
+- In the tip's face names, 435 of 820 steps are these; 1150 of 2280 in
+  the edges', 1223 of 2097 in the vertices'. About 38% of the spelled-out
+  text; 6346 of the string table's 44316 entries carry one such step.
+- A hole put in after the fourth feature: 24 of 65 faces keep their name
+  and 41 lose it -- 27 that passed the hole themselves, 14 that only list
+  a name that did. For 32 of the 41 the new name is the old one with the
+  hole's step in it and nothing else.
+- `getRelatedElements` for the 41: nothing for 8, several for 30, the
+  true partner first for 14. It compares histories step by step, and
+  every step after the one put in holds another hash.
+
+**The name reused instead, tried** (a switch in `mapSubElement`, not
+kept): an element passed on keeps its name where that ends in a step
+with no operation and another object's tag. The same hole: **57 of 65
+keep their name**, 8 lose it -- the ones the hole's cut reports, or that
+list one. The tip's face names go from 820 steps to 507.
+
+**What it costs.** A name's last tag is how its element is followed to
+the object it came from, and with the name reused that is the object
+that made it, not the one it was taken from:
+
+- A look given on an object that only passes a face on, or laid on by an
+  `App::Link`, does not reach what is made from it: the colour tracer
+  goes to the maker (`sourceColor`). `testWhatIsMadeFromALinkTakesWhatItLaysOver`
+  fails, alone of 3109.
+- `getElementHistory` from the last of three cuts lists the box and not
+  the two cuts between.
+
+**Ruled (user, 2026-10-11):** "I did it on purpose apparently, just
+forgot the reason, and yes color tracing is one of them. Leave it then."
+The step stays. Seeing through it is the reader's work, and is what
+stage 2 of the diff does (32.5, 32.6): of the 41 on that hole, 37 are
+found by their steps and the other 4 by their geometry.
+
+### 32.8 Step 3, built: a shape the log holds, read with its names (2026-10-11)
+
+`Part::ShapeDiff::valueShape(doc, ref, tag, shape)`; Python
+`Part.getTransactionShape(doc, ref, tag=0)` -> a shape or `None`.
+
+**The ref** is what the log already names a value by: a row's op has the
+value before and after it (`getTransactionOps`), a merge's or a pick's
+preview has it at the base, at ours and at theirs. `tag` is the object's
+id -- the preview's `cid` -- so that a shape of an object this document
+does not have is read as well.
+
+**How.** The value is read (`readValue`) and restored into a shape
+property that is on no object, as the sketch merge reads a list (31.10),
+with two things an owner would have given it:
+
+- *The string table.* A shape's names are read with the table the
+  property's value holds (27.74), so the property is first given an
+  empty shape with the document's.
+- *The geometry.* A value names it by hash, in the document's files, or
+  has it beside (`Property.brp`). The first is found in the manager a
+  `BlobRecorder` scope names, as a detached copy's is (23.16); the
+  second is the attachment.
+
+Nothing of the document is touched: no object is restored into, touched
+or marked.
+
+**Checked** (`s3.py`, `s3scale.py` in `~/.cache/txnlog-sd`), frozen and
+not:
+
+- A cut on two branches, base and theirs from the preview, and each
+  row's before and after: the names are those the live shape had, all
+  32; the shape is the same one (`diff`: same).
+- The scanner's `Body` after a pad made longer: the row has 23 shapes,
+  before and after; the 46 are read in 0.04 s, the tip's (65 faces, 449
+  names) in 0.6 to 2 ms. Before against after, 5 ms: all 65 by name --
+  29 the same, 4 moved, 32 changed.
+- One value read twice is one `TShape`. A value read and the shape the
+  document holds of it are not, where the document's was computed and
+  not read: they are one shape by geometry, which is what the diff then
+  says.
+
+**Left.**
+
+- *A value the log let go.* A shape is a derived value, in the cache
+  tier, and one evicted from it is no value: the answer is `None`. The
+  state's document -- `openTransactionVersion`, `openTransactionBranch`
+  -- has it; asking that is for the caller that knows the state, step 4.
+- *Ours.* A preview's `ours` for a derived value is the base's (32.1):
+  ours is the live object's shape.
+
+**Tests.** `parttests.ShapeDiffTest.ShapeAtAStateTest` (+4): the sides
+of a merge, a row's before and after, one value read twice, and what is
+no shape -- no such ref, an empty one, a length's value, a document with
+no log.
+
+**Next (32.4):** step 4, the overlay in the 3D view, and its entry from
+the merge dialog and from a row.

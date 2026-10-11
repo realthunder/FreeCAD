@@ -54,9 +54,14 @@
 #include <unordered_map>
 #endif
 
+#include <App/Document.h>
+#include <App/FileBlobManager.h>
 #include <App/StringHasher.h>
+#include <App/TransactionLog.h>
+#include <App/TransactionValue.h>
 #include <Base/Exception.h>
 
+#include "PropertyTopoShape.h"
 #include "ShapeCongruence.h"
 #include "ShapeDiff.h"
 #include "TopoShape.h"
@@ -1137,6 +1142,41 @@ ShapeDiff::ShapeDiff(const TopoShape& shapeA, const TopoShape& shapeB, const Opt
             }
         }
     }
+}
+
+bool ShapeDiff::valueShape(const App::Document& doc, const std::string& ref, long tag,
+                           TopoShape& shape)
+{
+    auto log = doc.getTransactionLog();
+    if (ref.empty() || !log)
+        return false;
+    App::CapturedValue value;
+    if (!log->readValue(ref, value) || !value.ok)
+        return false;
+    // Only a shape: the fragment of one opens with its Part element
+    if (value.fragment.compare(0, 6, "<Part ") != 0)
+        return false;
+    // A property on no object reads for no document. The geometry it names
+    // by hash is found in the store given here, and its names are read with
+    // the string table the value it holds has -- so it is given both.
+    App::BlobRecorder store(&doc.getFileBlobManager());
+    PropertyPartShape held;
+    held.setValue(TopoShape(tag, doc.getStringHasher()));
+    try {
+        App::restoreValue(held, value);
+        shape = held.getShape();
+    }
+    catch (const Base::Exception&) {
+        return false;
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+    catch (const std::exception&) {
+        return false;
+    }
+    shape.Tag = tag;
+    return true;
 }
 
 }  // namespace Part

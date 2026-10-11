@@ -32,6 +32,11 @@
 
 #include <Mod/Part/PartGlobal.h>
 
+namespace App
+{
+class Document;
+}
+
 namespace Part
 {
 
@@ -169,6 +174,20 @@ public:
      * Public for its tests.
      */
     static std::string nameWithoutSteps(const std::string& spelled, const std::set<long>& tags);
+
+    /** A shape value the transaction log of \a doc holds, by its ref, as a
+     * shape with its element names (docs/TransactionLog.md sec 32.7): what an
+     * object's shape was at a row, or is on another branch, with nothing of
+     * the document touched. \a tag is the object's id, which the names of its
+     * own elements are read by; 0 where it is not known.
+     *
+     * The geometry is the file the value names or the one beside it, parsed
+     * as a restore parses it, so a value the document also holds comes back
+     * as the same TShape. False where the log has no such value -- a shape is
+     * a derived value and the log may have let it go -- or it is no shape.
+     */
+    static bool valueShape(const App::Document& doc, const std::string& ref, long tag,
+                           TopoShape& shape);
 
 private:
     bool _same = false;
