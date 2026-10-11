@@ -5642,6 +5642,77 @@ the first time: `chcp.com` had exited, its process object stayed, and
 tag cannot be used again. `gui.cmd` now goes through `q2\runq.cmd`, a
 copy of `run.cmd` without the `chcp` (which only a compile needs).
 
+**A page makes its items when something needs them (`48b9aaa0ba`).**
+The reporter's "then the techdraw one". The load made the Qt items of
+every page: a view asking to be painted added its item
+(`ViewProviderDrawingView::singleParentPaint` -> `QGSPage::addView`) and
+each change of a page's `Views` made the missing ones
+(`QGSPage::fixOrphans`), page shown or not, and every property a view
+provider then restored drew the item again. `QGSPage::populate()` now
+makes them all at once and until it has run those two make nothing and
+`ViewProviderTemplate` attaches no template. It runs when the page is
+shown (`showMDIViewPage` -> `addChildrenToPage`, as before), printed
+(`PagePrinter::renderPage`) or exported (`saveSvg`); `PageServe` and
+`renderPageVg` already made the items a page lacked, by the same
+`addChildrenToPage`. `TechDrawGui.getSceneForPage()` hands out the scene
+as it is and does not populate it.
+
+Plain loads, three each, the model's first pixels after the open (a
+picture each second):
+
+| | before | now |
+|---|---|---|
+| the original (five of ten pages shown) | 8-9, 9-10, 9-10, 11-12 | 6-7, 6-7, 6-7 (whole at 7-8) |
+| re-saved, every page hidden | 7-8, 7-8, 7-8 | 2-3, 3-4, 3-4 |
+| re-saved, no TechDraw | 3-4, 3-4, 3-5 | 3-4, 3-4, 3-4 |
+
+The open itself is as it was (12.3, 12.9, 14.7 / 10.1, 11.4, 11.5 /
+8.0, 8.0, 8.1 s). So with no page shown TechDraw costs the wait after
+the open nothing any more, and the profile's "2.6 sampled seconds" for
+this part was short of it: four plain seconds. What is left of
+TechDraw's share is in the open (about 3 s here: the projection group
+items projecting again, the default `LineFormat`'s file, the module's
+own import) and, where pages are shown at the load, their items.
+
+The first showing of a page after the load (`q2\e47i.py`, each of the
+ten pages of the hidden control shown in turn): `show()` 0.06 to 0.23 s
+(33 views: 0.23 s), 1.3 s for all ten -- against the four seconds the
+load spent on them, because the load drew each item again at every
+property restored. The pictures of the pages are byte for byte those of
+the same pages in the control that shows them at the load (four of the
+five; the fifth was pictured in a narrower cell). In the hidden control
+no showing touched an object (224 touched before and after all ten); in
+the control with five shown the count went from 223 to 224 at the first
+showing -- which object, and whether the showing or a late projection
+did it, NOT looked into.
+
+Tests: `tests/gui/techdraw-page-items-when-needed.py`, new, 10 of 10 (a
+page saved hidden has no item after the load, none after a dimension is
+added to it, and shown for the first time draws both). Its first run
+failed one check for the test's own reason: the two dimensions measured
+the same edge length and were drawn one over the other. NOT run against
+the old code. The 14 TechDraw GUI tests 231 checks of 231; TechDraw's
+Python tests 9 of 9. NOT tried: printing a page that was never shown
+(`TechDraw_PrintAll`, which is what the `populate()` in `renderPage` is
+for) -- it needs a print dialog; a hand check for the reporter.
+
+**The dimension formatter's expressions made once (`4172eb2018`).**
+`DimensionFormatter` made five or more `QRegularExpression` objects at
+each call, each compiled at its first match (`loadprof7`: 2.2 sampled
+seconds under `formatValue`, `pcre2-16.dll` 1.4 s innermost in the view
+provider drain). Static now. It matters where pages are on the screen
+at the load, their dimensions drawn again at every property restored:
+the original, three loads, the model 5-6, 5-6, 5-6 s after the open
+(6-7 to 7-8 before), the open 11.2, 11.4, 11.5 s. The first showing of
+a page is as it was (0.07 to 0.22 s): one pass over a page's dimensions
+was never the cost. TechDraw's Python tests 9 of 9, the dimension click
+test 12 of 12, the page items test 10 of 10.
+
+Where entry 47 stands on this laptop, the original file, from the open
+asked to the model on the screen: 31 to 35 s on 2026-10-10 (the open
+18 s, the model 13 to 17 s after it), 23 to 25 s this morning, 17 to
+18 s now (11.2 to 11.5 s the open, 5 to 6 s after it).
+
 **The close.** The script closes its document when its last frame is
 taken.
 
