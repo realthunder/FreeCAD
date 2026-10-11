@@ -158,27 +158,60 @@ Select a row, then the operation that set an object's `Shape`:
 
 ![An operation that is a shape, shown over its object](images/transaction-log/05-op-in-the-view.png)
 
-The value after is drawn over the object:
+The two values are drawn over the object by their **material**:
 
-- faces that **changed** are tinted;
-- faces that are **new** and faces that are **gone** have colours of their
-  own (the colours of PartDesign's add, subtract and dress-up previews);
-- faces that are **as they were** are a faint grey.
+- the solid that was **added** and the solid that was **removed**, each in
+  a colour of its own (the colours of PartDesign's add and subtract
+  previews);
+- what **both** have, a faint grey.
+
+Here the bracket was made taller: what was added is the slab on top, and
+the status says how much.
 
 The line "In the 3D view:" has:
 
 | Control | What it does |
 |---|---|
-| The list (`before against after`) | Which two values are compared; `nothing` turns the overlay off. |
+| The first list (`before against after`) | Which two values are compared; `nothing` turns the overlay off. |
+| The second list (`Material` / `Faces`) | How a shape is shown: see below. |
 | The slider | From the first of the two (left) to the second (right): which one is drawn solid and which as a ghost. |
-| **Differences only** | Leaves out the faces that are as they were. |
-| The text | The count: `1 as they were, 7 changed, 0 new, 0 gone`. |
+| **Differences only** | Leaves out what did not change. |
+| The text | What was found: `2.97 ml added, 0.00 ml removed, 7.43 ml in both`, in the units of your preferences. |
 
 ![The slider at the left: the value before](images/transaction-log/06-slider-at-before.png)
 
-A face counts as changed as a whole: a box made taller has all four of its
-side faces changed. (Showing only the material added and removed is being
-built: sec 32.14.)
+### Material or faces
+
+**Material** answers *where* the object changed. The two solids are
+taken apart into what only the first has, what only the second has, and
+what they share, and the volumes are said. It needs two solids, and it
+works them out by a boolean operation of the two.
+
+On a heavy solid that takes time -- seconds at a thousand faces, the
+better part of a minute at two thousand -- and you are not made to wait
+for it: the faces are shown at once, the text says `working out the
+material; the faces meanwhile: ...`, and the material takes their place
+when it is there. Move on to another row and the work is dropped. Going
+back to one of the last few pairs looked at costs nothing.
+
+**Faces** answers *which faces* changed:
+
+![The same change by its faces](images/transaction-log/06-by-the-faces.png)
+
+- faces that **changed** are tinted;
+- faces that are **new** and faces that are **gone** have the colours of
+  added and removed;
+- faces that are **as they were** are a faint grey.
+
+The text is then a count: `1 as they were, 7 changed, 0 new, 0 gone`. A
+face counts as changed as a whole -- a box made taller has all four of its
+sides changed -- which is why Material is what is shown first. Use Faces
+when it is the faces you care about (what a reference to one of them will
+find), and for anything that is not a solid.
+
+Where one of the two values is no solid -- a shell, a sketch's face, or
+an object that did not exist yet -- its faces are shown whichever is
+asked for, and the text says so: `not two solids, by the faces: ...`.
 
 ### A whole row, a version or a merge: choose the objects
 
@@ -400,6 +433,8 @@ open it.
 | see what a step changed | Transactions: select the row, read its operations |
 | see the old and new value of a property | select the operation; the value pane |
 | see how an object's shape changed in a step | select the row, then its `Shape` operation |
+| see how much material a step added or removed | the same, with **Material** in the bar's second list; the status says the volumes |
+| see which faces a step changed | the same, with **Faces** |
 | follow one object through the history | add it to "Objects:", then step through the rows |
 | compare the document now with an earlier state | Versions: select the version; "Changed since" |
 | undo one step that is not the last | right-click the row, **Undo row N** |
@@ -425,6 +460,7 @@ Everything the panel does is a method of the document.
 | a shape the log holds | `Part.getTransactionShape(doc, ref, obj.ID)` |
 | what became of each face | `before.diff(after)` |
 | the material added and removed | `before.diffMaterial(after)` |
+| the overlay in the 3D view | `obj.ViewObject.showValueDiff("Shape", refBefore, refAfter, mode="material")`, `getValueDiff()`, `hideValueDiff()` |
 | Snapshot, name a version | `doc.snapshotTransactionLog()`, `doc.nameTransactionVersion(num, name)` |
 | the versions | `doc.getTransactionVersions()` |
 | Changed since | `doc.compareTransactionStates(seq, 0)` |
