@@ -427,13 +427,21 @@ void DrawPage::unsetupObject()
     std::string pageName = getNameInDocument();
 
     try {
-        const std::vector<App::DocumentObject*> currViews = Views.getValues();
-        for (auto& v : currViews) {
-            //NOTE: the order of objects in Page.Views does not reflect the object hierarchy
-            //      this means that a ProjGroup could be deleted before its child ProjGroupItems.
-            //      this causes problems when removing objects from document
-            if (v->isAttachedToDocument()) {
-                std::string viewName = v->getNameInDocument();
+        //NOTE: the order of objects in Page.Views does not reflect the object hierarchy
+        //      this means that a ProjGroup could be deleted before its child ProjGroupItems.
+        //      this causes problems when removing objects from document
+        // By name, not by the pointers the list held before the loop: a view removed here
+        // takes others of the list with it (a part view its dimensions and balloons), and
+        // outside a transaction a removed object is deleted at once -- the next pointer
+        // was then to freed memory, and asking it anything a crash.
+        std::vector<std::string> viewNames;
+        for (auto v : Views.getValues()) {
+            if (v && v->isAttachedToDocument()) {
+                viewNames.emplace_back(v->getNameInDocument());
+            }
+        }
+        for (const auto& viewName : viewNames) {
+            if (doc->getObject(viewName.c_str())) {
                 Base::Interpreter().runStringArg("App.getDocument(\"%s\").removeObject(\"%s\")",
                                                  docName.c_str(), viewName.c_str());
             }

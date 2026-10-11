@@ -28,4 +28,5 @@ from TDTest.DrawViewImageTest import DrawViewImageTest  # noqa: F401
 from TDTest.DrawViewSymbolTest import DrawViewSymbolTest  # noqa: F401
 from TDTest.DrawProjectionGroupTest import DrawProjectionGroupTest  # noqa: F401
 from TDTest.RestoredEnumerationTest import RestoredEnumerationTest  # noqa: F401
+from TDTest.DrawPageRemoveTest import DrawPageRemoveTest  # noqa: F401
 
