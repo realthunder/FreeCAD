@@ -149,6 +149,39 @@ Params = [
         "the OCCT loaded at run time is the fork at extension version 2 or\n"
         "later, which is where the flag is honoured."),
     # The long form, kept here; the documentation shown is the short one below.
+    # How far a fillet's corner plate may miss its boundary while held tangent
+    # to the fillets it joins, as a fraction of the smallest fillet radius (or
+    # chamfer distance) at the corner. A corner where more than three faces
+    # meet is filled by a patch kept tangent to the fillets; where a fillet's
+    # end meets a face at a sharp angle the patch folds to stay tangent,
+    # misses its boundary, and the corner's edges carry the miss as their
+    # tolerance. A patch missing it by more than this is built again on
+    # positions alone and kept if it fits better: a crease along the fillet
+    # instead of a fold. 0 keeps every tangent patch. Only with the OCCT
+    # fork, which has the setting; another OCCT ignores it.
+    ParamFloat("FilletPlateG0FallbackRatio", 0.01,
+        "How far a fillet's corner patch may miss its boundary while kept tangent\n"
+        "to the fillets, as a fraction of the smallest radius at the corner. A\n"
+        "patch missing by more is built again on positions alone and kept if it\n"
+        "fits better. 0 keeps every tangent patch. Needs the OCCT fork.",
+        on_change=True),
+    # The long form, kept here; the documentation shown is the short one below.
+    # How far a fillet's corner that cannot be built may be set back, as a
+    # multiple of the largest fillet radius at the corner. Where a fillet
+    # fails at a vertex, it is computed again with the fillets there cut back
+    # and the opening closed by one patch tangent to them: first where the
+    # fillets meet, then 1, 1.5, 2... times the radius, up to this multiple,
+    # and the first valid result is kept. Only fillets that fail without it
+    # change. 0 turns it off. Only with the OCCT fork, which has the setting;
+    # another OCCT ignores it.
+    ParamFloat("FilletCornerSetbackFallback", 2.0,
+        "How far a fillet's corner that cannot be built may be set back, as a\n"
+        "multiple of the largest fillet radius there. The fillets are cut back and\n"
+        "the opening closed by one patch, at growing setbacks up to this multiple.\n"
+        "Only fillets that fail without it change. 0 turns it off. Needs the OCCT\n"
+        "fork.",
+        on_change=True),
+    # The long form, kept here; the documentation shown is the short one below.
     # Report a shape operation whose input shapes carry no element map, so
     # the result cannot be named either. This is off by default because an
     # absent element map is frequently correct -- program generated and

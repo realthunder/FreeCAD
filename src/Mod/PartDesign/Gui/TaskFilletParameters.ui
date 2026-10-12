@@ -149,6 +149,11 @@ or 'Delete' key.</string>
        <string>Length</string>
       </property>
      </column>
+     <column>
+      <property name="text">
+       <string>Setback</string>
+      </property>
+     </column>
     </widget>
    </item>
    <item>

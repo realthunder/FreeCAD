@@ -78,6 +78,13 @@ protected:
     void refresh() override;
     void showMessage(const char *msg=nullptr);
     virtual void onNewItem(QTreeWidgetItem *) {}
+    /// Whether a top-level row is a reference of Base (a fillet's corner row
+    /// is not: Corners keeps it)
+    virtual bool isBaseItem(QTreeWidgetItem *) const { return true; }
+    /// Brings what keeps the rows that are not Base's in step with them
+    virtual void syncOtherItems() {}
+    /// Adds the rows that are not Base's, after the tree is built from Base
+    virtual void populateOtherItems() {}
     void finishedRecomputeFeature() override; 
 
     QTreeWidgetItem *getCurrentItem() const;
@@ -102,6 +109,8 @@ protected:
     QWidget* proxy;
 
     bool allowFaces, allowEdges;
+    /// Whether a vertex can be picked, for a fillet's corners
+    bool allowVertexes = false;
     selectionModes selectionMode;    
 
     QAction* deleteAction = nullptr;

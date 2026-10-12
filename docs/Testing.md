@@ -176,6 +176,11 @@ a view provider is made (docs/TransactionLog.md sec 27.19); `ViewProviderChain` 
 proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
 spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
 `FeaturePythonChain`, is headless and rides the Python suite.
+`PartDesignTests.TestFilletPanel` (5) also runs on `offscreen`: it opens the
+fillet task panel and drives its setback corners (`docs/CornerBlending.md`
+9.6). On macOS no edit panel could open on `offscreen` before 2026-10-07 --
+`QuarterWidget::paintEvent` made a GL call before checking it had a context,
+which Linux's GL dispatch ignores and macOS's libGL crashes on.
 
 The whole default list, run the way the script's header says (`xcb` under
 Xvfb, `FCX_PYODIDE` set), is **70 cases in 13 modules, OK, none skipped**

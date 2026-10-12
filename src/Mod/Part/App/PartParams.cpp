@@ -26,6 +26,10 @@ namespace Part {
 // AppPartPy.cpp: the OCCT fork's extension version, -1 without the fork.
 // ImmutableShapeValues defaults to it.
 PartExport int initOCCTExtension();
+// AppPartPy.cpp: hands FilletPlateG0FallbackRatio to the OCCT fork's fillet.
+PartExport bool setOCCTPlateG0FallbackRatio(double ratio);
+// AppPartPy.cpp: hands FilletCornerSetbackFallback to the OCCT fork's fillet.
+PartExport bool setOCCTCornerSetbackFallback(double multiple);
 }
 
 /*[[[cog
@@ -70,6 +74,8 @@ public:
     long BorrowBelowFace;
     unsigned long LoftMaxDegree;
     bool ImmutableShapeValues;
+    double FilletPlateG0FallbackRatio;
+    double FilletCornerSetbackFallback;
     long WarnUnnamedInput;
     bool MapFaceColor;
     bool MapLineColor;
@@ -179,6 +185,10 @@ public:
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
         ImmutableShapeValues = this->handle->GetBool("ImmutableShapeValues", Part::initOCCTExtension() >= 2);
         funcs["ImmutableShapeValues"] = &PartParamsP::updateImmutableShapeValues;
+        FilletPlateG0FallbackRatio = this->handle->GetFloat("FilletPlateG0FallbackRatio", 0.01);
+        funcs["FilletPlateG0FallbackRatio"] = &PartParamsP::updateFilletPlateG0FallbackRatio;
+        FilletCornerSetbackFallback = this->handle->GetFloat("FilletCornerSetbackFallback", 2.0);
+        funcs["FilletCornerSetbackFallback"] = &PartParamsP::updateFilletCornerSetbackFallback;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
         MapFaceColor = this->handle->GetBool("MapFaceColor", true);
@@ -370,6 +380,22 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateImmutableShapeValues(PartParamsP *self) {
         self->ImmutableShapeValues = self->handle->GetBool("ImmutableShapeValues", Part::initOCCTExtension() >= 2);
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateFilletPlateG0FallbackRatio(PartParamsP *self) {
+        auto v = self->handle->GetFloat("FilletPlateG0FallbackRatio", 0.01);
+        if (self->FilletPlateG0FallbackRatio != v) {
+            self->FilletPlateG0FallbackRatio = v;
+            PartParams::onFilletPlateG0FallbackRatioChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateFilletCornerSetbackFallback(PartParamsP *self) {
+        auto v = self->handle->GetFloat("FilletCornerSetbackFallback", 2.0);
+        if (self->FilletCornerSetbackFallback != v) {
+            self->FilletCornerSetbackFallback = v;
+            PartParams::onFilletCornerSetbackFallbackChanged();
+        }
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateWarnUnnamedInput(PartParamsP *self) {
@@ -665,6 +691,21 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "(docs/TransactionLog.md sec 23.6, 23.12). Unless set, on exactly when\n"
 "the OCCT loaded at run time is the fork at extension version 2 or\n"
 "later, which is where the flag is honoured."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "FilletPlateG0FallbackRatio", "FilletPlateG0FallbackRatio", App::ParamInfo::Float, 0.01)
+        .setTitle("Fillet Plate G0 Fallback Ratio")
+        .setDoc("How far a fillet's corner patch may miss its boundary while kept tangent\n"
+"to the fillets, as a fraction of the smallest radius at the corner. A\n"
+"patch missing by more is built again on positions alone and kept if it\n"
+"fits better. 0 keeps every tangent patch. Needs the OCCT fork.")
+        .setOnChange(),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "FilletCornerSetbackFallback", "FilletCornerSetbackFallback", App::ParamInfo::Float, 2.0)
+        .setTitle("Fillet Corner Setback Fallback")
+        .setDoc("How far a fillet's corner that cannot be built may be set back, as a\n"
+"multiple of the largest fillet radius there. The fillets are cut back and\n"
+"the opening closed by one patch, at growing setbacks up to this multiple.\n"
+"Only fillets that fail without it change. 0 turns it off. Needs the OCCT\n"
+"fork.")
+        .setOnChange(),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
         .setTitle("Warn Unnamed Input")
         .setDoc("Report shape operations whose inputs carry no element names, so the\n"
@@ -1517,6 +1558,69 @@ void PartParams::setImmutableShapeValues(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeImmutableShapeValues() {
     instance()->handle->RemoveBool("ImmutableShapeValues");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docFilletPlateG0FallbackRatio() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"How far a fillet's corner patch may miss its boundary while kept tangent\n"
+"to the fillets, as a fraction of the smallest radius at the corner. A\n"
+"patch missing by more is built again on positions alone and kept if it\n"
+"fits better. 0 keeps every tangent patch. Needs the OCCT fork.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & PartParams::getFilletPlateG0FallbackRatio() {
+    return instance()->FilletPlateG0FallbackRatio;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & PartParams::defaultFilletPlateG0FallbackRatio() {
+    const static double def = 0.01;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setFilletPlateG0FallbackRatio(const double &v) {
+    instance()->handle->SetFloat("FilletPlateG0FallbackRatio",v);
+    instance()->FilletPlateG0FallbackRatio = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeFilletPlateG0FallbackRatio() {
+    instance()->handle->RemoveFloat("FilletPlateG0FallbackRatio");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docFilletCornerSetbackFallback() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"How far a fillet's corner that cannot be built may be set back, as a\n"
+"multiple of the largest fillet radius there. The fillets are cut back and\n"
+"the opening closed by one patch, at growing setbacks up to this multiple.\n"
+"Only fillets that fail without it change. 0 turns it off. Needs the OCCT\n"
+"fork.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & PartParams::getFilletCornerSetbackFallback() {
+    return instance()->FilletCornerSetbackFallback;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & PartParams::defaultFilletCornerSetbackFallback() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setFilletCornerSetbackFallback(const double &v) {
+    instance()->handle->SetFloat("FilletCornerSetbackFallback",v);
+    instance()->FilletCornerSetbackFallback = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeFilletCornerSetbackFallback() {
+    instance()->handle->RemoveFloat("FilletCornerSetbackFallback");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2810,3 +2914,13 @@ void PartParams::removeWireJoinerIteration() {
     instance()->subHandles[6]->RemoveInt("Iteration");
 }
 //[[[end]]]
+
+void Part::PartParams::onFilletPlateG0FallbackRatioChanged()
+{
+    Part::setOCCTPlateG0FallbackRatio(getFilletPlateG0FallbackRatio());
+}
+
+void Part::PartParams::onFilletCornerSetbackFallbackChanged()
+{
+    Part::setOCCTCornerSetbackFallback(getFilletCornerSetbackFallback());
+}
