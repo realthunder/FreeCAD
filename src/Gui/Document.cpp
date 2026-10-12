@@ -84,6 +84,7 @@
 #include "MDIView.h"
 #include "NotificationArea.h"
 #include "Selection.h"
+#include "SoFCUnifiedSelection.h"
 #include "TaskOwner.h"
 #include "Thumbnail.h"
 #include "Tree.h"
@@ -337,6 +338,13 @@ struct DocumentP
     // Reference counted view providers that are 3D claimed by other object.
     // These view providers shouldn't appear at secen graph root.
     std::unordered_map<const ViewProvider*, int> _ClaimedViewProviders;
+
+    // View providers whose children are to be regrouped once the walk of a
+    // scene root that was under way when it was asked for is over
+    // (Document::handleChildren3D), and whether the call that does it is
+    // queued
+    std::set<ViewProvider*> _Children3DLater;
+    bool _Children3DScheduled = false;
 
     using Connection = fastsignals::connection;
     // The two blockers below need connections that were made blockable at
@@ -5676,6 +5684,42 @@ PyObject* Document::getPyObject()
     return _pcDocPy;
 }
 
+void Document::handleChildren3DLater()
+{
+    d->_Children3DScheduled = false;
+    if (d->_Children3DLater.empty())
+        return;
+    if (SoFCUnifiedSelection::boundingBoxWalks() > 0) {
+        // Still inside one: a nested event loop under a walk. Once more.
+        d->_Children3DScheduled = true;
+        std::string name = d->_pcDocument->getName();
+        QTimer::singleShot(0, QCoreApplication::instance(), [name]() {
+            if (auto doc = Application::Instance->getDocument(name.c_str()))
+                doc->handleChildren3DLater();
+        });
+        return;
+    }
+    std::set<ViewProvider*> later;
+    later.swap(d->_Children3DLater);
+    for (ViewProvider *vp : later) {
+        // Gone in between: a view provider deleted takes itself off the
+        // list, this is for whatever else may have ended it
+        bool alive = false;
+        for (auto &v : d->_ViewProviderMap) {
+            if (v.second == vp) {
+                alive = true;
+                break;
+            }
+        }
+        for (auto &v : d->_ViewProviderMapAnnotation) {
+            if (v.second == vp)
+                alive = true;
+        }
+        if (alive)
+            handleChildren3D(vp);
+    }
+}
+
 void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
 {
     if(!viewProvider)
@@ -5683,6 +5727,33 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
     SoGroup* childGroup =  viewProvider->getChildRoot();
     if(!childGroup)
         return;
+
+    // Not while a scene root is walking through its children. A regrouping
+    // takes the roots of claimed children out of the scene root, which
+    // shortens the list under the walk; the walk then reads past its end
+    // and Coin, which checks for that in a debug build alone, calls a node
+    // that is not there. Seen: a repaint the restore of the view providers
+    // pumped asks for the scene's bounding box; a PartDesign feature's
+    // visual is built on demand inside that walk (SoFCCoordinate3) and
+    // reads SuppressedShape, still parked from the load; serving it
+    // announces the property, and the announcement arrives here
+    // (docs/HandsOnQueue.md entry 79: one load in a few of a file saved by
+    // a build that stores that property). Done as soon as the walk is over.
+    if (deleting) {
+        d->_Children3DLater.erase(viewProvider);
+    }
+    else if (SoFCUnifiedSelection::boundingBoxWalks() > 0) {
+        d->_Children3DLater.insert(viewProvider);
+        if (!d->_Children3DScheduled) {
+            d->_Children3DScheduled = true;
+            std::string name = d->_pcDocument->getName();
+            QTimer::singleShot(0, QCoreApplication::instance(), [name]() {
+                if (auto doc = Application::Instance->getDocument(name.c_str()))
+                    doc->handleChildren3DLater();
+            });
+        }
+        return;
+    }
 
     SoGroup* frontGroup = viewProvider->getFrontRoot();
     SoGroup* backGroup = viewProvider->getFrontRoot();

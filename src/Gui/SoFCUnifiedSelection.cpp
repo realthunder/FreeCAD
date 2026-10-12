@@ -490,6 +490,8 @@ void SoFCUnifiedSelection::setExternalRenderer(Render::Renderer *renderer,
     pimpl->manager.setExternalRenderer(renderer, view);
 }
 
+static int _BoundingBoxWalks;
+
 void SoFCUnifiedSelection::getBoundingBox(SoGetBoundingBoxAction * action)
 {
     if (pimpl->pcViewer)
@@ -526,8 +528,15 @@ void SoFCUnifiedSelection::getBoundingBox(SoGetBoundingBoxAction * action)
     pimpl->applyVisibility(state, pimpl->isClipPass(action)
                                   ? SoFCVisibilityElement::Superset
                                   : SoFCVisibilityElement::Exact);
+    ++_BoundingBoxWalks;
     inherited::getBoundingBox(action);
+    --_BoundingBoxWalks;
     state->pop();
+}
+
+int SoFCUnifiedSelection::boundingBoxWalks()
+{
+    return _BoundingBoxWalks;
 }
 
 void SoFCUnifiedSelection::rayPick(SoRayPickAction * action)

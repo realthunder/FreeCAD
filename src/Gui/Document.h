@@ -508,6 +508,9 @@ protected:
 private:
     //handles the scene graph nodes to correctly group child and parents
     void handleChildren3D(ViewProvider* viewProvider, bool deleting=false);
+    /// The regroupings handleChildren3D() put off because a scene root was
+    /// being walked for a bounding box when they were asked for
+    void handleChildren3DLater();
 
     /// Rebuild the saved split view containers on restore, placing the
     /// (bare-created) 3D views and object views into cells

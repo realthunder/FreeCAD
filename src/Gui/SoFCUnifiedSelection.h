@@ -95,6 +95,18 @@ public:
     SoFCUnifiedSelection();
     void applySettings();
 
+    /** How many scene roots are walking through their children for a
+     * bounding box at this moment.
+     *
+     * A view provider's root taken out of a scene root while that root is
+     * being walked shortens the list under the walk, which then reads past
+     * its end: an access violation in SoAction::traverse, seen once in a
+     * repaint of the 3D view during a load (docs/HandsOnLog.md, the evening
+     * of 2026-10-12). Who takes one out then is not known; the viewer asks
+     * this where it adds and removes a root, and says who did.
+     */
+    static int boundingBoxWalks();
+
     enum HighlightModes {
         AUTO, ON, OFF
     };
