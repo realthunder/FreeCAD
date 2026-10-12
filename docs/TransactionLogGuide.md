@@ -111,7 +111,7 @@ lines, with a label at each branch's head and at each version.
 | Column | Meaning |
 |---|---|
 | Seq | The row's number in this log. |
-| Kind | `user`: a step you made. `implicit`: one made without a name. `undo`, `redo`. `recompute`: a record that a recompute ran. `save`, `snapshot`, `switch` (of branch), `merge`, `pick` (rows applied from another branch), `squash`, `restore`. Records that changed nothing are grey. |
+| Kind | `user`: a step you made. `implicit`: one made without a name -- a change from the Python console, a recompute. It is not in Edit > Undo: it goes with the step before it, and one undo takes both. `undo`, `redo`. `recompute`: a record that a recompute ran. `save`, `snapshot`, `switch` (of branch), `merge`, `pick` (rows applied from another branch), `squash`, `restore`. Records that changed nothing are grey. |
 | Name | The step's name, as in Edit > Undo. |
 | Author | Who made it; `host` is you, at this machine. |
 | Parent | The row before it on its branch. |
@@ -142,7 +142,7 @@ Right-click a row:
 |---|---|
 | **Copy script** | The text the row carries besides its operations, where it has any. |
 | **Copy row** | The row as text. |
-| **Undo row N** | Undoes this one step, though it is not the last: a new step that reverses it. Refused, with the reason in the report view, when something later changed what it touched. |
+| **Undo row N** | Undoes this one step, though it is not the last: a new step that reverses it. Refused, with the reason in the report view, when something later changed what it touched. It is also the way to take back an `implicit` row by itself. |
 | **Apply row N here...** | For a row of *another* branch: what it set is written to this branch as a step of its own, after a preview like a merge's. Select several rows first to apply them together. Greyed for rows of this branch -- undo and redo are for those. |
 | **Branch from here...** | A new branch whose history ends at this row, switched to. |
 | **Roll back the merge of X...** | Appears when the last thing done was undoing a merge: takes the merge and its undo out of the log, so X counts as not merged. |

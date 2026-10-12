@@ -5242,6 +5242,77 @@ class TransactionBranchCases(unittest.TestCase):
         doc.clearDocument()
         self.assertGreater(doc.addObject("Part::Box", "A").ID, first)
 
+    def testAnImplicitStepGoesWithTheUsersStepItFollowed(self):
+        # Sec 33.4: a write with no transaction open and a recompute are
+        # recorded, and are no undo steps of their own. One undo takes the
+        # user's step with the implicit ones that followed it, each in a
+        # row of its own; the redo puts them back, the shape from its row.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("ImplicitUndo"))
+        doc.UndoMode = 1
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        # Nothing of the user's yet: nothing to undo.
+        self.assertEqual(doc.UndoNames, [])
+        self.assertEqual(doc.UndoCount, 0)
+        doc.undo()
+        self.assertIsNotNone(doc.getObject("Box"))
+
+        doc.openTransaction("longer")
+        box.Length = 20
+        doc.commitTransaction()
+        doc.recompute()
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertEqual(doc.UndoNames, ["longer"])
+        self.assertEqual(doc.UndoCount, 1)
+        rows = len(doc.getTransactionLog())
+        doc.undo()
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertNotIn("Touched", box.State)
+        self.assertEqual(doc.UndoNames, [])
+        self.assertEqual(doc.RedoNames, ["longer"])
+        self.assertEqual(doc.RedoCount, 1)
+        self.assertEqual(
+            [t["kind"] for t in doc.getTransactionLog()[rows:]], ["undo", "undo"]
+        )
+        rows = len(doc.getTransactionLog())
+        doc.redo()
+        self.assertAlmostEqual(box.Length.Value, 20.0)
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertNotIn("Touched", box.State)
+        self.assertEqual(doc.UndoNames, ["longer"])
+        self.assertEqual(doc.RedoNames, [])
+        self.assertEqual(
+            [t["kind"] for t in doc.getTransactionLog()[rows:]], ["redo", "redo"]
+        )
+
+        # An implicit step ends no redo step: the redo after it goes through
+        # the log, and keeps what was written meanwhile.
+        doc.undo()
+        box.Width = 5
+        doc.recompute()
+        self.assertEqual(doc.RedoNames, ["longer"])
+        self.assertEqual(doc.UndoNames, [])
+        doc.redo()
+        self.assertAlmostEqual(box.Length.Value, 20.0)
+        self.assertAlmostEqual(box.Width.Value, 5.0)
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertEqual(doc.UndoNames, ["longer"])
+        self.assertEqual(doc.RedoNames, [])
+        doc.undo()
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Width.Value, 5.0)
+        self.assertAlmostEqual(box.Shape.Volume, 500.0)
+        self.assertEqual(doc.RedoNames, ["longer"])
+        # A new step of the user's does end it.
+        doc.openTransaction("taller")
+        box.Height = 30
+        doc.commitTransaction()
+        self.assertEqual(doc.RedoNames, [])
+        self.assertEqual(doc.UndoNames, ["taller"])
+
     def testAFeatureRefusedAFrozenInputRunsOnACopy(self):
         # Sec 27.82: an algorithm that writes into a frozen input throws
         # LockedShape; the feature runs once more on copies of its inputs,
