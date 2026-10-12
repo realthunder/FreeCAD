@@ -852,6 +852,7 @@ void Document::_applyRevert(ColdRevert& revert)
     }
     // 3. Every value the row replaced, each afterRestore() once all are in.
     RestoreBatch batch;
+    std::vector<long> recomputes;
     for (const LogOp* o : revert.ops) {
         if (o->op != "set" && o->op != "delprop")
             continue;
@@ -866,10 +867,14 @@ void Document::_applyRevert(ColdRevert& revert)
                 // A derived value gone from the cache (sec 24.1), or a set
                 // that holds none (a create's, or the `none` policy): the
                 // owner recomputes it.
+                // Touched once every value is in, not here: the ops come
+                // in no order (a hash map's), and a value written after the
+                // touch would record the object as touched before the row
+                // (docs/TransactionLog.md sec 33.5).
                 if (o->derived) {
                     if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(container)) {
-                        obj->touch();
-                        revert.touched.insert(obj->getID());
+                        if (revert.touched.insert(obj->getID()).second)
+                            recomputes.push_back(obj->getID());
                     }
                 }
                 return;
@@ -880,6 +885,10 @@ void Document::_applyRevert(ColdRevert& revert)
         });
     }
     batch.finish();
+    for (long id : recomputes) {
+        if (auto obj = getObjectByID(id))
+            obj->touch();
+    }
     // 4. The dynamic properties the row added, where the object stays.
     std::set<long> created;
     for (const LogOp* o : revert.ops) {
