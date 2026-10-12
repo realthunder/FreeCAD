@@ -839,14 +839,27 @@ void Document::_applyRevert(ColdRevert& revert)
             }
         });
     }
-    // 2. The dynamic properties the row removed.
+    // 2. The dynamic properties the row removed. One the row put another
+    // in the place of, under the same name and of another type -- a pattern
+    // changing its kind has an Offset that is a length or an angle -- finds
+    // that one there: it goes first, and is not what step 4 removes. Left
+    // in place it kept the removed one from coming back, and step 4 then
+    // took it away as the row's addition: the object had no Offset at all.
+    std::set<std::pair<const PropertyContainer*, std::string>> replaced;
     for (const LogOp* o : revert.ops) {
         if (o->op != "delprop")
             continue;
         guarded(*o, [&]() {
             auto container = opContainer(*this, *o);
-            if (!container || container->getPropertyByName(o->prop.c_str()))
+            if (!container)
                 return;
+            if (auto there = container->getPropertyByName(o->prop.c_str())) {
+                if (o->ptype == there->getTypeId().getName())
+                    return;
+                if (!container->removeDynamicProperty(o->prop.c_str()))
+                    return;
+                replaced.emplace(container, o->prop);
+            }
             addLoggedProperty(*container, o->ptype, o->prop, o->meta);
         });
     }
@@ -899,7 +912,8 @@ void Document::_applyRevert(ColdRevert& revert)
         if (o->op != "addprop" || created.count(o->cid))
             continue;
         guarded(*o, [&]() {
-            if (auto container = opContainer(*this, *o))
+            auto container = opContainer(*this, *o);
+            if (container && !replaced.count({container, o->prop}))
                 container->removeDynamicProperty(o->prop.c_str());
         });
     }
@@ -1066,7 +1080,16 @@ bool Document::_revertStep(bool undo, Transaction* step)
     auto inverse = new Transaction(step->getID());
     inverse->Name = step->Name;
     d->activeUndoTransaction = inverse;
-    _applyRevert(revert);
+    {
+        // The values go back as an undo's do: object code does not react to
+        // them (isPerformingTransaction()). They come in no order, and a
+        // pattern that took its suppressed indices back before its grid
+        // worked the positions out of them on the grid of before, then the
+        // indices again out of those: (1, 2) came back as (2, 0). The
+        // recompute below is outside of it.
+        Base::FlagToggler<bool> flag(d->undoing);
+        _applyRevert(revert);
+    }
     if (!revert.touched.empty()) {
         if (Transaction::isApplying())
             FC_WARN((undo ? "undo" : "redo") << " of '" << step->Name << "' in " << getName()
