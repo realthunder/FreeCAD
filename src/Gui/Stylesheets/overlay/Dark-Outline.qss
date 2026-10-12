@@ -110,8 +110,8 @@ Gui--OverlayToolButton {
   padding: 0px;
   border: none;
   /* the glyphs of the title buttons, on this sheet's ground whatever the
-     theme around it is */
-  qproperty-iconColor: #d0d0d0;
+     theme around it is; the files are black at half opacity, so white */
+  qproperty-iconColor: #ffffff;
 }
 
 Gui--OverlayToolButton::hover {

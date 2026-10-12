@@ -561,7 +561,7 @@ private:
  * A style sheet whose ground is not the theme's, an overlay sheet for one,
  * says which colour it wants:
  *
- *     Gui--OverlayToolButton { qproperty-iconColor: #d0d0d0; }
+ *     Gui--OverlayToolButton { qproperty-iconColor: #ffffff; }
  */
 class OverlayToolButton: public QToolButton
 {

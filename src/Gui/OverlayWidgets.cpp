@@ -349,8 +349,9 @@ QColor OverlayToolButton::effectiveIconColor() const
     // Not the button's palette: under a style sheet that is not the colour
     // its neighbours' text is drawn in, and it changes with the window
     // being the active one. A dark theme has light glyphs, a light one the
-    // files as they are.
-    return Application::isDarkTheme() ? QColor(0xd0, 0xd0, 0xd0) : QColor();
+    // files as they are. White and nothing dimmer: the files are black at
+    // half opacity, so a glyph ends half way from its ground to this colour.
+    return Application::isDarkTheme() ? QColor(0xff, 0xff, 0xff) : QColor();
 }
 
 QPixmap OverlayToolButton::tinted(const QPixmap &pixmap, const QColor &color)

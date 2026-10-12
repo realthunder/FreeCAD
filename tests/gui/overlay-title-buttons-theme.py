@@ -83,18 +83,25 @@ def stands_out(tag, button):
     """How far the button's glyph is from what is behind it, and which way:
     the button pictured with its icon and again without, and the pixels that
     differ. Above zero the glyph is lighter than its ground, below it darker.
-    The strongest quarter of them: the glyph's body, not its smoothed rim."""
+    The strongest quarter of them: the glyph's body, not its smoothed rim.
+    Pictured with the icon once more after: a pointer that came over the
+    button between the pictures changes its ground, and the two with the icon
+    then differ -- taken again."""
     bar = button.parentWidget()
     rect = QtCore.QRect(button.pos(), button.size())
     owner = button.defaultAction() or button
     icon = owner.icon()
-    seen = bar.grab(rect).toImage()
+    for _ in range(5):
+        seen = bar.grab(rect).toImage()
+        owner.setIcon(QtGui.QIcon())
+        settle(60)
+        bare = bar.grab(rect).toImage()
+        owner.setIcon(icon)
+        settle(60)
+        if bar.grab(rect).toImage() == seen:
+            break
+        settle(400)
     seen.save(os.path.join(OUT, tag + ".png"))
-    owner.setIcon(QtGui.QIcon())
-    settle(60)
-    bare = bar.grab(rect).toImage()
-    owner.setIcon(icon)
-    settle(60)
     deltas = []
     for y in range(min(seen.height(), bare.height())):
         for x in range(min(seen.width(), bare.width())):
