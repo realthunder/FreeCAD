@@ -800,6 +800,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
 | 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | OPEN; the five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
 | 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views" | OPEN; two points of the note-taker's under the entry |
+| 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only | OPEN; three points of the note-taker's under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8104,6 +8105,36 @@ b. As a button it holds no state: does the stored setting go away, the
 Near it: entry 63 has a button "Apply all" for the display settings of a
 view; the same word for the same kind of act may be wanted. Not asked.
 
+## 71. The preferences dialog: Enter in an edit box dismisses the dialog instead of committing that setting -- OPEN
+
+**2026-10-12 15:26, the reporter** (sent right after entry 70, while that
+one was being written down): "New defect, also press enter in an edit box
+in preference page shall only commit that setting instead of dismiss the
+preference dialog"
+
+The note-taker's reading:
+- Today: with the cursor in an edit box of a preference page, Enter
+  closes the preferences dialog (as OK would).
+- Asked: Enter commits the value of THAT box and the dialog stays open.
+- "also": said in one breath with entry 70, which is about the UI page;
+  the note-taker takes this one to be about every page, not that page
+  alone.
+
+READ in the source, nothing run -- a guess at the cause:
+- `src/Gui/DlgPreferencesImp.cpp` has no handling of the Enter key of
+  its own, so the key takes Qt's usual way in a dialog: it presses the
+  dialog's default button, which is OK.
+
+NOT said, the note-taker's count:
+a. "commit that setting": the value taken by the box (as on leaving it),
+   to be SAVED when OK or Apply is pressed as now -- or written to the
+   settings at once, on the key? The two differ when the dialog is then
+   cancelled.
+b. Which boxes: text fields and number boxes (spin boxes, quantity
+   boxes) alike, and the search box of the dialog?
+c. Does anything in the dialog still close it on Enter -- the key with
+   the focus on the OK button itself, as is usual?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -8112,4 +8143,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 70 are of 2026-10-12)
+entries 68 to 71 are of 2026-10-12)
