@@ -1963,10 +1963,14 @@ void Document::clearDocument()
     // for its versions and branches. A temporary document has neither, and
     // emptied it is new: its ids start over, as they did before a document
     // had a history (docs/TransactionLog.md sec 33.3).
+    // Its strings with them: they hold the ids of what was in it, and the
+    // names made of them are to come out the same the next time.
     if (testStatus(TempDoc)) {
         d->lastGeoIds.clear();
         if (d->history && !d->joinedHistory)
             d->history->forgetIds();
+        if (d->Hasher && !d->joinedHistory)
+            d->Hasher->clear();
     }
 }
 
@@ -6386,7 +6390,7 @@ void Document::_readVersion(int64_t num, const std::function<void(Document&)>& f
     Document* active = app.getActiveDocument();
     const std::string name = app.getUniqueDocumentName(
         (std::string(getName()) + "_read_v" + std::to_string(num)).c_str(), true);
-    Document* version = app.newDocument(name.c_str(), name.c_str(), false, true);
+    Document* version = app.newDocument(name.c_str(), name.c_str(), false, true, false);
     if (!version)
         THROWM(Base::RuntimeError, "cannot make the version's document");
     std::unique_ptr<void, std::function<void(void*)>> closer(

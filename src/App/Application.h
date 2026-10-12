@@ -95,9 +95,17 @@ public:
      * to get a unique name before calling newDoucument().
      * The second name is a UTF8 name of any kind. It's that name normally shown to
      * the user and stored in the App::Document::Name property.
+     *
+     * A temporary document is one per name: asked for again, the one there
+     * is returned. It comes emptied (Document::clearDocument()) unless \a
+     * clearTemp is false -- nothing in it, and its object and string ids
+     * starting over, so what is put into it is numbered the same every
+     * time, where a document's ids start at random. With \a clearTemp false
+     * the one there is returned as it is, and a new one keeps its random
+     * start.
      */
     App::Document* newDocument(const char * Name=nullptr, const char * UserName=nullptr,
-            bool createView=true, bool tempDoc=false);
+            bool createView=true, bool tempDoc=false, bool clearTemp=true);
     /// Closes the document \a name and removes it from the application.
     bool closeDocument(const char* name);
     /// find a unique document name

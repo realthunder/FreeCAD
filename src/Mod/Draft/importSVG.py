@@ -1334,7 +1334,7 @@ def export(exportList, filename):
     for obj in exportList:
         if obj.isDerivedFrom("Sketcher::SketchObject"):
             if hidden_doc is None:
-                hidden_doc = FreeCAD.newDocument(name="hidden", hidden=True, temp=True)
+                hidden_doc = FreeCAD.newDocument(name="hidden", hidden=True, temp=True, clear=False)
                 base_sketch_pla = obj.Placement
             sh = Part.Compound()
             sh.Placement = base_sketch_pla

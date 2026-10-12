@@ -225,7 +225,8 @@ be redone as they are and redoes the one after.</UserDocu>
     </Methode>
     <Methode Name="clearDocument">
       <Documentation>
-        <UserDocu>Clear the whole document</UserDocu>
+        <UserDocu>Clear the whole document. A temporary document starts its object
+and string ids over: what is put into it next is numbered as the first time.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="setClosable">

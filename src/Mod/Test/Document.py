@@ -5373,6 +5373,37 @@ class TransactionBranchCases(unittest.TestCase):
         doc.clearDocument()
         self.assertGreater(doc.addObject("Part::Box", "A").ID, first)
 
+    def testATemporaryDocumentComesEmptied(self):
+        # A temporary document is one per name, and comes emptied each time
+        # it is asked for: its ids start over, so what is put into it is
+        # numbered the same every time, where a document's ids start at
+        # random. clear=False gives the one there as it is.
+        doc = self.track(FreeCAD.newDocument("TmpEmptied", hidden=True, temp=True))
+        self.assertTrue(doc.Temporary)
+        a = doc.addObject("Part::Box", "A")
+        doc.recompute()
+        self.assertEqual((a.ID, a.Name), (1, "A"))
+        names = dict(a.Shape.ElementMap)
+        self.assertTrue(names)
+
+        kept = FreeCAD.newDocument("TmpEmptied", hidden=True, temp=True, clear=False)
+        self.assertEqual(kept.Name, doc.Name)
+        self.assertEqual([o.Name for o in kept.Objects], ["A"])
+        self.assertEqual(kept.addObject("Part::Box", "B").ID, 2)
+
+        again = FreeCAD.newDocument("TmpEmptied", hidden=True, temp=True)
+        self.assertEqual(again.Name, doc.Name)
+        self.assertEqual(again.Objects, [])
+        self.assertEqual(len(again.Hasher.Table), 0)
+        a = again.addObject("Part::Box", "A")
+        again.recompute()
+        self.assertEqual((a.ID, a.Name), (1, "A"))
+        self.assertEqual(dict(a.Shape.ElementMap), names)
+
+        # Not emptied, a new one starts as any document does
+        other = self.track(FreeCAD.newDocument("TmpAsItIs", hidden=True, temp=True, clear=False))
+        self.assertGreater(other.addObject("Part::Box", "A").ID, 10)
+
     def testAnImplicitStepGoesWithTheUsersStepItFollowed(self):
         # Sec 33.4: a write with no transaction open and a recompute are
         # recorded, and are no undo steps of their own. One undo takes the
