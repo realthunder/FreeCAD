@@ -703,10 +703,14 @@ void ViewProviderBody::onChanged(const App::Property* prop) {
     // from there its ShapeColor, whose alpha is the transparency. Those are
     // echoes, not settings: forwarded to the Tip, that ShapeColor looked
     // like a colour set on the body and switched the Tip's MapFaceColor off,
-    // so every later feature showed the default colour. The Tip has the
-    // Transparency already (above), and applies it to its own faces.
-    Base::StateLocker guard(followingChange, prop == &Transparency || followingChange);
-    PartGui::ViewProviderPartExt::onChanged(prop);
+    // so every later feature showed the default colour. The Tip is handed
+    // the Transparency itself below, once the echoes are through -- outside
+    // the guard, which would hold that back as one of them -- and applies
+    // it to its own faces.
+    {
+        Base::StateLocker guard(followingChange, prop == &Transparency || followingChange);
+        PartGui::ViewProviderPartExt::onChanged(prop);
+    }
     if (look)
         unifyVisualProperty(prop);
 }
