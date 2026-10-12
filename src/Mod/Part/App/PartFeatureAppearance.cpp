@@ -857,6 +857,23 @@ void Feature::writeFaces(const App::AppearanceList &before, const App::Appearanc
     // them -- a transparency is every face's -- and no face comes to state
     // one by it. What is drawn of the rest is made again.
     bool toObject = false;
+    if (after.isPBR() != before.isPBR()) {
+        // The shading model is a list's and no look's: a look given to a
+        // list is read in the model that list is in. So the lists kept for
+        // the faces go to the model first -- or the object stays in the one
+        // it had, whatever is written to it next.
+        if (store.hasBase(Store::Face)
+            && store.getBaseList(Store::Face).isPBR() != after.isPBR()) {
+            App::AppearanceList own = store.getBaseList(Store::Face);
+            own.convertPBR(after.isPBR());
+            store.setBaseList(Store::Face, own);
+        }
+        App::AppearanceList numbered = store.getNumbered(Store::Face);
+        if (numbered.getSize() > 0 && numbered.isPBR() != after.isPBR()) {
+            numbered.convertPBR(after.isPBR());
+            store.setNumbered(Store::Face, numbered);
+        }
+    }
     if (hasBase) {
         const bool moved =
             !sameLook(after.getBase(), before.getBase()) || after.isPBR() != before.isPBR();
