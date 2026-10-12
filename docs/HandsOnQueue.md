@@ -977,6 +977,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
 | 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space. ANSWERED 18:29: NO new mode -- from the property view the omni search opens with text already typed that leads to the current object, document or view and ends with a dot, so the list shows all its properties; Ctrl+F applies in the tree view and the property view ONLY; the tree's "Search..." menu item is kept and opens the omni search; opened from the tree view it scrolls the tree by itself as before and sets and clears the item's background as before | DONE `b70dab6401`, local, NOT pushed, NOT staged (21:03): its own test `omni-search-from-tree-and-property-view.py` 18 claims, no FAIL; found by it and fixed with it: opened on a lone dot (several objects selected) the omni search selected the first object in place of them all with the tree's "sync view" on. Before, 18:57: written in a second working copy, not built; the build session's choices on the three smaller points are under the entry, one of them (g) against the note-taker's reading. The four points answered 18:29 |
 | 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | OPEN, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
+| 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all" | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -9254,6 +9255,44 @@ The note-taker's notes:
 - Nothing is asked of the reporter here. If the staged copy dies at a
   load, the time and the file are worth a note under this entry.
 
+## 80. The file recovery dialog: a check box in the first column that selects all or none (a change request) -- OPEN
+
+**2026-10-12 21:37, the reporter:** "new request, in file recovery prompt
+dialog, add check box in first column to toggle select all"
+
+The note-taker's reading:
+- The dialog is "Document Recovery", the one that comes up at the start
+  after a session that did not end cleanly and lists the documents that
+  can be recovered.
+- Each listed document has a check box in the first column already. Asked
+  for: ONE more check box in that column -- in the column's HEADER, the
+  note-taker's guess -- that checks every document, or unchecks them all,
+  in one click.
+
+READ in the source, nothing run:
+- `src/Gui/DocumentRecovery.ui`: a `QTreeWidget` with the three columns
+  "Document Name", "Status" and "Modified"; the buttons "Start Recovery"
+  and "Cleanup..." act on the CHECKED documents (the text over the list
+  says so).
+- `src/Gui/DocumentRecovery.cpp`: each row is made user-checkable (about
+  line 287) and starts CHECKED unless it carries warnings, then unchecked
+  (about line 304); what is recovered is the rows that are checked (about
+  line 353); a row loses its check box once it is recovered (about line
+  529).
+- There is nothing today that checks or unchecks all rows at once.
+
+NOT said, the note-taker's count:
+a. WHERE the check box sits: in the header of the first column, beside
+   "Document Name" -- the guess above -- or as a row of its own at the
+   top of the list?
+b. With only SOME rows checked: the box shows a half state, and a click
+   on it then checks all -- the usual way, taken so unless said
+   otherwise.
+c. "Check all" and the rows with WARNINGS, which start unchecked on
+   purpose: checked with the rest -- the note-taker's reading of
+   "select all" -- or left out? And a row already recovered has no check
+   box and is not touched.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -9262,5 +9301,5 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 79 are of 2026-10-12, 77 said to the build session, 79
+entries 68 to 80 are of 2026-10-12, 77 said to the build session, 79
 found by it)
