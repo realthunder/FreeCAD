@@ -80,6 +80,14 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 01:00: entry 82's root fixed, `49dca0ebbc` (the generator no
+longer writes the machine's path); the build session STOPS FOR THE NIGHT
+"unless the user says otherwise".** From the build session (01:00, written
+here 01:00). Local head `4701c780da`; origin/LinkVibe still
+`5de7d97293`, the stage still `22ece75a08`. Waiting for the reporter's
+word: the push, a restage, entry 47 part (a) -- and, when they come to
+them, entry 69's point 1 and entry 66's proposals.
+
 **2026-10-13 00:56: THE COPY STAGED AT 17:52 CAN END BY ITSELF WHEN THE
 PREFERENCES ARE OPENED -- heap corruption, seven sessions of ten, no crash
 log. Entry 82. It is fixed by the commit that already waits for the push,
@@ -1109,7 +1117,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | FIXED `9b9a479164`, local, NOT pushed, NOT staged (23:17): on the build before the fix the detector fired on the first load of the re-saved file; with it, twelve loads of that file and two of the original wrote no crash log, the picture the same to the pixel; the detector stays in. NOT shown: that the staged copy crashes -- it has the same code. FOUND 22:09, the cause named: a repaint during the restore builds a PartDesign feature's visual on demand, which reads the `SuppressedShape` still parked from the load; serving it announces a change, and the answer to that regroups the view provider's children and takes roots out of the scene root under the walk. WHICH FILES, CORRECTED by the build session 22:20 (its "every file saved since the suppression port, 2026-10-03" is WITHDRAWN): a file SAVED BY A BUILD THAT HAS THE MERGE of 2026-10-12 (`ffb143c047`) -- so by the stage of 14:04 or of 17:52, both EXPOSED -- at any later load, one load in a few on this box; the stages before 2026-10-12 are not exposed by its reading of the code, which no run has shown; the file is not damaged; no crash seen on the staged copy itself. The fix: a regrouping asked for during such a walk waits until the walk is over. Before, 21:03, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
 | 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | DONE `53a231cc72`, local, NOT pushed, NOT staged (23:17): its own test `recovery-dialog-check-all.py` 13 claims, no FAIL; "Start Recovery" cannot be pressed with nothing ticked. As built: the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, local, NOT pushed, NOT staged (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
-| 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), local, NOT pushed, NOT in the copy under test; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. NO word for a restage yet |
+| 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), local, NOT pushed, NOT in the copy under test; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. NO word for a restage yet |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -9756,7 +9764,7 @@ The note-taker's notes:
   thousands of entries on this box is where it would show" -- the build
   session.
 
-## 82. The copy staged 2026-10-12 17:52 can end by itself when the Preferences are opened: heap corruption, the include of a second working copy -- FIXED already by `23e57d647c`, local, NOT pushed, NOT in the copy under test; found 2026-10-13 00:56
+## 82. The copy staged 2026-10-12 17:52 can end by itself when the Preferences are opened: heap corruption, the include of a second working copy -- FIXED already by `23e57d647c`, local, NOT pushed, NOT in the copy under test; found 2026-10-13 00:56; its root, the generator, fixed `49dca0ebbc`, local
 
 **2026-10-13 00:56, from the build session** (found and measured by it, NOT
 reported by the reporter; the number is the note-taker's; From the build session's message of 2026-10-13 00:56, written here 00:57). Its
@@ -9816,6 +9824,28 @@ The note-taker's notes, none of it said by the build session:
   the time, and what was open, under this entry.
 - NOT ASKED of the reporter in so many words: a restage of a build with
   the three local fixes (this, 79, 53).
+
+**2026-10-13 01:00: the ROOT is fixed too, `49dca0ebbc`, local, NOT pushed,
+NOT staged -- why the machine's path got into the generated files.**
+From the build session's message of 2026-10-13 01:00, written here 01:00.
+- The generator (`src/Tools/params_utils.py`) "split its module's file
+  name at 'src' + the system's separator; reached through a path written
+  with forward slashes on Windows it did not split, and the whole path
+  went into what it generated."
+- Changed: "It makes the path absolute and normal first now and refuses
+  a module that is not below a src/ directory."
+- Checked by it: "regenerating five files with such paths: unchanged."
+- Its summary: "`23e57d647c` takes the path out of the four files and
+  `49dca0ebbc` keeps it from coming back."
+- It is the generator, "Python, not in any binary": nothing of it is to
+  be seen in a staged copy.
+- The build session's state: local head `4701c780da` (its log); both
+  suites green on `5d63c7152d`, after which only the generator and its
+  log were committed. "I stop here for the night unless the user says
+  otherwise."
+- What waits for the reporter's word, in its words: "the push, a
+  restage, entry 47 part (a); and entry 69's point 1 and entry 66's
+  proposals when they come to them."
 
 ## Inbox
 
