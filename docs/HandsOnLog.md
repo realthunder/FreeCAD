@@ -6310,3 +6310,20 @@ in every build of mine since 20:00 and NOT in the copy under test.
 For the reporter: on the staged copy, opening Edit > Preferences can end
 the program, at once or some time after. A restage ends it; so far I have
 no word for one.
+
+**Why the path got there, and the generator fixed, `49dca0ebbc`.**
+`src/Tools/params_utils.py` took its module's directory by splitting the
+file name at "src" + the system's separator; a module reached through a
+path written with forward slashes on Windows was not split, and the whole
+path went into what it generated. It makes the path absolute and normal
+first now, and refuses a module that is not below a `src/` directory.
+Checked: `OverlayParams`, `ViewParams.h` and `DlgSettingsUI` regenerated
+with absolute paths in forward slashes come out unchanged. The function
+is at the END of that file on purpose: every generated file carries that
+file's line numbers in its comments, and a line added above the
+generating functions rewrites all 47 at their next regeneration.
+
+State at 2026-10-13 01:00: local head `49dca0ebbc`, both suites green on
+`5d63c7152d` (only this log and the generator after it), nothing pushed,
+nothing staged. The copy under test has the queue's entries 82, 79 and
+53's regression; a restage and the push wait for the reporter's word.
