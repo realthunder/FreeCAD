@@ -103,13 +103,15 @@ public:
     App::DocumentObjectExecReturn *updateShape();
 
 private:
-    /// Whether somebody gave the faces a look (it is not the material card's)
+    /// Whether somebody gave the faces, the lines or the points a look (it is
+    /// not the material card's, nor the preference's)
     bool isLookGiven() const;
     /** Give the features what is the solid's
      *
      * The material card to every one of them: a solid is of one material.
-     * The own look of the faces, if somebody gave this object one, to each
-     * feature nobody gave a look (PartDesign::Feature::followSolidBodyLook()).
+     * The own look of the faces, of the lines and of the points, each if
+     * somebody gave this object one, to each feature nobody gave one
+     * (PartDesign::Feature::followSolidBodyLook()).
      */
     void handOn(bool card, bool look);
 

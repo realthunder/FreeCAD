@@ -99,7 +99,8 @@ public:
      * A solid body given a look gives it to its features: the own look of
      * the faces of a feature nobody gave one is its solid body's, and stays
      * a look nobody chose (App::PropertyElementAppearance::isFollowingMaterial()).
-     * A feature given a look of its own keeps that.
+     * A feature given a look of its own keeps that. So for the lines and
+     * for the points, each on their own.
      *
      * @param always: also the look of a solid body that was given none, for
      * when that takes the place of one it was given

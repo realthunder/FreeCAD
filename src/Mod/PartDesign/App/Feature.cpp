@@ -196,12 +196,18 @@ void Feature::followSolidBodyLook(bool always)
 
     using Store = App::PropertyElementAppearance;
     const Store &given = solid->ElementAppearance;
-    if (!always && (!given.hasBase(Store::Face) || given.isFollowingMaterial(Store::Face)))
-        return;
-    // A look somebody gave this feature outranks its solid body's
-    if (!ElementAppearance.isFollowingMaterial(Store::Face))
-        return;
-    ElementAppearance.followMaterial(Store::Face, given.getBase(Store::Face));
+    // The faces, the lines and the points each on their own: a solid body
+    // given a line colour and nothing else hands on the line colour
+    for (auto kind : {Store::Face, Store::Edge, Store::Vertex}) {
+        if (!given.hasBase(kind))
+            continue;
+        if (!always && given.isFollowingMaterial(kind))
+            continue;
+        // A look somebody gave this feature outranks its solid body's
+        if (!ElementAppearance.isFollowingMaterial(kind))
+            continue;
+        ElementAppearance.followMaterial(kind, given.getBase(kind));
+    }
 }
 
 void Feature::onNewSolidChanged()

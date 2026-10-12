@@ -5111,8 +5111,20 @@ place of a look it was given and is no more.
 
 *What it is not.*
 
-- Faces only: colour, transparency and the rest of the faces' own look.
-  14.6.12's open point on lines and points is still open.
+- ~~Faces only: colour, transparency and the rest of the faces' own look.
+  14.6.12's open point on lines and points is still open.~~ **Lines and
+  points too, since 2026-10-13**, each kind on its own: a solid body given
+  a line colour and nothing else hands on the line colour, and a feature
+  given a line colour keeps it while its faces go on taking the solid
+  body's. *Mine, not ruled* -- read off "appearance/material assigned in
+  solidbody to be inherited by all its feature", and off what it looked
+  like without: a line colour set on a solid body changed nothing on the
+  screen, the solid being drawn by a feature. The follow is the one a look
+  nobody chose already has for lines and points (the preference's default
+  list carries the flag, `defaultLineLook()`), so nothing new holds it. A
+  feature of a file older than the store has its line and point looks
+  stated (`adoptAppearance()` gives them as looks somebody chose) and
+  keeps them.
 - A face painted on the solid body's own shape (`Body.Solid.Face3`) is that
   shape's, and no feature's.
 - A feature that leaves a solid keeps the look it had there until its new

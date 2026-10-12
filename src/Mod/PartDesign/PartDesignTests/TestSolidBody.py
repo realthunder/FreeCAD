@@ -698,6 +698,53 @@ class TestSolidBody(unittest.TestCase):
         finally:
             App.closeDocument(doc.Name)
 
+    def line(self, obj):
+        return tuple(round(c, 3) for c in obj.LineColor[:3])
+
+    def point(self, obj):
+        return tuple(round(c, 3) for c in obj.PointColor[:3])
+
+    def testLinesAndPointsOfASolidBodyAreItsFeatures(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        dark = self.line(c)
+        grey = self.rgb(c)
+        first.LineColor = self.RED
+        self.assertEqual(self.line(a), self.RED)
+        self.assertEqual(self.line(b), self.RED)
+        # the lines alone: nothing else was given
+        self.assertEqual(self.point(a), self.point(c))
+        self.assertEqual(self.rgb(a), grey)
+        first.PointColor = self.BLUE
+        self.assertEqual(self.point(a), self.BLUE)
+        self.assertEqual(self.point(b), self.BLUE)
+        self.assertEqual(self.line(b), self.RED)
+        for obj in (c, d, second):
+            self.assertEqual(self.line(obj), dark)
+            self.assertNotEqual(self.point(obj), self.BLUE)
+
+    def testFeatureGivenALineColourKeepsIt(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        a.LineColor = self.GREEN
+        first.LineColor = self.RED
+        self.assertEqual(self.line(a), self.GREEN)
+        self.assertEqual(self.line(b), self.RED)
+        # and its faces are the solid body's all the same
+        first.ShapeColor = self.BLUE
+        self.assertEqual(self.rgb(a), self.BLUE)
+        self.assertEqual(self.line(a), self.GREEN)
+
+    def testNewFeatureTakesTheLines(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.LineColor = self.RED
+        self.Body.Tip = b
+        e = self.box("Box004", 8)
+        self.Doc.recompute()
+        self.assertEqual(self.Body.getSolidBody(e), first)
+        self.assertEqual(self.line(e), self.RED)
+
     def twoCards(self):
         import Materials
 

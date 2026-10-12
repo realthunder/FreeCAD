@@ -222,8 +222,11 @@ void SolidBody::onDocumentRestored()
 bool SolidBody::isLookGiven() const
 {
     using Store = App::PropertyElementAppearance;
-    return ElementAppearance.hasBase(Store::Face)
-        && !ElementAppearance.isFollowingMaterial(Store::Face);
+    for (auto kind : {Store::Face, Store::Edge, Store::Vertex}) {
+        if (ElementAppearance.hasBase(kind) && !ElementAppearance.isFollowingMaterial(kind))
+            return true;
+    }
+    return false;
 }
 
 void SolidBody::handOn(bool card, bool look)
