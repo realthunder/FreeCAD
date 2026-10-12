@@ -1834,6 +1834,15 @@ void Document::clearDocument()
     d->objectMap.clear();
     d->objectIdMap.clear();
     d->lastObjectId = 0;
+    // The ids of a file are never handed out again (sec 27.40), which is
+    // for its versions and branches. A temporary document has neither, and
+    // emptied it is new: its ids start over, as they did before a document
+    // had a history (docs/TransactionLog.md sec 33.3).
+    if (testStatus(TempDoc)) {
+        d->lastGeoIds.clear();
+        if (d->history && !d->joinedHistory)
+            d->history->forgetIds();
+    }
 }
 
 
@@ -13614,7 +13623,9 @@ TransactionLog* Document::getTransactionLog() const
     // document opened before the preference was set still gets one on
     // its next commit -- and so the transient directory exists by then.
     if (!d->transactionLog) {
-        if (DocumentParams::getTransactionLog() == 0 || d->noLog)
+        // A temporary document is a workspace: nothing of it is history
+        // (sec 33.3).
+        if (DocumentParams::getTransactionLog() == 0 || d->noLog || testStatus(TempDoc))
             return nullptr;
         if (TransientDir.getStrValue().empty())
             return nullptr;

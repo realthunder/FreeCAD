@@ -5217,6 +5217,31 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(dict(A.Comp.Shape.ElementMap), built)
         self.assertEqual([v for v in A.Hasher.Table.values() if v == B.Uid], [B.Uid])
 
+    def testATemporaryDocumentEmptiedStartsItsIdsOver(self):
+        # Sec 33.3: a temporary document has no log, and emptied it is new --
+        # the ids and the names of what is put into it are those of the
+        # first time, where the file's counters (sec 27.40) went on.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("TmpIds", hidden=True, temp=True))
+        made = []
+        for turn in range(3):
+            a = doc.addObject("Part::Box", "A")
+            b = doc.addObject("Part::Box", "B")
+            doc.recompute()
+            made.append((a.ID, a.Name, b.ID, b.Name))
+            doc.clearDocument()
+        self.assertEqual(made[1], (1, "A", 2, "B"))
+        self.assertEqual(made[2], made[1])
+        self.assertEqual(doc.getTransactionLog(), [])
+        # Any other document keeps its counters, once it has a history.
+        doc = self.track(FreeCAD.newDocument("KeptIds"))
+        first = doc.addObject("Part::Box", "A").ID
+        doc.recompute()
+        self.assertTrue(doc.getTransactionLog())
+        doc.clearDocument()
+        self.assertGreater(doc.addObject("Part::Box", "A").ID, first)
+
     def testAFeatureRefusedAFrozenInputRunsOnACopy(self):
         # Sec 27.82: an algorithm that writes into a frozen input throws
         # LockedShape; the feature runs once more on copies of its inputs,
