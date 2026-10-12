@@ -793,14 +793,6 @@ public:
     /// the tick does not invoke the command back.
     void syncChecked(const char *mode);
 
-    /// One icon on the button, whatever style the view is in: the menu
-    /// under it sets more than the style now, and the style shows in its
-    /// combo box (docs/HandsOnQueue.md entry 63). The button's tooltip
-    /// still names the active style.
-    void setActionIcon(Action *action, const QIcon &) override {
-        GroupCommand::setActionIcon(action, BitmapFactory().iconFromTheme(getPixmap()));
-    }
-
     virtual Action * createAction() {
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
@@ -823,25 +815,11 @@ public:
         // run.
         if (auto group = qobject_cast<Gui::ActionGroup*>(action))
             group->setExclusiveOptional(true);
-        // The renderer's shading options ride under the style list as a
-        // popover section: they are not exclusive with each other, so
-        // they cannot be entries in it (Gui/ShadingOptions.h). The menu
-        // is built by ActionGroup::addTo -- for the tool button and for
-        // the menu bar, and again whenever the toolbar is rebuilt -- so
-        // the section is installed on first show of each one.
-        //
-        // Two more ride with it (Gui/DisplayOptions.h): the styles
-        // themselves as one combo box at the top, in place of their rows,
-        // with the anti-aliasing beside it; and the lights of the view
-        // below the shading. In that order: the first hides what is in the
-        // menu when it runs, which has to be the rows and nothing else.
-        if (auto group = qobject_cast<Gui::ActionGroup*>(action)) {
-            QObject::connect(group, &Gui::ActionGroup::aboutToShow, [](QMenu *menu) {
-                DrawStyleOptionsWidget::install(menu);
-                ShadingOptionsWidget::install(menu);
-                LightOptionsWidget::install(menu);
-            });
-        }
+        // The list and nothing else (docs/HandsOnQueue.md entry 74). The
+        // shading options, the anti-aliasing and the lights, which rode in
+        // this menu as sections -- with the styles as a combo box at its
+        // top, since entry 63 -- are the menu of a command of their own,
+        // Std_DisplayStyle, beside this one.
         return action;
     }
 };
@@ -850,11 +828,10 @@ StdCmdDrawStyle::StdCmdDrawStyle()
   : GroupCommand("Std_DrawStyle")
 {
     sGroup        = "Standard-View";
-    sMenuText     = QT_TR_NOOP("Display style");
-    sToolTipText  = QT_TR_NOOP("Change the display style and shading of the objects");
-    sStatusTip    = QT_TR_NOOP("Change the display style and shading of the objects");
+    sMenuText     = QT_TR_NOOP("Draw style");
+    sToolTipText  = QT_TR_NOOP("Change the draw style of the objects");
+    sStatusTip    = QT_TR_NOOP("Change the draw style of the objects");
     sWhatsThis    = "Std_DrawStyle";
-    sPixmap       = "Std_DrawStyle";
     eType         = 0;
     bCanLog       = false;
     // One override mode per viewer, so the list is a pick-one: this is
@@ -907,6 +884,50 @@ void StdCmdDrawStyle::updateIcon(const MDIView *view)
         // restored document and from the console.
         syncChecked(mode.c_str());
     }
+}
+
+//===========================================================================
+// Std_DisplayStyle
+//===========================================================================
+
+/** The Display style menu: the anti-aliasing, the shading options and the
+ * lights of the active 3D view (Gui/DisplayOptions.h, Gui/ShadingOptions.h).
+ * Sections of widgets and no entry to run, so the command has an action of
+ * its own that only opens the menu. Split off Std_DrawStyle, whose list it
+ * had taken the place of (docs/HandsOnQueue.md entry 74).
+ */
+class StdCmdDisplayStyle : public Command
+{
+public:
+    StdCmdDisplayStyle();
+    const char* className() const override {return "StdCmdDisplayStyle";}
+
+protected:
+    void activated(int) override {}
+    bool isActive() override {
+        return Base::freecad_dynamic_cast<View3DInventor>(Application::Instance->activeView())
+            != nullptr;
+    }
+    Action *createAction() override {
+        Action *action = new DisplayStyleAction(this, getMainWindow());
+        applyCommandData(this->className(), action);
+        if (sPixmap)
+            action->setIcon(BitmapFactory().iconFromTheme(sPixmap));
+        return action;
+    }
+};
+
+StdCmdDisplayStyle::StdCmdDisplayStyle()
+  : Command("Std_DisplayStyle")
+{
+    sGroup        = "Standard-View";
+    sMenuText     = QT_TR_NOOP("Display style");
+    sToolTipText  = QT_TR_NOOP("The anti-aliasing, the shading and the lights of the 3D view");
+    sStatusTip    = sToolTipText;
+    sWhatsThis    = "Std_DisplayStyle";
+    sPixmap       = "Std_DisplayStyle";
+    eType         = 0;
+    bCanLog       = false;
 }
 
 //===========================================================================
@@ -5610,6 +5631,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdToggleClipPlane());
     rcCmdMgr.addCommand(new StdCmdClipPlaneDragger());
     rcCmdMgr.addCommand(new StdCmdDrawStyle());
+    rcCmdMgr.addCommand(new StdCmdDisplayStyle());
     rcCmdMgr.addCommand(new StdCmdViewSaveCamera());
     rcCmdMgr.addCommand(new StdCmdViewRestoreCamera());
     rcCmdMgr.addCommand(new StdCmdFreezeViews());

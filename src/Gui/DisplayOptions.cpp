@@ -37,6 +37,7 @@
 # include <QPointer>
 # include <QPushButton>
 # include <QSlider>
+# include <QToolBar>
 # include <QToolButton>
 # include <QWidgetAction>
 #endif
@@ -52,6 +53,7 @@
 #include "Command.h"
 #include "FileDialog.h"
 #include "MainWindow.h"
+#include "ShadingOptions.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
@@ -60,21 +62,10 @@ using namespace Gui;
 
 namespace {
 
-// What marks a row of the menu as one this section stands in for
-const char *HiddenRow = "FCDrawStyleRowHidden";
-
 View3DInventorViewer *viewerInFront()
 {
     auto view = qobject_cast<View3DInventor*>(Application::Instance->activeView());
     return view ? view->getViewer() : nullptr;
-}
-
-std::vector<Command*> styleCommands()
-{
-    auto cmd = Application::Instance->commandManager().getCommandByName("Std_DrawStyle");
-    if (auto group = dynamic_cast<GroupCommand*>(cmd))
-        return group->getCommands();
-    return {};
 }
 
 QLabel *sectionTitle(const QString &text, QWidget *parent)
@@ -112,34 +103,12 @@ void dismiss(QWidget *section)
 
 // ---------------------------------------------------------------------------
 
-DrawStyleOptionsWidget::DrawStyleOptionsWidget(QWidget *parent)
+AntiAliasingOptionsWidget::AntiAliasingOptionsWidget(QWidget *parent)
     : QWidget(parent)
 {
     auto layout = new QGridLayout(this);
     layout->setContentsMargins(12, 6, 12, 4);
     layout->setHorizontalSpacing(12);
-
-    styleCombo = new QComboBox(this);
-    styleCombo->setObjectName(QStringLiteral("DrawStyleCombo"));
-    styleCombo->setToolTip(tr("How the active 3D view draws its objects, whatever display "
-                              "mode each of them is in."));
-    for (auto cmd : styleCommands()) {
-        styleCombo->addItem(BitmapFactory().iconFromTheme(cmd->getPixmap()),
-                            Action::commandMenuText(cmd),
-                            QByteArray(cmd->getName()));
-        styleCombo->setItemData(styleCombo->count() - 1, Action::commandToolTip(cmd, false),
-                                Qt::ToolTipRole);
-    }
-    layout->addWidget(new QLabel(tr("Display style:"), this), 0, 0);
-    layout->addWidget(styleCombo, 0, 1);
-    connect(styleCombo, qOverload<int>(&QComboBox::activated), this, [this](int index) {
-        // The style's own command, as its shortcut and a macro run it:
-        // the active view's style, every view's with Ctrl held.
-        const QByteArray name = styleCombo->itemData(index).toByteArray();
-        if (!name.isEmpty())
-            Application::Instance->commandManager().runCommandByName(name.constData());
-        refresh();
-    });
 
     aliasingCombo = new QComboBox(this);
     aliasingCombo->setObjectName(QStringLiteral("AntiAliasingCombo"));
@@ -148,8 +117,8 @@ DrawStyleOptionsWidget::DrawStyleOptionsWidget(QWidget *parent)
     aliasingCombo->addItems({tr("None"), tr("Line smoothing"), tr("MSAA 2x"), tr("MSAA 4x"),
                              tr("MSAA 8x")});
     aliasingCombo->setToolTip(doc(ViewParams::docAntiAliasing()));
-    layout->addWidget(new QLabel(tr("Anti-aliasing:"), this), 1, 0);
-    layout->addWidget(aliasingCombo, 1, 1);
+    layout->addWidget(new QLabel(tr("Anti-aliasing:"), this), 0, 0);
+    layout->addWidget(aliasingCombo, 0, 1);
     connect(aliasingCombo, qOverload<int>(&QComboBox::activated), this, [](int index) {
         if (ViewParams::getAntiAliasing() != index)
             ViewParams::setAntiAliasing(index);
@@ -157,56 +126,56 @@ DrawStyleOptionsWidget::DrawStyleOptionsWidget(QWidget *parent)
     layout->setColumnStretch(1, 1);
 }
 
-void DrawStyleOptionsWidget::refresh()
+void AntiAliasingOptionsWidget::refresh()
 {
-    auto viewer = viewerInFront();
-    styleCombo->setEnabled(viewer != nullptr);
-    if (viewer) {
-        const std::string mode = viewer->getOverrideMode();
-        int index = -1;
-        int i = 0;
-        for (auto cmd : styleCommands()) {
-            // a style is set by its untranslated name (StdCmdDrawStyleBase)
-            if (mode == cmd->getMenuText())
-                index = i;
-            ++i;
-        }
-        QSignalBlocker block(styleCombo);
-        styleCombo->setCurrentIndex(index);
-    }
     QSignalBlocker block(aliasingCombo);
     const long aliasing = ViewParams::getAntiAliasing();
     aliasingCombo->setCurrentIndex(aliasing >= 0 && aliasing < aliasingCombo->count()
                                        ? int(aliasing) : -1);
 }
 
-void DrawStyleOptionsWidget::install(QMenu *menu)
+void AntiAliasingOptionsWidget::install(QMenu *menu)
 {
     if (!menu)
         return;
-    auto widget = menu->findChild<DrawStyleOptionsWidget*>();
+    auto widget = menu->findChild<AntiAliasingOptionsWidget*>();
     if (!widget) {
-        // The rows ActionGroup made, one a style: all there is in the menu
-        // when this runs first. They stay in it, hidden -- they are the
-        // commands' own actions.
-        const QList<QAction*> rows = menu->actions();
-        for (QAction *row : rows) {
-            row->setProperty(HiddenRow, true);
-            row->setVisible(false);
-        }
         auto action = new QWidgetAction(menu);
-        widget = new DrawStyleOptionsWidget(menu);
+        widget = new AntiAliasingOptionsWidget(menu);
         action->setDefaultWidget(widget);
-        menu->insertAction(rows.isEmpty() ? nullptr : rows.first(), action);
-    }
-    else {
-        // ActionGroup shows a row again when its command's state changes
-        for (QAction *row : menu->actions()) {
-            if (row->property(HiddenRow).toBool() && row->isVisible())
-                row->setVisible(false);
-        }
+        const QList<QAction*> before = menu->actions();
+        menu->insertAction(before.isEmpty() ? nullptr : before.first(), action);
     }
     widget->refresh();
+}
+
+// ---------------------------------------------------------------------------
+
+DisplayStyleAction::DisplayStyleAction(Command *cmd, QObject *parent)
+    : Action(cmd, parent)
+{
+}
+
+void DisplayStyleAction::addTo(QWidget *widget)
+{
+    if (!_menu) {
+        // One menu, the action's own: under the tool button and, as a sub
+        // menu, wherever the command stands in a menu.
+        _menu = new QMenu(getMainWindow());
+        _menu->setObjectName(QStringLiteral("DisplayStyleMenu"));
+        action()->setMenu(_menu);
+        connect(_menu, &QMenu::aboutToShow, this, [this]() {
+            AntiAliasingOptionsWidget::install(_menu);
+            ShadingOptionsWidget::install(_menu);
+            LightOptionsWidget::install(_menu);
+        });
+    }
+    widget->addAction(action());
+    if (auto bar = qobject_cast<QToolBar*>(widget)) {
+        // The button has nothing to do but open the menu
+        if (auto button = qobject_cast<QToolButton*>(bar->widgetForAction(action())))
+            button->setPopupMode(QToolButton::InstantPopup);
+    }
 }
 
 // ---------------------------------------------------------------------------

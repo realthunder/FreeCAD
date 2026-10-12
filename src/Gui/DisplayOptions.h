@@ -27,6 +27,8 @@
 #include <QWidget>
 #include <FCGlobal.h>
 
+#include "Action.h"
+
 class QCheckBox;
 class QComboBox;
 class QMenu;
@@ -39,37 +41,49 @@ namespace Gui {
 class View3DInventorViewer;
 
 /**
- * The top of the Display style menu: the draw style of the active 3D view
- * as one combo box, each style with its icon, and the anti-aliasing of the
- * 3D views as another (docs/HandsOnQueue.md entry 63).
+ * The top of the Display style menu: the anti-aliasing of the 3D views
+ * (docs/HandsOnQueue.md entries 63 and 74). It is the setting,
+ * View/AntiAliasing: the open views take a change at once.
  *
- * The menu is the group command's -- Std_DrawStyle, one sub command a
- * style, which ActionGroup lays out as a row each. Those rows are hidden
- * here and the combo stands in for them: picking an entry runs the style's
- * own command, so the shortcuts, the macro names and what the tool button
- * shows are what they were. The style is the ACTIVE view's, as it was for
- * the rows.
- *
- * The anti-aliasing is the setting, View/AntiAliasing: the open views take
- * a change at once.
+ * Until entry 74 this section also held the draw style of the active view
+ * as a combo box, standing in for the rows of Std_DrawStyle, whose menu
+ * this then was. The draw styles are Std_DrawStyle's plain list again and
+ * this menu is a command of its own, Std_DisplayStyle.
  */
-class GuiExport DrawStyleOptionsWidget : public QWidget
+class GuiExport AntiAliasingOptionsWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit DrawStyleOptionsWidget(QWidget *parent = nullptr);
+    explicit AntiAliasingOptionsWidget(QWidget *parent = nullptr);
 
-    /// Re-read the active view and the setting into the two combo boxes
+    /// Re-read the setting into the combo box
     void refresh();
 
-    /// Put this section at the top of \a menu, in place of the style rows,
-    /// unless it is there already; and refresh it.
+    /// Put this section at the top of \a menu unless it is there already;
+    /// and refresh it.
     static void install(QMenu *menu);
 
 private:
-    QComboBox *styleCombo = nullptr;
     QComboBox *aliasingCombo = nullptr;
+};
+
+/**
+ * The action of Std_DisplayStyle: a tool button, or a menu entry, that opens
+ * the Display style menu -- the anti-aliasing, the shading options
+ * (Gui/ShadingOptions.h) and the lights of the active view, a section each.
+ * It runs nothing itself.
+ */
+class GuiExport DisplayStyleAction : public Action
+{
+    Q_OBJECT
+
+public:
+    explicit DisplayStyleAction(Command *cmd, QObject *parent = nullptr);
+    void addTo(QWidget *widget) override;
+
+private:
+    QMenu *_menu = nullptr;
 };
 
 /**
