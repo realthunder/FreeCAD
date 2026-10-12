@@ -895,7 +895,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-axes-over-the-cube.py` 8 claims, no FAIL. As it stood in work at 16:36: `View/CornerCoordSystem` off by default, in the preference pack template too; the cube's axes drawn last with no depth test, in both drawing paths. OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered |
 | 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-clear-of-panels.py` 16 claims, no FAIL. As it stood in work at 16:36: the docks leave no room, `DockOverlayCheckNaviCube` removed; new `View/DockOverlayMoveNaviCube`, on by default; the cube slides along its edge clear of overlaid docks and of a task panel over its view, and back. OPEN; the request turned 16:18; the two points of before fall away; the three new ones answered 16:20: the cube slides along its edge in the same corner; with the setting off a panel simply covers it; it moves for a momentary panel too and comes back; nothing left unanswered |
 | 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
-| 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space | OPEN; a reading of the source by the note-taker, nothing run: the omni search has no "/prop" mode today; four points under the entry |
+| 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space. ANSWERED 18:29: NO new mode -- from the property view the omni search opens with text already typed that leads to the current object, document or view and ends with a dot, so the list shows all its properties; Ctrl+F applies in the tree view and the property view ONLY; the tree's "Search..." menu item is kept and opens the omni search; opened from the tree view it scrolls the tree by itself as before and sets and clears the item's background as before | OPEN; the four points answered 18:29; three smaller ones of the note-taker's under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8895,7 +8895,7 @@ a. Which widgets the reporter saw. The fix changes the one general
    the staged copy and name what is still not seen.
 b. The Light theme is not named.
 
-## 78. Retire the tree view's object search; Ctrl+F opens the omni search with "/ ", and in the property view with "/prop " (a change request) -- OPEN
+## 78. Retire the tree view's object search; Ctrl+F opens the omni search with "/ ", and in the property view with the current object's name and a dot (first said as "/prop ") (a change request) -- OPEN, the four points answered 2026-10-12 18:29
 
 **2026-10-12 18:01, the reporter** (sent while the stage of 17:52 was being
 written into this file): "new request, retire current tree view search
@@ -8948,6 +8948,49 @@ d. What the old search did in the tree -- the found item marked while
 
 Near it: entry 62 (the omni search: the recent items before the three
 modes).
+
+**2026-10-12 18:29, the reporter answers the four points:** "Entry 78, a, no
+new mode, just launch omni search with pre typed text leads to the current
+object/document/view, ending with dot, so the list shows all the
+properties.  B, only applies to tree and property view. C, keep, trigger
+omni search. D, when launched by tree view, yes, auto scroll like before,
+set and clear item background as before."
+
+The note-taker's reading:
+- a. NO new mode. Ctrl+F in the property view opens the omni search with
+  text ALREADY TYPED: what leads to the thing the property view is
+  showing -- an object, a document or a view -- and a dot at its end, so
+  that the list under the box is all the properties of that thing. The
+  "/prop " of the first message is replaced by this; whether the typed
+  text begins with "/ " (the object mode's prefix) is not said and is the
+  builder's to choose so that it works.
+- b. Ctrl+F is hooked in the TREE VIEW and in the PROPERTY VIEW only --
+  not in the whole main window.
+- c. The "Search..." item of the tree's context menu is KEPT, and opens
+  the omni search.
+- d. When the omni search is opened FROM THE TREE VIEW (the key or the
+  menu item), the tree behaves as with the old search: it scrolls to the
+  item found by itself, and the item's background is set while it is the
+  one found and cleared after, as before. So of the old function it is
+  the search BOX under the tree that is retired, not what the tree shows
+  while searching.
+
+READ in the source, nothing run: the omni search resolves properties of
+an object, of a view provider, of a document and of a 3D view already --
+`src/Gui/OmniControl.cpp`, about lines 460 to 545, names the scopes
+"object", "view", "document" and "view3d". So a text that leads to each
+of the three should exist; what it is for each is not read here.
+
+NOT said, the note-taker's count -- smaller, none holds the work:
+e. The property view showing SEVERAL selected objects: the text leads to
+   which -- the first, the last selected, or nothing typed?
+f. Opened from the tree view, RETURN on a row: the old search selected
+   the item in the tree. Taken as: whatever the omni search does on
+   Return today, and the tree's mark cleared. Say if the old selection is
+   wanted.
+g. Opened another way (the "/" key, the tool bar): the tree is NOT
+   scrolled and marked -- the note-taker's reading of "when launched by
+   tree view".
 
 ## Inbox
 
