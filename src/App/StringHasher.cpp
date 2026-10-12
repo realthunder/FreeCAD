@@ -773,6 +773,19 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         }
     }
 
+    // The string as it is kept -- its postfix said by id, its index taken
+    // off -- is not the one looked up above, and the table takes one string
+    // under two ids (sec 27.41 Q2): it is looked up as kept before it is
+    // put in, or every asking would make it again under a new id.
+    StringID* kept = nullptr;
+    auto range = _hashes->left.equal_range(&newStringID);
+    for (auto i = range.first; i != range.second; ++i) {
+        if (!kept || i->first->_id < kept->_id)
+            kept = i->first;
+    }
+    if (kept)
+        return {kept, indexed.getIndex()};
+
     return {insert(newStringIDRef), indexed.getIndex()};
 }
 
