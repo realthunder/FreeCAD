@@ -141,6 +141,7 @@ class Client(threading.Thread):
         self.toggled3 = threading.Event()
         self.clicked3 = threading.Event()
         self.undo_reply = None
+        self.undo1_reply = None
         self.tool_reply = None
         self.on3_reply = None
         self.refused = None
@@ -204,6 +205,11 @@ class Client(threading.Thread):
         # The other way round: this client enters, the desktop joins and
         # starts the tool.
         desktop_left.wait(30.0)
+        ws.drain(0.5)
+        # What the first run made is this client's step, whoever's tool it
+        # clicked for (docs/TransactionLog.md sec 30.10), so it is this
+        # client that takes it back, for the second to start as the first.
+        self.undo1_reply = ws.op('{"id":15,"op":"undo"}')
         ws.drain(0.5)
         self.edit_reply = ws.op('{"id":4,"op":"edit","obj":"%s","mode":0}' % OBJ)
         ws.drain(0.5)
@@ -293,7 +299,9 @@ def sample():
     sk = sketch()
     return {"ext": external_geometry(),
             "cons": [(c.Type, c.First, c.Second) for c in sk.Constraints],
-            "undo": state["doc"].UndoCount, "mode": mode()}
+            # the client's steps: its clicks made them, in whoever's session
+            # and with whoever's tool (docs/TransactionLog.md sec 30.10)
+            "undo": wsclient.client_undos(state["doc"]), "mode": mode()}
 
 
 def build():
@@ -375,9 +383,9 @@ def poll():
                 gdoc().resetEdit()
 
                 def undo_first():
-                    # what the first run made goes, for the second to
-                    # start as the first did
-                    # (leaving the edit recorded a step of its own on top)
+                    # leaving the edit recorded a step of the desktop's
+                    # own on top of the client's: that one goes here, the
+                    # client's by the client's own undo
                     while state["doc"].UndoCount:
                         state["doc"].undo()
                     state["doc"].recompute()
@@ -484,6 +492,10 @@ def verify():
 
         # The session the client began.
         before, toggled, after = state["before2"], state["toggled2"], state["after2"]
+        reply = reply_of(client.undo1_reply)
+        check("the first run was the client's step, and its undo takes it back",
+              reply.get("ok") is True and reply.get("undos") == []
+              and len(reply.get("redos", [])) == 1, reply)
         reply = reply_of(client.edit_reply)
         check("the client's edit is accepted", reply.get("ok") is True, reply)
         check("the desktop window joined the client's session",

@@ -425,9 +425,13 @@ def run():
         doc.addObject("Spreadsheet::Sheet", "Numbers")
         doc.recompute()
         settle(1.5)
-        if not check("one cell, at least 900 x 500, to start from",
+        # The cell is 538 high on the Windows box this was written on and 484
+        # under xvfb on Linux. The scenarios want less than either: the nested
+        # gesture puts two cells of the 200 minimum one over the other, 403
+        # with the border, in a cell the first refusal's report has made shorter
+        if not check("one cell, at least 900 x 460, to start from",
                      area() is not None and len(cells()) == 1
-                     and rects()[0].width() >= 900 and rects()[0].height() >= 500,
+                     and rects()[0].width() >= 900 and rects()[0].height() >= 460,
                      show(rects()) if area() else None):
             return
         default_scenario()

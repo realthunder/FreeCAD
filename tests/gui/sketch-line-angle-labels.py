@@ -114,6 +114,11 @@ def run():
         import Sketcher
 
         if MODE is not None:
+            # another render cache mode is a setting only under the render
+            # type "Legacy": with the render engine it is 3 whatever is stored
+            if int(MODE) != 3:
+                FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
+                    "Type", "Legacy")
             FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
                 "RenderCache", int(MODE))
         V = FreeCAD.Vector

@@ -143,9 +143,31 @@ Right-click a row:
 | **Copy script** | The text the row carries besides its operations, where it has any. |
 | **Copy row** | The row as text. |
 | **Undo row N** | Undoes this one step, though it is not the last: a new step that reverses it. Refused, with the reason in the report view, when something later changed what it touched. It is also the way to take back an `implicit` row by itself. |
+| **Undo N rows** | The same with several rows selected: they are undone together, newest first, as one new step -- one Undo brings them all back. All of them or none: if one cannot be undone, nothing moves, and the report view says which and why. Rows that depend on each other go together where each alone would be refused -- the step that made an object and a later one that edited it. |
 | **Apply row N here...** | For a row of *another* branch: what it set is written to this branch as a step of its own, after a preview like a merge's. Select several rows first to apply them together. Greyed for rows of this branch -- undo and redo are for those. |
 | **Branch from here...** | A new branch whose history ends at this row, switched to. |
 | **Roll back the merge of X...** | Appears when the last thing done was undoing a merge: takes the merge and its undo out of the log, so X counts as not merged. |
+
+### Edit > Undo and the log
+
+Edit > Undo and Redo work on the steps you named; the log records more.
+
+- **A change made without a name goes with the step before it.** A
+  recompute, or a property set from the Python console, is an `implicit`
+  row. It is not in the undo list. One Undo takes the named step and the
+  implicit rows after it; one Redo puts them back.
+- **Several steps at once.** The arrow beside Undo lists the steps, newest
+  first. Clicking one undoes every step from the newest down to it. The same
+  for Redo. Steps in the middle cannot be picked there: for one of those,
+  **Undo row N** in the row's menu, and for several, select them and
+  **Undo N rows**.
+- **A step that cannot be undone or redone** is said in a dialog, with the
+  reason -- most often that something written since changed what the step
+  set, and which row did. Nothing in the document moves. **Skip this step**
+  leaves it where it is and takes the step after it; **Cancel** does nothing.
+  The step stays in the list, and is asked about again the next time.
+- A change made without a name does not empty the redo list, as a named step
+  does. A redo is refused only if that change set the same property.
 
 ## 6. Seeing a change in the 3D view
 
@@ -357,7 +379,7 @@ The list has one line per change the other branch made:
 
 | Change | Meaning | What you do |
 |---|---|---|
-| **conflict** (bold, first) | Both branches changed it, differently. | Pick a side in the **Takes** column: `ours` or `theirs`. |
+| **conflict** (bold, first) | Both branches changed it, differently. | Pick a side in the **Takes** column: `ours` or `theirs`. It starts on `ours`. The setting `MergeConflictSide` (Preferences/Document) changes that: 1 starts it on `theirs`, 2 starts it with no side, and **Merge** then waits until you have picked one for each. |
 | **take** | Only the other branch changed it; it goes in. | Untick it to leave it out. |
 | **merge** | Both changed it, and it holds many things (a sketch's constraints, a sheet's cells); the two are combined. | Untick to leave theirs out. |
 | **derived** (grey) | A shape their recompute made. Not merged: the result is recomputed. | Nothing. |
@@ -377,6 +399,35 @@ offers `base against ours` and `base against theirs` too. Select a line of
 the list to see that one change over its object:
 
 ![One change of the merge selected](images/transaction-log/12-merge-one-change.png)
+
+### What the merge would make
+
+`ours against theirs` shows the other branch, which is not what you get: a
+merge keeps what you changed and adds what they changed. The last entry of
+the list, **ours against the result**, shows that. Here this branch made
+the box taller and the other made it longer and added a ball. Against
+theirs, the height you added shows as removed:
+
+![Ours against theirs](images/transaction-log/12-merge-result-theirs.png)
+
+Against the result it is kept, the extra length is added, and the ball is
+there as new:
+
+![Ours against the result](images/transaction-log/12-merge-result.png)
+
+The result is worked out when you choose that entry, with the sides picked
+as they are at that moment, and again when you pick another side or untick
+a change. It is made in a hidden copy of the document, so nothing here
+changes: no undo step, and a step you had undone can still be redone. On a
+large document expect to wait about as long as opening it takes.
+
+The status line also says what the picture cannot: how many objects the
+merge makes or removes, and **which objects fail to compute in the result**.
+Two changes that each work alone can break a feature together; this tells
+you before you merge.
+
+When the other branch is simply ahead of this one (a fast-forward), the
+result is that branch, and the line says so.
 
 The preview **does not block the rest of the application**: turn the view,
 pick objects, hide things, while it is open.
@@ -438,6 +489,7 @@ open it.
 | follow one object through the history | add it to "Objects:", then step through the rows |
 | compare the document now with an earlier state | Versions: select the version; "Changed since" |
 | undo one step that is not the last | right-click the row, **Undo row N** |
+| undo several steps that are not the last, together | select the rows, right-click, **Undo N rows** |
 | go back to an earlier state | Versions: right-click, **Restore to version N** |
 | look at an earlier state without changing anything | Versions: right-click, **Open version N** |
 | mark a state so it is never dropped | Versions: right-click, **Name version N...** |
@@ -465,7 +517,7 @@ Everything the panel does is a method of the document.
 | the versions | `doc.getTransactionVersions()` |
 | Changed since | `doc.compareTransactionStates(seq, 0)` |
 | Restore, Open version | `doc.restoreTransactionVersion(num)`, `doc.openTransactionVersion(num)` |
-| Undo row | `doc.undoTransactionFromLog(seq)` |
+| Undo row, Undo N rows | `doc.undoTransactionFromLog(seq)`, `doc.undoTransactionFromLog([seq, ...])` |
 | Branch, switch, rename, delete | `doc.createTransactionBranch(name)`, `doc.switchTransactionBranch(name)`, `doc.renameTransactionBranch(...)`, `doc.deleteTransactionBranch(name)` |
 | the merge's preview, the merge | `doc.previewTransactionMerge(name)`, `doc.mergeTransactionBranch(name, picks)` |
 | Apply rows | `doc.previewTransactionPick(rows)`, `doc.pickTransactions(rows, picks)` |

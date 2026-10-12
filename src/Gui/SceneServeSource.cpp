@@ -59,6 +59,7 @@
 #endif
 
 #include <App/DocumentObserver.h>
+#include <App/ElementNamingUtils.h>
 #include <App/Actor.h>
 #include <App/Application.h>
 #include <Base/Tools.h>
@@ -954,7 +955,10 @@ public:
             json += "{\"obj\":";
             jsonQuoted(json, sel.FeatName ? sel.FeatName : "");
             json += ",\"sub\":";
-            jsonQuoted(json, sel.SubName ? sel.SubName : "");
+            // The element under its plain name (Face6): the one a viewer
+            // can place. An object that names its elements -- a box does,
+            // by role -- has the selection hold the mapped name with it.
+            jsonQuoted(json, Data::oldElementName(sel.SubName ? sel.SubName : ""));
             json += '}';
         }
         json += "]}";

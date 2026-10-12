@@ -99,8 +99,11 @@ def grab(widget, name, within=None):
 
 
 def window_buttons():
-    return [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QPushButton)
-            if w.metaObject().className() == "WindowDecorationButton" and w.isVisible()]
+    """The window buttons of the custom title bar: the kit's own on Windows
+    and with its generic backend, the Linux backend's in their place"""
+    return [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QAbstractButton)
+            if w.metaObject().className() in ("WindowDecorationButton", "LinuxWindowButton")
+            and w.isVisible()]
 
 
 def report_edit():
@@ -113,10 +116,15 @@ def report_edit():
 def look(tag, theme, dialog, sheet_view):
     mw = FreeCADGui.getMainWindow()
     buttons = window_buttons()
-    check("%s: the custom title bar has its window buttons" % tag, len(buttons) >= 3, len(buttons))
-    for b in buttons:
-        ok, detail = drawn(grab(b, "%s-%s" % (tag, b.objectName()), mw))
-        check("%s: the glyph of %s stands out from the title bar" % (tag, b.objectName()), ok, detail)
+    # the Linux backend has the buttons the desktop asks for (gsettings,
+    # kwinrc): a stock GNOME has the one that closes, and they have no name
+    least = 1 if mw.property("backend") == "linux" else 3
+    check("%s: the custom title bar has its window buttons" % tag, len(buttons) >= least,
+          len(buttons))
+    for i, b in enumerate(buttons):
+        name = b.objectName() or "button %d" % i
+        ok, detail = drawn(grab(b, "%s-%s" % (tag, name), mw))
+        check("%s: the glyph of %s stands out from the title bar" % (tag, name), ok, detail)
 
     for name in ("unchecked", "radio"):
         w = dialog.findChild(QtWidgets.QWidget, name)

@@ -89,9 +89,11 @@ def derived(automatic):
     pad.Length = 5
     doc.recompute()
     settle(1.0)
-    check("the sketch's edge colour is green (%s)" % ("automatic" if automatic else "its own"),
-          all(abs(a - b) < 0.01 for a, b in zip(sk.ViewObject.LineColor[:3], GREEN)),
-          sk.ViewObject.LineColor[:3])
+    # What it is drawn in: under AutoColor that is the preference's and not
+    # the property, which stays the sketch's own (getDrawnColors())
+    shown = [tuple(round(v, 2) for v in c[:3]) for c in sk.ViewObject.getDrawnColors()["Edge"]]
+    check("the sketch's edges are drawn green (%s)" % ("automatic" if automatic else "its own"),
+          shown and all(abs(a - b) < 0.01 for c in shown for a, b in zip(c, GREEN)), shown)
     return {o.Name: edge_colours(o) for o in (ext, face, comp, pad)}
 
 

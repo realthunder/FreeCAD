@@ -301,10 +301,18 @@ public:
     /// per-face colour path while diffuse is the only field that varies,
     /// the whole-material path once any other field does.
     void applyShapeAppearance();
-    void setHighlightedEdges(const std::vector<App::Color>& colors);
+    /// The colours the edges, and the points, are drawn in. Virtual for a
+    /// kind of view provider that draws in other colours than its
+    /// properties say -- a sketch in the theme's, under AutoColor -- and
+    /// leaves the properties, which are the object's, alone.
+    virtual void setHighlightedEdges(const std::vector<App::Color>& colors);
     void unsetHighlightedEdges();
-    void setHighlightedPoints(const std::vector<App::Color>& colors);
+    virtual void setHighlightedPoints(const std::vector<App::Color>& colors);
     void unsetHighlightedPoints();
+    /// The colours on the screen by kind -- "Edge", "Vertex", and what a
+    /// kind of view provider adds -- as the nodes hold them, which need not
+    /// be what the properties say
+    virtual void getDrawnColors(std::map<std::string, std::vector<App::Color>> &colors) const;
 
     void enableFullSelectionHighlight(bool face=true, bool line=true, bool point=true);
 

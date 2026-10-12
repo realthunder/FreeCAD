@@ -272,11 +272,11 @@ bool ShaderGraphView::onMsg(const char *msg, const char **)
     // The editor is a view over a property: its undo is the
     // document's (docs/ShaderGraphEditor.md sec 4.1).
     if (std::strcmp(msg, "Undo") == 0) {
-        getGuiDocument()->undo(1);
+        getGuiDocument()->undo(1, true);
         return true;
     }
     if (std::strcmp(msg, "Redo") == 0) {
-        getGuiDocument()->redo(1);
+        getGuiDocument()->redo(1, true);
         return true;
     }
     return false;

@@ -5,6 +5,7 @@
 # is given.
 
 import collections
+import math
 import os
 import tempfile
 import unittest
@@ -528,3 +529,194 @@ class KeptShapesTest(unittest.TestCase):
         self.reopened()
         self.assertIsNone(self.read(first))
 
+
+
+class MergedResultTest(unittest.TestCase):
+    """Document.previewTransactionMergeResult(): what a merge would make, in a
+    document of its own (docs/TransactionLog.md sec 32.17)."""
+
+    def setUp(self):
+        self.setting = App.ParamGet("User parameter:BaseApp/Preferences/Document")
+        self.log = self.setting.GetInt("TransactionLog", 2)
+        self.setting.SetInt("TransactionLog", 2)
+        self.doc = App.newDocument("MergedResult")
+        self.doc.UndoMode = 1
+        self.doc.openTransaction("base")
+        self.box = self.doc.addObject("Part::Box", "Box")
+        self.cyl = self.doc.addObject("Part::Cylinder", "Cyl")
+        self.cyl.Radius, self.cyl.Height = 2, 30
+        self.cyl.Placement.Base = App.Vector(5, 5, -10)
+        self.cut = self.doc.addObject("Part::Cut", "Cut")
+        self.cut.Base, self.cut.Tool = self.box, self.cyl
+        self.doc.recompute()
+        self.doc.commitTransaction()
+        self.doc.saveAs(os.path.join(tempfile.mkdtemp(prefix="fc-sd-result-"), "result.FCStd"))
+        self.results = []
+
+    def tearDown(self):
+        for name in self.results:
+            if name in App.listDocuments():
+                App.closeDocument(name)
+        App.closeDocument(self.doc.Name)
+        self.setting.SetInt("TransactionLog", self.log)
+
+    def edit(self, name, obj=None, **values):
+        self.doc.openTransaction(name)
+        for prop, value in values.items():
+            setattr(obj or self.box, prop, value)
+        self.doc.recompute()
+        self.doc.commitTransaction()
+
+    def result(self, *args):
+        out = self.doc.previewTransactionMergeResult("side", *args)
+        if out["document"]:
+            self.results.append(out["document"].Name)
+        return out
+
+    def state(self):
+        doc = self.doc
+        return (
+            [(o.Name, o.ID, tuple(o.State), o.Shape.Volume) for o in doc.Objects],
+            doc.UndoCount,
+            doc.RedoCount,
+            [r["seq"] for r in doc.getTransactionLog() if r["kind"] != "snapshot"],
+            sorted(b["name"] for b in doc.getTransactionBranches()),
+        )
+
+    def testTheResultIsWhatTheMergeMakes(self):
+        doc, cut = self.doc, self.cut
+        doc.createTransactionBranch("side")
+        self.edit("side: longer", Length=14)
+        doc.switchTransactionBranch("main")
+        self.edit("main: taller", Height=12)
+        # A step undone, which a merge would take the redo of
+        self.edit("main: wider", Width=11)
+        doc.undo()
+        before = self.state()
+        self.assertEqual(doc.RedoCount, 1)
+        out = self.result()
+        res = out["document"]
+        self.assertIsNotNone(res)
+        self.assertFalse(out["theirs"])
+        self.assertEqual((out["failed"], out["unresolved"], out["removed"]), ([], [], []))
+        # Nothing here moved: no step, no row but the tip's version, the
+        # redo still there, no branch, and this the active document
+        self.assertEqual(self.state(), before)
+        self.assertEqual(App.ActiveDocument.Name, doc.Name)
+        # In the result: both sides' numbers, computed, under the same ids
+        made = res.getObject("Cut")
+        self.assertEqual(made.ID, cut.ID)
+        self.assertEqual((res.Box.Length.Value, res.Box.Height.Value), (14, 12))
+        self.assertAlmostEqual(made.Shape.Volume, 14 * 10 * 12 - math.pi * 4 * 12)
+        self.assertEqual(
+            {(v["object"], v["prop"], v["here"]) for v in out["values"]},
+            {("Box", "Shape", True), ("Cut", "Shape", True)},
+        )
+        volume, names = made.Shape.Volume, dict(made.Shape.ElementReverseMap)
+        App.closeDocument(res.Name)
+        # Asked again, the tip is a version already: not one row more
+        rows = len(doc.getTransactionLog())
+        App.closeDocument(self.result()["document"].Name)
+        self.assertEqual(len(doc.getTransactionLog()), rows)
+        # And the merge makes that
+        self.assertEqual(doc.mergeTransactionBranch("side")["failed"], [])
+        self.assertAlmostEqual(cut.Shape.Volume, volume)
+        self.assertEqual(dict(cut.Shape.ElementReverseMap), names)
+
+    def testASideForAConflict(self):
+        doc = self.doc
+        doc.createTransactionBranch("side")
+        self.edit("side: longer", Length=14)
+        doc.switchTransactionBranch("main")
+        self.edit("main: shorter", Length=8)
+        before = self.state()
+        # With no side the merge is refused, and so there is no result
+        out = self.result()
+        self.assertIsNone(out["document"])
+        self.assertEqual([c["key"] for c in out["unresolved"]], ["Box.Length"])
+        theirs = self.result({"Box.Length": "theirs"})
+        self.assertEqual(theirs["document"].Box.Length.Value, 14)
+        self.assertAlmostEqual(
+            theirs["document"].Cut.Shape.Volume, 14 * 10 * 10 - math.pi * 4 * 10
+        )
+        # Ours kept: nothing of theirs goes in, and nothing is computed
+        ours = self.result({}, "ours")
+        self.assertEqual(ours["document"].Box.Length.Value, 8)
+        self.assertEqual(ours["values"], [])
+        self.assertNotEqual(ours["document"].Name, theirs["document"].Name)
+        self.assertEqual(self.state(), before)
+
+    def testAFastForwardIsTheirs(self):
+        doc = self.doc
+        doc.createTransactionBranch("side")
+        self.edit("side: longer", Length=14)
+        doc.switchTransactionBranch("main")
+        before = self.state()
+        out = self.result()
+        self.assertTrue(out["theirs"])
+        self.assertIsNone(out["document"])
+        self.assertEqual(self.state(), before)
+
+    def testWhatTheirsMadeAndWhatFailsThere(self):
+        doc, box = self.doc, self.box
+        doc.openTransaction("a fillet")
+        fillet = doc.addObject("Part::Fillet", "Fillet")
+        fillet.Base = box
+        fillet.Edges = [(1, 1.0, 1.0)]
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertTrue(fillet.isValid())
+        doc.createTransactionBranch("side")
+        self.edit("side: rounder", fillet, Edges=[(1, 4.0, 4.0)])
+        doc.openTransaction("side: a ball")
+        doc.addObject("Part::Sphere", "Ball")
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertTrue(fillet.isValid())
+        doc.switchTransactionBranch("main")
+        self.edit("main: thin", Length=3)
+        self.assertTrue(fillet.isValid())
+        before = self.state()
+        out = self.result()
+        res = out["document"]
+        # Neither side failed, and the two together do: said before the merge
+        self.assertEqual(out["failed"], ["Fillet"])
+        self.assertFalse(res.Fillet.isValid())
+        self.assertTrue(fillet.isValid())
+        # What theirs made is in the result, and not here
+        ball = [v for v in out["values"] if v["object"] == "Ball"]
+        self.assertEqual([(v["prop"], v["here"]) for v in ball], [("Shape", False)])
+        self.assertIsNotNone(res.getObject("Ball"))
+        self.assertIsNone(doc.getObject("Ball"))
+        self.assertEqual(self.state(), before)
+
+    def testRowsApplied(self):
+        doc = self.doc
+        doc.createTransactionBranch("side")
+        self.edit("side: longer", Length=14)
+        self.edit("side: taller", Height=20)
+        rows = [r["seq"] for r in doc.getTransactionLog() if r["name"] == "side: longer"]
+        doc.switchTransactionBranch("main")
+        self.edit("main: wider", Width=11)
+        before = self.state()
+        out = doc.previewTransactionPickResult(rows)
+        res = out["document"]
+        self.results.append(res.Name)
+        self.assertEqual(
+            (res.Box.Length.Value, res.Box.Width.Value, res.Box.Height.Value), (14, 11, 10)
+        )
+        self.assertAlmostEqual(res.Cut.Shape.Volume, 14 * 11 * 10 - math.pi * 4 * 10)
+        self.assertEqual(self.state(), before)
+
+    def testNotWhileAChangeIsBeingMade(self):
+        doc = self.doc
+        doc.createTransactionBranch("side")
+        self.edit("side: longer", Length=14)
+        doc.switchTransactionBranch("main")
+        self.edit("main: taller", Height=12)
+        doc.openTransaction("being made")
+        self.box.Width = 11
+        with self.assertRaises(RuntimeError):
+            doc.previewTransactionMergeResult("side")
+        doc.abortTransaction()
+        self.assertNotIn("_merged", "".join(App.listDocuments()))

@@ -75,8 +75,13 @@ void UndoDialog::onSelected()
     auto a = static_cast<QAction*>(sender());
     QList<QAction*> acts = this->actions();
     for (QList<QAction*>::Iterator it = acts.begin(); it != acts.end(); ++it) {
+        // A step that did not go -- refused, and the user did not go on
+        // past it -- ends the run: the next message would try it again.
+        MDIView* mdi = getMainWindow()->activeWindow();
+        const auto before = mdi ? mdi->undoActions().size() : 0;
         Gui::Application::Instance->sendMsgToActiveView("Undo");
-        if (*it == a)
+        mdi = getMainWindow()->activeWindow();
+        if (*it == a || !mdi || mdi->undoActions().size() >= before)
             break;
     }
 }
@@ -121,8 +126,11 @@ void RedoDialog::onSelected()
     auto a = static_cast<QAction*>(sender());
     QList<QAction*> acts = this->actions();
     for (QList<QAction*>::Iterator it = acts.begin(); it != acts.end(); ++it) {
+        MDIView* mdi = getMainWindow()->activeWindow();
+        const auto before = mdi ? mdi->redoActions().size() : 0;
         Gui::Application::Instance->sendMsgToActiveView("Redo");
-        if (*it == a)
+        mdi = getMainWindow()->activeWindow();
+        if (*it == a || !mdi || mdi->redoActions().size() >= before)
             break;
     }
 }

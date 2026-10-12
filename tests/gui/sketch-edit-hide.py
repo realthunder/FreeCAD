@@ -106,6 +106,11 @@ def quiet(sketch):
     which is not what is under test), no grid over the samples, and the
     shape drawn red so the frame tells it from the edit geometry."""
     vo = sketch.ViewObject
+    # Its own colours are what is drawn only with AutoColor off: on, the
+    # sketch is drawn in the theme's whatever they say
+    # (docs/TransactionLog.md sec 33.15)
+    if hasattr(vo, "AutoColor"):
+        vo.AutoColor = False
     vo.LineColor = (1.0, 0.0, 0.0)
     vo.PointColor = (1.0, 0.0, 0.0)
     for prop, value in (("HideDependent", False), ("ShowGrid", False),

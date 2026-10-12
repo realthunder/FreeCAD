@@ -465,10 +465,14 @@ public:
     std::vector<std::string> getUndoVector() const;
     /// Get an Redo string vector with the Redo names
     std::vector<std::string> getRedoVector() const;
-    /// Will UNDO one or more steps
-    void undo(int iSteps);
-    /// Will REDO one or more steps
-    void redo(int iSteps) ;
+    /** Will UNDO one or more steps. With \a ask, a step the document
+     * refuses is said in a dialog with the reason, and the step after it
+     * offered (docs/TransactionLog.md sec 33.11): for the user's own undo,
+     * not for one a script or a client asks for.
+     */
+    void undo(int iSteps, bool ask = false);
+    /// Will REDO one or more steps; \a ask as for undo()
+    void redo(int iSteps, bool ask = false);
     /** Whether undo/redo of \a iSteps here would ask the user first.
      *
      * checkTransactionID puts up a QMessageBox when a grouped transaction
@@ -550,6 +554,13 @@ private:
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);
+    /// undo() and redo(): the steps, a refused one asked about and left
+    void undoOrRedo(bool undo, int iSteps, bool ask);
+    /// Take up to \a iSteps steps, leaving the \a skipped newest; how many
+    /// were taken, -1 when the user called it off
+    int takeSteps(bool undo, int iSteps, int skipped);
+    /// Say a refused step and offer the one after; true to go on to it
+    bool askToSkip(bool undo, int skipped, const std::string& why);
     /// The scan behind checkTransactionID: the other documents that hold
     /// the same transaction ids, how many steps each, and which of them
     /// would need the user asked.

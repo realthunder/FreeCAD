@@ -26,6 +26,8 @@
 #ifndef _PreComp_
 # include <BRepOffsetAPI_DraftAngle.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>
+# include <BRep_Tool.hxx>
+# include <Standard_Version.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
 # include <TopExp.hxx>
 # include <TopoDS.hxx>
@@ -49,6 +51,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Tools.h>
+#include <Mod/Part/App/CellDraft.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/TopoShape.h>
 
@@ -63,6 +66,9 @@ FC_LOG_LEVEL_INIT("PartDesign", true,true)
 
 
 PROPERTY_SOURCE(PartDesign::Draft, PartDesign::DressUp)
+
+const char *DraftMethodEnums[] = {"Auto", "Classic", "New", nullptr};
+enum DraftMethod { MethodAuto, MethodClassic, MethodNew };
 
 const App::PropertyAngle::Constraints Draft::floatAngle = { -90.0,90.0 - Base::toDegrees<double>(Precision::Angular()), 0.1 };
 
@@ -79,6 +85,24 @@ Draft::Draft()
     ADD_PROPERTY_TYPE(_NeutralSense,(0),"Draft",
             (App::PropertyType)(App::Prop_Hidden|App::Prop_Output),
             "The side of that edge the guessed plane faces");
+    ADD_PROPERTY_TYPE(Method,(long(MethodAuto)),"Draft",App::Prop_None,
+            "Auto: the classic draft, and the new one if that fails.\n"
+            "Classic: OCCT's draft, which keeps the topology of the base\n"
+            "shape and refuses a draft that would change it.\n"
+            "New: a draft that can change topology: neighbours grow or\n"
+            "shrink to meet the drafted face, and a face split in coplanar\n"
+            "pieces drafts as one face.");
+    Method.setEnums(DraftMethodEnums);
+    ADD_PROPERTY_TYPE(StopAtBody,(true),"Draft",App::Prop_None,
+            "New draft only: a drafted face stops at the body. Where it\n"
+            "leans out, its neighbours grow to meet it, but not past a face\n"
+            "of the body that has the whole body on its inner side.");
+    ADD_PROPERTY_TYPE(TangentPropagation,(true),"Draft",App::Prop_None,
+            "A drafted face takes the faces tangent to it along: the fillets\n"
+            "beside it, the walls beyond them, and so on. Off, only the\n"
+            "faces picked are drafted, as if drafted before the fillets: a\n"
+            "fillet beside them that is not picked is made again at its\n"
+            "radius. The classic draft always takes them.");
 }
 
 namespace
@@ -268,7 +292,10 @@ short Draft::mustExecute() const
         Angle.isTouched() ||
         NeutralPlane.isTouched() ||
         PullDirection.isTouched() ||
-        Reversed.isTouched())
+        Reversed.isTouched() ||
+        Method.isTouched() ||
+        StopAtBody.isTouched() ||
+        TangentPropagation.isTouched())
         return 1;
     return DressUp::mustExecute();
 }
@@ -412,30 +439,130 @@ App::DocumentObjectExecReturn *Draft::execute()
     computeProps = {pullDirection, neutralPlane};
 
     this->positionByBaseFeature();
-    try {
-        // Note:
-        // LocOpe_SplitDrafts can split a face with a wire and apply draft to both parts
-        //       Not clear though whether the face must have free boundaries
-        // LocOpe_DPrism can create a stand-alone draft prism. The sketch can only have a single
-        //       wire, though.
-        // BRepFeat_MakeDPrism requires a support for the operation but will probably support multiple
-        //       wires in the sketch
+
+    std::vector<TopoDS_Face> pickedFaces;
+    for (const auto& f : faces)
+        pickedFaces.push_back(TopoDS::Face(f.getShape()));
+
+    long method = Method.getValue();
+    bool propagate = TangentPropagation.getValue();
+    if (!propagate) {
+        // The classic draft cannot stop at a fillet: it drafts the tangent
+        // chain whatever it is told (docs/NewDraft.md section 17.2). Where no
+        // picked face has a tangent face that was not picked, the option
+        // changes nothing; else only the cell draft can leave it out.
+        std::vector<TopoDS_Face> tangent;
+        try {
+            tangent = Part::CellDraft::TangentFaces(baseShape.getShape(), pickedFaces);
+        } catch (Standard_Failure &) {
+        }
+        if (tangent.empty())
+            propagate = true;
+        else if (method == MethodClassic) {
+            std::string names;
+            for (const auto& f : tangent) {
+                int idx = baseShape.findShape(f);
+                if (idx > 0)
+                    names += (names.empty() ? "" : ", ") + std::string("Face") + std::to_string(idx);
+            }
+            return new App::DocumentObjectExecReturn(
+                "Tangent propagation is off, but the classic draft always drafts the faces "
+                "tangent to the drafted ones (" + names + "); use the New or Auto method, "
+                "or turn tangent propagation on");
+        }
+        else
+            method = MethodNew;
+    }
+
+    // Note:
+    // LocOpe_SplitDrafts can split a face with a wire and apply draft to both parts
+    //       Not clear though whether the face must have free boundaries
+    // LocOpe_DPrism can create a stand-alone draft prism. The sketch can only have a single
+    //       wire, though.
+    // BRepFeat_MakeDPrism requires a support for the operation but will probably support multiple
+    //       wires in the sketch
+    auto makeDraft = [&](const TopoShape &base, const std::vector<TopoShape> &draftFaces,
+                         bool cell, std::string &error) {
         TopoShape shape(0,getDocument()->getStringHasher());
         try {
-            shape.makEDraft(baseShape,faces,pullDirection,angle,neutralPlane);
-        }catch(Standard_Failure &e) {
-            std::ostringstream ss;
-            ss << "Failed to create draft: " << e.GetMessageString();
-            return new App::DocumentObjectExecReturn(ss.str().c_str());
+            shape.makEDraft(base,draftFaces,pullDirection,angle,neutralPlane,
+                            true,nullptr,cell,StopAtBody.getValue(),propagate);
+            if (shape.isNull()) {
+                error = "Resulting shape is null";
+                return TopoShape();
+            }
+            shape = getSolid(shape);
+            if (shape.isNull())
+                error = "Resulting shape is not a solid";
+            return shape;
+        } catch (Standard_Failure &e) {
+            const char *msg = e.GetMessageString();
+            if (!msg || !*msg) {
+#if OCC_VERSION_HEX >= 0x080000
+                msg = e.ExceptionType();
+#else
+                msg = e.DynamicType()->Name();
+#endif
+            }
+            error = std::string("Failed to create draft: ") + msg;
+        } catch (Base::Exception &e) {
+            error = std::string("Failed to create draft: ") + e.what();
         }
-        if (shape.isNull())
-            return new App::DocumentObjectExecReturn("Resulting shape is null");
+        return TopoShape();
+    };
 
-        this->Shape.setValue(getSolid(shape));
-        return App::DocumentObject::StdReturn;
+    std::string error;
+    TopoShape result;
+    if (method != MethodNew) {
+        result = makeDraft(baseShape, faces, false, error);
+        if (!result.isNull() && method == MethodAuto) {
+            // The classic draft's result can be valid and still wrong: a
+            // drafted face crossing another face of the body, or the body
+            // grown past a face that bounds it where the cell draft stops
+            // (docs/NewDraft.md section 11). Then Auto takes the cell draft,
+            // or, if that refuses, keeps the classic result and says why.
+            std::string why;
+            try {
+                why = Part::CellDraft::CheckDraft(
+                    baseShape.getShape(), result.getShape(), pickedFaces, StopAtBody.getValue());
+            } catch (Standard_Failure &) {
+                FC_WARN(getFullName() << ": the check of the classic draft failed; kept it");
+            }
+            if (!why.empty()) {
+                std::string cellError;
+                TopoShape cell = makeDraft(baseShape, faces, true, cellError);
+                if (!cell.isNull()) {
+                    FC_LOG(getFullName() << ": classic draft: " << why << "; took the cell draft");
+                    result = cell;
+                }
+                else {
+                    FC_WARN(getFullName() << ": classic draft: " << why
+                            << "; kept, the cell draft refused: " << cellError);
+                }
+            }
+        }
+        if (!result.isNull() || method == MethodClassic) {
+            if (result.isNull())
+                return new App::DocumentObjectExecReturn(error.c_str());
+            this->Shape.setValue(result);
+            return App::DocumentObject::StdReturn;
+        }
     }
-    catch (Standard_Failure& e) {
 
-        return new App::DocumentObjectExecReturn(e.GetMessageString());
+    // The new draft (docs/NewDraft.md): the classic draft keeps the topology
+    // of the base shape, and refuses a draft whose result has another one --
+    // a face swept past the edge of its neighbour, a face split in coplanar
+    // pieces. The cell draft rebuilds the topology around the drafted face.
+    std::string cellError;
+    result = makeDraft(baseShape, faces, true, cellError);
+    if (result.isNull()) {
+        if (error.empty())
+            error = cellError;
+        else
+            error += "\n" + cellError;
     }
+    if (result.isNull())
+        return new App::DocumentObjectExecReturn(error.c_str());
+    this->Shape.setValue(result);
+    return App::DocumentObject::StdReturn;
 }

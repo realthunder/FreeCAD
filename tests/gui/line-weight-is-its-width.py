@@ -55,7 +55,12 @@ WIDTHS = (1.0, 1.25, 1.5, 2.0, 2.5, 3.5)
 ANGLES = (0.0, 4.0, 22.5, 45.0, 81.0, 90.0)
 CELL = 30.0     # the grid the lines stand on, mm
 LENGTH = 24.0   # a line, mm
-NEAR = {0: 0.12, 3: 0.16}   # pixels, by the value of View/AntiAliasing
+# pixels, by the value of View/AntiAliasing. What a line weighs moves with
+# where it falls on the pixel grid, and so with the size of the view: over
+# six window sizes under OpenGL (llvmpipe, 2026-10-12) the furthest line was
+# 0.08 to 0.12 px off without multisampling and 0.11 to 0.15 with it, and two
+# angles of one width 0.09 to 0.13 and 0.11 to 0.16 apart.
+NEAR = {0: 0.16, 3: 0.20}
 
 
 def note(msg):

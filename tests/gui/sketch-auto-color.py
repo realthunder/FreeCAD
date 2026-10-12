@@ -1,17 +1,25 @@
 """A sketch's edge and vertex colours follow the preferences (upstream
 8def94e6f8, e260cf5c8a, 97e7b9d1f2).
 
-AutoColor, on for a new sketch, takes LineColor and PointColor from
-SketchEdgeColor and SketchVertexColor and keeps them out of the file, so a
-sketch drawn on one theme is not stuck with its colours on another. A
-preference change recolours every such sketch and is not a modification of
-the document. Turned off, the colours are the sketch's own again and are
-saved. A file from before AutoColor turns it on only where the colours were
-never changed from white.
+AutoColor, on for a new sketch, draws it in SketchEdgeColor and
+SketchVertexColor -- the theme's -- so a sketch drawn on one theme is not
+stuck with its colours on another. Nothing of that is written anywhere: the
+colour properties are the sketch's own whatever AutoColor says, names over
+the object's looks, white for a sketch nobody coloured, and under AutoColor
+they are not what is drawn (docs/TransactionLog.md sec 33.15). So what is
+drawn is read off the screen's nodes (getDrawnColors()) and the properties
+beside it. A preference change recolours every such sketch and changes
+neither the document nor the object. Turned off, the sketch is drawn in its
+own colours. A file from before AutoColor turns it on only where the colours
+were never changed from white.
 
 The old file is made by stripping every AutoColor entry from
 GuiDocument.xml, the shared defaults block included: a value the fork's
-save elided comes back from there, and must not read as an old file.
+save elided comes back from there, and must not read as an old file. It
+is saved at schema 4 first: what tells an old file is the colours recorded
+in GuiDocument.xml with the status they were saved under, and at schema 5
+they are names over the object's looks and are not written there
+(App::Property::Legacy), which is a file no build before AutoColor wrote.
 """
 import os
 import ArchiveMembers
@@ -76,6 +84,16 @@ def rgb(color):
     return tuple(round(c, 3) for c in color[:3])
 
 
+def drawn(vo, kind):
+    """The colours of that kind on the screen"""
+    return [rgb(c) for c in vo.getDrawnColors().get(kind, [])]
+
+
+def draws(vo, kind, colour):
+    colours = drawn(vo, kind)
+    return bool(colours) and all(same(c, colour) for c in colours)
+
+
 def make_sketch(doc, name):
     import Part
     sk = doc.addObject("Sketcher::SketchObject", name)
@@ -128,10 +146,16 @@ def run():
         va, vb = a.ViewObject, b.ViewObject
 
         check("a new sketch has AutoColor on", va.AutoColor is True)
-        check("its edges take SketchEdgeColor", same(va.LineColor, RED), rgb(va.LineColor))
-        check("its vertices take SketchVertexColor", same(va.PointColor, GREEN), rgb(va.PointColor))
+        check("its edges are drawn in SketchEdgeColor", draws(va, "Edge", RED), drawn(va, "Edge"))
+        check("its vertices in SketchVertexColor", draws(va, "Vertex", GREEN),
+              drawn(va, "Vertex"))
+        check("its colour properties are its own all the same: a sketch's white",
+              same(va.LineColor, WHITE) and same(va.PointColor, WHITE),
+              "%s %s" % (rgb(va.LineColor), rgb(va.PointColor)))
+        check("which are the object's", same(a.LineColor, WHITE) and same(a.PointColor, WHITE),
+              "%s %s" % (rgb(a.LineColor), rgb(a.PointColor)))
         st = va.getPropertyStatus("LineColor")
-        check("the automatic colour is not saved", "Transient" in st, st)
+        check("and are not for the property editor while it is on", "Hidden" in st, st)
 
         gdoc = FreeCADGui.getDocument(DOC)
         path = os.path.join(OUT, "auto.FCStd")
@@ -141,20 +165,54 @@ def run():
         FreeCADGui.runCommand("Std_Save")
         settle(0.5)
         check("saved, the document is not modified", not gdoc.Modified)
+        def looks(obj):
+            return (rgb(obj.LineColor), rgb(obj.PointColor), rgb(obj.ShapeColor),
+                    obj.Transparency)
+
+        kept = looks(a), rgb(va.LineColor)
+        rows = len(doc.getTransactionLog())
         set_pref(BLUE, GREEN)
-        check("a preference change recolours an open sketch", same(va.LineColor, BLUE),
-              rgb(va.LineColor))
+        check("a preference change recolours an open sketch", draws(va, "Edge", BLUE),
+              drawn(va, "Edge"))
         check("and is not a modification of the document", not gdoc.Modified)
+        check("nor of the object or the property, which are as they were",
+              (looks(a), rgb(va.LineColor)) == kept,
+              "%s, were %s" % ((looks(a), rgb(va.LineColor)), kept))
+        check("and no row of the log is made for it", len(doc.getTransactionLog()) == rows,
+              "%d rows, were %d" % (len(doc.getTransactionLog()), rows))
 
         # B's colours made its own.
+        ORANGE = (1.0, 0.5, 0.0)
+        kept = looks(b)
         vb.AutoColor = False
-        vb.LineColor = (1.0, 0.5, 0.0)
+        settle(0.2)
+        check("turned off, the sketch is drawn in its own colours: white edges",
+              draws(vb, "Edge", WHITE) and draws(vb, "Vertex", WHITE),
+              "%s %s" % (drawn(vb, "Edge"), drawn(vb, "Vertex")))
+        check("and nothing is given to the object by it", looks(b) == kept,
+              "%s, were %s" % (looks(b), kept))
+        vb.LineColor = ORANGE
+        settle(0.2)
         st = vb.getPropertyStatus("LineColor")
-        check("turned off, the colour is saved again", "Transient" not in st, st)
+        check("turned off, the colour is for the property editor again", "Hidden" not in st, st)
+        check("a colour set is the object's, and is drawn",
+              same(b.LineColor, ORANGE) and draws(vb, "Edge", ORANGE),
+              "%s %s" % (rgb(b.LineColor), drawn(vb, "Edge")))
         set_pref(RED, GREEN)
         check("a preference change leaves a sketch with AutoColor off alone",
-              same(vb.LineColor, (1.0, 0.5, 0.0)), rgb(vb.LineColor))
-        check("while one with it on follows", same(va.LineColor, RED), rgb(va.LineColor))
+              same(vb.LineColor, ORANGE) and draws(vb, "Edge", ORANGE),
+              "%s %s" % (rgb(vb.LineColor), drawn(vb, "Edge")))
+        check("while one with it on follows", draws(va, "Edge", RED), drawn(va, "Edge"))
+        vb.AutoColor = True
+        settle(0.2)
+        check("turned on again, the sketch is drawn in the preference's",
+              draws(vb, "Edge", RED), drawn(vb, "Edge"))
+        check("and keeps its own colour", same(vb.LineColor, ORANGE) and same(b.LineColor, ORANGE),
+              "%s %s" % (rgb(vb.LineColor), rgb(b.LineColor)))
+        vb.AutoColor = False
+        settle(0.2)
+        check("which is drawn again once it is turned off", draws(vb, "Edge", ORANGE),
+              drawn(vb, "Edge"))
         doc.save()
         settle(0.3)
         with zipfile.ZipFile(path) as z:
@@ -171,18 +229,20 @@ def run():
         check("reopened, AutoColor stays on", va.AutoColor is True)
         vc = doc.getObject("C").ViewObject
         check("reopened, an AutoColor left to the default block stays on",
-              vc.AutoColor is True and same(vc.LineColor, BLUE),
-              "%s %s" % (vc.AutoColor, rgb(vc.LineColor)))
-        check("and the colour is the preference now, not the one saved",
-              same(va.LineColor, BLUE), rgb(va.LineColor))
+              vc.AutoColor is True and draws(vc, "Edge", BLUE),
+              "%s %s" % (vc.AutoColor, drawn(vc, "Edge")))
+        check("and the colour drawn is the preference now", draws(va, "Edge", BLUE),
+              drawn(va, "Edge"))
         check("reopened, AutoColor stays off", vb.AutoColor is False)
-        check("and its own colour is kept", same(vb.LineColor, (1.0, 0.5, 0.0)),
-              rgb(vb.LineColor))
+        check("and its own colour is kept, and drawn",
+              same(vb.LineColor, ORANGE) and draws(vb, "Edge", ORANGE),
+              "%s %s" % (rgb(vb.LineColor), drawn(vb, "Edge")))
 
         # A file from before AutoColor: A saved white, B orange.
         va.AutoColor = False
         va.LineColor = WHITE
         va.PointColor = WHITE
+        doc.SaveSchemaVersion = 4  # the colours recorded in the view file, as then
         doc.save()
         settle(0.3)
         old = os.path.join(OUT, "old.FCStd")
@@ -192,15 +252,16 @@ def run():
         doc = reopen(old)
         va, vb = doc.getObject("A").ViewObject, doc.getObject("B").ViewObject
         check("an old sketch still white turns AutoColor on", va.AutoColor is True)
-        check("and follows the preference", same(va.LineColor, GREEN), rgb(va.LineColor))
+        check("and is drawn in the preference's", draws(va, "Edge", GREEN), drawn(va, "Edge"))
         check("an old sketch coloured by hand keeps AutoColor off", vb.AutoColor is False)
-        check("and keeps its colour", same(vb.LineColor, (1.0, 0.5, 0.0)), rgb(vb.LineColor))
+        check("and keeps its colour", same(vb.LineColor, ORANGE) and draws(vb, "Edge", ORANGE),
+              "%s %s" % (rgb(vb.LineColor), drawn(vb, "Edge")))
 
-        # Turned on, the colours follow at once.
+        # Turned on, what is drawn follows at once.
         vb.AutoColor = True
-        check("turning AutoColor on applies the preference at once",
-              same(vb.LineColor, GREEN) and same(vb.PointColor, RED),
-              "%s %s" % (rgb(vb.LineColor), rgb(vb.PointColor)))
+        check("turning AutoColor on draws in the preference's at once",
+              draws(vb, "Edge", GREEN) and draws(vb, "Vertex", RED),
+              "%s %s" % (drawn(vb, "Edge"), drawn(vb, "Vertex")))
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()

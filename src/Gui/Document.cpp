@@ -36,6 +36,7 @@
 # include <QMessageBox>
 # include <QPushButton>
 # include <QRadioButton>
+# include <QRegularExpression>
 # include <QTextStream>
 # include <QTimer>
 # include <QStatusBar>
@@ -5616,69 +5617,150 @@ static bool undoRedoInEdit(bool redo)
     return vp && vp->undoRedoInEdit(redo);
 }
 
-/// Will UNDO one or more steps
-void Document::undo(int iSteps)
+int Document::takeSteps(bool undo, int iSteps, int skipped)
 {
-    if (undoRedoInEdit(false))
-        return;
-
     Base::FlagToggler<> flag(d->_isTransacting);
 
     Gui::Selection().clearCompleteSelection();
 
+    const auto kind = undo ? App::TransactionGuard::Undo : App::TransactionGuard::Redo;
+    int taken = 0;
     {
         // One guard for the run, let go of around a step that goes through
         // the log (docs/TransactionLog.md sec 30.10): that one recomputes,
         // and the guard defers the touches a recompute works from.
-        std::optional<App::TransactionGuard> guard(std::in_place, App::TransactionGuard::Undo);
+        std::optional<App::TransactionGuard> guard(std::in_place, kind);
 
-        if(!checkTransactionID(true,iSteps))
-            return;
+        // Past a step that was refused (sec 33.11) there is no run of
+        // grouped transactions to ask about: the step taken is one of this
+        // document's, picked by the user.
+        if (!skipped && !checkTransactionID(undo, iSteps))
+            return -1;
 
-        for (int i=0;i<iSteps;i++) {
-            if (getDocument()->stepNeedsLog(true))
+        for (; taken < iSteps; ++taken) {
+            if (getDocument()->stepNeedsLog(undo, skipped))
                 guard.reset();
             else if (!guard)
-                guard.emplace(App::TransactionGuard::Undo);
-            if (!getDocument()->undo())
+                guard.emplace(kind);
+            const bool done = undo ? getDocument()->undoSkipping(skipped)
+                                   : getDocument()->redoSkipping(skipped);
+            if (!done)
                 break;   // nothing left, or refused: the document says why
         }
+    }
+
+    if (!undo) {
+        // Use index for iteration so that we can handle possible changes of _redoObjects while iterating.
+        for (size_t i=0; i < d->_redoObjects.size(); ++i) {
+            if (auto vp = Application::Instance->getViewProvider(d->_redoObjects[i])) {
+                handleChildren3D(vp);
+            }
+        }
+        d->_redoObjects.clear();
+    }
+    return taken;
+}
+
+bool Document::askToSkip(bool undo, int skipped, const std::string& why)
+{
+    // docs/TransactionLog.md sec 33.11: a step that was refused is said,
+    // with the reason, where it only went to the report view and the
+    // command looked as if it did nothing; and the step after it is
+    // offered, where every further undo tried the same one again.
+    const auto names = undo ? getUndoVector() : getRedoVector();
+    auto nameAt = [&names](std::size_t pos) {
+        return pos < names.size()
+            ? QCoreApplication::translate("Command", names[pos].c_str())
+            : QString();
+    };
+    const QString refused = nameAt(static_cast<std::size_t>(skipped));
+    const QString next = nameAt(static_cast<std::size_t>(skipped) + 1);
+
+    // The document says "Length of id 12 was changed since, by row 57;":
+    // the object by its label here.
+    QStringList reasons;
+    static const QRegularExpression byId(QStringLiteral("\\bid (\\d+)\\b"));
+    for (QString part : QString::fromStdString(why).split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        part = part.trimmed();
+        if (part.isEmpty())
+            continue;
+        QString said;
+        int last = 0;
+        auto it = byId.globalMatch(part);
+        while (it.hasNext()) {
+            const auto match = it.next();
+            said += part.mid(last, match.capturedStart() - last);
+            auto obj = getDocument()->getObjectByID(match.captured(1).toLong());
+            said += obj ? QString::fromUtf8(obj->Label.getValue()) : match.captured(0);
+            last = match.capturedEnd();
+        }
+        said += part.mid(last);
+        reasons << said;
+    }
+
+    QMessageBox box(getMainWindow());
+    box.setObjectName(QStringLiteral("undoRefused"));
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(undo ? QObject::tr("Undo") : QObject::tr("Redo"));
+    box.setText((undo ? QObject::tr("'%1' cannot be undone.")
+                      : QObject::tr("'%1' cannot be redone.")).arg(refused));
+    QString detail = reasons.join(QLatin1Char('\n'));
+    QAbstractButton* skip = nullptr;
+    if (next.isEmpty()) {
+        box.addButton(QMessageBox::Ok);
+    }
+    else {
+        detail += QStringLiteral("\n\n")
+            + (undo ? QObject::tr("Skip it and undo '%1' instead? '%2' stays as it is.")
+                    : QObject::tr("Skip it and redo '%1' instead? '%2' stays as it is."))
+                  .arg(next, refused);
+        skip = box.addButton(QObject::tr("Skip this step"), QMessageBox::AcceptRole);
+        box.addButton(QMessageBox::Cancel);
+    }
+    box.setInformativeText(detail);
+    box.exec();
+    return skip && box.clickedButton() == skip;
+}
+
+void Document::undoOrRedo(bool undo, int iSteps, bool ask)
+{
+    // The view provider in edit may take the command as its own: asked
+    // once, before any step of the document's is looked at.
+    if (undoRedoInEdit(!undo))
+        return;
+
+    int skipped = 0;
+    while (iSteps > 0) {
+        const int taken = takeSteps(undo, iSteps, skipped);
+        if (taken < 0)
+            return;
+        iSteps -= taken;
+        if (iSteps <= 0 || !ask)
+            return;
+        // Asked with nothing held: no guard, and the document not said to
+        // be in a transaction while the dialog's loop turns.
+        const std::string why = getDocument()->undoRefusal();
+        if (why.empty() || !askToSkip(undo, skipped, why))
+            return;
+        // The step refused is left, and was one of those asked for.
+        ++skipped;
+        --iSteps;
+        // Nothing asked for is left: the one the user chose to go on to.
+        if (iSteps <= 0)
+            iSteps = 1;
     }
 }
 
-/// Will REDO one or more steps
-void Document::redo(int iSteps)
+/// Will UNDO one or more steps
+void Document::undo(int iSteps, bool ask)
 {
-    if (undoRedoInEdit(true))
-        return;
+    undoOrRedo(true, iSteps, ask);
+}
 
-    Base::FlagToggler<> flag(d->_isTransacting);
-
-    Gui::Selection().clearCompleteSelection();
-
-    {
-        std::optional<App::TransactionGuard> guard(std::in_place, App::TransactionGuard::Redo);
-
-        if(!checkTransactionID(false,iSteps))
-            return;
-
-        for (int i=0;i<iSteps;i++) {
-            if (getDocument()->stepNeedsLog(false))
-                guard.reset();
-            else if (!guard)
-                guard.emplace(App::TransactionGuard::Redo);
-            if (!getDocument()->redo())
-                break;   // nothing left, or refused: the document says why
-        }
-    }
-
-    // Use index for iteration so that we can handle possible changes of _redoObjects while iterating.
-    for (size_t i=0; i < d->_redoObjects.size(); ++i) {
-        if (auto vp = Application::Instance->getViewProvider(d->_redoObjects[i])) {
-            handleChildren3D(vp);
-        }
-    }
-    d->_redoObjects.clear();
+/// Will REDO one or more steps
+void Document::redo(int iSteps, bool ask)
+{
+    undoOrRedo(false, iSteps, ask);
 }
 
 PyObject* Document::getPyObject()

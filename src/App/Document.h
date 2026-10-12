@@ -739,11 +739,57 @@ public:
     MergeResult pickRows(const std::vector<int64_t>& rows,
                          const std::map<std::string, std::string>& picks = {},
                          const std::string& fallback = std::string());
-    /// mergeBranch() and pickRows(): `rows` for the second.
+    /// What a merge would make of the document (docs/TransactionLog.md sec
+    /// 32.17).
+    struct MergeOutcome
+    {
+        /** The document the merge was made in: this one as it is, read into
+         * a document of its own with no log and no view, what the merge
+         * takes written to it, and recomputed. Its objects have the ids
+         * this document's have. The caller's to close
+         * (Application::closeDocument). Null where there is none: the
+         * merge would be refused (`unresolved`), brings nothing, or takes
+         * the other branch as it is (`theirs`).
+         */
+        Document* document {nullptr};
+        /// A fast-forward: what the merge makes is the other branch.
+        bool theirs {false};
+        struct Value
+        {
+            long cid {0};
+            std::string object;   ///< its name
+            std::string prop;     ///< its geometry: `Shape`
+            bool here {true};     ///< this document has the object
+        };
+        /// The geometry of every object the merge made, wrote the geometry
+        /// of, or computed.
+        std::vector<Value> values;
+        std::vector<long> removed;         ///< objects of this document the merge removes
+        std::vector<std::string> failed;   ///< objects whose recompute failed there
+        std::vector<MergeChange> unresolved;
+        MergePreview preview;
+    };
+    /** What mergeBranch() with these arguments would make, in a document
+     * of its own (docs/TransactionLog.md sec 32.17). Nothing of this
+     * document moves, and nothing is written to the log but its tip as a
+     * version, unnamed, where it is none already -- what the merge itself
+     * takes first. Throws as mergeBranch() does, and where a transaction
+     * is open.
+     */
+    MergeOutcome previewMergeResult(const std::string& branch,
+                                    const std::map<std::string, std::string>& picks = {},
+                                    const std::string& fallback = std::string(),
+                                    int64_t version = 0);
+    /// The same of pickRows().
+    MergeOutcome previewPickResult(const std::vector<int64_t>& rows,
+                                   const std::map<std::string, std::string>& picks = {},
+                                   const std::string& fallback = std::string());
+    /// mergeBranch() and pickRows(): `rows` for the second. With `outcome`
+    /// it is previewMergeResult(): written to a document of its own.
     MergeResult _merge(const std::string& branch,
                        const std::map<std::string, std::string>& picks,
                        const std::string& fallback, int64_t version,
-                       const std::vector<int64_t>* rows);
+                       const std::vector<int64_t>* rows, MergeOutcome* outcome = nullptr);
 
     /// A merge undone at the head of this branch, with nothing since
     /// (docs/TransactionLog.md sec 31.21).
@@ -946,6 +992,13 @@ public:
      * not restored; their owners are touched. Returns whether it ran.
      */
     bool undoLogged(int64_t seq);
+    /** Undo several log rows as one step (docs/TransactionLog.md sec 33.13):
+     * one new transaction applying them reversed, newest first. A row is
+     * refused as one alone is, except that what the other rows of the set
+     * did is not held against it; if any is refused none is undone. The
+     * step is named by what it undid and names no single row it inverts.
+     */
+    bool undoLogged(const std::vector<int64_t>& seqs);
 
     /** How App reaches an object's view provider (docs/TransactionLog.md
      * sec 24.9): the Gui registers a resolver; without one (FreeCADCmd)
@@ -1411,7 +1464,15 @@ public:
      * TransactionGuard lets go of it first: the guard defers the touches a
      * recompute works from.
      */
-    bool stepNeedsLog(bool undo) const;
+    bool stepNeedsLog(bool undo, int skip = 0) const;
+    /** undo() and redo() leaving the `skip` newest steps of whoever acts
+     * where they are (docs/TransactionLog.md sec 33.11): for a step that was
+     * refused and is gone past. The step taken has others above it, so it
+     * goes through the log, and is refused in its turn where what it left
+     * was changed since.
+     */
+    bool undoSkipping(int skip);
+    bool redoSkipping(int skip);
     /// Why the last undo() or redo() was refused, empty when it was not.
     const std::string& undoRefusal() const;
     /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback,
@@ -1631,9 +1692,9 @@ protected:
     /// What one undo (or redo) of whoever acts takes, in the order it is
     /// taken (docs/TransactionLog.md sec 33.4): the user's step with the
     /// implicit ones that go with it. Empty for nothing to take.
-    std::vector<Transaction*> _myRun(bool undo) const;
+    std::vector<Transaction*> _myRun(bool undo, int skip = 0) const;
     /// Take the steps of _myRun(); false when there is none or one refused.
-    bool _takeRun(bool undo);
+    bool _takeRun(bool undo, int skip = 0);
     /// Take the one undo (or redo) step of `id`, from its copies or through
     /// the log; false when refused.
     bool _takeStep(bool undo, int id);
@@ -1682,6 +1743,10 @@ protected:
     /// reads one -- joined to this file's history, blobs by hash, no view,
     /// no log (sec 27.60) -- handed to `fn`, and closed.
     void _readVersion(int64_t num, const std::function<void(Document&)>& fn);
+    /// The same, left open and the caller's to close: named after this
+    /// document with `stem`. With `active` it is left the active document,
+    /// as a new one is; else the one that was is handed back.
+    Document* _openReadVersion(int64_t num, const std::string& stem, bool active);
     /// Restore this new document from `dir`, a materialised version of the
     /// file `history` records, as a version document named `fileName`.
     void _restoreAsVersion(const std::shared_ptr<FileHistory>& history, const std::string& dir,

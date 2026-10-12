@@ -593,11 +593,21 @@ public:
     /// Under AutoColor the colours follow the preferences: display state,
     /// not mapped onto shapes made from the sketch
     bool mapsElementColors(int type) const override;
+    /// Under AutoColor the edges and the points are drawn in the colours the
+    /// theme's settings ask for, and the colours given here -- the
+    /// properties', which are the object's -- are not looked at
+    void setHighlightedEdges(const std::vector<App::Color>& colors) override;
+    void setHighlightedPoints(const std::vector<App::Color>& colors) override;
+    /// With "Face": what the faces are drawn in, transparency in the alpha
+    void getDrawnColors(std::map<std::string, std::vector<App::Color>> &colors) const override;
 protected:
-    /// AutoColor: marks the colours it owns as not saved and not editable
+    /// AutoColor: marks the colours as not editable while it is on
     void updateColorPropertiesVisibility();
-    /// AutoColor: takes the edge and vertex colours from the preferences
-    void updateAutomaticColorProperties();
+    /// AutoColor: what is drawn made again -- from the settings where it is
+    /// on, from the properties where it is off. No property is written.
+    void applyAutomaticColors();
+    /// An edge or vertex colour of Preferences/View, white where not set
+    static App::Color colorFromPreference(const char *key);
     /// AutoColor: follows a change of those preferences in every sketch
     static void attachColorObserver();
 

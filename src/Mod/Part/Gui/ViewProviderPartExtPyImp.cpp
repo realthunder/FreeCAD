@@ -59,6 +59,27 @@ PyObject *ViewProviderPartExtPy::mapShapeColors(PyObject *args) {
     Py_Return;
 }
 
+PyObject *ViewProviderPartExtPy::getDrawnColors(PyObject *args) const {
+    if(!PyArg_ParseTuple(args, ""))
+        return 0;
+    std::map<std::string, std::vector<App::Color>> colors;
+    getViewProviderPartExtPtr()->getDrawnColors(colors);
+    Py::Dict dict;
+    for(const auto &v : colors) {
+        Py::List list;
+        for(const App::Color &c : v.second) {
+            Py::Tuple color(4);
+            color.setItem(0, Py::Float(c.r));
+            color.setItem(1, Py::Float(c.g));
+            color.setItem(2, Py::Float(c.b));
+            color.setItem(3, Py::Float(c.a));
+            list.append(color);
+        }
+        dict.setItem(v.first.c_str(), list);
+    }
+    return Py::new_reference_to(dict);
+}
+
 PyObject *ViewProviderPartExtPy::enableFullSelectionHighlight(PyObject *args) {
     PyObject *face = Py_True;
     PyObject *line = Py_True;

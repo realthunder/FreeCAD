@@ -78,6 +78,7 @@ set(Part_tests
     parttests/HLRProjectionTest.py
     parttests/PrimitiveNamesTest.py
     parttests/TestLinkArray.py
+    parttests/FilletCornerTest.py
 )
 
 add_custom_target(PartScripts ALL SOURCES

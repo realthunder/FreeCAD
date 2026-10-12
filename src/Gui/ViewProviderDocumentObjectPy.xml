@@ -25,7 +25,8 @@
 
 Show over the object how property 'prop' differs between two values the
 transaction log holds, each by its ref; an empty ref is the value the object has
-now. 'position' is where between the two, 0 at a and 1 at b. 'mode' is which of
+now, and 'doc:' with a document's name the value the object of this id has in
+that open document. 'position' is where between the two, 0 at a and 1 at b. 'mode' is which of
 the ways the view provider has to show it: of a shape 'faces', what became of
 each face, or 'material', the solid only one of the two has. False where this
 view provider shows no such thing, or the log does not hold a value.</UserDocu>
