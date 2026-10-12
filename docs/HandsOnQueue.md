@@ -798,7 +798,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, not pushed; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
-| 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view | OPEN; five points of the note-taker's to confirm, under the entry |
+| 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | OPEN; the five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -7976,7 +7976,7 @@ Evidence: `..\dl\handson\2026-10-12\entry68\mcp_console.log`, the
 reporter's report log copied 14:56 (its last line is of 14:28; nothing in
 its tail names this).
 
-## 69. Overlay panels: a transparent background, item backgrounds in the theme's 3D view colour at alpha 150, the task panel at alpha 150 (a change request) -- OPEN
+## 69. Overlay panels: a transparent background, item backgrounds in the theme's 3D view colour at alpha 150, the task panel at alpha 150 (a change request) -- OPEN, the five points answered 2026-10-12 15:21
 
 **2026-10-12 15:12, the reporter:** "new request, when the panel is moved to
 overlay mode change its background to transparent. change default tree view
@@ -8011,6 +8011,43 @@ d. The alternate rows of the property view: their present colour at alpha
    150, or a shade of the new item colour?
 e. Does a value the user has set for the item background stay as it is
    (the request says "default")?
+
+**2026-10-12 15:21, the reporter answers the five points:** "a, only
+overlay mode, add a setting to auto follow theme color, default true. b,
+the first color. c, theme's own panel colour. d, background of the item,
+complete transparent for no item part. e make the overlay alpha a setting.
+implement it as qt property that can be override by stylesheet"
+
+The note-taker's reading, by letter:
+- a. The item background applies in OVERLAY mode only; a docked tree or
+  property view is as it is today. A NEW SETTING: follow the theme's
+  colour automatically, ON by default.
+- b. Of a gradient: the FIRST colour. This REPLACES "the darker one if
+  it's gradient" of the request. By the settings' own titles that is
+  `View/BackgroundColor2`, "Background gradient, first colour" -- the top
+  of a linear gradient, the centre of a radial one (read in
+  `src/Gui/ViewParams.py`, nothing run); with a plain background,
+  `View/BackgroundColor`.
+- c. The task panel at alpha 150: the THEME'S OWN panel colour.
+- d. "background of the item, complete transparent for no item part" --
+  the note-taker's reading, NOT the reporter's words: a row's background,
+  the alternate one too, is drawn on the rows that hold an item only, and
+  whatever part of the view has no item is wholly transparent. WHICH
+  colour the alternate rows get -- their present one at alpha 150, as the
+  request's "keep the alternate item background (150 alpha)" says, or a
+  shade of the new item colour -- is not said again; the request's own
+  words are taken to stand.
+- e. The overlay alpha (the 150) becomes a SETTING. The point as it was
+  asked -- does a value the user set for the item background stay -- is
+  not answered in words; the note-taker's reading: with the new "follow
+  the theme" setting off, the user's own colour is what is used. To
+  confirm if the build needs it.
+- "implement it as qt property that can be override by stylesheet": the
+  note-taker reads "it" as these values -- the item background and the
+  alpha at least -- exposed as Qt properties of the widgets, so that a
+  style sheet (`qproperty-...`) can set them and so override the
+  setting. Whether "it" is the alpha alone, or every value of this entry,
+  is the build session's to ask if it matters.
 
 Where it touches, READ in the source, nothing run:
 - The tree's item background is a setting already:
