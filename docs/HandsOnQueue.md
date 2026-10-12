@@ -805,7 +805,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
 | 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63). ANSWERED 16:04: the name is `Std_DisplayStyle`; `Std_DrawStyle` takes its old icon back and the new command the split cube; the new command to the RIGHT of `Std_DrawStyle`, in the View menu too; the overlap is not looked into for its own sake | OPEN; the four points answered 16:04; the context menu not named in the answer |
 | 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered |
-| 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | OPEN; the request turned 16:18; the two points of before fall away, three new ones of the note-taker's under the entry |
+| 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | OPEN; the request turned 16:18; the two points of before fall away; the three new ones answered 16:20: the cube slides along its edge in the same corner; with the setting off a panel simply covers it; it moves for a momentary panel too and comes back; nothing left unanswered |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8443,7 +8443,7 @@ migration, nothing that turns it off in a configuration that has it stored
 as on; the reporter switches their own off by hand. Nothing of this entry
 is left unanswered.
 
-## 76. An overlay panel at the navigation cube's side leaves room for the cube even where it covers no cube -- OPEN; turned by the reporter 2026-10-12 16:18: no room left by a panel, the cube moves out of the way
+## 76. An overlay panel at the navigation cube's side leaves room for the cube even where it covers no cube -- OPEN; turned by the reporter 2026-10-12 16:18: no room left by a panel, the cube moves out of the way; its three points answered 16:20
 
 **2026-10-12 16:15, the reporter:** "new defect, any panel in overlay mode
 that is docked at the side of navicube leaves space for the navicube. this
@@ -8516,6 +8516,19 @@ d. With the new setting OFF: the cube stays where it is and a panel
 e. A panel that is there only for a moment -- an overlay that shows on
    hover or hides itself, a see-through one the mouse passes through:
    does the cube move for those too, and come back when they go?
+
+**2026-10-12 16:20, the reporter answers the three points:** "c, slide along
+the edge, same corner. d, yes. e, yes"
+
+The note-taker's reading:
+- c. The cube SLIDES along its edge until it is clear of the panel and
+  stays in the same corner.
+- d. Yes: with the new setting off the cube stays where it is and a
+  panel simply covers it.
+- e. Yes: the cube moves for a panel that is there only for a moment
+  too -- shown on hover, hiding itself, see-through -- and comes back
+  when the panel goes.
+Nothing of this entry is left unanswered.
 
 Near it: entry 68 is the same kind of thing from the other side (a task
 panel in its view keeping clear of an overlay), and entry 75 changes how
