@@ -160,7 +160,7 @@ void ViewProviderBody::setupContextMenu(QMenu* menu, QObject* receiver, const ch
         this->doubleClicked();
     });
 
-    act = menu->addAction(tr("Solid bodies"));
+    act = menu->addAction(tr("Auto create solid body"));
     act->setToolTip(tr("Group the features of each solid under a solid body once the body\n"
                        "has more than one solid. Switched off, the features of a solid can be\n"
                        "grouped under its last feature, as documents made before solid bodies do."));
@@ -171,15 +171,15 @@ void ViewProviderBody::setupContextMenu(QMenu* menu, QObject* receiver, const ch
             auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
             if (!body)
                 return;
-            App::AutoTransaction committer("Toggle solid bodies");
+            App::AutoTransaction committer("Toggle auto create solid body");
             try {
                 FCMD_OBJ_CMD(body, "AddSolidBody = "
                         << (body->AddSolidBody.getValue() ? "False" : "True"));
                 Gui::Command::updateActive();
             } catch (Base::Exception &e) {
                 e.ReportException();
-                QMessageBox::critical(Gui::getMainWindow(), tr("Solid bodies"),
-                        tr("Toggle solid bodies failed. Please check report view for more details."));
+                QMessageBox::critical(Gui::getMainWindow(), tr("Auto create solid body"),
+                        tr("Toggle auto create solid body failed. Please check report view for more details."));
                 committer.close(true);
             }
         });

@@ -37,7 +37,7 @@ class Body;
  * object that stays the same while the features making up the solid come and
  * go. It lists those features (Group) for the tree, names the one of them the
  * solid is rolled back to (Tip), and has the shape of that feature in the
- * body's coordinates, so Body.SolidBody.Face1 refers to the solid whichever
+ * body's coordinates, so Body.Solid.Face1 refers to the solid whichever
  * feature is its tip.
  *
  * It is a plain member of Body.Group and never a solid feature itself. The

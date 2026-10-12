@@ -69,7 +69,7 @@ PartDesignGuiExport bool isSolidTip(const PartDesign::Body *body,
  *
  * In the tree the solid body holds the features of its solid. In the 3D view
  * the features draw the solid; the solid body's own shape is hidden unless
- * asked for, and is what Body.SolidBody.Face1 is picked on.
+ * asked for, and is what Body.Solid.Face1 is picked on.
  */
 class PartDesignGuiExport ViewProviderSolidBody : public PartGui::ViewProviderPart
 {

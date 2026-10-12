@@ -145,11 +145,18 @@ class TestSolidBody(unittest.TestCase):
         self.assertEqual(len(self.solidBodies()), 2)
         self.assertEqual(self.Doc.ActiveObject, feat)
 
-    def testNameIsNoElementName(self):
-        """'Solid001' would read as the element Solid1 at the end of a path"""
-        self.twoSolids()
-        for solid in self.solidBodies():
-            self.assertTrue(solid.Name.startswith("SolidBody"))
+    def testNamedSolid(self):
+        """Solid, Solid001: a path names an object with a dot behind it, so
+        Solid001 is never taken for the element Solid1"""
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        self.assertEqual(names([first, second]), ["Solid", "Solid001"])
+        self.assertEqual(self.Body.getSubObject("Solid001.", retType=1), second)
+        self.assertEqual(self.Body.getSubObject("Solid001.Face1", retType=1), second)
+        self.assertEqual(self.Body.getSubObject("Solid001.Face1").ShapeType, "Face")
+        self.assertEqual(self.Body.getSubObject("Solid001.Box003.Face1", retType=1), d)
+        # without the dot it is an element of the body, as it always was
+        self.assertEqual(self.Body.getSubObject("Solid1", retType=1), self.Body)
 
     def testStaysWhenTheOtherSolidIsDeleted(self):
         a, b, c, d = self.twoSolids()
@@ -162,7 +169,7 @@ class TestSolidBody(unittest.TestCase):
         self.assertEqual(len(self.Body.Solids), 1)
         self.assertEqual(self.solidBodies(), [first])
         self.assertEqual(names(first.Group), ["Box", "Box001"])
-        self.assertIsNone(self.Doc.getObject("SolidBody001"))
+        self.assertIsNone(self.Doc.getObject("Solid001"))
         self.assertInStep()
 
     def testGoesWithItsLastFeature(self):
@@ -362,7 +369,7 @@ class TestSolidBody(unittest.TestCase):
         """What a build without SolidBody resolves: the object is not loaded
         there, and the body skips the name it does not know"""
         self.twoSolids()
-        sub = "NoSuchSolidBody.Box003.Face1"
+        sub = "Solid007.Box003.Face1"
         self.assertEqual(self.Body.getSubObject(sub, retType=1).Name, "Box003")
 
     def testPlacedBody(self):
@@ -468,7 +475,7 @@ class TestSolidBody(unittest.TestCase):
             xml = re.sub(r'<%s Count="(\d+)"' % tag,
                          lambda m: '<%s Count="%d"' % (tag, int(m.group(1)) - len(gone)),
                          xml, count=1)
-        self.assertEqual(re.findall(r'::SolidBody|"SolidBody\d*"', xml), [])
+        self.assertEqual(re.findall(r'::SolidBody|"Solid\d*"', xml), [])
 
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zout:
             for item, data in items:

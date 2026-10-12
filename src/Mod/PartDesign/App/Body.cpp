@@ -1076,7 +1076,9 @@ void Body::syncSolidBodies(bool force)
             // Not made the document's active object: that stays the feature
             // whose arrival made the second solid
             auto solid = new SolidBody();
-            doc->addObject(solid, "SolidBody", false);
+            // Named Solid, Solid001: a path names an object with a dot behind
+            // it (Body.Solid001.Face1), so it is never read as the element Solid1
+            doc->addObject(solid, "Solid", false);
             solid->_Body.setValue(this);
             // Its features draw the solid; this object's shape is for referencing
             solid->Visibility.setValue(false);
