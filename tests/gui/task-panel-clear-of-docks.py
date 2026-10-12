@@ -189,7 +189,6 @@ def build():
     VIEW.SetBool("ShowNaviCube", False)
     VIEW.SetBool("UseNavigationAnimations", False)
     VIEW.SetBool("UseViewArea", True)
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", True)
     LAST.RemString("Side")
     LAST.RemString("Mode")
@@ -256,6 +255,69 @@ def clear_of_them_on_every_side():
           lambda: choose("a1", "Top") is None and clear("a1")[0])
     claim("and on the left again",
           lambda: choose("a1", "Left") is None and clear("a1")[0])
+
+
+def left_dock():
+    for w in all_widgets("Gui::OverlayTabWidget"):
+        if w.isVisible() and w.count() and w.objectName() == "OverlayLeft":
+            return w
+    return None
+
+
+def inside(dock, w):
+    return w is not None and (w == dock or dock.isAncestorOf(w))
+
+
+def engage(dock):
+    """Give a dock the keyboard focus, or failing that the pointer: either takes
+    it out of its see-through mode for as long as it lasts. Says which it was."""
+    tree = None
+    for w in dock.findChildren(QtWidgets.QTreeWidget):
+        if w.isVisible():
+            tree = w
+            break
+    if tree is None:
+        return ""
+    mw().activateWindow()
+    tree.setFocus(QtCore.Qt.OtherFocusReason)
+    settle(1500)
+    if inside(dock, QtWidgets.QApplication.focusWidget()):
+        return "focus"
+    state["pointer"] = QtGui.QCursor.pos()
+    item = tree.topLevelItem(0)
+    spot = tree.visualItemRect(item).center() if item else tree.viewport().rect().center()
+    QtGui.QCursor.setPos(tree.viewport().mapToGlobal(spot))
+    settle(1500)
+    if inside(dock, QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())):
+        return "pointer"
+    return ""
+
+
+@step
+def clear_of_a_dock_in_use():
+    """docs/HandsOnQueue.md entry 68: "when mouse hover in tree view item, the
+    task panel moves under the tree view". A dock that has the pointer or the
+    focus is opaque for as long, and is over the view all the same."""
+    dock = left_dock()
+    if not check("the tree is in the left dock", dock is not None):
+        return
+    before = on_screen(host_of("a1")).getRect()
+    how = engage(dock)
+    if not check("the left dock is in use: it has the focus, or the pointer", bool(how), how):
+        return
+    note("the left dock has the %s" % how)
+    claim("the panel, on the left, still touches none of the docks", lambda: clear("a1"))
+    claim("and still begins where the left dock ends",
+          lambda: (abs(on_screen(host_of("a1")).left() - (docks()["Left"].right() + 1)) <= 2,
+                   (on_screen(host_of("a1")).left(), docks()["Left"].right(), before)))
+    if "pointer" in state:
+        QtGui.QCursor.setPos(state.pop("pointer"))
+    mw().setActiveWindow(state["views"]["a1"])
+    widget_of("a1").setFocus(QtCore.Qt.OtherFocusReason)
+    settle(1500)
+    claim("with the dock left alone again the panel is where it was",
+          lambda: (on_screen(host_of("a1")).getRect() == before
+                   and clear("a1")[0], (on_screen(host_of("a1")).getRect(), before)))
     FreeCADGui.runCommand("Std_DockOverlayAll")
     settle(1800)
 
@@ -291,13 +353,14 @@ def finish():
     if state["done"]:
         return
     state["done"] = True
+    if "pointer" in state:
+        QtGui.QCursor.setPos(state.pop("pointer"))
     try:
         if docks():
             FreeCADGui.runCommand("Std_DockOverlayAll")
             settle(800)
     except Exception:
         pass
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", False)
     LAST.RemString("Side")
     LAST.RemString("Mode")

@@ -406,6 +406,34 @@ enum class ToggleMode {
     Check,
 };
 
+namespace {
+/// Tells the manager when something registered with addCover() changes what
+/// it covers
+class CoverWatch : public QObject
+{
+public:
+    explicit CoverWatch(OverlayManager *manager)
+        : QObject(manager), manager(manager)
+    {}
+    bool eventFilter(QObject *, QEvent *ev) override
+    {
+        switch (ev->type()) {
+        case QEvent::Move:
+        case QEvent::Resize:
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::ParentChange:
+            Q_EMIT manager->coverChanged();
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+    OverlayManager *manager;
+};
+} // anonymous namespace
+
 class OverlayManager::Private {
 public:
 
@@ -445,6 +473,13 @@ public:
     std::map<QString, OverlayTabWidget*> _dockWidgetNameMap;
 
     bool raising = false;
+    /// The manager is made: set by its constructor's last line
+    bool ready = false;
+
+    /// What is laid over views beside the docks (OverlayManager::addCover),
+    /// and the watcher that tells when one of them moves, shows or hides
+    QList<QWidget*> covers;
+    QObject *coverWatch = nullptr;
 
     OverlayManager::ReloadMode curReloadMode = OverlayManager::ReloadMode::ReloadPending;
 
@@ -466,8 +501,11 @@ public:
         connect(&_timer, &QTimer::timeout, [this, host](){
             onTimer();
             Q_EMIT host->layoutChanged();
+            Q_EMIT host->coverChanged();
         });
         _timer.setSingleShot(true);
+
+        coverWatch = new CoverWatch(host);
 
         _reloadTimer.setSingleShot(true);
         connect(&_reloadTimer, &QTimer::timeout, [this]() {
@@ -503,6 +541,13 @@ public:
         // shows it
         Control().signalHostChanged.connect([this]() {
             syncTaskHostAction();
+        });
+        // ... and so is the page the Tasks tab shows: asked a turn later,
+        // when the task view has done showing it
+        Control().signalDialogActivated.connect([this](const TaskOwner &) {
+            QTimer::singleShot(0, &_actTaskHost, [this]() {
+                syncTaskHostAction();
+            });
         });
 
         retranslate();
@@ -722,20 +767,11 @@ public:
         if(tabbar)
             h -= tabbar->height();
 
-        int naviCubeSize = NaviCube::getNaviCubeSize();
-        // The cube is placed per view: keep clear of the active view's,
-        // and of none when that view does not show one.
-        int naviCorner = -1;
-        if (OverlayParams::getDockOverlayCheckNaviCube()) {
-            naviCorner = OverlayParams::getCornerNaviCube();
-            if (auto view = qobject_cast<View3DInventor*>(getMainWindow()->activeWindow())) {
-                auto viewer = view->getViewer();
-                if (!viewer->isEnabledNaviCube() || !viewer->getNaviCube())
-                    naviCorner = -1;
-                else
-                    naviCorner = int(viewer->getNaviCube()->getCorner());
-            }
-        }
+        // No room is left for a navigation cube any more: the cube moves
+        // clear of what is laid over its view (covered(), and
+        // docs/HandsOnQueue.md entry 76). The docks left a cube's width at
+        // the corner the preference names, whatever lay under them -- a
+        // TechDraw page, a cell with no cube.
 
         QRect rect;
         QRect rectBottom(0,0,0,0);
@@ -746,22 +782,7 @@ public:
         int delta = _bottom.tabWidget->getSizeDelta();
         h -= ofs.height();
 
-        auto getCubeSize = [naviCubeSize](OverlayInfo &info) -> int {
-            float scale = info.tabWidget->_imageScale;
-            if (scale == 0.0) {
-                scale = info.tabWidget->titleBar->grab().devicePixelRatio();
-                if (scale == 0.0)
-                    scale = 1.0;
-            }
-            return naviCubeSize/scale + 10;
-        };
-
-        int cubeSize = getCubeSize(_bottom);
-        if(naviCorner == 2)
-            ofs.setWidth(ofs.width()+cubeSize);
         int bw = w-10-ofs.width()-delta;
-        if(naviCorner == 3)
-            bw -= cubeSize;
         if(bw < 10)
             bw = 10;
 
@@ -779,12 +800,7 @@ public:
         rect = _left.tabWidget->getRect();
 
         ofs = _left.tabWidget->getOffset();
-        cubeSize = getCubeSize(_left);
-        if(naviCorner == 0)
-            ofs.setWidth(ofs.width()+cubeSize);
         delta = _left.tabWidget->getSizeDelta()+rectBottom.height();
-        if(naviCorner == 2 && cubeSize > rectBottom.height())
-            delta += cubeSize - rectBottom.height();
         int lh = std::max(h-ofs.width()-delta, 10);
 
         _left.tabWidget->setRect(QRect(ofs.height(),ofs.width(),rect.width(),lh));
@@ -798,12 +814,7 @@ public:
         rect = _right.tabWidget->getRect();
 
         ofs = _right.tabWidget->getOffset();
-        cubeSize = getCubeSize(_right);
-        if(naviCorner == 1)
-            ofs.setWidth(ofs.width()+cubeSize);
         delta = _right.tabWidget->getSizeDelta()+rectBottom.height();
-        if(naviCorner == 3 && cubeSize > rectBottom.height())
-            delta += cubeSize - rectBottom.height();
         int rh = std::max(h-ofs.width()-delta, 10);
         w -= ofs.height();
 
@@ -817,12 +828,7 @@ public:
         rect = _top.tabWidget->getRect();
 
         ofs = _top.tabWidget->getOffset();
-        cubeSize = getCubeSize(_top);
         delta = _top.tabWidget->getSizeDelta();
-        if(naviCorner == 0)
-            rectLeft.setWidth(std::max(rectLeft.width(), cubeSize));
-        else if(naviCorner == 1)
-            rectRight.setWidth(std::max(rectRight.width(), cubeSize));
         int tw = w-rectLeft.width()-rectRight.width()-ofs.width()-delta;
 
         _top.tabWidget->setRect(QRect(rectLeft.width()-ofs.width(),ofs.height(),tw,rect.height()));
@@ -1074,6 +1080,18 @@ public:
     void syncTaskHostAction()
     {
         _actTaskHost.setToolTip(QObject::tr("Show this task panel in its view"));
+        // Only while it has a panel to send: the Tasks tab also shows the
+        // watchers' page, and dialogs no view owns, and the button did
+        // nothing for those (docs/HandsOnQueue.md entry 73)
+        // Not asked while this is being made: the dock window manager makes
+        // the overlay manager from its own constructor, and asking for the
+        // task view there asks for the dock window manager again, which is
+        // not there yet and makes another -- without end. Nothing is shown
+        // that early, so there is no panel to send.
+        auto taskView = ready ? Control().taskPanel() : nullptr;
+        const bool can = taskView && taskView->canSendShownToView();
+        if (_actTaskHost.isVisible() != can)
+            _actTaskHost.setVisible(can);
     }
 
     void onAction(QAction *action) {
@@ -1594,6 +1612,7 @@ OverlayManager::OverlayManager()
 {
     d = new Private(this, getMainWindow());
     qApp->installEventFilter(this);
+    d->ready = true;
 }
 
 OverlayManager::~OverlayManager()
@@ -2102,14 +2121,47 @@ bool OverlayManager::isMouseTransparent() const
     return d->mouseTransparent;
 }
 
+void OverlayManager::addCover(QWidget *cover)
+{
+    if (!cover || d->covers.contains(cover))
+        return;
+    d->covers.append(cover);
+    cover->installEventFilter(d->coverWatch);
+    connect(cover, &QObject::destroyed, this, [this](QObject *gone) {
+        d->covers.removeAll(static_cast<QWidget*>(gone));
+        Q_EMIT coverChanged();
+    });
+    Q_EMIT coverChanged();
+}
+
+QRegion OverlayManager::covered(const QWidget *widget) const
+{
+    QRegion region = occupied(widget);
+    if (!widget)
+        return region;
+    for (QWidget *cover : d->covers) {
+        if (!cover->isVisible() || cover->window() != widget->window())
+            continue;
+        const QRect local = QRect(widget->mapFromGlobal(cover->mapToGlobal(QPoint(0, 0))),
+                                  cover->size()).intersected(widget->rect());
+        if (!local.isEmpty())
+            region += local;
+    }
+    return region;
+}
+
 QRegion OverlayManager::occupied(const QWidget *widget) const
 {
     QRegion region;
     if (!widget)
         return region;
     for (OverlayTabWidget *tabWidget : _Overlays) {
+        // Not asked whether it isOverlaid(): that is its see-through look,
+        // which the dock under the pointer and the one with the focus are
+        // taken out of for as long as that lasts. It stands over the view
+        // all the same, and a panel that took its strip for free then slid
+        // under it at every hover (docs/HandsOnQueue.md entry 68).
         if (!tabWidget || !tabWidget->count() || !tabWidget->isVisible()
-                || !tabWidget->isOverlaid()
                 || tabWidget->getState() > OverlayTabWidget::State::Normal)
             continue;
         const QRect global(tabWidget->mapToGlobal(QPoint(0, 0)), tabWidget->size());

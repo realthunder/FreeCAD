@@ -2080,3 +2080,26 @@ fc_add_gui_test(GuiCloseDuringViewProviderDrain_tests_run
 fc_add_gui_test(GuiPreferencesEnterInAnEditBox_tests_run
                 preferences-enter-in-an-edit-box.py
                 --timeout 180)
+
+# The buttons on a dock's title bar are glyphs drawn in the button's own text
+# colour, so they are seen under a dark theme as under a light one, docked,
+# overlaid and on the header of a task panel in its view; and the "show this
+# panel in its view" button is there only while the Tasks tab shows a panel
+# that has a view (docs/HandsOnQueue.md entry 73).
+fc_add_gui_test(GuiOverlayTitleButtonsTheme_tests_run
+                overlay-title-buttons-theme.py
+                --timeout 240)
+
+# The navigation cube slides along its edge, out from under an overlaid dock
+# or a task panel shown over its view, and back when the panel goes; the
+# docks leave it no room any more (docs/HandsOnQueue.md entry 76).
+fc_add_gui_test(GuiNaviCubeClearOfPanels_tests_run
+                navicube-clear-of-panels.py
+                --timeout 240)
+
+# The navigation cube's axes are drawn over the cube's faces, where they ran
+# behind them from most directions, and the corner coordinate system is off
+# unless asked for (docs/HandsOnQueue.md entry 75).
+fc_add_gui_test(GuiNaviCubeAxesOverTheCube_tests_run
+                navicube-axes-over-the-cube.py
+                --timeout 180)

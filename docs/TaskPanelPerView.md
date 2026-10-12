@@ -1587,11 +1587,15 @@ a group of their own as the `Render_*` properties of a 3D view are:
 - **A panel that is open stays where it was put** until its own view's
   property changes: not moved by the preference, nor by what is chosen in
   another view. The task view remembers the place per dialog for that.
-- **The option beside the preference**, `View/TaskPanelInViewAll` ("... and
-  the panels that are open"): while it is on, a change of the preference --
-  and turning the option on -- makes every view follow the preference at
+- **The button beside the preference**, "Apply to live views"
+  (`Control.applyPlaceToViews()` from Python): pressed, it stores the
+  preference if the dialog has not yet and makes every view follow it at
   once. The views' own places are given up (emptied) and the open panels
-  move.
+  move. Until 2026-10-12 this was a second, stored option,
+  `View/TaskPanelInViewAll` ("... and the panels that are open"), which
+  made every change of the preference do so while it was on; a setting for
+  what is one act, and its label read as a cut-off sentence
+  (docs/HandsOnQueue.md entry 70).
 - Changing a property moves the panel of that view and no other, also
   when it is set from Python. Nothing is closed, no dialog is told
   anything: the page moves as it does today.
@@ -1772,7 +1776,8 @@ The state, with no new look: the panel in its view is still sec 14's host.
   ones a document has outside it -- has its own place emptied, and every
   dialog's `inView` is read again.
 - `ViewParams::TaskPanelInViewAll`, with the preference's change handler
-  no longer moving anything unless it is on.
+  no longer moving anything unless it is on. (Gone 2026-10-12: the handler
+  moves nothing, and the preference page's button calls `applyToAll`.)
 - `TaskView::sendShownToView` behind `OBTN TaskHost`, which is no longer
   checkable.
 - Gone: the collapse button, `setCollapsed`, the header's double click,

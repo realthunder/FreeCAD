@@ -104,6 +104,9 @@ Gui--OverlayToolButton {
   background: transparent;
   padding: 0px;
   border: none;
+  /* the glyphs of the title buttons, on this sheet's ground whatever the
+     theme around it is */
+  qproperty-iconColor: #000000;
 }
 
 Gui--OverlayToolButton::hover {

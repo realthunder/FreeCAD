@@ -133,7 +133,6 @@ public:
     bool PerViewEdit;
     bool PerViewSelection;
     bool TaskPanelInView;
-    bool TaskPanelInViewAll;
     double DraggerScale;
     double HiddenLineTransparency;
     bool HiddenLineOverrideTransparency;
@@ -412,11 +411,11 @@ public:
         funcs["HiddenLineSelectionOnTop"] = &ViewParamsP::updateHiddenLineSelectionOnTop;
         PartialHighlightOnFullSelect = this->handle->GetBool("PartialHighlightOnFullSelect", false);
         funcs["PartialHighlightOnFullSelect"] = &ViewParamsP::updatePartialHighlightOnFullSelect;
-        SelectionLineThicken = this->handle->GetFloat("SelectionLineThicken", 1.5);
+        SelectionLineThicken = this->handle->GetFloat("SelectionLineThicken", 1.0);
         funcs["SelectionLineThicken"] = &ViewParamsP::updateSelectionLineThicken;
         SelectionLineMaxWidth = this->handle->GetFloat("SelectionLineMaxWidth", 4.0);
         funcs["SelectionLineMaxWidth"] = &ViewParamsP::updateSelectionLineMaxWidth;
-        SelectionPointScale = this->handle->GetFloat("SelectionPointScale", 2.5);
+        SelectionPointScale = this->handle->GetFloat("SelectionPointScale", 1.5);
         funcs["SelectionPointScale"] = &ViewParamsP::updateSelectionPointScale;
         SelectionPointMaxSize = this->handle->GetFloat("SelectionPointMaxSize", 6.0);
         funcs["SelectionPointMaxSize"] = &ViewParamsP::updateSelectionPointMaxSize;
@@ -470,8 +469,6 @@ public:
         funcs["PerViewSelection"] = &ViewParamsP::updatePerViewSelection;
         TaskPanelInView = this->handle->GetBool("TaskPanelInView", false);
         funcs["TaskPanelInView"] = &ViewParamsP::updateTaskPanelInView;
-        TaskPanelInViewAll = this->handle->GetBool("TaskPanelInViewAll", false);
-        funcs["TaskPanelInViewAll"] = &ViewParamsP::updateTaskPanelInViewAll;
         DraggerScale = this->handle->GetFloat("DraggerScale", 0.03);
         funcs["DraggerScale"] = &ViewParamsP::updateDraggerScale;
         HiddenLineTransparency = this->handle->GetFloat("HiddenLineTransparency", 0.4);
@@ -720,7 +717,7 @@ public:
         funcs["DatumTemporaryScaleFactor"] = &ViewParamsP::updateDatumTemporaryScaleFactor;
         EyeDistance = this->handle->GetFloat("EyeDistance", 5.0);
         funcs["EyeDistance"] = &ViewParamsP::updateEyeDistance;
-        CornerCoordSystem = this->handle->GetBool("CornerCoordSystem", true);
+        CornerCoordSystem = this->handle->GetBool("CornerCoordSystem", false);
         funcs["CornerCoordSystem"] = &ViewParamsP::updateCornerCoordSystem;
         CornerCoordSystemSize = this->handle->GetInt("CornerCoordSystemSize", 10);
         funcs["CornerCoordSystemSize"] = &ViewParamsP::updateCornerCoordSystemSize;
@@ -1047,7 +1044,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionLineThicken(ViewParamsP *self) {
-        self->SelectionLineThicken = self->handle->GetFloat("SelectionLineThicken", 1.5);
+        self->SelectionLineThicken = self->handle->GetFloat("SelectionLineThicken", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionLineMaxWidth(ViewParamsP *self) {
@@ -1055,7 +1052,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionPointScale(ViewParamsP *self) {
-        self->SelectionPointScale = self->handle->GetFloat("SelectionPointScale", 2.5);
+        self->SelectionPointScale = self->handle->GetFloat("SelectionPointScale", 1.5);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionPointMaxSize(ViewParamsP *self) {
@@ -1167,14 +1164,6 @@ public:
         if (self->TaskPanelInView != v) {
             self->TaskPanelInView = v;
             ViewParams::onTaskPanelInViewChanged();
-        }
-    }
-    // Auto generated code (Tools/params_utils.py:322)
-    static void updateTaskPanelInViewAll(ViewParamsP *self) {
-        auto v = self->handle->GetBool("TaskPanelInViewAll", false);
-        if (self->TaskPanelInViewAll != v) {
-            self->TaskPanelInViewAll = v;
-            ViewParams::onTaskPanelInViewAllChanged();
         }
     }
     // Auto generated code (Tools/params_utils.py:314)
@@ -1695,7 +1684,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCornerCoordSystem(ViewParamsP *self) {
-        self->CornerCoordSystem = self->handle->GetBool("CornerCoordSystem", true);
+        self->CornerCoordSystem = self->handle->GetBool("CornerCoordSystem", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCornerCoordSystemSize(ViewParamsP *self) {
@@ -2138,13 +2127,13 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PartialHighlightOnFullSelect", "PartialHighlightOnFullSelect", App::ParamInfo::Bool, false)
         .setTitle("Enable partial highlight on full selection for object that supports it.")
         .setDoc("Enable partial highlight on full selection for object that supports it."),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionLineThicken", "SelectionLineThicken", App::ParamInfo::Float, 1.5)
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionLineThicken", "SelectionLineThicken", App::ParamInfo::Float, 1.0)
         .setTitle("Line width multiplier")
         .setDoc("Muplication factor to increase the width of the selected line."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionLineMaxWidth", "SelectionLineMaxWidth", App::ParamInfo::Float, 4.0)
         .setTitle("Maximum line width")
         .setDoc("Limit the selected line width when applying line thickening."),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionPointScale", "SelectionPointScale", App::ParamInfo::Float, 2.5)
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionPointScale", "SelectionPointScale", App::ParamInfo::Float, 1.5)
         .setTitle("Point size multiplier")
         .setDoc("Muplication factor to increase the size of the selected point.\n"
 "If zero, then use line multiplication factor."),
@@ -2272,12 +2261,9 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "Tasks tab of the combo view, which follows the active view. This is\n"
 "for the panels opened from now on: one that is open stays where it\n"
 "is, and a view keeps the place chosen with the button on its own\n"
-"panel's title bar.")
-        .setOnChange(),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "TaskPanelInViewAll", "TaskPanelInViewAll", App::ParamInfo::Bool, false)
-        .setTitle("... and the panels that are open")
-        .setDoc("Apply the setting above to every view at once: the panels that are\n"
-"open move, and a view's own choice of place is given up.")
+"panel's title bar. \"Apply to live views\", beside it on the\n"
+"preference page, moves the panels that are open as well and has\n"
+"every view give its own choice of place up.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DraggerScale", "DraggerScale", App::ParamInfo::Float, 0.03)
         .setTitle("Transform dragger scale")
@@ -2830,7 +2816,7 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Eye distance for stereo modes")
         .setDoc("Offset between the left and the right eye image of a stereo 3D\n"
 "view. 0.1 to 1000. Applies at once to all open 3D views."),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CornerCoordSystem", "CornerCoordSystem", App::ParamInfo::Bool, true)
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CornerCoordSystem", "CornerCoordSystem", App::ParamInfo::Bool, false)
         .setTitle("Show coordinate system in the corner")
         .setDoc("Show the small coordinate system in the corner of every 3D view.\n"
 "Applies at once."),
@@ -4304,7 +4290,7 @@ const double & ViewParams::getSelectionLineThicken() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const double & ViewParams::defaultSelectionLineThicken() {
-    const static double def = 1.5;
+    const static double def = 1.0;
     return def;
 }
 
@@ -4361,7 +4347,7 @@ const double & ViewParams::getSelectionPointScale() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const double & ViewParams::defaultSelectionPointScale() {
-    const static double def = 2.5;
+    const static double def = 1.5;
     return def;
 }
 
@@ -5120,7 +5106,9 @@ const char *ViewParams::docTaskPanelInView() {
 "Tasks tab of the combo view, which follows the active view. This is\n"
 "for the panels opened from now on: one that is open stays where it\n"
 "is, and a view keeps the place chosen with the button on its own\n"
-"panel's title bar.");
+"panel's title bar. \"Apply to live views\", beside it on the\n"
+"preference page, moves the panels that are open as well and has\n"
+"every view give its own choice of place up.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5143,35 +5131,6 @@ void ViewParams::setTaskPanelInView(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void ViewParams::removeTaskPanelInView() {
     instance()->handle->RemoveBool("TaskPanelInView");
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-const char *ViewParams::docTaskPanelInViewAll() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Apply the setting above to every view at once: the panels that are\n"
-"open move, and a view's own choice of place is given up.");
-}
-
-// Auto generated code (Tools/params_utils.py:405)
-const bool & ViewParams::getTaskPanelInViewAll() {
-    return instance()->TaskPanelInViewAll;
-}
-
-// Auto generated code (Tools/params_utils.py:413)
-const bool & ViewParams::defaultTaskPanelInViewAll() {
-    const static bool def = false;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:422)
-void ViewParams::setTaskPanelInViewAll(const bool &v) {
-    instance()->handle->SetBool("TaskPanelInViewAll",v);
-    instance()->TaskPanelInViewAll = v;
-}
-
-// Auto generated code (Tools/params_utils.py:431)
-void ViewParams::removeTaskPanelInViewAll() {
-    instance()->handle->RemoveBool("TaskPanelInViewAll");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -8754,7 +8713,7 @@ const bool & ViewParams::getCornerCoordSystem() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & ViewParams::defaultCornerCoordSystem() {
-    const static bool def = true;
+    const static bool def = false;
     return def;
 }
 
@@ -10726,7 +10685,7 @@ void ViewParams::removeHeadlightRotationW() {
     instance()->handle->RemoveFloat("HeadlightRotationW");
 }
 
-// Auto generated code (Gui/ViewParams.py:1121)
+// Auto generated code (Gui/ViewParams.py:1119)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -10771,7 +10730,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:1129)
+// Auto generated code (Gui/ViewParams.py:1127)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -10784,7 +10743,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:1139)
+// Auto generated code (Gui/ViewParams.py:1137)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -10797,13 +10756,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:1149)
+// Auto generated code (Gui/ViewParams.py:1147)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:1156)
+// Auto generated code (Gui/ViewParams.py:1154)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -10811,7 +10770,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:1165)
+// Auto generated code (Gui/ViewParams.py:1163)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -10823,7 +10782,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:1178)
+// Auto generated code (Gui/ViewParams.py:1176)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)
@@ -10837,15 +10796,9 @@ const char *drawStyleDocumentation(int i)
 void ViewParams::onTaskPanelInViewChanged() {
     // For the panels opened from now on, in a view that holds no place of
     // its own (docs/TaskPanelPerView.md sec 15.3). The ones that are open
-    // stay, unless the option beside it asks for them too.
-    if (getTaskPanelInViewAll())
-        TaskView::TaskPlacement::applyToAll();
+    // stay: "Apply to live views" on the preference page moves them
+    // (TaskPlacement::applyToAll, docs/HandsOnQueue.md entry 70).
     Control().signalHostChanged();
-}
-
-void ViewParams::onTaskPanelInViewAllChanged() {
-    if (getTaskPanelInViewAll())
-        TaskView::TaskPlacement::applyToAll();
 }
 
 void ViewParams::onShowSelectionOnTopChanged() {

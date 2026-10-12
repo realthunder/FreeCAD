@@ -63,6 +63,10 @@ public:
 	/// properties NaviCubeX/NaviCubeY). A corner is 0 or 1 on both.
 	void setPosition(float x, float y);
 	void getPosition(float &x, float &y) const;
+	/// Where the cube is shown, in the same terms: the position stated, or
+	/// what it has slid to along its edge to be clear of a panel laid over
+	/// the view (docs/HandsOnQueue.md entry 76).
+	void getShownPosition(float &x, float &y) const;
 	/// The position a corner stands for.
 	static void cornerPosition(Corner, float &x, float &y);
 	/// State a cube of \a size pixels at position (\a x, \a y) on an

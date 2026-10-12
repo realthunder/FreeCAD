@@ -36,6 +36,7 @@
 # include <QPointer>
 # include <QSpacerItem>
 # include <QSplitter>
+# include <QStyleOption>
 # include <QTabBar>
 # include <QTextStream>
 # include <QTimerEvent>
@@ -333,6 +334,78 @@ OverlayToolButton::OverlayToolButton(QWidget *parent)
     setCursor(Qt::ArrowCursor);
 }
 
+void OverlayToolButton::setIconColor(const QColor &color)
+{
+    if (_iconColor == color)
+        return;
+    _iconColor = color;
+    update();
+}
+
+QColor OverlayToolButton::effectiveIconColor() const
+{
+    if (_iconColor.isValid())
+        return _iconColor;
+    // Not the button's palette: under a style sheet that is not the colour
+    // its neighbours' text is drawn in, and it changes with the window
+    // being the active one. A dark theme has light glyphs, a light one the
+    // files as they are.
+    return Application::isDarkTheme() ? QColor(0xd0, 0xd0, 0xd0) : QColor();
+}
+
+QPixmap OverlayToolButton::tinted(const QPixmap &pixmap, const QColor &color)
+{
+    if (pixmap.isNull() || !color.isValid())
+        return pixmap;
+    QImage image = pixmap.toImage().convertToFormat(QImage::Format_ARGB32);
+    const int r = color.red(), g = color.green(), b = color.blue();
+    for (int y = 0; y < image.height(); ++y) {
+        auto line = reinterpret_cast<QRgb*>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const QRgb px = line[x];
+            const int alpha = qAlpha(px);
+            if (!alpha)
+                continue;
+            // how light the pixel is, of 255: none of the colour at white
+            const int light = qGray(px);
+            line[x] = qRgba((r * (255 - light) + qRed(px) * light) / 255,
+                            (g * (255 - light) + qGreen(px) * light) / 255,
+                            (b * (255 - light) + qBlue(px) * light) / 255,
+                            alpha);
+        }
+    }
+    QPixmap out = QPixmap::fromImage(image);
+    out.setDevicePixelRatio(pixmap.devicePixelRatio());
+    return out;
+}
+
+void OverlayToolButton::initStyleOption(QStyleOptionToolButton *option) const
+{
+    QToolButton::initStyleOption(option);
+    if (option->icon.isNull())
+        return;
+    const QColor color = effectiveIconColor();
+    // Black on a button whose text is black: the file as it is
+    if (!color.isValid() || (color.rgb() & 0xffffff) == 0)
+        return;
+    if (_tintedOf != option->icon.cacheKey() || _tintedIn != color.rgba()
+            || _tintedAt != option->iconSize) {
+        _tinted = QIcon();
+        for (auto mode : {QIcon::Normal, QIcon::Disabled}) {
+            for (auto state : {QIcon::Off, QIcon::On}) {
+                _tinted.addPixmap(
+                    tinted(option->icon.pixmap(option->iconSize, devicePixelRatioF(), mode, state),
+                           color),
+                    mode, state);
+            }
+        }
+        _tintedOf = option->icon.cacheKey();
+        _tintedIn = color.rgba();
+        _tintedAt = option->iconSize;
+    }
+    option->icon = _tinted;
+}
+
 // --------------------------------------------------------------------
 
 OverlayTabWidget::OverlayTabWidget(QWidget *parent, Qt::DockWidgetArea pos)
@@ -523,6 +596,15 @@ QWidget *OverlayTabWidget::createTitleButton(QAction *action, int size)
     button->setAutoRaise(true);
     button->setContentsMargins(0,0,0,0);
     button->setFixedSize(size,size);
+    // A button made by hand does not follow its action's visibility, as one
+    // in a tool bar does: the "show this panel in its view" button is there
+    // only while the Tasks tab shows a panel that has a view.
+    if (!action->isVisible())
+        button->hide();
+    QObject::connect(action, &QAction::changed, button, [button, action]() {
+        if (button->isHidden() == action->isVisible())
+            button->setVisible(action->isVisible());
+    });
     return button;
 }
 

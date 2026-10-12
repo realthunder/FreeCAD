@@ -52,7 +52,7 @@ public:
     bool DockOverlayWheelPassThrough;
     long DockOverlayWheelDelay;
     long DockOverlayAlphaRadius;
-    bool DockOverlayCheckNaviCube;
+    bool DockOverlayMoveNaviCube;
     long DockOverlayHintTriggerSize;
     long DockOverlayHintSize;
     long DockOverlayHintLeftLength;
@@ -96,8 +96,8 @@ public:
         funcs["DockOverlayWheelDelay"] = &OverlayParamsP::updateDockOverlayWheelDelay;
         DockOverlayAlphaRadius = this->handle->GetInt("DockOverlayAlphaRadius", 2);
         funcs["DockOverlayAlphaRadius"] = &OverlayParamsP::updateDockOverlayAlphaRadius;
-        DockOverlayCheckNaviCube = this->handle->GetBool("DockOverlayCheckNaviCube", true);
-        funcs["DockOverlayCheckNaviCube"] = &OverlayParamsP::updateDockOverlayCheckNaviCube;
+        DockOverlayMoveNaviCube = this->handle->GetBool("DockOverlayMoveNaviCube", true);
+        funcs["DockOverlayMoveNaviCube"] = &OverlayParamsP::updateDockOverlayMoveNaviCube;
         DockOverlayHintTriggerSize = this->handle->GetInt("DockOverlayHintTriggerSize", 16);
         funcs["DockOverlayHintTriggerSize"] = &OverlayParamsP::updateDockOverlayHintTriggerSize;
         DockOverlayHintSize = this->handle->GetInt("DockOverlayHintSize", 8);
@@ -197,11 +197,11 @@ public:
         self->DockOverlayAlphaRadius = self->handle->GetInt("DockOverlayAlphaRadius", 2);
     }
     // Auto generated code (Tools/params_utils.py:322)
-    static void updateDockOverlayCheckNaviCube(OverlayParamsP *self) {
-        auto v = self->handle->GetBool("DockOverlayCheckNaviCube", true);
-        if (self->DockOverlayCheckNaviCube != v) {
-            self->DockOverlayCheckNaviCube = v;
-            OverlayParams::onDockOverlayCheckNaviCubeChanged();
+    static void updateDockOverlayMoveNaviCube(OverlayParamsP *self) {
+        auto v = self->handle->GetBool("DockOverlayMoveNaviCube", true);
+        if (self->DockOverlayMoveNaviCube != v) {
+            self->DockOverlayMoveNaviCube = v;
+            OverlayParams::onDockOverlayMoveNaviCubeChanged();
         }
     }
     // Auto generated code (Tools/params_utils.py:314)
@@ -342,9 +342,11 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
 "the region are non-opaque.")
         .setProxy("SpinBox")
         .setRange(1, 100, 1, 0),
-    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayCheckNaviCube", "DockOverlayCheckNaviCube", App::ParamInfo::Bool, true)
-        .setTitle("Check Navigation Cube")
-        .setDoc("Leave space for Navigation Cube in dock overlay")
+    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayMoveNaviCube", "DockOverlayMoveNaviCube", App::ParamInfo::Bool, true)
+        .setTitle("Navigation cube moves clear of panels")
+        .setDoc("Slide the navigation cube along its edge of the view, out from under\n"
+"an overlaid panel or a task panel shown over the view, and back when\n"
+"the panel is gone. When off a panel simply covers the cube.")
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayHintTriggerSize", "DockOverlayHintTriggerSize", App::ParamInfo::Int, 16)
         .setTitle("Hint trigger size")
@@ -722,31 +724,33 @@ void OverlayParams::removeDockOverlayAlphaRadius() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-const char *OverlayParams::docDockOverlayCheckNaviCube() {
+const char *OverlayParams::docDockOverlayMoveNaviCube() {
     return QT_TRANSLATE_NOOP("OverlayParams",
-"Leave space for Navigation Cube in dock overlay");
+"Slide the navigation cube along its edge of the view, out from under\n"
+"an overlaid panel or a task panel shown over the view, and back when\n"
+"the panel is gone. When off a panel simply covers the cube.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
-const bool & OverlayParams::getDockOverlayCheckNaviCube() {
-    return instance()->DockOverlayCheckNaviCube;
+const bool & OverlayParams::getDockOverlayMoveNaviCube() {
+    return instance()->DockOverlayMoveNaviCube;
 }
 
 // Auto generated code (Tools/params_utils.py:413)
-const bool & OverlayParams::defaultDockOverlayCheckNaviCube() {
+const bool & OverlayParams::defaultDockOverlayMoveNaviCube() {
     const static bool def = true;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:422)
-void OverlayParams::setDockOverlayCheckNaviCube(const bool &v) {
-    instance()->handle->SetBool("DockOverlayCheckNaviCube",v);
-    instance()->DockOverlayCheckNaviCube = v;
+void OverlayParams::setDockOverlayMoveNaviCube(const bool &v) {
+    instance()->handle->SetBool("DockOverlayMoveNaviCube",v);
+    instance()->DockOverlayMoveNaviCube = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
-void OverlayParams::removeDockOverlayCheckNaviCube() {
-    instance()->handle->RemoveBool("DockOverlayCheckNaviCube");
+void OverlayParams::removeDockOverlayMoveNaviCube() {
+    instance()->handle->RemoveBool("DockOverlayMoveNaviCube");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1225,7 +1229,7 @@ void OverlayParams::removeDockOverlayMinimumSize() {
     instance()->handle->RemoveInt("DockOverlayMinimumSize");
 }
 
-// Auto generated code (Gui/OverlayParams.py:180)
+// Auto generated code (Gui/OverlayParams.py:183)
 const std::vector<QString> OverlayParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -1279,8 +1283,9 @@ void OverlayParams::onCornerNaviCubeChanged() {
     OverlayManager::instance()->refresh();
 }
 
-void OverlayParams::onDockOverlayCheckNaviCubeChanged() {
-    OverlayManager::instance()->refresh();
+void OverlayParams::onDockOverlayMoveNaviCubeChanged() {
+    // the cubes place themselves again
+    Q_EMIT OverlayManager::instance()->coverChanged();
 }
 
 void OverlayParams::onDockOverlayHideTabBarChanged() {

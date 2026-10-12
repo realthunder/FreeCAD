@@ -233,7 +233,6 @@ def build():
     VIEW.SetBool("ShowNaviCube", False)
     VIEW.SetBool("UseNavigationAnimations", False)
     VIEW.SetBool("UseViewArea", True)
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", False)
     LAST.RemString("Side")
     LAST.RemString("Mode")
@@ -370,7 +369,6 @@ def finish():
     if state["done"]:
         return
     state["done"] = True
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", False)
     LAST.RemString("Side")
     LAST.RemString("Mode")

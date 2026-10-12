@@ -52,8 +52,7 @@ ParamGroup = (
     )]),
 
     ('Views', [_ViewParams['UseViewArea'], _ViewParams['PerViewEdit'],
-               _ViewParams['PerViewSelection'], _ViewParams['TaskPanelInView'],
-               _ViewParams['TaskPanelInViewAll']]
+               _ViewParams['PerViewSelection'], _ViewParams['TaskPanelInView']]
               + [_OpenViewParams[name] for name in (
         'DocumentTarget',
         'DocViewTarget',
@@ -101,7 +100,7 @@ ParamGroup = (
         'DockOverlayWheelPassThrough',
         'DockOverlayWheelDelay',
         'DockOverlayAlphaRadius',
-        'DockOverlayCheckNaviCube',
+        'DockOverlayMoveNaviCube',
         'DockOverlayHintTriggerSize',
         'DockOverlayHintSize',
         'DockOverlayHintLeftOffset',

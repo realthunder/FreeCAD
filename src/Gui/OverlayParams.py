@@ -127,8 +127,11 @@ Params = [
          "defines a region of alpha test under the mouse cursor.\n"
          "Auto click through is only activated if all pixels within\n"
          "the region are non-opaque."),
-    ParamBool('DockOverlayCheckNaviCube', True, on_change=True, title="Check Navigation Cube",
-         doc="Leave space for Navigation Cube in dock overlay"),
+    ParamBool('DockOverlayMoveNaviCube', True, on_change=True,
+         title="Navigation cube moves clear of panels",
+         doc="Slide the navigation cube along its edge of the view, out from under\n"
+             "an overlaid panel or a task panel shown over the view, and back when\n"
+             "the panel is gone. When off a panel simply covers the cube."),
     ParamInt('DockOverlayHintTriggerSize', 16, title="Hint trigger size", proxy=ParamSpinBox(1, 100, 1),
          doc="Auto hide hint visual display triggering width"),
     ParamInt('DockOverlayHintSize', 8, title="Hint width", proxy=ParamSpinBox(1, 100, 1),

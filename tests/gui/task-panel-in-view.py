@@ -37,8 +37,10 @@ task-panel-place.py is that state's own test). The host moves to the
 other side of its cell, and the view remembers it. No button folds it.
 
 The preference alone is for the panels opened afterwards, so this test
-runs with View/TaskPanelInViewAll on: every panel then goes by the
-preference at once, which is what its steps were written against.
+applies it to the views each time it changes it (Control.applyPlaceToViews,
+what "Apply to live views" on the preference page does): every panel then
+goes by the preference at once, which is what its steps were written
+against.
 
 A sketch edited in a1: its panel is in a1's cell, stays with a2 active,
 and the edit survives the switch both ways. A pad edited in a1: a length
@@ -394,6 +396,7 @@ def second_view():
 
 def in_view(on):
     VIEW.SetBool("TaskPanelInView", on)
+    Control.applyPlaceToViews()
     settle(300)
 
 
@@ -409,8 +412,8 @@ def build():
     VIEW.SetBool("PerViewEdit", True)
     VIEW.SetBool("ShowNaviCube", False)
     VIEW.SetBool("UseNavigationAnimations", False)
-    VIEW.SetBool("TaskPanelInViewAll", True)
     VIEW.SetBool("TaskPanelInView", False)
+    Control.applyPlaceToViews()
     TASKS.SetBool("TaskPanelAllowConcurrent", False)
     LAST.RemString("Side")
     LAST.RemString("Mode")
@@ -638,13 +641,15 @@ def the_two_buttons():
           calls("two") == before and two.edit.text() == "stays", (before, calls("two")))
     check("the combo view's title bar has a button for the panel in front of it",
           title_button() is not None)
+    claim("the title bar button is no switch", lambda: not title_button().isCheckable())
     claim("clicking it", lambda: QTest.mouseClick(title_button(), LEFT) is None)
     settle(400)
     claim("the view holds the place", lambda: state["views"]["a1"].Task_Place == "InView")
     claim("the page is back in a1's cell", lambda: hosted("a1", two.form) and on_screen(two.form))
     check("still the same dialog", calls("two") == before and two.edit.text() == "stays",
           (before, calls("two")))
-    claim("the title bar button is no switch", lambda: not title_button().isCheckable())
+    check("the panel gone to its view, the title bar has no button to send it",
+          title_button() is None)
     claim("no button folds the host to its header",
           lambda: host_button("a1", "taskPanelHostCollapse") is None)
 
@@ -906,7 +911,6 @@ def finish():
     state["done"] = True
     VIEW.SetBool("PerViewEdit", False)
     VIEW.SetBool("TaskPanelInView", False)
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("UseViewArea", True)
     LAST.RemString("Side")
     LAST.RemString("Mode")

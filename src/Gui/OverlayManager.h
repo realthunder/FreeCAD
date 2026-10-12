@@ -131,10 +131,25 @@ public:
      * For what is laid over a view and must not stand under a dock, nor
      * over one: a task panel in overlay mode
      * (docs/TaskPanelPerView.md sec 5.3). Only docks that are shown --
-     * not one that is hidden to its hint, or by the user. Empty when no
-     * dock is overlaid, and for a widget none of them reaches.
+     * not one that is hidden to its hint, or by the user -- and each of
+     * those whether it is see-through at the moment or has the pointer
+     * or the focus and is opaque. Empty when no dock is overlaid, and for
+     * a widget none of them reaches.
      */
     QRegion occupied(const QWidget *widget) const;
+
+    /** The parts of \a widget that are laid over: by the overlaid docks,
+     * as occupied() answers, and by whatever else registered itself with
+     * addCover() -- a task panel shown over its view.
+     *
+     * For what gets out of the way of all of them: the navigation cube
+     * (docs/HandsOnQueue.md entry 76).
+     */
+    QRegion covered(const QWidget *widget) const;
+    /// \a cover is laid over views while it is shown: covered() counts it,
+    /// and coverChanged() tells when it moves, shows or hides. Forgotten
+    /// when it is destroyed.
+    void addCover(QWidget *cover);
 
     bool isChangingMode() const
     {
@@ -188,6 +203,8 @@ Q_SIGNALS:
     /// The overlaid docks were laid out again: occupied() may answer
     /// differently now
     void layoutChanged();
+    /// covered() may answer differently now
+    void coverChanged();
 
 protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;

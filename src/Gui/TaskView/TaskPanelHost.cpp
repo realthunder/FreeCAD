@@ -571,6 +571,9 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
 {
     setObjectName(QStringLiteral("taskPanelHost"));
     setAutoFillBackground(true);
+    // Laid over its view when its place is that: what keeps clear of the
+    // overlaid docks keeps clear of this too (the navigation cube)
+    OverlayManager::instance()->addCover(this);
 
     _layout = new QVBoxLayout(this);
     _layout->setContentsMargins(1, 1, 1, 1);
@@ -880,6 +883,12 @@ void TaskPanelHost::applyLook()
         setAttribute(Qt::WA_NoSystemBackground, overlay);
         setAttribute(Qt::WA_TranslucentBackground, overlay);
         setStyleSheet(overlay ? OverlayManager::instance()->getStyleSheet() : QString());
+        // A colour the overlay sheet gave the header's buttons stays on them
+        // when the sheet is taken away; without it they go by the theme
+        if (!overlay) {
+            for (auto button : findChildren<OverlayToolButton*>())
+                button->setIconColor(QColor());
+        }
     }
     if (_page) {
         OverlayTabWidget::applyOverlayLook(_page, overlay);
