@@ -80,8 +80,23 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-12 22:20: a CORRECTION on entry 79 -- WHICH FILES can crash at
+a load: one saved by a build that has the merge of 2026-10-12, so by the
+stage of 14:04 or of 17:52. "Since 2026-10-03" is WITHDRAWN.** From the
+build session (22:20 and 22:21, written here 22:12).
+- Both staged copies of 2026-10-12 are exposed; the stages before that
+  day are not, by its reading of the code, which no run has shown.
+- A file saved today with either stage can die at a load, one load in a
+  few on this box; it is NOT damaged and loads on another try.
+- No crash has been seen on the staged copy itself; the two occurrences
+  are on the dev builds of the evening.
+- The fix is as at 22:09: written, in a build, not tested, not
+  committed.
+
 **2026-10-12 22:09: entry 79's CAUSE FOUND -- any file saved by a build
-since 2026-10-03 can crash at its next load; a fix written, not tested.
+since 2026-10-03 can crash at its next load ["since 2026-10-03" is
+WITHDRAWN, see the block of 22:20 above: a file saved by a build with the
+merge of 2026-10-12]; a fix written, not tested.
 Entry 80 built. A new finding, entry 81: saving into a large folder is
 slow. ALL LOCAL, nothing staged or pushed; the fix of what was pushed
 still waits for the reporter's word.** From the build session (its message
@@ -104,7 +119,8 @@ origin/LinkVibe is still `5de7d97293`, the stage still `22ece75a08`.
   running build: "results not before about 23:30".
 - What the staged copy of 17:52 has of this: entry 79's crash CAN
   happen there (the note-taker's conclusion from "since the suppression
-  port", not said by the build session in those words); nothing of 69,
+  port", not said by the build session in those words -- CONFIRMED by
+  it at 22:20 on other grounds, see the block above); nothing of 69,
   78, 80, 81 nor the white glyphs of 73.
 
 **2026-10-12 21:03: entries 69 and 78 DONE and committed, entry 73's glyphs
@@ -1003,7 +1019,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-clear-of-panels.py` 16 claims, no FAIL. As it stood in work at 16:36: the docks leave no room, `DockOverlayCheckNaviCube` removed; new `View/DockOverlayMoveNaviCube`, on by default; the cube slides along its edge clear of overlaid docks and of a task panel over its view, and back. OPEN; the request turned 16:18; the two points of before fall away; the three new ones answered 16:20: the cube slides along its edge in the same corner; with the setting off a panel simply covers it; it moves for a momentary panel too and comes back; nothing left unanswered |
 | 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
 | 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space. ANSWERED 18:29: NO new mode -- from the property view the omni search opens with text already typed that leads to the current object, document or view and ends with a dot, so the list shows all its properties; Ctrl+F applies in the tree view and the property view ONLY; the tree's "Search..." menu item is kept and opens the omni search; opened from the tree view it scrolls the tree by itself as before and sets and clears the item's background as before | DONE `b70dab6401`, local, NOT pushed, NOT staged (21:03): its own test `omni-search-from-tree-and-property-view.py` 18 claims, no FAIL; found by it and fixed with it: opened on a lone dot (several objects selected) the omni search selected the first object in place of them all with the tree's "sync view" on. Before, 18:57: written in a second working copy, not built; the build session's choices on the three smaller points are under the entry, one of them (g) against the note-taker's reading. The four points answered 18:29 |
-| 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | FOUND 22:09, the cause named; a fix WRITTEN, uncommitted, in a build, NOT tested: a repaint during the restore builds a PartDesign feature's visual on demand, which reads the `SuppressedShape` still parked from the load; serving it announces a change, and the answer to that regroups the view provider's children and takes roots out of the scene root under the walk. So EVERY file saved by a build since the suppression port (2026-10-03) can do it at its next load, one load in a few on this box. The fix: a regrouping asked for during such a walk waits until the walk is over. Before, 21:03, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
+| 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | FOUND 22:09, the cause named; a fix WRITTEN, uncommitted, in a build, NOT tested: a repaint during the restore builds a PartDesign feature's visual on demand, which reads the `SuppressedShape` still parked from the load; serving it announces a change, and the answer to that regroups the view provider's children and takes roots out of the scene root under the walk. WHICH FILES, CORRECTED by the build session 22:20 (its "every file saved since the suppression port, 2026-10-03" is WITHDRAWN): a file SAVED BY A BUILD THAT HAS THE MERGE of 2026-10-12 (`ffb143c047`) -- so by the stage of 14:04 or of 17:52, both EXPOSED -- at any later load, one load in a few on this box; the stages before 2026-10-12 are not exposed by its reading of the code, which no run has shown; the file is not damaged; no crash seen on the staged copy itself. The fix: a regrouping asked for during such a walk waits until the walk is over. Before, 21:03, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
 | 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | IN WORK 2026-10-12 22:09, in the working tree, uncommitted, built; its test not through yet (the test's fault, the build session says): the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | IN WORK 2026-10-12 22:09, `src/App/Document.cpp`, uncommitted, in a build, NOT tested: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 
@@ -9246,7 +9262,7 @@ written here 21:04.
   marked however the box is opened); the reporter has not said
   otherwise.
 
-## 79. A crash at the load of `scanner.FCStd` saved again by this version: the scene root's children change under a repaint -- FOUND 2026-10-12 22:09: any file saved since 2026-10-03 can do it; a fix written, in a build, not tested, not committed
+## 79. A crash at the load of `scanner.FCStd` saved again by this version: the scene root's children change under a repaint -- FOUND 2026-10-12 22:09; which files CORRECTED 22:20: a file saved by a build with the merge of 2026-10-12, so by either stage of that day ("since 2026-10-03" withdrawn); a fix written, in a build, not tested, not committed
 
 **2026-10-12 21:03, from the build session** (its message headed "state at
 21:05"; found by it on entry 47, NOT reported by the reporter; the number
@@ -9300,12 +9316,14 @@ written here 22:10.
   4. `Gui::Document::slotChangedObject` answers by regrouping the view
      provider's children (`handleChildren3D`), which takes the roots of
      claimed children out of the scene root -- under the walk.
-- Why the ORIGINAL `scanner.FCStd` never showed it: a file saved before
-  `SuppressedShape` was stored has nothing parked there.
-- So: EVERY file saved by a build since the suppression port
-  (2026-10-03) can do it at its next load -- "one load in a few here".
-  This answers the note-taker's "NOT known" above: the original file
-  no, any file saved since, yes.
+- [WITHDRAWN by the build session 22:20, see the correction below; kept
+  as it was written:] Why the ORIGINAL `scanner.FCStd` never showed
+  it: a file saved before `SuppressedShape` was stored has nothing
+  parked there.
+- [WITHDRAWN 22:20, the same:] So: EVERY file saved by a build since the
+  suppression port (2026-10-03) can do it at its next load -- "one
+  load in a few here". This answers the note-taker's "NOT known"
+  above: the original file no, any file saved since, yes.
 - The fix: a regrouping asked for during such a walk is put on a list
   and done by a queued call when the walk is over. To be shown by twelve
   loads of the re-saved file writing no crash log.
@@ -9316,6 +9334,40 @@ with the stages before it since that date, can die at a load -- with a
 PartDesign feature in it, as far as the chain says. That conclusion is
 the note-taker's, not a sentence of the build session's. If it happens:
 the time and the file, under this entry.
+
+**2026-10-12 22:20, a CORRECTION from the build session: WHICH FILES are
+exposed.** From its messages of 22:20 and 22:21, written here 22:12. Its
+own words on the two sentences marked above: "WRONG in my message ... I
+had not looked in the files. I have now".
+- READ by it in three files: the original `scanner.FCStd` (saved
+  2026-10-06), the copy a build of 2026-10-11 saved, and the copy
+  tonight's build saved ALL carry `SuppressedShape` for their 126
+  PartDesign features. The first two name a FILE for it
+  (`file="Pad.SuppressedShape.brp"`); tonight's names a BLOB
+  (`hash="d483..."`), the form the merge of this morning brought
+  (`ffb143c047`, first staged 14:04).
+- Its READING of the code, "not shown by a run": a shape that names a
+  file is served by the restore's own slices before a view provider
+  exists; one that names a blob stays parked until something asks for
+  it, and the first to ask can be the visual built inside a scene walk
+  -- the chain that crashed.
+- So the exposure as it has it now: a file SAVED BY A BUILD THAT HAS THE
+  MERGE, at any later load, one load in a few here (1 of 3 at 20:17; the
+  detector fired on the first of the next).
+- The staged copies: YES, the stage of 17:52 (`22ece75a08`) is exposed,
+  and so is the stage of 14:04 (`4474fcb17e`) -- both have the merge.
+  The stages BEFORE 2026-10-12 are NOT exposed by this reading: they
+  save the file form.
+- For the reporter: a file saved on 2026-10-12 with either stage can die
+  at a load. It is NOT damaged -- the crash is in the display's restore;
+  the file loads when the timing falls the other way, and with the fix.
+- NOT shown: a crash on the staged copy itself. The TWO occurrences --
+  the crash of 20:17 and the detector's report of 22:03 -- are both on
+  tonight's dev builds (its 22:20 said "four"; corrected by it at 22:21).
+
+The note-taker's note of 22:10 just above said "the stages before it since
+that date" too: that part is WITHDRAWN with the build session's sentence;
+what holds of it is the staged copies of 2026-10-12, 14:04 and 17:52.
 
 ## 80. The file recovery dialog: a check box in the first column that selects all or none (a change request) -- IN WORK 2026-10-12 22:09, built, uncommitted, its test not through; the three points answered 2026-10-12 21:40
 
