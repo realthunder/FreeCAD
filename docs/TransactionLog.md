@@ -18638,12 +18638,20 @@ BREP, with nothing frozen:
   two pairs of this case each come out of a general fuse as one face.
 
 So the freeze does what it says, and a valid tool fuses the same either
-way. **Not built, and the user's to decide:** the loft (LinkVibe's, from
-a face that is not planar) so that its side does not fold through its
-cap; or, for the same result on and off from the tool as it is, the fork
-letting `ThruSections` keep a frozen section's edges in its shell --
-pcurves on them as caches (23.12), `SameParameter` thawing what must
-grow -- which is a change to the kernel with tests of its own.
+way. Two ways were put to the user: the loft, so that its side does not
+fold through its cap; or, for the same result on and off from the tool
+as it is, the fork letting `ThruSections` keep a frozen section's edges
+in its shell, a change to the kernel with tests of its own.
+
+**Ruled (user, 2026-10-12): fix the loft.** Built on LinkVibe, in its
+`FeatureLoft.cpp` -- this branch has no loft from a face that is not
+planar, so it comes with the next merge this way. Where an end is not
+planar and the sewn shell fails the argument analyzer's self-
+intersection check, the loft is the solids `BOPAlgo_MakerVolume` builds
+of the shell's faces, in place of the shell made a solid. Measured
+there, the same on and off: 17 faces, the test's volume; the tool two
+solids with no self-intersection left, `common` 980.01 where it was
+empty. The fork is not changed for it.
 
 ### 33.9 Gates
 
@@ -18654,8 +18662,57 @@ of it, in `Shiboken::BindingManager::releaseWrapper` under a deferred
 delete, with no frame of FreeCAD's above the event loop; it passed the
 other twelve on the same binaries. Not chased.
 
-**Open.** 33.8 is the user's to decide. LinkVibe's refine names faces
-it did not unite as modified with the freeze on, on the Windows box
-only: its kernel is 82 commits past the one this branch is built on,
-and the same script gives the same names on and off here. To be
-reproduced on that kernel first.
+### 33.10 A growth that is rounding is none
+
+On the Windows box a refined feature's faces were renamed with the
+freeze on: `testPartDesignElementMapRevolutionWithDefaultFuseOrder`,
+faces the refine did not unite coming back as `...;:M;RFI`, a united
+face named after its neighbour. Not here, with the same script, on the
+old kernel or the new (this box's fork was brought to its remote for
+it, `834c8a92ec`, and every gate run again on that: green).
+
+**What it was.** There every vertex and some edges of that model have
+a tolerance of 1.0000000000000002e-07 and the rest
+9.9999999999999995e-08: the same 1e-7, one ulp apart, from another
+compiler's arithmetic. Here every one prints the same value. The
+refine builds a united face on the boundary edges of the faces it
+replaces (`BRepLib_MakeWire`, `BRepLib_MakeFace`), which ends in
+`BRepLib::UpdateTolerances`: every edge is raised to its face's
+tolerance, and a frozen edge that has to grow is copied (23.15). A
+frozen edge an ulp under its new face "grew" by 1.3e-23 and was copied
+for it. The copy then lay beside the original, which the neighbouring
+face still held; the refine's sewing merged the two into a new edge on
+a new curve and rebuilt the neighbour on it. With nothing frozen the
+edge grows in place and stays shared. `GenericShapeMapper::init` then
+took each rebuilt face for a new one and named it after the first face
+that shares two edges with it.
+
+Found by measurement on the Windows box, each step a guess of this
+side's it confirmed or killed: not thawed copies in the result (the
+sewing had replaced them), four new edges between source vertices on
+fresh curves, the two tolerances.
+
+**The rule** (fork, `BRep_Builder.cxx`). A frozen shape's tolerance
+covers one that is above it by rounding and no more: within
+`max(1e-4 * Precision::Confusion(), 1e-5 of its own)`. Such a growth
+is not refused and not made. One helper, `covers()`, in place of every
+`Tol <= held` on an Immutable target, and the update after it skipped
+for one. With it:
+
+- `BRepLib`'s `UpdShTol` makes no copy of a frozen shape for it;
+- `BRepLib_MakeWire` neither copies a frozen vertex for it nor moves
+  one by less than 1e-11 -- and no longer throws: joining an edge whose
+  end was an ulp wider than a frozen one's raised `LockedShape` from
+  `Transfert`, which the test for it found.
+
+**Tests** (`ImmutableShape.cpp`, +2).
+`aFaceOnAFrozenWireCopiesNothingForRounding`: a face on a frozen wire
+with one edge at 1.0000006e-7 holds the wire itself, nothing thawed --
+three thawed edges on the kernel without the rule, the Windows
+mechanism on Linux. `aWireMergeCopiesNothingForRounding`. The case of
+23.15, an edge at 2e-7 among others at 1e-7, still thaws.
+
+**Gates**, on the fork at `834c8a92ec` with the rule, the freeze on and
+off: Python 3132 OK both ways, ctest 920 of 920 both ways, the 19 Gui
+checks with no failure. The Windows box, with the first part of the
+rule by hand in its kernel: the names of that test the same on and off.
