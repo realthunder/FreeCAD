@@ -398,16 +398,14 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                 // by every binder they did not: its object ids started at
                 // random and went on from one copy to the next, and its
                 // string table, whose strings hold those ids, grew with
-                // them. Emptied, the ids start over (Document::
-                // clearDocument()) and so does the table.
+                // them. A temporary document comes emptied (Application::
+                // newDocument()): the ids start over, and so does the table.
                 std::string tmpName("_tmp_binder_");
                 tmpName += getDocument()->getName();
                 tmpName += '_';
                 tmpName += getNameInDocument();
                 auto tmpDoc = App::GetApplication().newDocument(
                                 tmpName.c_str(), 0, false, true);
-                tmpDoc->clearDocument();
-                tmpDoc->getStringHasher()->clear();
                 auto objs = tmpDoc->copyObject({obj},true,true);
                 if(objs.size()) {
                     for(auto it=objs.rbegin(); it!=objs.rend(); ++it)

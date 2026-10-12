@@ -471,7 +471,7 @@ def get_svg(
                     group = obj.Group
             else:
                 # Hidden doc hack:
-                hidden_doc = App.newDocument(name="hidden", hidden=True, temp=True)
+                hidden_doc = App.newDocument(name="hidden", hidden=True, temp=True, clear=False)
                 new = hidden_doc.copyObject(obj, True)
                 pla = new.Placement
                 new.Placement = App.Placement()
@@ -513,7 +513,7 @@ def get_svg(
     # Handle Links to texts and dimensions. These Links do not have a Shape.
     if obj.isDerivedFrom("App::Link") and obj.LinkedObject and not hasattr(obj, "Shape"):
         # Hidden doc hack:
-        hidden_doc = App.newDocument(name="hidden", hidden=True, temp=True)
+        hidden_doc = App.newDocument(name="hidden", hidden=True, temp=True, clear=False)
         new = hidden_doc.copyObject(obj.LinkedObject, True)
         if utils.get_type(new) in ("Dimension", "LinearDimension", "AngularDimension"):
             new.Proxy.transform(new, obj.Placement)

@@ -141,12 +141,18 @@ PyMethodDef Application::Methods[] = {
 //   "saveDocument(string) -- Save the document to a file."},
 //  {"saveDocumentAs", (PyCFunction) Application::sSaveDocumentAs, METH_VARARGS},
     {"newDocument",    reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( Application::sNewDocument )), METH_VARARGS|METH_KEYWORDS,
-     "newDocument(name, label=None, hidden=False, temp=False) -> object\n"
+     "newDocument(name, label=None, hidden=False, temp=False, clear=True) -> object\n"
      "Create a new document with a given name.\n\n"
      "name: unique document name which is checked automatically.\n"
      "label: optional user changeable label for the document.\n"
      "hidden: whether to hide document 3D view.\n"
-     "temp: mark the document as temporary so that it will not be saved"},
+     "temp: mark the document as temporary so that it will not be saved. There is\n"
+     "      one temporary document of a name: asked for again, it is returned.\n"
+     "clear: for a temporary document, whether it comes emptied as clearDocument()\n"
+     "       leaves it: nothing in it, its object and string ids starting over, so\n"
+     "       what is put into it is numbered the same every time. With False the\n"
+     "       one there is returned as it is, and a new one starts its ids at random\n"
+     "       as any document does."},
     {"closeDocument",  (PyCFunction) Application::sCloseDocument, METH_VARARGS,
      "closeDocument(string) -> None\n\n"
      "Close the document with a given name."},
@@ -418,14 +424,17 @@ PyObject* Application::sNewDocument(PyObject * /*self*/, PyObject *args, PyObjec
     char *usrName = nullptr;
     PyObject *hidden = Py_False;
     PyObject *temp = Py_False;
-    static const std::array<const char *, 5> kwlist {"name", "label", "hidden", "temp", nullptr};
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwd, "|etetO!O!", kwlist,
-                "utf-8", &docName, "utf-8", &usrName, &PyBool_Type, &hidden, &PyBool_Type, &temp)) {
+    PyObject *clear = Py_True;
+    static const std::array<const char *, 6> kwlist {"name", "label", "hidden", "temp", "clear", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwd, "|etetO!O!O!", kwlist,
+                "utf-8", &docName, "utf-8", &usrName, &PyBool_Type, &hidden, &PyBool_Type, &temp,
+                &PyBool_Type, &clear)) {
         return nullptr;
     }
 
     PY_TRY {
-        App::Document* doc = GetApplication().newDocument(docName, usrName, !Base::asBoolean(hidden), Base::asBoolean(temp));
+        App::Document* doc = GetApplication().newDocument(docName, usrName, !Base::asBoolean(hidden),
+                                                          Base::asBoolean(temp), Base::asBoolean(clear));
         PyMem_Free(docName);
         PyMem_Free(usrName);
         return doc->getPyObject();
