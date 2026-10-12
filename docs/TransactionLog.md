@@ -18820,7 +18820,8 @@ the one before left it, a refusal in the middle leaves the ones before
 it done, and Edit > Undo then takes them back one at a time. One step
 is one thing to take back, and all of the rows or none. Built as one
 step; what it gives up is the `inverts` of each row, which a row that
-undoes several cannot carry (below).
+undoes several cannot carry (below). **Ruled (user, 2026-10-12): one
+step.**
 
 **As built.**
 
@@ -18965,14 +18966,7 @@ legacy renderer and the Linux title bar -- is in `docs/Testing.md`.
 
 **Not settled.**
 
-- **A sketch's automatic colours are saved.** With `AutoColor` on, the
-  colours a sketch takes from the preference are set on its view
-  provider, and so reach the object's looks: they are saved in the
-  file, and a preference changed rewrites them in every open sketch
-  as an `implicit` row, the document not marked modified. AutoColor
-  is there to keep them out of the file. Not passing them through
-  while it is on is a change to which looks an object has, and is the
-  user's to rule.
+- **A sketch's automatic colours were saved.** Ruled and built: 33.15.
 - **A colour set on the object ends no mapping.** The rule that a
   colour picked ends a binder's mapping is the view provider's;
   `obj.ShapeColor = ...` leaves the flags. Not looked into further.
@@ -18990,3 +18984,75 @@ which a change to the cavity shader made on LinkVibe moved and whose
 references are not made again (`docs/Testing.md`). How these are run
 on LinkVibe -- the driven tests given no `FREECAD_USER_HOME`, from
 wiped profiles -- is that page's fourth trap.
+
+### 33.15 A sketch's automatic colours are no look of the object
+
+**What there was.** With `AutoColor` on a sketch takes its edge, vertex
+and face colours from the theme: the settings a theme writes
+(`View/SketchEdgeColor`, `SketchVertexColor`, and
+`Mod/Sketcher/General/FaceColor`), which the Sketcher's Appearance page
+also sets. It is there so that they stay out of the file (LinkVibe,
+upstream's feature), and it worked by writing them into the view
+provider's colour properties. Those are names over the object's looks
+since docs/ShapeAppearanceDesign.md sec 14.6: the theme's colours
+became the object's, were saved with it, and a setting changed rewrote
+them in every open sketch as an `implicit` row, the document not
+marked modified. The checks that an automatic colour is not saved
+looked at the view provider's property and passed.
+
+**Ruled (user, 2026-10-12).** With the option on the colour is the
+setting's and not the object's, and the object is not touched. The
+view provider sets its colours the same whatever the option says; on,
+the properties are ignored and what is drawn is filled in from the
+settings; off, the sketch goes to its own colour, a sketch's white
+edges, and nothing is written then either.
+
+**As built.**
+
+- **The properties** are the sketch's own always: white edges and
+  points and the face colour its constructor sets -- the `FaceColor`
+  setting as it is when the sketch is made, as it was before there was
+  an AutoColor -- given to a new object as any kind's look is
+  (`giveClassAppearance()`), names over the object's looks from then
+  on. The constructor no longer writes the
+  settings into them, and nothing else does.
+- **What is drawn.** The colours of the edges and of the points reach
+  their nodes through `setHighlightedEdges()` and
+  `setHighlightedPoints()`, now virtual; a sketch under AutoColor puts
+  the settings' there and does not look at what it is handed. A colour
+  or a material written puts itself into its node past those, so the
+  sketch puts the settings' back after it. The faces are drawn by a
+  view provider of their own (the internal faces), which keeps values
+  of its own: the settings' under AutoColor, the sketch's otherwise.
+  `applyAutomaticColors()` makes all of it again -- at attach, at the
+  end of a restore, when the option or a setting changes.
+- **Turned off**, the same call draws from the properties: the
+  object's colours. Nothing is given to the object. Two forms built
+  before this one were ruled out the same day: the properties detached
+  from the object while the option is on, and what the sketch showed
+  kept as the object's when it is turned off.
+- **While on**, the colour properties are hidden from the property
+  editor, as before: a write to one changes the object and nothing on
+  the screen.
+- `getDrawnColors()` on a Part view provider (Python too) says what the
+  nodes hold, by kind, with a sketch's faces: the one way to ask what
+  is on the screen, where the properties no longer say.
+
+**Left as it is.** A file of LinkVibe from before this, saved with the
+option on, recorded the theme's colours of that day in its view file,
+and at open they become the object's as any older file's colours do:
+white in every theme shipped, and seen only once the option is turned
+off. Shapes made from a sketch take a colour from the sketch object
+where they take one at all, never the theme's.
+
+**Tests.** `tests/gui/sketch-auto-color.py` (33), reading what is
+drawn beside the properties: a new sketch drawn in the settings'
+colours with its properties and its object white; a setting changed
+recolours it, changes neither the object nor the property and makes no
+row of the log; turned off it is drawn white and the object is as it
+was; a colour set then is the object's and is drawn; turned on again
+it is drawn in the setting's and keeps its own colour, which is drawn
+again once it is off; reopened, and the files from before AutoColor,
+as before. `sketch-auto-face-color.py` (16) the same for the faces;
+`sketch-color-map-automatic.py` reads the drawn colour for its
+premise.
