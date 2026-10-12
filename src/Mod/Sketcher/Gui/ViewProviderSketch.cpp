@@ -885,8 +885,9 @@ ViewProviderSketch::ViewProviderSketch()
     yInit=0;
     relative=false;
 
-    // edge and vertex colours from the preferences (upstream 8def94e6f8)
-    updateAutomaticColorProperties();
+    // The colours set above are the sketch's own whatever AutoColor says.
+    // Under it the theme's are what is drawn (applyAutomaticColors()), and
+    // no property is written from them.
     updateColorPropertiesVisibility();
     attachColorObserver();
 
@@ -9099,7 +9100,7 @@ void ViewProviderSketch::finishRestoring()
             automatic = false;
     }
     AutoColor.setValue(automatic);
-    updateAutomaticColorProperties();
+    applyAutomaticColors();
     updateColorPropertiesVisibility();
 
     auto sketch = getSketchObject();
@@ -9142,9 +9143,10 @@ void ViewProviderSketch::updateColorPropertiesVisibility()
 {
     bool automatic = AutoColor.getValue();
     for (App::Property *prop : automaticColorProperties()) {
-        // not saved, so users on different themes do not keep rewriting
-        // each other's files; and not a modification of the document when a
-        // preference changes it
+        // as upstream marks them, and as a view file of an older schema
+        // records them: one saved with these Transient is an automatic
+        // sketch's (finishRestoring()). At this schema they are names over
+        // the object's looks and are not in the view file at all.
         prop->setStatus(App::Property::Transient, automatic);
         prop->setStatus(App::Property::NoModify, automatic);
     }
@@ -9156,40 +9158,74 @@ void ViewProviderSketch::updateColorPropertiesVisibility()
     }
 }
 
-void ViewProviderSketch::updateAutomaticColorProperties()
+App::Color ViewProviderSketch::colorFromPreference(const char *key)
 {
-    // Mid restore AutoColor is still its default, and the file's colours may
-    // be on their way in: finishRestoring() decides. A deferred restore
-    // spans event loop turns, so a preference handler can land in between.
-    if (!AutoColor.getValue() || testStatus(Gui::isRestoring))
-        return;
+    App::Color color(1.f, 1.f, 1.f);
+    color.setPackedValue((uint32_t)App::GetApplication()
+        .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+        ->GetUnsigned(key, color.getPackedValue()));
+    return color;
+}
 
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/View");
-    auto follow = [&hGrp](App::PropertyColor &prop, const char *key) {
-        App::Color color(1.f, 1.f, 1.f);
-        color.setPackedValue((uint32_t)hGrp->GetUnsigned(key, color.getPackedValue()));
-        if (prop.getValue() != color)
-            prop.setValue(color);
-    };
-    // Not a modification of the document. NoModify on the colours is not
-    // enough: every view provider change also touches the object's
-    // ViewObject, and the document takes that as one. Nothing but these
-    // colours changes here, so the flag can be put back as it was.
-    // (none yet in the constructor)
-    Gui::Document *gdoc = getObject() ? getDocument() : nullptr;
+void ViewProviderSketch::setHighlightedEdges(const std::vector<App::Color>& colors)
+{
+    // The colours given are the properties', and the properties are names
+    // over the object's looks: a sketch's own, white unless somebody
+    // coloured it. Under AutoColor they are not what is drawn.
+    if (AutoColor.getValue())
+        inherited::setHighlightedEdges({colorFromPreference("SketchEdgeColor")});
+    else
+        inherited::setHighlightedEdges(colors);
+}
+
+void ViewProviderSketch::setHighlightedPoints(const std::vector<App::Color>& colors)
+{
+    if (AutoColor.getValue())
+        inherited::setHighlightedPoints({colorFromPreference("SketchVertexColor")});
+    else
+        inherited::setHighlightedPoints(colors);
+}
+
+void ViewProviderSketch::getDrawnColors(
+        std::map<std::string, std::vector<App::Color>> &colors) const
+{
+    inherited::getDrawnColors(colors);
+    if (pInternalView) {
+        App::Color face = pInternalView->ShapeColor.getValue();
+        face.a = pInternalView->Transparency.getValue() / 100.f;
+        colors["Face"].push_back(face);
+    }
+}
+
+void ViewProviderSketch::applyAutomaticColors()
+{
+    // Nothing drawn yet in the constructor
+    if (!getObject())
+        return;
+    // The edges and the points, made again: from the settings or from the
+    // properties (setHighlightedEdges()).
+    unsetHighlightedEdges();
+    unsetHighlightedPoints();
+    if (!pInternalView)
+        return;
+    // The faces are drawn by a view provider of their own, which keeps
+    // values of its own: the settings', as upstream drives them
+    // (SketchFaceColor there) from the fork's FaceColor and with the fork's
+    // default, or this view provider's.
+    App::Color faceColor = ShapeColor.getValue();
+    long faceTransparency = Transparency.getValue();
+    if (AutoColor.getValue())
+        faceColorFromPreference(faceColor, faceTransparency);
+    // Not a modification of the document: every view provider change also
+    // touches the object's ViewObject, and the document takes that as one.
+    // Nothing but what is drawn changes here, so the flag can be put back
+    // as it was.
+    Gui::Document *gdoc = getDocument();
     bool modified = gdoc && gdoc->isModified();
-    follow(LineColor, "SketchEdgeColor");
-    follow(PointColor, "SketchVertexColor");
-    // The faces as upstream drives them (SketchFaceColor there), from the
-    // fork's FaceColor and with the fork's default.
-    App::Color faceColor;
-    long faceTransparency;
-    faceColorFromPreference(faceColor, faceTransparency);
-    if (ShapeColor.getValue() != faceColor)
-        ShapeColor.setValue(faceColor);
-    if (Transparency.getValue() != faceTransparency)
-        Transparency.setValue(faceTransparency);
+    if (pInternalView->ShapeColor.getValue() != faceColor)
+        pInternalView->ShapeColor.setValue(faceColor);
+    if (pInternalView->Transparency.getValue() != faceTransparency)
+        pInternalView->Transparency.setValue(faceTransparency);
     if (gdoc && !modified && gdoc->isModified())
         gdoc->setModified(false);
 }
@@ -9208,7 +9244,7 @@ void ViewProviderSketch::attachColorObserver()
                 continue;
             for (Gui::ViewProvider *vp :
                     gdoc->getViewProvidersOfType(ViewProviderSketch::getClassTypeId()))
-                static_cast<ViewProviderSketch*>(vp)->updateAutomaticColorProperties();
+                static_cast<ViewProviderSketch*>(vp)->applyAutomaticColors();
         }
     };
     handlers.addDelayedHandler("BaseApp/Preferences/View",
@@ -9262,7 +9298,9 @@ void ViewProviderSketch::onChanged(const App::Property *prop)
 {
     // call father
     inherited::onChanged(prop);
-    if (pInternalView) {
+    const bool automatic = AutoColor.getValue();
+    // Under AutoColor the faces are the settings' (applyAutomaticColors())
+    if (pInternalView && !automatic) {
         if (prop == &ShapeColor)
             pInternalView->ShapeColor.setValue(ShapeColor.getValue());
         else if (prop == &Transparency)
@@ -9270,14 +9308,24 @@ void ViewProviderSketch::onChanged(const App::Property *prop)
         else if (prop == &ShapeAppearance)
             pInternalView->ShapeAppearance.setValue(ShapeAppearance[0]);
     }
+    // A colour or a material written puts itself into the node it is drawn
+    // from, past setHighlightedEdges(): under AutoColor the settings' go
+    // back in.
+    if (automatic && getObject()) {
+        if (prop == &LineColor || prop == &LineMaterial)
+            unsetHighlightedEdges();
+        else if (prop == &PointColor || prop == &PointMaterial)
+            unsetHighlightedPoints();
+    }
     if (prop == &SectionView)
         toggleViewSection(SectionView.getValue() ? 1 : 0);
     else if (prop == &AutoColor) {
         if (testStatus(Gui::isRestoring))
             autoColorRestored = true;
-        // turned on, the colours follow at once (upstream 97e7b9d1f2)
+        // turned on, what is drawn follows at once (upstream 97e7b9d1f2);
+        // turned off, it is the sketch's own colours again
         updateColorPropertiesVisibility();
-        updateAutomaticColorProperties();
+        applyAutomaticColors();
     }
 }
 
@@ -9310,6 +9358,7 @@ void ViewProviderSketch::attach(App::DocumentObject *pcFeat)
         pInternalView->show();
         pFaceRoot->addChild(pInternalView->getRoot());
     }
+    applyAutomaticColors();
 }
 
 void ViewProviderSketch::beforeDelete()

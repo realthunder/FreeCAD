@@ -32,6 +32,17 @@ sourceDoc: the document of the source object in case the shape comes from anothe
             </UserDocu>
         </Documentation>
     </Methode>
+    <Methode Name="getDrawnColors" Const="true">
+        <Documentation>
+            <UserDocu>
+getDrawnColors() -> dict(kind: [(r, g, b, a), ...])
+
+The colours on the screen, by kind ('Edge', 'Vertex', and 'Face' for a
+sketch's faces, whose a is their transparency). They need not be what the
+colour properties say: a sketch under AutoColor is drawn in the theme's.
+            </UserDocu>
+        </Documentation>
+    </Methode>
     <Attribute Name="ShapePropertyName">
         <Documentation>
             <UserDocu>Set/get shape property name</UserDocu>

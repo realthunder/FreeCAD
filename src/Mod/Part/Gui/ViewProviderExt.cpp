@@ -3795,6 +3795,21 @@ void ViewProviderPartExt::unsetHighlightedPoints()
     setHighlightedPoints(PointColorArray.getValues());
 }
 
+void ViewProviderPartExt::getDrawnColors(
+        std::map<std::string, std::vector<App::Color>> &colors) const
+{
+    auto read = [](const SoMaterial *material, std::vector<App::Color> &out) {
+        if (!material)
+            return;
+        const int count = material->diffuseColor.getNum();
+        const SbColor *values = material->diffuseColor.getValues(0);
+        for (int i = 0; i < count; ++i)
+            out.emplace_back(values[i][0], values[i][1], values[i][2]);
+    };
+    read(pcLineMaterial, colors["Edge"]);
+    read(pcPointMaterial, colors["Vertex"]);
+}
+
 void ViewProviderPartExt::reload(bool applyTessellation)
 {
     bool update = false;
