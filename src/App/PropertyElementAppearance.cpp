@@ -564,6 +564,9 @@ void PropertyElementAppearance::setBase(Kind kind, const MaterialAppearance &loo
     AppearanceList list = listAt(SlotBase + kind);
     if (list.getSize() == 0) {
         list.setValue(look);
+        // A list is made following, and one given its first look is not
+        // told that somebody chose it
+        list.setFollowMaterial(false);
     }
     else {
         list.setBase(look);

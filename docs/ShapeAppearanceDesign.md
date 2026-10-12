@@ -5134,7 +5134,10 @@ up: it had no look, drew `(0.14, 0.14, 0.14)` where nothing was mapped
 onto it, and a colour given to it did not end the follow
 (`PropertyElementAppearance::setBase()` on a kind with no own look states
 the look and leaves the flag). It is given its default look where it is
-made now, and one read from a file without is given one then.
+made now, and one read from a file without is given one then. And
+`setBase()` ends the follow there too since (2026-10-12): a first look is
+a look somebody chose, as its own comment said
+(`ElementAppearanceNamesTest.testAFirstLookIsALookSomebodyChose`).
 
 Tests: `PartDesignTests.TestSolidBody` (the look and the material of a
 solid), `TestSolidBodyGui` (given through the view provider, and the solid

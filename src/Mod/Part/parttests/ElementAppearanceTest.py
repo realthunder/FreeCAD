@@ -231,6 +231,22 @@ class ElementAppearanceNamesTest(unittest.TestCase):
         self.assertEqual(ea.keys(), [])
         self.assertFalse("Touched" in box.State)
 
+    def testAFirstLookIsALookSomebodyChose(self):
+        # An object with no look of its own follows its card, and the look
+        # it is then given ended that as any other does: it was stated and
+        # the card could still write over it
+        box = self.box
+        self.assertTrue(box.ShapeAppearance.FollowMaterial)
+        box.ElementAppearance.clear()
+        self.assertTrue(box.ShapeAppearance.FollowMaterial)
+        box.ShapeColor = GREEN[:3]
+        self.assertEqual(rgb(box.ShapeColor), GREEN[:3])
+        self.assertFalse(box.ShapeAppearance.FollowMaterial)
+        # by the store itself, the same
+        box.ElementAppearance.clear()
+        box.ElementAppearance.Face = material(RED)
+        self.assertFalse(box.ShapeAppearance.FollowMaterial)
+
     def testWhatWasMadeFromItFollows(self):
         cyl = self.doc.addObject("Part::Cylinder", "Cyl")
         cyl.Radius = 2
