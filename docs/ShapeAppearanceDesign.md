@@ -5139,6 +5139,15 @@ made now, and one read from a file without is given one then. And
 a look somebody chose, as its own comment said
 (`ElementAppearanceNamesTest.testAFirstLookIsALookSomebodyChose`).
 
+*Giving a look up again* is `Reset appearance to material`, on a feature
+and on a solid body alike: every card states a look
+(`Part::Feature::canResetAppearanceToMaterial()` asks for a card, and an
+object always has one, the default card at least; all 219 of the library
+were tried), so the command is offered wherever a look was given. On a
+feature it takes the card's and with that its solid body's; on a solid
+body the card's, which its features take in place of the one given up.
+Nothing had to be built for it (`TestSolidBodyGui`, three cases).
+
 Tests: `PartDesignTests.TestSolidBody` (the look and the material of a
 solid), `TestSolidBodyGui` (given through the view provider, and the solid
 of the body's tip, twice).

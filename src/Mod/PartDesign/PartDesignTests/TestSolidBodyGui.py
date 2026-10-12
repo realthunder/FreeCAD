@@ -310,6 +310,72 @@ class TestSolidBodyGui(unittest.TestCase):
         self.assertEqual(self.look(d), green)
         self.assertTrue(d.MapFaceColor)
 
+    def resetCommand(self, obj):
+        """'Reset appearance to material', with one object selected"""
+        import MatGui  # noqa: F401  the command is that module's
+
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(obj)
+        return Gui.Command.get("Material_ResetAppearance")
+
+    def testFeatureGivesItsLookBackToItsSolidBody(self):
+        # 'Reset appearance to material' on a feature: what it goes back to
+        # is the look its solid body was given, in place of the card's
+        red, green = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        first.ViewObject.ShapeColor = red
+        b.ViewObject.ShapeColor = green
+        self.assertEqual(self.look(b), green)
+        # nothing was given to the feature that follows already
+        self.assertFalse(self.resetCommand(a).isActive())
+        command = self.resetCommand(b)
+        self.assertTrue(command.isActive())
+        command.run()
+        self.assertEqual(self.look(b), red)
+        self.assertFalse(self.resetCommand(b).isActive())
+        # and it is its solid body's from here on
+        first.ViewObject.ShapeColor = green
+        self.assertEqual(self.look(b), green)
+        Gui.Selection.clearSelection()
+
+    def testFeatureOfTheTipSolidGivesItsLookBack(self):
+        red, green = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        second.ViewObject.ShapeColor = red
+        c.ViewObject.ShapeColor = green
+        command = self.resetCommand(c)
+        self.assertTrue(command.isActive())
+        command.run()
+        self.assertEqual(self.look(c), red)
+        self.assertEqual(self.look(d), red)
+        Gui.Selection.clearSelection()
+
+    def testSolidBodyGivesItsLookUp(self):
+        # and on the solid body: the card's again, which its features take
+        # in place of the look that was given
+        red, green = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        grey = self.look(a)
+        self.assertFalse(self.resetCommand(first).isActive())
+        first.ViewObject.ShapeColor = red
+        b.ViewObject.ShapeColor = green
+        self.assertEqual(self.look(a), red)
+        command = self.resetCommand(first)
+        self.assertTrue(command.isActive())
+        command.run()
+        self.assertEqual(self.look(first), grey)
+        self.assertEqual(self.look(a), grey)
+        # a feature given a look of its own keeps it
+        self.assertEqual(self.look(b), green)
+        self.assertFalse(self.resetCommand(first).isActive())
+        # until it gives that up too
+        self.resetCommand(b).run()
+        self.assertEqual(self.look(b), grey)
+        Gui.Selection.clearSelection()
+
     # -- where a solid body is highlighted -----------------------------------------------
     #
     # A selection, a preselection and a show on top are all drawn on the nodes
