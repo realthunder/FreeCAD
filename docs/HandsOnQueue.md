@@ -798,6 +798,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, not pushed; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
+| 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view | OPEN; five points of the note-taker's to confirm, under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -7975,6 +7976,59 @@ Evidence: `..\dl\handson\2026-10-12\entry68\mcp_console.log`, the
 reporter's report log copied 14:56 (its last line is of 14:28; nothing in
 its tail names this).
 
+## 69. Overlay panels: a transparent background, item backgrounds in the theme's 3D view colour at alpha 150, the task panel at alpha 150 (a change request) -- OPEN
+
+**2026-10-12 15:12, the reporter:** "new request, when the panel is moved to
+overlay mode change its background to transparent. change default tree view
+item background (150 alpha) that is the same as the current theme 3d view
+background color (the darker one if it's gradient). Same for property view,
+transparent background for empty area, keep the alternate item background
+(150 alpha), and same (non-alternate) item background as tree view. Also 150
+alpha for task panel background, both overlay and in view mode"
+
+The note-taker's reading, point by point:
+1. A panel put into overlay mode: its background becomes transparent.
+2. The tree view: the DEFAULT item background is the colour of the current
+   theme's 3D view background at alpha 150 (of 255); where that background
+   is a gradient, the darker of its colours.
+3. The property view: the empty area transparent; the alternate rows keep
+   their alternate background, at alpha 150; the other rows get the same
+   item background as the tree view's.
+4. The task panel: its background at alpha 150, both as an overlay and
+   when it is shown in its view.
+
+NOT said -- the note-taker's count of what a build would have to decide,
+to confirm with the reporter:
+a. "default tree view item background": a value that FOLLOWS the theme
+   (and a change of the 3D view's background colour) by itself, or one
+   each theme writes when it is applied? And only while the tree is an
+   overlay, or docked too?
+b. The gradient: the 3D view has two colours and an optional middle one;
+   "the darker one" of all that are in use?
+c. The task panel's COLOUR at alpha 150: the theme's own panel colour, or
+   the same 3D view colour as the items?
+d. The alternate rows of the property view: their present colour at alpha
+   150, or a shade of the new item colour?
+e. Does a value the user has set for the item background stay as it is
+   (the request says "default")?
+
+Where it touches, READ in the source, nothing run:
+- The tree's item background is a setting already:
+  `TreeParams` `ItemBackground` (a colour, default 0 = none) and
+  `ItemBackgroundPadding` (`src/Gui/TreeParams.py`, about line 137).
+- The 3D view's background: `View` `Simple`, `Gradient`,
+  `RadialGradient`, `BackgroundColor`, `BackgroundColor2` to `4`
+  (`src/Gui/ViewParams.py`, about lines 878 to 902).
+- The overlay style sheets carry the alternate row colour today, a fixed
+  one each: `src/Gui/Stylesheets/overlay/Dark.qss` and `Dark-Outline.qss`
+  `rgba(50,50,50,120)`, `Light.qss` `rgba(250,250,250,120)`.
+- The task panel shown in its view takes the overlay look from
+  `OverlayTabWidget::applyOverlayLook` (`src/Gui/TaskView/TaskPanelHost.cpp`).
+- Entry 30 is next to this: its one "Overlay" preset is the layout alone
+  and an overlay's look is the theme's (Dark, Light, Classic name the
+  overlay sheet); what this entry asks changes that look, and the four
+  choices of entry 30 still with the reporter are about the same sheets.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -7983,4 +8037,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entry 68 is of 2026-10-12)
+entries 68 and 69 are of 2026-10-12)
