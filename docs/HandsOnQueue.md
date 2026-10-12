@@ -799,7 +799,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, not pushed; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
 | 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | OPEN; the five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
-| 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views" | OPEN; two points of the note-taker's under the entry |
+| 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views". ANSWERED 15:35: the label seen is '...and the panels that are open', "ellipsed strangely"; the button first commits the relevant settings (for when auto apply is off) and then applies to the views | OPEN; both points answered 15:35 |
 | 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -8068,7 +8068,7 @@ Where it touches, READ in the source, nothing run:
   overlay sheet); what this entry asks changes that look, and the four
   choices of entry 30 still with the reporter are about the same sheets.
 
-## 70. The UI preference page: "Apply the setting above to every view at once" has a wrong label and should be a button -- OPEN
+## 70. The UI preference page: "Apply the setting above to every view at once" has a wrong label and should be a button -- OPEN, both points answered 2026-10-12 15:35
 
 **2026-10-12 15:25, the reporter:** "new defect. the UI preference page, the
 setting label is wrong for 'Apply the setting above to every view at once'.
@@ -8104,6 +8104,29 @@ b. As a button it holds no state: does the stored setting go away, the
 
 Near it: entry 63 has a button "Apply all" for the display settings of a
 view; the same word for the same kind of act may be wanted. Not asked.
+
+**2026-10-12 15:35, the reporter answers the two points:** "entry 70, the
+label is ellipsed strangely as '...and the panels that are open'. button
+shall commit relevant settings (in case auto apply is not on) and then
+apply to views"
+
+The note-taker's reading:
+- a. What is seen is '...and the panels that are open'. That IS the
+  setting's title as it is written in the source ("... and the panels
+  that are open", with the three dots in it on purpose, to read on from
+  the row above) -- so nothing is cut off by the page and there is no
+  second defect; the title itself is what reads wrongly. (Read in
+  `src/Gui/ViewParams.py`, nothing run.)
+- b. The button, when pressed: FIRST commits the relevant settings --
+  needed when auto apply ("Apply preferences at once",
+  `General/AutoApplyPreference`, entry 71) is off, since the value in
+  the row above is then not stored yet -- and THEN applies to the views.
+  So it acts at once, on the press.
+- The note-taker's count, not said: "relevant settings" is read as the
+  row above, "Task panels in their views" (`View/TaskPanelInView`),
+  and whatever else the press goes by; and a button keeps no state, so
+  the stored boolean `View/TaskPanelInViewAll` would have no use left --
+  whether it is removed is the build session's to say.
 
 ## 71. The preferences dialog: Enter in an edit box dismisses the dialog instead of committing that setting -- OPEN, the three points answered 2026-10-12 15:29
 
