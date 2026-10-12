@@ -798,6 +798,146 @@ class TestSolidBody(unittest.TestCase):
         self.assertEqual(a.ShapeMaterial.UUID, steel.UUID)
         self.assertEqual(b.ShapeMaterial.UUID, steel.UUID)
 
+    # -- a reference to the solid body from inside its own solid ---------------------
+    #
+    # The solid body has the shape of its tip, so what the tip is made of
+    # cannot refer to it. Picked for a feature of the same solid, it means
+    # the solid as that feature finds it: the feature before it.
+
+    def flat(self, obj, x=0.0):
+        """The highest face lying flat, the one starting at x where there are two"""
+        best = None
+        for i, face in enumerate(obj.Shape.Faces):
+            bb = face.BoundBox
+            if abs(bb.ZMin - bb.ZMax) > 1e-6:
+                continue
+            key = (round(bb.ZMax, 6), abs(bb.XMin - x) < 1e-6)
+            if best is None or key > best[0]:
+                best = (key, "Face%d" % (i + 1))
+        return best[1]
+
+    def sketchOn(self, obj, face, x=2.0):
+        import Part
+
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch.AttachmentSupport = [(obj, face)]
+        sketch.MapMode = "FlatFace"
+        sketch.addGeometry(Part.Circle(App.Vector(x, 2, 0), App.Vector(0, 0, 1), 1.0), False)
+        return sketch
+
+    def support(self, sketch):
+        return [(obj.Name, list(subs)) for obj, subs in sketch.AttachmentSupport]
+
+    def padOn(self, sketch, name="Pad", length=5.0):
+        pad = self.Body.newObjectAt("PartDesign::Pad", name)
+        pad.Profile = sketch
+        pad.Length = length
+        return pad
+
+    def assertRecomputes(self):
+        self.Doc.recompute()
+        self.assertEqual([o.Name for o in self.Doc.Objects if "Invalid" in o.State], [])
+        self.assertEqual([o.Name for o in self.Doc.Objects if "Touched" in o.State], [])
+
+    def testSketchOnTheSolidBodyForAFeatureOfTheSolid(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        self.Body.Tip = b
+        self.Doc.recompute()
+        face = self.flat(first)
+        sketch = self.sketchOn(first, face)
+        self.Doc.recompute()
+        # nothing of the solid is made of it yet
+        self.assertEqual(self.support(sketch), [(first.Name, [face])])
+        pad = self.padOn(sketch)
+        self.assertEqual(first.Tip, pad)
+        # the solid as the pad finds it
+        self.assertEqual(self.support(sketch), [(b.Name, [face])])
+        self.assertRecomputes()
+        self.assertAlmostEqual(sketch.Placement.Base.z, 10.0)
+        self.assertGreater(pad.Shape.Volume, b.Shape.Volume)
+        self.assertAlmostEqual(first.Shape.Volume, pad.Shape.Volume)
+
+    def testFeatureReferringToItsOwnSolidBody(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        self.Body.Tip = b
+        self.Doc.recompute()
+        sketch = self.sketchOn(a, self.flat(a))
+        pad = self.padOn(sketch)
+        self.assertEqual(first.Tip, pad)
+        # picked on the solid body while it had the shape of Box001
+        face = self.flat(first)
+        pad.Type = "UpToFace"
+        pad.UpToFace = (first, [face])
+        self.assertEqual(pad.UpToFace[0], b)
+        self.assertEqual(list(pad.UpToFace[1]), [face])
+
+    def testSolidBodyReferredToAfterAReload(self):
+        a, b, c, d = self.twoSolids()
+        self.Body.Tip = b
+        self.Doc.recompute()
+        path = self.tempFile("PartDesignTestSolidBodyOwnReference.FCStd")
+        self.Doc.saveAs(path)
+        App.closeDocument(self.Doc.Name)
+        self.Doc = App.openDocument(path)
+        self.Body = self.Doc.Body
+        first, second = self.solidBodies()
+        tip = first.Tip
+        face = self.flat(first)
+        sketch = self.sketchOn(first, face)
+        pad = self.padOn(sketch)
+        self.assertEqual(self.support(sketch), [(tip.Name, [face])])
+        self.assertRecomputes()
+
+    def testFeatureOfAnotherSolidRefersToTheSolidBody(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        face = self.flat(first)
+        sketch = self.sketchOn(first, face)
+        pad = self.padOn(sketch)
+        self.assertEqual(self.Body.getSolidBody(pad), second)
+        # the moving target it was made to be
+        self.assertEqual(self.support(sketch), [(first.Name, [face])])
+        self.assertRecomputes()
+        first.Tip = a
+        self.assertRecomputes()
+        self.assertEqual(self.support(sketch)[0][0], first.Name)
+
+    def testFeatureBehindTheTipRefersToTheSolidBody(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        self.Body.Tip = b
+        self.Doc.recompute()
+        face = self.flat(first)
+        sketch = self.sketchOn(first, face)
+        pad = self.padOn(sketch)
+        self.assertEqual(self.support(sketch), [(b.Name, [face])])
+        self.assertRecomputes()
+        # rolled back, a sketch on the solid as it is then, for nothing yet
+        first.Tip = b
+        self.Doc.recompute()
+        again = self.sketchOn(first, self.flat(first), 4.0)
+        self.assertRecomputes()
+        self.assertEqual(self.support(again)[0][0], first.Name)
+
+    def testReferenceWithTheNamesOfAnotherShapeIsLeft(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        self.Body.Tip = b
+        self.Doc.recompute()
+        sketch = self.sketchOn(a, self.flat(a))
+        pad = self.padOn(sketch)
+        self.assertRecomputes()
+        # the sketch of the pad attached to the solid the pad is the tip of:
+        # the face is one of the pad's shape, not of the box before it
+        face = self.flat(first)
+        sketch.AttachmentSupport = [(first, face)]
+        self.assertEqual(self.support(sketch), [(first.Name, [face])])
+        # put right by hand, it recomputes
+        sketch.AttachmentSupport = [(a, self.flat(a))]
+        self.assertRecomputes()
+
     # -- what a build without SolidBody reads ----------------------------------------
 
     def testSiblingsAreGroupedUnderTheLastFeature(self):

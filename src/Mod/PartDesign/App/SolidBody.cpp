@@ -22,20 +22,66 @@
 
 #include "PreCompiled.h"
 
+#include <memory>
+#include <set>
+#include <sstream>
+
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/ElementNamingUtils.h>
+#include <Base/Console.h>
 #include <Base/Tools.h>
 
 #include "Body.h"
 #include "Feature.h"
 #include "SolidBody.h"
 
+FC_LOG_LEVEL_INIT("PartDesign", true, true)
+
 using namespace PartDesign;
+
+namespace {
+
+/// A link of something in a body changed: what the tip of one of its solid
+/// bodies is made of may now refer to that solid body
+void slotChangedObject(const App::DocumentObject &obj, const App::Property &prop)
+{
+    static bool busy;
+    if (busy || !prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId()))
+        return;
+    if (static_cast<const App::PropertyLinkBase&>(prop).getScope() == App::LinkScope::Hidden)
+        return;
+    if (obj.isDerivedFrom(SolidBody::getClassTypeId())
+            || obj.isDerivedFrom(Body::getClassTypeId()))
+        return;
+    auto doc = obj.getDocument();
+    if (!doc || !obj.isAttachedToDocument() || obj.isRestoring()
+            || doc->testStatus(App::Document::Restoring)
+            || doc->testStatus(App::Document::Recomputing)
+            || doc->isPerformingTransaction())
+        return;
+    auto body = Body::findBodyOf(&obj);
+    if (!body)
+        return;
+    Base::StateLocker guard(busy);
+    for (auto solid : body->getSolidBodies())
+        solid->keepOutOfItself();
+}
+
+} // anonymous namespace
 
 PROPERTY_SOURCE(PartDesign::SolidBody, Part::Feature)
 
 SolidBody::SolidBody()
 {
+    // For as long as the application runs: there is nothing to watch until
+    // there is a solid body
+    static bool connected;
+    if (!connected) {
+        connected = true;
+        App::GetApplication().signalChangedObject.connect(&slotChangedObject);
+    }
+
     ADD_PROPERTY_TYPE(Tip, (nullptr), "Base", App::Prop_None,
             "The feature this solid is rolled back to. The solid has its shape,\n"
             "and a new feature of the solid is inserted after it");
@@ -154,7 +200,102 @@ App::DocumentObjectExecReturn *SolidBody::updateShape()
     // Body::execute()
     shape.transformShape(shape.getTransform(), true);
     Shape.setValue(shape);
+    shapeOf = tip->getNameInDocument();
     return App::DocumentObject::StdReturn;
+}
+
+void SolidBody::keepOutOfItself()
+{
+    auto doc = getDocument();
+    auto tip = Tip.getValue();
+    if (!doc || !isAttachedToDocument() || !tip || !hasFeature(tip))
+        return;
+
+    // Nothing refers to it but its body, most of the time
+    auto body = _Body.getValue();
+    bool referred = false;
+    for (auto obj : getInList()) {
+        if (obj != body) {
+            referred = true;
+            break;
+        }
+    }
+    if (!referred) {
+        reported.clear();
+        return;
+    }
+
+    // The feature the shape is of, and with it the names of its elements
+    auto shown = shapeOf.empty() ? nullptr : doc->getObject(shapeOf.c_str());
+
+    // Feature by feature up to the tip, each with what it is made of that an
+    // earlier one is not: what refers to this object there means the solid
+    // before that feature. What comes after the tip may refer to the solid
+    // as it is rolled back.
+    std::set<App::DocumentObject*> visited;
+    visited.insert(this);
+    std::string wrong;
+    std::ostringstream message;
+    for (auto obj : Group.getValues()) {
+        auto feature = Base::freecad_dynamic_cast<PartDesign::Feature>(obj);
+        if (feature) {
+            auto before = feature->BaseFeature.getValue();
+            std::vector<App::DocumentObject*> stack(1, feature);
+            while (!stack.empty()) {
+                auto cur = stack.back();
+                stack.pop_back();
+                if (!cur || !cur->isAttachedToDocument() || !visited.insert(cur).second)
+                    continue;
+                bool refers = false;
+                for (auto out : cur->getOutList()) {
+                    if (out == this)
+                        refers = true;
+                    else
+                        stack.push_back(out);
+                }
+                if (!refers)
+                    continue;
+                if (before && before == shown && hasFeature(before)) {
+                    std::vector<App::Property*> props;
+                    cur->getPropertyList(props);
+                    for (auto prop : props) {
+                        auto link = Base::freecad_dynamic_cast<App::PropertyLinkBase>(prop);
+                        if (!link || link->getScope() == App::LinkScope::Hidden)
+                            continue;
+                        // Not where the feature is linked beside this object:
+                        // the two would be swapped
+                        std::vector<App::DocumentObject*> links;
+                        link->getLinks(links, true);
+                        if (std::find(links.begin(), links.end(), this) == links.end()
+                                || std::find(links.begin(), links.end(), before) != links.end())
+                            continue;
+                        std::unique_ptr<App::Property> copy(
+                                link->CopyOnLinkReplace(cur, this, before));
+                        if (copy)
+                            link->Paste(*copy);
+                    }
+                }
+                auto left = cur->getOutList();
+                if (std::find(left.begin(), left.end(), this) != left.end()) {
+                    wrong += cur->getNameInDocument();
+                    wrong += ' ';
+                    message << cur->getFullName() << " refers to " << getFullName()
+                            << ", and " << feature->getFullName() << " of that solid"
+                               " is made of it: a solid cannot be made of what"
+                               " refers to it. Refer to a feature of the solid before "
+                            << feature->getNameInDocument() << " instead.\n";
+                }
+            }
+        }
+        if (obj == tip)
+            break;
+    }
+    // Said once, not with every link that changes while it stands
+    if (wrong != reported) {
+        reported = wrong;
+        if (!wrong.empty())
+            FC_ERR(message.str());
+    }
 }
 
 void SolidBody::onChanged(const App::Property* prop)
@@ -173,6 +314,7 @@ void SolidBody::onChanged(const App::Property* prop)
                 if (bodyTip && bodyTip != tip && hasFeature(bodyTip))
                     body->Tip.setValue(tip);
             }
+            keepOutOfItself();
         }
         else if (prop == &Visibility) {
             if (Visibility.getValue()) {
@@ -216,6 +358,11 @@ void SolidBody::onDocumentRestored()
             ShapeMaterial.setValue(tip->ShapeMaterial.getValue());
     }
     lookGiven = isLookGiven();
+    // Saved with the shape of its tip
+    if (auto tip = Tip.getValue()) {
+        if (hasFeature(tip))
+            shapeOf = tip->getNameInDocument();
+    }
     inherited::onDocumentRestored();
 }
 

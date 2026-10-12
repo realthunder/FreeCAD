@@ -23,6 +23,8 @@
 #ifndef PARTDESIGN_SolidBody_H
 #define PARTDESIGN_SolidBody_H
 
+#include <string>
+
 #include <App/PropertyLinks.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
@@ -102,6 +104,24 @@ public:
     /// Set Shape from Tip; what execute() does
     App::DocumentObjectExecReturn *updateShape();
 
+    /** Keep a reference to this object out of the history of its own solid
+     *
+     * This object has the shape of its tip, so whatever the tip is made of
+     * cannot refer to it: the sketch of a feature attached to
+     * Body.Solid.Face1 makes the solid depend on itself once the tip is at
+     * that feature or past it. What is meant is the solid as that feature
+     * finds it, which is the feature before it. Where that is the feature
+     * this object has the shape of -- the reference was picked on that
+     * shape, element for element -- the reference is turned into one to that
+     * feature. Elsewhere the names would be those of another shape: it is
+     * left as it is and said to be wrong, as the recompute would only say
+     * that the document has a cycle.
+     *
+     * Called when the tip moves, and when a link of anything in the body
+     * changes.
+     */
+    void keepOutOfItself();
+
 private:
     /// Whether somebody gave the faces, the lines or the points a look (it is
     /// not the material card's, nor the preference's)
@@ -117,6 +137,10 @@ private:
 
     /// isLookGiven() as it last was: a look taken away again is handed on too
     bool lookGiven = false;
+    /// The feature Shape was last taken from, by name
+    std::string shapeOf;
+    /// What keepOutOfItself() last said is wrong, not to say it again
+    std::string reported;
 };
 
 } //namespace PartDesign
