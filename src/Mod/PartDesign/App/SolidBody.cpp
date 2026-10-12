@@ -43,6 +43,14 @@ SolidBody::SolidBody()
             "The features of this solid");
     ADD_PROPERTY_TYPE(_Body, (nullptr), "Base",
             (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output), 0);
+    ADD_PROPERTY_TYPE(_Shown, (nullptr), "Base",
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output), 0);
+    ADD_PROPERTY_TYPE(_ShownShape, (false), "Base",
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output), 0);
+    // View state, as Visibility is: no undo step and no modified document
+    // for it
+    _Shown.setStatus(App::Property::NoModify, true);
+    _ShownShape.setStatus(App::Property::NoModify, true);
 
     // The shape is in the body's coordinates, as the body's own is
     Placement.setStatus(App::Property::Hidden, true);
@@ -58,6 +66,54 @@ bool SolidBody::hasFeature(const App::DocumentObject *obj) const
 {
     return obj && obj->isAttachedToDocument()
         && Group.find(obj->getNameInDocument()) == obj;
+}
+
+bool SolidBody::isSolidVisible() const
+{
+    if (Visibility.getValue())
+        return true;
+    for (auto obj : Group.getValues()) {
+        if (obj && obj->Visibility.getValue())
+            return true;
+    }
+    return false;
+}
+
+App::DocumentObject *SolidBody::getShowTarget() const
+{
+    if (_ShownShape.getValue())
+        return const_cast<SolidBody*>(this);
+    auto shown = _Shown.getValue();
+    if (shown && hasFeature(shown))
+        return shown;
+    if (auto tip = Tip.getValue())
+        return tip;
+    return Group.getSize() ? Group.getValues().back() : nullptr;
+}
+
+void SolidBody::rememberShown(const App::DocumentObject *obj)
+{
+    // A solid body just made has no features yet, and is hidden to leave the
+    // drawing to them: nothing was seen through it
+    if (!obj || !Group.getSize() || isSolidVisible())
+        return;
+    // A pinned version takes a change of what is visible, and no other
+    auto doc = getDocument();
+    if (!doc || doc->testStatus(App::Document::FrozenVersion))
+        return;
+
+    bool own = obj == this;
+    if (!own && !hasFeature(obj))
+        return;
+    if (_ShownShape.getValue() != own)
+        _ShownShape.setValue(own);
+    if (!own) {
+        // The tip is not held: a solid last seen through its tip is shown
+        // through whichever feature is its tip by then
+        auto shown = obj == Tip.getValue() ? nullptr : const_cast<App::DocumentObject*>(obj);
+        if (_Shown.getValue() != shown)
+            _Shown.setValue(shown);
+    }
 }
 
 short SolidBody::mustExecute() const
@@ -117,13 +173,17 @@ void SolidBody::onChanged(const App::Property* prop)
                     body->Tip.setValue(tip);
             }
         }
-        else if (prop == &Visibility && Visibility.getValue()) {
-            // The solid is shown either by one of its features or by this
-            // object, which has the shape of its tip
-            for (auto obj : Group.getValues()) {
-                if (obj && obj->Visibility.getValue())
-                    obj->Visibility.setValue(false);
+        else if (prop == &Visibility) {
+            if (Visibility.getValue()) {
+                // The solid is shown either by one of its features or by this
+                // object, which has the shape of its tip
+                for (auto obj : Group.getValues()) {
+                    if (obj && obj->Visibility.getValue())
+                        obj->Visibility.setValue(false);
+                }
             }
+            else
+                rememberShown(this);
         }
     }
     inherited::onChanged(prop);

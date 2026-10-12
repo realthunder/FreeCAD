@@ -250,6 +250,27 @@ class TestSolidBodyGui(unittest.TestCase):
         b.ViewObject.Visibility = True
         self.assertFalse(first.Visibility)
 
+    def testHiddenSolidComesBackAsItWasSeen(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        a.ViewObject.Visibility = True
+        self.assertFalse(b.ViewObject.Visibility)
+        # what the eye of the solid body's tree item does
+        self.Body.setElementVisible(first.Name, False)
+        self.assertFalse(a.ViewObject.Visibility or b.ViewObject.Visibility)
+        self.Body.setElementVisible(first.Name, True)
+        self.assertTrue(a.ViewObject.Visibility)
+        self.assertFalse(b.ViewObject.Visibility or first.ViewObject.Visibility)
+        # its own shape comes back the same way
+        first.ViewObject.Visibility = True
+        self.Body.setElementVisible(first.Name, False)
+        self.assertFalse(first.ViewObject.Visibility)
+        self.Body.setElementVisible(first.Name, True)
+        self.assertTrue(first.ViewObject.Visibility)
+        self.assertFalse(a.ViewObject.Visibility or b.ViewObject.Visibility)
+        # and the other solid stayed as it was
+        self.assertTrue(d.ViewObject.Visibility)
+
     # -- where a solid body is highlighted -----------------------------------------------
     #
     # A selection, a preselection and a show on top are all drawn on the nodes

@@ -408,6 +408,128 @@ class TestSolidBody(unittest.TestCase):
         b.Visibility = True
         self.assertFalse(first.Visibility)
 
+    def shown(self, solid):
+        """The names of what a solid is seen through"""
+        return names(o for o in [solid] + solid.Group if o.Visibility)
+
+    def show(self, obj):
+        """Show a feature the way its eye does. One made by a script is
+        visible from the start, beside the others of its solid."""
+        obj.Visibility = False
+        obj.Visibility = True
+
+    def twoSolidsAsSeen(self):
+        """twoSolids(), each solid seen through its tip alone"""
+        a, b, c, d = self.twoSolids()
+        self.show(b)
+        self.show(d)
+        return a, b, c, d
+
+    def testNothingIsRememberedAtFirst(self):
+        self.twoSolidsAsSeen()
+        for solid in self.solidBodies():
+            self.assertIsNone(solid._Shown)
+            self.assertFalse(solid._ShownShape)
+
+    def testShownThroughTheFeatureItWasSeenThrough(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        self.show(a)
+        self.assertEqual(self.shown(first), ["Box"])
+        self.Body.setElementVisible(first.Name, False)
+        self.assertEqual(self.shown(first), [])
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.shown(first), ["Box"])
+        # and the other solid was never part of it
+        self.assertEqual(self.shown(second), ["Box003"])
+        self.assertIsNone(second._Shown)
+
+    def testShownThroughItsOwnShapeAgain(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        first.Visibility = True
+        self.Body.setElementVisible(first.Name, False)
+        self.assertEqual(self.shown(first), [])
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.shown(first), [first.Name])
+        # a feature shown takes over, and is what comes back from then on
+        self.show(a)
+        self.Body.setElementVisible(first.Name, False)
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.shown(first), ["Box"])
+
+    def testFeatureHiddenByItselfIsRemembered(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        self.show(a)
+        a.Visibility = False
+        self.assertEqual(self.Body.isElementVisible(first.Name), 0)
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.shown(first), ["Box"])
+
+    def testHidingASiblingByShowingAnotherIsNotRemembered(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        self.show(a)
+        self.show(b)
+        self.assertIsNone(first._Shown)
+        self.Body.setElementVisible(first.Name, False)
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.shown(first), ["Box001"])
+
+    def testSeenThroughTheTipFollowsTheTip(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        self.Body.setElementVisible(first.Name, False)
+        self.assertIsNone(first._Shown)
+        first.Tip = a
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.shown(first), ["Box"])
+
+    def testRememberedFeatureDeleted(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        self.show(c)
+        self.Body.setElementVisible(second.Name, False)
+        self.assertEqual(second._Shown, c)
+        self.Doc.removeObject(c.Name)
+        self.Doc.recompute()
+        self.assertEqual(names(second.Group), ["Box003"])
+        self.assertIsNone(second._Shown)
+        self.Body.setElementVisible(second.Name, True)
+        self.assertEqual(self.shown(second), ["Box003"])
+
+    def testRememberedFeatureLeftTheSolid(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        first.Tip = a
+        self.Body.setElementVisible(first.Name, False)
+        self.assertEqual(first._Shown, b)
+        # Box001 starts a solid of its own, and is no view of the first one
+        b.NewSolid = True
+        self.Doc.recompute()
+        self.assertInStep()
+        self.assertEqual(self.Body.getSolidBody(a), first)
+        other = self.Body.getSolidBody(b)
+        self.assertNotEqual(other, first)
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.shown(first), ["Box"])
+        self.assertEqual(self.shown(other), [])
+        self.Body.setElementVisible(other.Name, True)
+        self.assertEqual(self.shown(other), ["Box001"])
+        self.assertEqual(self.shown(first), ["Box"])
+
+    def testRememberingIsNoUndoStep(self):
+        a, b, c, d = self.twoSolidsAsSeen()
+        first, second = self.solidBodies()
+        self.Doc.UndoMode = 1
+        count = self.Doc.UndoCount
+        self.show(a)
+        self.Body.setElementVisible(first.Name, False)
+        self.Body.setElementVisible(first.Name, True)
+        self.assertEqual(self.Doc.UndoCount, count)
+        self.assertEqual(self.shown(first), ["Box"])
+
     # -- what a build without SolidBody reads ----------------------------------------
 
     def testSiblingsAreGroupedUnderTheLastFeature(self):
@@ -560,6 +682,8 @@ class TestSolidBody(unittest.TestCase):
         first, second = self.solidBodies()
         first.Tip = a
         self.Doc.recompute()
+        # hidden while seen through Box001, which is not its tip
+        self.Body.setElementVisible(first.Name, False)
         solidNames = [first.Name, second.Name]
         saved = self.tempFile("PartDesignTestSolidBody_save.FCStd")
         self.Doc.saveAs(saved)
@@ -576,6 +700,11 @@ class TestSolidBody(unittest.TestCase):
             self.assertEqual(body.Tip.Name, "Box003")
             self.assertInStep(body)
             self.assertAlmostEqual(solids[0].Shape.Volume, 1000)
+            # what the first solid was seen through is kept by the file
+            self.assertEqual(body.isElementVisible(solids[0].Name), 0)
+            body.setElementVisible(solids[0].Name, True)
+            self.assertTrue(doc.getObject("Box001").Visibility)
+            self.assertFalse(doc.getObject("Box").Visibility)
             # nothing to do after a load
             group = names(body.Group)
             doc.recompute()

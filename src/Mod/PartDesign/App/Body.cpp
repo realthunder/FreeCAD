@@ -1278,14 +1278,7 @@ int Body::isElementVisible(const char *element) const
     if (obj && obj->isDerivedFrom<SolidBody>()) {
         // A solid is seen through one of its features, or through the solid
         // body's own shape when that was asked for
-        auto solid = static_cast<SolidBody*>(obj);
-        if (solid->Visibility.getValue())
-            return 1;
-        for (auto child : solid->Group.getValues()) {
-            if (child->Visibility.getValue())
-                return 1;
-        }
-        return 0;
+        return static_cast<SolidBody*>(obj)->isSolidVisible() ? 1 : 0;
     }
     return -1;
 }
@@ -1309,13 +1302,11 @@ int Body::setElementVisible(const char *element, bool visible)
                     child->Visibility.setValue(false);
             }
         }
-        else if (isElementVisible(element) == 0) {
-            // Showing a solid shows the feature it is rolled back to
-            auto tip = solid->Tip.getValue();
-            if (!tip && solid->Group.getSize())
-                tip = solid->Group.getValues().back();
-            if (tip)
-                tip->Visibility.setValue(true);
+        else if (!solid->isSolidVisible()) {
+            // Showing a solid shows what it was last seen through, the
+            // feature it is rolled back to if nothing is remembered
+            if (auto target = solid->getShowTarget())
+                target->Visibility.setValue(true);
         }
         return 1;
     }

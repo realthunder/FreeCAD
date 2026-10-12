@@ -60,6 +60,10 @@ public:
     /// The features of the solid in history order, kept by the body
     App::PropertyLinkList Group;
     App::PropertyLinkHidden _Body;
+    /// The feature the solid was last seen through, if not its tip
+    App::PropertyLinkHidden _Shown;
+    /// Whether the solid was last seen through this object's own shape
+    App::PropertyBool _ShownShape;
 
     App::DocumentObjectExecReturn *execute() override;
     short mustExecute() const override;
@@ -77,6 +81,22 @@ public:
 
     /// Whether \a obj is one of the solid's features
     bool hasFeature(const App::DocumentObject *obj) const;
+
+    /** @name What the solid is seen through
+     *
+     * A solid is drawn by one of its features, or by this object's own
+     * shape. Hidden, it remembers which, and is shown through that again.
+     */
+    //@{
+    /// Whether a feature of the solid, or this object, is visible
+    bool isSolidVisible() const;
+    /// What a hidden solid is shown through: what it was last seen through,
+    /// else its tip
+    App::DocumentObject *getShowTarget() const;
+    /// To be called once \a obj, a feature of the solid or this object, is
+    /// hidden. If that hid the solid, \a obj is what it was last seen through.
+    void rememberShown(const App::DocumentObject *obj);
+    //@}
 
     /// Set Shape from Tip; what execute() does
     App::DocumentObjectExecReturn *updateShape();

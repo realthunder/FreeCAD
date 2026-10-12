@@ -139,8 +139,9 @@ void Feature::onChanged(const App::Property *prop)
             if (auto body = getFeatureBody())
                 body->touchSolidBodies();
         }
-        else if (prop == &Visibility && Visibility.getValue()) {
-            if (auto body = Body::findBodyOf(this)) {
+        else if (prop == &Visibility) {
+            auto body = Body::findBodyOf(this);
+            if (body && Visibility.getValue()) {
                 auto siblings = body->getSiblings(this);
                 for (auto feat : siblings) {
                     if (feat != this && feat->Visibility.getValue())
@@ -152,6 +153,12 @@ void Feature::onChanged(const App::Property *prop)
                         solid->Visibility.setValue(false);
                 }
                 body->signalSiblingVisibilityChanged(siblings);
+            }
+            else if (body) {
+                // The solid is shown through this feature again, if hiding it
+                // hid the solid
+                if (auto solid = body->getSolidBody(this))
+                    solid->rememberShown(this);
             }
         }
         else if (prop == &ShapeMaterial) {
