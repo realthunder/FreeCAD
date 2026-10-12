@@ -56,6 +56,7 @@
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
 #include "RenderParams.h"
+#include "OwnNodesPath.h"
 #include "ViewProviderExtension.h"
 #include "ViewProviderLink.h"
 #include "ViewProviderPy.h"
@@ -1031,6 +1032,23 @@ bool ViewProvider::getElementPicked(const SoPickedPoint *pp, std::string &subnam
     if(!queryExtension(&ViewProviderExtension::extensionGetElementPicked,pp,subname))
         subname = getElement(pp?pp->getDetail():0);
     return true;
+}
+
+static int _OwnNodesPath;
+
+OwnNodesPath::OwnNodesPath()
+{
+    ++_OwnNodesPath;
+}
+
+OwnNodesPath::~OwnNodesPath()
+{
+    --_OwnNodesPath;
+}
+
+bool OwnNodesPath::wanted()
+{
+    return _OwnNodesPath > 0;
 }
 
 bool ViewProvider::getDetailPath(const char *subname, SoFullPath *pPath, bool append, SoDetail *&det) const {
