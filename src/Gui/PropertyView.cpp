@@ -41,6 +41,7 @@
 #include "Application.h"
 #include "Document.h"
 #include "MainWindow.h"
+#include "OmniSearchBox.h"
 #include "SelectionObject.h"
 #include "Tree.h"
 #include "ViewParams.h"
@@ -196,6 +197,40 @@ PropertyView::~PropertyView()
     this->connectChangedView.disconnect();
     this->connectDetachView.disconnect();
     this->connectActivateView.disconnect();
+}
+
+QString PropertyView::omniSearchText(bool viewEditor) const
+{
+    QString text = QString::fromLatin1(OmniSearch::modePrefix(OmniSearch::Mode::Object));
+    if (!Gui::Selection().hasSelection()) {
+        // As onTimer(): the document the tree view has selected, and its view
+        auto gdoc = TreeWidget::selectedDocument();
+        if (!gdoc || !gdoc->getDocument())
+            return text;
+        text += QString::fromUtf8(gdoc->getDocument()->getName()) + QStringLiteral("#.");
+        if (viewEditor && gdoc->getActiveView())
+            text += QStringLiteral("ActiveView.");
+        return text;
+    }
+    std::vector<App::DocumentObject*> objs;
+    for (auto &sel : Gui::Selection().getSelectionEx("*")) {
+        auto obj = sel.getObject();
+        if (obj && std::find(objs.begin(), objs.end(), obj) == objs.end())
+            objs.push_back(obj);
+    }
+    // One object by its name; of several, the properties they share, which
+    // is what a leading dot asks the omni search for
+    if (objs.size() == 1 && objs.front()->isAttachedToDocument())
+        text += QString::fromUtf8(objs.front()->getNameInDocument());
+    text += QLatin1Char('.');
+    if (viewEditor)
+        text += QStringLiteral("ViewObject.");
+    return text;
+}
+
+void PropertyView::openOmniSearch(bool viewEditor)
+{
+    OmniSearchBox::instance()->open(omniSearchText(viewEditor));
 }
 
 static bool _ShowAll;

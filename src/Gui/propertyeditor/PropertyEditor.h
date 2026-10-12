@@ -134,6 +134,7 @@ protected:
 #endif
     void contextMenuEvent(QContextMenuEvent *event) override;
     bool event(QEvent*) override;
+    void keyPressEvent(QKeyEvent*) override;
 
 private:
     void setEditorMode(const QModelIndex & parent, int start, int end);

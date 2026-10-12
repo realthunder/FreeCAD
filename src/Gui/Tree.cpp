@@ -84,6 +84,7 @@
 #include "PieMenu.h"
 #include "OverlayWidgets.h"
 #include "OverlayManager.h"
+#include "OmniSearchBox.h"
 #include "OverlayParams.h"
 #include "TreeParams.h"
 
@@ -1465,11 +1466,6 @@ void TreeWidget::resetItemSearch() {
     searchObject = nullptr;
 }
 
-void TreeWidget::startItemSearch(QLineEdit *edit) {
-    if (auto obj = startItemSearch())
-        static_cast<ExpressionLineEdit*>(edit)->setDocumentObject(obj);
-}
-
 App::DocumentObject *TreeWidget::startItemSearch() {
 
     if(TreeParams::getRecordSelection())
@@ -2279,9 +2275,14 @@ bool TreeWidget::_setupObjectMenu(DocumentObjectItem *item, QMenu &menu)
     return res;
 }
 
+// The tree view had a search box of its own under it. The omni search does
+// what that did -- it scrolls to the item its text names and marks it, in
+// the tree view it was opened from -- and more, so Ctrl+F and "Search..."
+// open that, with its objects' prefix typed (docs/HandsOnQueue.md entry 78).
 void TreeWidget::onSearchObjects()
 {
-    Q_EMIT emitSearchObjects();
+    OmniSearchBox::instance()->open(QString::fromLatin1(
+                OmniSearch::modePrefix(OmniSearch::Mode::Object)), this);
 }
 
 void TreeWidget::onActivateDocument(QAction* active)
@@ -5182,81 +5183,10 @@ TreePanel::TreePanel(const char *name, QWidget* parent)
     pLayout->setSpacing(0);
     pLayout->setContentsMargins(0, 0, 0, 0);
     pLayout->addWidget(this->treeWidget);
-    connect(this->treeWidget, &TreeWidget::emitSearchObjects,
-            this, &TreePanel::showEditor);
-
-    this->searchBox = new Gui::ExpressionLineEdit(this,true);
-    pLayout->addWidget(this->searchBox);
-    this->searchBox->hide();
-    this->searchBox->installEventFilter(this);
-    this->treeWidget->installEventFilter(this);
-    this->searchBox->setPlaceholderText(tr("Search"));
-    connect(this->searchBox, &QLineEdit::returnPressed,
-            this, &TreePanel::accept);
-    connect(this->searchBox, &QLineEdit::textChanged,
-            this, &TreePanel::itemSearch);
 }
 
 TreePanel::~TreePanel()
 {
-}
-
-void TreePanel::accept()
-{
-    QString text = this->searchBox->text();
-    hideEditor();
-    this->treeWidget->setFocus();
-    this->treeWidget->itemSearch(text,true);
-}
-
-bool TreePanel::eventFilter(QObject *obj, QEvent *ev)
-{
-    if (this->searchBox->isVisible()
-            && ev->type() == QEvent::KeyPress)
-    {
-        int key = static_cast<QKeyEvent*>(ev)->key();
-        switch (key) {
-        case Qt::Key_Escape:
-            hideEditor();
-            treeWidget->setFocus();
-            return true;
-        case Qt::Key_Up:
-        case Qt::Key_Down:
-            if (obj == searchBox)  {
-                QApplication::sendEvent(treeWidget, ev);
-                return true;
-            }
-            break;
-        default:
-            break;
-        }
-    }
-
-    return false;
-}
-
-void TreePanel::showEditor()
-{
-    this->searchBox->show();
-    this->searchBox->setFocus();
-    this->treeWidget->startItemSearch(searchBox);
-}
-
-void TreePanel::hideEditor()
-{
-    static_cast<ExpressionLineEdit*>(this->searchBox)->setDocumentObject(0);
-    this->searchBox->clear();
-    this->searchBox->hide();
-    this->treeWidget->resetItemSearch();
-    auto sels = this->treeWidget->selectedItems();
-    if(!sels.empty())
-        this->treeWidget->scrollToItem(sels.front());
-}
-
-void TreePanel::itemSearch(const QString &text)
-{
-    this->treeWidget->itemSearch(text,false);
-    this->searchBox->setFocus();
 }
 
 // ----------------------------------------------------------------------------

@@ -178,7 +178,6 @@ public:
     void startDragging();
 
     void resetItemSearch();
-    void startItemSearch(QLineEdit*);
     /** Prepare an item search and return the object that anchors it.
      *
      * Picks the document to search from the current selection (falling
@@ -256,9 +255,6 @@ private Q_SLOTS:
     void onItemExpanded(QTreeWidgetItem * item);
     void onUpdateStatus();
     void onItemPressed();
-
-Q_SIGNALS:
-    void emitSearchObjects();
 
 private:
     void slotNewDocument(const Gui::Document&, bool);
@@ -367,16 +363,7 @@ public:
     explicit TreePanel(const char *name, QWidget* parent=nullptr);
     ~TreePanel() override;
 
-    bool eventFilter(QObject *obj, QEvent *ev) override;
-
-private Q_SLOTS:
-    void accept();
-    void showEditor();
-    void hideEditor();
-    void itemSearch(const QString &text);
-
 private:
-    QLineEdit* searchBox;
     TreeWidget* treeWidget;
 };
 

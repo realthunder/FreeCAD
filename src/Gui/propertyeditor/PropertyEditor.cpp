@@ -269,6 +269,23 @@ bool PropertyEditor::event(QEvent* event)
     return QTreeView::event(event);
 }
 
+// Ctrl+F in the property view: the omni search, with what the view shows
+// typed in (docs/HandsOnQueue.md entry 78). In the view alone -- the editor
+// is used in dialogs too, where the key stays what it was.
+void PropertyEditor::keyPressEvent(QKeyEvent* event)
+{
+    if (event->matches(QKeySequence::Find)) {
+        for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+            if (auto view = qobject_cast<PropertyView*>(w)) {
+                event->accept();
+                view->openOmniSearch(isViewEditor);
+                return;
+            }
+        }
+    }
+    QTreeView::keyPressEvent(event);
+}
+
 void PropertyEditor::commitData (QWidget * editor)
 {
     committing = true;

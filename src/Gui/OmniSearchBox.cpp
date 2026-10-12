@@ -1075,22 +1075,35 @@ void OmniSearchEdit::setInputText(const QString &text)
 // for the focus that activation brings.
 void OmniSearchEdit::requestChooser()
 {
+    requestInput(QStringLiteral("/"));
+}
+
+// As the chooser: the text brings a popup up, which waits for the focus. The
+// text itself is in the box at once -- but for the chooser's lone slash,
+// which says nothing without its list and comes with it as it always did.
+void OmniSearchEdit::requestInput(const QString &text)
+{
     if (hasFocus()) {
-        chooserPending = false;
-        setInputText(QStringLiteral("/"));
+        pendingInput.clear();
+        setInputText(text);
         return;
     }
-    chooserPending = true;
+    pendingInput = text;
+    if (text != QLatin1String("/")) {
+        setText(text);
+        setCursorPosition(text.size());
+    }
 }
 
 void OmniSearchEdit::focusInEvent(QFocusEvent *event)
 {
     QLineEdit::focusInEvent(event);
-    if (chooserPending) {
-        chooserPending = false;
-        QTimer::singleShot(0, this, [this]() {
+    if (!pendingInput.isEmpty()) {
+        const QString text = pendingInput;
+        pendingInput.clear();
+        QTimer::singleShot(0, this, [this, text]() {
             if (isVisible() && hasFocus())
-                setInputText(QStringLiteral("/"));
+                setInputText(text);
         });
     }
 }
@@ -1549,11 +1562,25 @@ OmniSearchBox::~OmniSearchBox()
 
 TreeWidget *OmniSearchBox::tree() const
 {
+    if (launchTree)
+        return launchTree;
     return TreeWidget::instance();
 }
 
 void OmniSearchBox::open()
 {
+    open(QString());
+}
+
+void OmniSearchBox::open(const QString &text, TreeWidget *from)
+{
+    // Open already, for another tree view: that one is done with its search
+    if (launchTree != from) {
+        if (auto t = tree())
+            t->resetItemSearch();
+    }
+    launchTree = from;
+
     App::DocumentObject *owner = nullptr;
     if (auto t = tree())
         owner = t->startItemSearch();
@@ -1585,7 +1612,10 @@ void OmniSearchBox::open()
     show();
     raise();
     activateWindow();
-    lineEdit->requestChooser();
+    if (text.isEmpty())
+        lineEdit->requestChooser();
+    else
+        lineEdit->requestInput(text);
     lineEdit->setFocus();
     qApp->removeEventFilter(this);
     qApp->installEventFilter(this);
@@ -1603,6 +1633,7 @@ void OmniSearchBox::hideEvent(QHideEvent *event)
     hidePanels();
     if (auto t = tree())
         t->resetItemSearch();
+    launchTree = nullptr;
     Selection().rmvPreselect();
     QFrame::hideEvent(event);
 }
@@ -1705,11 +1736,16 @@ void OmniSearchBox::onModeChanged(Mode mode)
 void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
 {
     auto t = tree();
+    // A ".Name" query is about the selection, which the tree shows already.
+    // So is the lone "." the property view's Ctrl+F types for several
+    // selected objects: looked up in the tree it named the first of them,
+    // and with the tree's "sync view" on that one was selected in place of
+    // them all (docs/HandsOnQueue.md entry 78).
+    const bool local = lineEdit->currentInput().query.trimmed().startsWith(QLatin1Char('.'));
     if (match.prop) {
         if (panelHost->isVisible() && !propertyPanel->isFor(match.prop))
             hidePanels();
-        // A ".Name" query is about the selection, which the tree shows already
-        if (lineEdit->currentInput().query.trimmed().startsWith(QLatin1Char('.')))
+        if (local)
             return;
         if (t)
             t->resetItemSearch();
@@ -1730,7 +1766,7 @@ void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
     }
     if (panelHost->isVisible())
         hidePanels();
-    if (t)
+    if (t && !local)
         t->itemSearch(lineEdit->currentInput().query, false);
 }
 
