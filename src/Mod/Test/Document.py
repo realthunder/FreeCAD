@@ -5354,6 +5354,48 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertTrue(any(own), own)
         self.assertFalse(all(own), own)
 
+    def testAFeatureThatWorkedAroundARefusalRunsOnACopy(self):
+        # Sec 33.6: a refusal the feature catches and works around gives
+        # another shape and no error (a pad up to a shape came out four
+        # times its volume). It is run again on copies all the same, and
+        # the result is the one it makes of inputs it may change.
+        import Part
+
+        if not FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part").GetBool(
+            "ImmutableShapeValues", True
+        ):
+            self.skipTest("shape values are not frozen")
+
+        runs = []
+
+        class Tolerance:
+            def __init__(self, obj):
+                obj.addProperty("App::PropertyLink", "Base")
+                obj.Proxy = self
+
+            def execute(self, obj):
+                shape = obj.Base.Shape
+                try:
+                    shape.Edges[0].fixTolerance(0.01)
+                    runs.append("fixed")
+                except Exception:
+                    runs.append("worked around")
+                obj.Shape = shape
+
+        self.param.SetInt("TransactionLog", 0)
+        doc = self.track(FreeCAD.newDocument("WorkedAround"))
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        feature = doc.addObject("Part::FeaturePython", "Tolerance")
+        Tolerance(feature)
+        feature.Base = box
+        del runs[:]
+        doc.recompute()
+        self.assertEqual(runs, ["worked around", "fixed"])
+        self.assertNotIn("Invalid", feature.State)
+        self.assertAlmostEqual(max(e.Tolerance for e in feature.Shape.Edges), 0.01)
+        self.assertLess(max(e.Tolerance for e in box.Shape.Edges), 0.01)
+
     def testAnExpressionIntoAnotherDocumentStoresItsName(self):
         # Sec 27.82: an expression's element path into another document --
         # which the parser used to turn into a sub-object label -- names the
