@@ -241,6 +241,12 @@ fc_add_gui_test(GuiTechDrawColourWithoutOpacity_tests_run
 fc_add_gui_test(GuiTechDrawPageItemsWhenNeeded_tests_run
                 techdraw-page-items-when-needed.py --timeout 180)
 
+# The other side of the same change: an export of a page nothing has shown
+# writes the whole drawing, not the template alone. Python's exports bring the
+# view up first; TechDraw_PrintAll, which does not, is not driven here.
+fc_add_gui_test(GuiTechDrawNeverShownPageExports_tests_run
+                techdraw-never-shown-page-exports.py --timeout 180)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view
