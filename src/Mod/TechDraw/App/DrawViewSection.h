@@ -217,6 +217,9 @@ public:
 protected:
     TopoDS_Compound m_sectionTopoDSFaces;//needed for hatching
     std::vector<LineSet> m_lineSets;
+    /// The hatch lines are to be read from the pattern file when they are
+    /// first asked for: after a restore, see onDocumentRestored()
+    bool m_lineSetsPending = false;
     std::vector<TechDraw::FacePtr> m_tdSectionFaces;
 
     //! What the cut did, kept so that the element names can be mapped on the

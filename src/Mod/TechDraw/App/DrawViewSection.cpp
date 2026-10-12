@@ -1462,6 +1462,9 @@ std::vector<LineSet> DrawViewSection::getDrawableLines(int i)
     //    Base::Console().Message("DVS::getDrawableLines(%d) - lineSets: %d\n", i,
     //    m_lineSets.size());
     std::vector<LineSet> result;
+    if (m_lineSetsPending) {
+        makeLineSets();
+    }
     return DrawGeomHatch::getTrimmedLinesSection(this,
                                                  m_lineSets,
                                                  getSectionTopoDSFace(i),
@@ -1527,7 +1530,12 @@ bool DrawViewSection::restoreStoredGeometry()
 
 void DrawViewSection::onDocumentRestored()
 {
-    makeLineSets();
+    // Not read here: the hatch lines are for whoever draws the cut face, and
+    // reading them opens the pattern file -- which has to be written out
+    // first where the document keeps it as a blob. Every section view did
+    // that at every load, drawn or not, hatched with a pattern or not
+    // (docs/HandsOnQueue.md entry 47). getDrawableLines() reads them.
+    m_lineSetsPending = true;
     DrawViewPart::onDocumentRestored();
 }
 
@@ -1546,6 +1554,7 @@ void DrawViewSection::setupObject()
 void DrawViewSection::makeLineSets(void)
 {
     //    Base::Console().Message("DVS::makeLineSets()\n");
+    m_lineSetsPending = false;
     if (PatIncluded.isEmpty()) {
         return;
     }
