@@ -5310,6 +5310,140 @@ class TransactionBranchCases(unittest.TestCase):
         )
         self.assertEqual(said(A), before)
 
+    def testANameReadThroughAChildHoldsWhatItsPostfixNames(self):
+        # Sec 33.2: the external marker names its document by a string id
+        # that is only text in the postfix. A shape of fewer than five
+        # elements of a kind is not kept as a child map: its names are
+        # written down one by one, and each has to hold that id itself, or
+        # the save drops the string, the reopened document makes it again
+        # under another id, and the first recompute renames every element.
+        import Part
+
+        self.param.SetInt("TransactionLog", 0)
+        B = self.track(FreeCAD.newDocument("SmallB"))
+        plane = B.addObject("Part::Plane", "Plane")
+        B.recompute()
+        B.saveAs(os.path.join(self.dir, "smallb.FCStd"))
+        A = self.track(FreeCAD.newDocument("SmallA"))
+        link = A.addObject("App::Link", "Link")
+        link.LinkedObject = plane
+        comp = A.addObject("Part::Compound", "Comp")
+        comp.Links = [link]
+        A.recompute()
+        built = dict(comp.Shape.ElementMap)
+        self.assertEqual(len(built), 9)
+        for name in built:
+            self.assertIn(";:X#", name)
+        comp.touch()
+        A.recompute()
+        self.assertEqual(dict(comp.Shape.ElementMap), built)
+        path = os.path.join(self.dir, "smalla.FCStd")
+        A.saveAs(path)
+        FreeCAD.closeDocument(A.Name)
+        A = self.track(FreeCAD.openDocument(path))
+        self.assertEqual([v for v in A.Hasher.Table.values() if v == B.Uid], [B.Uid])
+        self.assertEqual(dict(A.Comp.Shape.ElementMap), built)
+        A.Comp.touch()
+        A.recompute()
+        self.assertEqual(dict(A.Comp.Shape.ElementMap), built)
+        self.assertEqual([v for v in A.Hasher.Table.values() if v == B.Uid], [B.Uid])
+
+    def testATemporaryDocumentEmptiedStartsItsIdsOver(self):
+        # Sec 33.3: a temporary document has no log, and emptied it is new --
+        # the ids and the names of what is put into it are those of the
+        # first time, where the file's counters (sec 27.40) went on.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("TmpIds", hidden=True, temp=True))
+        made = []
+        for turn in range(3):
+            a = doc.addObject("Part::Box", "A")
+            b = doc.addObject("Part::Box", "B")
+            doc.recompute()
+            made.append((a.ID, a.Name, b.ID, b.Name))
+            doc.clearDocument()
+        self.assertEqual(made[1], (1, "A", 2, "B"))
+        self.assertEqual(made[2], made[1])
+        self.assertEqual(doc.getTransactionLog(), [])
+        # Any other document keeps its counters, once it has a history.
+        doc = self.track(FreeCAD.newDocument("KeptIds"))
+        first = doc.addObject("Part::Box", "A").ID
+        doc.recompute()
+        self.assertTrue(doc.getTransactionLog())
+        doc.clearDocument()
+        self.assertGreater(doc.addObject("Part::Box", "A").ID, first)
+
+    def testAnImplicitStepGoesWithTheUsersStepItFollowed(self):
+        # Sec 33.4: a write with no transaction open and a recompute are
+        # recorded, and are no undo steps of their own. One undo takes the
+        # user's step with the implicit ones that followed it, each in a
+        # row of its own; the redo puts them back, the shape from its row.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("ImplicitUndo"))
+        doc.UndoMode = 1
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        # Nothing of the user's yet: nothing to undo.
+        self.assertEqual(doc.UndoNames, [])
+        self.assertEqual(doc.UndoCount, 0)
+        doc.undo()
+        self.assertIsNotNone(doc.getObject("Box"))
+
+        doc.openTransaction("longer")
+        box.Length = 20
+        doc.commitTransaction()
+        doc.recompute()
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertEqual(doc.UndoNames, ["longer"])
+        self.assertEqual(doc.UndoCount, 1)
+        rows = len(doc.getTransactionLog())
+        doc.undo()
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertNotIn("Touched", box.State)
+        self.assertEqual(doc.UndoNames, [])
+        self.assertEqual(doc.RedoNames, ["longer"])
+        self.assertEqual(doc.RedoCount, 1)
+        self.assertEqual(
+            [t["kind"] for t in doc.getTransactionLog()[rows:]], ["undo", "undo"]
+        )
+        rows = len(doc.getTransactionLog())
+        doc.redo()
+        self.assertAlmostEqual(box.Length.Value, 20.0)
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertNotIn("Touched", box.State)
+        self.assertEqual(doc.UndoNames, ["longer"])
+        self.assertEqual(doc.RedoNames, [])
+        self.assertEqual(
+            [t["kind"] for t in doc.getTransactionLog()[rows:]], ["redo", "redo"]
+        )
+
+        # An implicit step ends no redo step: the redo after it goes through
+        # the log, and keeps what was written meanwhile.
+        doc.undo()
+        box.Width = 5
+        doc.recompute()
+        self.assertEqual(doc.RedoNames, ["longer"])
+        self.assertEqual(doc.UndoNames, [])
+        doc.redo()
+        self.assertAlmostEqual(box.Length.Value, 20.0)
+        self.assertAlmostEqual(box.Width.Value, 5.0)
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertEqual(doc.UndoNames, ["longer"])
+        self.assertEqual(doc.RedoNames, [])
+        doc.undo()
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Width.Value, 5.0)
+        self.assertAlmostEqual(box.Shape.Volume, 500.0)
+        self.assertEqual(doc.RedoNames, ["longer"])
+        # A new step of the user's does end it.
+        doc.openTransaction("taller")
+        box.Height = 30
+        doc.commitTransaction()
+        self.assertEqual(doc.RedoNames, [])
+        self.assertEqual(doc.UndoNames, ["taller"])
+
     def testAFeatureRefusedAFrozenInputRunsOnACopy(self):
         # Sec 27.82: an algorithm that writes into a frozen input throws
         # LockedShape; the feature runs once more on copies of its inputs,
@@ -5350,6 +5484,48 @@ class TransactionBranchCases(unittest.TestCase):
         own = [any(f.isPartner(g) for g in box.Shape.Faces) for f in feature.Shape.Faces]
         self.assertTrue(any(own), own)
         self.assertFalse(all(own), own)
+
+    def testAFeatureThatWorkedAroundARefusalRunsOnACopy(self):
+        # Sec 33.6: a refusal the feature catches and works around gives
+        # another shape and no error (a pad up to a shape came out four
+        # times its volume). It is run again on copies all the same, and
+        # the result is the one it makes of inputs it may change.
+        import Part
+
+        if not FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part").GetBool(
+            "ImmutableShapeValues", True
+        ):
+            self.skipTest("shape values are not frozen")
+
+        runs = []
+
+        class Tolerance:
+            def __init__(self, obj):
+                obj.addProperty("App::PropertyLink", "Base")
+                obj.Proxy = self
+
+            def execute(self, obj):
+                shape = obj.Base.Shape
+                try:
+                    shape.Edges[0].fixTolerance(0.01)
+                    runs.append("fixed")
+                except Exception:
+                    runs.append("worked around")
+                obj.Shape = shape
+
+        self.param.SetInt("TransactionLog", 0)
+        doc = self.track(FreeCAD.newDocument("WorkedAround"))
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        feature = doc.addObject("Part::FeaturePython", "Tolerance")
+        Tolerance(feature)
+        feature.Base = box
+        del runs[:]
+        doc.recompute()
+        self.assertEqual(runs, ["worked around", "fixed"])
+        self.assertNotIn("Invalid", feature.State)
+        self.assertAlmostEqual(max(e.Tolerance for e in feature.Shape.Edges), 0.01)
+        self.assertLess(max(e.Tolerance for e in box.Shape.Edges), 0.01)
 
     def testAnExpressionIntoAnotherDocumentStoresItsName(self):
         # Sec 27.82: an expression's element path into another document --
@@ -8477,6 +8653,19 @@ class TransactionBranchCases(unittest.TestCase):
             ],
         )
         self.assertEqual(at(doc), theirs)
+
+    def testACopysGeometryComesUnderThisFilesIdsWithNamesIndexed(self):
+        # Sec 33.7: the same with names indexed, where `g5;SKT` is the
+        # string `g;SKT` and the 5 is in the reference to it -- so what
+        # changes when this file numbers the line otherwise is the
+        # reference's number, and not a string.
+        param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        was = param.GetBool("HashIndexedName", False)
+        param.SetBool("HashIndexedName", True)
+        try:
+            self.testACopysGeometryComesUnderThisFilesIds()
+        finally:
+            param.SetBool("HashIndexedName", was)
 
     def testGeometryACopyTookComesBackUnderItsOwnId(self):
         # Sec 31.15: the round trip. A copy that took a line of this file's

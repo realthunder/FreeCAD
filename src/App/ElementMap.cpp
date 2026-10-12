@@ -1158,8 +1158,10 @@ public:
                 name = MappedName(childIdx);
             if (name) {
                 name += child.postfix;
-                // What the postfix names is held by the child (sec 27.76
-                // item 4), and so by a name read through it.
+                // The strings the child's postfix names by id are held by
+                // the child, and so by every name read through it: one that
+                // is written down as a name of its own has nothing else to
+                // hold them (docs/TransactionLog.md sec 33.2).
                 if (sids)
                     *sids += child.sids;
                 return name;
@@ -1400,8 +1402,8 @@ public:
                 for (int i=0; i<child.count; ++i, ++childIdx, ++idx) {
                     ElementIDRefs sids;
                     MappedName name = child.elementMap->find(childIdx, &sids);
-                    // Written down one by one, the names hold what the
-                    // child's postfix names: the child is not kept.
+                    // The name takes the child's postfix, and holds what
+                    // that names by id (sec 33.2).
                     sids += child.sids;
                     if (!name) {
                         if (!child.tag || child.tag == master.Tag) {

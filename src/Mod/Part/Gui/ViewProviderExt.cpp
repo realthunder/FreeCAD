@@ -2730,8 +2730,13 @@ void ViewProviderPartExt::setGivenShape(const Part::TopoShape &shape)
 
 bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
                                         const std::string &b, float position,
-                                        bool differencesOnly)
+                                        bool differencesOnly, const std::string &mode)
 {
+    ShapeDiffView::Mode how = ShapeDiffView::Mode::Faces;
+    if (mode == "material")
+        how = ShapeDiffView::Mode::Material;
+    else if (!mode.empty() && mode != "faces")
+        return false;
     auto obj = getObject();
     if (!prop || !obj || !obj->getDocument() || hasGivenShape)
         return false;
@@ -2755,14 +2760,22 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
         Part::TopoShape shapeA, shapeB;
         if (!at(a, shapeA) || !at(b, shapeB) || (shapeA.isNull() && shapeB.isNull()))
             return false;
+        // What a value is known by, for what is kept of the two: its ref,
+        // and of the object's own shape nothing but the shape
+        auto known = [&](const std::string &ref) {
+            return ref.empty() || ref == "-"
+                ? std::string()
+                : std::string(obj->getDocument()->getName()) + ":" + ref;
+        };
         auto view = std::make_unique<ShapeDiffView>(*this);
-        if (!view->show(shapeA, shapeB))
+        if (!view->show(shapeA, shapeB, how, known(a), known(b)))
             return false;
         diffView = std::move(view);
         diffProp = prop;
         diffA = a;
         diffB = b;
     }
+    diffView->setMode(how);
     diffView->setOptions(position, differencesOnly);
     return true;
 }
@@ -2775,7 +2788,7 @@ void ViewProviderPartExt::hideValueDiff()
     diffB.clear();
 }
 
-std::map<std::string, int> ViewProviderPartExt::getValueDiff() const
+std::map<std::string, double> ViewProviderPartExt::getValueDiff() const
 {
     if (!diffView)
         return {};

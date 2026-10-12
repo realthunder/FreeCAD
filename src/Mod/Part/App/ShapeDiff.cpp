@@ -1148,7 +1148,8 @@ ShapeDiff::ShapeDiff(const TopoShape& shapeA, const TopoShape& shapeB, const Opt
     }
 }
 
-bool ShapeDiff::material(const TopoShape& a, const TopoShape& b, Material& out, double fuzzy)
+bool ShapeDiff::material(const TopoShape& a, const TopoShape& b, Material& out, double fuzzy,
+                         const Message_ProgressRange& progress)
 {
     out = Material();
     const auto start = std::chrono::steady_clock::now();
@@ -1198,9 +1199,13 @@ bool ShapeDiff::material(const TopoShape& a, const TopoShape& b, Material& out, 
             cells.AddArgument(sa);
             cells.AddArgument(sb);
             cells.SetNonDestructive(true);
+            // All of what this takes is here, and it is what the kernel's
+            // other fuses are given (sec 32.16)
+            cells.SetRunParallel(true);
             if (fuzzy > 0.)
                 cells.SetFuzzyValue(fuzzy);
-            cells.Perform();
+            cells.Perform(progress);
+            // Told to stop is an error of the fuse
             if (cells.HasErrors())
                 return false;
             auto part = [&](bool inA, bool inB, TopoDS_Shape& shape, double& volume) {

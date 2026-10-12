@@ -205,6 +205,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include "PartFeature.h"
+#include "PropertyTopoShape.h"
 
 #include "PartPyCXX.h"
 #include "PropertyTopoShape.h"
@@ -2581,11 +2582,10 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
     // extrusion to work around: retrying on the original until face, or on
     // a base of our own, gave a prism up to the wrong place. It is passed
     // on, and the feature recomputes on copies (Part::Feature::recompute(),
-    // docs/TransactionLog.md sec 27.82).
+    // docs/TransactionLog.md sec 27.82, 33.6).
     auto refusedFrozen = [refused = TopoDS_LockedShape::Raised()]() {
         return !ThawInputs::active() && TopoDS_LockedShape::Raised() != refused;
     };
-
     std::vector<TopoShape> results;
     for (;;) {
         results.clear();

@@ -854,13 +854,8 @@ void Document::_applyRevert(ColdRevert& revert)
         });
     }
     // 3. Every value the row replaced, each afterRestore() once all are in.
-    // An owner left to recompute is touched after the values: the first
-    // write to an object records its touched state as the one before the
-    // row (sec 27.58), and a row's ops come in no order -- with the derived
-    // one first, the write after it recorded the touch as the state before,
-    // and the redo of that undo put the object back touched.
-    std::vector<long> recomputes;
     RestoreBatch batch;
+    std::vector<long> recomputes;
     for (const LogOp* o : revert.ops) {
         if (o->op != "set" && o->op != "delprop")
             continue;
@@ -875,6 +870,10 @@ void Document::_applyRevert(ColdRevert& revert)
                 // A derived value gone from the cache (sec 24.1), or a set
                 // that holds none (a create's, or the `none` policy): the
                 // owner recomputes it.
+                // Touched once every value is in, not here: the ops come
+                // in no order (a hash map's), and a value written after the
+                // touch would record the object as touched before the row
+                // (docs/TransactionLog.md sec 33.5).
                 if (o->derived) {
                     if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(container)) {
                         if (revert.touched.insert(obj->getID()).second)
@@ -1013,20 +1012,6 @@ bool sameUser(const Actor* a, const Actor* b)
 
 }  // namespace
 
-Transaction* Document::_myStep(bool undo) const
-{
-    const auto& stack = undo ? mUndoTransactions : mRedoTransactions;
-    // With no log there are no authors: one stack, its back (item 7).
-    if (!d->transactionLog)
-        return stack.empty() ? nullptr : stack.back();
-    const auto actor = ActorScope::current();
-    for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
-        if (sameUser((*it)->Author.get(), actor.get()))
-            return *it;
-    }
-    return nullptr;
-}
-
 bool Document::_atState(const Transaction* step) const
 {
     return !d->transactionLog || step->StateAfter == d->stateToken;
@@ -1036,7 +1021,9 @@ bool Document::stepNeedsLog(bool undo) const
 {
     if (!d->iUndoMode)
         return false;
-    const Transaction* step = _myStep(undo);
+    // What one undo takes (sec 33.4): the user's step and the implicit
+    // ones that go with it.
+    const auto run = _myRun(undo);
     // An open transaction is committed first. The actor's own is then the
     // step, where the document stands; another's is a write past the
     // actor's newest.
@@ -1046,9 +1033,9 @@ bool Document::stepNeedsLog(bool undo) const
         if (undo && sameUser(d->activeUndoTransaction->Author.get(),
                              ActorScope::current().get()))
             return false;
-        return step != nullptr;
+        return !run.empty();
     }
-    return step && !_atState(step);
+    return _runNeedsLog(run);
 }
 
 const std::string& Document::undoRefusal() const
@@ -1104,6 +1091,9 @@ bool Document::_revertStep(bool undo, Transaction* step)
     // what the copies of any step name, so nothing is applied from copies
     // across it.
     Transaction* stub = Transaction::coldCopy(*inverse);
+    // Of the kind the step taken was (sec 33.4); the inverse itself was
+    // not, or the recompute above would have committed it as it returned.
+    stub->Implicit = step->Implicit;
     _deleteTransaction(inverse);
     toMap[stub->getID()] = stub;
     to.push_back(stub);
@@ -1124,6 +1114,144 @@ bool Document::_revertStep(bool undo, Transaction* step)
     return true;
 }
 
+std::vector<Transaction*> Document::_myRun(bool undo) const
+{
+    // docs/TransactionLog.md sec 33.4: an implicit step -- a write with no
+    // transaction open, a recompute -- is no step of its own to whoever
+    // undoes. It goes with the user's step it followed: one undo takes that
+    // step and the implicit ones above it, one redo the step and the
+    // implicit ones it then finds under it.
+    const auto& stack = undo ? mUndoTransactions : mRedoTransactions;
+    const bool authors = d->transactionLog != nullptr;
+    const auto actor = ActorScope::current();
+    std::vector<Transaction*> run;
+    for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+        Transaction* step = *it;
+        if (authors && !sameUser(step->Author.get(), actor.get()))
+            continue;
+        if (undo) {
+            run.push_back(step);
+            if (!step->Implicit)
+                return run;
+        }
+        else {
+            if (!step->Implicit && !run.empty())
+                break;
+            run.push_back(step);
+        }
+    }
+    // Implicit steps with no step of the user's below them: nothing to
+    // undo, as when no log recorded them.
+    if (undo)
+        run.clear();
+    return run;
+}
+
+bool Document::_takeStep(bool undo, int id)
+{
+    if (d->activeUndoTransaction)
+        _commitTransaction(true);
+    auto& from = undo ? mUndoTransactions : mRedoTransactions;
+    auto& fromMap = undo ? mUndoMap : mRedoMap;
+    auto& to = undo ? mRedoTransactions : mUndoTransactions;
+    auto& toMap = undo ? mRedoMap : mUndoMap;
+    // By its id: the commit above may have made the step a cold one.
+    auto found = fromMap.find(id);
+    if (found == fromMap.end())
+        return false;
+    Transaction* step = found->second;
+    if (!_atState(step))
+        return _revertStep(undo, step);
+
+    ColdRevert cold;
+    if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
+        return false;
+    StepTouched touched;   // sec 27.63
+    if (auto log = getTransactionLog())
+        touched.begin(*this, *log, *step);
+
+    TransactionGuard guard(undo ? TransactionGuard::Undo : TransactionGuard::Redo);
+
+    // The step that takes this one back again.
+    d->activeUndoTransaction = new Transaction(step->getID());
+    d->activeUndoTransaction->Name = step->Name;
+    // Back in the state the step was made in; the other step is applied
+    // from there.
+    d->activeUndoTransaction->StateBefore = step->StateAfter;
+    d->activeUndoTransaction->StateAfter = step->StateBefore;
+    d->stateToken = step->StateBefore ? step->StateBefore : ++d->stateCounter;
+
+    Base::FlagToggler<bool> flag(d->undoing);
+    if (step->Cold)
+        _applyRevert(cold);
+    else
+        step->apply(*this, !undo);
+    if (touched.active)
+        touched.leave(*this, *d->activeUndoTransaction, cold.touched);
+    logInverse(*step, undo ? "undo" : "redo", step->Cold ? &cold : nullptr);
+    // Of the kind the step taken was (sec 33.4). Set here, not when it was
+    // opened: an open implicit transaction is committed by whatever
+    // invocation ends.
+    d->activeUndoTransaction->Implicit = step->Implicit;
+
+    toMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+    to.push_back(d->activeUndoTransaction);
+    d->activeUndoTransaction = nullptr;
+
+    fromMap.erase(step->getID());
+    // The actor's own, which another's steps may lie above.
+    from.remove(step);
+    delete step;
+    if (!undo && getTransactionLog())
+        _trimHotWindow(mUndoTransactions, mUndoMap);
+    return true;
+}
+
+bool Document::_takeRun(bool undo)
+{
+    if (d->activeUndoTransaction)
+        _commitTransaction(true);
+    // Ids, not steps: a commit on the way -- a write some observer makes --
+    // can turn a step into a cold one of the same id.
+    std::vector<int> ids;
+    for (auto step : _myRun(undo))
+        ids.push_back(step->getID());
+    if (ids.empty())
+        return false;
+    std::size_t taken = 0;
+    while (taken < ids.size() && _takeStep(undo, ids[taken]))
+        ++taken;
+    if (taken == ids.size())
+        return true;
+    if (!undo) {
+        // The user's step is redone; an implicit one refused under it
+        // stays where it is, to be asked for again or ended by a new step.
+        return taken > 0;
+    }
+    // The user's step, or an implicit one above it, was refused: what was
+    // taken on the way is put back, so an undo is all of it or none.
+    const std::string why = d->undoRefusal;
+    while (taken > 0 && _takeStep(false, ids[taken - 1]))
+        --taken;
+    d->undoRefusal = why;
+    return false;
+}
+
+bool Document::_runNeedsLog(const std::vector<Transaction*>& run) const
+{
+    if (!d->transactionLog)
+        return false;
+    // Each step leaves the state the one below was made in, or that one
+    // goes through the log.
+    int64_t token = d->stateToken;
+    for (auto step : run) {
+        if (step->StateAfter != token)
+            return true;
+        token = step->StateBefore;   // none: a new one, which no step has
+    }
+    return false;
+}
+
 bool Document::undo(int id)
 {
     OperationScope scope;   // sec 27.38
@@ -1134,17 +1262,21 @@ bool Document::undo(int id)
             if(it == mUndoMap.end())
                 return false;
             if(it->second != d->activeUndoTransaction) {
+                // An implicit step is no step to undo down to (sec 33.4).
+                if (it->second->Implicit)
+                    return false;
                 // The actor's steps down to that one (sec 30.10): another's
                 // on the way are not in its stack.
                 std::optional<TransactionGuard> guard;
                 while (true) {
-                    Transaction* top = _myStep(true);
+                    const auto run = _myRun(true);
+                    Transaction* top = run.empty() ? nullptr : run.back();
                     if (!top || top == it->second)
                         break;
                     // One guard for the run, let go of around a step that
                     // goes through the log: it recomputes, and a guard's
                     // deferred touches would starve that.
-                    if (!_atState(top))
+                    if (_runNeedsLog(run))
                         guard.reset();
                     else if (!guard)
                         guard.emplace(TransactionGuard::Undo);
@@ -1153,53 +1285,7 @@ bool Document::undo(int id)
                 }
             }
         }
-
-        if (d->activeUndoTransaction)
-            _commitTransaction(true);
-        Transaction* step = _myStep(true);
-        if (!step)
-            return false;
-        if (!_atState(step))
-            return _revertStep(true, step);
-
-        ColdRevert cold;
-        if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
-            return false;
-        StepTouched touched;   // sec 27.63
-        if (auto log = getTransactionLog())
-            touched.begin(*this, *log, *step);
-
-        TransactionGuard guard(TransactionGuard::Undo);
-
-        // redo
-        d->activeUndoTransaction = new Transaction(step->getID());
-        d->activeUndoTransaction->Name = step->Name;
-        // Back in the state the step was made in; the redo step is applied
-        // from there.
-        d->activeUndoTransaction->StateBefore = step->StateAfter;
-        d->activeUndoTransaction->StateAfter = step->StateBefore;
-        d->stateToken = step->StateBefore ? step->StateBefore : ++d->stateCounter;
-
-        Base::FlagToggler<bool> flag(d->undoing);
-        // applying the undo
-        if (step->Cold)
-            _applyRevert(cold);
-        else
-            step->apply(*this,false);
-        if (touched.active)
-            touched.leave(*this, *d->activeUndoTransaction, cold.touched);
-        logInverse(*step, "undo", step->Cold ? &cold : nullptr);
-
-        // save the redo
-        mRedoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
-        mRedoTransactions.push_back(d->activeUndoTransaction);
-        d->activeUndoTransaction = nullptr;
-
-        mUndoMap.erase(step->getID());
-        // The actor's newest, which another's steps may lie above.
-        mUndoTransactions.remove(step);
-        delete step;
-        return true;
+        return _takeRun(true);
     }
 
     return false;
@@ -1214,12 +1300,15 @@ bool Document::redo(int id)
             auto it = mRedoMap.find(id);
             if(it == mRedoMap.end())
                 return false;
+            if (it->second->Implicit)
+                return false;   // sec 33.4
             std::optional<TransactionGuard> guard;
             while (true) {
-                Transaction* top = _myStep(false);
+                const auto run = _myRun(false);
+                Transaction* top = run.empty() ? nullptr : run.front();
                 if (!top || top == it->second)
                     break;
-                if (!_atState(top))
+                if (_runNeedsLog(run))
                     guard.reset();
                 else if (!guard)
                     guard.emplace(TransactionGuard::Redo);
@@ -1227,52 +1316,7 @@ bool Document::redo(int id)
                     return false;   // a step refused (sec 24.3, 30.10)
             }
         }
-
-        if (d->activeUndoTransaction)
-            _commitTransaction(true);
-
-        Transaction* step = _myStep(false);
-        if (!step)
-            return false;
-        if (!_atState(step))
-            return _revertStep(false, step);
-
-        ColdRevert cold;
-        if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
-            return false;
-        StepTouched touched;   // sec 27.63
-        if (auto log = getTransactionLog())
-            touched.begin(*this, *log, *step);
-
-        TransactionGuard guard(TransactionGuard::Redo);
-
-        // undo
-        d->activeUndoTransaction = new Transaction(step->getID());
-        d->activeUndoTransaction->Name = step->Name;
-        d->activeUndoTransaction->StateBefore = step->StateAfter;
-        d->activeUndoTransaction->StateAfter = step->StateBefore;
-        d->stateToken = step->StateBefore ? step->StateBefore : ++d->stateCounter;
-
-        // do the redo
-        Base::FlagToggler<bool> flag(d->undoing);
-        if (step->Cold)
-            _applyRevert(cold);
-        else
-            step->apply(*this,true);
-        if (touched.active)
-            touched.leave(*this, *d->activeUndoTransaction, cold.touched);
-        logInverse(*step, "redo", step->Cold ? &cold : nullptr);
-
-        mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
-        mUndoTransactions.push_back(d->activeUndoTransaction);
-        d->activeUndoTransaction = nullptr;
-
-        mRedoMap.erase(step->getID());
-        mRedoTransactions.remove(step);
-        delete step;
-        if (getTransactionLog())
-            _trimHotWindow(mUndoTransactions, mUndoMap);
-        return true;
+        return _takeRun(false);
     }
 
     return false;
@@ -1386,13 +1430,17 @@ namespace
 
 /// Sec 30.10 item 2: the steps of `stack` that are the actor's, newest
 /// first -- every one when the log is off, which keeps no authors. An open
-/// transaction is the newest undo step of whoever opened it.
+/// transaction is the newest undo step of whoever opened it. Implicit ones
+/// are left out (sec 33.4): they go with the user's step they followed,
+/// and are nothing a caller counts or names.
 std::vector<const Transaction*> stepsOf(const std::list<Transaction*>& stack,
                                         const Transaction* open, bool authors)
 {
     std::vector<const Transaction*> mine;
     const auto actor = ActorScope::current();
     auto take = [&](const Transaction* step) {
+        if (step->Implicit)
+            return;
         if (!authors || sameUser(step->Author.get(), actor.get()))
             mine.push_back(step);
     };
@@ -1453,7 +1501,12 @@ int Document::_openTransaction(const char* name, int id, bool implicit)
             THROWM(Base::RuntimeError, "invalid transaction id")
         if (d->activeUndoTransaction)
             _commitTransaction(true);
-        _clearMyRedos();
+        // A new step of the user's ends its redo steps (sec 30.10 item 5).
+        // An implicit one does not (sec 33.4): nothing the user cannot see
+        // empties the redo list. A redo after it goes through the log, as
+        // after another's write.
+        if (!implicit)
+            _clearMyRedos();
 
         d->activeUndoTransaction = new Transaction(id);
         if (!name)
@@ -1847,6 +1900,15 @@ void Document::clearDocument()
     d->objectMap.clear();
     d->objectIdMap.clear();
     d->lastObjectId = 0;
+    // The ids of a file are never handed out again (sec 27.40), which is
+    // for its versions and branches. A temporary document has neither, and
+    // emptied it is new: its ids start over, as they did before a document
+    // had a history (docs/TransactionLog.md sec 33.3).
+    if (testStatus(TempDoc)) {
+        d->lastGeoIds.clear();
+        if (d->history && !d->joinedHistory)
+            d->history->forgetIds();
+    }
 }
 
 
@@ -13670,7 +13732,9 @@ TransactionLog* Document::getTransactionLog() const
     // document opened before the preference was set still gets one on
     // its next commit -- and so the transient directory exists by then.
     if (!d->transactionLog) {
-        if (DocumentParams::getTransactionLog() == 0 || d->noLog)
+        // A temporary document is a workspace: nothing of it is history
+        // (sec 33.3).
+        if (DocumentParams::getTransactionLog() == 0 || d->noLog || testStatus(TempDoc))
             return nullptr;
         if (TransientDir.getStrValue().empty())
             return nullptr;

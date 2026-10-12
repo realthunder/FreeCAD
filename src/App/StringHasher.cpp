@@ -825,22 +825,18 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         }
     }
 
-    // The string as it is kept -- its postfix encoded, its index taken off --
-    // may be here though the name as given was not found above. While the
-    // string side held a string once, the insert found that and gave the
-    // one that was there; it holds one under two ids now (sec 27.41 Q2) and
-    // takes anything, so the look is made here. Without it every hash of a
-    // name made a string, and a shape made again had other names.
-    // The lowest of the ids it is under, as importOne() takes.
+    // The string as it is kept -- its postfix said by id, its index taken
+    // off -- is not the one looked up above, and the table takes one string
+    // under two ids (sec 27.41 Q2): it is looked up as kept before it is
+    // put in, or every asking would make it again under a new id.
     StringID* kept = nullptr;
     auto range = _hashes->left.equal_range(&newStringID);
     for (auto i = range.first; i != range.second; ++i) {
         if (!kept || i->first->_id < kept->_id)
             kept = i->first;
     }
-    if (kept) {
+    if (kept)
         return {kept, indexed.getIndex()};
-    }
 
     return {insert(newStringIDRef), indexed.getIndex()};
 }
@@ -1032,12 +1028,13 @@ bool mintedText(const App::StringIDRef& prefix, const QByteArray& after, QByteAr
 }
 
 /** The same for a name whose number is in the reference and not in the
- * string (a table that indexes names): `#c:5;:G;XTR;:H24:7,F` is `#c` --
- * `g;SKT` -- with 5, the name `g5;SKT`. `own` is what of the string's own
- * postfix belongs to the name, `after` what holds the tag. Where the object
- * numbers the thing otherwise here, `index` is its number here: the string
- * is the same one, only the reference changes. False where it comes as it
- * is, which a name whose text changes otherwise does too.
+ * string (a table that indexes names, docs/TransactionLog.md sec 33.7):
+ * `#c:5;:G;XTR;:H24:7,F` is `#c` -- `g;SKT` -- with 5, the name `g5;SKT`.
+ * `own` is what of the string's own postfix belongs to the name, `after`
+ * what holds the tag. Where the object numbers the thing otherwise here,
+ * `index` is its number here: the string is the same one, only the
+ * reference changes. False where it comes as it is, which a name whose
+ * text changes otherwise does too.
  */
 bool mintedIndex(const App::StringID& name, const QByteArray& own, const QByteArray& after,
                  int& index)
@@ -1135,7 +1132,7 @@ bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, 
             return false;
         // The number a table that indexes names keeps in the reference,
         // `#c:5`: where this file numbers the thing otherwise the string is
-        // the same and the number is the one here.
+        // the same and the number is the one here (sec 33.7).
         if (pos == 0 && end < text.size() && text[end] == ':') {
             int stop = end + 1;
             while (stop < text.size() && std::isxdigit(static_cast<unsigned char>(text[stop])))
@@ -1199,7 +1196,8 @@ StringIDRef StringHasher::importOne(const StringIDRef& foreign, ImportMemo& memo
     if (!it->second)
         return {};
     // A name numbered in the reference, as this file numbers the thing
-    // (sec 31.14): the string is the one imported, the number the one here.
+    // (sec 31.14, 33.7): the string is the one imported, the number the one
+    // here.
     int index = foreign._index;
     mintedReference(*theirs, *from, index);
     return {it->second, index};

@@ -388,12 +388,17 @@ public:
      * docs/TransactionLog.md sec 32.9: a shape property's two values, read
      * from the log with their names, compared (Part::ShapeDiff) and drawn.
      * Gone when the object's own shape changes while it is one of the two.
+     *
+     * \a mode is "faces", what became of each face, or "material", the
+     * solid only one of the two has (sec 32.16); the faces where it is
+     * empty, and where the two are not both solids.
      */
     //@{
     bool showValueDiff(const char *prop, const std::string &a, const std::string &b,
-                       float position = 1.f, bool differencesOnly = false) override;
+                       float position = 1.f, bool differencesOnly = false,
+                       const std::string &mode = std::string()) override;
     void hideValueDiff() override;
-    std::map<std::string, int> getValueDiff() const override;
+    std::map<std::string, double> getValueDiff() const override;
     //@}
 
     void setHighlightFaceEdges(bool enable);

@@ -106,17 +106,20 @@ public:
     //@{
     /** Show how property \a prop differs between the values \a a, the
      * earlier, and \a b. \a position is where between the two, 0 at a and 1
-     * at b; \a differencesOnly leaves out what did not change. Asked again
-     * with the same values, only the two options are taken.
+     * at b; \a differencesOnly leaves out what did not change. \a mode is
+     * which of the ways a view provider has to show it, by a name of its
+     * own, and empty for its first. Asked again with the same values, only
+     * the options are taken.
      * @return false where this view provider shows no such thing of that
      * property, or the log does not hold one of the values.
      */
     virtual bool showValueDiff(const char *prop, const std::string &a, const std::string &b,
-                               float position = 1.f, bool differencesOnly = false);
+                               float position = 1.f, bool differencesOnly = false,
+                               const std::string &mode = std::string());
     /// Take away what showValueDiff() shows
     virtual void hideValueDiff();
     /// What showValueDiff() shows now, as numbers by name; empty where nothing is
-    virtual std::map<std::string, int> getValueDiff() const;
+    virtual std::map<std::string, double> getValueDiff() const;
     //@}
     /// Re-read DisplayModeInView from \a view's ObjectDisplayModes
     /// entry for this object (null = no active 3D view, shows "Use

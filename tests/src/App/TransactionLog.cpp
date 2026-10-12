@@ -381,15 +381,45 @@ TEST_F(TransactionLogTest, implicitTransactionsGroupByInvocation)
     EXPECT_EQ(txns.back().kind, "user");
     EXPECT_EQ(txns.back().name, "explicit");
 
-    // Undo on: the implicit transaction is an undo step as well.
+    // Undo on: the implicit transaction is recorded, and is no undo step of
+    // its own (docs/TransactionLog.md sec 33.4). With no step of the user's
+    // below it there is nothing to undo ...
     doc()->setUndoMode(1);
     {
         App::Application::InvocationScope scope("again");
         obj->Integer.setValue(9);
     }
-    EXPECT_EQ(doc()->getAvailableUndoNames().size(), 1u);
+    EXPECT_EQ(store.transactions().back().kind, "implicit");
+    EXPECT_TRUE(doc()->getAvailableUndoNames().empty());
+    EXPECT_EQ(doc()->getAvailableUndos(), 0);
+    EXPECT_FALSE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 9);
+    // ... and it goes with the user's step it follows: one undo takes both,
+    // one redo puts both back.
+    doc()->openTransaction("user");
+    obj->Integer.setValue(10);
+    doc()->commitTransaction();
+    {
+        App::Application::InvocationScope scope("after");
+        obj->Integer.setValue(11);
+    }
+    EXPECT_EQ(doc()->getAvailableUndoNames(), std::vector<std::string> {"user"});
+    const size_t before = store.transactions().size();
     EXPECT_TRUE(doc()->undo());
-    EXPECT_EQ(obj->Integer.getValue(), 6);
+    EXPECT_EQ(obj->Integer.getValue(), 9);
+    EXPECT_TRUE(doc()->getAvailableUndoNames().empty());
+    EXPECT_EQ(doc()->getAvailableRedoNames(), std::vector<std::string> {"user"});
+    EXPECT_EQ(store.transactions().size(), before + 2);   // a row for each step taken
+    // An implicit step ends no redo step.
+    {
+        App::Application::InvocationScope scope("meanwhile");
+        obj->Float.setValue(3.0);
+    }
+    EXPECT_EQ(doc()->getAvailableRedoNames(), std::vector<std::string> {"user"});
+    EXPECT_TRUE(doc()->redo());
+    EXPECT_EQ(obj->Integer.getValue(), 11);
+    EXPECT_EQ(obj->Float.getValue(), 3.0);
+    EXPECT_TRUE(doc()->getAvailableRedoNames().empty());
 }
 
 TEST_F(TransactionLogTest, recomputeRecordAndSession)
@@ -1722,14 +1752,25 @@ TEST_F(TransactionLogTest, undoAndRedoAreLoggedAsInverses)
     EXPECT_TRUE(undo["ExecCount"].derived);
     EXPECT_TRUE(redo["ExecCount"].derived);
 
-    // A recompute with no transaction open is an undo step of its own
-    // (sec 24.1, TransactionOnRecompute ignored under the log).
+    // A recompute with no transaction open is recorded, and goes with the
+    // user's step it followed (sec 33.4, which revises 24.1): no step of
+    // its own, and one undo takes both.
     obj->touch();
     doc()->recompute();
+    const int again = obj->ExecCount.getValue();
+    EXPECT_GT(again, execs);
     auto names = doc()->getAvailableUndoNames();
     ASSERT_FALSE(names.empty());
-    EXPECT_NE(names.front().find("recompute"), std::string::npos) << names.front();
+    EXPECT_EQ(names.front(), "edit");
     EXPECT_EQ(doc()->getAvailableRedos(), 0);
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 4711);
+    names = doc()->getAvailableUndoNames();
+    ASSERT_FALSE(names.empty());
+    EXPECT_EQ(names.front(), "create");
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(obj->Integer.getValue(), 7);
+    EXPECT_EQ(obj->ExecCount.getValue(), again);
 }
 
 TEST_F(TransactionLogTest, coldUndoRevertsFromTheLog)
@@ -2057,16 +2098,22 @@ TEST_F(TransactionLogTest, viewChangesAreLoggedWhateverTheSetting)
     ASSERT_EQ(ops.size(), 1u);
     EXPECT_EQ(ops[0].ckind, "view");
     EXPECT_EQ(ops[0].prop, "Shade");
+    // One undo takes the implicit step with the user's step it followed
+    // (sec 33.4): the shade, and the object the step made.
     ASSERT_TRUE(doc()->undo());
     EXPECT_EQ(view.Shade.getValue(), 0);
+    EXPECT_EQ(doc()->getObject("A"), nullptr);
     ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(doc()->getObject("A"), a);
+    EXPECT_EQ(view.Shade.getValue(), 3);
 
     {
         App::DerivedViewWrites derived;
         view.Shade.setValue(4);
     }
     EXPECT_FALSE(doc()->hasPendingTransaction());
-    EXPECT_EQ(store.transactions().size(), rows + 3);   // the undo and the redo rows
+    // A row for each step taken: two undone, two redone.
+    EXPECT_EQ(store.transactions().size(), rows + 5);
 }
 
 TEST_F(TransactionLogTest, pythonObjectValuesAreCapturedOnTheMainThread)

@@ -382,11 +382,11 @@ App::DocumentObjectExecReturn *Feature::recompute()
     // change (docs/TransactionLog.md sec 27.82). Counted, not caught: the
     // refusal seldom reaches here as an exception.
     //
-    // A feature that reports no error is run again as well. The refusal was
-    // caught inside and worked around -- another face maker, the retry of an
-    // extrusion -- and the shape that gave is not the one the feature makes
-    // of inputs it may change: a pad up to a shape came out four times its
-    // volume, and no error said so.
+    // A feature that reports no error is run again as well (sec 33.6). The
+    // refusal was caught inside and worked around -- another face maker, the
+    // retry of an extrusion -- and the shape that gave is not the one the
+    // feature makes of inputs it may change: a pad up to a shape came out
+    // four times its volume, and no error said so.
     const unsigned int refused = TopoDS_LockedShape::Raised();
     App::DocumentObjectExecReturn* ret = once();
     if (ThawInputs::active() || TopoDS_LockedShape::Raised() == refused)

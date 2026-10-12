@@ -666,7 +666,8 @@ void ViewProviderDocumentObject::reattach(App::DocumentObject *pcObj) {
 }
 
 bool ViewProviderDocumentObject::showValueDiff(const char *, const std::string &,
-                                               const std::string &, float, bool)
+                                               const std::string &, float, bool,
+                                               const std::string &)
 {
     return false;
 }
@@ -675,7 +676,7 @@ void ViewProviderDocumentObject::hideValueDiff()
 {
 }
 
-std::map<std::string, int> ViewProviderDocumentObject::getValueDiff() const
+std::map<std::string, double> ViewProviderDocumentObject::getValueDiff() const
 {
     return {};
 }

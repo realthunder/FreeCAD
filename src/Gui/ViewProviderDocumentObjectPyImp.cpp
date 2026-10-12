@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <cmath>
 # include <sstream>
 #endif
 
@@ -64,14 +65,15 @@ PyObject* ViewProviderDocumentObjectPy::showValueDiff(PyObject *args, PyObject *
     const char *b = "";
     double position = 1.0;
     PyObject *differencesOnly = Py_False;
-    static const std::array<const char *, 6> kwlist {"prop", "a", "b", "position",
-                                                     "differencesOnly", nullptr};
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|ssdO", kwlist, &prop, &a, &b,
-                                             &position, &differencesOnly))
+    const char *mode = "";
+    static const std::array<const char *, 7> kwlist {"prop", "a", "b", "position",
+                                                     "differencesOnly", "mode", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|ssdOs", kwlist, &prop, &a, &b,
+                                             &position, &differencesOnly, &mode))
         return nullptr;
     PY_TRY {
         bool shown = getViewProviderDocumentObjectPtr()->showValueDiff(
-            prop, a, b, static_cast<float>(position), Base::asBoolean(differencesOnly));
+            prop, a, b, static_cast<float>(position), Base::asBoolean(differencesOnly), mode);
         return Py::new_reference_to(Py::Boolean(shown));
     } PY_CATCH;
 }
@@ -92,8 +94,13 @@ PyObject* ViewProviderDocumentObjectPy::getValueDiff(PyObject *args)
         return nullptr;
     PY_TRY {
         Py::Dict dict;
-        for (const auto &v : getViewProviderDocumentObjectPtr()->getValueDiff())
-            dict.setItem(v.first, Py::Long(v.second));
+        for (const auto &v : getViewProviderDocumentObjectPtr()->getValueDiff()) {
+            // A count is a count: only what is no whole number is a float
+            if (v.second == std::floor(v.second) && std::fabs(v.second) < 1e15)
+                dict.setItem(v.first, Py::Long(static_cast<long>(v.second)));
+            else
+                dict.setItem(v.first, Py::Float(v.second));
+        }
         return Py::new_reference_to(dict);
     } PY_CATCH;
 }

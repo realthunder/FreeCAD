@@ -18312,3 +18312,407 @@ the windows where they asked for the modal one
 
 **Next (32.4):** step 6 goes on -- the material drawn, the merged
 result, the stream.
+
+### 32.16 Step 6, second part: the material drawn, and not waited for (2026-10-11)
+
+**Built.** The bar has a second list, **Material** and **Faces**, and
+Material is what it starts with: the solid only the later state has in
+the colour of what is added, the solid only the earlier has in that of
+what is removed, what both have thin and grey -- the kinds of 32.9 with
+two of them empty, so the slider and "Differences only" do what they
+did. The status line says the three volumes, in one unit, that of what
+changed: a unit goes by a volume's size, and three of them each in its
+own are not compared at a glance. Anything that is not two solids -- a
+shell, a value against none -- is shown by its faces whichever is asked,
+and the line says so: "not two solids, by the faces: ...".
+
+The view provider is asked by name: `showValueDiff(prop, a, b, position,
+differencesOnly, mode)`, `mode` one of the ways it has and empty for its
+first; of a shape "faces" and "material". `getValueDiff()` is numbers
+that are not all counts now (`volume.added` ...), `material` 1 or 0 for
+which is drawn, `material.none`, `material.pending`, `material.kept`; in
+Python a whole number is an int still.
+
+**Measured, and what it changed.** Plates with a grid of holes, one
+made taller and one with a hole moved (`~/.cache/txnlog-sd/big/big.py`;
+"faces" is `Shape.diff()`, "material" `Shape.diffMaterial()`):
+
+| faces | change | made in | faces | material |
+|---|---|---|---|---|
+| 70 | taller | 0.03 s | 0.003 s | 0.07 s |
+| 70 | a hole moved | 0.03 s | 0.005 s | 0.10 s |
+| 262 | taller | 0.14 s | 0.020 s | 0.57 s |
+| 262 | a hole moved | 0.14 s | 0.050 s | 0.75 s |
+| 1030 | taller | 0.80 s | 0.29 s | 7.6 s |
+| 1030 | a hole moved | 0.80 s | 0.79 s | 11.1 s |
+| 2031 | taller | 2.4 s | 1.2 s | 34.8 s |
+| 2031 | a hole moved | 2.4 s | 3.0 s | 51.4 s |
+
+Four times the faces is thirteen times the seconds, and at a thousand
+faces and more the fuse of two states is ten to twenty times the cut
+that made either. All of it is
+the fuse's intersection (`Perform`: 6.18 of 6.61 s at 1030 faces; the
+three parts taken out of it, 0.3 s together): two states of one solid
+lie on each other over nearly all of their faces, which is the case
+that costs it most. Tried:
+
+- *in parallel*, as the kernel's other fuses are run: 7.6 -> 6.6 s and
+  11.1 -> 9.1 s. Kept.
+- *oriented boxes* (`SetUseOBB`): nothing, 6.7 s. Not kept.
+- *the glue* (`BOPAlgo_GlueShift`), which is for arguments that touch
+  and do not cross: 1.1 s, and right for the plate made taller -- and
+  for the hole moved 447660 added and as much removed, the two taken
+  for strangers. Nothing cheap says which case two states are. Not
+  kept.
+
+So the fuse is not waited for. Of two solids of more than 300 faces
+together (`Mod/Part/ShapeDiffInlineFaces`) it runs on a thread of its
+own, on copies made before it starts -- nothing it reads is anything
+the document, a recompute or the view has. Meanwhile the faces are
+drawn and the line says "working out the material; the faces meanwhile";
+the thread says in the main one when it is done, the view draws the
+material in the faces' place, and the bar, which asks five times a
+second while something is pending, says the volumes. A view that goes
+-- another row, another pair, the document closed -- leaves, and a fuse
+nobody waits for is told to stop through the progress it is run with
+(`material()` takes a `Message_ProgressRange` now). The application
+going stops and joins what runs. The last eight pairs are kept, by the
+refs of their values and, for the value an object has now, by the shape
+it is: going back to a row is not paid for again.
+
+On the 1030-face plate in the Gui (`~/.cache/txnlog-sd/big/gui.py`):
+shown in 1.8 s -- the two values read, their faces paired and drawn,
+which was so before this --, the material there 7.6 s after the click
+with the event loop turned 94 times meanwhile; asked again, 0.10 s;
+left after a second, 0.09 s of CPU in the three seconds after, where
+not left it is 3.0; and with a fuse started as the application quits,
+gone 0.4 s later, exit 0.
+
+**Left.**
+- A fuse that fails is said as "not two solids".
+- The 1.8 s of the faces at a thousand of them is waited for, as it
+  was.
+- What two states share is not told the fuse. Faces that 32.6 finds
+  as they were are one surface with one boundary in both, and a fuse
+  given them as one face would have nothing to intersect there; that
+  is the edges of one solid put under the faces of another, and was
+  not tried.
+- Objects the document does not have are counted and not drawn, as
+  before.
+
+**Tests.** The Gui check (+24, 114): by its material asked of the view
+provider -- the slab of a box made taller and its volume, what is
+drawn and how thin, differences only, the same two by their faces
+again in the same overlay, kept the second time, the other way round,
+against no value, the value the object has now and that known again by
+its shape, a way there is not; two solids made heavy by the setting --
+the faces at once, the material when it is there, there already when
+asked again, nothing shown later when left, worked out again after;
+from the panel -- the two ways and which is first, the volumes said,
+differences only, the faces again, a row that made the object, a heavy
+one said to be worked out and then there; from the merge dialog, ours
+against theirs by the material. The guide's pictures are taken again,
+with one more, the same change by its faces.
+
+**Next (32.4):** step 6 goes on -- the merged result, the stream.
+
+## 33. What the merge into LinkVibe exposed (2026-10-12)
+
+`origin/Transaction` at `09c96678f1` was merged into `LinkVibe` on the
+Windows box. LinkVibe has 1400 commits this branch never ran against --
+names indexed by default, a binder's temporary document emptied for every
+copy, PartDesign tests of its own -- and MSVC orders a hash map another
+way. What follows is what that showed of this branch, each reproduced
+here first. The user's rulings, as relayed: the same string gets the same
+id ("that is a bug"); implicit transactions must not break undo, and are
+not shown in the undo and redo lists; the freeze stays on.
+
+### 33.1 One string asked for twice, with names indexed
+
+`StringHasher::getID(MappedName, sids)` looks the name up as it is asked
+for and, when it is not there, keeps it in another form: with
+`HashIndexedName`, a name built on another string's id has its number
+taken off the text -- `#1:5` kept as `#1:` and an index. The second
+asking misses the same way and makes the string again. It used to end in
+an insert that failed, which found the first: the table's string side
+was a set. Since 27.41 Q2 it is a multiset, the insert succeeds, and
+every asking minted an id -- every rebuild renamed every element.
+
+With names not indexed, this branch's default, nothing shows: the form
+kept is the form asked for (an "encoded" postfix is kept as its text),
+so the first lookup hits. That is why no gate here saw it.
+
+**Fix.** The string as kept is looked up before it is put in, the lowest
+id of those equal, as `importOne()` takes it. `importOne()` did so
+already, and `getID(QByteArray)` asks and keeps one form.
+
+### 33.2 A name read through a child holds what its postfix names
+
+The external marker names its document by id, `;:X#5` (27.76 item 4),
+and that id is only text in a postfix: no string is built on it. The
+design has `copyElementMap` put it into the child map's `sids`, and the
+child map is saved with them. But a shape of fewer than five elements of
+a kind is not kept as a child map -- `addChildElements` writes its names
+down one by one -- and those names took the base name's ids and not the
+postfix's. Nothing held the Uid's string: the save dropped it, the
+reopened document made it again under another id, and the first
+recompute renamed every element of the consumer.
+
+Reproduced without PartDesign: an `App::Link` to a `Part::Plane` of
+another document, a `Part::Compound` of the link; saved, reopened,
+touched, recomputed, `;:X#1` read `;:X#3`. The existing case (27.78)
+used a filleted box, whose elements are many enough for a child map.
+
+**Fix** (`ElementMap.cpp`). A name read through a child takes the
+child's `sids` with it: in `find()`, in `findAll()`, and where
+`addChildElements` writes the names down. It closes the same hole for
+the postfix `hashChildMaps()` hashes, which is older than the log. No
+string is made persistent and no text is scanned at save. A file written
+before lacks the string: its names change once, at the first recompute.
+
+### 33.3 A temporary document
+
+LinkVibe's binder empties its temporary document before every copy
+(`clearDocument()`, the hasher cleared) so the copies come out with the
+same ids, and so the same element names, in every session. Under this
+branch the ids went on: `clearDocument()` zeroes the document's counter,
+and `nextObjectId()` takes the file's (27.40 item 1), which never goes
+back; the name table and the geometry ids likewise.
+
+"Never handed out again" is for the versions and branches of a file. A
+temporary document has neither. So:
+
+- **It has no log.** `getTransactionLog()` is null for a `TempDoc`: it
+  is a workspace, and each copy's recompute was being recorded.
+- **Emptied, it is new.** `Document::clearDocument()` on a `TempDoc`
+  whose history is its own starts the history's ids over
+  (`FileHistory::forgetIds()`): the last object id, the names, the
+  geometry ids. The history itself stays -- the blob manager lives in
+  it. Any other document keeps its counters through a
+  `clearDocument()`.
+
+### 33.4 An implicit step is no undo step of its own
+
+**What there was** (24.1). Every transaction was an undo step, the
+implicit ones too: a recompute with no transaction open, a bare write
+from a script. `openTransaction`, a write, `commitTransaction`,
+`recompute()`, `undo()` took back the recompute and left the write; the
+list read `<implicit recompute>`, `Change kind`, `<implicit script>`.
+Two of LinkVibe's PartDesign tests state the rule the user wants: one
+undo takes the change back.
+
+**The rule** (user, 2026-10-12; it revises 24.1's "is an undo step of
+its own" and 30.10 item 5).
+
+1. **An undo step is the user's step with what followed it**: the
+   actor's step that is not implicit, and the actor's implicit steps
+   above it up to its next one. The names and counts a caller reads, and
+   `getTransactionID`, are of the user's steps only.
+2. **`undo()` takes them newest first, each as it was taken before** --
+   from its copies where the document stands as it left it, through the
+   log otherwise -- so each writes its own `undo` row, naming the row it
+   inverts, with its own state tokens and touched record. Nothing in the
+   log changes shape, and `_rebuildUndoFromLog` needs nothing new. An
+   undo is all of it or none: where the user's step is refused, the
+   implicit ones taken on the way are put back.
+3. **`redo()` takes the user's step and then the implicit ones under
+   it** on the redo list. The step an undo leaves is of the kind the one
+   it took was; the flag was lost on the way before.
+4. **Implicit steps with no step of the user's below them are not
+   reached** by `undo()`, as when nothing recorded them. They are in the
+   log, and a row can still be taken back from the panel
+   (`undoLogged`, 24.7).
+5. **An implicit step ends no redo step.** Only a new step of the
+   user's does: nothing the user cannot see empties the redo list. A
+   redo after one goes through the log, as after another author's write
+   (30.10 item 3), and is refused only where the same property was
+   written since.
+
+Not the other way offered, folding an implicit transaction into the step
+before it at commit: the log groups by invocation (9.1), a recompute's
+record hangs on its own row (27.59), and a hot step made of two rows
+would have two `LogSeq` for the one `Inverts` its undo names.
+
+**Built** (`Document.cpp`). `_myRun(undo)` is what one call takes;
+`_takeRun()` takes it by the steps' ids -- a commit on the way, a write
+some observer makes, can turn a step into a cold one of the same id --
+and `_takeStep()` is the one body `undo()` and `redo()` each had a copy
+of. `stepNeedsLog()` answers for the run (`_runNeedsLog`: each step
+leaves the state the next was made in, or that one goes through the
+log). `_openTransaction` ends the redo steps for a step that is not
+implicit only. `undo(id)` and `redo(id)` refuse an implicit step's id.
+
+**What it changed elsewhere.** Three C++ tests and one Gui check stated
+24.1 and now state this: `implicitTransactionsGroupByInvocation` (an
+implicit step alone is not undone; after a user's step one undo takes
+both, two rows; an implicit step between an undo and its redo leaves
+the redo), `undoAndRedoAreLoggedAsInverses` (the list reads `edit`
+after a bare recompute, and one undo takes both),
+`viewChangesAreLoggedWhateverTheSetting` (the undo of a bare view write
+takes the step that made the object with it), and the recovery check
+(one undo for a cylinder and its recompute, where it made two). No case
+of the Python suite read an implicit step off the undo list. The guide
+says where an `implicit` row went.
+
+### 33.5 A revert touched before it wrote
+
+`_applyRevert` touched the owner of a derived value it leaves to a
+recompute the moment it met the op, in the order of the row's ops --
+which is a hash map's (`TransactionObject::_PropChangeMap`). Where the
+derived op came first, the value written after it recorded the object as
+touched before the row, and a later redo folding back through that row
+left the object touched with its shape right. libstdc++ happens to put
+the value first; MSVC does not
+(`testEachAuthorUndoesItsOwnSteps`, found on Windows). The owners are
+now collected and touched once every value is in.
+
+### 33.6 A refusal worked around is run again too
+
+27.82 left this "not chased": a refusal an algorithm catches inside and
+works around gives another shape and no error, which the retry on copies
+could not see -- it ran again only when `execute()` returned an error.
+LinkVibe's pad up to a whole shape showed it: `makEPrismUntil` catches
+the failure of `BRepFeat_MakePrism` and tries again its own way (the
+original until face, then a base of its own), and the pad came out with
+a volume of 12800 for 3000.
+
+Built on the Windows box, taken here:
+
+- **`Part::Feature::recompute()` runs again on copies whenever a
+  refusal was counted**, an error returned or not. The counter is per
+  thread, and a `ThawInputs` scope still stops a third run. It is logged
+  with the feature's name ("worked around"): such a feature runs twice
+  at every recompute, and the log is how to find them.
+- **`makEPrismUntil` passes a refusal on** in place of its own retries,
+  which were wasted where the feature is run again anyway.
+
+### 33.7 A copy's geometry under this file's ids, with names indexed
+
+31.14 gives geometry a copy of the file made an id of this file's, and
+rewrites the names built on it: `g5;SKT` to `g6;SKT`. With names indexed
+there is no such string: `g5;SKT` is the string `g;SKT` and a 5 in the
+reference to it -- `#c:5;:G;XTR;:H24:7,F` in a text, an index beside the
+id elsewhere. `mintedText()` asked by the string's text with no number,
+found nothing, and the reference kept the copy's 5.
+
+Built on the Windows box, taken here. The string does not change, the
+reference's number does: `mintedIndex()` asks with the number put in,
+and takes the number of the name that comes back, which must be of the
+same kind. It is used where a reference is carried over -- in
+`rewriteIds()` for `#id:index` at the start of a text, and in
+`importOne()` for a reference with an index, of a name with the tag in
+its own postfix or of a string built on a name (`mintedReference`).
+Names not indexed go as before.
+
+Not covered: a name whose number is inside the string's own text
+(`g5v1;SKT`), which goes 31.14's way, and a reference that is not at the
+start of its text.
+
+### 33.8 A loft through its own cap, and what the freeze showed of it
+
+LinkVibe's `testForkFileKeepsItsReferences` gives a loft another result
+with the freeze on: 18 faces for 17, one face of the base whole and the
+loft's cap beside it, both inside the solid. It was first read as the
+boolean not knowing a frozen face shared by its two arguments. It is
+not. Measured on the two shapes as the fuse gets them, sent over as
+BREP, with nothing frozen:
+
+- **The tool is not a solid a boolean can be asked about.**
+  `tool.check(True)` reports a self-intersection on five of its six
+  faces; the base is clean. The loft's upper side passes through its own
+  cap, 0.013 deep near one corner: the section of the two is 11.81 long
+  where the edge they share is 10.05. Every boolean on it is luck. With
+  the freeze on `common` is empty and `base.cut(tool)` is the whole base
+  though the tool is 980 inside it; with the freeze off `common` is
+  empty too and `tool.cut(base)` is the whole tool. The fuse leaves a
+  sliver of 0.29 off and a membrane on. Neither is right.
+- **Why the freeze changes the tool.** `BRepOffsetAPI_ThruSections`
+  takes an Immutable section as input it may not modify (fork), so the
+  generator works on copies of the section's edges. Off, the loft's
+  shell is built on the profile face's own edges, the sewing that closes
+  the solid has nothing to merge there, and the profile face goes into
+  the tool as it is, shared with the base. On, the sewing merges each
+  copied edge with the face's own into a new edge and rebuilds the face:
+  a new face, not shared.
+- Coincident faces that are not shared are no trouble by themselves: the
+  two pairs of this case each come out of a general fuse as one face.
+
+So the freeze does what it says, and a valid tool fuses the same either
+way. Two ways were put to the user: the loft, so that its side does not
+fold through its cap; or, for the same result on and off from the tool
+as it is, the fork letting `ThruSections` keep a frozen section's edges
+in its shell, a change to the kernel with tests of its own.
+
+**Ruled (user, 2026-10-12): fix the loft.** Built on LinkVibe, in its
+`FeatureLoft.cpp` -- this branch has no loft from a face that is not
+planar, so it comes with the next merge this way. Where an end is not
+planar and the sewn shell fails the argument analyzer's self-
+intersection check, the loft is the solids `BOPAlgo_MakerVolume` builds
+of the shell's faces, in place of the shell made a solid. Measured
+there, the same on and off: 17 faces, the test's volume; the tool two
+solids with no self-intersection left, `common` 980.01 where it was
+empty. The fork is not changed for it.
+
+### 33.9 Gates
+
+All of 33.1 to 33.7 in one build, the freeze on and off: Python 3132 OK
+both ways (52 and 54 skipped), ctest 918 of 918 both ways, the 19 Gui
+checks with no failure. The import check crashed once in thirteen runs
+of it, in `Shiboken::BindingManager::releaseWrapper` under a deferred
+delete, with no frame of FreeCAD's above the event loop; it passed the
+other twelve on the same binaries. Not chased.
+
+### 33.10 A growth that is rounding is none
+
+On the Windows box a refined feature's faces were renamed with the
+freeze on: `testPartDesignElementMapRevolutionWithDefaultFuseOrder`,
+faces the refine did not unite coming back as `...;:M;RFI`, a united
+face named after its neighbour. Not here, with the same script, on the
+old kernel or the new (this box's fork was brought to its remote for
+it, `834c8a92ec`, and every gate run again on that: green).
+
+**What it was.** There every vertex and some edges of that model have
+a tolerance of 1.0000000000000002e-07 and the rest
+9.9999999999999995e-08: the same 1e-7, one ulp apart, from another
+compiler's arithmetic. Here every one prints the same value. The
+refine builds a united face on the boundary edges of the faces it
+replaces (`BRepLib_MakeWire`, `BRepLib_MakeFace`), which ends in
+`BRepLib::UpdateTolerances`: every edge is raised to its face's
+tolerance, and a frozen edge that has to grow is copied (23.15). A
+frozen edge an ulp under its new face "grew" by 1.3e-23 and was copied
+for it. The copy then lay beside the original, which the neighbouring
+face still held; the refine's sewing merged the two into a new edge on
+a new curve and rebuilt the neighbour on it. With nothing frozen the
+edge grows in place and stays shared. `GenericShapeMapper::init` then
+took each rebuilt face for a new one and named it after the first face
+that shares two edges with it.
+
+Found by measurement on the Windows box, each step a guess of this
+side's it confirmed or killed: not thawed copies in the result (the
+sewing had replaced them), four new edges between source vertices on
+fresh curves, the two tolerances.
+
+**The rule** (fork, `BRep_Builder.cxx`). A frozen shape's tolerance
+covers one that is above it by rounding and no more: within
+`max(1e-4 * Precision::Confusion(), 1e-5 of its own)`. Such a growth
+is not refused and not made. One helper, `covers()`, in place of every
+`Tol <= held` on an Immutable target, and the update after it skipped
+for one. With it:
+
+- `BRepLib`'s `UpdShTol` makes no copy of a frozen shape for it;
+- `BRepLib_MakeWire` neither copies a frozen vertex for it nor moves
+  one by less than 1e-11 -- and no longer throws: joining an edge whose
+  end was an ulp wider than a frozen one's raised `LockedShape` from
+  `Transfert`, which the test for it found.
+
+**Tests** (`ImmutableShape.cpp`, +2).
+`aFaceOnAFrozenWireCopiesNothingForRounding`: a face on a frozen wire
+with one edge at 1.0000006e-7 holds the wire itself, nothing thawed --
+three thawed edges on the kernel without the rule, the Windows
+mechanism on Linux. `aWireMergeCopiesNothingForRounding`. The case of
+23.15, an edge at 2e-7 among others at 1e-7, still thaws.
+
+**Gates**, on the fork at `834c8a92ec` with the rule, the freeze on and
+off: Python 3132 OK both ways, ctest 920 of 920 both ways, the 19 Gui
+checks with no failure. The Windows box, with the first part of the
+rule by hand in its kernel: the names of that test the same on and off.

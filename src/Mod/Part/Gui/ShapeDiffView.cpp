@@ -23,18 +23,30 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRep_Builder.hxx>
 #include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoTransform.h>
+#include <Message_ProgressIndicator.hxx>
+#include <QCoreApplication>
+#include <TopExp_Explorer.hxx>
 #include <TopoDS_Compound.hxx>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <functional>
+#include <list>
+#include <thread>
+#include <vector>
 #endif
 
+#include <App/Application.h>
 #include <App/Color.h>
 #include <App/GeoFeature.h>
+#include <Base/Parameter.h>
 #include <Base/Placement.h>
 #include <Gui/SoFCUnifiedSelection.h>
+#include <Gui/WaitCursor.h>
 #include <Mod/Part/App/ShapeDiff.h>
 #include <Mod/Part/App/TopoShape.h>
 
@@ -52,6 +64,254 @@ constexpr float Full = 0.7f;
 constexpr float Ghost = 0.2f;
 /// What did not change: thin, wherever the position is
 constexpr float Thin = 0.15f;
+
+/** The fuse of two shapes on a thread of its own (sec 32.16).
+ *
+ * What it is given are copies, made before it starts: nothing it reads is
+ * anything the document, a recompute or the view has. What it found is read
+ * once it has said, in the main thread, that it is done.
+ */
+struct Work
+{
+    Part::TopoShape a;
+    Part::TopoShape b;
+    std::atomic<bool> stop {false};
+    bool ok = false;
+    Part::ShapeDiff::Material material;
+    std::thread thread;
+};
+
+/// What the fuse asks whether to go on
+class Stopped: public Message_ProgressIndicator
+{
+public:
+    explicit Stopped(const std::atomic<bool>& stop)
+        : _stop(stop)
+    {}
+    Standard_Boolean UserBreak() override
+    {
+        return _stop.load() ? Standard_True : Standard_False;
+    }
+
+protected:
+    void Show(const Message_ProgressScope&, const Standard_Boolean) override
+    {}
+
+private:
+    const std::atomic<bool>& _stop;
+};
+
+/// Two shapes taken apart by their material, and what they were known by
+struct Apart
+{
+    int id = 0;
+    std::string refA;
+    std::string refB;
+    TopoDS_Shape a;
+    TopoDS_Shape b;
+    bool ok = false;
+    Part::ShapeDiff::Material material;
+    std::shared_ptr<Work> work; ///< while it is being worked out
+};
+
+/// The last few: a row gone back to is not fused again
+constexpr size_t ApartKept = 8;
+
+/// All of it is the main thread's
+struct Aparts
+{
+    std::list<Apart> kept;
+    /// Who waits for which, and what each does when it is there
+    std::map<const void*, std::pair<int, std::function<void()>>> waiting;
+    /// Told to stop, and not done with it yet
+    std::vector<std::shared_ptr<Work>> stopping;
+    int ids = 0;
+    bool quitting = false;
+    bool watched = false;
+};
+
+Aparts& aparts()
+{
+    static Aparts all;
+    return all;
+}
+
+/// The application goes: nothing is left running, or held
+void quit()
+{
+    auto& all = aparts();
+    all.quitting = true;
+    std::vector<std::shared_ptr<Work>> works = all.stopping;
+    for (auto& entry : all.kept) {
+        if (entry.work)
+            works.push_back(entry.work);
+    }
+    for (auto& work : works)
+        work->stop = true;
+    for (auto& work : works) {
+        if (work->thread.joinable())
+            work->thread.join();
+    }
+    all.kept.clear();
+    all.waiting.clear();
+    all.stopping.clear();
+}
+
+/// A fuse is done, or stopped: said by its thread, here in the main one
+void arrived(const std::shared_ptr<Work>& work, int id)
+{
+    if (work->thread.joinable())
+        work->thread.join();
+    auto& all = aparts();
+    all.stopping.erase(std::remove(all.stopping.begin(), all.stopping.end(), work),
+                       all.stopping.end());
+    bool found = false;
+    for (auto& entry : all.kept) {
+        if (entry.id == id && entry.work == work) {
+            entry.ok = work->ok;
+            entry.material = work->material;
+            entry.work.reset();
+            found = true;
+        }
+    }
+    if (!found)
+        return;
+    // One at a time, each looked up when its turn is: what one does may be
+    // the end of another
+    for (;;) {
+        auto it = std::find_if(all.waiting.begin(), all.waiting.end(), [id](const auto& item) {
+            return item.second.first == id;
+        });
+        if (it == all.waiting.end())
+            break;
+        auto then = std::move(it->second.second);
+        all.waiting.erase(it);
+        then();
+    }
+}
+
+/// \a who waits for nothing any more. What nobody waits for is stopped.
+void leave(const void* who)
+{
+    auto& all = aparts();
+    auto it = all.waiting.find(who);
+    if (it == all.waiting.end())
+        return;
+    const int id = it->second.first;
+    all.waiting.erase(it);
+    for (const auto& item : all.waiting) {
+        if (item.second.first == id)
+            return;
+    }
+    for (auto entry = all.kept.begin(); entry != all.kept.end(); ++entry) {
+        if (entry->id == id && entry->work) {
+            entry->work->stop = true;
+            all.stopping.push_back(entry->work);
+            all.kept.erase(entry);
+            break;
+        }
+    }
+}
+
+enum class Got
+{
+    Yes,   ///< taken apart
+    No,    ///< not two solids, or the fuse failed
+    Later, ///< being worked out: said when it is there
+};
+
+/** The material of \a a and \a b, from what is kept where it is there.
+ *
+ * A value of the log is another shape each time it is read, so it is known
+ * again by its ref; a shape with no ref -- what an object has now -- by
+ * being that shape, where it was. \a was says whether it was there.
+ *
+ * The fuse of two heavy solids takes seconds, and tens of them (sec 32.16):
+ * of more faces than ShapeDiffInlineFaces it is worked out on a thread of
+ * its own, and \a then is called when it is there -- unless \a who has
+ * left by then.
+ */
+Got apart(const Part::TopoShape& a, const Part::TopoShape& b, const std::string& refA,
+          const std::string& refB, const Part::ShapeDiff::Material*& material, bool& was,
+          const void* who, std::function<void()> then)
+{
+    auto& all = aparts();
+    const TopoDS_Shape& sa = a.getShape();
+    const TopoDS_Shape& sb = b.getShape();
+    auto is = [](const std::string& ref, const std::string& was, const TopoDS_Shape& shape,
+                 const TopoDS_Shape& held) {
+        return ref == was && (!ref.empty() || shape.IsEqual(held));
+    };
+    auto got = [&]() {
+        Apart& first = all.kept.front();
+        if (first.work) {
+            all.waiting[who] = {first.id, std::move(then)};
+            return Got::Later;
+        }
+        material = &first.material;
+        return first.ok ? Got::Yes : Got::No;
+    };
+    for (auto it = all.kept.begin(); it != all.kept.end(); ++it) {
+        if (!is(refA, it->refA, sa, it->a) || !is(refB, it->refB, sb, it->b))
+            continue;
+        all.kept.splice(all.kept.begin(), all.kept, it);
+        was = true;
+        return got();
+    }
+    was = false;
+    Apart made;
+    made.id = ++all.ids;
+    made.refA = refA;
+    made.refB = refB;
+    // Held only where it is what the shape is known by
+    if (refA.empty())
+        made.a = sa;
+    if (refB.empty())
+        made.b = sb;
+    auto solid = [](const TopoDS_Shape& shape) {
+        return TopExp_Explorer(shape, TopAbs_SOLID).More();
+    };
+    const long faces = static_cast<long>(a.countSubShapes(TopAbs_FACE))
+                       + static_cast<long>(b.countSubShapes(TopAbs_FACE));
+    const long inlined = App::GetApplication()
+                             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part")
+                             ->GetInt("ShapeDiffInlineFaces", 300);
+    if (all.quitting || !solid(sa) || !solid(sb) || sa.IsEqual(sb) || faces <= inlined) {
+        Gui::WaitCursor wait;
+        made.ok = Part::ShapeDiff::material(a, b, made.material);
+    }
+    else {
+        auto work = std::make_shared<Work>();
+        work->a = Part::TopoShape(BRepBuilderAPI_Copy(sa).Shape());
+        work->b = Part::TopoShape(BRepBuilderAPI_Copy(sb).Shape());
+        made.work = work;
+        if (!all.watched) {
+            all.watched = true;
+            QObject::connect(qApp, &QCoreApplication::aboutToQuit, qApp, []() { quit(); });
+        }
+        const int id = made.id;
+        work->thread = std::thread([work, id]() {
+            try {
+                Handle(Stopped) stopped = new Stopped(work->stop);
+                work->ok = Part::ShapeDiff::material(work->a, work->b, work->material, 0.,
+                                                     stopped->Start());
+            }
+            catch (...) {
+                work->ok = false;
+            }
+            QMetaObject::invokeMethod(
+                qApp, [work, id]() { arrived(work, id); }, Qt::QueuedConnection);
+        });
+    }
+    all.kept.push_front(std::move(made));
+    // What is being worked out is not let go of for being old
+    for (auto it = all.kept.end(); all.kept.size() > ApartKept && it != all.kept.begin();) {
+        --it;
+        if (!it->work && it != all.kept.begin())
+            it = all.kept.erase(it);
+    }
+    return got();
+}
 
 }  // namespace
 
@@ -93,6 +353,7 @@ ShapeDiffView::ShapeDiffView(ViewProviderPartExt& owner)
 
 ShapeDiffView::~ShapeDiffView()
 {
+    leave(this);
     int index = _owner.getRoot()->findChild(_root);
     if (index >= 0)
         _owner.getRoot()->removeChild(index);
@@ -102,44 +363,108 @@ ShapeDiffView::~ShapeDiffView()
     }
 }
 
-bool ShapeDiffView::show(const Part::TopoShape& a, const Part::TopoShape& b)
+bool ShapeDiffView::show(const Part::TopoShape& a, const Part::TopoShape& b, Mode mode,
+                         const std::string& refA, const std::string& refB)
 {
-    Part::ShapeDiff diff(a, b);
-    const auto& faces = diff.elements(TopAbs_FACE);
-    if (faces.empty())
-        return false;
+    _a = a;
+    _b = b;
+    _refA = refA;
+    _refB = refB;
+    _mode = mode;
+    return build();
+}
 
-    BRep_Builder builder;
-    TopoDS_Compound shapes[Kinds];
+void ShapeDiffView::setMode(Mode mode)
+{
+    if (mode == _mode)
+        return;
+    _mode = mode;
+    build();
+}
+
+bool ShapeDiffView::build()
+{
+    TopoDS_Shape shapes[Kinds];
     int counts[Kinds] = {};
-    for (auto& shape : shapes)
-        builder.MakeCompound(shape);
-    auto add = [&](Kind kind, const Part::TopoShape& from, int index) {
-        builder.Add(shapes[kind], from.getSubShape(TopAbs_FACE, index));
-        ++counts[kind];
-    };
-    _summary.clear();
-    for (const auto& face : faces) {
-        ++_summary[Part::ShapeDiff::name(face.what)];
-        if (face.by != Part::ShapeDiff::By::None)
-            ++_summary[std::string("by.") + Part::ShapeDiff::name(face.by)];
-        switch (face.what) {
-            case Part::ShapeDiff::What::Same:
-                add(Same, b, face.b);
-                break;
-            case Part::ShapeDiff::What::Moved:
-            case Part::ShapeDiff::What::Changed:
-                add(ChangedA, a, face.a);
-                add(ChangedB, b, face.b);
-                break;
-            case Part::ShapeDiff::What::Removed:
-                add(Removed, a, face.a);
-                break;
-            case Part::ShapeDiff::What::Added:
-                add(Added, b, face.b);
-                break;
+    std::map<std::string, double> summary;
+
+    // Whatever was waited for
+    leave(this);
+    const Part::ShapeDiff::Material* material = nullptr;
+    if (_mode == Mode::Material) {
+        bool was = false;
+        Got got = Got::No;
+        if (!_a.isNull() && !_b.isNull()) {
+            got = apart(_a, _b, _refA, _refB, material, was, this, [this]() {
+                _arrived = true;
+                build();
+                _arrived = false;
+            });
         }
+        if (got != Got::Yes)
+            material = nullptr;
+        // Until it is there, the faces
+        if (got == Got::Later)
+            summary["material.pending"] = 1;
+        else if (got == Got::No)
+            summary["material.none"] = 1;
+        else
+            summary["material.kept"] = was && !_arrived ? 1 : 0;
     }
+    if (material) {
+        auto add = [&](Kind kind, const TopoDS_Shape& shape, double volume) {
+            summary[std::string("volume.") + name(kind)] = volume;
+            if (shape.IsNull())
+                return;
+            shapes[kind] = shape;
+            ++counts[kind];
+        };
+        add(Same, material->common, material->commonVolume);
+        add(Removed, material->removed, material->removedVolume);
+        add(Added, material->added, material->addedVolume);
+        // "same" is what the faces are counted by
+        summary["volume.common"] = summary["volume.same"];
+        summary.erase("volume.same");
+    }
+    else {
+        Part::ShapeDiff diff(_a, _b);
+        const auto& faces = diff.elements(TopAbs_FACE);
+        if (faces.empty())
+            return false;
+        BRep_Builder builder;
+        TopoDS_Compound kinds[Kinds];
+        for (auto& kind : kinds)
+            builder.MakeCompound(kind);
+        auto add = [&](Kind kind, const Part::TopoShape& from, int index) {
+            builder.Add(kinds[kind], from.getSubShape(TopAbs_FACE, index));
+            ++counts[kind];
+        };
+        for (const auto& face : faces) {
+            ++summary[Part::ShapeDiff::name(face.what)];
+            if (face.by != Part::ShapeDiff::By::None)
+                ++summary[std::string("by.") + Part::ShapeDiff::name(face.by)];
+            switch (face.what) {
+                case Part::ShapeDiff::What::Same:
+                    add(Same, _b, face.b);
+                    break;
+                case Part::ShapeDiff::What::Moved:
+                case Part::ShapeDiff::What::Changed:
+                    add(ChangedA, _a, face.a);
+                    add(ChangedB, _b, face.b);
+                    break;
+                case Part::ShapeDiff::What::Removed:
+                    add(Removed, _a, face.a);
+                    break;
+                case Part::ShapeDiff::What::Added:
+                    add(Added, _b, face.b);
+                    break;
+            }
+        }
+        for (int kind = 0; kind < Kinds; ++kind)
+            shapes[kind] = kinds[kind];
+    }
+    summary["material"] = material ? 1 : 0;
+    _summary = std::move(summary);
 
     const App::Color grey(0.6f, 0.6f, 0.6f);
     const App::Color changed(static_cast<uint32_t>(PartParams::getPreviewDressColor()));

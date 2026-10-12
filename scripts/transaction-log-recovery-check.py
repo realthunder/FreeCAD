@@ -133,11 +133,12 @@ def recover():
             repr(doc.UndoNames) == notes.get("undo"),
         )
         check("the old directory is gone", not os.path.exists(notes.get("dir", "")))
-        doc.undo()  # the recompute after the cylinder
-        doc.undo()  # the cylinder
+        # One undo: the cylinder with the recompute that followed it, an
+        # implicit step that goes with it (docs/TransactionLog.md sec 33.4).
+        doc.undo()
         check(
             "undo across the crash takes the cylinder away: %s" % doc.UndoNames[:1],
-            doc.getObject("Cylinder") is None,
+            doc.getObject("Cylinder") is None and doc.UndoNames[:1] == ["colour"],
         )
         doc.redo()
         check("and redo brings it back", doc.getObject("Cylinder") is not None)

@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include <Message_ProgressRange.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Trsf.hxx>
@@ -200,10 +201,15 @@ public:
      * them, and is dropped. \a fuzzy is the fuse's own tolerance, 0 for
      * what the shapes carry.
      *
-     * False where either has no solid, or the fuse fails.
+     * The fuse is all of what this takes, and on two heavy solids it is
+     * long (sec 32.16). \a progress is what it is told to stop by, from
+     * another thread: one whose indicator says UserBreak().
+     *
+     * False where either has no solid, the fuse fails, or it was stopped.
      */
     static bool material(const TopoShape& a, const TopoShape& b, Material& out,
-                         double fuzzy = 0.);
+                         double fuzzy = 0.,
+                         const Message_ProgressRange& progress = Message_ProgressRange());
 
     /** A shape value the transaction log of \a doc holds, by its ref, as a
      * shape with its element names (docs/TransactionLog.md sec 32.7): what an

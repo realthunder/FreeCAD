@@ -160,6 +160,20 @@ public:
     }
     const std::unordered_map<long, long>& lastGeoIds() const { return _lastGeoIds; }
 
+    /** The object ids, the names and the geometry ids start over
+     * (docs/TransactionLog.md sec 33.3): for a temporary document emptied
+     * to be filled again. It has no version and no branch an id could be
+     * found again in, and what is copied into it has to come out with the
+     * same ids, and so the same element names, every time.
+     */
+    void forgetIds()
+    {
+        _lastObjectId = 0;
+        _idOfName.clear();
+        _nameOfId.clear();
+        _lastGeoIds.clear();
+    }
+
     /** The bytes of name and geometry-id entries estimated to be referred
      * to by nothing since the last compaction (docs/TransactionLog.md sec
      * 27.48, 27.49): what trimming, deleting a branch and squashing left

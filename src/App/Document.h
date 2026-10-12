@@ -1628,8 +1628,18 @@ protected:
     /// Sec 30.10: the redo steps of whoever acts, which a new step of
     /// theirs ends; every one when the log is off.
     void _clearMyRedos();
-    /// The newest undo (or redo) step of whoever acts, null for none.
-    Transaction* _myStep(bool undo) const;
+    /// What one undo (or redo) of whoever acts takes, in the order it is
+    /// taken (docs/TransactionLog.md sec 33.4): the user's step with the
+    /// implicit ones that go with it. Empty for nothing to take.
+    std::vector<Transaction*> _myRun(bool undo) const;
+    /// Take the steps of _myRun(); false when there is none or one refused.
+    bool _takeRun(bool undo);
+    /// Take the one undo (or redo) step of `id`, from its copies or through
+    /// the log; false when refused.
+    bool _takeStep(bool undo, int id);
+    /// Whether a step of `run`, taken in its order from where the document
+    /// stands, goes through the log.
+    bool _runNeedsLog(const std::vector<Transaction*>& run) const;
     /// Whether `step` can be applied as it is: the document is in the state
     /// the step left.
     bool _atState(const Transaction* step) const;

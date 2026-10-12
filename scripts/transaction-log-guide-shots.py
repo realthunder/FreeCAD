@@ -272,6 +272,12 @@ def run():
         part(bar, "diffPosition").setValue(0)
         shot("06-slider-at-before", mdi, bar)
         part(bar, "diffPosition").setValue(100)
+        # The same by its faces
+        part(bar, "diffMode").setCurrentIndex(1)
+        settle()
+        shot("06-by-the-faces", mdi, bar)
+        part(bar, "diffMode").setCurrentIndex(0)
+        settle()
 
         # 07: the whole of a row, and the objects chosen
         ops.clearSelection()

@@ -1619,6 +1619,33 @@ TEST_F(StringHasherTest, getIDFromMappedNameDuplicateWithEncodedPostfix)  // NOL
     EXPECT_EQ(secondIDInserted.dataToText(), mappedNameB.toString());
 }
 
+TEST_F(StringHasherTest, getIDFromMappedNameAskedTwiceIsOneString)  // NOLINT
+{
+    // With names indexed, a name built on another string's id is kept with
+    // its number taken off the text ("#1:5" as "#1:" and an index), which is
+    // not the form it is asked by: with one string allowed under two ids
+    // (docs/TransactionLog.md sec 27.41 Q2) the table took it again at every
+    // asking, and every rebuild renamed every element.
+    // Arrange
+    const bool was = App::DocumentParams::getHashIndexedName();
+    App::DocumentParams::setHashIndexedName(true);
+    QVector<App::StringIDRef> sids;
+    sids.push_back(Hasher()->getID("g;SKT"));
+    auto built = "#" + std::to_string(sids[0].value()) + ":5";
+    auto first = Hasher()->getID(givenMappedName(built.c_str(), ";:G;XTR;:Hb:7,F"), sids);
+    auto size = Hasher()->size();
+
+    // Act
+    auto second = Hasher()->getID(givenMappedName(built.c_str(), ";:G;XTR;:Hb:7,F"), sids);
+    App::DocumentParams::setHashIndexedName(was);
+
+    // Assert
+    EXPECT_EQ(first.getIndex(), 5);
+    EXPECT_EQ(first.value(), second.value());
+    EXPECT_EQ(second.getIndex(), 5);
+    EXPECT_EQ(Hasher()->size(), size);
+}
+
 TEST_F(StringHasherTest, getIDFromIntegerIDNoSuchID)  // NOLINT
 {
     // Arrange

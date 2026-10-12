@@ -11,7 +11,7 @@
 # It writes PASS/FAIL lines to $SHAPEDIFFCHECK_OUT and exits. The log setting
 # is put back before it exits.
 import time
-import os, tempfile, traceback
+import math, os, tempfile, traceback
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtWidgets
@@ -118,6 +118,11 @@ def drive(seen, cut):
     tree = dialog.findChild(QtWidgets.QTreeWidget)
     diff = bar(dialog)
     seen["bar"] = diff is not None
+    # By the faces, as what follows counts them; by the material further on
+    seen["mode"] = part(diff, "diffMode").currentText() if diff else None
+    if diff:
+        part(diff, "diffMode").setCurrentIndex(1)
+        settle()
     cut2 = cut.Document.getObject("Cut2")
     seen["unchosen"] = cut2.ViewObject.getValueDiff()
     seen["unchosen said"] = part(diff, "diffStatus").text() if diff else None
@@ -163,6 +168,13 @@ def drive(seen, cut):
             tree.setCurrentItem(item)
     settle()
     seen["again"] = cut.ViewObject.getValueDiff()
+    if diff:
+        part(diff, "diffMode").setCurrentIndex(0)
+        settle()
+        seen["material"] = cut.ViewObject.getValueDiff()
+        seen["material said"] = part(diff, "diffStatus").text()
+        part(diff, "diffMode").setCurrentIndex(1)
+        settle()
 
     # Not modal (sec 32.15): the document is in reach while it is open
     doc = cut.Document
@@ -310,6 +322,124 @@ def run():
         check("hidden: nothing shown, nothing drawn",
               view.getValueDiff() == {} and drawn(cut)[0] is None)
 
+        # By its material (sec 32.16): where it changed, not which faces
+        ring = 100 - math.pi * 4
+
+        def near(value, wanted):
+            return value is not None and abs(value - wanted) <= 1e-6 * max(1.0, wanted)
+
+        check("by its material: shown",
+              view.showValueDiff("Shape", taller["before"], taller["after"], mode="material")
+              is True)
+        shown = view.getValueDiff()
+        check("a box with a hole through it, made taller: one slab added (%r)"
+              % ({k: v for k, v in shown.items() if k.startswith(("volume", "material"))},),
+              shown.get("material") == 1 and near(shown.get("volume.added"), ring * 2)
+              and shown.get("volume.removed") == 0 and near(shown.get("volume.common"), ring * 10)
+              and "changed" not in shown and "by.name" not in shown
+              and shown.get("material.kept") == 0)
+        node, on = drawn(cut)
+        check("drawn: what both have, thin, and what was added, full (%r)" % (on,),
+              node is not None and on in (2, -1)
+              and shown.get("shown.same") == 1 and shown.get("shown.added") == 1
+              and shown.get("shown.removed") == 0 and shown.get("shown.changedB") == 0
+              and shown.get("transparency.added") == 30
+              and shown.get("transparency.same") == 85)
+        view.showValueDiff("Shape", taller["before"], taller["after"], differencesOnly=True,
+                           mode="material")
+        check("differences only: the slab alone",
+              view.getValueDiff().get("shown.same") == 0 and drawn(cut)[1] in (1, -1))
+        view.showValueDiff("Shape", taller["before"], taller["after"])
+        shown = view.getValueDiff()
+        check("the same two by their faces again: the same overlay",
+              shown.get("material") == 0 and shown.get("changed") == 5
+              and "volume.added" not in shown
+              and (drawn(cut)[0] == node or node == "no pivy"))
+        view.hideValueDiff()
+        view.showValueDiff("Shape", taller["before"], taller["after"], mode="material")
+        check("shown again: the two are not fused a second time",
+              view.getValueDiff().get("material.kept") == 1
+              and near(view.getValueDiff().get("volume.added"), ring * 2))
+        view.showValueDiff("Shape", taller["after"], taller["before"], position=0.0,
+                           mode="material")
+        shown = view.getValueDiff()
+        check("the other way round: the slab is what was removed",
+              near(shown.get("volume.removed"), ring * 2) and shown.get("volume.added") == 0
+              and shown.get("material.kept") == 0 and shown.get("transparency.removed") == 30)
+        view.hideValueDiff()
+        check("against no value there are no two solids: by the faces, and said",
+              view.showValueDiff("Shape", "-", taller["after"], mode="material") is True
+              and view.getValueDiff().get("material") == 0
+              and view.getValueDiff().get("material.none") == 1
+              and view.getValueDiff().get("added") == 7)
+        view.hideValueDiff()
+        check("the value the object has now, by its material",
+              view.showValueDiff("Shape", taller["before"], "", mode="material") is True
+              and near(view.getValueDiff().get("volume.added"), ring * 2)
+              and view.getValueDiff().get("material.kept") == 0)
+        view.hideValueDiff()
+        view.showValueDiff("Shape", taller["before"], "", mode="material")
+        check("and that is known again by the shape it is",
+              view.getValueDiff().get("material.kept") == 1)
+        view.hideValueDiff()
+        check("not by a way there is not",
+              view.showValueDiff("Shape", taller["before"], taller["after"], mode="nosuch")
+              is False and view.getValueDiff() == {})
+
+        # Two heavy solids are not waited for: their faces meanwhile. Any two
+        # are heavy here, by the setting that says from how many faces on.
+        heavy = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
+        heavy.SetInt("ShapeDiffInlineFaces", 0)
+
+        def arrive(of):
+            for _ in range(500):
+                if not of.getValueDiff().get("material.pending"):
+                    return True
+                time.sleep(0.02)
+                settle()
+            return False
+
+        check("heavy: shown at once, by the faces",
+              view.showValueDiff("Shape", "", taller["before"], mode="material") is True
+              and view.getValueDiff().get("material.pending") == 1
+              and view.getValueDiff().get("material") == 0
+              and view.getValueDiff().get("changed") == 5)
+        came = arrive(view)
+        shown = view.getValueDiff()
+        check("heavy: and by the material when it is there (%r)"
+              % ({k: v for k, v in shown.items() if k.startswith(("volume", "material"))},),
+              came and shown.get("material") == 1 and near(shown.get("volume.removed"), ring * 2)
+              and shown.get("material.kept") == 0 and "changed" not in shown
+              and drawn(cut)[1] in (2, -1))
+        view.hideValueDiff()
+        view.showValueDiff("Shape", "", taller["before"], mode="material")
+        check("heavy: asked again it is there already",
+              "material.pending" not in view.getValueDiff()
+              and view.getValueDiff().get("material.kept") == 1)
+        view.hideValueDiff()
+        second = op("a second hole", cut2)
+        view.showValueDiff("Shape", taller["before"], second["after"], mode="material")
+        left = view.getValueDiff().get("material.pending")
+        view.hideValueDiff()
+        for _ in range(20):
+            time.sleep(0.01)
+            settle()
+        check("heavy: left before it is there, nothing is shown later",
+              left == 1 and view.getValueDiff() == {} and drawn(cut)[0] is None)
+        view.showValueDiff("Shape", taller["before"], second["after"], mode="material")
+        again = view.getValueDiff().get("material.pending")
+        came = arrive(view)
+        shown = view.getValueDiff()
+        # The slab without the second hole's part of it, and that hole
+        # through what was there
+        check("heavy: and asked again it is worked out again (%r, %r)"
+              % (shown.get("volume.added"), shown.get("volume.removed")),
+              again == 1 and came and shown.get("material") == 1
+              and near(shown.get("volume.added"), ring * 2 - math.pi * 2)
+              and near(shown.get("volume.removed"), math.pi * 10))
+        view.hideValueDiff()
+        heavy.RemInt("ShapeDiffInlineFaces")
+
         # A face only the later state has
         added = op("a second hole", cut2)
         check("a shape with no value before has nothing to be against",
@@ -385,6 +515,14 @@ def run():
         if dock is not None and ops is not None:
             diff = bar(dock)
             check("the panel has the bar", diff is not None)
+            # By the faces, as what follows counts them; by the material below
+            how = part(diff, "diffMode") if diff is not None else None
+            check("the bar says how a shape is shown, by its material first",
+                  how is not None and [how.itemText(i) for i in range(how.count())]
+                  == ["Material", "Faces"] and how.currentIndex() == 0)
+            if how is not None:
+                how.setCurrentIndex(1)
+                settle()
             panelRows = len(doc.getTransactionLog())
             name = column(tree, "Name")
             for i in range(tree.topLevelItemCount()):
@@ -415,6 +553,25 @@ def run():
                 check("differences only", view.getValueDiff().get("shown.same") == 0)
                 part(diff, "diffOnly").setChecked(False)
                 part(diff, "diffPosition").setValue(100)
+                how.setCurrentIndex(0)
+                settle()
+                shown = view.getValueDiff()
+                said = part(diff, "diffStatus").text()
+                check("by its material: the slab, and its volume said (%r)" % said,
+                      shown.get("material") == 1 and near(shown.get("volume.added"), ring * 2)
+                      and " added, " in said and " removed, " in said
+                      and said.endswith(" in both") and "as they were" not in said)
+                part(diff, "diffOnly").setChecked(True)
+                settle()
+                check("by its material, differences only",
+                      view.getValueDiff().get("shown.same") == 0
+                      and view.getValueDiff().get("shown.added") == 1)
+                part(diff, "diffOnly").setChecked(False)
+                how.setCurrentIndex(1)
+                settle()
+                check("and by its faces again",
+                      view.getValueDiff().get("material") == 0
+                      and view.getValueDiff().get("changed") == 5)
                 for i in range(ops.topLevelItemCount()):
                     if ops.topLevelItem(i).text(prop) == "Height":
                         ops.setCurrentItem(ops.topLevelItem(i))
@@ -502,6 +659,39 @@ def run():
                       % part(diff, "diffStatus").text(),
                       shown2.get("added") == 8 and "changed" not in shown2
                       and view.getValueDiff() == {})
+                how.setCurrentIndex(0)
+                settle()
+                said = part(diff, "diffStatus").text()
+                check("by its material there are no two solids of it: its faces, and said "
+                      "(%r)" % said,
+                      view2.getValueDiff().get("material.none") == 1
+                      and view2.getValueDiff().get("added") == 8
+                      and said.startswith("not two solids, by the faces: "))
+                # Heavy, as above: the faces and that it is being worked out,
+                # then the material without anything asked again
+                heavy.SetInt("ShapeDiffInlineFaces", 0)
+                for i in range(tree.topLevelItemCount()):
+                    if tree.topLevelItem(i).text(name) == "wider":
+                        tree.setCurrentItem(tree.topLevelItem(i))
+                said = part(diff, "diffStatus").text()
+                for _ in range(200):
+                    if " added, " in part(diff, "diffStatus").text():
+                        break
+                    time.sleep(0.02)
+                    settle()
+                heavy.RemInt("ShapeDiffInlineFaces")
+                check("a heavy one is said to be worked out, its faces meanwhile (%r)" % said,
+                      said.startswith("working out the material; the faces meanwhile: ")
+                      and view2.getValueDiff().get("material") == 1)
+                said = part(diff, "diffStatus").text()
+                # 10 x 10 made 10 x 12, 12 high; both holes are through what was there
+                check("a row of it by its material (%r)" % said,
+                      view2.getValueDiff().get("material") == 1
+                      and near(view2.getValueDiff().get("volume.added"), 10 * 2 * 12)
+                      and view2.getValueDiff().get("volume.removed") == 0
+                      and " added, " in said)
+                how.setCurrentIndex(1)
+                settle()
                 select("base")
                 said = part(diff, "diffStatus").text()
                 check("a row that changed nothing of the object chosen: nothing, and said "
@@ -779,6 +969,16 @@ def run():
             check("dialog: nothing, when asked", seen.get("nothing") == {})
             check("dialog: a length selected shows nothing", seen.get("a length") == {})
             check("dialog: the shape again", (seen.get("again") or {}).get("by.name") == 7)
+            # Ours is 10 x 11 and theirs 14 x 12, both 12 high with the hole
+            # through them: theirs has all of ours and more
+            material = seen.get("material") or {}
+            check("dialog: by its material, the default: what theirs has more (%r, %r)"
+                  % (seen.get("mode"), seen.get("material said")),
+                  seen.get("mode") == "Material" and material.get("material") == 1
+                  and abs(material.get("volume.added", 0) - (14 * 12 - 10 * 11) * 12) < 1e-3
+                  and material.get("volume.removed") == 0
+                  and "by.name" not in material
+                  and " added, " in (seen.get("material said") or ""))
             check("dialog closed: nothing left in the view",
                   view.getValueDiff() == {} and drawn(cut)[0] is None
                   and doc.getObject("Cut2").ViewObject.getValueDiff() == {})
