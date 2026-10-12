@@ -5179,6 +5179,44 @@ class TransactionBranchCases(unittest.TestCase):
         )
         self.assertEqual(said(A), before)
 
+    def testANameReadThroughAChildHoldsWhatItsPostfixNames(self):
+        # Sec 33.2: the external marker names its document by a string id
+        # that is only text in the postfix. A shape of fewer than five
+        # elements of a kind is not kept as a child map: its names are
+        # written down one by one, and each has to hold that id itself, or
+        # the save drops the string, the reopened document makes it again
+        # under another id, and the first recompute renames every element.
+        import Part
+
+        self.param.SetInt("TransactionLog", 0)
+        B = self.track(FreeCAD.newDocument("SmallB"))
+        plane = B.addObject("Part::Plane", "Plane")
+        B.recompute()
+        B.saveAs(os.path.join(self.dir, "smallb.FCStd"))
+        A = self.track(FreeCAD.newDocument("SmallA"))
+        link = A.addObject("App::Link", "Link")
+        link.LinkedObject = plane
+        comp = A.addObject("Part::Compound", "Comp")
+        comp.Links = [link]
+        A.recompute()
+        built = dict(comp.Shape.ElementMap)
+        self.assertEqual(len(built), 9)
+        for name in built:
+            self.assertIn(";:X#", name)
+        comp.touch()
+        A.recompute()
+        self.assertEqual(dict(comp.Shape.ElementMap), built)
+        path = os.path.join(self.dir, "smalla.FCStd")
+        A.saveAs(path)
+        FreeCAD.closeDocument(A.Name)
+        A = self.track(FreeCAD.openDocument(path))
+        self.assertEqual([v for v in A.Hasher.Table.values() if v == B.Uid], [B.Uid])
+        self.assertEqual(dict(A.Comp.Shape.ElementMap), built)
+        A.Comp.touch()
+        A.recompute()
+        self.assertEqual(dict(A.Comp.Shape.ElementMap), built)
+        self.assertEqual([v for v in A.Hasher.Table.values() if v == B.Uid], [B.Uid])
+
     def testAFeatureRefusedAFrozenInputRunsOnACopy(self):
         # Sec 27.82: an algorithm that writes into a frozen input throws
         # LockedShape; the feature runs once more on copies of its inputs,

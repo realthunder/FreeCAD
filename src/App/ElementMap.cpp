@@ -1158,6 +1158,12 @@ public:
                 name = MappedName(childIdx);
             if (name) {
                 name += child.postfix;
+                // The strings the child's postfix names by id are held by
+                // the child, and so by every name read through it: one that
+                // is written down as a name of its own has nothing else to
+                // hold them (docs/TransactionLog.md sec 33.2).
+                if (sids)
+                    *sids += child.sids;
                 return name;
             }
         }
@@ -1201,10 +1207,12 @@ public:
             IndexedName childIdx(idx.getType(), idx.getIndex() - child.offset);
             if (child.elementMap) {
                 res = child.elementMap->findAll(childIdx);
-                for (auto &v : res)
+                for (auto &v : res) {
                     v.first += child.postfix;
+                    v.second += child.sids;
+                }
             } else 
-                res.emplace_back(MappedName(childIdx) + child.postfix, ElementIDRefs());
+                res.emplace_back(MappedName(childIdx) + child.postfix, child.sids);
         }
 
         return res;
@@ -1394,6 +1402,9 @@ public:
                 for (int i=0; i<child.count; ++i, ++childIdx, ++idx) {
                     ElementIDRefs sids;
                     MappedName name = child.elementMap->find(childIdx, &sids);
+                    // The name takes the child's postfix, and holds what
+                    // that names by id (sec 33.2).
+                    sids += child.sids;
                     if (!name) {
                         if (!child.tag || child.tag == master.Tag) {
                             if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
