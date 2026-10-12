@@ -139,9 +139,15 @@ void ViewProviderSubShapeBinder::onChanged(const App::Property *prop) {
     // A colour set here is a colour picked, which ends the mapping -- but not
     // one read from the file or replayed by undo: properties restore in name
     // order, so MapFaceColor was read before ShapeColor, which then switched
-    // it off, and an eagerly opened file lost its saved mapping.
+    // it off, and an eagerly opened file lost its saved mapping. Nor one
+    // taken from the object (mirrorAppearance()): that is the object's look
+    // arriving under this name, and a flag switched off for it stayed here
+    // -- nothing is given back while mirroring -- so the view provider said
+    // false where the object, which makes the looks, said true, and a
+    // colour picked afterwards found nothing left to switch off.
     else if (prop->testStatus(App::Property::User3)
              || isRestoring()
+             || mirroringAppearance
              || (getObject() && getObject()->getDocument()
                  && getObject()->getDocument()->isPerformingTransaction())) {
     }
