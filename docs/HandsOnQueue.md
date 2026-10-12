@@ -895,6 +895,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-axes-over-the-cube.py` 8 claims, no FAIL. As it stood in work at 16:36: `View/CornerCoordSystem` off by default, in the preference pack template too; the cube's axes drawn last with no depth test, in both drawing paths. OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered |
 | 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-clear-of-panels.py` 16 claims, no FAIL. As it stood in work at 16:36: the docks leave no room, `DockOverlayCheckNaviCube` removed; new `View/DockOverlayMoveNaviCube`, on by default; the cube slides along its edge clear of overlaid docks and of a task panel over its view, and back. OPEN; the request turned 16:18; the two points of before fall away; the three new ones answered 16:20: the cube slides along its edge in the same corner; with the setting off a panel simply covers it; it moves for a momentary panel too and comes back; nothing left unanswered |
 | 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
+| 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space | OPEN; a reading of the source by the note-taker, nothing run: the omni search has no "/prop" mode today; four points under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8894,6 +8895,60 @@ a. Which widgets the reporter saw. The fix changes the one general
    the staged copy and name what is still not seen.
 b. The Light theme is not named.
 
+## 78. Retire the tree view's object search; Ctrl+F opens the omni search with "/ ", and in the property view with "/prop " (a change request) -- OPEN
+
+**2026-10-12 18:01, the reporter** (sent while the stage of 17:52 was being
+written into this file): "new request, retire current tree view search
+object function. hook the ctrl+f shortcut to omni search / followed by
+space. also hook ctrl+f in property view to omni search /prop followed by
+space."
+
+The note-taker's reading:
+- The tree view's own search for an object is RETIRED: what Ctrl+F does
+  in the tree today.
+- Ctrl+F opens the omni search with "/ " -- a slash and a space --
+  already typed in. By the source that is the omni search's OBJECT mode.
+- In the property view Ctrl+F opens the omni search with "/prop " typed
+  in.
+
+READ in the source, nothing run:
+- The tree's search: `TreeWidget::keyPressEvent` (`src/Gui/Tree.cpp`,
+  about line 2451) takes the Find key (`QKeySequence::Find`, Ctrl+F) and
+  calls `onSearchObjects`; that shows `TreePanel`'s `searchBox`, a line
+  edit under the tree with the placeholder "Search" (about lines 5167 to
+  5240). The same from the tree's context menu, "Search..." (about lines
+  1204 and 1646). While typing, the item found gets a yellow background
+  (`itemSearch`, about line 1588); Return selects it.
+- The omni search: command `Std_OmniSearch`, shortcut "/"
+  (`src/Gui/CommandStd.cpp`, about line 1030). Its modes
+  (`OmniSearch::modePrefix`, `src/Gui/OmniSearch.cpp`, about line 62):
+  "/ " for "Documents, objects, sub-objects and properties", "/cmd " for
+  commands, "/param " for the application parameters.
+- There is NO "/prop" mode today: the keywords are "cmd" and "param"
+  alone (`OmniSearch::modeKeywords`). So "/prop " either asks for a NEW
+  mode or is typed into the object mode as a name beginning with "prop".
+- The property view takes no Ctrl+F today (no Find key in
+  `src/Gui/PropertyView.cpp` or `src/Gui/propertyeditor/PropertyEditor.cpp`).
+  The one other taker of the Find key in `src/Gui` is the text editor
+  (`TextEdit.cpp`).
+
+NOT said, the note-taker's count:
+a. "/prop": a NEW mode of the omni search -- and then searching what:
+   the properties of the object the property view shows (the note-taker's
+   guess), of every selected object, of any object? Or is something that
+   exists meant?
+b. WHERE Ctrl+F is hooked for "/ ": in the tree view alone, where the
+   key works today -- the note-taker's reading -- or in the whole main
+   window, as "/" is? The text editor has a Ctrl+F of its own.
+c. The "Search..." item of the tree's context menu: removed with the
+   function, or kept and opening the omni search too?
+d. What the old search did in the tree -- the found item marked while
+   typing, scrolled to, selected on Return: is the omni search as it is
+   today enough, or is anything of that to be kept?
+
+Near it: entry 62 (the omni search: the recent items before the three
+modes).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -8902,4 +8957,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 77 are of 2026-10-12, 77 said to the build session)
+entries 68 to 78 are of 2026-10-12, 77 said to the build session)
