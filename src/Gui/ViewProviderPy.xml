@@ -183,6 +183,59 @@ canReorderObject([obj...], before) -> Boolean
 </UserDocu>
             </Documentation>
         </Methode>
+        <Methode Name="getExtraIcons">
+            <Documentation>
+                <UserDocu>getExtraIcons() -> list of str
+
+The tags of the extra icons shown beside the object's icon in the tree view,
+in the order they are shown.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getIconToolTip">
+            <Documentation>
+                <UserDocu>getIconToolTip(tag) -> str
+
+The tool tip the tree view shows for the icon of the given tag.
+
+tag : str
+    Tag of an icon, as returned by getExtraIcons().</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="canDragIcon">
+            <Documentation>
+                <UserDocu>canDragIcon(tag) -> bool
+
+Check whether the extra icon of the given tag can be dragged off the
+object's tree item, to be dropped on another item.
+
+tag : str
+    Tag of an icon, as returned by getExtraIcons().</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="canDropIcon">
+            <Documentation>
+                <UserDocu>canDropIcon(source, tag) -> bool
+
+Check whether an icon dragged off another object can be dropped on this one.
+
+source : App.DocumentObject
+    The object whose icon is being dragged.
+tag : str
+    Tag of the dragged icon.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="dropIcon">
+            <Documentation>
+                <UserDocu>dropIcon(source, tag) -> None
+
+Drop an icon dragged off another object on this one.
+
+source : App.DocumentObject
+    The object whose icon was dragged.
+tag : str
+    Tag of the dragged icon.</UserDocu>
+            </Documentation>
+        </Methode>
         <Methode Name="doubleClicked">
             <Documentation>
                 <UserDocu>doubleClicked() -> bool

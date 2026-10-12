@@ -671,6 +671,30 @@ public:
      */
     virtual bool iconMouseEvent(QMouseEvent *ev, const QByteArray &iconTag);
 
+    /** @name Dragging an extra icon in the tree
+     * An icon returned by getExtraIcons() can be dragged on its own, onto
+     * another item of the tree. A drag that starts on such an icon carries
+     * the icon and not the selected objects: nothing is moved, the item the
+     * icon is dropped on is told. The tree calls these with the selection
+     * context set to the item asked, as for any other drop.
+     */
+    //@{
+    /** Whether the icon of the given tag can be dragged off this item
+     * @param iconTag: tag returned from getExtraIcons()
+     */
+    virtual bool canDragIcon(const QByteArray &iconTag) const;
+    /** Whether an icon dragged off another item can be dropped on this one
+     * @param source: the object whose icon is being dragged
+     * @param iconTag: tag of the dragged icon
+     */
+    virtual bool canDropIcon(App::DocumentObject *source, const QByteArray &iconTag) const;
+    /** An icon dragged off another item is dropped on this one
+     * @param source: the object whose icon was dragged
+     * @param iconTag: tag of the dragged icon
+     */
+    virtual void dropIcon(App::DocumentObject *source, const QByteArray &iconTag);
+    //@}
+
     /** @name direct handling methods
      *  This group of methods is to direct influence the
      *  appearance of the viewed content. It's only for fast

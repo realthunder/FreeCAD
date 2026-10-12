@@ -1385,3 +1385,17 @@ bool ViewProvider::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
     });
     return res;
 }
+
+bool ViewProvider::canDragIcon(const QByteArray &) const
+{
+    return false;
+}
+
+bool ViewProvider::canDropIcon(App::DocumentObject *, const QByteArray &) const
+{
+    return false;
+}
+
+void ViewProvider::dropIcon(App::DocumentObject *, const QByteArray &)
+{
+}
