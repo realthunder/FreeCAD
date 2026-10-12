@@ -143,6 +143,7 @@ Right-click a row:
 | **Copy script** | The text the row carries besides its operations, where it has any. |
 | **Copy row** | The row as text. |
 | **Undo row N** | Undoes this one step, though it is not the last: a new step that reverses it. Refused, with the reason in the report view, when something later changed what it touched. It is also the way to take back an `implicit` row by itself. |
+| **Undo N rows** | The same with several rows selected: they are undone together, newest first, as one new step -- one Undo brings them all back. All of them or none: if one cannot be undone, nothing moves, and the report view says which and why. Rows that depend on each other go together where each alone would be refused -- the step that made an object and a later one that edited it. |
 | **Apply row N here...** | For a row of *another* branch: what it set is written to this branch as a step of its own, after a preview like a merge's. Select several rows first to apply them together. Greyed for rows of this branch -- undo and redo are for those. |
 | **Branch from here...** | A new branch whose history ends at this row, switched to. |
 | **Roll back the merge of X...** | Appears when the last thing done was undoing a merge: takes the merge and its undo out of the log, so X counts as not merged. |
@@ -158,7 +159,8 @@ Edit > Undo and Redo work on the steps you named; the log records more.
 - **Several steps at once.** The arrow beside Undo lists the steps, newest
   first. Clicking one undoes every step from the newest down to it. The same
   for Redo. Steps in the middle cannot be picked there: for one of those,
-  **Undo row N** in the row's menu.
+  **Undo row N** in the row's menu, and for several, select them and
+  **Undo N rows**.
 - **A step that cannot be undone or redone** is said in a dialog, with the
   reason -- most often that something written since changed what the step
   set, and which row did. Nothing in the document moves. **Skip this step**
@@ -458,6 +460,7 @@ open it.
 | follow one object through the history | add it to "Objects:", then step through the rows |
 | compare the document now with an earlier state | Versions: select the version; "Changed since" |
 | undo one step that is not the last | right-click the row, **Undo row N** |
+| undo several steps that are not the last, together | select the rows, right-click, **Undo N rows** |
 | go back to an earlier state | Versions: right-click, **Restore to version N** |
 | look at an earlier state without changing anything | Versions: right-click, **Open version N** |
 | mark a state so it is never dropped | Versions: right-click, **Name version N...** |
@@ -485,7 +488,7 @@ Everything the panel does is a method of the document.
 | the versions | `doc.getTransactionVersions()` |
 | Changed since | `doc.compareTransactionStates(seq, 0)` |
 | Restore, Open version | `doc.restoreTransactionVersion(num)`, `doc.openTransactionVersion(num)` |
-| Undo row | `doc.undoTransactionFromLog(seq)` |
+| Undo row, Undo N rows | `doc.undoTransactionFromLog(seq)`, `doc.undoTransactionFromLog([seq, ...])` |
 | Branch, switch, rename, delete | `doc.createTransactionBranch(name)`, `doc.switchTransactionBranch(name)`, `doc.renameTransactionBranch(...)`, `doc.deleteTransactionBranch(name)` |
 | the merge's preview, the merge | `doc.previewTransactionMerge(name)`, `doc.mergeTransactionBranch(name, picks)` |
 | Apply rows | `doc.previewTransactionPick(rows)`, `doc.pickTransactions(rows, picks)` |

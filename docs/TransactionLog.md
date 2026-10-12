@@ -18767,7 +18767,7 @@ the named steps newest first, and clicking one takes every step from
 the newest down to it -- a range from the top, and no other. The log
 panel takes several rows as selected, and **Undo row N** acts on the
 one clicked alone; several rows of this branch are undone one at a
-time. Not built: an undo of the rows selected.
+time. An undo of the rows selected: 33.13.
 
 **Tests.** Python `testAStepRefusedIsSaidAndGonePast`: an undo leaving
 the newest step, fewer steps than to be left, a redo refused by a
@@ -18808,3 +18808,185 @@ from LinkVibe as it was built there (`26b48d53fc`).
 both ways, ctest 920 of 920 both ways, the 20 Gui checks with no
 failure. On the Windows box, 33.1 to 33.10 merged into LinkVibe with
 33.12's first form: ctest 850 of 850, Python 3641 OK.
+
+### 33.13 The rows selected, undone as one step
+
+**Asked (user, 2026-10-12):** the next thing after the merge -- the log
+panel undoing the rows selected, where it undid the one clicked.
+
+**One step, not one a row.** Both were weighed. A step a row is the
+loop there already was: each undo is checked against the document as
+the one before left it, a refusal in the middle leaves the ones before
+it done, and Edit > Undo then takes them back one at a time. One step
+is one thing to take back, and all of the rows or none. Built as one
+step; what it gives up is the `inverts` of each row, which a row that
+undoes several cannot carry (below).
+
+**As built.**
+
+- `Document::undoLogged(seqs)`, Python
+  `undoTransactionFromLog([seq, ...])` (a number still does the one
+  row, as 24.7 has it; a row named twice counts once). One transaction:
+  the rows are taken back newest first, each read from the document as
+  the newer ones left it, so that a row making an object and a newer
+  one removing it go together -- the removal taken back first, which
+  puts there the object the other then unmakes -- and so do a row making
+  an object and a newer one editing it.
+- **The refuse rule among them.** 24.7's rule asks whether anything
+  later left a property in another state than the row did. A later row
+  that is undone with it is no such thing: it is taken back first.
+  `checkSelective` is handed the rows undone together and looks under
+  each of them for the newest op of a row that is not one -- so two rows
+  on one property, the older refused alone, go together; and a row
+  between two selected ones that is not selected still refuses them.
+- **All or none.** What the log alone can say is asked of every row
+  before any is taken back: a refusal there writes nothing, and every
+  row in the way is named in the report view. What only the document
+  can say -- an object's name taken, an object gone -- is asked row by
+  row on the way down; a refusal there aborts the transaction, which
+  puts back the rows already taken back, and nothing is logged. The
+  redo steps are cleared once every row is taken back, where 24.7
+  cleared them before the first: a refusal leaves them.
+- **The row written.** Kind `undo`, as one row's is. `inverts` names
+  the row for one; for several it is 0, one row not being what it
+  inverts, and the name says what was undone: `Undo Pad, Fillet`,
+  oldest first, three names at most and `and N more`; `Undo N rows`
+  where none has a name. It is one undo step and one redo step.
+- **The panel.** With several rows of this branch selected the menu
+  says **Undo N rows**, and acts on the selection; with one, or with a
+  click on a row outside the selection, **Undo row N** as before. The
+  entry is offered where every row is one that can be undone (`user`,
+  `implicit`, `undo`, `redo`, `pick`). A refusal is said in the panel's
+  status line, the reasons in the report view. `undoRows(seqs)` is the
+  slot behind it.
+
+**Tests.** Gtest `severalRowsUndoneAreOneStep`: two rows on one
+property, the older refused alone, undone together in one row of kind
+`undo` with no `inverts` and both names, and one undo bringing both
+back; a row between two selected that is not selected refuses both
+with nothing written and its property named; one row in a list keeps
+its `inverts`; a row making an object, refused alone, undone with the
+one editing it; a row making an object and one removing it undone
+together; and a row making an object removed since by a row not
+selected, refused by the log with the redo step left. Gtest
+`severalRowsRefusedLateArePutBack`, the refusal only the document can
+make: a view provider's change whose object was removed since -- the
+removal wrote nothing under that name -- selected with a newer row;
+the newer one is taken back and put back (one abort signalled), the
+document as it was, no row, the undo names and the redo step
+untouched, no transaction left open. Gui check
+`transaction-log-undo-check.py` (20), through the panel's slot: two of
+four steps undone as one row named for both, the shape following, one
+Edit > Undo bringing both back, and a refused pair said in the panel
+with nothing moved.
+
+### 33.14 What LinkVibe's driven Gui tests met
+
+The merge of 33.11 to 33.13's branch into LinkVibe (2026-10-12) was
+the first run on Linux of LinkVibe's driven Gui tests
+(`scripts/gui-test.sh`, under xvfb) with this work in the tree: the
+Windows box, where the earlier merges were made and gated, cannot run
+them. What follows is what was this work's doing. What was not -- tests
+written on the Windows box and never run here, and two faults of the
+legacy renderer and the Linux title bar -- is in `docs/Testing.md`.
+
+**Faults, fixed.**
+
+- **A pinned version not shown as one.** The tree shows a pinned
+  version's label in italic (27.22) when it is told the label; it was
+  told before the version was marked frozen, and showed it right only
+  because a document used to say it was modified during its restore.
+  One whose view providers are built later does not.
+  `openFileVersion` says the label again once the version is frozen.
+- **A body's Transparency not reaching its Tip.** `ViewProviderBody`
+  handed the value to the Tip while still inside the guard it holds
+  against the echo of its own base call, so the hand-over was dropped
+  as an echo. The guard covers the base call alone.
+- **A served selection under the mapped name.** A box names its
+  elements (docs/PrimitiveNames.md), so a selection of its face is held
+  as `;Top.Face6`, and went to the client so; the viewer places an
+  element by `Face6` and paints the whole object for a name it cannot
+  place. The message carries the plain name
+  (`Data::oldElementName`).
+- **A look's shading model lost on the way to the object.** A write to
+  `ShapeAppearance` goes to the object's store a look at a time
+  (`Feature::writeFaces`), and a look given to a list is read in the
+  model that list is in -- so `convertPBR(true)` on an object that had
+  a colour, or followed its material card, left it Phong, and the
+  metallic set next threw `material list is not in PBR mode`: a glTF
+  import of the chess set. Where the model changes, the lists kept for
+  the faces -- the object's own look and the looks by number -- are
+  converted first.
+- **A binder's mapping switched off by its own look.** A
+  `SubShapeBinder`'s view provider ends the mapping of the face colour
+  when its colour is set, as a colour picked. The object's look
+  arriving under the view provider's name (`mirrorAppearance`) was
+  taken for one: the view provider's `MapFaceColor` read false where
+  the object's read true, and a colour picked afterwards found nothing
+  left to switch off, so the object kept mapping. A look mirrored is
+  not a colour picked.
+- **A first picture held as a refinement.** A shape parsed before is
+  kept by its content (`ShapeParseCache`, 27.35), so a file opened again
+  in one session comes with its meshes. A shape drawn as a box whose
+  finer mesh was there already was queued as a refinement, which a
+  load holds back until it has built its visuals
+  (docs/DocumentLoad.md sec 18.11 says a first picture is not). Such a
+  body is marked as a first picture and is not held.
+
+**Tests that leaned on what changed.**
+
+- *Undo is each author's (30.10).* Three served-sketch tests read the
+  desktop's `UndoCount` for a step a client made; it is the client's.
+  They read it as the client (`wsclient.client_undos`), and the one
+  that undid the client's step from the desktop has the client undo
+  it.
+- *A save writes the history (27.5).* Its blobs may be zstd members,
+  which `zipfile` reads from Python 3.14 on: two tests that rewrote a
+  saved archive read it through `ArchiveMembers`.
+- *The looks are the object's.* A view provider's colours are names
+  over them and are not written to `GuiDocument.xml` at schema 5. Two
+  sketch tests made "a file from before AutoColor" by stripping
+  `AutoColor` from a file just saved, which is then no file an older
+  build wrote: they save it at schema 4 first. The binder test wrote
+  its flag into `GuiDocument.xml`; it reads the object's.
+- *A box names its elements.* A fillet corner's face is named from the
+  vertex's name, `RearRT`, not `Vertex7`.
+- *A parse is kept by content.* A test that opened one file three
+  times to see three loads mesh opens three files.
+- *The tree makes no undo step of its own (30.8).* It is brought up to
+  date before a transaction closes, and gives a rank only to an object
+  that has none. The test of the tree itemising inside a command's
+  nested loop while an import is live found everything itemised
+  already -- the fit's command closes the implicit transaction the
+  import wrote into -- and no rank written. It runs the import inside
+  a transaction of its own and leaves the imported objects without a
+  rank; the write the guard must let through is then made inside the
+  loop as before. Not run against the exemption reverted.
+
+**Not settled.**
+
+- **A sketch's automatic colours are saved.** With `AutoColor` on, the
+  colours a sketch takes from the preference are set on its view
+  provider, and so reach the object's looks: they are saved in the
+  file, and a preference changed rewrites them in every open sketch
+  as an `implicit` row, the document not marked modified. AutoColor
+  is there to keep them out of the file. Not passing them through
+  while it is on is a change to which looks an object has, and is the
+  user's to rule.
+- **A colour set on the object ends no mapping.** The rule that a
+  colour picked ends a binder's mapping is the view provider's;
+  `obj.ShapeColor = ...` leaves the flags. Not looked into further.
+- **A binder of a file from before the looks were the object's.** A
+  file made to look like one lost the binder's flag and colour at
+  open; it was not a faithful old file, and no real one is on this
+  box.
+
+**Gates** for 33.13 and 33.14, on LinkVibe with the branch and OcctFix
+merged, the freeze on and off: Python 3674 OK both ways; the ctest
+entries that are not driven, 947 of 947 both ways; the 20 Gui checks
+with no failure (`ur` 20). The 273 driven Gui and render tests, once,
+the freeze as it defaults: all but the two golden raster pictures,
+which a change to the cavity shader made on LinkVibe moved and whose
+references are not made again (`docs/Testing.md`). How these are run
+on LinkVibe -- the driven tests given no `FREECAD_USER_HOME`, from
+wiped profiles -- is that page's fourth trap.
