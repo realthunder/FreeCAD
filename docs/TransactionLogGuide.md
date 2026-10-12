@@ -379,7 +379,7 @@ The list has one line per change the other branch made:
 
 | Change | Meaning | What you do |
 |---|---|---|
-| **conflict** (bold, first) | Both branches changed it, differently. | Pick a side in the **Takes** column: `ours` or `theirs`. It starts on `ours`; the setting `MergeConflictSide` (Preferences/Document, 1 for theirs) makes it start on `theirs`. |
+| **conflict** (bold, first) | Both branches changed it, differently. | Pick a side in the **Takes** column: `ours` or `theirs`. It starts on `ours`. The setting `MergeConflictSide` (Preferences/Document) changes that: 1 starts it on `theirs`, 2 starts it with no side, and **Merge** then waits until you have picked one for each. |
 | **take** | Only the other branch changed it; it goes in. | Untick it to leave it out. |
 | **merge** | Both changed it, and it holds many things (a sketch's constraints, a sheet's cells); the two are combined. | Untick to leave theirs out. |
 | **derived** (grey) | A shape their recompute made. Not merged: the result is recomputed. | Nothing. |

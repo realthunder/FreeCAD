@@ -218,9 +218,9 @@ one needs the image it is named for. A document read at schema 5 has its
 view providers when the event loop has got to them, so the script waits for
 them; `obj.ViewObject` asked for before that makes them.
 
-**A shape at two states.** `scripts/transaction-log-shapediff-check.py` (128
-checks, `$SHAPEDIFFCHECK_OUT`; the last 14 are what a merge would make, from
-the merge dialog, sec 32.17) is a GUI run of its own: a shape property's
+**A shape at two states.** `scripts/transaction-log-shapediff-check.py` (132
+checks, `$SHAPEDIFFCHECK_OUT`; the last 18 are what a merge would make and
+a conflict asked, from the merge dialog, sec 32.17) is a GUI run of its own: a shape property's
 two values of the transaction log shown over the object -- asked of the view
 provider, from an op of a row in the log panel, and from a change in the
 merge dialog -- with what became of each face, the overlay's nodes, and that

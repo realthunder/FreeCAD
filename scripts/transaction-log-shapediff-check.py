@@ -343,6 +343,41 @@ def driveAgain(seen, before):
     dialog.reject()
 
 
+def driveAsk(seen):
+    # The setting says to ask (sec 32.17): a conflict starts with no side
+    dialog = mergeDialog()
+    if dialog is None or dialog.objectName() != "TransactionMergeDialog":
+        seen["ask found"] = False
+        if dialog is not None:
+            dialog.reject()
+        return
+    seen["ask found"] = True
+    tree = dialog.findChild(QtWidgets.QTreeWidget)
+    diff = bar(dialog)
+    merge = part(dialog, "merge")
+    sides = [c for c in tree.findChildren(QtWidgets.QComboBox)
+             if [c.itemText(i) for i in range(c.count())] == ["ours", "theirs"]]
+    seen["ask starts"] = ([(c.currentIndex(), c.currentText()) for c in sides],
+                          merge.isEnabled(), merge.text())
+    for i in range(tree.topLevelItemCount()):
+        item = tree.topLevelItem(i)
+        if item.text(1) == "Cut" and item.text(2) == "Shape":
+            tree.setCurrentItem(item)
+    settle()
+    pair = part(diff, "diffPair")
+    pair.setCurrentIndex(3)
+    settle()
+    seen["ask result"] = (part(diff, "diffStatus").text(),
+                          [n for n in App.listDocuments() if "_merged" in n])
+    for c in sides:
+        c.setCurrentIndex(1)
+    settle()
+    cut = seen["doc"].getObject("Cut")
+    seen["ask picked"] = (merge.isEnabled(), merge.text(), cut.ViewObject.getValueDiff(),
+                          [n for n in App.listDocuments() if "_merged" in n])
+    dialog.reject()
+
+
 def run():
     p = App.ParamGet("User parameter:BaseApp/Preferences/Document")
     mode = p.GetInt("TransactionLog", 2)
@@ -1161,6 +1196,32 @@ def run():
             check("dialog cancelled: no row written but the two edits (%r)" % seen.get("rows"),
                   len(doc.getTransactionLog()) == seen.get("rows")
                   and seen.get("rows", 0) >= rows + 2)
+            # Asked: a conflict starts with no side, and nothing is merged
+            # and no result made until it has one
+            params = App.ParamGet("User parameter:BaseApp/Preferences/Document")
+            params.SetInt("MergeConflictSide", 2)
+            QtCore.QTimer.singleShot(300, lambda: driveAsk(seen))
+            QtCore.QMetaObject.invokeMethod(
+                dock, "mergeBranch", QtCore.Qt.DirectConnection, QtCore.Q_ARG(str, "side")
+            )
+            settle()
+            params.SetInt("MergeConflictSide", 0)
+            starts = seen.get("ask starts") or ([], None, "")
+            check("asked: the conflict starts with no side, and Merge waits for it (%r)"
+                  % (starts,),
+                  seen.get("ask found") is True and starts[0] == [(-1, "")]
+                  and starts[1] is False and "1 to pick" in starts[2])
+            asked = seen.get("ask result") or ("", None)
+            check("asked: no result while a conflict has no side (%r)" % (asked,),
+                  "have no side" in asked[0] and asked[1] == [])
+            picked = seen.get("ask picked") or (None, "", {}, [])
+            check("asked: a side picked, Merge is there and the result is made (%r)"
+                  % (picked[:2],),
+                  picked[0] is True and "to pick" not in picked[1]
+                  and picked[2].get("material") == 1 and len(picked[3]) == 1)
+            check("asked: nothing merged, and nothing left behind",
+                  len(doc.getTransactionLog()) == seen.get("rows")
+                  and [n for n in App.listDocuments() if "_merged" in n] == [])
         App.closeDocument(doc.Name)
         settle()
     except Exception:

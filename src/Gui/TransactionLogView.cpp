@@ -2444,9 +2444,14 @@ public:
                 auto side = new QComboBox(_tree);
                 side->addItems({QStringLiteral("ours"), QStringLiteral("theirs")});
                 // A conflict starts on the side the setting says, ours
-                // unless it was changed; a view's keeps ours (sec 28.6 Q2)
+                // unless it was changed -- or on none, where the setting
+                // is to ask: nothing is merged until each has one. A
+                // view's keeps ours (sec 28.6 Q2)
+                side->setPlaceholderText(QObject::tr("pick a side"));
                 if (conflict && App::DocumentParams::getMergeConflictSide() == 1)
                     side->setCurrentIndex(1);
+                else if (conflict && App::DocumentParams::getMergeConflictSide() == 2)
+                    side->setCurrentIndex(-1);
                 _tree->setItemWidget(item, Takes, side);
                 _sides.emplace_back(c->key, side);
                 QObject::connect(side, qOverload<int>(&QComboBox::currentIndexChanged), this,
@@ -2636,6 +2641,7 @@ public:
                                         QDialogButtonBox::AcceptRole);
         merge->setObjectName(QStringLiteral("merge"));
         _merge = merge;
+        _mergeSays = merge->text();
         _again = buttons->addButton(QObject::tr("Preview again"), QDialogButtonBox::ActionRole);
         _again->setObjectName(QStringLiteral("again"));
         _again->hide();
@@ -2651,6 +2657,7 @@ public:
         QObject::connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
         layout->addWidget(buttons);
         resize(900, 480);
+        allowMerge();
     }
 
     ~MergeDialog() override
@@ -2666,10 +2673,10 @@ public:
     /// document that is no more.
     void setStale()
     {
-        _merge->setEnabled(false);
         _stale->show();
         _again->show();
         _isStale = true;
+        allowMerge();
         dropResult();
         _diff->setPairNote(OursResult, QObject::tr("the document has changed: preview again"));
         _show();
@@ -2697,13 +2704,15 @@ public:
         return out;
     }
 
-    /// The side of every conflict, by its key; and `ours` for every change
-    /// that asks nothing and was unticked (sec 31.12).
+    /// The side of every conflict that has one, by its key; and `ours` for
+    /// every change that asks nothing and was unticked (sec 31.12).
     std::map<std::string, std::string> picks() const
     {
         std::map<std::string, std::string> out;
-        for (const auto& kv : _sides)
-            out[kv.first] = kv.second->currentText().toStdString();
+        for (const auto& kv : _sides) {
+            if (kv.second->currentIndex() >= 0)
+                out[kv.first] = kv.second->currentText().toStdString();
+        }
         for (auto item : _taken) {
             if (item->checkState(Kind) == Qt::Unchecked)
                 out[item->data(Kind, Qt::UserRole).toString().toStdString()] = "ours";
@@ -2777,10 +2786,28 @@ private:
             App::GetApplication().closeDocument(name.c_str());
     }
 
+    /// Nothing is merged from a stale preview, nor while a conflict has no
+    /// side: the button says how many are asked.
+    void allowMerge()
+    {
+        if (!_merge)
+            return;
+        int asked = 0;
+        for (auto side : _conflicts)
+            asked += side->currentIndex() < 0 ? 1 : 0;
+        _merge->setEnabled(!_isStale && asked == 0);
+        _merge->setToolTip(asked ? QObject::tr("%n conflict(s) have no side: pick one for each",
+                                               "", asked)
+                                 : QString());
+        _merge->setText(asked ? QObject::tr("%1 (%n to pick)", "", asked).arg(_mergeSays)
+                              : _mergeSays);
+    }
+
     /// A side was picked, or a change left out: the result made is of
     /// other sides, and is made again where it is what is looked at.
     void sidesChanged()
     {
+        allowMerge();
         if (_settingAll || !_made)
             return;
         dropResult();
@@ -2874,6 +2901,7 @@ private:
     TransactionDiffBar* _diff {nullptr};
     QLabel* _stale {nullptr};
     QPushButton* _merge {nullptr};
+    QString _mergeSays;   ///< what the button says with nothing asked
     QPushButton* _again {nullptr};
     std::vector<std::pair<std::string, QComboBox*>> _sides;
     std::vector<QComboBox*> _conflicts;

@@ -18489,6 +18489,15 @@ merged unless another is picked. A view provider's conflict keeps ours
 (28.6 Q2). A merge asked for by a script with no side for a conflict is
 refused as before (28.6 Q3): the setting is the dialog's.
 
+**Or it is asked (user, 2026-10-12: "Add an option to ask on
+conflict").** `MergeConflictSide` 2: a conflict starts with no side --
+its list says "pick a side" -- and nothing is decided for the user.
+`picks()` leaves it out; "Merge" is disabled and says how many are
+asked ("Merge (2 to pick)"), so the refusal of 28.6 Q3 is never
+reached from the dialog; the result is not made while one is missing,
+and its line says "N conflict(s) have no side" -- it is made when the
+last one is picked. "All ours" and "All theirs" answer them all.
+
 **As built, Gui.** The bar of the merge's preview, and of rows applied,
 has a fourth pair, **ours against the result**.
 
@@ -18561,12 +18570,14 @@ without a side, each side's result, two results two documents; a
 fast-forward; what theirs made, and a fillet that neither side broke
 and the two together do, said and found invalid there and valid here;
 rows applied; not while a transaction is open. The Gui check (+14,
-128): from the merge dialog -- made when the pair is chosen, by the
+128, and 132 with the asking): from the merge dialog -- made when the pair is chosen, by the
 material, nothing of the document moved, the dialog still open, with
 no change selected the object chosen, what theirs made drawn in this
 document's view all new and alone when its line is selected, gone with
 another pair, made once; stale; the side the setting says; a side
-changed and the result made again; its document gone with the dialog.
+changed and the result made again; its document gone with the dialog;
+asked (+4, 132) -- no side to start with and Merge waiting, no result
+meanwhile, both there once it is picked, nothing merged by looking.
 
 **Gates** (`~/.cache/lv-merge/gates-lv.sh`, both freezes): the 20 Gui
 checks clean; Python 3680, OK, frozen and not; gtest entries 947 of 947
