@@ -801,6 +801,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | OPEN; the five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
 | 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views". ANSWERED 15:35: the label seen is '...and the panels that are open', "ellipsed strangely"; the button first commits the relevant settings (for when auto apply is off) and then applies to the views | OPEN; both points answered 15:35 |
 | 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
+| 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | OPEN; the first name read by the note-taker as `SelectionLineThicken`, under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8194,6 +8195,33 @@ once", `General/AutoApplyPreference`) is on, and does nothing when it is
 off; the dialog is not closed by it either way. Nothing of this entry is
 left unanswered.
 
+## 72. New defaults: the selected line's width multiplier 1, the selected point's size multiplier 1.5 (a change request) -- OPEN
+
+**2026-10-12 15:36, the reporter** (sent while entry 70's answers were
+being written down): "New request. change default 'SelectionLinkThicken'
+to 1, and default 'SelectionPointScale' to 1.5"
+
+The note-taker's reading, with the settings READ in the source
+(`src/Gui/ViewParams.py`, about lines 278 to 290), nothing run:
+- 'SelectionLinkThicken': no setting of that name exists. The one meant
+  is taken to be `View/SelectionLineThicken` ("Line width multiplier",
+  the factor a selected line is widened by), default 1.5 today -- to
+  become 1, which is: a selected line is no wider than it was. "Link"
+  for "Line" is the note-taker's reading of a slip, NOT confirmed.
+- `View/SelectionPointScale` ("Point size multiplier", the factor a
+  selected point is enlarged by; at zero the line's factor is used),
+  default 2.5 today -- to become 1.5.
+- Beside them, not named by the reporter and so not asked to change:
+  `SelectionLineMaxWidth` (4.0) and `SelectionPointMaxSize` (6.0), the
+  limits the two factors work under.
+
+NOT said, the note-taker's count:
+a. A changed default reaches only who has not set the value: the
+   reporter's own configuration, and a theme or preset that writes one of
+   the two, keep what they have. Is a theme to be changed with it? (Not
+   looked up whether any theme writes them.)
+b. The browser viewer, if it carries defaults of its own for the two.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -8202,4 +8230,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 71 are of 2026-10-12)
+entries 68 to 72 are of 2026-10-12)
