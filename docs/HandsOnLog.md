@@ -5906,3 +5906,59 @@ show completion percentage in cmd") in its own console; whether that is
 the cause is not shown -- the same hang has happened without it. The
 helper has a window of its own now, and a wait gives up when no log has
 grown for 15 minutes.
+
+## The afternoon of 2026-10-12: entries 68 and 70 to 76, the archive's handles, the Dark borders -- STAGED 17:52 at `22ece75a08`, PUSHED 17:56 (`11070a22ff`)
+
+The reporter tested the stage of 14:04 and reported while this ran; the
+note-taking session passed the entries and the answers on. Evidence:
+`..\dl\handson\2026-10-12\s1` (`g-e-*`, `g-f-*` the tests on the two
+builds, `g-o-*` the two tests that were run against the build before).
+
+| # | State | In one line |
+|---|---|---|
+| 47 | the handles FIXED `1c53d547d2`, staged | `ZipFileReader::openEntry` opened the archive anew for each of the 1652 entries, 1.2 ms an open on this box. A pool of handles: by the load's own log, old and new turn about, reading the archive goes from about 3.8 s (832 property files 2.0 to 2.2 s, 209 shapes 0.5 s, the deferred shapes' opens 1.1 to 1.3 s) to 0.2 s. The second the morning's merge put on the wait is NOT attributed: the transaction log is ruled out (five loads each way, open 14.2 s off and 13.9 s on, the two drains the same to a tenth) |
+| 68 | FIXED `22ece75a08`, staged | reproduced by its test on the build before: with the left dock in use the panel went to x 324, under the tree at 320 to 581, and came back. `OverlayManager::occupied()` skipped a dock that is not see-through at the moment, which the one with the pointer or the focus is |
+| 70 | DONE `22ece75a08`, staged | the check box "... and the panels that are open" and its setting are gone (my choice, left to me); "Apply to live views" beside "Task panels in their views" stores that setting and moves the open panels; `Control.applyPlaceToViews()` |
+| 71 | FIXED `93b08fd472`, staged | reproduced on the build before: Return in the author field closed the dialog. The dialog keeps Return from an edit box; the box stores at once only with "Apply preferences at once" on, a tenth of a second after the key |
+| 72 | DONE `22ece75a08`, staged | defaults 1.0 and 1.5. `selection-on-top-hidden-edges.py` then fails two claims of the highlight colour on the visible edges ("the colour's lean 135 to 205", "90 to 145"): NOT looked into, most likely the thinner line the default now gives |
+| 73 | DONE `22ece75a08`, staged; its test NOT passing | the title buttons' glyphs are drawn light under a dark theme, and an overlay sheet states its own colour (`qproperty-iconColor`); the "in its view" button shows only while the Tasks tab shows a dialog a view owns. The first rule (the button's own palette colour) gave a dim grey and was replaced; the test's first measure took a button's edge for its ground, and the measure written since (the button pictured with its icon and without) has not run |
+| 74 | DONE `7970f5b7d6`, staged | Std_DrawStyle the plain list, its button the active style's icon; Std_DisplayStyle (anti-aliasing, shading, lights; the split cube) right of it in the tool bar, after it in the View menu and in the view's context menu |
+| 75 | DONE `22ece75a08`, staged | `View/CornerCoordSystem` off by default (a profile that stores it keeps it); the cube's axes drawn last, no depth test, both drawing paths: 59, 43 and 72 pixels of red, green and blue over the cube in isometric, none with the axes off |
+| 76 | DONE `22ece75a08`, staged | the docks leave no room (`DockOverlayCheckNaviCube` gone); `View/DockOverlayMoveNaviCube`, on by default: the cube slides along its edge clear of docks and of a task panel over its view, and back |
+| Dark borders | DONE `d25fa8539c`, staged | the reporter, 17:20: "check dark theme border color for various widget's. looks like many are style dark color which is invisible". `GeneralBorderColor` was black on grounds all but black; it takes the check boxes' grey. Pictures: `g-darkborders-staged` |
+| 69 | IN WORK, not in the tree | the two settings, the tree's and the property view's row backgrounds and the task panel's opacity are written in a second working copy (`D:\works\sw\fcad-wt`), not built. Point 1, the reporter 17:07: "overlay has a setting, 'transparent mode' to control this behavior, but right now it seems borken, fix it" -- not looked into yet; a probe is written (`s1\e69probe.py`) |
+
+**What went wrong on the way.** The first build of the batch (17:04)
+died at start-up: entry 73's sync asked for the task view from inside the
+overlay manager's constructor, which the dock window manager calls from
+its own, and each made the other again without end. Found with cdb,
+fixed, rebuilt. The second build's title glyphs were a dim grey; a third
+build. One test of mine left the preferences with `reject()` after
+changing a setting: "Revert changes?" sat on the reporter's screen from
+about 17:21 to 17:28 (the reporter: "beware of the preference dialog popup
+asking revert of not when you exit"); the tests use `close()` now. The
+Python suite on the handle pool's build was stopped by hand at about 84
+percent after 40 minutes, no failure up to there.
+
+**Tests on the staged build (`22ece75a08`), by hand, the box in use:**
+no FAIL in `task-panel-clear-of-docks.py` 21,
+`preferences-enter-in-an-edit-box.py` 12, `task-panel-place.py` 59,
+`navicube-axes-over-the-cube.py` 8, `navicube-clear-of-panels.py` 16,
+`task-panel-kept-any-view.py` 15, `task-panel-combo.py` 66,
+`task-panel-side.py` 61. With failures, none looked into:
+`display-style-menu.py` 37 of 38 (a press on the light handle selected the
+box; it passed one run earlier), `task-panel-in-view.py` 89 of 90 (a click
+back into the other view does not make it the active one),
+`task-panel-overlay.py` 42 of 47 (two of the five want libX11; the others
+ask what is under a point of the screen), `task-panel-owner.py` did not
+start here (`wsclient` is not on the launcher's path),
+`overlay-title-buttons-theme.py` as said. ctest on the handle pool's
+build: 954 of 955, the one a wrong check in the new test. ctest and the
+Python suite on the staged build were started at 17:5x and had not ended
+when this was written (`s1\ctest8.log`, `s1\pytest8.log`).
+
+**Pushed** 17:56 on the reporter's word ("push. continue in next
+session"): origin/LinkVibe at `11070a22ff`, a merge with `a98ad48342`, the
+one commit the remote had gained (App: a temporary document comes
+emptied). That merge is NOT built or tested here; the stage is the commit
+before it.
