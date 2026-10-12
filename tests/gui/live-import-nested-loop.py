@@ -30,6 +30,25 @@ crash needed three heavy tests in parallel to show). The hold makes the
 window's end deterministic; the import still supplies the objects and
 runs its animated fit.
 
+Re-aimed 2026-10-12, after the tree stopped making undo steps of its own
+(docs/TransactionLog.md sec 30.8), which moved both halves of the window:
+  - the tree is brought up to date before every transaction closes
+    (signalBeforeCloseTransaction). An import run from a script writes
+    into an implicit transaction, the fit's command commits that as it
+    starts, and the tree itemised everything there -- ahead of the
+    command's guard, with nothing left for a tick inside a loop. The
+    tick still lands inside the guard when nothing closes on the way:
+    the import run with a transaction already open, as a script's
+    openTransaction() around it leaves it. So the import here runs
+    inside a transaction of the test's own;
+  - an item new to the tree is no longer given a rank because its rank
+    is below the highest. The document ranks an object as it is added,
+    so the tree writes none for what an import made. It still writes
+    one for an object that carries no rank at all (TreeRank 0, an
+    object of a file older than the ranks) in a document that has
+    ranks, and that write is judged by the guard exactly as before. So
+    the imported objects are left rank-less before the command runs.
+
 What is asserted, so that the test cannot pass without having reached
 the mechanism:
   - the window was open: the document carried LiveImport when the
@@ -51,7 +70,9 @@ the mechanism:
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt. Proven by
 reverting the TreeRank exemption: the run then reports the refusal and
-dies on the next tick.
+dies on the next tick. (That was the form before the re-aim; the
+re-aimed one was not run against the exemption reverted, where its own
+write of the ranks would be the first thing refused.)
 """
 import os
 import time
@@ -85,6 +106,7 @@ state = {
     "live_at_start": None,
     "live_at_end": None,
     "held": False,
+    "txn": False,
     "import_returned": False,
     "items_before": None,
     "items_after": None,
@@ -183,6 +205,20 @@ def fire():
         QtCore.QTimer.singleShot(10, fire)
         return
     state["live_at_start"] = doc.LiveImport
+    # The one rank the tree still writes for an item new to it is the
+    # rank of an object that has none (docs/TransactionLog.md sec 30.8),
+    # and what an import adds is ranked by the document. TreeRank is the
+    # property the guard lets through, so this write is allowed where a
+    # fit's guard already stands; a refusal here is the exemption gone.
+    try:
+        for obj in doc.Objects:
+            if obj.Name != SEED:
+                obj.TreeRank = 0
+    except Exception:
+        check("the imported objects were left without a rank", False,
+              traceback.format_exc())
+        finish()
+        return
     labels = tree_labels(doc)
     state["items_before"] = len(labels) if labels is not None else -1
     state["ranks_before"] = ranks(doc)
@@ -215,8 +251,13 @@ def settle():
 
 def release_hold():
     """Gives the live-import hold back once both the import and the
-    command have returned; the tick that matters has happened by then."""
+    command have returned; the tick that matters has happened by then.
+    The transaction around the import closes with it, and not sooner:
+    its close is what brings the tree up to date."""
     doc = state["doc"]
+    if state["txn"] and state["import_returned"]:
+        doc.commitTransaction()
+        state["txn"] = False
     if state["held"] and state["import_returned"] and not doc.Restoring:
         FreeCADGui.setLiveImport(doc, False)
         state["held"] = False
@@ -322,6 +363,12 @@ def start_import():
         # tick (that is why the crash needed load to show).
         FreeCADGui.setLiveImport(doc, True)
         state["held"] = True
+        # Open across the import, so that the fit's command finds a
+        # transaction active and commits nothing as it starts: a commit
+        # is where the tree itemises whatever is pending, and here that
+        # has to be left to its tick (see the module docstring).
+        doc.openTransaction("Import (test)")
+        state["txn"] = True
         ImportGui.insert(GLB, doc.Name)
         state["import_returned"] = True
         note("imported %d objects, LiveImport=%s" % (len(doc.Objects), doc.LiveImport))

@@ -34,6 +34,7 @@ import time
 import traceback
 import zipfile
 
+import ArchiveMembers
 import FreeCAD
 import FreeCADGui
 import Part
@@ -96,8 +97,9 @@ def patch_gui_xml(path, name, values):
     """Rewrite the saved Deviation / AngularDeflection of one view
     provider -- a file value below the constraint the property would take
     from a setter."""
-    with zipfile.ZipFile(path) as z:
-        entries = {i.filename: z.read(i.filename) for i in z.infolist()}
+    # Not zipfile's own read: a save writes the history too, whose blobs
+    # may be zstd members (src/Mod/Test/ArchiveMembers.py)
+    entries = {i.filename: data for i, data in ArchiveMembers.members(path)}
     xml = entries["GuiDocument.xml"].decode("utf-8")
     start = xml.index('<ViewProvider name="%s"' % name)
     end = xml.index("</ViewProvider>", start)

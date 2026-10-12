@@ -107,7 +107,8 @@ class FilletCornerTest(unittest.TestCase):
             box = doc.addObject("Part::Box", "Box")
             doc.recompute()
             vertex, edges = cornerOf(box.Shape, App.Vector(10, 10, 10))
-            vname = nameOf(box.Shape, vertex)
+            # a box names its elements by role (docs/PrimitiveNames.md)
+            vname = box.Shape.getElementMappedName(nameOf(box.Shape, vertex))
             plain = box.Shape.makeFillet(1, edges)
             shape = box.Shape.makeFillet(1, edges, corners={vertex: 2})
             # the patch is generated from the vertex, as the sphere corner

@@ -168,13 +168,17 @@ def run():
 
         # Files written before the face joined AutoColor: the face colour was
         # saved. A carries the default, B its own orange; both with white
-        # edges, as AutoColor's own old-file test wants.
+        # edges, as AutoColor's own old-file test wants. At schema 4, where
+        # the colours are recorded in the view file with their saved status
+        # as they were then; at 5 they are names over the object's looks and
+        # are not written there.
         va.AutoColor = False
         vb.AutoColor = False
         va.ShapeColor, va.Transparency = DEFAULT
         for vo in (va, vb):
             vo.LineColor = (1.0, 1.0, 1.0)
             vo.PointColor = (1.0, 1.0, 1.0)
+        doc.SaveSchemaVersion = 4
         doc.save()
         settle(0.3)
         for tag, fn in (("before AutoColor", strip_auto_color),

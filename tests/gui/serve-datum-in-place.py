@@ -258,7 +258,7 @@ def build():
         sketch.addGeometry(Part.LineSegment(V(-5, 0, 0), V(5, 0, 0)), False)
         sketch.addGeometry(Part.LineSegment(V(-5, 5, 0), V(5, 5, 0)), False)
         doc.recompute()
-        state["undo0"] = doc.UndoCount
+        state["undo0"] = wsclient.client_undos(doc)
 
         port = free_port()
         ok = FreeCADGui.serveDocument(doc, port)
@@ -282,17 +282,18 @@ def poll():
     sketch = state["doc"].getObject(OBJ)
     if client.phase == "started" and "started" not in state:
         state["started"] = True
-        state["undo0"] = state["doc"].UndoCount
+        # the client's own steps: undo is each author's (wsclient.client_undos)
+        state["undo0"] = wsclient.client_undos(state["doc"])
         client.sampled.set()
     if client.phase == "entered" and "entered" not in state:
         state["entered"] = (sketch.ConstraintCount,
                             [round(c.Value, 6) for c in sketch.Constraints],
-                            state["doc"].UndoCount - state["undo0"],
+                            wsclient.client_undos(state["doc"]) - state["undo0"],
                             [e[1] for e in sketch.ExpressionEngine])
         client.sampled.set()
     if client.phase == "escaped" and "escaped" not in state:
         state["escaped"] = (sketch.ConstraintCount,
-                            state["doc"].UndoCount - state["undo0"])
+                            wsclient.client_undos(state["doc"]) - state["undo0"])
         client.sampled.set()
     if client.is_alive():
         if clock() - state["t0"] > CLIENT_WAIT_S:

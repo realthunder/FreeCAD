@@ -11,7 +11,11 @@ never changed from white.
 
 The old file is made by stripping every AutoColor entry from
 GuiDocument.xml, the shared defaults block included: a value the fork's
-save elided comes back from there, and must not read as an old file.
+save elided comes back from there, and must not read as an old file. It
+is saved at schema 4 first: what tells an old file is the colours recorded
+in GuiDocument.xml with the status they were saved under, and at schema 5
+they are names over the object's looks and are not written there
+(App::Property::Legacy), which is a file no build before AutoColor wrote.
 """
 import os
 import ArchiveMembers
@@ -183,6 +187,7 @@ def run():
         va.AutoColor = False
         va.LineColor = WHITE
         va.PointColor = WHITE
+        doc.SaveSchemaVersion = 4  # the colours recorded in the view file, as then
         doc.save()
         settle(0.3)
         old = os.path.join(OUT, "old.FCStd")

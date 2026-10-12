@@ -28,6 +28,7 @@ import tempfile
 import unittest
 import zipfile
 
+import ArchiveMembers
 import FreeCAD
 import Part
 
@@ -160,9 +161,10 @@ def _toOldCorners(name, old, vertex):
         r'(<Property name="Base" type="App::PropertyLinkSub"[^>]*>\s*'
         r'<LinkSub value="Box" count=")'
     )
-    with zipfile.ZipFile(name) as zin, zipfile.ZipFile(old, "w", zipfile.ZIP_DEFLATED) as zout:
-        for item in zin.infolist():
-            data = zin.read(item.filename)
+    # the blob entries of a saved file may be zstd members, which zipfile
+    # reads only from Python 3.14 on
+    with zipfile.ZipFile(old, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item, data in ArchiveMembers.members(name):
             if item.filename == "Document.xml":
                 xml, n = re.subn(corners, r"\1\2", data.decode("utf-8"), flags=re.S)
                 assert n == 1

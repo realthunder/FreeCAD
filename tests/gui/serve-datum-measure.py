@@ -202,7 +202,7 @@ def build():
         V = FreeCAD.Vector
         sketch.addGeometry(Part.Circle(V(*CENTRE, 0), V(0, 0, 1), RADIUS), False)
         doc.recompute()
-        state["undo0"] = doc.UndoCount
+        state["undo0"] = wsclient.client_undos(doc)
 
         port = free_port()
         ok = FreeCADGui.serveDocument(doc, port)
@@ -226,11 +226,12 @@ def poll():
     sketch = state["doc"].getObject(OBJ)
     if client.phase == "started" and "started" not in state:
         state["started"] = True
-        state["undo0"] = state["doc"].UndoCount
+        # the client's own steps: undo is each author's (wsclient.client_undos)
+        state["undo0"] = wsclient.client_undos(state["doc"])
         client.sampled.set()
     if client.phase == "entered" and "entered" not in state:
         state["entered"] = ([(c.Type, round(c.Value, 6)) for c in sketch.Constraints],
-                            state["doc"].UndoCount - state["undo0"],
+                            wsclient.client_undos(state["doc"]) - state["undo0"],
                             round(sketch.Geometry[0].Radius, 6))
         client.sampled.set()
     if client.is_alive():

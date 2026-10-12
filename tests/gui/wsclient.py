@@ -40,6 +40,21 @@ CAMERA_SIZE = 6 + 13 * 4
 PICK_SIZE = 2 + 6 * 4
 
 
+def client_undos(doc, name=IDENTITY):
+    """How many undo steps the test's client has in `doc`.
+
+    Undo is each author's own (docs/TransactionLog.md sec 30.10): UndoCount
+    answers for whoever acts, and a test's own script runs as the desktop
+    user, whose steps a client's are not among. So the count of what a
+    client did is read as that client -- by user, whichever its connection.
+    Nothing is written."""
+    doc.pushTransactionActor("verified", name)
+    try:
+        return doc.UndoCount
+    finally:
+        doc.popTransactionActor()
+
+
 def invitation(token, name):
     """The door for a browser page that edits: its grant list.
 
