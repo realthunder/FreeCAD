@@ -799,6 +799,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, not pushed; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
 | 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | OPEN; the five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
+| 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views" | OPEN; two points of the note-taker's under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8066,6 +8067,43 @@ Where it touches, READ in the source, nothing run:
   overlay sheet); what this entry asks changes that look, and the four
   choices of entry 30 still with the reporter are about the same sheets.
 
+## 70. The UI preference page: "Apply the setting above to every view at once" has a wrong label and should be a button -- OPEN
+
+**2026-10-12 15:25, the reporter:** "new defect. the UI preference page, the
+setting label is wrong for 'Apply the setting above to every view at once'.
+make it a button instead, with label some thing like 'apply to live views'"
+
+The note-taker's reading:
+- On the UI page of the preferences, the row under "Task panels in their
+  views" is shown as a check box with a label that is wrong. The
+  reporter names the row by its tool tip's first words.
+- Asked: a BUTTON in its place, labelled something like "Apply to live
+  views" -- an action done once when pressed, not a state kept.
+
+Which row it is, READ in the source, nothing run:
+- `View/TaskPanelInViewAll`, a boolean, off by default
+  (`src/Gui/ViewParams.py`, about line 388). Its TITLE -- the label the
+  page shows -- is "... and the panels that are open"; its tool tip is
+  "Apply the setting above to every view at once: the panels that are
+  open move, and a view's own choice of place is given up."
+- It follows `View/TaskPanelInView` ("Task panels in their views") in
+  the page's list (`src/Gui/PreferencePages/DlgSettingsUI.py`, line 55).
+- So the label reads as the tail of the row above and says nothing by
+  itself; that is the note-taker's guess at what "wrong" means, NOT the
+  reporter's words.
+
+NOT said, the note-taker's count:
+a. What the reporter SEES as the label: "... and the panels that are
+   open", or something else (cut off, or another row's text)? If it is
+   something else there is a second defect here.
+b. As a button it holds no state: does the stored setting go away, the
+   press acting on the views open at that moment and nothing more? And
+   does the press act at once, or when the dialog's OK or Apply is
+   pressed? ("apply to live views" reads as: at once.)
+
+Near it: entry 63 has a button "Apply all" for the display settings of a
+view; the same word for the same kind of act may be wanted. Not asked.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -8074,4 +8112,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 and 69 are of 2026-10-12)
+entries 68 to 70 are of 2026-10-12)
