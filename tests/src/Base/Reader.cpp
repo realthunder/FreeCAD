@@ -13,6 +13,11 @@
 #include <boost/filesystem.hpp>
 #include <fmt/format.h>
 #include <fstream>
+#include <iterator>
+#include <memory>
+#include <string>
+#include <zipios++/zipinputstream.h>
+#include <zipios++/zipoutputstream.h>
 
 namespace fs = boost::filesystem;
 
@@ -294,4 +299,126 @@ TEST_F(ReaderTest, charStreamBase64Encoded)
     // Assert
     // Conversion done using https://www.base64encode.org for testing purposes
     EXPECT_EQ(std::string("FreeCAD rocks! 🪨🪨🪨"), std::string(buffer.data()));
+}
+
+// The archive reader hands an entry stream a file handle that an earlier
+// stream is done with (docs/HandsOnLog.md, entry 47). What that must not
+// change: a stream reads its own entry whatever else is open, in any order,
+// and after the reader that opened it is gone.
+class ZipFileReaderTest: public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        _archive = (fs::path(_tempDir.string()) / "entries.zip").string();
+        zipios::ZipOutputStream zip(_archive);
+        for (int i = 0; i < count; ++i) {
+            zip.putNextEntry(name(i));
+            const std::string data = content(i);
+            zip.write(data.data(), static_cast<std::streamsize>(data.size()));
+        }
+        zip.close();
+    }
+
+    static std::string name(int i)
+    {
+        return fmt::format("entry{}.txt", i);
+    }
+
+    /// Long enough to be read in several turns, and different for every entry.
+    static std::string content(int i)
+    {
+        std::string data;
+        for (int line = 0; line < 400 + 7 * i; ++line) {
+            data += fmt::format("entry {} line {}\n", i, line);
+        }
+        return data;
+    }
+
+    static std::string rest(std::istream& in)
+    {
+        return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    }
+
+    static constexpr int count {12};
+    tests::TempDirectory _tempDir {"unit_test_ZipFileReader"};
+    std::string _archive;
+};
+
+TEST_F(ZipFileReaderTest, everyEntryOneAfterAnother)
+{
+    Base::ZipFileReader reader(_archive);
+
+    for (int turn = 0; turn < 3; ++turn) {
+        for (int i = count - 1; i >= 0; --i) {
+            auto stream = reader.openEntry(name(i));
+            ASSERT_TRUE(stream);
+            EXPECT_EQ(rest(*stream), content(i)) << name(i) << ", turn " << turn;
+        }
+    }
+    EXPECT_FALSE(reader.openEntry("no such entry"));
+}
+
+TEST_F(ZipFileReaderTest, streamsAliveTogetherReadTheirOwnEntry)
+{
+    Base::ZipFileReader reader(_archive);
+    auto a = reader.openEntry(name(3));
+    auto b = reader.openEntry(name(7));
+    ASSERT_TRUE(a);
+    ASSERT_TRUE(b);
+
+    // A line of each in turn: either would lose its place on a shared handle.
+    std::string gotA;
+    std::string gotB;
+    std::string line;
+    bool more = true;
+    while (more) {
+        more = false;
+        if (std::getline(*a, line)) {
+            gotA += line + "\n";
+            more = true;
+        }
+        if (std::getline(*b, line)) {
+            gotB += line + "\n";
+            more = true;
+        }
+    }
+
+    EXPECT_EQ(gotA, content(3));
+    EXPECT_EQ(gotB, content(7));
+}
+
+TEST_F(ZipFileReaderTest, aStreamLeftHalfReadDoesNotSpoilTheNext)
+{
+    Base::ZipFileReader reader(_archive);
+    {
+        auto half = reader.openEntry(name(5));
+        ASSERT_TRUE(half);
+        std::string line;
+        std::getline(*half, line);
+        EXPECT_EQ(line, "entry 5 line 0");
+    }
+    {
+        auto past = reader.openEntry(name(count - 1));
+        ASSERT_TRUE(past);
+        EXPECT_EQ(rest(*past), content(count - 1));
+        // read to the end and past it: the handle goes back at the end of the entry
+        EXPECT_EQ(past->peek(), std::char_traits<char>::eof());
+    }
+
+    auto next = reader.openEntry(name(0));
+    ASSERT_TRUE(next);
+    EXPECT_EQ(rest(*next), content(0));
+}
+
+TEST_F(ZipFileReaderTest, aStreamOutlivesItsReader)
+{
+    std::unique_ptr<std::istream> stream;
+    {
+        Base::ZipFileReader reader(_archive);
+        stream = reader.openEntry(name(9));
+    }
+
+    ASSERT_TRUE(stream);
+    EXPECT_EQ(rest(*stream), content(9));
 }
