@@ -70,10 +70,13 @@ def painted(tag):
         for x in range(img.width()):
             p = img.pixel(x, y)
             r, g, b = (p >> 16) & 255, (p >> 8) & 255, p & 255
-            # The dimension by its full red. The hatch by hue: its thin
-            # lines are antialiased pale -- and so are the colour fringes
-            # of a label's text, a few dozen pixels that BLUE_FLOOR is for.
-            if r > 180 and g < 90 and b < 90:
+            # Both by hue. The hatch's thin lines are antialiased pale --
+            # and so are the colour fringes of a label's text, a few dozen
+            # pixels that BLUE_FLOOR is for. The dimension's are as thin:
+            # on xvfb's 1280x1024 its line is half a pixel wide over the
+            # hatch and never a full red, which left 20 pixels of arrow
+            # heads and digits where a larger screen has hundreds.
+            if r > g + 40 and r > b + 40:
                 red += 1
             elif b > r + 40 and b > g + 40:
                 blue += 1

@@ -8,7 +8,7 @@ Claims, on an orthographic view whose height is set here:
 
   - with both sides in one unit, the unit appears once, at the end;
   - both numbers are still there, and they are the view's;
-  - with the sides in different units (1.x m wide, 700 mm high) each
+  - with the sides in different units (12 m wide, under 10 m high) each
     keeps its own.
 
 Scored against the tree before the change: see the commit message.
@@ -79,7 +79,11 @@ def run():
                   abs(height - 80.0) < 0.01 and abs(width - 80.0 * aspect) < 0.5,
                   (width, height, aspect))
 
-        text = text_at(7000.0)
+        # 12 m across, over the ten metres where the schema goes from mm to
+        # m, and the height under it: a fixed 7000 mm is 15 m across in a view
+        # 2.2 times as wide as high and 9.9 m, still mm, in one 1.41 times
+        size = view.getSize()
+        text = text_at(12000.0 * float(size[1]) / float(size[0]))
         match = re.fullmatch(r"([0-9.,]+) (\S+) x ([0-9.,]+) (\S+)", text)
         check("with the sides in different units each keeps its own",
               match is not None and match.group(2) == "m" and match.group(4) == "mm",
