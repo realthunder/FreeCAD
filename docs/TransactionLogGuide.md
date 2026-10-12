@@ -379,7 +379,7 @@ The list has one line per change the other branch made:
 
 | Change | Meaning | What you do |
 |---|---|---|
-| **conflict** (bold, first) | Both branches changed it, differently. | Pick a side in the **Takes** column: `ours` or `theirs`. |
+| **conflict** (bold, first) | Both branches changed it, differently. | Pick a side in the **Takes** column: `ours` or `theirs`. It starts on `ours`; the setting `MergeConflictSide` (Preferences/Document, 1 for theirs) makes it start on `theirs`. |
 | **take** | Only the other branch changed it; it goes in. | Untick it to leave it out. |
 | **merge** | Both changed it, and it holds many things (a sketch's constraints, a sheet's cells); the two are combined. | Untick to leave theirs out. |
 | **derived** (grey) | A shape their recompute made. Not merged: the result is recomputed. | Nothing. |
@@ -399,6 +399,35 @@ offers `base against ours` and `base against theirs` too. Select a line of
 the list to see that one change over its object:
 
 ![One change of the merge selected](images/transaction-log/12-merge-one-change.png)
+
+### What the merge would make
+
+`ours against theirs` shows the other branch, which is not what you get: a
+merge keeps what you changed and adds what they changed. The last entry of
+the list, **ours against the result**, shows that. Here this branch made
+the box taller and the other made it longer and added a ball. Against
+theirs, the height you added shows as removed:
+
+![Ours against theirs](images/transaction-log/12-merge-result-theirs.png)
+
+Against the result it is kept, the extra length is added, and the ball is
+there as new:
+
+![Ours against the result](images/transaction-log/12-merge-result.png)
+
+The result is worked out when you choose that entry, with the sides picked
+as they are at that moment, and again when you pick another side or untick
+a change. It is made in a hidden copy of the document, so nothing here
+changes: no undo step, and a step you had undone can still be redone. On a
+large document expect to wait about as long as opening it takes.
+
+The status line also says what the picture cannot: how many objects the
+merge makes or removes, and **which objects fail to compute in the result**.
+Two changes that each work alone can break a feature together; this tells
+you before you merge.
+
+When the other branch is simply ahead of this one (a fast-forward), the
+result is that branch, and the line says so.
 
 The preview **does not block the rest of the application**: turn the view,
 pick objects, hide things, while it is open.

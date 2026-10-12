@@ -18416,6 +18416,165 @@ with one more, the same change by its faces.
 
 **Next (32.4):** step 6 goes on -- the merged result, the stream.
 
+### 32.17 Step 6, third part: what the merge would make (2026-10-12)
+
+**Asked for since 32.2** ("what the merge would *make* -- that is a merge
+and a recompute in a document of its own, then a diff against it"), and
+last of Q3. Ours against theirs is not it: theirs lacks what ours did
+since the base, and shows it as removed.
+
+**Where the merge is made: three ways, and the one ruled.**
+
+| | How | What it costs |
+| --- | --- | --- |
+| A | In the document: merge, read the shapes, undo, roll back (31.23) | The redo steps go (`_clearMyRedos`); the view jumps twice; a served client sees a merge and its undo; a sent file held for the branch is let go (30.29) |
+| B | On a branch made for it, in a second document with no view, the branch deleted after | A "Delete branch" record each time, theirs' head version named "merged into ...", sent files let go, the branch lists of everyone redrawn: a special case in the log for each |
+| C | In a document with no log: ours' tip read as a version is read to compare against (27.60), the merge's write part applied to it, recomputed, closed with the dialog | The write part of `_merge` takes the document it writes to; the overlay reads a value from another open document |
+
+**Ruled (user, 2026-10-12): "C".**
+
+**As built, App.** `Document::previewMergeResult(branch, picks, fallback,
+version)` and `previewPickResult(rows, picks, fallback)`; Python
+`previewTransactionMergeResult()`, `previewTransactionPickResult()`.
+They are `_merge()` with a `MergeOutcome` to fill:
+
+- The plan, the sides, what goes in and every value read are the
+  merge's own code, on this document and its log: what is refused,
+  what is left out and what is merged by what it holds are the same by
+  construction, and not by a second copy of the rules.
+- Then the document as it is is read into one of its own.
+  `_leaveBranch()` takes the tip as a version where it is none --
+  unnamed, and the first thing a merge that writes does anyway
+  (31.21); rows applied take none, and their preview does -- and
+  `_openReadVersion()` reads it as `_readVersion()` does: joined to the file's history, blobs by hash, shapes already
+  parsed shared, no log, no view, undo off. It is `_readVersion()` with
+  the document left open; that one is now this and a closer. Its
+  objects have the ids this document's have.
+- The write part -- objects made and removed, dynamic properties,
+  values, placements kept (31.26), element references followed
+  (31.22), the recompute -- is the merge's, with the document it
+  writes to named: `into`, this one for a merge. What a merge does to
+  this document and nobody else stays outside: the rollback of an
+  undone merge, the transaction, the move along the log of a
+  fast-forward, the row and its annotation, the version named, the
+  sent files let go.
+- No transaction says whether anything was written there, so the write
+  part counts it: nothing written, nothing computed, as in a merge.
+
+`MergeOutcome`: `document`, the caller's to close; `theirs`, a
+fast-forward -- the rows are taken as they are and what the merge makes
+is the other branch, so none is made; `values`, the geometry
+(`GeoFeature::getPropertyOfGeometry`) of every object the merge made,
+wrote the geometry of, or computed -- which reaches past the plan's
+lines to what is made of what changed -- each with whether this
+document has the object; `removed`; `failed`, the objects whose
+recompute failed there and had not before; `unresolved`, where a
+conflict has no side and there is no document, as there is no merge.
+Refused while a transaction is open: the tip cannot be taken as a
+version then, and an older one would be shown as the document.
+
+**What it leaves in the log:** one `snapshot` record, the tip's
+version, the first time; asked again with nothing done since, nothing.
+No step, no redo lost, no branch, no row of a merge. Checked by the
+tests below, row by row.
+
+**A conflict's side is a setting (user, 2026-10-12: "create a setting
+for conflict resolve, default to ours").** I had asked whether the
+result should wait until every conflict has a side; in the dialog every
+conflict has one from the start, so what was open was which.
+`MergeConflictSide` (Preferences/Document; 0 ours, the default, 1
+theirs) is the side a conflict starts on in the preview of a merge and
+of rows applied -- and so what the result is shown with and what is
+merged unless another is picked. A view provider's conflict keeps ours
+(28.6 Q2). A merge asked for by a script with no side for a conflict is
+refused as before (28.6 Q3): the setting is the dialog's.
+
+**As built, Gui.** The bar of the merge's preview, and of rows applied,
+has a fourth pair, **ours against the result**.
+
+- *Made when asked for:* choosing the pair makes it, with the sides as
+  they are picked, under a wait cursor. A side picked or a change
+  unticked after that drops it, and makes it again where it is what is
+  looked at; "All ours" and "All theirs" make it once. Stale (32.15),
+  it is closed and none is made: "the document has changed: preview
+  again".
+- *How a value of it is read:* a ref of the form `doc:` and a
+  document's name is the value the object of that id has in that open
+  document (`ViewProviderDocumentObject::showValueDiff`, Part's
+  `ViewProviderPartExt`). Such a shape is known by being that shape, as
+  the object's own is, and not by the ref: each result's document has a
+  name no other had (`<name>_merged<n>`).
+- *What is listed:* with no change selected, the changes' objects and,
+  after them, every object the result computed that no line names.
+- *What theirs made* (left since 32.10, "counted only") is drawn: the
+  result's document has a view provider of it, though no view, and
+  that goes into this document's 3D views where theirs left the object
+  shown -- hidden as a picture, not selectable, and asked to show its
+  geometry against no value: all of it new. The bar holds it as a
+  value of another document's object (`Value::document`), shown
+  whatever is chosen; the line that makes it, selected, shows it
+  alone. It leaves the views before its document closes, whoever
+  closes that.
+- *Said after what was found:* "N object(s) made by the merge", "N
+  object(s) are removed", "N object(s) fail to compute in the result:
+  names" -- two changes that each compute and do not together, known
+  before the merge -- "a fast-forward: the result is theirs", "the
+  result is the document as it is", or why there is none.
+
+**Measured** (`~/.cache/lv-merge/mr/scale/scale.py`, the scanner model
+of 27.52: 615 objects, a 5.5 MB file that opens in 2.7 s; a pad made
+longer on one branch, another on the other): the preview 0.03 s; the
+result 3.2 s the first time, the tip's version taken, and 2.1 s again,
+86 values; closing it 0.05 s; the merge itself 1.0 s, and the volume of
+the body's tip the same to the last digit. So a result costs the merge
+and a read of the document, on the main thread.
+
+**Pictures** (`~/.cache/lv-merge/mr/pic1/pic.py`, under `xvfb-run`; the
+two in the guide): ours taller, theirs longer with a ball added. Against
+theirs the height is red, removed; against the result it is grey, kept,
+the length cyan and the ball cyan.
+
+**Left.**
+
+- *On the main thread, and waited for.* A recompute of a document is
+  not handed to a thread; this is a use for the kernel out of process
+  (docs/ComputeBoundaries.md).
+- *Made again whole when a side changes*: a read of the document each
+  time. The document could be kept and the sides written over it.
+- *Closing the result's document clears the selection*, as closing any
+  document does (`Gui::Application::slotDeleteDocument`).
+- *What the merge removes* is counted, and not drawn as gone.
+- *Only geometry.* A length that would differ is not listed: the
+  dialog's lines say it.
+- *A view opened while the result is shown* does not have what theirs
+  made.
+- *The file's string table grows by what the result's recompute
+  named*: the result's document shares it (27.60), and what nothing
+  holds goes at the next compaction (27.47). Not measured.
+- The browser: the stream, next.
+
+**Tests.** `parttests.ShapeDiffTest.MergedResultTest` (+6): the result
+is what the merge then makes, by volume and by every element name, with
+a step undone before it still to be redone, the rows and the branches
+as they were and no row more the second time; a conflict -- none
+without a side, each side's result, two results two documents; a
+fast-forward; what theirs made, and a fillet that neither side broke
+and the two together do, said and found invalid there and valid here;
+rows applied; not while a transaction is open. The Gui check (+14,
+128): from the merge dialog -- made when the pair is chosen, by the
+material, nothing of the document moved, the dialog still open, with
+no change selected the object chosen, what theirs made drawn in this
+document's view all new and alone when its line is selected, gone with
+another pair, made once; stale; the side the setting says; a side
+changed and the result made again; its document gone with the dialog.
+
+**Gates** (`~/.cache/lv-merge/gates-lv.sh`, both freezes): the 20 Gui
+checks clean; Python 3680, OK, frozen and not; gtest entries 947 of 947
+both; driven 271 of 273, the two the golden raster pictures that wait
+for their references (33.14).
+
+**Next (32.4):** the stream.
+
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
 `origin/Transaction` at `09c96678f1` was merged into `LinkVibe` on the
