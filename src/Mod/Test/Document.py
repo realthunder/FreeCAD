@@ -8522,6 +8522,19 @@ class TransactionBranchCases(unittest.TestCase):
         )
         self.assertEqual(at(doc), theirs)
 
+    def testACopysGeometryComesUnderThisFilesIdsWithNamesIndexed(self):
+        # Sec 33.7: the same with names indexed, where `g5;SKT` is the
+        # string `g;SKT` and the 5 is in the reference to it -- so what
+        # changes when this file numbers the line otherwise is the
+        # reference's number, and not a string.
+        param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        was = param.GetBool("HashIndexedName", False)
+        param.SetBool("HashIndexedName", True)
+        try:
+            self.testACopysGeometryComesUnderThisFilesIds()
+        finally:
+            param.SetBool("HashIndexedName", was)
+
     def testGeometryACopyTookComesBackUnderItsOwnId(self):
         # Sec 31.15: the round trip. A copy that took a line of this file's
         # holds it under a number of its own -- its `g6` is this file's
