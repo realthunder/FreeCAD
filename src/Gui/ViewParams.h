@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:1084)
+// Auto generated code (Gui/ViewParams.py:1082)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -970,12 +970,10 @@ public:
     ///
     /// Show a task panel inside the view it belongs to, where it stays
     /// whichever view is active. When off, task panels are shown in the
-    /// Tasks tab of the combo view, which follows the active view. This is
-    /// for the panels opened from now on: one that is open stays where it
-    /// is, and a view keeps the place chosen with the button on its own
-    /// panel's title bar. "Apply to live views", beside it on the
-    /// preference page, moves the panels that are open as well and has
-    /// every view give its own choice of place up.
+    /// Tasks tab of the combo view, which follows the active view. A panel
+    /// that is open stays where it is, and a view keeps the place chosen
+    /// on its own panel's title bar, until "Apply to live views" on the
+    /// preference page moves them all.
     static const bool & getTaskPanelInView();
     static const bool & defaultTaskPanelInView();
     static void removeTaskPanelInView();
@@ -3469,7 +3467,7 @@ public:
     static const char *docHeadlightRotationW();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:1090)
+    // Auto generated code (Gui/ViewParams.py:1088)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -3500,7 +3498,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:1103)
+// Auto generated code (Gui/ViewParams.py:1101)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

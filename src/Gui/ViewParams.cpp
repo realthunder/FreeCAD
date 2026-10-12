@@ -2258,12 +2258,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Task panels in their views")
         .setDoc("Show a task panel inside the view it belongs to, where it stays\n"
 "whichever view is active. When off, task panels are shown in the\n"
-"Tasks tab of the combo view, which follows the active view. This is\n"
-"for the panels opened from now on: one that is open stays where it\n"
-"is, and a view keeps the place chosen with the button on its own\n"
-"panel's title bar. \"Apply to live views\", beside it on the\n"
-"preference page, moves the panels that are open as well and has\n"
-"every view give its own choice of place up.")
+"Tasks tab of the combo view, which follows the active view. A panel\n"
+"that is open stays where it is, and a view keeps the place chosen\n"
+"on its own panel's title bar, until \"Apply to live views\" on the\n"
+"preference page moves them all.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DraggerScale", "DraggerScale", App::ParamInfo::Float, 0.03)
         .setTitle("Transform dragger scale")
@@ -5103,12 +5101,10 @@ const char *ViewParams::docTaskPanelInView() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Show a task panel inside the view it belongs to, where it stays\n"
 "whichever view is active. When off, task panels are shown in the\n"
-"Tasks tab of the combo view, which follows the active view. This is\n"
-"for the panels opened from now on: one that is open stays where it\n"
-"is, and a view keeps the place chosen with the button on its own\n"
-"panel's title bar. \"Apply to live views\", beside it on the\n"
-"preference page, moves the panels that are open as well and has\n"
-"every view give its own choice of place up.");
+"Tasks tab of the combo view, which follows the active view. A panel\n"
+"that is open stays where it is, and a view keeps the place chosen\n"
+"on its own panel's title bar, until \"Apply to live views\" on the\n"
+"preference page moves them all.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -10685,7 +10681,7 @@ void ViewParams::removeHeadlightRotationW() {
     instance()->handle->RemoveFloat("HeadlightRotationW");
 }
 
-// Auto generated code (Gui/ViewParams.py:1119)
+// Auto generated code (Gui/ViewParams.py:1117)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -10730,7 +10726,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:1127)
+// Auto generated code (Gui/ViewParams.py:1125)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -10743,7 +10739,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:1137)
+// Auto generated code (Gui/ViewParams.py:1135)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -10756,13 +10752,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:1147)
+// Auto generated code (Gui/ViewParams.py:1145)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:1154)
+// Auto generated code (Gui/ViewParams.py:1152)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -10770,7 +10766,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:1163)
+// Auto generated code (Gui/ViewParams.py:1161)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -10782,7 +10778,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:1176)
+// Auto generated code (Gui/ViewParams.py:1174)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

@@ -381,12 +381,10 @@ Params = [
         title='Task panels in their views', doc=
         "Show a task panel inside the view it belongs to, where it stays\n"
         "whichever view is active. When off, task panels are shown in the\n"
-        "Tasks tab of the combo view, which follows the active view. This is\n"
-        "for the panels opened from now on: one that is open stays where it\n"
-        "is, and a view keeps the place chosen with the button on its own\n"
-        "panel's title bar. \"Apply to live views\", beside it on the\n"
-        "preference page, moves the panels that are open as well and has\n"
-        "every view give its own choice of place up."),
+        "Tasks tab of the combo view, which follows the active view. A panel\n"
+        "that is open stays where it is, and a view keeps the place chosen\n"
+        "on its own panel's title bar, until \"Apply to live views\" on the\n"
+        "preference page moves them all."),
     ParamFloat('DraggerScale', 0.03,
         title='Transform dragger scale',
         doc="Size of the transform dragger relative to the viewport."),
