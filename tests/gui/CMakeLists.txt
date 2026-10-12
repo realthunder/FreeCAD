@@ -2072,3 +2072,11 @@ fc_add_gui_test(GuiPasteFollowsTheClipboard_tests_run
 fc_add_gui_test(GuiCloseDuringViewProviderDrain_tests_run
                 close-during-view-provider-drain.py
                 --timeout 300)
+
+# Return in an edit box of the preferences commits that setting, when
+# settings are applied at once, and never closes the dialog: a line edit and
+# a spin box leave the key unaccepted and the dialog pressed OK for it
+# (docs/HandsOnQueue.md entry 71). Return on the OK button still closes.
+fc_add_gui_test(GuiPreferencesEnterInAnEditBox_tests_run
+                preferences-enter-in-an-edit-box.py
+                --timeout 180)
