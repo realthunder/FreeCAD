@@ -6958,6 +6958,12 @@ Document* Document::_openVersionDocument(const std::shared_ptr<FileHistory>& his
             // Nothing to undo, ever; set last, the restore being over.
             doc->setUndoMode(0);
             doc->setStatus(FrozenVersion, true);
+            // Whatever shows the label shows a pinned version as one (the
+            // tree, in italic: sec 27.22), and was given the label before
+            // it was one. That it looked again was a document saying it
+            // was modified during its restore and not after, which one
+            // whose view providers are built later does not say.
+            GetApplication().signalRelabelDocument(*doc);
         }
         doc->refreshVersionNames();
     }
