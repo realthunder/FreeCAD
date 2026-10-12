@@ -132,6 +132,17 @@ Params = [
          doc="Slide the navigation cube along its edge of the view, out from under\n"
              "an overlaid panel or a task panel shown over the view, and back when\n"
              "the panel is gone. When off a panel simply covers the cube."),
+    ParamBool('DockOverlayThemeItemColor', True, on_change=True,
+         title="Item background follows the theme",
+         doc="Back the items of an overlaid tree view and property view with the\n"
+             "colour of the 3D view's background as the theme has it -- the first\n"
+             "colour of a gradient -- so that their text reads over the view.\n"
+             "When off the tree view's own item background colour is used."),
+    ParamInt('DockOverlayAlpha', 150, on_change=True, title="Overlay background opacity",
+         proxy=ParamSpinBox(0, 255, 5),
+         doc="Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of\n"
+             "the items of the tree view and of the property view, and of a task\n"
+             "panel."),
     ParamInt('DockOverlayHintTriggerSize', 16, title="Hint trigger size", proxy=ParamSpinBox(1, 100, 1),
          doc="Auto hide hint visual display triggering width"),
     ParamInt('DockOverlayHintSize', 8, title="Hint width", proxy=ParamSpinBox(1, 100, 1),

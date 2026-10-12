@@ -65,6 +65,12 @@ class PropertyEditor : public QTreeView
     Q_PROPERTY(QBrush groupBackground READ groupBackground WRITE setGroupBackground DESIGNABLE true SCRIPTABLE true) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(QColor groupTextColor READ groupTextColor WRITE setGroupTextColor DESIGNABLE true SCRIPTABLE true) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(QBrush itemBackground READ itemBackground WRITE setItemBackground DESIGNABLE true SCRIPTABLE true) // clazy:exclude=qproperty-without-notify
+    /// What backs a row while the view is overlaid, and how opaque that and
+    /// the alternate rows' colour are (docs/HandsOnQueue.md entry 69). Unset
+    /// -- no brush, -1 -- the settings answer, as for the tree view
+    /// (OverlayManager::overlayItemBackground).
+    Q_PROPERTY(QBrush overlayItemBackground READ overlayItemBackground WRITE setOverlayItemBackground DESIGNABLE true SCRIPTABLE true) // clazy:exclude=qproperty-without-notify
+    Q_PROPERTY(int overlayAlpha READ overlayAlpha WRITE setOverlayAlpha DESIGNABLE true SCRIPTABLE true) // clazy:exclude=qproperty-without-notify
 
 public:
     explicit PropertyEditor(bool isViewEditor = false);
@@ -87,6 +93,18 @@ public:
     void setGroupTextColor(const QColor& c);
     QBrush itemBackground() const;
     void setItemBackground(const QBrush& c);
+
+    QBrush overlayItemBackground() const { return _overlayItemBackground; }
+    void setOverlayItemBackground(const QBrush& c);
+    int overlayAlpha() const { return _overlayAlpha; }
+    void setOverlayAlpha(int alpha);
+    /// Whether the view has its overlaid look: see-through but for its
+    /// rows, which it backs itself (the overlay tab widget says when)
+    bool overlayLook() const { return _overlayLook; }
+    void setOverlayLook(bool on);
+    /// What an ordinary row and an alternate one are backed with in that
+    /// look: the alternate colour is the sheet's, at the overlay's opacity
+    QBrush overlayRowBackground(const QModelIndex& index) const;
 
     bool isBinding() const { return binding; }
     void openEditor(const QModelIndex &index);
@@ -143,6 +161,9 @@ private:
     QColor groupColor;
     QBrush background;
     QBrush _itemBackground;
+    QBrush _overlayItemBackground;
+    int _overlayAlpha = -1;
+    bool _overlayLook = false;
 
     QPointer<QWidget> activeEditor;
     QPersistentModelIndex editingIndex;

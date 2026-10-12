@@ -23,6 +23,7 @@
 #ifndef FC_OVERLAYMANAGER_H
 #define FC_OVERLAYMANAGER_H
 
+#include <QBrush>
 #include <QObject>
 #include <QRegion>
 #include <FCGlobal.h>
@@ -137,6 +138,23 @@ public:
      * a widget none of them reaches.
      */
     QRegion occupied(const QWidget *widget) const;
+
+    /** The brush an item of an overlaid view is backed with
+     * (docs/HandsOnQueue.md entry 69): of the tree view and of the property
+     * view, whose text has to read over the 3D view while the panel itself
+     * is transparent.
+     *
+     * \a own and \a alpha are what a style sheet set on the view (its
+     * overlayItemBackground and overlayAlpha properties): no brush and -1
+     * where it set nothing, and then the settings answer -- the 3D view's
+     * background colour as the theme has it, the first colour of a
+     * gradient, at View/DockOverlayAlpha; or, with
+     * View/DockOverlayThemeItemColor off, the tree view's own item
+     * background colour as it is stored.
+     */
+    static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1);
+    /// View/DockOverlayAlpha, or \a alpha where a style sheet set one
+    static int overlayAlpha(int alpha = -1);
 
     /** The parts of \a widget that are laid over: by the overlaid docks,
      * as occupied() answers, and by whatever else registered itself with

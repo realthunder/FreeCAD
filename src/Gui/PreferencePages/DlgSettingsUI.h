@@ -150,6 +150,9 @@ private:
     QLabel *labelDockOverlayAlphaRadius = nullptr;
     Gui::PrefSpinBox *DockOverlayAlphaRadius = nullptr;
     Gui::PrefCheckBox *DockOverlayMoveNaviCube = nullptr;
+    Gui::PrefCheckBox *DockOverlayThemeItemColor = nullptr;
+    QLabel *labelDockOverlayAlpha = nullptr;
+    Gui::PrefSpinBox *DockOverlayAlpha = nullptr;
     QLabel *labelDockOverlayHintTriggerSize = nullptr;
     Gui::PrefSpinBox *DockOverlayHintTriggerSize = nullptr;
     QLabel *labelDockOverlayHintSize = nullptr;

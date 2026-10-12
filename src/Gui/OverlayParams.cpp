@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 #include "OverlayWidgets.h"
+#include "TreeParams.h"
 
 /*[[[cog
 import OverlayParams
@@ -53,6 +54,8 @@ public:
     long DockOverlayWheelDelay;
     long DockOverlayAlphaRadius;
     bool DockOverlayMoveNaviCube;
+    bool DockOverlayThemeItemColor;
+    long DockOverlayAlpha;
     long DockOverlayHintTriggerSize;
     long DockOverlayHintSize;
     long DockOverlayHintLeftLength;
@@ -98,6 +101,10 @@ public:
         funcs["DockOverlayAlphaRadius"] = &OverlayParamsP::updateDockOverlayAlphaRadius;
         DockOverlayMoveNaviCube = this->handle->GetBool("DockOverlayMoveNaviCube", true);
         funcs["DockOverlayMoveNaviCube"] = &OverlayParamsP::updateDockOverlayMoveNaviCube;
+        DockOverlayThemeItemColor = this->handle->GetBool("DockOverlayThemeItemColor", true);
+        funcs["DockOverlayThemeItemColor"] = &OverlayParamsP::updateDockOverlayThemeItemColor;
+        DockOverlayAlpha = this->handle->GetInt("DockOverlayAlpha", 150);
+        funcs["DockOverlayAlpha"] = &OverlayParamsP::updateDockOverlayAlpha;
         DockOverlayHintTriggerSize = this->handle->GetInt("DockOverlayHintTriggerSize", 16);
         funcs["DockOverlayHintTriggerSize"] = &OverlayParamsP::updateDockOverlayHintTriggerSize;
         DockOverlayHintSize = this->handle->GetInt("DockOverlayHintSize", 8);
@@ -202,6 +209,22 @@ public:
         if (self->DockOverlayMoveNaviCube != v) {
             self->DockOverlayMoveNaviCube = v;
             OverlayParams::onDockOverlayMoveNaviCubeChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDockOverlayThemeItemColor(OverlayParamsP *self) {
+        auto v = self->handle->GetBool("DockOverlayThemeItemColor", true);
+        if (self->DockOverlayThemeItemColor != v) {
+            self->DockOverlayThemeItemColor = v;
+            OverlayParams::onDockOverlayThemeItemColorChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDockOverlayAlpha(OverlayParamsP *self) {
+        auto v = self->handle->GetInt("DockOverlayAlpha", 150);
+        if (self->DockOverlayAlpha != v) {
+            self->DockOverlayAlpha = v;
+            OverlayParams::onDockOverlayAlphaChanged();
         }
     }
     // Auto generated code (Tools/params_utils.py:314)
@@ -348,6 +371,21 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
 "an overlaid panel or a task panel shown over the view, and back when\n"
 "the panel is gone. When off a panel simply covers the cube.")
         .setOnChange(),
+    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayThemeItemColor", "DockOverlayThemeItemColor", App::ParamInfo::Bool, true)
+        .setTitle("Item background follows the theme")
+        .setDoc("Back the items of an overlaid tree view and property view with the\n"
+"colour of the 3D view's background as the theme has it -- the first\n"
+"colour of a gradient -- so that their text reads over the view.\n"
+"When off the tree view's own item background colour is used.")
+        .setOnChange(),
+    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAlpha", "DockOverlayAlpha", App::ParamInfo::Int, 150)
+        .setTitle("Overlay background opacity")
+        .setDoc("Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of\n"
+"the items of the tree view and of the property view, and of a task\n"
+"panel.")
+        .setOnChange()
+        .setProxy("SpinBox")
+        .setRange(0, 255, 5, 0),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayHintTriggerSize", "DockOverlayHintTriggerSize", App::ParamInfo::Int, 16)
         .setTitle("Hint trigger size")
         .setDoc("Auto hide hint visual display triggering width")
@@ -751,6 +789,67 @@ void OverlayParams::setDockOverlayMoveNaviCube(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void OverlayParams::removeDockOverlayMoveNaviCube() {
     instance()->handle->RemoveBool("DockOverlayMoveNaviCube");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *OverlayParams::docDockOverlayThemeItemColor() {
+    return QT_TRANSLATE_NOOP("OverlayParams",
+"Back the items of an overlaid tree view and property view with the\n"
+"colour of the 3D view's background as the theme has it -- the first\n"
+"colour of a gradient -- so that their text reads over the view.\n"
+"When off the tree view's own item background colour is used.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & OverlayParams::getDockOverlayThemeItemColor() {
+    return instance()->DockOverlayThemeItemColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & OverlayParams::defaultDockOverlayThemeItemColor() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void OverlayParams::setDockOverlayThemeItemColor(const bool &v) {
+    instance()->handle->SetBool("DockOverlayThemeItemColor",v);
+    instance()->DockOverlayThemeItemColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void OverlayParams::removeDockOverlayThemeItemColor() {
+    instance()->handle->RemoveBool("DockOverlayThemeItemColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *OverlayParams::docDockOverlayAlpha() {
+    return QT_TRANSLATE_NOOP("OverlayParams",
+"Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of\n"
+"the items of the tree view and of the property view, and of a task\n"
+"panel.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & OverlayParams::getDockOverlayAlpha() {
+    return instance()->DockOverlayAlpha;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & OverlayParams::defaultDockOverlayAlpha() {
+    const static long def = 150;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void OverlayParams::setDockOverlayAlpha(const long &v) {
+    instance()->handle->SetInt("DockOverlayAlpha",v);
+    instance()->DockOverlayAlpha = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void OverlayParams::removeDockOverlayAlpha() {
+    instance()->handle->RemoveInt("DockOverlayAlpha");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1229,7 +1328,7 @@ void OverlayParams::removeDockOverlayMinimumSize() {
     instance()->handle->RemoveInt("DockOverlayMinimumSize");
 }
 
-// Auto generated code (Gui/OverlayParams.py:183)
+// Auto generated code (Gui/OverlayParams.py:194)
 const std::vector<QString> OverlayParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -1281,6 +1380,16 @@ void OverlayParams::onDockOverlayAutoViewChanged() {
 
 void OverlayParams::onCornerNaviCubeChanged() {
     OverlayManager::instance()->refresh();
+}
+
+void OverlayParams::onDockOverlayThemeItemColorChanged() {
+    TreeParams::refreshTreeViews();
+    OverlayManager::instance()->refresh(nullptr, true);
+}
+
+void OverlayParams::onDockOverlayAlphaChanged() {
+    TreeParams::refreshTreeViews();
+    OverlayManager::instance()->refresh(nullptr, true);
 }
 
 void OverlayParams::onDockOverlayMoveNaviCubeChanged() {

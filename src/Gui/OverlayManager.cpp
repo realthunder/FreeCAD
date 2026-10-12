@@ -62,6 +62,7 @@
 #include "MDIView.h"
 #include "NaviCube.h"
 #include "OverlayParams.h"
+#include "StyleParameters/ParameterManager.h"
 #include "OverlayWidgets.h"
 #include "TaskView/TaskView.h"
 #include "Tree.h"
@@ -154,6 +155,39 @@ public:
         if (activeStyleSheet.isEmpty()) {
             activeStyleSheet = _default;
         }
+
+        // What the settings state goes in FRONT of the sheet: a sheet that
+        // states its own for the same thing comes later and wins.
+        activeStyleSheet.prepend(fromSettings());
+    }
+
+    /** The rules the settings make (docs/HandsOnQueue.md entry 69): a task
+     * panel's ground, overlaid or shown in its view, is the theme's own
+     * panel colour at View/DockOverlayAlpha. The sheets carried a grey of
+     * their own for it, at an opacity of their own. What is inside the
+     * panel has no second ground over that one.
+     */
+    static QString fromSettings() {
+        QColor panel = qApp ? qApp->palette().color(QPalette::Window) : QColor(140, 140, 140);
+        if (Application::Instance) {
+            if (auto manager = Application::Instance->styleParameterManager()) {
+                const Base::Color colour = manager->resolve(
+                    StyleParameters::ParameterDefinition<Base::Color> {
+                        "DialogBackgroundColor",
+                        Base::Color(float(panel.redF()), float(panel.greenF()),
+                                    float(panel.blueF()))});
+                panel = QColor::fromRgbF(colour.r, colour.g, colour.b);
+            }
+        }
+        return QStringLiteral(
+                   "QSint--ActionGroup QFrame[class=\"content\"] {"
+                   " background-color: rgba(%1,%2,%3,%4); }\n"
+                   "QSint--ActionGroup QFrame[class=\"content\"] > QWidget {"
+                   " background-color: transparent; }\n")
+            .arg(panel.red())
+            .arg(panel.green())
+            .arg(panel.blue())
+            .arg(OverlayManager::overlayAlpha());
     }
 
     ParameterGrp::handle handle;
@@ -2119,6 +2153,40 @@ void OverlayManager::setMouseTransparent(bool enabled)
 bool OverlayManager::isMouseTransparent() const
 {
     return d->mouseTransparent;
+}
+
+int OverlayManager::overlayAlpha(int alpha)
+{
+    if (alpha < 0)
+        alpha = int(OverlayParams::getDockOverlayAlpha());
+    return std::clamp(alpha, 0, 255);
+}
+
+QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha)
+{
+    QBrush brush = own;
+    if (brush.style() == Qt::NoBrush) {
+        App::Color colour;
+        if (!OverlayParams::getDockOverlayThemeItemColor()) {
+            // The tree view's own colour, as stored: alpha and all, and none
+            // at all while that setting is empty
+            if (!TreeParams::getItemBackground())
+                return QBrush();
+            colour.setPackedValue(TreeParams::getItemBackground());
+            return QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b, colour.a));
+        }
+        colour.setPackedValue(ViewParams::getGradient() || ViewParams::getRadialGradient()
+                                  ? ViewParams::getBackgroundColor2()
+                                  : ViewParams::getBackgroundColor());
+        brush = QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b));
+        alpha = overlayAlpha(alpha);
+    }
+    if (alpha >= 0) {
+        QColor colour = brush.color();
+        colour.setAlpha(std::min(alpha, 255));
+        brush.setColor(colour);
+    }
+    return brush;
 }
 
 void OverlayManager::addCover(QWidget *cover)

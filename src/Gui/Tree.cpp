@@ -83,6 +83,8 @@
 #include "SelectionView.h"
 #include "PieMenu.h"
 #include "OverlayWidgets.h"
+#include "OverlayManager.h"
+#include "OverlayParams.h"
 #include "TreeParams.h"
 
 FC_LOG_LEVEL_INIT("Tree",false,true,true)
@@ -973,9 +975,11 @@ void TreeWidgetItemDelegate::paint(QPainter *painter,
     QRect rect = opt.rect;
 
     if (index.column() == 0) {
+        const QBrush itemBackground = tree->testAttribute(Qt::WA_NoSystemBackground)
+            ? tree->effectiveOverlayItemBackground() : QBrush();
         if (tree->testAttribute(Qt::WA_NoSystemBackground)
                 && (trimBG || (opt.backgroundBrush.style() == Qt::NoBrush
-                                && _TreeItemBackground.style() != Qt::NoBrush)))
+                                && itemBackground.style() != Qt::NoBrush)))
         {
             const int margin = style->pixelMetric(QStyle::PM_FocusFrameHMargin, &option, tree) + 1;
             // 2 margin for text, 2 margin for decoration (icon)
@@ -992,9 +996,9 @@ void TreeWidgetItemDelegate::paint(QPainter *painter,
                 rect.setWidth(rect.width() + 5);
                 opt.rect = rect;
                 if (opt.backgroundBrush.style() == Qt::NoBrush)
-                    painter->fillRect(rect, _TreeItemBackground);
+                    painter->fillRect(rect, itemBackground);
             } else if (!opt.state.testFlag(QStyle::State_Selected))
-                painter->fillRect(rect, _TreeItemBackground);
+                painter->fillRect(rect, itemBackground);
         }
 
         if (!trimBG || !opt.state.testFlag(QStyle::State_Selected)) {
@@ -1990,6 +1994,23 @@ static int &_TreeIconSize()
     if (treeIconSize < 0)
         treeIconSize = TreeParams::getIconSize();
     return treeIconSize;
+}
+
+void TreeWidget::setOverlayItemBackground(const QBrush &brush)
+{
+    _overlayItemBackground = brush;
+    viewport()->update();
+}
+
+void TreeWidget::setOverlayAlpha(int alpha)
+{
+    _overlayAlpha = alpha;
+    viewport()->update();
+}
+
+QBrush TreeWidget::effectiveOverlayItemBackground() const
+{
+    return OverlayManager::overlayItemBackground(_overlayItemBackground, _overlayAlpha);
 }
 
 int TreeWidget::iconHeight() const

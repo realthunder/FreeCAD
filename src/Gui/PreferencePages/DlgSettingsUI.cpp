@@ -702,6 +702,35 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
+    DockOverlayThemeItemColor = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(DockOverlayThemeItemColor);
+    DockOverlayThemeItemColor->setChecked(Gui::OverlayParams::defaultDockOverlayThemeItemColor());
+    DockOverlayThemeItemColor->setEntryName("DockOverlayThemeItemColor");
+    DockOverlayThemeItemColor->setParamGrpPath("View");
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutOverlay->addLayout(layoutRow);
+    labelDockOverlayAlpha = new QLabel(this);
+    layoutRow->addWidget(labelDockOverlayAlpha);
+    DockOverlayAlpha = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(DockOverlayAlpha);
+    DockOverlayAlpha->setValue(Gui::OverlayParams::defaultDockOverlayAlpha());
+    DockOverlayAlpha->setEntryName("DockOverlayAlpha");
+    DockOverlayAlpha->setParamGrpPath("View");
+    // Auto generated code (Tools/params_utils.py:1360)
+    DockOverlayAlpha->setMinimum(0);
+    DockOverlayAlpha->setMaximum(255);
+    DockOverlayAlpha->setSingleStep(5);
+    DockOverlayAlpha->setValue(Gui::OverlayParams::defaultDockOverlayAlpha());
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintTriggerSize = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintTriggerSize);
     DockOverlayHintTriggerSize = new Gui::PrefSpinBox(this);
@@ -1042,6 +1071,8 @@ void DlgSettingsUI::saveSettings()
     DockOverlayWheelDelay->onSave();
     DockOverlayAlphaRadius->onSave();
     DockOverlayMoveNaviCube->onSave();
+    DockOverlayThemeItemColor->onSave();
+    DockOverlayAlpha->onSave();
     DockOverlayHintTriggerSize->onSave();
     DockOverlayHintSize->onSave();
     DockOverlayHintLeftOffset->onSave();
@@ -1105,6 +1136,8 @@ void DlgSettingsUI::loadSettings()
     DockOverlayWheelDelay->onRestore();
     DockOverlayAlphaRadius->onRestore();
     DockOverlayMoveNaviCube->onRestore();
+    DockOverlayThemeItemColor->onRestore();
+    DockOverlayAlpha->onRestore();
     DockOverlayHintTriggerSize->onRestore();
     DockOverlayHintSize->onRestore();
     DockOverlayHintLeftOffset->onRestore();
@@ -1252,6 +1285,11 @@ void DlgSettingsUI::retranslateUi()
     labelDockOverlayAlphaRadius->setToolTip(DockOverlayAlphaRadius->toolTip());
     DockOverlayMoveNaviCube->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayMoveNaviCube()));
     DockOverlayMoveNaviCube->setText(QObject::tr("Navigation cube moves clear of panels"));
+    DockOverlayThemeItemColor->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayThemeItemColor()));
+    DockOverlayThemeItemColor->setText(QObject::tr("Item background follows the theme"));
+    DockOverlayAlpha->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayAlpha()));
+    labelDockOverlayAlpha->setText(QObject::tr("Overlay background opacity"));
+    labelDockOverlayAlpha->setToolTip(DockOverlayAlpha->toolTip());
     DockOverlayHintTriggerSize->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayHintTriggerSize()));
     labelDockOverlayHintTriggerSize->setText(QObject::tr("Hint trigger size"));
     labelDockOverlayHintTriggerSize->setToolTip(DockOverlayHintTriggerSize->toolTip());

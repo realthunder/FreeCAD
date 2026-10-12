@@ -101,6 +101,8 @@ ParamGroup = (
         'DockOverlayWheelDelay',
         'DockOverlayAlphaRadius',
         'DockOverlayMoveNaviCube',
+        'DockOverlayThemeItemColor',
+        'DockOverlayAlpha',
         'DockOverlayHintTriggerSize',
         'DockOverlayHintSize',
         'DockOverlayHintLeftOffset',

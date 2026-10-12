@@ -1159,6 +1159,9 @@ void OverlayTabWidget::_setOverlayMode(QWidget *widget, OverlayOption option)
     widget->setStyleSheet(OverlayManager::instance()->getStyleSheet());
 #endif
 
+    if (auto editor = qobject_cast<PropertyEditor::PropertyEditor*>(widget))
+        editor->setOverlayLook(option != OverlayOption::Disable);
+
     if (qobject_cast<QScrollBar*>(widget)) {
         auto parent = widget->parentWidget();
         if (parent) {
@@ -1650,6 +1653,13 @@ void OverlayTabWidget::addWidget(QDockWidget *dock, const QString &title)
         }
         setRect(rect);
     }
+
+    // The see-through look is given to the widgets the tab widget holds at
+    // the moment its mode is set. A dock that comes after that has none of
+    // it -- solid among see-through neighbours, until the pointer has come
+    // into the tab widget and left it -- so the mode is set again on the
+    // manager's next turn (docs/HandsOnQueue.md entry 69).
+    touch();
 
     saveTabs();
 }
