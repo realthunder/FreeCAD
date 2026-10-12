@@ -804,7 +804,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
 | 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
 | 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63). ANSWERED 16:04: the name is `Std_DisplayStyle`; `Std_DrawStyle` takes its old icon back and the new command the split cube; the new command to the RIGHT of `Std_DrawStyle`, in the View menu too; the overlap is not looked into for its own sake | OPEN; the four points answered 16:04; the context menu not named in the answer |
-| 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | OPEN; points a and b answered 16:07; point c asked back by the reporter and explained, its question (the reporter's own stored value stays on) NOT ANSWERED YET |
+| 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8365,7 +8365,7 @@ READ in the source, nothing run:
   "Apply all" brings, the icon's two directions) are about the menu that
   moves; they move with it.
 
-## 75. The corner coordinate system (`CornerCoordSystem`; first named `ShowAxisCross`) off by default; the navigation cube's axis cross drawn over the cube (a change request) -- OPEN, a and b answered 2026-10-12 16:07
+## 75. The corner coordinate system (`CornerCoordSystem`; first named `ShowAxisCross`) off by default; the navigation cube's axis cross drawn over the cube (a change request) -- OPEN, all three points answered 2026-10-12 16:13; a and b 16:07
 
 **2026-10-12 16:01, the reporter:** "new request, make ShowAxisCross default
 false. Make axis cross in navicube show on top of the cube so it can be
@@ -8434,6 +8434,13 @@ The note-taker's reading:
   default enough, the reporter switching their own off by hand -- or is
   something wanted that turns it off for a configuration that has it
   stored as on?
+
+**2026-10-12 16:13, the reporter, on point c:** "change default is enough"
+
+So: the default of `View/CornerCoordSystem` changes and nothing more -- no
+migration, nothing that turns it off in a configuration that has it stored
+as on; the reporter switches their own off by hand. Nothing of this entry
+is left unanswered.
 
 ## Inbox
 
