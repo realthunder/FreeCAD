@@ -275,6 +275,39 @@ staged. GUI tests by hand on that build, no FAIL:
 The full suites were not run again (one accessor in App, two labels in the
 pattern panels, two test scripts since the run above).
 
+The session of 2026-10-12 (the reporter: "fetch and merge remote LinkVibe.
+sync all relevant repos and submodules. build and test first, then stage.
+after then resume fixing issues in the notes"). origin/LinkVibe
+(`3016b5c0db`, 596 commits past `9e1cf7d9f9`, most of them the Transaction
+branch) merged as `ffb143c047` with no conflict; OCCT `LinkVibe-801`
+fast-forwarded 79 commits to `5755a62295`; Coin and pivy were current and
+no submodule pointer moved. Both full suites on the merge: ctest 951 of
+951; Python 3644 tests with 2 failures, 52 skipped, 6 expected failures.
+The two are copy tests of `FileBlobs` and the fault was the tests', fixed
+`69b103d1de`; the two thickness failures carried since 2026-10-04 did not
+appear. "The sync of 2026-10-12", at the end, has the account.
+
+Staged 2026-10-12 14:04:58 at `4474fcb17e` (OCCT `5755a62295`, Coin
+`d2da5cc93`), on that word; the reporter's own FreeCAD was not running. It
+is the first stage from LinkVibe: the copy under test was PartDesignPort's
+`72180a4812` until now, so it gains everything LinkVibe had and
+PartDesignPort did not, and today's merge on top. Of the queue it has, for
+the first time: entry 47's fixes (`24f7c8a2bd`, `93fc6cd58a`, `43fdcb1435`,
+`ee9583a247`, `d38ac38d7b`, `0049176c22`, `5c45b43220`, `48b9aaa0ba`,
+`4172eb2018`), entry 67 (`39b548048b`), entry 58's three fixes and the
+note in the pattern panels (`2a45e36492`), entry 30's one overlay preset
+(`438216ad93`, `5c021cb111`), entry 48's budget fix (`31c09e28e7`), entry
+52's frame report on Direct3D (`d79122782b`), and entry 61's rounding
+setting on the Advanced page (`a343a386b6`). Smoke-tested on the staged
+copy right after, no FAIL: `techdraw-never-shown-page-exports.py` 10,
+`techdraw-page-items-when-needed.py` 10,
+`close-during-view-provider-drain.py` 7, `techdraw-page-backend-switch.py`
+11, `tooltip-icon-and-images.py` 6, `render-type-default-and-legacy.py`
+13, `view-cell-menu.py` 15, and two loads of `scanner.FCStd`. NOT pushed:
+the merge and everything local since `9e1cf7d9f9`, the code in it `d38ac38d7b`, `0049176c22`,
+`39b548048b`, `5c45b43220`, `48b9aaa0ba`, `4172eb2018`, `69b103d1de` and
+`4474fcb17e`.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -5764,3 +5797,112 @@ for this drain.
 Pictures and logs: `..\dl\handson\2026-10-10\q2\g-r-e47b-*-dev`
 (PartDesignPort), `g-s-e47b-*-dev` (LinkVibe; the crash is
 `g-s-e47b-close15-3-dev`, its stack in `FreeCAD.log`).
+
+## The sync of 2026-10-12 -- merged `ffb143c047`, both suites, STAGED 14:04 at `4474fcb17e`; not pushed
+
+Asked for by the reporter (the words are in the head of this file). Tools,
+chains and results: `..\dl\handson\2026-10-12\s1`.
+
+**The merge.** origin/LinkVibe at `3016b5c0db` into the local line, which
+was 24 commits ahead of `9e1cf7d9f9`. No conflict. Two files were changed
+on both sides, `src/App/PropertyFile.cpp` and `src/Mod/Test/FileBlobs.py`;
+both merged by themselves and were read afterwards. OCCT: `LinkVibe-801`
+fast-forwarded to `5755a62295` (its `tests/fork` to `e3b90cb`), rebuilt
+(33 steps). Coin `LinkVibe` and pivy `rt-0.6.10` had nothing new. The
+three feedstock repositories are not on this box. FreeCAD rebuilt, 2055
+steps, no failed step.
+
+**The suites, on the merge.** ctest 951 of 951 in 721 s. Python: 3644
+tests, 2 failures, 52 skipped, 6 expected failures. The two thickness
+failures carried since the OCCT merge of 2026-10-04 are not among them.
+
+**The two failures: `FileBlobs`' copy tests, and the tests were wrong.**
+`BlobExportImportCases.testCopySharedContentStaysShared` and
+`testCopyCarriesOnlyTheExportedSubset` count the files of the target
+document's store straight after a copy and found 0 where they expect 1.
+Two changes met: an included file is restored out of memory since
+`5c45b43220` (mine, 2026-10-11), and the remote's store keeps content
+adopted that way in its pack, where it has no file of its own until
+something asks for its path (`docs/FileBlobsManager.md` sec 15.7,
+`ArchiveBlobStore` on by default). The content is there and is shared as
+the tests mean it to be; only the place they looked in is empty. The
+tests ask for the path first and then count, and count the blob entries
+of the saved target as well, which is what a user ends up with:
+`69b103d1de`. `FreeCADCmd -t FileBlobs` on the rebuilt tree: 95 tests, 2
+skipped, OK. The full Python suite was NOT run a second time.
+
+**GUI tests on the dev tree, by hand** (they are not in ctest on this
+box), no FAIL: `close-during-view-provider-drain.py` 7,
+`msaa-reaches-the-view.py` 12, `omni-search-recent-items.py` 18,
+`overlay-preset-follows-the-theme.py` 45,
+`pattern-count-over-the-limit.py` 16,
+`render-type-default-and-legacy.py` 13,
+`techdraw-dimension-click-no-recompute.py` 12,
+`techdraw-page-backend-switch.py` 11,
+`techdraw-page-before-its-view-providers.py` 12,
+`techdraw-page-items-when-needed.py` 10, `techdraw-section-line-click.py`
+10, `tooltip-icon-and-images.py` 6, `view-cell-menu.py` 15.
+
+**A test for the export of a page nothing has shown (`4474fcb17e`).**
+Left untried on 2026-10-11 (entry 47, "a page makes its items when
+something needs them"). `tests/gui/techdraw-never-shown-page-exports.py`:
+a page saved hidden and reopened has an empty scene; exported to a PDF and
+to an SVG before anything shows it, the PDF is the size of the one made
+while it was on the screen (6117 bytes both), the SVG has the same 8
+paths and the same text, the dimension's `30`. 10 of 10, on the dev tree
+and on the staged copy. Its first run failed one claim of mine that was
+wrong: that the export opens no view. Python's `exportPageAsPdf` and
+`exportPageAsSvg` bring the page's view up themselves and always did. So
+this does NOT cover `TechDraw_PrintAll`, which prints every page from its
+scene with no view and has no way in from Python; by reading,
+`PagePrinter::renderPage` populates the scene first. It stays a hand
+check for the reporter. Not done: a Python entry for
+`PagePrinter::printAllPdf`, which would make it a test.
+
+**The reporter's addons in every GUI test** (the reporter, during the
+build: "duplicate the third party workbench in the staged envrionment, so
+that when you testing, those object got loaded correctly"). A test runs on
+an application data directory of its own, with no `Mod`; the reporter's
+has `fasteners` 0.5.51 and `OpticsWorkbench` 1.2.2. Every load of
+`scanner.FCStd` measured for entry 47 so far therefore logged 111
+`ModuleNotFoundError` (`FastenersCmd`, `OpticalObject`, `Ray`) and showed
+a document the reporter never sees. Now: `..\tools\sync-test-addons.cmd`
+mirrors the two into `..\dl\test-addons\Mod` (603 files; the reporter's
+own directory is only read), and the launcher links it into each test's
+home, unless told not to. With it: 0 such errors, 630 commands where
+there were 612. The two full suites still run without; they open none of
+the reporter's files.
+
+**`scanner.FCStd` after the merge, the box quiet** (the open, then the
+model's first pixels after it, a picture each second; whole a second or
+two later):
+
+| | the open | the model, s after the open |
+|---|---|---|
+| 2026-10-11, `4172eb2018`, no addons | 11.2, 11.4, 11.5 | 5-6, 5-6, 5-6 |
+| today, dev tree, no addons | 13.4, 10.5, 10.3 | 6-7, 6-7, 6-7 |
+| today, dev tree, with the addons | 14.8, 12.6 | 8-9, 6-7 |
+| today, the staged copy, with the addons | 11.3, 11.5 | 7-8, 6-7 |
+
+So the merge put about a second on the wait after the open, like for
+like; NOT looked into (what the remote added to a restore is the first
+suspect, not shown). With the addons the model is whole at 10 to 12 s
+after the open, as without them. One earlier load with the addons, the
+first of the day's on the dev tree, had the model at 10.3 s; not seen
+again in the four after it.
+
+**The stage.** `install-user.ps1` at 14:04:58, `INSTALL-USER: OK`; what
+it has is in the head of this file. Seven GUI tests and two loads on the
+staged copy after it, no FAIL, every one with the addons and no
+`ModuleNotFoundError`.
+
+**What went wrong on the way.** The rebuild at the two test commits sat
+from 11:41 to 13:50 without starting: its chain hung in the `chcp` of
+`.conda\run.cmd`'s first line, the build log empty, and the wait I had
+set watched for the end marker alone. Found when the reporter asked for
+the status. It was the first chain to run the new progress helper
+(`..\tools\build-progress.ps1`, the reporter: "next time, when you build,
+show completion percentage in cmd") in its own console; whether that is
+the cause is not shown -- the same hang has happened without it. The
+helper has a window of its own now, and a wait gives up when no log has
+grown for 15 minutes.
