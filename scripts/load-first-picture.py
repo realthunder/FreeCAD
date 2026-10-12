@@ -28,6 +28,9 @@ What it reports, in this order:
 With LOAD_LOG=1 the Gui and Part log is on, and the session's log has the load's own account:
 "progressive restore <doc>: N view providers in S slices, T s ..." (Gui::Document's drain),
 "progressive load <doc>: N of N visuals in S slices ..." and "pre-mesh <doc>: ..." (Part).
+LOAD_LOG_TAGS names the logs to turn on instead (default "Gui,Part"); with "App" and "Base" the
+log also has what reading the archive took: "readFiles(random access) ...: N entries, ..." per
+kind of entry (Base) and "deferred serve slice ...: (open S s, restore S s cumulative)" (App).
 With LOAD_TRACE=<ms> every dispatch of the event loop slower than that is logged with its depth
 ("slow dispatch: depth D Nms event E to Class"): depth 0 is the event loop's own, deeper is an
 event run from inside another -- a load's slice pumping the loop. Both cost time; take the
@@ -113,8 +116,8 @@ def open_it():
     clipboard()
     commands("no document")
     if os.environ.get("LOAD_LOG") == "1":
-        FreeCAD.setLogLevel("Gui", "Log")
-        FreeCAD.setLogLevel("Part", "Log")
+        for tag in os.environ.get("LOAD_LOG_TAGS", "Gui,Part").split(","):
+            FreeCAD.setLogLevel(tag, "Log")
     if os.environ.get("LOAD_TRACE"):
         render = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
         render.SetInt("LevelSlowBuildMS", int(os.environ["LOAD_TRACE"]))
