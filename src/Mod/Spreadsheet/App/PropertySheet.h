@@ -84,7 +84,16 @@ public:
 
     void Save(Base::Writer& writer) const override;
 
+    /// The string ids the cells' element paths hold are marked, as a link
+    /// property marks what its shadows hold (docs/TransactionLog.md sec
+    /// 27.75, 31.24)
+    void beforeSave(Base::Writer& writer) const override;
+
     void Restore(Base::XMLReader& reader) override;
+
+    /// By the cell's address (docs/TransactionLog.md sec 31.8).
+    bool splitSaved(const std::string& fragment, SavedElements& elements) const override;
+    bool joinSaved(const SavedElements& elements, std::string& fragment) const override;
 
     void getLinksTo(std::vector<App::ObjectIdentifier> &identifiers,
                     App::DocumentObject *obj,

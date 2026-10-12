@@ -33,6 +33,7 @@
 
 #include <Base/BoundBoxPy.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
+#include <App/MaterialPy.h>
 #include <App/PropertyStandard.h>
 
 #include "ViewProvider.h"
@@ -574,17 +575,60 @@ PyObject* ViewProviderPy::setElementColors(PyObject* args)
         throw Py::TypeError("Expect a dict");
 
     std::map<std::string,App::Color> colors;
-    Py::Dict dict(pyObj);
-    for(auto it=dict.begin();it!=dict.end();++it) {
-        const auto &value = *it;
-        if(!value.first.isString() || !value.second.isSequence())
+    // PyDict_Next and not Py::Dict's iterators, which make the list of the
+    // keys again at every step: a second for the 12,000 faces of an import
+    PyObject *key = nullptr;
+    PyObject *value = nullptr;
+    Py_ssize_t pos = 0;
+    App::PropertyColor prop;
+    while(PyDict_Next(pyObj, &pos, &key, &value)) {
+        if(!PyUnicode_Check(key) || !PySequence_Check(value))
             throw Py::TypeError("Expect the dictionary to contain items of type elementName:(r,g,b,a)");
 
-        App::PropertyColor prop;
-        prop.setPyObject(value.second.ptr());
-        colors[value.first.as_string()] = prop.getValue();
+        prop.setPyObject(value);
+        colors[Py::String(key).as_string()] = prop.getValue();
     }
     getViewProviderPtr()->setElementColors(colors);
+    Py_Return;
+}
+
+PyObject* ViewProviderPy::getElementAppearances(PyObject* args)
+{
+    const char *element = nullptr;
+    if (!PyArg_ParseTuple(args, "|s", &element))
+        return nullptr;
+
+    Py::Dict dict;
+    for(auto &v : getViewProviderPtr()->getElementAppearances(element)) {
+        dict.setItem(Py::String(v.first),
+                Py::asObject(new App::MaterialPy(new App::MaterialAppearance(v.second))));
+    }
+    return Py::new_reference_to(dict);
+}
+
+PyObject* ViewProviderPy::setElementAppearances(PyObject* args)
+{
+    PyObject *pyObj;
+    if (!PyArg_ParseTuple(args, "O", &pyObj))
+        return nullptr;
+
+    if(!PyDict_Check(pyObj))
+        throw Py::TypeError("Expect a dict");
+
+    std::map<std::string,App::MaterialAppearance> appearances;
+    // PyDict_Next, as setElementColors() above
+    PyObject *key = nullptr;
+    PyObject *value = nullptr;
+    Py_ssize_t pos = 0;
+    while(PyDict_Next(pyObj, &pos, &key, &value)) {
+        if(!PyUnicode_Check(key)
+                || !PyObject_TypeCheck(value, &(App::MaterialPy::Type)))
+            throw Py::TypeError("Expect the dictionary to contain items of type elementName:material");
+
+        appearances[Py::String(key).as_string()] =
+            *static_cast<App::MaterialPy*>(value)->getMaterialAppearancePtr();
+    }
+    getViewProviderPtr()->setElementAppearances(appearances);
     Py_Return;
 }
 

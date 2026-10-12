@@ -99,6 +99,23 @@ bool AutoTransaction::recordViewObjectChange()
     return _TransactionViewObject > 0;
 }
 
+static int _DerivedViewWrites;
+
+DerivedViewWrites::DerivedViewWrites()
+{
+    ++_DerivedViewWrites;
+}
+
+DerivedViewWrites::~DerivedViewWrites()
+{
+    --_DerivedViewWrites;
+}
+
+bool DerivedViewWrites::active()
+{
+    return _DerivedViewWrites > 0;
+}
+
 void AutoTransaction::close(bool abort) {
     if(tid || abort) {
         GetApplication().closeActiveTransaction(abort,abort?0:tid);
@@ -126,6 +143,38 @@ void AutoTransaction::setEnable(bool enable) {
         if(close)
             app.closeActiveTransaction();
     }
+}
+
+Application::InvocationScope::InvocationScope(const char* origin)
+{
+    GetApplication()._invocations.push_back(origin ? origin : "");
+}
+
+Application::InvocationScope::~InvocationScope()
+{
+    auto& app = GetApplication();
+    if (app._invocations.empty())
+        return;
+    app._invocations.pop_back();
+    if (app._invocations.empty())
+        app.commitImplicitTransactions();
+}
+
+const char* Application::InvocationScope::current()
+{
+    auto& inv = GetApplication()._invocations;
+    return inv.empty() ? "" : inv.back();
+}
+
+int Application::InvocationScope::depth()
+{
+    return static_cast<int>(GetApplication()._invocations.size());
+}
+
+void Application::commitImplicitTransactions()
+{
+    for (auto& v : DocMap)
+        v.second->commitImplicitTransaction();
 }
 
 int Application::setActiveTransaction(const char *name, bool persist) {
@@ -170,6 +219,7 @@ const char *Application::getActiveTransaction(int *id) const {
 }
 
 void Application::closeActiveTransaction(bool abort, int id) {
+    OperationScope scope;   // sec 27.38
     auto stillOpen = [this](int tid) {
         for (auto &v : DocMap) {
             if (v.second->hasPendingTransaction() && v.second->getTransactionID(true) == tid)

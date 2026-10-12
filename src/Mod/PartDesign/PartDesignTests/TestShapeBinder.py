@@ -209,9 +209,10 @@ class TestSubShapeBinder(unittest.TestCase):
         other.BindCopyOnChange = "Mutated"
         self.Doc.recompute()
         self.assertNotEqual(other.getPropertyByName("_CopiedLink")[0].Document.Name, copies.Name)
+        # the marker names the document the copy is of: ";:X#<its Uid's id>;"
         self.assertEqual(
-            [name.split(";:X;")[0] for _, name in self._faceNames(other)],
-            [name.split(";:X;")[0] for _, name in names],
+            [name.split(";:X#")[0] for _, name in self._faceNames(other)],
+            [name.split(";:X#")[0] for _, name in names],
         )
 
         path = os.path.join(tempfile.mkdtemp(), "PartDesignTestSubShapeBinder.FCStd")

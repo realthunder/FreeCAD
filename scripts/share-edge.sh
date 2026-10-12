@@ -7,7 +7,14 @@
 # server recognizes out of the box. So the FreeCAD side is always just:
 #
 #   FC_SERVE_TRUST_PROXY=1   believe those headers from loopback peers
+#   FC_SERVE_IDENTITY_DOOR=1 the door signs people in: its identity header
+#                            is believed too. Only for a door that sets the
+#                            header itself -- access and caddy below, never
+#                            quick, which passes on what the client wrote
 #   FC_SERVE_TOKEN=...       optional bearer door on top (or instead)
+#   FC_SERVE_INVITE=<name>   whose that token is: its holder may edit under
+#                            that name (&client=<name> on the link); the
+#                            token alone admits to look
 #
 # Modes:
 #   quick  [port]             cloudflared quick tunnel (trycloudflare.com).
@@ -36,7 +43,7 @@
 #         scripts/share-edge.sh caddy cad.example.com [8077]
 set -u
 MODE=${1:-}
-usage() { sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 need() {
     command -v "$1" >/dev/null && return
@@ -53,6 +60,9 @@ quick)
     echo "  FC_SERVE_TRUST_PROXY=1 FC_SERVE_TOKEN=<secret> scripts/renderer-serve.sh <scene.py> $PORT"
     echo "tunnel starting; share the https://….trycloudflare.com link it prints"
     echo "(with your ?token=… tail — the quick tunnel itself checks nobody)."
+    echo "The token alone admits to look. For the one person who may edit, start"
+    echo "the backend with FC_SERVE_INVITE=<name> too and give them the link"
+    echo "with &client=<name> after the token."
     exec cloudflared tunnel --url "http://localhost:$PORT"
     ;;
 access)
@@ -75,7 +85,7 @@ access)
         exit 2
     fi
     echo "backend side (if not already up):"
-    echo "  FC_SERVE_TRUST_PROXY=1 scripts/renderer-serve.sh <scene.py> $PORT"
+    echo "  FC_SERVE_TRUST_PROXY=1 FC_SERVE_IDENTITY_DOOR=1 scripts/renderer-serve.sh <scene.py> $PORT"
     echo "fronting http://localhost:$PORT as https://$HOST (tunnel $TUNNEL)"
     exec cloudflared tunnel run --url "http://localhost:$PORT" "$TUNNEL"
     ;;
@@ -88,7 +98,8 @@ caddy)
 # Self-hosted sharing front door (docs/ShareAccess.md §4): Caddy
 # terminates TLS on your own box and asks oauth2-proxy who the viewer
 # is; the verified email reaches the origin in X-Auth-Request-Email,
-# which the scene server recognizes when FC_SERVE_TRUST_PROXY=1.
+# which the scene server recognizes when FC_SERVE_TRUST_PROXY=1 and
+# FC_SERVE_IDENTITY_DOOR=1.
 $HOST {
     forward_auth 127.0.0.1:4180 {
         uri /oauth2/auth
@@ -121,7 +132,7 @@ EOF
     echo "  oauth2-proxy  # with the env above filled in and sourced"
     echo "  caddy run --config $OUT/Caddyfile"
     echo "backend side:"
-    echo "  FC_SERVE_TRUST_PROXY=1 scripts/renderer-serve.sh <scene.py> $PORT"
+    echo "  FC_SERVE_TRUST_PROXY=1 FC_SERVE_IDENTITY_DOOR=1 scripts/renderer-serve.sh <scene.py> $PORT"
     command -v caddy >/dev/null || echo "note: caddy not installed here (https://caddyserver.com/docs/install)"
     command -v oauth2-proxy >/dev/null || echo "note: oauth2-proxy not installed here (https://oauth2-proxy.github.io/oauth2-proxy/)"
     ;;

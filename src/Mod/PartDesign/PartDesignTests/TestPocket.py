@@ -20,6 +20,7 @@
 #***************************************************************************
 
 import unittest
+import ArchiveMembers
 
 import FreeCAD
 import math
@@ -325,8 +326,7 @@ class TestPocket(unittest.TestCase):
                      '<Enum value="Subtraction"/>\n<Enum value="Common"/>\n'
                      '</CustomEnumList>\n</Property>\n')
         with zipfile.ZipFile(ours) as src, zipfile.ZipFile(theirs, "w") as dst:
-            for item in src.infolist():
-                data = src.read(item.filename)
+            for item, data in ArchiveMembers.members(ours):
                 if item.filename == "Document.xml":
                     xml = data.decode("utf-8")
                     # the Pocket's AddSubType, which upstream lacks, becomes

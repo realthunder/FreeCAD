@@ -101,13 +101,25 @@ Params = [
             'archive order, nothing pays for inflating entries nobody reads,\n'
             'and an entry can be reopened after the restore. Turn off to\n'
             'fall back to the forward-only walk.'),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Keep a document's included files in a pack store: a few zip
+    # segment files in the transient directory instead of a file per
+    # blob (docs/FileBlobsManager.md sec 15.7-15.10). An opened archive
+    # is split into segments, new content is compressed once and
+    # batched into them, and a save copies the members as they are. A
+    # blob gets a file of its own only when something asks for a path.
+    # Turn off for a file per blob, which on a monitored filesystem
+    # costs a file create per blob.
     ParamBool('ArchiveBlobStore', True,
-        doc='Serve the included files of a document archive out of one copy\n'
-            'of the archive in the transient directory, and give each its own\n'
-            'file only when something asks for a path. Requires\n'
-            'ArchiveRandomAccess. Turn off to write every included file out\n'
-            'during the restore, which on a monitored filesystem costs a file\n'
-            'create per entry.'),
+        doc='Keep a document\'s included files in a pack store: a few zip\n'
+            'segment files in the transient directory instead of a file per\n'
+            'blob. A blob gets a file of its own only when something asks for\n'
+            'a path. Turn off for a file per blob.'),
+    ParamInt('BlobSegmentSize', 64 * 1024,
+        doc='Cap of one pack store segment, in KB. A segment is rewritten\n'
+            'whole when content is added to it or dropped from it, so this\n'
+            'bounds the cost of every such rewrite. Content over a quarter of\n'
+            'it is kept as a file of its own.'),
     # The long form, kept here; the documentation shown is the short one below.
     # Park shape archive entries during restore and read each one on
     # first real use instead of before the document opens, so the
@@ -166,6 +178,25 @@ Params = [
         doc="Write each 2D curve of a shape once, and leave out those on planar\n"
             "faces, which are computed again on reading. The geometry read back is\n"
             "the same. Applies to shapes written as ASCII BRep."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # Write a shape's file from the shape alone, not from what was
+    # done with it.
+    #
+    # An edge keeps a 2D curve for every face built on it, including
+    # faces of other objects: extruding a sketch's face gives the
+    # sketch's own edges a curve on each side face, and those were saved
+    # with the sketch. Some flags record what was last done to a shape
+    # rather than what it is. With this on, curves on surfaces that no
+    # face of the saved shape carries are left out and those flags are
+    # written as constants, so an unchanged shape saves to the same bytes
+    # (docs/TransactionLog.md sec 23.12). Nothing the shape needs is
+    # lost. Needs the realthunder OCCT fork; ignored without it.
+    ParamBool('StableShapeBytes', True,
+        doc='Write a shape\'s file from the shape alone, not from what was\n'
+            'done with it: 2D curves on surfaces no face of the saved shape\n'
+            'carries are left out, so an unchanged shape saves to the same\n'
+            'bytes. Nothing the shape needs is lost. Needs the realthunder OCCT\n'
+            'fork; ignored without it.'),
     # The long form, kept here; the documentation shown is the short one below.
     # Store one file for parts that are the same shape in different
     # places, and record the motion between them instead of writing the
@@ -273,6 +304,54 @@ Params = [
     ParamBool('TransactionOnRecompute', False,
         doc = "Record a recompute started with the Refresh command as an undo step.\n"
               "When off, refreshing leaves the undo and redo history alone."),
+    ParamInt('TransactionLog', 2,
+        doc='Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The\n'
+            'log is always on; what this chooses is whether a save writes the\n'
+            'history into the file: 2 (the default) writes it, 1 keeps it in\n'
+            'the document transient directory only, where it dies with the\n'
+            'session. 0 switches the log off, for A/B checks.'),
+    ParamBool('TransactionLogIdentity', False,
+        doc='Record the user and host name in the transaction log session\n'
+            'row (sec 13.3, privacy). Off by default.'),
+    ParamInt('TransactionLogDerived', 1,
+        doc='What the transaction log does with derived values, i.e. values\n'
+            'written by their own object recompute (sec 10): 0 none (the op\n'
+            'notes the change, no value), 1 cache (evictable tier), 2 full.'),
+    ParamInt('TransactionLogSnapshotTransactions', 200,
+        doc='The transaction log takes an unnamed version (sec 16.3) every\n'
+            'this many committed transactions since the last version; 0 for\n'
+            'none. A snapshot serialises the document like a save, without\n'
+            'writing an archive. With the time rule of AutoSaveTimeout, it\n'
+            'bounds how much a crash recovery replays (sec 25.3).'),
+    ParamInt('TransactionLogKeepVersions', 0,
+        doc='How many unnamed versions the transaction log keeps (sec 16.3):\n'
+            'when a version is added, the oldest unnamed ones over this count\n'
+            'are evicted -- never a named one, never the newest. 0 keeps all.'),
+    ParamInt('TransactionLogCompactSize', 256,
+        doc='When the file-scope state of the transaction log is compacted on\n'
+            'its own (docs/TransactionLog.md sec 27.48, 27.49), in KB: after a\n'
+            'trim, a branch deletion or a squash, once the names estimated to be\n'
+            'referred to by nothing and the strings of the file hasher nothing\n'
+            'holds come to this many bytes together. 0 never.'),
+    ParamInt('ClosePinnedVersion', 0,
+        doc='When the last link pinned to a version of a file goes, what\n'
+            'happens to the document that showed it (docs/TransactionLog.md\n'
+            'sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to\n'
+            'ask, 0 keeps it open.'),
+    ParamInt('TransactionLogDeltaHops', 8,
+        doc='How long a reverse-delta chain the transaction log allows (sec\n'
+            '23.2): an entity superseded by a newer one is re-encoded as a\n'
+            'patch against it unless the chain below it would then be this\n'
+            'many hops from a full entity. 0 stores everything full.'),
+    ParamInt('TransactionLogDeltaRatio', 50,
+        doc='The largest patch the transaction log keeps, as a percent of the\n'
+            'full compressed size (sec 23.2); a patch over it means the codec\n'
+            'found nothing to share and the entity stays full.'),
+    ParamBool('TransactionLogVerify', False,
+        doc='A composed snapshot (sec 23.3) serialises the properties it\n'
+            'would have taken from the log anyway and compares: a mismatch\n'
+            'names a value changed without aboutToSetValue (sec 23.6). Always\n'
+            'on in a debug build.'),
     ParamBool('RelativeStringID', True,
         doc = "Write the ids in a document's string table as differences from the\n"
               "id before, which makes the saved file smaller. Turn off to write\n"

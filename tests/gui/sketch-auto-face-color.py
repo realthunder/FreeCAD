@@ -16,6 +16,7 @@ preference there and drop the colour on the next save.
 Measured on ShapeColor, Transparency and their saved status.
 """
 import os
+import ArchiveMembers
 import re
 import traceback
 import zipfile
@@ -87,8 +88,7 @@ def make_sketch(doc, name):
 
 def rewrite_gui(src, dst, fn):
     with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
-        for item in zin.infolist():
-            data = zin.read(item.filename)
+        for item, data in ArchiveMembers.members(src):
             if item.filename == "GuiDocument.xml":
                 data = fn(data)
             zout.writestr(item, data)

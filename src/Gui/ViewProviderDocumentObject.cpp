@@ -272,7 +272,9 @@ void ViewProviderDocumentObject::onBeforeChange(const App::Property* prop)
     if (isAttachedToDocument() && !testStatus(SecondaryView)) {
         App::DocumentObject* obj = getObject();
         App::Document* doc = obj ? obj->getDocument() : nullptr;
-        if (doc) {
+        // Not a name over a value kept elsewhere (Legacy): what it names
+        // is what an undo puts back
+        if (doc && !prop->testStatus(App::Property::Legacy)) {
             onBeforeChangeProperty(doc, prop);
         }
     }
@@ -661,6 +663,22 @@ void ViewProviderDocumentObject::reattach(App::DocumentObject *pcObj) {
     setStatus(Detach, false);
     callExtension(&ViewProviderExtension::extensionReattach,pcObj);
     updateChildren();
+}
+
+bool ViewProviderDocumentObject::showValueDiff(const char *, const std::string &,
+                                               const std::string &, float, bool,
+                                               const std::string &)
+{
+    return false;
+}
+
+void ViewProviderDocumentObject::hideValueDiff()
+{
+}
+
+std::map<std::string, double> ViewProviderDocumentObject::getValueDiff() const
+{
+    return {};
 }
 
 void ViewProviderDocumentObject::update(const App::Property* prop)

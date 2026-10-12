@@ -43,6 +43,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "ExpressionParser.h"
+#include "GeoFeature.h"
 #include "PropertyLinks.h"
 #include "Range.h"
 
@@ -723,6 +724,58 @@ bool ObjectIdentifier::updateElementReference(ExpressionVisitor &v,
         return false;
 
     ResolveResults result(*this);
+    // The ids a file gave are held against the target's table first, as a
+    // link's are on registering, whether the element is there or missing
+    // (docs/TransactionLog.md sec 27.77): else the next save's compaction
+    // drops the strings the reference names.
+    // A stored name's ids are the owner's, held by the lookup in
+    // _updateElementReference (sec 27.82).
+    if (!shadowSub.savedIds.empty() && !shadowSub.pending) {
+        App::DocumentObject *target = result.resolvedDocumentObject;
+        if (!target && owner && owner->getDocument()) {
+            auto doc = result.resolvedDocument ? result.resolvedDocument : owner->getDocument();
+            const auto &name = documentObjectName.getString();
+            target = doc->getObject(name.c_str());
+            if (!target && documentObjectName.isRealString()) {
+                for (auto obj : doc->getObjects()) {
+                    if (name == obj->Label.getValue()) {
+                        target = obj;
+                        break;
+                    }
+                }
+            }
+        }
+        StringHasherRef hasher;
+        if (target && target->getDocument())
+            hasher = target->getDocument()->getStringHasher();
+        if (hasher) {
+            shadowSub.sids.clear();
+            for (long id : shadowSub.savedIds) {
+                if (auto sid = hasher->getID(id))
+                    shadowSub.sids.push_back(sid);
+            }
+            shadowSub.savedIds.clear();
+        }
+    }
+    // The name a file gave beside the text's element (sec 31.22): where
+    // the path registers it is taken as it is, as a link's shadow is. The
+    // two were saved together; where the shapes here are not the ones they
+    // were saved with -- a value a merge takes -- the property is told to
+    // follow its names (PropertyLinkBase::followElementReferences).
+    // (Kept while the object it is an element of is not there to register
+    // with.)
+    if (!shadowSub.given.empty() && result.resolvedDocumentObject) {
+        std::string given = std::move(shadowSub.given);
+        shadowSub.given.clear();
+        if (!feature && !reverse && !shadowSub.pending
+                && !GeoFeature::hasMissingElement(subObjectName.getString().c_str())) {
+            shadowSub.first = std::move(given);
+            shadowSub.second = subObjectName.getString();
+            v.getPropertyLink()->_registerElementReference(
+                    result.resolvedDocumentObject, subObjectName.str, shadowSub);
+            return false;
+        }
+    }
     if(!result.resolvedSubObject)
         return false;
     if(v.getPropertyLink()->_updateElementReference(

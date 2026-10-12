@@ -352,24 +352,37 @@ private:
     void setObjectName(Info &info, TDF_Label label, bool checkExistingName=false);
     std::string getLabelName(TDF_Label label);
 
-    virtual void applyEdgeColors(Part::Feature*, const std::vector<App::Color>&)
-    {}
-    virtual void applyFaceColors(Part::Feature*, const std::vector<App::Color>&)
-    {}
+protected:
+    /** @name What a file says of looks, given to the objects
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.7. The looks of a shape's
+     * elements are the object's, and of what a link shows the link's, so
+     * they are written here and are there with no view provider. What is
+     * a view's own -- the Render_* properties -- is the Gui importer's.
+     */
+    //@{
+    /// One colour is the colour of the edges; more are one an edge
+    virtual void applyEdgeColors(Part::Feature*, const std::vector<App::Color>&);
+    /// One colour is the object's, with what is seen through it; more are
+    /// one a face
+    virtual void applyFaceColors(Part::Feature*, const std::vector<App::Color>&);
     /// Per-face whole materials (glTF visualization materials whose
-    /// fields beyond diffuse vary across faces); the Gui importer puts
-    /// them into the view provider's ShapeAppearance.
-    virtual void applyFaceMaterials(Part::Feature*, const std::vector<App::MaterialAppearance>&, bool /*pbr*/)
-    {}
+    /// fields beyond diffuse vary across faces): the one most of the
+    /// surface wears is the object's own look, the rest are the faces',
+    /// by number.
+    virtual void applyFaceMaterials(Part::Feature*, const std::vector<App::MaterialAppearance>&, bool pbr);
     virtual void applyElementColors(App::DocumentObject*, const std::map<std::string, App::Color>&)
     {}
-    virtual void applyLinkColor(App::DocumentObject*, int /*index*/, App::Color)
-    {}
+    /// The colour a link gives all it shows, or one of an array of it
+    virtual void applyLinkColor(App::DocumentObject*, int index, App::Color);
     /// Per-object render (PBR) material resolved from XCAFDoc_VisMaterial
-    /// (glTF import); the Gui importer mirrors it into the view provider's
+    /// (glTF import): the metalness and roughness are the object's look;
+    /// the Gui importer mirrors the rest into the view provider's
     /// Render_* dynamic properties.
-    virtual void applyRenderMaterial(Part::Feature*, const RenderMaterial&)
-    {}
+    virtual void applyRenderMaterial(Part::Feature*, const RenderMaterial&);
+    //@}
+
+private:
 
     /// Resolve the label's XCAFDoc_VisMaterial (checking the sub shape
     /// labels when the label itself carries none) into a neutral

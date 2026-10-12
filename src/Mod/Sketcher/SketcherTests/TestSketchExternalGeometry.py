@@ -52,7 +52,7 @@ class TestSketchExternalGeometry(unittest.TestCase):
         # one silhouette is the algorithm's own, from the side face; the
         # other is where the seam lies, and is the seam's projection
         silhouettes = [name for _, name, geo in ext if abs(geo.length() - cyl.Height.Value) < 1e-6]
-        self.assertEqual(sorted(name.split(";")[0] for name in silhouettes), ["Edge1", "Face1"])
+        self.assertEqual(sorted(name.split(";")[0] for name in silhouettes), ["Lateral", "SeamL"])
 
     def testIdsFollowTheNameNotThePosition(self):
         cyl, sketch = self.sideSketchOnCylinder()
@@ -127,9 +127,9 @@ class TestSketchExternalGeometry(unittest.TestCase):
         names = [name for _, name, _ in ext]
         self.assertTrue(all(names), names)
         self.assertEqual(len(set(names)), 4)
-        # a primitive's mapped name is its element name
-        for name in names:
-            self.assertRegex(name, r"^Edge\d+$")
+        # an edge of a box is named by the two faces it is between, the
+        # second by its letter, and these are the top's
+        self.assertEqual(sorted(names), ["FrontT", "LeftT", "RearT", "RightT"])
 
     def testPlanarFaceIdsFollowTheName(self):
         notch, sketch = self.notchedTopFace()
@@ -222,3 +222,32 @@ class TestSketchExternalGeometry(unittest.TestCase):
             self.doc.recompute()
             self.assertEqual([g.TypeId for g in sketch.ExternalGeo], before)
             self.assertNotIn("Invalid", sketch.State)
+
+    def testAnEdgeDrawnAgainstItsLoopKeepsItsDirection(self):
+        # A closed profile with one line drawn against the loop. Its edge in
+        # the sketch's shape is that line oriented, not a copy on the
+        # reversed curve: the curve runs as the geometry does, and so does an
+        # external edge taken from it. The copy swapped the ends a sketch
+        # built on it constrains, and so which circle took which radius
+        # (docs/TransactionLog.md sec 27.87).
+        import Part
+
+        profile = self.doc.addObject("Sketcher::SketchObject", "Profile")
+        points = [Vector(0, 0, 0), Vector(1, -10, 0), Vector(3, -10, 0), Vector(2, 0, 0)]
+        for i in range(3):
+            profile.addGeometry(Part.LineSegment(points[i], points[i + 1]))
+        profile.addGeometry(Part.LineSegment(points[0], points[3]))  # against the loop
+        self.doc.recompute()
+        self.assertEqual(len(profile.Shape.Wires), 1)
+        for i, geo in enumerate(profile.Geometry):
+            edge = profile.Shape.getElement("Edge%d" % (i + 1))
+            start = edge.Curve.value(edge.FirstParameter)
+            self.assertLess((start - geo.StartPoint).Length, 1e-7, "Edge%d" % (i + 1))
+
+        sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
+        self.doc.recompute()
+        sketch.addExternal("Profile", "Edge4")
+        self.doc.recompute()
+        geo = sketch.ExternalGeo[-1]
+        self.assertLess((geo.StartPoint - points[0]).Length, 1e-7)
+        self.assertLess((geo.EndPoint - points[3]).Length, 1e-7)

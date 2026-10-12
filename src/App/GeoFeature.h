@@ -36,6 +36,7 @@ namespace App
 {
 
 class PropertyXLinkSub;
+class AppearanceList;
 
 /** Base class of all geometric document objects.
  */
@@ -102,6 +103,17 @@ public:
      */
     virtual std::pair<std::string,std::string> getElementName(
             const char *name, ElementNameType type=Normal) const;
+
+    /** The string ids an element's name holds: what its element map records
+     * for it -- which includes the names it was made from, not only those
+     * its text shows -- and any id the text names that the map does not
+     * know (a name made on demand, such as a wire's). A reference into the
+     * element holds them, so the string table keeps what it names
+     * (docs/TransactionLog.md sec 27.75).
+     *
+     * @param element: the element part of a sub-name, mapped or indexed
+     */
+    Data::ElementIDRefs getElementIDs(const char *element) const;
 
     /** Resolve both the new and old style element name
      *
@@ -199,6 +211,30 @@ public:
      */
     virtual void onElementReferenceReleased(PropertyLinkBase *prop) { (void)prop; }
 
+    /** Keep a value of the geometry another branch had, for a reference
+     * taken from that branch.
+     *
+     * A reference a merge takes names its element by the number it has in
+     * the other branch's value of the geometry (docs/TransactionLog.md sec
+     * 31.22), which is no generation this feature ever had.  The feature
+     * makes a property of its own to hold that value and returns it for the
+     * caller to fill.  From then on it is what 'referrer' is answered from
+     * (searchElementCache), and it is kept as a generation of the feature's
+     * own is: while the reference is missing.
+     *
+     * @param referrer: the link property that was written against the value
+     * @param evidence: the property an earlier call returned, to answer one
+     * more referrer from; null to make one
+     * @return the property, or null where the feature keeps no such thing
+     */
+    virtual Property *retainElementEvidence(const PropertyLinkBase *referrer,
+                                            Property *evidence = nullptr)
+    {
+        (void)referrer;
+        (void)evidence;
+        return nullptr;
+    }
+
 
     /// Return the object that owns the shape that contains the give element name
     virtual DocumentObject *getElementOwner(const Data::MappedName & /*name*/) const
@@ -215,10 +251,22 @@ public:
      * cannot reach directly. These two virtuals are the bridge: a feature that
      * carries a material card reports its appearance here, and the view
      * provider reads it from the App side without linking Materials.
+     *
+     * A feature that carries none answers with a default-constructed
+     * appearance, which is what "no card" is to whoever asks.
      */
     virtual App::MaterialAppearance getMaterialAppearance() const;
     /// Set the feature's material appearance from an App::MaterialAppearance
     virtual void setMaterialAppearance(const App::MaterialAppearance& material);
+    /** The look an object has that nobody gave one
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.10: every object is given a look
+     * when it is made, by the object. setupObject() is where, and this is for
+     * whoever makes an object setupObject() is not called for: a script that
+     * adds one with its proxy, Document.addObject(attach=True). Nothing over
+     * a look the object has.
+     */
+    virtual void giveDefaultAppearance() {}
     /** Render_* view properties the feature's material card states
      *
      * The third leg of the same bridge, for what App::MaterialAppearance cannot
@@ -228,7 +276,43 @@ public:
      */
     virtual App::MaterialRenderProperties getMaterialRenderProperties() const;
 
+    /** @name The look of the object's elements, kept by the object
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6. An object that keeps what its
+     * faces, edges and vertices look like answers here, so that a face made
+     * from one of its faces can take that face's look without knowing what
+     * kind of object it came from.
+     */
+    //@{
+    /** The elements of a kind as they are drawn
+     *
+     * @param kind: an App::PropertyElementAppearance::Kind
+     * @param list: a look for each element of the kind, or one alone where
+     *              every element is the object's own
+     *
+     * @return False where the object keeps no looks. What was made from it
+     * is then asked of what it was made from itself.
+     */
+    virtual bool getDrawnAppearance(int kind, App::AppearanceList &list) const
+    {
+        (void)kind;
+        (void)list;
+        return false;
+    }
+    /** An object this one depends on is drawn differently
+     *
+     * Told by App::AppearanceUpdater, and no recompute: what this object
+     * takes from the looks of its sources is to be made again.
+     */
+    virtual void onSourceAppearanceChanged() {}
+    //@}
+
 protected:
+    /** The geometry an element name belongs to, with 'element' moved past
+     * whatever selects it: the geometry property's data by default.
+     */
+    virtual const Data::ComplexGeoData* getElementGeometry(const char*& element) const;
+
     void onChanged(const Property* prop) override;
     void onDocumentRestored() override;
     void updateElementReference();

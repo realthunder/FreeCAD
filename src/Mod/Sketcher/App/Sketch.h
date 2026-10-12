@@ -78,7 +78,7 @@ public:
      * constraints or may not
      */
     int setUpSketch(
-        const std::vector<Part::Geometry*>& GeoList,
+        const std::vector<const Part::Geometry*>& GeoList,
         const std::vector<Constraint*>& ConstraintList,
         int extGeoCount = 0
     );
@@ -87,11 +87,11 @@ public:
     /// add unspecified geometry
     int addGeometry(const Part::Geometry* geo, bool fixed = false);
     /// add unspecified geometry
-    int addGeometry(const std::vector<Part::Geometry*>& geos, bool fixed = false);
+    int addGeometry(const std::vector<const Part::Geometry*>& geos, bool fixed = false);
     /// add unspecified geometry, where each element's "fixed" status is given by the
     /// blockedGeometry array
     int addGeometry(
-        const std::vector<Part::Geometry*>& geos,
+        const std::vector<const Part::Geometry*>& geos,
         const std::vector<bool>& blockedGeometry,
         const std::set<int>& inGroupGeoIds
     );
@@ -848,7 +848,7 @@ private:
      * parameters that fulfil the dependacy groups.
      */
     bool analyseBlockedGeometry(
-        const std::vector<Part::Geometry*>& internalGeoList,
+        const std::vector<const Part::Geometry*>& internalGeoList,
         const std::vector<Constraint*>& constraintList,
         std::vector<bool>& onlyblockedGeometry,
         std::vector<int>& blockedGeoIds

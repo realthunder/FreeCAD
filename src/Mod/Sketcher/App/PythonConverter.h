@@ -71,7 +71,7 @@ public:
 
     /// Convert a vector of geometries into the string representing the command creating them
     static std::string convert(const std::string& doc,
-                               const std::vector<Part::Geometry*>& geos,
+                               const std::vector<const Part::Geometry*>& geos,
                                Mode mode = Mode::CreateInternalGeometry);
 
     static std::string convert(const Sketcher::Constraint* constraint,

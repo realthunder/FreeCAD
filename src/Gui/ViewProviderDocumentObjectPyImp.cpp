@@ -23,10 +23,12 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <cmath>
 # include <sstream>
 #endif
 
 #include <App/DocumentObjectPy.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include "Application.h"
 #include "Document.h"
 
@@ -56,6 +58,53 @@ PyObject* ViewProviderDocumentObjectPy::update(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* ViewProviderDocumentObjectPy::showValueDiff(PyObject *args, PyObject *kwds)
+{
+    const char *prop;
+    const char *a = "";
+    const char *b = "";
+    double position = 1.0;
+    PyObject *differencesOnly = Py_False;
+    const char *mode = "";
+    static const std::array<const char *, 7> kwlist {"prop", "a", "b", "position",
+                                                     "differencesOnly", "mode", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|ssdOs", kwlist, &prop, &a, &b,
+                                             &position, &differencesOnly, &mode))
+        return nullptr;
+    PY_TRY {
+        bool shown = getViewProviderDocumentObjectPtr()->showValueDiff(
+            prop, a, b, static_cast<float>(position), Base::asBoolean(differencesOnly), mode);
+        return Py::new_reference_to(Py::Boolean(shown));
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderDocumentObjectPy::hideValueDiff(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        getViewProviderDocumentObjectPtr()->hideValueDiff();
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderDocumentObjectPy::getValueDiff(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::Dict dict;
+        for (const auto &v : getViewProviderDocumentObjectPtr()->getValueDiff()) {
+            // A count is a count: only what is no whole number is a float
+            if (v.second == std::floor(v.second) && std::fabs(v.second) < 1e15)
+                dict.setItem(v.first, Py::Long(static_cast<long>(v.second)));
+            else
+                dict.setItem(v.first, Py::Float(v.second));
+        }
+        return Py::new_reference_to(dict);
+    } PY_CATCH;
+}
+
 PyObject* ViewProviderDocumentObjectPy::isShowable(PyObject *args)
 {
     PyObject *refresh = Py_False;
@@ -70,6 +119,9 @@ PyObject* ViewProviderDocumentObjectPy::isShowable(PyObject *args)
 Py::Object ViewProviderDocumentObjectPy::getObject() const
 {
     App::DocumentObject* obj = getViewProviderDocumentObjectPtr()->getObject();
+    if (!obj) {
+        return Py::None();
+    }
     return Py::Object(obj->getPyObject(), true); // do not inc'ref twice
 }
 

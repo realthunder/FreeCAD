@@ -49,6 +49,14 @@ public:
       entry. */
   void putNextEntry( const ZipCDirEntry &entry ) ;
 
+  /** Writes a whole entry whose data is already in its stored form.
+      The bytes go out as they are, never compressed again: \a entry
+      carries the method, the CRC-32 and the uncompressed size the data
+      was made with, and the compressed size is \a size. What copies a
+      member from one archive to another without inflating it -- the blob
+      pack store's save (docs/FileBlobsManager.md sec 15.7). */
+  void putRawEntry( const ZipCDirEntry &entry, const char *data, size_t size ) ;
+
   /** Sets the global comment for the Zip archive. */
   void setComment( const string &comment ) ;
 
@@ -67,6 +75,7 @@ protected:
   virtual int sync() ;
 
   void setEntryClosedState() ;
+  static int dosTimeNow() ;
   void updateEntryHeaderInfo() ;
 
   // Should/could be moved to zipheadio.h ?!

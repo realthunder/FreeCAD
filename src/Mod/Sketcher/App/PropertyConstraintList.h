@@ -131,9 +131,9 @@ public:
     bool isSame(const App::Property &other) const override;
     App::Property *copyBeforeChange() const override;
 
-    void acceptGeometry(const std::vector<Part::Geometry*>& GeoList);
-    bool checkGeometry(const std::vector<Part::Geometry*>& GeoList);
-    bool scanGeometry(const std::vector<Part::Geometry*>& GeoList) const;
+    void acceptGeometry(const std::vector<const Part::Geometry*>& GeoList);
+    bool checkGeometry(const std::vector<const Part::Geometry*>& GeoList);
+    bool scanGeometry(const std::vector<const Part::Geometry*>& GeoList) const;
 
     bool checkConstraintIndices(int geomax, int geomin);
 

@@ -56,7 +56,10 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/DocumentParams.h>
+#include <App/TransactionLog.h>
+#include <App/TransactionStore.h>
 #include <App/AutoTransaction.h>
+#include <optional>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Link.h>
 
@@ -185,7 +188,7 @@ protected:
                     QTreeWidgetItem *parent=0, int index=-1,
                     DocumentObjectDataPtr ptrs = DocumentObjectDataPtr());
 
-    void setupTreeRank(DocumentObjectItem *item);
+    void setupTreeRank(DocumentObjectItem *item, bool moved = false);
 
     int findRootIndex(App::DocumentObject *childObj);
 
@@ -236,6 +239,7 @@ private:
     fastsignals::scoped_connection connOnTopObject;
     fastsignals::scoped_connection connActivateView;
     fastsignals::scoped_connection connSignalChanged;
+    fastsignals::scoped_connection connBranches;
 
     std::map<App::SubObjectT, std::vector<DocumentObjectItem*>> itemsOnTop;
     bool updatingItemsOnTop = false;
@@ -1205,6 +1209,17 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
 
     // Setup connections
     connectNewDocument = Application::Instance->signalNewDocument.connect(std::bind(&TreeWidget::slotNewDocument, this, sp::_1, sp::_2));
+    // What a command did to the tree's structure is settled before its
+    // transaction closes, so a rank the tree writes for it -- an object the
+    // command moved out to the root, sent last -- is part of that command's
+    // step and not an edit of the tree's own from its timer
+    // (docs/TransactionLog.md sec 30.8). The flush is the one
+    // checkTopParent() asks for, and does nothing when nothing is pending.
+    connectBeforeCloseTransaction = App::GetApplication().signalBeforeCloseTransaction.connect(
+        [this](bool abort) {
+            if (!abort)
+                _updateStatus(false);
+        });
     connectDelDocument = Application::Instance->signalDeleteDocument.connect(std::bind(&TreeWidget::slotDeleteDocument, this, sp::_1));
     connectRenDocument = Application::Instance->signalRenameDocument.connect(std::bind(&TreeWidget::slotRenameDocument, this, sp::_1));
     connectActDocument = Application::Instance->signalActiveDocument.connect(std::bind(&TreeWidget::slotActiveDocument, this, sp::_1));
@@ -1290,6 +1305,7 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
 TreeWidget::~TreeWidget()
 {
     connectNewDocument.disconnect();
+    connectBeforeCloseTransaction.disconnect();
     connectDelDocument.disconnect();
     connectRenDocument.disconnect();
     connectActDocument.disconnect();
@@ -3004,8 +3020,14 @@ void TreeWidget::mousePressEvent(QMouseEvent *event) {
             if (event->button() == Qt::LeftButton) {
                 if (event->modifiers() & Qt::AltModifier)
                     pimpl->toggleItemShowOnTop(oitem);
-                else
+                else {
+                    // With the log on a click is a step of its own, named
+                    // (docs/TransactionLog.md sec 24.10); off, as it was.
+                    std::optional<App::AutoTransaction> committer;
+                    if (App::DocumentParams::getTransactionLog() != 0)
+                        committer.emplace("Toggle visibility");
                     pimpl->toggleItemVisibility(oitem);
+                }
                 pimpl->skipMouseRelease = true;
                 event->setAccepted(true);
                 return;
@@ -3013,6 +3035,9 @@ void TreeWidget::mousePressEvent(QMouseEvent *event) {
         }
         else if (tag == Gui::treeUnselectableIconTag()) {
             if (event->button() == Qt::LeftButton) {
+                std::optional<App::AutoTransaction> committer;
+                if (App::DocumentParams::getTransactionLog() != 0)
+                    committer.emplace("Toggle selectability");
                 oitem->object()->Selectable.setValue(true);
                 pimpl->skipMouseRelease = true;
                 event->setAccepted(true);
@@ -5705,6 +5730,10 @@ DocumentItem::DocumentItem(const Gui::Document* doc, QTreeWidgetItem * parent)
     connectRecomputedObj = adoc->signalRecomputedObject.connect(
             std::bind(&DocumentItem::slotRecomputedObject, this, sp::_1));
     connectChangedModified = doc->signalChangedModified.connect([this](const Document &) { setDocumentLabel(); });
+    // The branch suffix follows the file's branches (docs/TransactionLog.md
+    // sec 27.24).
+    connBranches = adoc->signalBranchesChanged.connect(
+        [this](const App::Document &) { setDocumentLabel(); });
 
     connectDetachView = doc->signalDetachView.connect(
         [this](const BaseView &, bool passive) {
@@ -5772,9 +5801,38 @@ void DocumentItem::setDocumentLabel() {
     auto doc = document()->getDocument();
     if(!doc)
         return;
-    setText(0, QStringLiteral("%1%2").arg(
-                QString::fromUtf8(doc->Label.getValue()),
+    // The file's own document, while the file has more than one branch:
+    // `@<branch>@v<num>`, the branch it is on and the version it is on disk
+    // (docs/TransactionLog.md sec 27.24). A version document's label carries
+    // its own (27.23).
+    QString suffix;
+    auto log = doc->getTransactionLog();
+    if (log && !doc->testStatus(App::Document::VersionDoc)) {
+        int open = 0;
+        std::string branch;
+        for (const auto &b : log->store().branches()) {
+            if (b.closed != 0)
+                continue;
+            ++open;
+            if (b.id == log->branch())
+                branch = b.name;
+        }
+        auto version = Base::freecad_dynamic_cast<App::PropertyString>(
+                doc->getPropertyByName("Version"));
+        const long long num = version ? std::atoll(version->getValue()) : 0;
+        if (open > 1 && !branch.empty()) {
+            suffix = QStringLiteral("@%1@").arg(QString::fromUtf8(branch.c_str()));
+            if (num > 0)
+                suffix += QStringLiteral("v%1").arg(num);
+        }
+    }
+    setText(0, QStringLiteral("%1%2%3").arg(
+                QString::fromUtf8(doc->Label.getValue()), suffix,
                 document()->isModified()?QStringLiteral(" *"):QStringLiteral("")));
+    // A pinned version is the version itself: shown as not editable (27.22).
+    QFont f = font(0);
+    f.setItalic(doc->testStatus(App::Document::FrozenVersion));
+    setFont(0, f);
 }
 
 #define _FOREACH_ITEM(_item, _obj) \
@@ -5922,7 +5980,7 @@ void DocumentItem::slotNewObject(const Gui::ViewProviderDocumentObject& obj) {
     getTree()->_updateStatus();
 }
 
-void DocumentItem::setupTreeRank(DocumentObjectItem *item)
+void DocumentItem::setupTreeRank(DocumentObjectItem *item, bool moved)
 {
     if(!this->connectChgObject.connected()) {
         // This means the document is not fully restored yet by the tree view.
@@ -5931,7 +5989,29 @@ void DocumentItem::setupTreeRank(DocumentObjectItem *item)
     }
     auto ranks = document()->getDocument()->treeRanks();
     auto obj = item->object()->getObject();
-    if (obj->TreeRank.getValue() < ranks.second) {
+    const long rank = obj->TreeRank.getValue();
+    // An item new to the tree is not an object new to the document: the
+    // document ranks an object as it is added, a restored, undone or merged
+    // one carries the rank it had, and the tree may be seeing either late --
+    // several made by one command before its timer ran, a document shown
+    // for the first time. Writing a rank then is an edit nobody made: with
+    // the transaction log it was an undo step of its own after the command,
+    // and it cleared the redo stack after an undo
+    // (docs/TransactionLog.md sec 30.8). Only an object with no rank at all
+    // is given one.
+    //
+    // An item moved out to the root goes last, so the user finds it -- as
+    // part of the command that moved it. The tree is brought up to date
+    // before a transaction closes (TreeWidget's connection to
+    // signalBeforeCloseTransaction), so the rank is written while that
+    // command's transaction is open and is undone with it. When the tree
+    // learns of the move with no transaction open -- an undo put the object
+    // back out, the tree was hidden or busy at the commit -- the object
+    // stays where its rank puts it: the tree makes no step of its own.
+    const bool write = moved
+        ? rank < ranks.second && document()->getDocument()->hasPendingTransaction()
+        : rank == 0 && ranks.second != 0;
+    if (write) {
         obj->TreeRank.setValue(ranks.second + 1);
         if (itemSorted) {
             itemSorted = false;
@@ -6283,7 +6363,7 @@ void DocumentItem::populateItem(DocumentObjectItem *item, bool refresh, bool del
                     updateItemsVisibility(childItem,false);
                 childItem->myData->rootItem = childItem;
                 ++_TreeItemGeneration;
-                setupTreeRank(childItem);
+                setupTreeRank(childItem, true);
                 continue;
             }
         }

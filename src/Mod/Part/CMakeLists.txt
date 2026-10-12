@@ -70,10 +70,13 @@ set(Part_tests
     parttests/TestFaceMakerUnifiedPlanar.py
     parttests/TestFaceMakerUnifiedNonPlanar.py
     parttests/ShapeListTest.py
+    parttests/ShapeDiffTest.py
     parttests/TopoShapeListTest.py
     parttests/ColorPerFaceTest.py
+    parttests/ElementAppearanceTest.py
     parttests/ElementNameTest.py
     parttests/HLRProjectionTest.py
+    parttests/PrimitiveNamesTest.py
     parttests/TestLinkArray.py
 )
 

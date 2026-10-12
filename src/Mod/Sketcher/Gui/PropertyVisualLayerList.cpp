@@ -65,7 +65,7 @@ void PropertyVisualLayerList::Save(Base::Writer& writer) const
     writer.Stream() << writer.ind() << "<VisualLayerList count=\"" << getSize() << "\">" << endl;
     writer.incInd();
     for (int i = 0; i < getSize(); i++) {
-        _lValueList[i].Save(writer);
+        this->getValues()[i].Save(writer);
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</VisualLayerList>" << endl;
@@ -94,16 +94,17 @@ void PropertyVisualLayerList::Restore(Base::XMLReader& reader)
 Property* PropertyVisualLayerList::Copy() const
 {
     PropertyVisualLayerList* p = new PropertyVisualLayerList();
-    p->_lValueList = _lValueList;
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyVisualLayerList::Paste(const Property& from)
 {
-    setValues(dynamic_cast<const PropertyVisualLayerList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyVisualLayerList&>(from).getValues());
 }
 
 unsigned int PropertyVisualLayerList::getMemSize() const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(VisualLayer));
+    return static_cast<unsigned int>(this->getValues().size() * sizeof(VisualLayer));
 }

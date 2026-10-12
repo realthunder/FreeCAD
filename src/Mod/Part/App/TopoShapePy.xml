@@ -1084,6 +1084,52 @@ elementary shapes, Face, Edge, Vertex.
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="diff" Const="true" Keyword="true">
+      <Documentation>
+          <UserDocu>
+diff(other, edges=False, vertices=False, geometry=True, around=True, tol=1e-7) -> dict
+
+What became of each element between this shape and 'other', two states of one
+object's shape. The faces, and the edges and vertices where asked for, are
+paired by name, by name without the steps only one of the two has, by geometry
+and by the paired faces around, each with what the one before left.
+
+geometry: pair by geometry what the names left
+around: pair by the paired faces around what all else left
+tol: how far two points may be apart and be one
+
+Returns a dict:
+    same: the two are one shape in one place
+    moved: 'other' is this shape moved as a whole
+    motion: the matrix of that motion, where moved
+    Face, Edge, Vertex: a list of (a, b, by, what) for each type asked for.
+        a, b: the element's name in this shape and in 'other', None where it
+              is added or removed
+        by: how the pair was found: 'shape', 'name', 'steps', 'geometry',
+            'around', or '' where there is no pair
+        what: 'same', 'moved', 'changed', 'added' or 'removed'
+    cost: the seconds it took, by what they were spent on
+        </UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="diffMaterial" Const="true" Keyword="true">
+      <Documentation>
+        <UserDocu>
+diffMaterial(other, fuzzy=0.0) -> dict or None
+
+Two states of a solid, this one before and `other` after: one general fuse of
+the two, and of its cells those only this has, those only the other has, and
+those of both (docs/TransactionLog.md sec 32.14).
+
+{'removed': Shape or None, 'added': Shape or None, 'common': Shape or None,
+ 'removedVolume': float, 'addedVolume': float, 'commonVolume': float,
+ 'seconds': float}
+
+Neither shape is touched. `fuzzy` is the fuse's own tolerance, 0 for what the
+shapes carry. None where either has no solid, or the fuse fails.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getChildShapes" Const="true">
       <Documentation>
           <UserDocu>

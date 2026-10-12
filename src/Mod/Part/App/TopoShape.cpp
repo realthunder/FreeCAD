@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <array>
+# include <set>
 # include <cmath>
 # include <cstdlib>
 # include <sstream>
@@ -911,6 +912,7 @@ void TopoShape::applyStorageOptions(BRepTools_ShapeSet& set, bool forStorage)
 {
     const bool dedup = forStorage && App::DocumentParams::getDedupShapePCurves();
     set.SetOmitPCurvesOnPlane(dedup);
+    set.SetStableBytes(forStorage && App::DocumentParams::getStableShapeBytes());
     // Merging equal 2D curves is what the kernel does by default, so this only
     // ever has to turn it off.
     set.ChangeCurves2d().SetMerging(dedup);
@@ -921,6 +923,7 @@ void TopoShape::applyStorageOptions(BinTools_ShapeSet& set, bool forStorage)
     // The binary 2D curve set has no merging to gate, so only the pcurve drop
     // applies to this format.
     set.SetOmitPCurvesOnPlane(forStorage && App::DocumentParams::getDedupShapePCurves());
+    set.SetStableBytes(forStorage && App::DocumentParams::getStableShapeBytes());
 }
 
 void TopoShape::exportBrep(std::ostream& out, bool forStorage) const
@@ -2902,6 +2905,31 @@ void TopoShape::sewShape(double tolerance)
     *this = makEShape(sew);
 }
 
+/** Whether a sub-shape of \a shape belongs to a frozen value.
+ *
+ * docs/TransactionLog.md sec 23.12: a shape property freezes its value, and a
+ * shape built on it shares the value's sub-shapes. Repairing such a shape in
+ * place would repair them inside the value, so fix() keeps the repaired copy.
+ */
+static bool hasFrozenPart(const TopoDS_Shape& shape, std::set<const TopoDS_TShape*>& seen)
+{
+    if (shape.IsNull() || !seen.insert(shape.TShape().get()).second)
+        return false;
+    if (shape.Immutable())
+        return true;
+    for (TopoDS_Iterator it(shape, false, false); it.More(); it.Next()) {
+        if (hasFrozenPart(it.Value(), seen))
+            return true;
+    }
+    return false;
+}
+
+static bool hasFrozenPart(const TopoDS_Shape& shape)
+{
+    std::set<const TopoDS_TShape*> seen;
+    return hasFrozenPart(shape, seen);
+}
+
 bool TopoShape::fix()
 {
     if (this->_Shape.IsNull())
@@ -2930,6 +2958,13 @@ bool TopoShape::fix()
     BRepCheck_Analyzer aChecker(fix.Shape());
     if (!aChecker.IsValid())
         return false;
+
+    // Built on a frozen value, the original may not be fixed in place: the
+    // repair would land in the value too (a revolve's cap is its base face).
+    if (hasFrozenPart(_Shape)) {
+        makESHAPE(fix.Shape(), MapperHistory(fix), {copy});
+        return true;
+    }
 
     // If the above fix produces a valid shape, then we fix the original shape,
     // because BRepBuilderAPI_Copy has some undesired side effect (e.g. flatten
@@ -3014,6 +3049,11 @@ bool TopoShape::fix(double precision, double mintol, double maxtol)
     // nothing-to-fix case the hot one.
     if (copiedShape.IsSame(copy.getShape()))
         return true;
+    // See fix(): a shape with a frozen part keeps the fixed copy.
+    if (hasFrozenPart(_Shape)) {
+        makESHAPE(copiedShape, MapperHistory(fix), {copy});
+        return true;
+    }
     ShapeFix_Shape fixThis(_Shape);
     TopoDS_Shape fixedShape;
     if (doFix(fixThis, *this, fixedShape))

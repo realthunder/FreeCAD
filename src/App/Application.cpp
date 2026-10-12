@@ -49,6 +49,7 @@
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <thread>
 
 #include <QCoreApplication>
 #include <QDir>
@@ -57,6 +58,7 @@
 #include <QStandardPaths>
 #include <LibraryVersions.h>
 
+#include <App/ElementAppearancePy.h>
 #include <App/MaterialListPy.h>
 #include <App/MaterialPy.h>
 #include <App/MetadataPy.h>
@@ -91,6 +93,7 @@
 #include "Application.h"
 #include "ComplexGeoData.h"
 #include "Document.h"
+#include "FileHistory.h"
 #include "DocumentObjectFileIncluded.h"
 #include "DocumentObjectGroup.h"
 #include "DocumentObjectGroupPy.h"
@@ -98,6 +101,8 @@
 #include "DocumentObserver.h"
 #include "DocumentParams.h"
 #include "UnitsParams.h"
+#include "private/DocumentP.h"
+#include "TransactionLog.h"
 #include "DocumentPy.h"
 #include "ExpressionParser.h"
 #include "ExpressionEvaluator.h"
@@ -132,6 +137,8 @@
 #include "PropertyContainer.h"
 #include "PropertyExpressionEngine.h"
 #include "PropertyFile.h"
+#include "PropertyHistory.h"
+#include "PropertyElementAppearance.h"
 #include "PropertyLinks.h"
 #include "PropertyPythonObject.h"
 #include "SavedView.h"
@@ -255,9 +262,18 @@ init_image_module()
     return PyModule_Create(&ImageModuleDef);
 }
 
+/// The thread the application was made on; none before that
+static std::thread::id _mainThreadId;
+
+bool Application::isMainThread()
+{
+    return _mainThreadId == std::thread::id() || _mainThreadId == std::this_thread::get_id();
+}
+
 Application::Application(std::map<std::string,std::string> &mConfig)
   : _mConfig(mConfig)
 {
+    _mainThreadId = std::this_thread::get_id();
     //_hApp = new ApplicationOCC;
     mpcPramManager["System parameter"] = _pcSysParamMngr;
     mpcPramManager["User parameter"] = _pcUserParamMngr;
@@ -334,6 +350,7 @@ void Application::setupPythonTypes()
 
     Base::Interpreter().addType(&App::MaterialPy::Type, pAppModule, "Material");
     Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "MaterialList");
+    Base::Interpreter().addType(&App::ElementAppearancePy::Type, pAppModule, "ElementAppearance");
     // The class is App::AppearanceList now; the Python type keeps the name
     // fork macros use, and answers to the new one as well.
     Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "AppearanceList");
@@ -560,6 +577,7 @@ Document* Application::newDocument(const char * Name, const char * UserName, boo
 
     // set the UserName after notifying all observers
     _pActiveDoc->Label.setValue(userName);
+    _pActiveDoc->setStatus(Document::Initializing, false);
 
     // set the old document active again if the new is temporary
     if (tempDoc && oldActiveDoc)
@@ -574,7 +592,11 @@ bool Application::closeDocument(const char* name)
     if (pos == DocMap.end()) // no such document
         return false;
 
+    OperationScope scope;
+
     Base::ConsoleRefreshDisabler disabler;
+
+    pos->second->commitImplicitTransaction();
 
     // Trigger observers before removing the document from the internal map.
     // Some observers might rely on this document still being there.
@@ -708,6 +730,74 @@ bool Application::isClosingAll() const {
     return _isClosingAll;
 }
 
+void Application::noteReleasedVersion(const Document& doc)
+{
+    if (!_releasedHandled)
+        _releasedVersions.insert(doc.getName());
+}
+
+void Application::setReleasedVersionsHandled(bool handled)
+{
+    _releasedHandled = handled;
+    if (handled)
+        _releasedVersions.clear();
+}
+
+int Application::closeReleasedVersions()
+{
+    // Not inside an operation, and not inside itself: a close is an
+    // operation, and may release the pins the closed version held.
+    if (_releasedVersions.empty() || _operationDepth > 0 || _closingReleased
+            || isRestoring() || _isClosingAll || Document::isAnyRecomputing())
+        return 0;
+    if (DocumentParams::getClosePinnedVersion() != 1) {
+        // Ask keeps it, with no one to ask; keep keeps it.
+        _releasedVersions.clear();
+        return 0;
+    }
+    Base::FlagToggler<bool> flag(_closingReleased);
+    int closed = 0;
+    while (!_releasedVersions.empty()) {
+        std::set<std::string> names;
+        names.swap(_releasedVersions);
+        for (const auto& name : names) {
+            Document* doc = getDocument(name.c_str());
+            if (!doc || !doc->testStatus(Document::FrozenVersion)
+                    || !doc->testStatus(Document::OpenedForPin))
+                continue;
+            // Pinned again since, or linked to some other way.
+            auto in = PropertyXLink::getDocumentInList(doc);
+            if (!in[doc].empty())
+                continue;
+            FC_LOG("closing " << name << ": no link pins it any more");
+            if (closeDocument(name.c_str()))
+                ++closed;
+        }
+    }
+    return closed;
+}
+
+OperationScope::OperationScope()
+{
+    ++GetApplication()._operationDepth;
+}
+
+OperationScope::~OperationScope()
+{
+    auto& app = GetApplication();
+    if (--app._operationDepth == 0 && !app._releasedVersions.empty()) {
+        try {
+            app.closeReleasedVersions();
+        }
+        catch (Base::Exception& e) {
+            e.ReportException();
+        }
+        catch (...) {
+            FC_ERR("closing released versions failed");
+        }
+    }
+}
+
 struct DocTiming {
     FC_DURATION_DECLARE(d1);
     FC_DURATION_DECLARE(d2);
@@ -789,6 +879,7 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
                                                   std::vector<std::string> *errs,
                                                   bool createView)
 {
+    OperationScope scope;   // sec 27.38
     std::vector<Document*> res(filenames.size(), nullptr);
     if (filenames.empty())
         return res;
@@ -956,6 +1047,13 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
 
             auto &timing = timings[doc];
             FC_TIME_INIT(t1);
+            // A version's document was restored whole when it was opened
+            // (Document::openFileVersion): nothing is left to finish.
+            if (doc->testStatus(Document::VersionDoc)) {
+                openedDocs.emplace_back(doc);
+                it = docs.erase(it);
+                continue;
+            }
             // Finalize document restoring with the correct order
             if(doc->afterRestore(true)) {
                 openedDocs.emplace_back(doc);
@@ -1024,6 +1122,32 @@ Document* Application::openDocumentPrivate(const char * FileName,
     // check below, which is itself an answer about the host's disk.
     ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsRead,
                                       FileName ? FileName : "");
+
+    // A document of a file named for a version or a branch (docs/
+    // TransactionLog.md sec 27.7, 27.23, 27.24): `<file>@v<num>`, the frozen
+    // instance a pin shows; `<file>@<branch>@v<num>`, an editable instance
+    // at that version; `<file>@<branch>@`, the branch's tip -- whatever
+    // document holds the branch, or its head opened as an editable instance.
+    {
+        FileHistory::NameParts parts;
+        if (FileHistory::parseName(FileName ? FileName : "", parts)) {
+            if (auto doc = getDocumentByPath(FileName))
+                return isMainDoc ? doc : nullptr;
+            std::string reason;
+            auto history = FileHistory::openFile(parts.file, &reason);
+            if (!history)
+                THROWM(Base::FileSystemError, "no history in '" + parts.file + "': " + reason)
+            Document* doc = Document::openFileBranch(history, parts.branch, parts.version,
+                                                     isMainDoc && createView);
+            // Asked for by a link resolving (the objects it wants are named):
+            // opened for a pin, offered for closing when its pins go (27.30).
+            if (!objNames.empty() && doc->testStatus(Document::FrozenVersion))
+                doc->setStatus(Document::OpenedForPin, true);
+            if (!DocFileMap.empty())
+                DocFileMap[FileInfo(doc->FileName.getValue()).filePath()] = doc;
+            return doc;
+        }
+    }
 
     FileInfo File(FileName);
 
@@ -1095,7 +1219,13 @@ Document* Application::openDocumentPrivate(const char * FileName,
         label = name.c_str();
     Document* newDoc = newDocument(name.c_str(),label,isMainDoc && createView);
 
-    newDoc->FileName.setValue(propFileName==FileName?File.filePath():propFileName);
+    // Who the document is, not a change to it (docs/TransactionLog.md sec
+    // 27.9): outside any transaction, so it joins none that is open, which
+    // the restore below would commit in every document (sec 27.15).
+    {
+        Base::FlagToggler<> quiet(newDoc->d->bookkeeping, false);
+        newDoc->FileName.setValue(propFileName==FileName?File.filePath():propFileName);
+    }
 
     try {
         // read the document
@@ -1119,6 +1249,33 @@ Document* Application::openDocumentPrivate(const char * FileName,
     catch (...) {
         throw;
     }
+}
+
+Document* Application::recoverDocument(const char* transientDir, bool createView)
+{
+    if (DocumentParams::getTransactionLog() == 0)
+        THROWM(Base::RuntimeError, "recovery from the transaction log needs the log on")
+    const std::string dir(transientDir);
+    TransactionLog::RecoverInfo info;
+    if (!TransactionLog::readRecoveryMeta(dir, info))
+        THROWM(Base::FileSystemError, std::string("no transaction log in ") + dir)
+    std::string name = info.fileName.empty() ? std::string("Recovered")
+                                             : FileInfo(info.fileName).fileNamePure();
+    const std::string label = info.label.empty() ? name : info.label;
+    Document* doc = newDocument(name.c_str(), label.c_str(), createView);
+    // The history carries on across the crash (sec 25.3): undo is on for the
+    // recovered document whatever a new one gets, so its stacks are rebuilt.
+    doc->setUndoMode(1);
+    try {
+        if (!doc->recoverFromLog(dir))
+            THROWM(Base::RuntimeError, std::string("nothing to recover in ") + dir)
+    }
+    catch (...) {
+        closeDocument(doc->getName());
+        throw;
+    }
+    FileInfo(dir).deleteDirectoryRecursive();
+    return doc;
 }
 
 Document* Application::getActiveDocument() const
@@ -2369,6 +2526,7 @@ void Application::initTypes()
     App::PropertyLinkSubChild       ::init();
     App::PropertyLinkSubGlobal      ::init();
     App::PropertyLinkSubHidden      ::init();
+    App::PropertyElementAppearance  ::init();
     App::PropertyLinkList           ::init();
     App::PropertyLinkListChild      ::init();
     App::PropertyLinkListGlobal     ::init();
@@ -2404,6 +2562,7 @@ void Application::initTypes()
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();
+    App::PropertyHistory                  ::init();
     App::PropertyStringIncluded     ::init();
     App::PropertyFileIncludedList   ::init();
     App::PropertyPythonObject       ::init();
@@ -3341,10 +3500,12 @@ std::list<std::string> Application::processFiles(const std::list<std::string>& f
                 processed.push_back(it);
             }
             else if (file.hasExtension("fcscript") || file.hasExtension("fcmacro")) {
+                InvocationScope scope("script");
                 Base::Interpreter().runFile(file.filePath().c_str(), true);
                 processed.push_back(it);
             }
             else if (file.hasExtension("py")) {
+                InvocationScope scope("script");
                 try {
                     Base::Interpreter().addPythonPath(file.dirPath().c_str());
                     Base::Interpreter().loadModule(file.fileNamePure().c_str());

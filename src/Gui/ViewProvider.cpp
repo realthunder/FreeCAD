@@ -42,6 +42,7 @@
 #include <Base/Exception.h>
 #include <Base/Matrix.h>
 #include <Base/Tools.h>
+#include <App/AppearanceList.h>
 #include <App/Document.h>
 
 #include "SoMouseWheelEvent.h"
@@ -601,14 +602,18 @@ int ViewProvider::getDefaultMode(bool noOverride) const {
 
 void ViewProvider::onBeforeChange(const App::Property* prop)
 {
-    Application::Instance->signalBeforeChangeObject(*this, *prop);
+    if (announcesChanges()) {
+        Application::Instance->signalBeforeChangeObject(*this, *prop);
+    }
 
     App::TransactionalObject::onBeforeChange(prop);
 }
 
 void ViewProvider::onChanged(const App::Property* prop)
 {
-    Application::Instance->signalChangedObject(*this, *prop);
+    if (announcesChanges()) {
+        Application::Instance->signalChangedObject(*this, *prop);
+    }
     Application::Instance->updateActions();
 
     App::TransactionalObject::onChanged(prop);
@@ -1043,6 +1048,28 @@ bool ViewProvider::getDetailPath(const char *subname, SoFullPath *pPath, bool ap
     if(!queryExtension(&ViewProviderExtension::extensionGetDetailPath,subname,pPath,det))
         det = getDetail(subname);
     return true;
+}
+
+std::map<std::string, App::MaterialAppearance>
+ViewProvider::getElementAppearances(const char *element) const
+{
+    std::map<std::string, App::MaterialAppearance> ret;
+    for (auto &v : getElementColors(element)) {
+        App::MaterialAppearance mat;
+        mat.diffuseColor = v.second;
+        mat.transparency = v.second.transparency();
+        ret.emplace(v.first, mat);
+    }
+    return ret;
+}
+
+void ViewProvider::setElementAppearances(
+        const std::map<std::string, App::MaterialAppearance> &appearances)
+{
+    std::map<std::string, Base::Color> colors;
+    for (auto &v : appearances)
+        colors.emplace(v.first, App::AppearanceList::storedDiffuse(v.second));
+    setElementColors(colors);
 }
 
 const std::string &ViewProvider::hiddenMarker() {

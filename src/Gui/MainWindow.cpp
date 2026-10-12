@@ -116,6 +116,7 @@
 #include "ReportView.h"
 #include "ReportViewParams.h"
 #include "SelectionView.h"
+#include "TransactionLogView.h"
 #include "Splashscreen.h"
 #include "ToolBarManager.h"
 #include "ToolBoxManager.h"
@@ -924,6 +925,7 @@ void MainWindow::setupDockWindows()
     setupReportView();
     setupPythonConsole();
     setupSelectionView();
+    setupTransactionLogView();
 
     initDockWindows(false);
 }
@@ -939,6 +941,22 @@ bool MainWindow::setupSelectionView()
 
         DockWindowManager* pDockMgr = DockWindowManager::instance();
         pDockMgr->registerDockWindow("Std_SelectionView", pcSelectionView);
+        return true;
+    }
+
+    return false;
+}
+
+bool MainWindow::setupTransactionLogView()
+{
+    // The transaction log browser (docs/TransactionLog.md sec 22.2)
+    if (d->hiddenDockWindows.find("Std_TransactionLogView") == std::string::npos) {
+        auto view = new DockWnd::TransactionLogView(nullptr, this);
+        view->setObjectName
+            (QStringLiteral(QT_TRANSLATE_NOOP("QDockWidget","Transaction log")));
+
+        DockWindowManager* pDockMgr = DockWindowManager::instance();
+        pDockMgr->registerDockWindow("Std_TransactionLogView", view);
         return true;
     }
 
@@ -1336,6 +1354,7 @@ bool MainWindow::closeAllDocuments (bool close)
             return false;
         if (!gdoc->isModified()
                 || doc->testStatus(App::Document::PartialDoc)
+                || doc->testStatus(App::Document::VersionDoc)
                 || doc->testStatus(App::Document::TempDoc))
             continue;
         bool save = saveAll;

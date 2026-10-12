@@ -416,6 +416,20 @@ public:
      */
     using FileDeferrer = std::function<bool(const std::string &, Base::Persistence *)>;
     void setFileDeferrer(FileDeferrer deferrer) { _fileDeferrer = std::move(deferrer); }
+
+    /** Hand the bytes of every entry readFiles() serves to `sink`, by name.
+     *
+     * The transaction log's version manifest wants each XML entry of the
+     * file as found (docs/TransactionLog.md sec 16.1, 16.6): the readers
+     * tap the entry's Reader around RestoreDocFile() and pass on what
+     * streamed, drained to the end. Blob entries go through the archive
+     * handler, not through this.
+     */
+    using EntrySink = std::function<void(const std::string&, std::string)>;
+    void setEntrySink(EntrySink sink) { _entrySink = std::move(sink); }
+    bool hasEntrySink() const { return static_cast<bool>(_entrySink); }
+    /// RestoreDocFile() on `object` from `entry`, tapped for the sink if one is set.
+    void serveEntry(Base::Reader& entry, Base::Persistence* object, const std::string& name);
     /// Offer a registered entry for deferral; true when it was taken.
     bool deferFileEntry(const std::string &name, Base::Persistence *obj) const {
         return _fileDeferrer && _fileDeferrer(name, obj);
@@ -572,6 +586,7 @@ protected:
     ArchiveHandler _archiveHandler;
     ArchiveFilter _archiveFilter;
     FileDeferrer _fileDeferrer;
+    EntrySink _entrySink;
     std::vector<std::string> FileNames;
 
     std::vector<int*> Guards;
@@ -588,6 +603,7 @@ class BaseExport Reader: public std::istream
 {
 public:
     Reader(std::istream&, const std::string&, XMLReader *parent=nullptr);
+    ~Reader() override;
 
     XMLReader *getParent() const;
     const std::string &getFileName() const;
@@ -595,6 +611,24 @@ public:
     int getDocumentSchema() const;
     /// Directory the document is read from, for readers backed by one.
     virtual std::string getDirectory() const { return {}; }
+
+    /** @name Byte tap
+     *
+     * The mirror of Writer::beginTap(): every byte read through this stream
+     * between beginTap() and endTap() is also handed to the sink, in order.
+     * endTap() first drains what is left of the stream into the sink, so a
+     * parser that stopped at the closing element still leaves the sink with
+     * the whole entry -- which is how a restore hashes Document.xml as found
+     * (docs/TransactionLog.md sec 16.6) without inflating it twice. It must
+     * therefore be ended while the stream is still on that entry: a
+     * forward-only archive reader moves on at readFiles().
+     */
+    //@{
+    using TapSink = std::function<void(const char*, std::size_t)>;
+    void beginTap(TapSink sink);
+    void endTap();
+    bool isTapping() const { return static_cast<bool>(_tapBuf); }
+    //@}
 
     friend class XMLReader;
 
@@ -605,8 +639,11 @@ protected:
     virtual void readFiles(XMLReader &) {};
 
 private:
+    class TapBuf;
     std::string _name;
     XMLReader *_parent;
+    std::streambuf *_tappedBuf {nullptr};
+    std::unique_ptr<TapBuf> _tapBuf;
 };
 
 class BaseExport ZipReader : public Base::Reader
@@ -642,6 +679,8 @@ public:
     ~ZipFileReader() override;
 
     bool hasEntry(const std::string &name) const;
+    /// Every entry's name, in archive order.
+    const std::vector<std::string> &entryNames() const { return _entryOrder; }
     /// Open an archive entry as an independent stream; null when absent.
     std::unique_ptr<zipios::ZipInputStream> openEntry(const std::string &name) const;
 

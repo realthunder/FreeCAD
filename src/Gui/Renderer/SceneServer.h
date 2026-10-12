@@ -247,6 +247,39 @@ struct SceneGrant {
     /// so a renamed client can reconnect; the panel shows them apart,
     /// with a way to keep or drop them.
     bool liveOnly = false;
+    /// How many browsers this grant is for (docs/ShareAccess.md sec 2.5,
+    /// docs/TransactionLog.md sec 30.32). 0, the default: it counts
+    /// nobody, and is the invitation it always was. More: the grant
+    /// admits a connection only with the id its browser keeps
+    /// (SceneDevice), enrols the first `maxUsers` of them in `devices`,
+    /// and refuses any other. One enrolled is someone known, and may
+    /// write where the grant says edit: what it presents is half the
+    /// grant's -- its token, or the identity a door verified -- and half
+    /// its own.
+    int maxUsers = 0;
+    /// The browsers enrolled, by SceneDevice::key. Filled by the server
+    /// at a hello; whoever stores the grants stores these with them.
+    std::vector<std::string> devices;
+};
+
+/// A browser, as the host's record knows it (docs/ShareAccess.md sec 2.5):
+/// the id it generated once and keeps, which comes with every hello
+/// whatever token or sign-in the connection came by -- so the record
+/// follows one browser across them. Kept by its hash; the id itself is
+/// not stored.
+struct SceneDevice {
+    std::string key;         ///< SHA-1 of the browser's id, hex
+    std::string name;        ///< what its user calls itself, as last given
+    std::string enrolledAs;  ///< and as first given: what a log names it by
+    std::string identity;    ///< the verified identity it last came with
+    /// The host's own name for it, when it gave one: what a log then
+    /// names it by. Never from the browser.
+    std::string label;
+    double first = 0;        ///< first and last hello, seconds since the epoch
+    double last = 0;
+    /// Off: refused wherever a grant counts its users. The host's way to
+    /// turn one browser out of a token several share.
+    bool enabled = true;
 };
 
 /// One connected viewer as the sharing UI sees it (docs/MultiDocServe.md
@@ -271,6 +304,19 @@ struct SceneClientInfo {
     /// self-declared \a client label is all there is.
     std::string identity;
     bool viewer = false;      ///< sent a hello (a probe may not)
+    /// Admitted on an invitation the host issued to this one name: a
+    /// token, and a name spelled out rather than a pattern. With no
+    /// verified identity it is what lets the connection write
+    /// (docs/TransactionLog.md sec 30.6 U4, U6).
+    bool invited = false;
+    /// The browser it is (SceneDevice::key); empty when its hello gave no
+    /// id. \a enrolled: admitted as one of the browsers its grant counts
+    /// (SceneGrant::maxUsers), which makes it someone known.
+    std::string device;
+    bool enrolled = false;
+    /// Past the door: a connection still waiting for a token it has not
+    /// presented is on the roster and gets no scene bytes.
+    bool authorized = false;
     /// View: picks and mutating ops refused; Host: may act beyond the
     /// document (ClientAccess)
     ClientAccess access = ClientAccess::Edit;
@@ -368,6 +414,17 @@ public:
     /// FC_SERVE_TOKEN presets it at first use.
     void setToken(const std::string &token);
     std::string token();
+    /// Say whose the shared token is: the one person it was issued to,
+    /// by the name their connection gives. The token is then an
+    /// invitation to that name, and its holder under that name may
+    /// write (docs/ShareAccess.md sec 2.3, docs/TransactionLog.md sec
+    /// 30.6 U6); under any other name, or with no invitee set, the
+    /// shared token admits to look. Empty (the default) = nobody. No
+    /// effect without a token, or while a grant list is the door.
+    /// FC_SERVE_INVITE presets it at first use, beside FC_SERVE_TOKEN;
+    /// the viewer's link then carries `?token=...&client=<name>`.
+    void setTokenInvitee(const std::string &name);
+    std::string tokenInvitee();
 
     /// Believe `X-Forwarded-For` when the connection came from a
     /// loopback peer — which is what a reverse proxy on this machine,
@@ -408,6 +465,20 @@ public:
     void setIdentityHeader(const std::string &name);
     std::string identityHeader();
 
+    /// Whether the proxy in front signs anyone in at all. Off (the
+    /// default), no header is taken for an identity: a proxy that only
+    /// carries traffic -- a quick tunnel, a plain reverse proxy -- passes
+    /// on whatever headers the client sent, and a client that wrote
+    /// `X-Forwarded-Email` itself would otherwise be taken for someone a
+    /// door verified, and for whoever a grant names. On, an identity
+    /// header is read under the trust rule above. Trusting the proxy for
+    /// the address does not turn this on; whoever starts the serve says
+    /// so: FC_SERVE_IDENTITY_DOOR=1 presets it at first use, and so does
+    /// FC_SERVE_IDENTITY_HEADER, which names what such a door sends. The
+    /// desktop Share dialog sets it from its door.
+    void setIdentityDoor(bool on);
+    bool identityDoor();
+
     /// Replace the live grant list (docs/ShareAccess.md §2) — the door
     /// itself. Seeded from the enabled persistent grants when sharing
     /// starts, free to evolve at runtime, gone with the process. A
@@ -422,6 +493,18 @@ public:
     /// easings the server has minted since.
     void setGrants(const std::vector<SceneGrant> &list);
     std::vector<SceneGrant> grants();
+
+    /// The record of browsers (SceneDevice): every one an admitted hello
+    /// came from, whichever door admitted it. setDevices() replaces it --
+    /// what was stored, when sharing starts; a browser turned off there
+    /// is re-judged out. deviceEpoch() moves whenever the record or a
+    /// grant's enrolment changed by a hello, which is the cue to store
+    /// both again.
+    void setDevices(const std::vector<SceneDevice> &list);
+    std::vector<SceneDevice> devices();
+    uint64_t deviceEpoch();
+    /// The record's entry for \a key; false when it has none.
+    bool device(const std::string &key, SceneDevice &out);
     /// Add one grant to the live list (a rule made in the panel while
     /// sharing runs). Returns its assigned id.
     uint64_t addGrant(SceneGrant grant);
@@ -640,6 +723,15 @@ public:
     /// told its access. Any thread.
     bool setClientSelectionRoute(uint64_t id, SelectionRoute route);
 
+    /// Install this document's cue that the roster changed -- what
+    /// setClientsChangedNotifier is for the sharing UI, for the source
+    /// that serves the document: it records who came and who left
+    /// (docs/TransactionLog.md sec 30.6). Fired for every change of any
+    /// connection, since a connection that left this document for
+    /// another is a change of both; the handler reads clients() and
+    /// decides. Called on a server thread -- it must marshal itself.
+    void setRosterNotifier(std::function<void()> notifier,
+                           const std::string &doc = {});
     /// Queue a JSON control message to ONE connection, by id; false
     /// when it is gone. Any thread.
     bool sendControl(uint64_t client, const std::string &json);

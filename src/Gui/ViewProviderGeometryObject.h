@@ -119,9 +119,25 @@ public:
     { _appearance = appearance; }
 
     void setValue(const App::MaterialAppearance &mat);
-    /// See PropertyShapeColor::mirrorValue; same no-op rule
+    /** See PropertyShapeColor::mirrorValue; same no-op rule.
+     *
+     * Field by field, and not by ==, which calls two appearances that name
+     * one material card the same whatever their colours say. Every look
+     * names a card now, so a mirror compared that way never moved again:
+     * ShapeMaterial stayed the look the object was made with, was written
+     * to a file so, and an older build that saved the file again handed
+     * that look back as the object's own.
+     */
     void mirrorValue(const App::MaterialAppearance &mat)
-    { if (!(mat == getValue())) App::PropertyAppearance::setValue(mat); }
+    {
+        App::MaterialAppearance mine = getValue();
+        App::MaterialAppearance theirs = mat;
+        const bool sameCard = mine.uuid == theirs.uuid;
+        mine.uuid.clear();
+        theirs.uuid.clear();
+        if (!sameCard || !(mine == theirs))
+            App::PropertyAppearance::setValue(mat);
+    }
 
     void Restore(Base::XMLReader &reader) override;
     /// See PropertyShapeColor::applyToAppearance; same ordering rule
@@ -258,7 +274,7 @@ public:
      * how a fresh object with a card starts following one. The overriding
      * faces are left alone, so a following object keeps its painted faces.
      */
-    void applyMaterialAppearance();
+    virtual void applyMaterialAppearance();
 
     /** Whether going back to the card's look would change anything
      *
@@ -267,7 +283,7 @@ public:
      * button and the context-menu command both ask before offering
      * themselves (docs/MaterialStorage.md 15.5).
      */
-    bool canResetAppearanceToMaterial() const;
+    virtual bool canResetAppearanceToMaterial() const;
 
     /** Take the card's look again, and follow it from now on
      *
@@ -276,7 +292,7 @@ public:
      * -- this is not "clear the overrides". Answers whether it did
      * anything.
      */
-    bool resetAppearanceToMaterial();
+    virtual bool resetAppearanceToMaterial();
 
     /** Decide, once, whether a restored appearance follows its card
      *

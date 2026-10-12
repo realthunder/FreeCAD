@@ -26,7 +26,14 @@
 #ifndef _PreComp_
 #endif
 
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <cassert>
 #include <deque>
+#include <shared_mutex>
+#include <sstream>
+#include <vector>
 #include <boost/io/ios_state.hpp>
 #include <boost/iostreams/device/array.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -35,6 +42,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/bimap.hpp>
 #include <boost/bimap/unordered_set_of.hpp>
+#include <boost/bimap/unordered_multiset_of.hpp>
 #include <boost/bimap/set_of.hpp>
 #include <QHash>
 #include <QCryptographicHash>
@@ -46,7 +54,9 @@
 #include <App/StringHasherPy.h>
 #include <App/StringIDPy.h>
 #include <App/MappedElement.h>
+#include <App/ElementNamingUtils.h>
 #include <App/DocumentParams.h>
+#include <App/TransactionValue.h>
 
 FC_LOG_LEVEL_INIT("App",true,true)
 
@@ -75,10 +85,15 @@ struct StringIDHasher {
     }
 };
 
+// The string side is a multiset (docs/TransactionLog.md sec 27.41 Q2): a
+// table shared by the documents of one file can come to hold one string
+// under two ids -- dropped from the saved state, minted again after a
+// reopen, then brought back under its old id by an old version. Both ids
+// stay valid; a lookup by string finds either.
 typedef boost::bimap<
-            boost::bimaps::unordered_set_of<StringID*,
-                                            StringIDHasher,
-                                            StringIDHasher>,
+            boost::bimaps::unordered_multiset_of<StringID*,
+                                                 StringIDHasher,
+                                                 StringIDHasher>,
             boost::bimaps::set_of<long> >
             HashMapBase;
 
@@ -90,7 +105,120 @@ public:
     bool IndexedNames = false;
     /// Restored without a mode: inferIndexedNames() decides once the table is in
     bool InferIndexed = false;
+    /// The last id handed out or read (sec 27.40 item 2), which a save
+    /// writes and a restore reads back: ids the saved state no longer
+    /// uses are not handed out again.
+    long LastID = 0;
+    /// Counts the changes to the entries, which is what the cached hash of
+    /// the whole table (contentHash()) is valid for.
+    uint64_t Revision = 0;
+    /// Many readers or one writer, of any thread (docs/TransactionLog.md sec
+    /// 31.30): taken through TableLock by every function that reads or
+    /// changes the entries.
+    mutable std::shared_mutex mutex;
 };
+
+namespace {
+
+/// What this thread holds of one table
+struct HeldTable
+{
+    const std::shared_mutex* mutex;
+    int readers;
+    int writers;
+    bool exclusive;
+};
+thread_local std::vector<HeldTable> heldTables;
+
+/** A table's lock for one function: shared to read, exclusive to change.
+ * The functions of the table call each other, so it may be taken again by
+ * the thread that has it: to read under either, to write under a write.
+ * To write under a read is a fault of the function that took the read --
+ * what it looked up may not be there once the lock was let go to take the
+ * other -- and is asserted; every function that may come to add a string
+ * takes the write from its start. The one that only may, the lookup that
+ * adds what it does not find, takes them one after the other and looks
+ * again.
+ */
+class TableLock
+{
+public:
+    enum Mode { Read, Write };
+
+    template<class Table>
+    TableLock(const Table& table, Mode mode)
+        : _mutex(table.mutex)
+        , _mode(mode)
+    {
+        HeldTable* held = find();
+        if (!held) {
+            if (mode == Write)
+                _mutex.lock();
+            else
+                _mutex.lock_shared();
+            heldTables.push_back({&_mutex, mode == Read ? 1 : 0, mode == Write ? 1 : 0,
+                                  mode == Write});
+            return;
+        }
+        if (mode == Write && !held->exclusive) {
+            assert(!"string table: a write taken under a read");
+            _mutex.unlock_shared();
+            _mutex.lock();
+            held->exclusive = true;
+            _raised = true;
+        }
+        ++(mode == Read ? held->readers : held->writers);
+    }
+
+    ~TableLock()
+    {
+        HeldTable* held = find();
+        --(_mode == Read ? held->readers : held->writers);
+        if (_raised) {
+            _mutex.unlock();
+            _mutex.lock_shared();
+            held->exclusive = false;
+            return;
+        }
+        if (held->readers == 0 && held->writers == 0) {
+            if (held->exclusive)
+                _mutex.unlock();
+            else
+                _mutex.unlock_shared();
+            heldTables.erase(heldTables.begin() + (held - heldTables.data()));
+        }
+    }
+
+    TableLock(const TableLock&) = delete;
+    TableLock& operator=(const TableLock&) = delete;
+
+    /// Whether this thread has the table for writing already
+    template<class Table>
+    static bool writing(const Table& table)
+    {
+        for (const auto& held : heldTables) {
+            if (held.mutex == &table.mutex)
+                return held.exclusive;
+        }
+        return false;
+    }
+
+private:
+    HeldTable* find() const
+    {
+        for (auto& held : heldTables) {
+            if (held.mutex == &_mutex)
+                return &held;
+        }
+        return nullptr;
+    }
+
+    std::shared_mutex& _mutex;
+    Mode _mode;
+    bool _raised {false};
+};
+
+} // namespace
 
 ///////////////////////////////////////////////////////////
 
@@ -98,8 +226,10 @@ TYPESYSTEM_SOURCE_ABSTRACT(App::StringID, Base::BaseClass)
 
 StringID::~StringID()
 {
-    if (_hasher)
+    if (_hasher) {
         _hasher->_hashes->right.erase(_id);
+        ++_hasher->_hashes->Revision;
+    }
 }
 
 PyObject *StringID::getPyObject() {
@@ -169,6 +299,8 @@ TYPESYSTEM_SOURCE(App::StringHasher, Base::Persistence)
 StringHasher::StringHasher()
     :_hashes(new HashMap)
 {
+    static std::atomic<std::uint64_t> serials {0};
+    _serial = ++serials;
     _hashes->IndexedNames = DocumentParams::getHashIndexedName();
 }
 
@@ -177,20 +309,31 @@ StringHasher::~StringHasher() {
 }
 
 void StringHasher::setSaveAll(bool enable) {
-    if (_hashes->SaveAll == enable)
-        return;
+    TableLock lock(*_hashes, TableLock::Write);
+    // No compaction here: what may go depends on what the file's history
+    // still uses, which only the document knows (docs/TransactionLog.md sec
+    // 27.50 item 4). The next save compacts.
     _hashes->SaveAll = enable;
-    compact();
 }
 
-void StringHasher::compact()
+std::vector<long> StringHasher::compact(const std::function<bool(long)>& keep)
 {
+    TableLock lock(*_hashes, TableLock::Write);
+    std::vector<long> dropped;
     if (_hashes->SaveAll)
-        return;
+        return dropped;
 
+    // What goes is not handed out again (sec 27.40 item 2).
+    _hashes->LastID = lastID();
+    // Kept: persistent, or used by what memory does not hold (sec 27.50 item
+    // 4). What a kept string is built from stays with it: the kept one holds
+    // a reference to each, so none of them falls to one reference below.
+    auto kept = [&keep](const StringID& sid) {
+        return sid.isPersistent() || (keep && keep(sid.value()));
+    };
     std::deque<StringIDRef> pendings;
     for (auto & v : _hashes->right) {
-        if (!v.second->isPersistent() && v.second->getRefCount() == 1)
+        if (!kept(*v.second) && v.second->getRefCount() == 1)
             pendings.emplace_back(v.second);
     }
     while(pendings.size()) {
@@ -198,19 +341,147 @@ void StringHasher::compact()
         pendings.pop_front();
         if (!_hashes->right.erase(sid.value()))
             continue;
+        ++_hashes->Revision;
+        dropped.push_back(sid.value());
         sid._sid->_hasher = nullptr;
         sid._sid->unref();
         for (auto & sid : sid._sid->_sids) {
             if (sid._sid->_hasher == this
-                    && !sid._sid->isPersistent()
+                    && !kept(*sid._sid)
                     && sid._sid->getRefCount() == 2)
                 pendings.push_back(sid);
         }
     }
+    std::sort(dropped.begin(), dropped.end());
+    return dropped;
+}
+
+std::string StringHasher::saveTable() const
+{
+    TableLock lock(*_hashes, TableLock::Write);
+    std::ostringstream out;
+    out << "StringTableStart v1 " << size() << '\n';
+    saveStream(out, true);
+    std::string bytes = out.str();
+    _contentHash = QCryptographicHash::hash(QByteArray::fromRawData(bytes.data(),
+                                                                     static_cast<int>(bytes.size())),
+                                            QCryptographicHash::Sha1)
+                       .toHex()
+                       .toStdString();
+    _hashRevision = _hashes->Revision;
+    return bytes;
+}
+
+const std::string& StringHasher::contentHash() const
+{
+    TableLock lock(*_hashes, TableLock::Write);
+    if (_contentHash.empty() || _hashRevision != _hashes->Revision)
+        saveTable();
+    return _contentHash;
+}
+
+void StringHasher::restoreTable(std::istream& stream)
+{
+    TableLock lock(*_hashes, TableLock::Write);
+    // The last id stays what the element that named the table said.
+    const long last = _hashes->LastID;
+    clear();
+    _hashes->LastID = last;
+    std::string marker;
+    stream >> marker;
+    if (marker == "StringTableStart") {
+        std::string ver;
+        std::size_t count = 0;
+        stream >> ver >> count;
+        if (ver != "v1") {
+            FC_WARN("Unknown string table format");
+        }
+        restoreStreamNew(stream, count);
+        return;
+    }
+    // A count alone: the older private tables (<shape>.Table).
+    restoreStream(stream, std::strtoul(marker.c_str(), nullptr, 10));
+}
+
+std::vector<StringHasher::Row> StringHasher::rows(long after,
+                                                  const std::function<bool(long)>& want) const
+{
+    TableLock lock(*_hashes, TableLock::Read);
+    std::vector<Row> out;
+    for (auto it = _hashes->right.upper_bound(after); it != _hashes->right.end(); ++it) {
+        const StringID& d = *it->second;
+        if (want && !want(d._id))
+            continue;
+        Row row;
+        row.id = d._id;
+        auto flags = d._flags;
+        flags.setFlag(StringID::Flag::Marked, false);
+        row.flags = static_cast<int>(flags.toUnderlyingType());
+        row.sids.reserve(d._sids.size());
+        for (const auto& sid : d._sids)
+            row.sids.emplace_back(sid.value(), sid.getIndex());
+        row.data = d._data;
+        row.postfix = d._postfix;
+        out.push_back(std::move(row));
+    }
+    return out;
+}
+
+std::size_t StringHasher::insertRows(const std::vector<Row>& rows, std::size_t* conflicts)
+{
+    TableLock lock(*_hashes, TableLock::Write);
+    constexpr auto kept = ~static_cast<int>(StringID::Flag::Marked);
+    std::size_t taken = 0;
+    std::size_t clashes = 0;
+    for (const auto& row : rows) {
+        auto it = _hashes->right.find(row.id);
+        if (it != _hashes->right.end()) {
+            const StringID& d = *it->second;
+            bool same = d._data == row.data && d._postfix == row.postfix
+                && (static_cast<int>(d._flags.toUnderlyingType()) & kept) == (row.flags & kept)
+                && d._sids.size() == static_cast<int>(row.sids.size());
+            for (int i = 0; same && i < d._sids.size(); ++i) {
+                same = d._sids[i].value() == row.sids[i].first
+                    && d._sids[i].getIndex() == row.sids[i].second;
+            }
+            if (!same)
+                ++clashes;
+            continue;
+        }
+        StringIDRef sid(new StringID(row.id, row.data, static_cast<StringID::Flag>(row.flags & kept)));
+        sid._sid->_postfix = row.postfix;
+        sid._sid->_sids.reserve(static_cast<int>(row.sids.size()));
+        bool complete = true;
+        for (const auto& ref : row.sids) {
+            StringIDRef here = getID(ref.first, ref.second);
+            if (!here) {
+                complete = false;
+                break;
+            }
+            sid._sid->_sids.push_back(here);
+        }
+        if (!complete) {
+            ++clashes;
+            continue;
+        }
+        insert(sid);
+        ++taken;
+    }
+    _hashes->LastID = lastID();
+    if (conflicts)
+        *conflicts = clashes;
+    return taken;
+}
+
+bool StringHasher::hasID(long id) const
+{
+    TableLock lock(*_hashes, TableLock::Read);
+    return _hashes->right.count(id) != 0;
 }
 
 StringHasher::StorageSizes StringHasher::getStorageSize() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     StorageSizes sizes;
     std::unordered_set<const char *> dataset;
     for (const auto & v : _hashes->right) {
@@ -232,14 +503,17 @@ StringHasher::StorageSizes StringHasher::getStorageSize() const
 }
 
 bool StringHasher::getSaveAll() const {
+    TableLock lock(*_hashes, TableLock::Read);
     return _hashes->SaveAll;
 }
 
 void StringHasher::setThreshold(int threshold) {
+    TableLock lock(*_hashes, TableLock::Write);
     _hashes->Threshold = threshold;
 }
 
 int StringHasher::getThreshold() const {
+    TableLock lock(*_hashes, TableLock::Read);
     return _hashes->Threshold;
 }
 
@@ -293,12 +567,64 @@ void StringHasher::inferIndexedNames()
 
 long StringHasher::lastID() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     if (_hashes->right.empty()) {
-        return 0;
+        return _hashes->LastID;
     }
     auto it = _hashes->right.end();
     --it;
-    return it->first;
+    return std::max(_hashes->LastID, it->first);
+}
+
+bool StringHasher::merge(const StringHasher& other, std::size_t* aliased)
+{
+    TableLock theirs(*other._hashes, TableLock::Read);
+    TableLock lock(*_hashes, TableLock::Write);
+    // docs/TransactionLog.md sec 27.40 item 2: the table of one document of
+    // a file, read on its own, joins the file's. First see that no id means
+    // something else here; only then change anything.
+    constexpr auto kept = ~static_cast<int>(StringID::Flag::Marked);
+    auto same = [&](const StringID& a, const StringID& b) {
+        if (a._data != b._data || a._postfix != b._postfix
+                || (a._flags.toUnderlyingType() & kept) != (b._flags.toUnderlyingType() & kept)
+                || a._sids.size() != b._sids.size())
+            return false;
+        for (int i = 0; i < a._sids.size(); ++i) {
+            if (a._sids[i].value() != b._sids[i].value()
+                    || a._sids[i].getIndex() != b._sids[i].getIndex())
+                return false;
+        }
+        return true;
+    };
+    for (const auto& v : other._hashes->right) {
+        auto it = _hashes->right.find(v.first);
+        if (it != _hashes->right.end() && !same(*it->second, *v.second))
+            return false;
+    }
+    std::size_t aliases = 0;
+    // In id order, so each one's references are here before it.
+    for (const auto& v : other._hashes->right) {
+        if (_hashes->right.count(v.first))
+            continue;
+        const StringID& from = *v.second;
+        StringIDRef sid(new StringID(v.first, from._data, static_cast<StringID::Flag>(
+            from._flags.toUnderlyingType() & kept)));
+        sid._sid->_postfix = from._postfix;
+        sid._sid->_sids.reserve(from._sids.size());
+        for (const auto& ref : from._sids) {
+            StringIDRef here = getID(ref.value(), ref.getIndex());
+            if (!here)
+                FC_THROWM(Base::RuntimeError, "Invalid string id reference");
+            sid._sid->_sids.push_back(here);
+        }
+        if (_hashes->left.find(sid._sid) != _hashes->left.end())
+            ++aliases;
+        insert(sid);
+    }
+    _hashes->LastID = std::max(_hashes->LastID, other.lastID());
+    if (aliased)
+        *aliased = aliases;
+    return true;
 }
 
 StringIDRef StringHasher::getID(const char* text, int len, bool hashable)
@@ -315,21 +641,36 @@ StringIDRef StringHasher::getID(const QByteArray& data, Options options)
     bool hashable = options.testFlag(Option::Hashable);
     bool nocopy = options.testFlag(Option::NoCopy);
 
-    bool hashed = hashable && _hashes->Threshold > 0 && (int)data.size() > _hashes->Threshold;
-
+    // Looked up under the shared lock, which is all a string that is there
+    // needs; one that is not is put in under the exclusive one, and looked
+    // up again first where the lock was let go in between: another thread
+    // may have put it in (docs/TransactionLog.md sec 31.30).
+    const bool writing = TableLock::writing(*_hashes);
+    bool hashed = false;
     StringID dataID;
-    if (hashed) {
-        QCryptographicHash hasher(QCryptographicHash::Sha1);
-        hasher.addData(data);
-        dataID._data = hasher.result();
-    }
-    else {
-        dataID._data = data;
-    }
+    {
+        TableLock lock(*_hashes, TableLock::Read);
+        hashed = hashable && _hashes->Threshold > 0 && (int)data.size() > _hashes->Threshold;
+        if (hashed) {
+            QCryptographicHash hasher(QCryptographicHash::Sha1);
+            hasher.addData(data);
+            dataID._data = hasher.result();
+        }
+        else {
+            dataID._data = data;
+        }
 
-    auto it = _hashes->left.find(&dataID);
-    if (it != _hashes->left.end()) {
-        return {it->first};
+        auto it = _hashes->left.find(&dataID);
+        if (it != _hashes->left.end()) {
+            return {it->first};
+        }
+    }
+    TableLock lock(*_hashes, TableLock::Write);
+    if (!writing) {
+        auto it = _hashes->left.find(&dataID);
+        if (it != _hashes->left.end()) {
+            return {it->first};
+        }
     }
 
     if (!hashed && !nocopy) {
@@ -350,6 +691,7 @@ StringIDRef StringHasher::getID(const QByteArray& data, Options options)
 
 StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<StringIDRef>& sids)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     StringID tempID;
     tempID._postfix = name.postfixBytes();
 
@@ -483,11 +825,468 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         }
     }
 
+    // The string as it is kept -- its postfix said by id, its index taken
+    // off -- is not the one looked up above, and the table takes one string
+    // under two ids (sec 27.41 Q2): it is looked up as kept before it is
+    // put in, or every asking would make it again under a new id.
+    StringID* kept = nullptr;
+    auto range = _hashes->left.equal_range(&newStringID);
+    for (auto i = range.first; i != range.second; ++i) {
+        if (!kept || i->first->_id < kept->_id)
+            kept = i->first;
+    }
+    if (kept)
+        return {kept, indexed.getIndex()};
+
     return {insert(newStringIDRef), indexed.getIndex()};
+}
+
+StringIDRef StringHasher::importID(const StringIDRef& foreign, ImportMemo* memo)
+{
+    ImportMemo local;
+    return importOne(foreign, memo ? *memo : local, true);
+}
+
+StringIDRef StringHasher::lookupID(const StringIDRef& foreign, ImportMemo* memo) const
+{
+    ImportMemo local;
+    // Nothing is taken in with `take` false: the table is not changed.
+    return const_cast<StringHasher*>(this)->importOne(foreign, memo ? *memo : local, false);
+}
+
+bool StringHasher::importText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                              QVector<StringIDRef>* sids, ImportMemo& memo)
+{
+    return rewriteIds(text, from, out, sids, memo, true);
+}
+
+bool StringHasher::lookupText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                              ImportMemo& memo) const
+{
+    // As lookupID(): with `take` false the table is not changed.
+    return const_cast<StringHasher*>(this)->rewriteIds(text, from, out, nullptr, memo, false);
+}
+
+bool StringHasher::importName(const Data::MappedName& name, const StringHasher& from,
+                              Data::MappedName& out, QVector<StringIDRef>& sids,
+                              ImportMemo& memo)
+{
+    TableLock lock(*_hashes, TableLock::Write);
+    QVector<StringIDRef> named;
+    QByteArray data;
+    QByteArray postfix;
+    if (!rewriteIds(name.dataBytes(), from, data, &named, memo, true)
+            || !rewriteIds(name.postfixBytes(), from, postfix, &named, memo, true)) {
+        return false;
+    }
+    QVector<StringIDRef> held;
+    held.reserve(sids.size() + named.size());
+    for (const auto& sid : sids) {
+        // A held id its table no longer has is not needed: what the name
+        // says is in its text, and the text's are all here.
+        if (auto here = importOne(sid, memo, true)) {
+            if (held.indexOf(here) < 0)
+                held.push_back(here);
+        }
+    }
+    for (const auto& sid : named) {
+        if (held.indexOf(sid) < 0)
+            held.push_back(sid);
+    }
+    sids = std::move(held);
+    if (data == name.dataBytes() && postfix == name.postfixBytes()) {
+        out = name;
+        return true;
+    }
+    Data::MappedName res(data.constData(), data.size());
+    res += postfix;
+    out = std::move(res);
+    return true;
+}
+
+namespace {
+thread_local const std::map<long, long>* importTags = nullptr;
+
+/// The id a tag says, `;:H<hex>` at `pos` of `text`. False where none is.
+bool tagAt(const QByteArray& text, int pos, long& tag)
+{
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    if (pos < 0 || text.mid(pos, marker.size()) != marker)
+        return false;
+    int digits = pos + marker.size();
+    if (digits < text.size() && text[digits] == '-')
+        ++digits;
+    int end = digits;
+    while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+        ++end;
+    bool ok = false;
+    tag = text.mid(digits, end - digits).toLong(&ok, 16);
+    return ok;
+}
+
+/// The id here of the object another copy's tag names (ImportTags).
+long tagHere(long tag)
+{
+    if (tag < 0)
+        tag = -tag;
+    if (importTags) {
+        auto it = importTags->find(tag);
+        if (it != importTags->end())
+            return it->second;
+    }
+    return tag;
+}
+
+/** `text` where it starts with an element's own name and the tag of the
+ * object that made it -- `g5;SKT;:H24,E`, a name no string stands for --
+ * with the name as this file numbers it (RestoreMinted,
+ * docs/TransactionLog.md sec 31.14). The tag is the copy's still.
+ */
+QByteArray rewriteMinted(const QByteArray& text)
+{
+    auto minted = App::RestoreMinted::current();
+    if (!minted)
+        return text;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    const int pos = text.indexOf(marker);
+    long tag = 0;
+    if (pos <= 0 || text.left(pos).contains('#') || !tagAt(text, pos, tag))
+        return text;
+    std::string name(text.constData(), static_cast<std::size_t>(pos));
+    if (!minted->byId(tagHere(tag), name))
+        return text;
+    return QByteArray(name.c_str(), static_cast<int>(name.size())) + text.mid(pos);
+}
+
+/// `text` with the tags of ImportTags rewritten: each `;:H<hex>` whose id
+/// the map names.
+QByteArray rewriteTags(const QByteArray& text)
+{
+    if (!importTags || importTags->empty())
+        return text;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    int pos = text.indexOf(marker);
+    if (pos < 0)
+        return text;
+    QByteArray res;
+    int last = 0;
+    while (pos >= 0) {
+        int digits = pos + marker.size();
+        if (digits < text.size() && text[digits] == '-')
+            ++digits;
+        int end = digits;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+            ++end;
+        if (end > digits) {
+            bool ok = false;
+            const long tag = text.mid(digits, end - digits).toLong(&ok, 16);
+            auto it = ok ? importTags->find(tag) : importTags->end();
+            if (it != importTags->end()) {
+                res.append(text.constData() + last, digits - last);
+                res.append(QByteArray::number(static_cast<qlonglong>(it->second), 16));
+                last = end;
+            }
+        }
+        pos = text.indexOf(marker, end);
+    }
+    if (!last)
+        return text;
+    res.append(text.constData() + last, text.size() - last);
+    return res;
+}
+}  // namespace
+
+namespace {
+/** `#b;:H24,E`, `#b;:G;XTR;:H24:7,F` are the name `#b` -- `g5;SKT` -- as
+ * an element of the object the first tag after it says: the shape it came
+ * from (docs/TransactionLog.md sec 31.14). Where that object numbers the
+ * thing otherwise here (RestoreMinted), `said` is what the string `prefix`
+ * says here in place of its own text. `after` is what follows the
+ * reference to it. False where it comes as it is.
+ */
+bool mintedText(const App::StringIDRef& prefix, const QByteArray& after, QByteArray& said)
+{
+    const auto minted = App::RestoreMinted::current();
+    if (!minted || !prefix)
+        return false;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    long tag = 0;
+    if (!tagAt(after, after.indexOf(marker), tag))
+        return false;
+    const App::StringID& name = prefix.deref();
+    const QByteArray tail = name.postfix();
+    // A name of its own, not one built on another.
+    if (name.isBinary() || name.isHashed() || name.data().contains('#') || tail.contains('#'))
+        return false;
+    std::string text = name.dataToText(0);
+    if (!minted->byId(tagHere(tag), text) || text.size() < static_cast<std::size_t>(tail.size())
+            || text.compare(text.size() - tail.size(), std::string::npos, tail.constData(),
+                            tail.size()) != 0)
+        return false;
+    said = QByteArray(text.c_str(), static_cast<int>(text.size()) - tail.size());
+    return true;
+}
+
+/** The same for a name whose number is in the reference and not in the
+ * string (a table that indexes names, docs/TransactionLog.md sec 33.7):
+ * `#c:5;:G;XTR;:H24:7,F` is `#c` -- `g;SKT` -- with 5, the name `g5;SKT`.
+ * `own` is what of the string's own postfix belongs to the name, `after`
+ * what holds the tag. Where the object numbers the thing otherwise here,
+ * `index` is its number here: the string is the same one, only the
+ * reference changes. False where it comes as it is, which a name whose
+ * text changes otherwise does too.
+ */
+bool mintedIndex(const App::StringID& name, const QByteArray& own, const QByteArray& after,
+                 int& index)
+{
+    const auto minted = App::RestoreMinted::current();
+    if (!minted || index <= 0)
+        return false;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    long tag = 0;
+    if (!tagAt(after, after.indexOf(marker), tag))
+        return false;
+    // A name of its own, not one built on another.
+    if (name.isBinary() || name.isHashed() || name.data().contains('#') || own.contains('#'))
+        return false;
+    std::string text(name.data().constData(), static_cast<std::size_t>(name.data().size()));
+    text += std::to_string(index);
+    text.append(own.constData(), static_cast<std::size_t>(own.size()));
+    if (!minted->byId(tagHere(tag), text) || text.size() < static_cast<std::size_t>(own.size())
+            || text.compare(text.size() - own.size(), std::string::npos, own.constData(),
+                            own.size()) != 0)
+        return false;
+    const Data::IndexedName here(
+        QByteArray(text.c_str(), static_cast<int>(text.size()) - own.size()));
+    if (!here || here.getIndex() <= 0 || name.data() != here.getType())
+        return false;
+    index = here.getIndex();
+    return true;
+}
+
+/// mintedIndex() for the reference `index` of `theirs`, a string of `from`:
+/// a name with its tag in its own postfix (`g` + `;SKT;:H24,E`), or one
+/// built on a name, the tag in what it adds (`#c:` + `;:H24,E`).
+bool mintedReference(const App::StringID& theirs, const App::StringHasher& from, int& index)
+{
+    if (index <= 0 || !App::RestoreMinted::current() || theirs.isBinary() || theirs.isHashed())
+        return false;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    const QByteArray tail = theirs.postfix();
+    if (theirs.data().startsWith('#')) {
+        const auto head = App::StringID::fromString(theirs.data(), false);
+        App::StringIDRef prefix = head.id > 0 && head.index == 0 ? from.getID(head.id)
+                                                                 : App::StringIDRef();
+        return prefix && mintedIndex(prefix.deref(), prefix.deref().postfix(), tail, index);
+    }
+    const int pos = tail.indexOf(marker);
+    return pos >= 0 && mintedIndex(theirs, tail.left(pos), tail.mid(pos), index);
+}
+}  // namespace
+
+StringHasher::ImportTags::ImportTags(const std::map<long, long>& tags)
+    : _outer(importTags)
+{
+    importTags = &tags;
+}
+
+StringHasher::ImportTags::~ImportTags()
+{
+    importTags = _outer;
+}
+
+long StringHasher::ImportTags::map(long tag)
+{
+    if (!importTags)
+        return tag;
+    auto it = importTags->find(tag < 0 ? -tag : tag);
+    if (it == importTags->end())
+        return tag;
+    return tag < 0 ? -it->second : it->second;
+}
+
+bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                              QVector<StringIDRef>* sids, ImportMemo& memo, bool take)
+{
+    TableLock lock(*_hashes, take ? TableLock::Write : TableLock::Read);
+    int pos = text.indexOf('#');
+    if (pos < 0) {
+        out = rewriteTags(rewriteMinted(text));
+        return true;
+    }
+    QByteArray res;
+    res.reserve(text.size() + 8);
+    int last = 0;
+    while (pos >= 0) {
+        int end = pos + 1;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+            ++end;
+        if (end == pos + 1) {
+            pos = text.indexOf('#', end);
+            continue;
+        }
+        bool ok = false;
+        long id = text.mid(pos + 1, end - pos - 1).toLong(&ok, 16);
+        StringIDRef theirs = ok ? from.getID(id) : StringIDRef();
+        if (!theirs)
+            return false;
+        // The number a table that indexes names keeps in the reference,
+        // `#c:5`: where this file numbers the thing otherwise the string is
+        // the same and the number is the one here (sec 33.7).
+        if (pos == 0 && end < text.size() && text[end] == ':') {
+            int stop = end + 1;
+            while (stop < text.size() && std::isxdigit(static_cast<unsigned char>(text[stop])))
+                ++stop;
+            int index = stop > end + 1 ? text.mid(end + 1, stop - end - 1).toInt(&ok, 16) : 0;
+            if (index > 0 && ok
+                    && mintedIndex(theirs.deref(), theirs.deref().postfix(), text.mid(stop), index)) {
+                StringIDRef here = importOne(theirs, memo, take);
+                if (!here)
+                    return false;
+                if (sids && sids->indexOf(here) < 0)
+                    sids->push_back(here);
+                res.append(text.constData() + last, pos + 1 - last);
+                res.append(QByteArray::number(static_cast<qlonglong>(here.value()), 16));
+                res.append(':');
+                res.append(QByteArray::number(index, 16));
+                last = stop;
+                pos = text.indexOf('#', stop);
+                continue;
+            }
+        }
+        // The name the text is built on, as this file numbers the thing
+        // (sec 31.14): not the string it comes as anywhere else, so not
+        // through the memo.
+        QByteArray said;
+        StringIDRef here = pos == 0 && mintedText(theirs, text.mid(end), said)
+            ? StringIDRef(importNew(*theirs._sid, from, memo, take, &said), theirs._index)
+            : importOne(theirs, memo, take);
+        if (!here)
+            return false;
+        if (sids && sids->indexOf(here) < 0)
+            sids->push_back(here);
+        res.append(text.constData() + last, pos + 1 - last);
+        res.append(QByteArray::number(static_cast<qlonglong>(here.value()), 16));
+        last = end;
+        pos = text.indexOf('#', end);
+    }
+    res.append(text.constData() + last, text.size() - last);
+    out = rewriteTags(res);
+    return true;
+}
+
+StringIDRef StringHasher::importOne(const StringIDRef& foreign, ImportMemo& memo, bool take)
+{
+    TableLock lock(*_hashes, take ? TableLock::Write : TableLock::Read);
+    if (!foreign)
+        return {};
+    const StringID* theirs = foreign._sid;
+    if (theirs->_hasher == this)
+        return foreign;
+    const StringHasher* from = theirs->_hasher;
+    if (!from)
+        return {};
+    auto it = memo.find(theirs);
+    if (it == memo.end()) {
+        // Nothing refers to itself or above itself (a string is made after
+        // what it is built from), so the recursion ends.
+        StringIDRef res = importNew(*theirs, *from, memo, take);
+        it = memo.emplace(theirs, res).first;
+    }
+    if (!it->second)
+        return {};
+    // A name numbered in the reference, as this file numbers the thing
+    // (sec 31.14, 33.7): the string is the one imported, the number the one
+    // here.
+    int index = foreign._index;
+    mintedReference(*theirs, *from, index);
+    return {it->second, index};
+}
+
+StringIDRef StringHasher::importNew(const StringID& theirs, const StringHasher& from,
+                                    ImportMemo& memo, bool take, const QByteArray* said)
+{
+    TableLock lock(*_hashes, TableLock::Write);
+    // The name this one is built on, as this file numbers the thing (sec
+    // 31.14, mintedText): another string than the one it comes as anywhere
+    // else, so not through the memo.
+    const StringID* builtOn = nullptr;
+    StringIDRef builtOnHere;
+    if (!said && !theirs.isBinary() && !theirs.isHashed() && theirs._data.startsWith('#')
+            && App::RestoreMinted::current()) {
+        const StringID::IndexID head = StringID::fromString(theirs._data, false);
+        StringIDRef prefix = head.id > 0 ? from.getID(head.id) : StringIDRef();
+        QByteArray data;
+        if (mintedText(prefix, theirs._postfix, data)) {
+            builtOnHere = importNew(*prefix._sid, from, memo, take, &data);
+            if (!builtOnHere)
+                return {};
+            builtOn = prefix._sid;
+        }
+    }
+    QVector<StringIDRef> related;
+    related.reserve(theirs._sids.size());
+    for (const auto& sid : theirs._sids) {
+        StringIDRef here = builtOn && sid._sid == builtOn ? StringIDRef(builtOnHere, sid._index)
+                                                          : importOne(sid, memo, take);
+        if (!here)
+            return {};
+        related.push_back(here);
+    }
+    QByteArray data = said ? *said : theirs._data;
+    QByteArray postfix = theirs._postfix;
+    QVector<StringIDRef> named;
+    if (!theirs.isBinary() && !theirs.isHashed()) {
+        // A prefix reference is its text too ("#7", "#7:"), and comes out
+        // as the related id it names does; a postfix string of its own has
+        // no '#' (getID(MappedName) makes one only then).
+        if (builtOn) {
+            int end = 1;
+            while (end < theirs._data.size()
+                   && std::isxdigit(static_cast<unsigned char>(theirs._data[end])))
+                ++end;
+            data = "#" + QByteArray::number(static_cast<qlonglong>(builtOnHere.value()), 16)
+                 + theirs._data.mid(end);
+            named.push_back(builtOnHere);
+        }
+        else if (!said && !rewriteIds(theirs._data, from, data, &named, memo, take)) {
+            return {};
+        }
+        if (!rewriteIds(theirs._postfix, from, postfix, &named, memo, take))
+            return {};
+    }
+    StringID key;
+    key._data = data;
+    key._postfix = postfix;
+    StringID* found = nullptr;
+    auto range = _hashes->left.equal_range(&key);
+    for (auto i = range.first; i != range.second; ++i) {
+        if (!found || i->first->_id < found->_id)
+            found = i->first;
+    }
+    if (found)
+        return {found};
+    if (!take)
+        return {};
+    auto flags = theirs._flags;
+    flags.setFlag(StringID::Flag::Marked, false);
+    flags.setFlag(StringID::Flag::Persistent, false);
+    StringIDRef sid(new StringID(lastID() + 1, data, flags));
+    sid._sid->_postfix = postfix;
+    // The strings the text names are held after the related ones, whose
+    // places the flags index: a combo string has no related ids, and its
+    // names are held by nothing else once imported.
+    for (const auto& n : named) {
+        if (related.indexOf(n) < 0)
+            related.push_back(n);
+    }
+    sid._sid->_sids = std::move(related);
+    return {insert(sid)};
 }
 
 StringIDRef StringHasher::getID(long id, int index) const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     if (id <= 0) {
         return {};
     }
@@ -515,6 +1314,7 @@ const std::string& StringHasher::getPersistenceFileName() const
 
 void StringHasher::Save(Base::Writer& writer) const
 {
+    TableLock lock(*_hashes, TableLock::Write);
 
     size_t count = 0;
     if (_hashes->SaveAll) {
@@ -532,7 +1332,8 @@ void StringHasher::Save(Base::Writer& writer) const
     writer.Stream() << writer.ind()
         << "<StringHasher saveall=\"" << _hashes->SaveAll
         << "\" threshold=\"" << _hashes->Threshold
-        << "\" indexed=\"" << _hashes->IndexedNames << "\"";
+        << "\" indexed=\"" << _hashes->IndexedNames
+        << "\" lastid=\"" << lastID() << "\"";
 
     if(!count) {
         writer.Stream() << " count=\"0\"></StringHasher>\n";
@@ -554,15 +1355,88 @@ void StringHasher::Save(Base::Writer& writer) const
     writer.Stream() << writer.ind() << "</StringHasher2>\n";
 }
 
+void StringHasher::saveReference(Base::Writer& writer, const std::string& file,
+                                 const std::string& hash, std::size_t count,
+                                 const std::vector<long>& used) const
+{
+    TableLock lock(*_hashes, TableLock::Read);
+    writer.Stream() << writer.ind()
+        << "<StringHasher saveall=\"" << _hashes->SaveAll
+        << "\" threshold=\"" << _hashes->Threshold << "\" lastid=\"" << lastID()
+        << "\" count=\"0\" new=\"1\"/>\n";
+    writer.Stream() << writer.ind() << "<StringHasher2 table=\"" << encodeAttribute(file) << '"';
+    if (!hash.empty())
+        writer.Stream() << " hash=\"" << hash << '"';
+    writer.Stream() << " count=\"" << count << "\" used=\"";
+    for (std::size_t i = 0; i < used.size();) {
+        std::size_t j = i;
+        while (j + 1 < used.size() && used[j + 1] == used[j] + 1)
+            ++j;
+        if (i)
+            writer.Stream() << ',';
+        writer.Stream() << used[i];
+        if (j > i)
+            writer.Stream() << '-' << used[j];
+        i = j + 1;
+    }
+    writer.Stream() << "\"/>\n";
+}
+
+bool StringHasher::parseUsed(const std::string& xml, std::vector<std::pair<long, long>>& ranges)
+{
+    ranges.clear();
+    const std::size_t element = xml.find("<StringHasher2 table=");
+    if (element == std::string::npos)
+        return false;
+    const std::size_t end = xml.find('>', element);
+    const std::size_t at = xml.find(" used=\"", element);
+    if (at == std::string::npos || at > end)
+        return false;
+    const char* p = xml.c_str() + at + 7;
+    while (*p && *p != '"') {
+        char* next = nullptr;
+        const long lo = std::strtol(p, &next, 10);
+        if (next == p)
+            return false;
+        long hi = lo;
+        p = next;
+        if (*p == '-') {
+            hi = std::strtol(p + 1, &next, 10);
+            p = next;
+        }
+        ranges.emplace_back(lo, hi);
+        if (*p == ',')
+            ++p;
+    }
+    return true;
+}
+
+std::vector<long> StringHasher::markedIDs() const
+{
+    TableLock lock(*_hashes, TableLock::Read);
+    std::vector<long> out;
+    for (auto & v : _hashes->right) {
+        if (v.second->isMarked() || v.second->isPersistent())
+            out.push_back(v.first);
+    }
+    return out;
+}
+
 void StringHasher::SaveDocFile (Base::Writer &writer) const {
-    std::size_t count = _hashes->SaveAll ? this->size() : this->count();
-    // saveStream() writes the new format, which RestoreDocFile() recognizes
-    // by this marker; without it the entries went to the legacy parser
+    TableLock lock(*_hashes, TableLock::Write);
+    // What saveStream() writes, under the marker RestoreDocFile() reads it
+    // by: a bare count there means the older format.
+    std::size_t count = 0;
+    for (auto & v : _hashes->right) {
+        if (_hashes->SaveAll || v.second->isMarked() || v.second->isPersistent())
+            ++count;
+    }
     writer.Stream() << "StringTableStart v1 " << count << '\n';
     saveStream(writer.Stream());
 }
 
-void StringHasher::saveStream(std::ostream &stream) const {
+void StringHasher::saveStream(std::ostream &stream, bool all) const {
+    TableLock lock(*_hashes, TableLock::Write);
     Base::OutputStream str(stream,false);
     boost::io::ios_flags_saver ifs(stream);
     stream << std::hex;
@@ -576,7 +1450,7 @@ void StringHasher::saveStream(std::ostream &stream) const {
     for(auto &v : _hashes->right) {
         auto & d = *v.second;
         long id = d._id;
-        if (!_hashes->SaveAll && !d.isMarked() && !d.isPersistent()) {
+        if (!all && !_hashes->SaveAll && !d.isMarked() && !d.isPersistent()) {
             continue;
         }
 
@@ -665,25 +1539,13 @@ void StringHasher::saveStream(std::ostream &stream) const {
 
 void StringHasher::RestoreDocFile(Base::Reader& reader)
 {
-    std::string marker;
-    std::string ver;
-    reader >> marker;
-    std::size_t count = 0;
-    _hashes->clear();
-    if (marker == "StringTableStart") {
-        reader >> ver >> count;
-        if (ver != "v1") {
-            FC_WARN("Unknown string table format");
-        }
-        restoreStreamNew(reader, count);
-        return;
-    }
-    count = atoi(marker.c_str());
-    restoreStream(reader,count);
+    TableLock lock(*_hashes, TableLock::Write);
+    restoreTable(reader);
 }
 
 void StringHasher::restoreStreamNew(std::istream &stream, std::size_t count)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     Base::InputStream str(stream,false);
     _hashes->clear();
     std::string content;
@@ -802,10 +1664,12 @@ void StringHasher::restoreStreamNew(std::istream &stream, std::size_t count)
 
 StringID* StringHasher::insert(const StringIDRef& sid)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     assert(sid && sid._sid->_hasher == nullptr);
     auto & d = *sid._sid;
     d._hasher = this;
     d.ref();
+    ++_hashes->Revision;
     auto res = _hashes->right.insert(_hashes->right.end(),
             HashMap::right_map::value_type(sid.value(),&d));
     if (res->second != &d) {
@@ -816,6 +1680,7 @@ StringID* StringHasher::insert(const StringIDRef& sid)
 }
 
 void StringHasher::restoreStream(std::istream &stream, std::size_t count) {
+    TableLock lock(*_hashes, TableLock::Write);
     Base::InputStream str(stream,false);
     _hashes->clear();
     std::string content;
@@ -838,20 +1703,25 @@ void StringHasher::restoreStream(std::istream &stream, std::size_t count) {
 }
 
 void StringHasher::clear() {
+    TableLock lock(*_hashes, TableLock::Write);
     for (auto & v : _hashes->right) {
         v.second->_hasher = nullptr;
         v.second->unref();
     }
     _hashes->clear();
+    _hashes->LastID = 0;
+    ++_hashes->Revision;
 }
 
 size_t StringHasher::size() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     return _hashes->size();
 }
 
 size_t StringHasher::count() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     size_t count = 0;
     // What saveStream() writes when not saving all (upstream a1ce983035)
     for(auto &v : _hashes->right)  {
@@ -864,6 +1734,7 @@ size_t StringHasher::count() const
 
 void StringHasher::Restore(Base::XMLReader& reader)
 {
+    TableLock lock(*_hashes, TableLock::Write);
     clear();
     reader.readElement("StringHasher");
     _hashes->SaveAll = reader.getAttributeAsInteger("saveall")?true:false;
@@ -878,6 +1749,7 @@ void StringHasher::Restore(Base::XMLReader& reader)
         _hashes->IndexedNames = DocumentParams::getHashIndexedName();
         _hashes->InferIndexed = true;
     }
+    _hashes->LastID = std::max<long>(_hashes->LastID, reader.getAttributeAsInteger("lastid", "0"));
 
     bool newTag = false;
     if (reader.getAttributeAsInteger("new","0") > 0) {
@@ -885,10 +1757,30 @@ void StringHasher::Restore(Base::XMLReader& reader)
         newTag = true;
     }
 
+    // The file's table as a member of its own (docs/TransactionLog.md sec
+    // 27.50 item 1): read before the objects by whoever restores the
+    // document, which knows the archive -- or not at all, when the table is
+    // in memory already (item 3).
+    _tableFile.clear();
+    _tableHash.clear();
+    if (newTag && reader.hasAttribute("table")) {
+        _tableFile = reader.getAttribute("table");
+        if (reader.hasAttribute("hash"))
+            _tableHash = reader.getAttribute("hash");
+        return;
+    }
+
+    // The table in a member the file names, which is how upstream writes
+    // one that is not empty, and this fork did. Named for whoever restores
+    // the document to read, as the member above is, and not handed to the
+    // reader to be served after the objects: a document that shares its
+    // file's hasher reads its table into a hasher of its own and merges it
+    // (Document::Restore), and that one was gone before the reader came to
+    // it -- the table was lost, and the reader called into freed memory.
     if(reader.hasAttribute("file")) {
         const char *file = reader.getAttribute("file");
         if(*file) {
-            reader.addFile(file,this);
+            _tableFile = file;
         }
         return;
     }
@@ -930,6 +1822,7 @@ void StringHasher::Restore(Base::XMLReader& reader)
 
 unsigned int StringHasher::getMemSize() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     return (_hashes->SaveAll ? size() : count()) * 10;
 }
 
@@ -940,6 +1833,7 @@ PyObject* StringHasher::getPyObject()
 
 std::map<long,StringIDRef> StringHasher::getIDMap() const
 {
+    TableLock lock(*_hashes, TableLock::Read);
     std::map<long,StringIDRef> ret;
     for(auto &v : _hashes->right) {
         ret.emplace_hint(ret.end(), v.first, StringIDRef(v.second));
@@ -949,7 +1843,45 @@ std::map<long,StringIDRef> StringHasher::getIDMap() const
 
 void StringHasher::clearMarks() const
 {
+    TableLock lock(*_hashes, TableLock::Write);
     for (auto & v : _hashes->right) {
         v.second->_flags.setFlag(StringID::Flag::Marked, false);
     }
+}
+
+///////////////////////////////////////////////////////////
+
+namespace {
+thread_local App::StringIDCollector* idCollector = nullptr;
+}
+
+StringIDCollector::StringIDCollector(const StringHasher* hasher)
+    : hasher(hasher)
+    , _outer(idCollector)
+{
+    idCollector = this;
+}
+
+StringIDCollector::~StringIDCollector()
+{
+    idCollector = _outer;
+}
+
+bool StringIDCollector::take(const StringIDRef& sid)
+{
+    StringIDCollector* collector = idCollector;
+    if (!collector)
+        return sid.isMarked();
+    if (!sid.isFromHasher(collector->hasher))
+        return false;
+    collector->ids.push_back(sid.value());
+    return true;
+}
+
+std::vector<long> StringIDCollector::sortedIds() const
+{
+    std::vector<long> out = ids;
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
 }

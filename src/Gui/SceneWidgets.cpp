@@ -51,6 +51,7 @@
 #include "MainWindow.h"
 #include "Renderer/SceneServer.h"
 #include "SceneControl.h"
+#include "SceneRequests.h"
 #include "SceneWidgets.h"
 
 using namespace Gui;
@@ -350,35 +351,6 @@ bool isToolBarModel(const QString& id)
         || id.startsWith(QLatin1String("action:"));
 }
 
-/// The most one upload may carry.  A panel's file chooser names a font,
-/// a hatch pattern, a symbol: kilobytes.  The cap is here rather than
-/// left to the socket's 64 MB because this one writes to disk.
-constexpr int kMaxUploadBytes = 16 * 1024 * 1024;
-
-/// The name a client asked for, reduced to a plain file name.
-///
-/// A client's string is never treated as a path: `QFileInfo::fileName`
-/// drops every directory part, so `../../.ssh/config` arrives as
-/// `config`, and what is left is filtered to a conservative set.  A
-/// leading dot goes too -- a name of dots alone would name the
-/// directory itself.  Empty is refused by the caller.
-QString sanitizedUploadName(const QString& given)
-{
-    const QString base = QFileInfo(given.trimmed()).fileName();
-    QString out;
-    out.reserve(base.size());
-    for (const QChar c : base) {
-        if (c.isLetterOrNumber() || c == QLatin1Char('.') || c == QLatin1Char('-')
-            || c == QLatin1Char('_') || c == QLatin1Char(' '))
-            out.append(c);
-        else
-            out.append(QLatin1Char('_'));
-    }
-    while (out.startsWith(QLatin1Char('.')))
-        out.remove(0, 1);
-    return out.trimmed().left(120);
-}
-
 /// Where an uploaded file lands: one directory under the host's temp
 /// path, made on first use.
 ///
@@ -393,21 +365,6 @@ QString uploadDir()
     return QDir().mkpath(dir) ? dir : QString();
 }
 
-/// A path in \a dir nothing holds yet: the same name uploaded twice must
-/// not overwrite the first, which a panel may still be pointing at.
-QString uniqueUploadPath(const QString& dir, const QString& base)
-{
-    const QDir at(dir);
-    const QFileInfo info(base);
-    const QString stem = info.baseName();
-    const QString suffix = info.completeSuffix();
-    QString name = base;
-    for (int n = 1; at.exists(name) && n < 10000; ++n) {
-        name = suffix.isEmpty() ? QStringLiteral("%1-%2").arg(stem).arg(n)
-                                : QStringLiteral("%1-%2.%3").arg(stem).arg(n).arg(suffix);
-    }
-    return at.filePath(name);
-}
 }  // namespace
 
 void Gui::installSceneWidgetOps()
@@ -686,29 +643,22 @@ void Gui::installSceneWidgetOps()
     registerSceneControlOp(QStringLiteral("widgets.upload"), true,
                            [](const QJsonObject& req, const std::string&) {
         const QJsonValue id = req.value(QLatin1String("id"));
-        const QString base = sanitizedUploadName(req.value(QLatin1String("name")).toString());
+        const QString base =
+            SceneRequests::sanitizedName(req.value(QLatin1String("name")).toString());
         if (base.isEmpty())
             return sceneControlError(id, "BadRequest", QStringLiteral("name required"));
-        const QString encoded = req.value(QLatin1String("data")).toString();
-        // Checked before decoding: base64 is 4 bytes per 3, so this
-        // bounds the allocation the decode would make.
-        if (encoded.size() / 4 * 3 > kMaxUploadBytes)
-            return sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most")
-                                                         .arg(kMaxUploadBytes));
-        const auto decoded = QByteArray::fromBase64Encoding(
-            encoded.toLatin1(),
-            QByteArray::Base64Encoding | QByteArray::AbortOnBase64DecodingErrors);
-        if (!decoded)
-            return sceneControlError(id, "BadRequest", QStringLiteral("data is not base64"));
-        const QByteArray bytes = *decoded;
-        if (bytes.size() > kMaxUploadBytes)
-            return sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most")
-                                                         .arg(kMaxUploadBytes));
+        // The most one upload may carry is a setting (SceneRequests::
+        // uploadLimit, docs/TransactionLog.md sec 30.23): 16 MB unless set,
+        // a panel's file being a font, a hatch pattern, a symbol.
+        QByteArray bytes;
+        QJsonObject tooMuch;
+        if (!SceneRequests::decode(req, bytes, tooMuch))
+            return tooMuch;
         const QString dir = uploadDir();
         if (dir.isEmpty())
             return sceneControlError(id, "UploadFailed",
                                      QStringLiteral("no upload directory"));
-        const QString path = uniqueUploadPath(dir, base);
+        const QString path = SceneRequests::uniquePath(dir, base);
         QFile file(path);
         if (!file.open(QIODevice::WriteOnly))
             return sceneControlError(id, "UploadFailed", file.errorString());
@@ -726,6 +676,9 @@ void Gui::installSceneWidgetOps()
         reply[QLatin1String("size")] = double(bytes.size());
         return reply;
     });
+
+    // A file sent to be merged rides the same lane (sec 30.23).
+    SceneRequests::install();
 }
 
 #include "moc_SceneWidgets.cpp"

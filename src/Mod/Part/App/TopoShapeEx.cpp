@@ -123,6 +123,7 @@
 # include <TopoDS.hxx>
 # include <TopoDS_Compound.hxx>
 # include <TopoDS_Iterator.hxx>
+# include <TopoDS_LockedShape.hxx>
 # include <TopoDS_Solid.hxx>
 # include <TopoDS_Vertex.hxx>
 # include <TopExp.hxx>
@@ -204,8 +205,10 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include "PartFeature.h"
+#include "PropertyTopoShape.h"
 
 #include "PartPyCXX.h"
+#include "PropertyTopoShape.h"
 #include "TopoShape.h"
 #include "TopoShapeOpCode.h"
 #include "HLRProjector.h"
@@ -1179,7 +1182,9 @@ void TopoShape::mapSubElement(const std::vector<TopoShape> &shapes, const char *
                     child.offset = offset;
                     offset += count;
                     child.count = count;
-                    child.elementMap = s.elementMap();
+                    // A child from another table is imported, cached per
+                    // source map (docs/TransactionLog.md sec 27.76 item 2).
+                    child.elementMap = Data::translateElementMap(s.elementMap(), s.Hasher, Hasher);
                     child.tag = s.Tag;
                     if (op)
                         child.postfix = op;
@@ -1205,6 +1210,22 @@ void TopoShape::copyElementMap(const TopoShape &s, const char *op)
 {
     if (s.isNull() || isNull())
         return;
+    // The names of a shape of another table come in with this table's ids,
+    // not as text naming the other's (docs/TransactionLog.md sec 27.76 item
+    // 2); the ids the op's own postfix names -- the external marker's
+    // document, item 4 -- are this table's, and the children hold them.
+    auto elementMap = Data::translateElementMap(s.elementMap(), s.Hasher, Hasher);
+    Data::ElementIDRefs postfixIds;
+    if (op && Hasher) {
+        for (const char *p = strchr(op, '#'); p; p = strchr(p + 1, '#')) {
+            char *end = nullptr;
+            long id = std::strtol(p + 1, &end, 16);
+            if (end != p + 1 && id > 0) {
+                if (auto sid = Hasher->getID(id))
+                    postfixIds.push_back(sid);
+            }
+        }
+    }
     std::vector<Data::MappedChildElements> children;
     TopAbs_ShapeEnum types[] = {TopAbs_VERTEX, TopAbs_EDGE, TopAbs_FACE};
     for (unsigned i=0; i<sizeof(types)/sizeof(types[0]); ++i) {
@@ -1222,7 +1243,8 @@ void TopoShape::copyElementMap(const TopoShape &s, const char *op)
         child.indexedName = Data::IndexedName::fromConst(shapeName(types[i]).c_str(), 1);
         child.offset = 0;
         child.count = count;
-        child.elementMap = s.elementMap();
+        child.elementMap = elementMap;
+        child.sids = postfixIds;
         // If there is op code supplied, we must include child tag even if it's
         // the same as the tag of this shape, because otherwise we won't be able
         // to strip the op code to get back to the original name in history tracing.
@@ -1254,21 +1276,15 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
     static const std::array<TopAbs_ShapeEnum,3> types = 
         {TopAbs_VERTEX,TopAbs_EDGE,TopAbs_FACE};
 
+    // A shape of another table has its names imported into this one's
+    // (docs/TransactionLog.md sec 27.76 item 2): this shape keeps its table,
+    // where it used to take the other's, or keep the other's ids as text.
     auto checkHasher = [this](const TopoShape &other) {
-        if(Hasher) {
-            if(other.Hasher!=Hasher) {
-                if(!getElementMapSize(false)) {
-                    if(FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
-                        FC_WARN("hasher mismatch");
-                }else {
-                    // FC_THROWM(Base::RuntimeError, "hasher mismatch");
-                    FC_ERR("hasher mismatch");
-                }
-                Hasher = other.Hasher;
-            }
-        }else
+        if(!Hasher)
             Hasher = other.Hasher;
     };
+    App::StringHasher::ImportMemo importMemo;
+    int importFailed = 0;
 
     for(auto type : types) {
         auto &shapeMap = _Cache->getInfo(type);
@@ -1291,23 +1307,21 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
             forward = false;
             count = shapeMap.count();
         }
-        for(int k=1;k<=count;++k) {
-            int i,idx;
-            if(forward) {
-                i = k;
-                idx = shapeMap.find(_Shape,otherMap.find(other._Shape,k));
-                if(!idx) continue;
-            } else {
-                idx = k;
-                i = otherMap.find(other._Shape,shapeMap.find(_Shape,k));
-                if(!i) continue;
-            }
+        // Element idx of this shape is element i of other.
+        auto mapElement = [&](int idx, int i) {
             Data::IndexedName element = Data::IndexedName::fromConst(shapetype, idx);
             for(auto &v : other.getElementMappedNames(
                         Data::IndexedName::fromConst(shapetype,i),true))
             {
                 auto &name = v.first;
                 auto &sids = v.second;
+                if (Hasher && other.Hasher && Hasher != other.Hasher) {
+                    Data::MappedName imported;
+                    if (Hasher->importName(name, *other.Hasher, imported, sids, importMemo))
+                        name = imported;
+                    else
+                        ++importFailed;
+                }
                 if(sids.size()) {
                     if (!Hasher)
                         Hasher = sids[0].getHasher();
@@ -1323,8 +1337,45 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
                 encodeElementName(shapetype[0],name,ss,&sids,op,other.Tag);
                 setElementName(element,name,&sids);
             }
+        };
+        for(int k=1;k<=count;++k) {
+            int i,idx;
+            if(forward) {
+                i = k;
+                idx = shapeMap.find(_Shape,otherMap.find(other._Shape,k));
+                if(!idx) continue;
+            } else {
+                idx = k;
+                i = otherMap.find(other._Shape,shapeMap.find(_Shape,k));
+                if(!i) continue;
+            }
+            mapElement(idx, i);
+        }
+        // A thawed copy (the OCCT fork's TopoDS_TShape::Thawed): an algorithm
+        // copied a frozen sub-shape of other's where it would have changed it
+        // in place (docs/TransactionLog.md sec 23.15), and the copy is named
+        // as the original would have been. The original may be a thawed copy
+        // itself, of something other has.
+        for (int idx = 1; idx <= shapeMap.count(); ++idx) {
+            const TopoDS_Shape &element = shapeMap.find(_Shape, idx);
+            if (!element.TShape()->Thawed())
+                continue;
+            TopoDS_Shape original = element;
+            int i = 0;
+            for (auto from = TopoDS_TShape::ThawedFrom(element.TShape().get());
+                    !from.IsNull() && !i;
+                    from = TopoDS_TShape::ThawedFrom(from.get()))
+            {
+                original.TShape(from);
+                i = otherMap.find(other._Shape, original);
+            }
+            if (i)
+                mapElement(idx, i);
         }
     }
+    if (importFailed)
+        FC_WARN(importFailed << " element names of tag " << other.Tag
+                << " name a string their table does not have; kept as they were");
 }
 
 std::vector<TopoDS_Shape> TopoShape::getSubShapes(TopAbs_ShapeEnum type, TopAbs_ShapeEnum avoid) const {
@@ -2527,6 +2578,14 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
     // if (!uptoface.isNull() && !this->findShape(uptoface.getShape()))
     //     srcShapes.push_back(uptoface);
 
+    // A frozen input the algorithm refused to change is no failure of this
+    // extrusion to work around: retrying on the original until face, or on
+    // a base of our own, gave a prism up to the wrong place. It is passed
+    // on, and the feature recomputes on copies (Part::Feature::recompute(),
+    // docs/TransactionLog.md sec 27.82, 33.6).
+    auto refusedFrozen = [refused = TopoDS_LockedShape::Raised()]() {
+        return !ThawInputs::active() && TopoDS_LockedShape::Raised() != refused;
+    };
     std::vector<TopoShape> results;
     for (;;) {
         results.clear();
@@ -2552,12 +2611,12 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             }
             break;
         } catch (const Base::Exception &e) {
-            if (!retry()) {
+            if (refusedFrozen() || !retry()) {
                 throw;
             }
             FC_WARN("Retry extrusion on error: " << e.what());
         } catch (const Standard_Failure &e) {
-            if (!retry()) {
+            if (refusedFrozen() || !retry()) {
                 throw;
             }
             FC_WARN("Retry extrusion on error: " << e.GetMessageString());
@@ -3187,11 +3246,18 @@ struct EdgePoints {
 // One connected run, taken out of an edge_points list that the caller built.
 // Both entry points below drive this; keeping the list across runs is the whole
 // point, because building it walks every edge and asks OCCT for two vertices.
+// An edge that runs against the run is turned by a copy on the reversed curve
+// when <reverse> is set, and handed over as it is otherwise -- for a caller that
+// gives the run to BRepBuilderAPI_MakeWire, which orients an edge itself and
+// keeps its curve: a sketch's edge keeps its geometry's direction, which its
+// external geometry and constraints on its ends read (docs/TransactionLog.md
+// sec 27.87).
 static std::deque<TopoShape>
 extractRun(std::list<TopoShape>& edges,
            std::list<EdgePoints>& edge_points,
            bool keepOrder,
-           double tol3d)
+           double tol3d,
+           bool reverse = true)
 {
     std::deque<TopoShape> sorted;
     if (edge_points.empty())
@@ -3240,6 +3306,10 @@ extractRun(std::list<TopoShape>& edges,
         return res;
     };
 
+    auto turn = [&](const TopoShape &edge) {
+        return reverse ? reverseEdge(edge) : edge;
+    };
+
     while (!edge_points.empty()) {
         // search for adjacent edge
         std::list<EdgePoints>::iterator pEI;
@@ -3250,7 +3320,7 @@ extractRun(std::list<TopoShape>& edges,
             if (keepOrder && sorted.size() == 1) {
                 if (pEI->v2.SquareDistance(first) <= tol3d
                         || pEI->v1.SquareDistance(first) <= tol3d) {
-                    sorted[0] = reverseEdge(sorted[0]);
+                    sorted[0] = turn(sorted[0]);
                     std::swap(first, last);
                 }
             }
@@ -3273,7 +3343,7 @@ extractRun(std::list<TopoShape>& edges,
             }
             else if (pEI->v2.SquareDistance(last) <= tol3d) {
                 last = pEI->v1;
-                sorted.push_back(reverseEdge(pEI->edge));
+                sorted.push_back(turn(pEI->edge));
                 edges.erase(pEI->it);
                 edge_points.erase(pEI);
                 pEI = edge_points.begin();
@@ -3281,7 +3351,7 @@ extractRun(std::list<TopoShape>& edges,
             }
             else if (pEI->v1.SquareDistance(first) <= tol3d) {
                 first = pEI->v2;
-                sorted.push_front(reverseEdge(pEI->edge));
+                sorted.push_front(turn(pEI->edge));
                 edges.erase(pEI->it);
                 edge_points.erase(pEI);
                 pEI = edge_points.begin();
@@ -3318,7 +3388,7 @@ TopoShape::sortEdges(std::list<TopoShape>& edges, bool keepOrder, double tol)
 }
 
 std::vector<std::deque<TopoShape>>
-TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol)
+TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol, bool reverse)
 {
     if (tol<Precision::Confusion()) tol = Precision::Confusion();
     double tol3d = tol * tol;
@@ -3331,7 +3401,7 @@ TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol)
 
     std::vector<std::deque<TopoShape>> runs;
     while (!edge_points.empty()) {
-        auto run = extractRun(edges, edge_points, keepOrder, tol3d);
+        auto run = extractRun(edges, edge_points, keepOrder, tol3d, reverse);
         if (run.empty())
             break;
         runs.push_back(std::move(run));
@@ -3346,13 +3416,14 @@ TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol)
 static std::vector<TopoShape>
 wiresFromSortedRuns(std::list<TopoShape> &edge_list,
                     bool keepOrder,
+                    bool reverse,
                     double tol,
                     const char *op,
                     bool fixWires,
                     Part::TopoShapeMap *output)
 {
     std::vector<TopoShape> wires;
-    for (const auto &run : TopoShape::sortEdgesAll(edge_list, keepOrder, tol)) {
+    for (const auto &run : TopoShape::sortEdgesAll(edge_list, keepOrder, tol, reverse)) {
         // An edge shorter than tol never joins a run -- its ends coincide, so
         // the sorting calls it closed and gives it a run of its own. The wire
         // fixing used to delete such edges (they are why makEWires() fixes at
@@ -3411,7 +3482,7 @@ TopoShape &TopoShape::makEOrderedWires(const std::vector<TopoShape> &shapes,
     for(auto &e : shape.getSubTopoShapes(TopAbs_EDGE))
         edge_list.push_back(e);
 
-    return makECompound(wiresFromSortedRuns(edge_list, true, tol, op, false, output),
+    return makECompound(wiresFromSortedRuns(edge_list, true, true, tol, op, false, output),
                         0, false);
 }
 
@@ -3465,7 +3536,7 @@ TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
     // each wire by re-offering every remaining edge to MakeWire after every
     // accepted one. That rescan was quadratic twice over -- in the number of
     // wires and in the length of each -- and it never honoured tol at all.
-    return makECompound(wiresFromSortedRuns(edge_list, false, tol, op, true, output),
+    return makECompound(wiresFromSortedRuns(edge_list, false, false, tol, op, true, output),
                         0, false);
 }
 
@@ -4011,6 +4082,21 @@ Data::MappedName TopoShape::setElementComboName(const Data::IndexedName & elemen
                                                 const char *op,
                                                 const Data::ElementIDRefs *_sids)
 {
+    Data::ElementIDRefs sids;
+    if (_sids)
+        sids = *_sids;
+    Data::MappedName newName = makeElementComboName(element, names, marker, op, sids);
+    if (!newName)
+        return newName;
+    return setElementName(element,newName,&sids);
+}
+
+Data::MappedName TopoShape::makeElementComboName(const Data::IndexedName & element,
+                                                 const std::vector<Data::MappedName> &names,
+                                                 const char *marker,
+                                                 const char *op,
+                                                 Data::ElementIDRefs &sids) const
+{
     if(names.empty())
         return Data::MappedName();
     std::string _marker;
@@ -4023,9 +4109,6 @@ Data::MappedName TopoShape::setElementComboName(const Data::IndexedName & elemen
     auto it = names.begin();
     Data::MappedName newName = *it;
     std::ostringstream ss;
-    Data::ElementIDRefs sids;
-    if (_sids)
-        sids = *_sids;
     if(names.size() == 1) 
         ss << marker;
     else {
@@ -4049,7 +4132,7 @@ Data::MappedName TopoShape::setElementComboName(const Data::IndexedName & elemen
         }
     }
     encodeElementName(element[0],newName,ss,&sids,op);
-    return setElementName(element,newName,&sids);
+    return newName;
 }
 
 std::vector<Data::MappedName>
@@ -4235,6 +4318,9 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
     Data::MappedName newName;
 
     std::map<Data::IndexedName, std::map<NameKey,NameInfo> > newNames;
+    // Names of an input of another table come in with this one's ids
+    // (docs/TransactionLog.md sec 27.76 item 2).
+    App::StringHasher::ImportMemo importMemo;
 
     // First, collect names from other shapes that generates or modifies the
     // new shape
@@ -4252,8 +4338,14 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
                 const auto &otherElement = otherMap.find(other._Shape,i);
                 // Find all new objects that are a modification of the old object
                 Data::ElementIDRefs sids;
-                NameKey key(info.type, other.getMappedName(
-                            Data::IndexedName::fromConst(info.shapetype, i),true,&sids));
+                Data::MappedName otherName = other.getMappedName(
+                            Data::IndexedName::fromConst(info.shapetype, i),true,&sids);
+                if (Hasher && other.Hasher && Hasher != other.Hasher) {
+                    Data::MappedName imported;
+                    if (Hasher->importName(otherName, *other.Hasher, imported, sids, importMemo))
+                        otherName = imported;
+                }
+                NameKey key(info.type, otherName);
 
                 int k=0;
                 for(auto &newShape : mapper.modified(otherElement)) {
@@ -4676,6 +4768,11 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
                 }
                 auto it = names.begin();
                 newName = it->first;
+                // Cleared here, not only in the branch below: the stream still
+                // holds the last encode of the passes before, which a single
+                // lower name would otherwise carry into this one's name
+                // (docs/TransactionLog.md sec 27.77).
+                ss.str("");
                 if(names.size() == 1)
                     ss << lowerPostfix();
                 else {

@@ -480,6 +480,13 @@ struct EditData {
     bool FullyConstrained;
     bool needUpdate{false};
 
+    // The factor each B-spline pole circle is drawn at, by GeoId, refilled
+    // by every draw(). It lives here and not on the geometry: the extension
+    // that used to carry it is persistent, so writing it into the sketch
+    // geometry changed the value the view was only meant to draw
+    // (docs/TransactionLog.md 23.6).
+    std::map<int, double> PoleScaleFactor;
+
     // container to track our own selected parts
     std::map<int,int> SelPointMap;
     std::map<int,int> SelCurveMap; // also holds cross axes at -1 and -2
@@ -674,7 +681,7 @@ ExpressionToolTipFilter expressionToolTipFilter;
 } // namespace
 
 // this function is used to simulate cyclic periodic negative geometry indices (for external geometry)
-const Part::Geometry* GeoById(const std::vector<Part::Geometry*> GeoList, int Id)
+const Part::Geometry* GeoById(const std::vector<const Part::Geometry*> GeoList, int Id)
 {
     if (Id >= 0)
         return GeoList[Id];
@@ -2397,6 +2404,21 @@ void ViewProviderSketch::beginDragAutoConstraints()
 }
 
 /// The vector a drag step or its commit moves by. B-spline weights need it rescaled.
+double ViewProviderSketch::poleScaleFactor(int GeoId, const Part::Geometry* geo) const
+{
+    if (edit) {
+        auto it = edit->PoleScaleFactor.find(GeoId);
+        if (it != edit->PoleScaleFactor.end())
+            return it->second;
+    }
+    if (geo && geo->hasExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId())) {
+        auto vpext = std::static_pointer_cast<const SketcherGui::ViewProviderSketchGeometryExtension>(
+                        geo->getExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()).lock());
+        return vpext->getRepresentationFactor();
+    }
+    return 1.0;
+}
+
 Base::Vector3d ViewProviderSketch::getDragVector(double x, double y) const
 {
     Base::Vector3d vec(x - xInit, y - yInit, 0);
@@ -2421,15 +2443,7 @@ Base::Vector3d ViewProviderSketch::getDragVector(double x, double y) const
 
         Base::Vector3d dir = vec - center;
 
-        double scalefactor = 1.0;
-
-        if (circle->hasExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()))
-        {
-            auto vpext = std::static_pointer_cast<const SketcherGui::ViewProviderSketchGeometryExtension>(
-                            circle->getExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()).lock());
-
-            scalefactor = vpext->getRepresentationFactor();
-        }
+        double scalefactor = poleScaleFactor(edit->Dragged[0].GeoId, circle);
 
         vec = center + dir / scalefactor;
     }
@@ -2545,7 +2559,8 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
 #endif
 
     // with memory allocation
-    const std::vector<Part::Geometry *> geomlist = getSolvedSketch().extractGeometry(true, true);
+    auto extracted = getSolvedSketch().extractGeometry(true, true);
+    const std::vector<const Part::Geometry*> geomlist(extracted.begin(), extracted.end());
 
 #ifdef _DEBUG
     assert(int(geomlist.size()) == extGeoCount + intGeoCount);
@@ -2555,7 +2570,7 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
 
     auto commit = [&]() {
         // delete the cloned objects
-        for (Part::Geometry* geo : geomlist) {
+        for (const Part::Geometry* geo : geomlist) {
             delete geo;
         }
         getSketchObject()->Constraints.set1Value(constNum, std::move(Constr));
@@ -2667,15 +2682,7 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
 
                 if(Constr->Type == Sketcher::Weight) {
 
-                    double scalefactor = 1.0;
-
-                    if(circle->hasExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()))
-                    {
-                        auto vpext = std::static_pointer_cast<const SketcherGui::ViewProviderSketchGeometryExtension>(
-                                        circle->getExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()).lock());
-
-                        scalefactor = vpext->getRepresentationFactor();
-                    }
+                    double scalefactor = poleScaleFactor(Constr->First, circle);
 
                     p2 = center + dir * scalefactor;
 
@@ -3411,7 +3418,7 @@ void ViewProviderSketch::doBoxSelection(const SbVec2s &startPos, const SbVec2s &
     int intGeoCount = sketchObject->getHighestCurveIndex() + 1;
     int extGeoCount = sketchObject->getExternalGeometryCount();
 
-    const std::vector<Part::Geometry *> geomlist = sketchObject->getCompleteGeometry(); // without memory allocation
+    const std::vector<const Part::Geometry*> geomlist = sketchObject->getCompleteGeometry(); // without memory allocation
     assert(int(geomlist.size()) == extGeoCount + intGeoCount);
     assert(int(geomlist.size()) >= 2);
 
@@ -3456,7 +3463,7 @@ void ViewProviderSketch::doBoxSelection(const SbVec2s &startPos, const SbVec2s &
         select(ss.str());
     };
 
-    for (std::vector<Part::Geometry *>::const_iterator it = geomlist.begin(); it != geomlist.end()-2; ++it, ++GeoId) {
+    for (std::vector<const Part::Geometry*>::const_iterator it = geomlist.begin(); it != geomlist.end()-2; ++it, ++GeoId) {
 
         if (GeoId >= intGeoCount)
             GeoId = -extGeoCount;
@@ -6165,7 +6172,7 @@ bool ViewProviderSketch::isGeometryHidden(int GeoId) const
     // Only internal geometry has a layer; external geometry is always shown.
     if (GeoId < 0)
         return false;
-    const std::vector<Part::Geometry *> &geos = getSketchObject()->Geometry.getValues();
+    const std::vector<const Part::Geometry *> &geos = getSketchObject()->Geometry.getValues();
     if (GeoId >= (int)geos.size())
         return false;
     const std::vector<VisualLayer> &layers = VisualLayerList.getValues();
@@ -6194,13 +6201,16 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     int intGeoCount = sketch->getHighestCurveIndex() + 1;
     int extGeoCount = sketch->getExternalGeometryCount();
 
-    const std::vector<Part::Geometry *> *geomlist;
-    std::vector<Part::Geometry *> tempGeo;
+    const std::vector<const Part::Geometry*> *geomlist;
+    std::vector<const Part::Geometry*> tempGeo;
     std::vector<bool> constructions;
-    if (temp)
-        tempGeo = getSolvedSketch().extractGeometry(true, true); // with memory allocation
+    if (temp) {
+        auto extracted = getSolvedSketch().extractGeometry(true, true); // with memory allocation
+        tempGeo.assign(extracted.begin(), extracted.end());
+    }
     else
         tempGeo = sketch->getCompleteGeometry(); // without memory allocation
+    edit->PoleScaleFactor.clear();
 
     geomlist = &tempGeo;
 
@@ -6378,30 +6388,10 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
                             mcurve(0,x,y);
                             Coords.emplace_back(x, y, 0);
 
-                            // save scale factor for any prospective dragging operation
-                            // 1. Solver must be updated, in case a dragging operation starts
-                            // 2. if temp geometry is being used (with memory allocation), then the copy we have here must be updated. If
-                            //    no temp geometry is being used, then the normal geometry must be updated.
-                            {// make solver be ready for a dragging operation
-                                auto vpext = std::make_unique<SketcherGui::ViewProviderSketchGeometryExtension>();
-                                vpext->setRepresentationFactor(scalefactor);
-
-                                getSketchObject()->updateSolverExtension(GeoId, std::move(vpext));
-                            }
-
-                            if(!circle->hasExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()))
-                            {
-                                // It is ok to add this kind of extension to a const geometry because:
-                                // 1. It does not modify the object in a way that affects property state, just ViewProvider representation
-                                // 2. If it is lost (for example upon undo), redrawing will reinstate it with the correct value
-                                const_cast<Part::GeomCircle *>(circle)->setExtension(std::make_unique<SketcherGui::ViewProviderSketchGeometryExtension>());
-                            }
-
-                            auto vpext = std::const_pointer_cast<SketcherGui::ViewProviderSketchGeometryExtension>(
-                                            std::static_pointer_cast<const SketcherGui::ViewProviderSketchGeometryExtension>(
-                                                circle->getExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()).lock()));
-
-                            vpext->setRepresentationFactor(scalefactor);
+                            // save scale factor for any prospective dragging
+                            // operation: in the edit state, never on the
+                            // geometry, which is the value of a property
+                            edit->PoleScaleFactor[GeoId] = scalefactor;
                         }
                         break;
                     }
@@ -7223,7 +7213,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
             curveSet.ids.clear();
         unsigned int layerPattern = 0xFFFF;
         const std::vector<VisualLayer> &layers = VisualLayerList.getValues();
-        const std::vector<Part::Geometry *> &geos = sketch->Geometry.getValues();
+        const std::vector<const Part::Geometry *> &geos = sketch->Geometry.getValues();
         int vertex = 0;
         for (int c = 0; c < (int)Index.size(); ++c) {
             int count = int(Index[c]);
@@ -8456,15 +8446,7 @@ Restart:
                                 double radius;
 
                                 if(Constr->Type == Weight) {
-                                    double scalefactor = 1.0;
-
-                                    if(circle->hasExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()))
-                                    {
-                                        auto vpext = std::static_pointer_cast<const SketcherGui::ViewProviderSketchGeometryExtension>(
-                                                        circle->getExtension(SketcherGui::ViewProviderSketchGeometryExtension::getClassTypeId()).lock());
-
-                                        scalefactor = vpext->getRepresentationFactor();
-                                    }
+                                    double scalefactor = poleScaleFactor(Constr->First, circle);
 
                                     radius = circle->getRadius()*scalefactor;
                                 }
@@ -8533,7 +8515,7 @@ Restart:
 
     // delete the cloned objects
     if (temp) {
-        for (std::vector<Part::Geometry *>::iterator it=tempGeo.begin(); it != tempGeo.end(); ++it) {
+        for (std::vector<const Part::Geometry*>::iterator it=tempGeo.begin(); it != tempGeo.end(); ++it) {
             if (*it)
                 delete *it;
         }

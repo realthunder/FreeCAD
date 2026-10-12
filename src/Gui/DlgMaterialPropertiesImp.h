@@ -25,6 +25,7 @@
 #define GUI_DIALOG_DLGMATERIALPROPERTIES_IMP_H
 
 #include <QDialog>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -32,6 +33,7 @@
 #include <FCGlobal.h>
 
 namespace App {
+class MaterialAppearance;
 class Property;
 class PropertyAppearance;
 class PropertyAppearanceList;
@@ -61,12 +63,29 @@ public:
     explicit DlgMaterialPropertiesImp(const std::string& mat, QWidget* parent = nullptr, Qt::WindowFlags fl = Qt::WindowFlags());
     ~DlgMaterialPropertiesImp() override;
     void setViewProviders(const std::vector<Gui::ViewProvider*>&);
+    /** Edit a material that is no view provider's property
+     *
+     * The look of one named face, say: a value its owner keeps where this
+     * dialog cannot write. Each edit is announced by materialChanged(), and
+     * getMaterial() is the value as it is then. Cancel puts back the one given
+     * and announces that too. The shading model is the owner's, and is not
+     * offered.
+     */
+    //@{
+    void setMaterial(const App::MaterialAppearance &mat);
+    App::MaterialAppearance getMaterial() const;
+    //@}
     QColor diffuseColor() const;
 
     void reject() override;
 
+Q_SIGNALS:
+    void materialChanged();
+
 private:
     void setupConnections();
+    /// An edit to the material given by setMaterial(), where there is one
+    void editLoose(const std::function<void(App::PropertyAppearanceList &)> &edit);
     void onShadingModelActivated(int);
     void onAmbientColorChanged();
     void onDiffuseColorChanged();
@@ -89,6 +108,10 @@ private:
     std::vector<Gui::ViewProvider*> Objects;
     /// What Cancel restores: the property as the dialog found it
     std::vector<std::pair<Gui::ViewProvider*, std::unique_ptr<App::Property>>> snapshots;
+    /// The material of setMaterial(), a list of one so that every edit
+    /// above is the same call on it; and as it was given, for Cancel
+    std::unique_ptr<App::PropertyAppearanceList> loose;
+    std::unique_ptr<App::PropertyAppearanceList> looseBefore;
 };
 
 } // namespace Dialog

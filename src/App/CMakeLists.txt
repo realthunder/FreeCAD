@@ -83,7 +83,27 @@ include_directories(
 list(APPEND FreeCADApp_LIBS
         ${QtCore_LIBRARIES}
         ${QtXml_LIBRARIES}
+        ${ZLIB_LIBRARIES}
 )
+
+# The transaction log's store (docs/TransactionLog.md sec 13).
+find_package(SQLite3 REQUIRED)
+include_directories(${SQLite3_INCLUDE_DIRS})
+list(APPEND FreeCADApp_LIBS ${SQLite3_LIBRARIES})
+
+# zstd is optional and only used by the transaction-log measurement
+# (TransactionMeasure.cpp, docs/TransactionLog.md sec 15 phase 0), which
+# compares it against zlib. Nothing is stored with it yet.
+find_path(ZSTD_INCLUDE_DIR zstd.h)
+find_library(ZSTD_LIBRARY NAMES zstd)
+if(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARY)
+    include_directories(${ZSTD_INCLUDE_DIR})
+    add_definitions(-DFC_HAVE_ZSTD)
+    list(APPEND FreeCADApp_LIBS ${ZSTD_LIBRARY})
+    message(STATUS "zstd found for TransactionMeasure: ${ZSTD_LIBRARY}")
+else()
+    message(STATUS "zstd not found; TransactionMeasure measures zlib only")
+endif()
 
 # The Python sandbox host seam (docs/ExpressionSandbox.md): ImageHost,
 # the bridge, and whichever runtimes this build carries.  Host-only,
@@ -371,6 +391,7 @@ generate_from_xml(ComplexGeoDataPy)
 generate_from_xml(PropertyContainerPy)
 generate_from_xml(MaterialPy)
 generate_from_xml(MaterialListPy)
+generate_from_xml(ElementAppearancePy)
 
 generate_embed_from_py(FreeCADInit InitScript.h)
 generate_embed_from_py(FreeCADTest TestScript.h)
@@ -402,6 +423,7 @@ SET(FreeCADApp_XML_SRCS
     ComplexGeoDataPy.xml
     MaterialPy.xml
     MaterialListPy.xml
+    ElementAppearancePy.xml
     ExpressionPy.xml
     StringHasherPy.xml
     StringIDPy.xml
@@ -419,6 +441,7 @@ SET(Document_CPP_SRCS
     UnitsParams.cpp
     SandboxParams.cpp
     FileBlobManager.cpp
+    FileHistory.cpp
     FileSet.cpp
     GroupParams.cpp
     DocumentObject.cpp
@@ -436,6 +459,9 @@ SET(Document_CPP_SRCS
     DocumentObjectGroupPyImp.cpp
     GeoFeaturePyImp.cpp
     DocumentObjectPyImp.cpp
+    AppearanceUpdater.cpp
+    ElementAppearanceMerge.cpp
+    LinkAppearance.cpp
     DocumentObserver.cpp
     DocumentObserverPython.cpp
     DocumentPyImp.cpp
@@ -472,6 +498,10 @@ SET(Document_CPP_SRCS
     Placement.cpp
     ProjectFile.cpp
     Transactions.cpp
+    TransactionLog.cpp
+    TransactionMeasure.cpp
+    TransactionStoreSQLite.cpp
+    TransactionValue.cpp
     TransactionalObject.cpp
     VRMLObject.cpp
     MaterialObject.cpp
@@ -499,6 +529,7 @@ SET(Document_HPP_SRCS
     UnitsParams.h
     SandboxParams.h
     FileBlobManager.h
+    FileHistory.h
     FileSet.h
     GroupParams.h
     DocumentObject.h
@@ -508,7 +539,11 @@ SET(Document_HPP_SRCS
     DocumentObjectExtension.h
     DocumentObjectFileIncluded.h
     DocumentObjectGroup.h
+    AppearanceUpdater.h
+    ElementAppearanceMerge.h
+    LinkAppearance.h
     DocumentObserver.h
+    ViewObjectRequest.h
     DocumentObserverPython.h
     Expression.h
     ExpressionEvaluator.h
@@ -546,6 +581,10 @@ SET(Document_HPP_SRCS
     OriginFeature.h
     Range.h
     Transactions.h
+    TransactionLog.h
+    TransactionMeasure.h
+    TransactionStore.h
+    TransactionValue.h
     TransactionDefs.h
     TransactionalObject.h
     VRMLObject.h
@@ -574,7 +613,9 @@ SET(Properties_CPP_SRCS
     PropertyContainer.cpp
     PropertyContainerPyImp.cpp
     PropertyFile.cpp
+    PropertyHistory.cpp
     PropertyGeo.cpp
+    PropertyElementAppearance.cpp
     PropertyLinks.cpp
     PropertyPythonObject.cpp
     PropertyStandard.cpp
@@ -587,7 +628,9 @@ SET(Properties_HPP_SRCS
     Property.h
     PropertyContainer.h
     PropertyFile.h
+    PropertyHistory.h
     PropertyGeo.h
+    PropertyElementAppearance.h
     PropertyLinks.h
     PropertyPythonObject.h
     PropertyStandard.h
@@ -603,6 +646,7 @@ SOURCE_GROUP("Properties" FILES ${Properties_SRCS})
 SET(FreeCADApp_CPP_SRCS
     ${Document_CPP_SRCS}
     ${Properties_CPP_SRCS}
+    Actor.cpp
     Application.cpp
     ApplicationPy.cpp
     AutoTransaction.cpp
@@ -622,6 +666,7 @@ SET(FreeCADApp_CPP_SRCS
     AppearanceList.cpp
     MaterialPyImp.cpp
     MaterialListPyImp.cpp
+    ElementAppearancePyImp.cpp
     Metadata.cpp
     MetadataPyImp.cpp
     ParamRegistry.cpp
@@ -634,6 +679,7 @@ SET(FreeCADApp_CPP_SRCS
 SET(FreeCADApp_HPP_SRCS
     ${Document_HPP_SRCS}
     ${Properties_HPP_SRCS}
+    Actor.h
     Application.h
     AutoTransaction.h
     Branding.h

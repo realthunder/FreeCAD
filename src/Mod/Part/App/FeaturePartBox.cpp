@@ -29,6 +29,7 @@
 #include <Base/Reader.h>
 
 #include "FeaturePartBox.h"
+#include "PrimitiveNames.h"
 
 
 using namespace Part;
@@ -71,7 +72,7 @@ App::DocumentObjectExecReturn *Box::execute()
         // Build a box using the dimension attributes
         BRepPrimAPI_MakeBox mkBox(L, W, H);
         TopoDS_Shape ResultShape = mkBox.Shape();
-        this->Shape.setValue(ResultShape,false);
+        this->Shape.setValue(PrimitiveNames::named(ResultShape, PrimitiveNames::Kind::Box));
         return Primitive::execute();
     }
     catch (Standard_Failure& e) {

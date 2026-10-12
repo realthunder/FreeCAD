@@ -24,12 +24,14 @@
 #include "PreCompiled.h"
 
 #include <limits>
+#include <map>
 #include <locale>
 #include <iomanip>
 
 #include <Build/Version.h>
 
 #include "Writer.h"
+#include "OlderTypeName.h"
 #include "Base64.h"
 #include "Base64Filter.h"
 #include "Exception.h"
@@ -98,8 +100,6 @@ Writer::Writer(short indent_size)
   : indent_size(indent_size)
 {
 }
-
-Writer::~Writer() = default;
 
 std::ostream& Writer::beginCharStream(CharStreamFormat format, unsigned line_size)
 {
@@ -214,12 +214,40 @@ int Writer::getSchemaVersion() const
     return schemaVersion;
 }
 
+namespace
+{
+std::map<unsigned int, std::string>& olderTypeNames()
+{
+    static std::map<unsigned int, std::string> names;
+    return names;
+}
+}  // namespace
+
+void Base::setOlderTypeName(const Base::Type& type, const char* name)
+{
+    if (!type.isBad() && name && name[0]) {
+        olderTypeNames()[type.getKey()] = name;
+    }
+}
+
+const char* Base::getOlderTypeName(const Base::Type& type)
+{
+    const auto& names = olderTypeNames();
+    auto it = names.find(type.getKey());
+    return it == names.end() ? nullptr : it->second.c_str();
+}
+
 const char* Writer::typeName(const Base::Type& type) const
 {
     // 0 is "no document schema resolved" -- an object export, a content
     // dump. Nothing there is being written for an older reader, so it gets
     // the current name like schema 5 does.
     if (schemaVersion > 0 && schemaVersion < 5) {
+        // The type the reader has the property under, where this build's
+        // is one of its own made of it (OlderTypeName.h)
+        if (const char* older = getOlderTypeName(type)) {
+            return older;
+        }
         if (const char* legacy = type.getLegacyName()) {
             return legacy;
         }
@@ -388,8 +416,258 @@ void Writer::decInd()
 }
 
 void Writer::putNextEntry(const char *file, const char *obj) {
+    endTap();
     ObjectName = obj?obj:file;
 }
+
+// A streambuf that forwards to the stream's own buffer and shows the sink
+// every byte on the way past. Unbuffered (no put area) so xsputn and
+// overflow see everything and nothing is held back from the sink.
+class Writer::TapBuf : public std::streambuf
+{
+public:
+    TapBuf(std::streambuf* inner, TapSink sink)
+        : inner(inner), sink(std::move(sink))
+    {}
+
+protected:
+    int overflow(int c) override
+    {
+        if (c == traits_type::eof())
+            return traits_type::not_eof(c);
+        char ch = traits_type::to_char_type(c);
+        sink(&ch, 1);
+        return inner->sputc(ch);
+    }
+    std::streamsize xsputn(const char* s, std::streamsize n) override
+    {
+        if (n > 0)
+            sink(s, static_cast<std::size_t>(n));
+        return inner->sputn(s, n);
+    }
+    int sync() override
+    {
+        return inner->pubsync();
+    }
+
+private:
+    std::streambuf* inner;
+    TapSink sink;
+};
+
+void Writer::writeEntry(const FileEntry& entry)
+{
+    putNextEntry(entry.FileName.c_str());
+    indent = 0;
+    indBuf[0] = 0;
+    if (!entrySink) {
+        entry.Object->SaveDocFile(*this);
+        return;
+    }
+    beginCapture();
+    try {
+        entry.Object->SaveDocFile(*this);
+    }
+    catch (...) {
+        endTap();
+        capture.reset();
+        throw;
+    }
+    endCapture(entry.FileName);
+}
+
+// ----------------------------------------------------------------------------
+// The entry capture and the property marks (docs/TransactionLog.md 23.3)
+
+EntryCapture::EntryCapture(std::string bytes)
+{
+    Segment s;
+    s.text = std::move(bytes);
+    segments.push_back(std::move(s));
+}
+
+std::string EntryCapture::bytes() const
+{
+    // A Count's final number is its base plus the parts that follow it
+    // (up to the next Count), so the parts are counted first.
+    std::vector<std::size_t> counts(segments.size(), 0);
+    std::size_t current = segments.size();
+    for (std::size_t i = 0; i < segments.size(); ++i) {
+        const Segment& s = segments[i];
+        if (s.kind == Segment::Count)
+            current = i;
+        else if (s.kind == Segment::Part && current < segments.size())
+            ++counts[current];
+    }
+    std::string out;
+    for (std::size_t i = 0; i < segments.size(); ++i) {
+        const Segment& s = segments[i];
+        switch (s.kind) {
+        case Segment::Text:
+            out += s.text;
+            break;
+        case Segment::Count:
+            out += std::to_string(std::stoull(s.text.empty() ? "0" : s.text) + counts[i]);
+            break;
+        case Segment::Part:
+            out += s.open;
+            out += s.text;
+            out += s.close;
+            break;
+        }
+    }
+    return out;
+}
+
+void Writer::beginCapture()
+{
+    if (capture)
+        THROWM(Base::RuntimeError, "Writer::beginCapture(): a capture is already open")
+    capture = std::make_unique<EntryCapture>();
+    captureTarget = CaptureTarget::Text;
+    partOpen = false;
+    partNesting = 0;
+    beginTap([this](const char* p, std::size_t n) { captureBytes(p, n); });
+}
+
+void Writer::endCapture(const std::string& name)
+{
+    if (!capture)
+        return;
+    endTap();
+    if (partOpen)
+        endPart();
+    std::unique_ptr<EntryCapture> done = std::move(capture);
+    if (entrySink)
+        entrySink(name, std::move(*done));
+}
+
+void Writer::captureBytes(const char* p, std::size_t n)
+{
+    if (!capture || n == 0)
+        return;
+    auto& segs = capture->segments;
+    switch (captureTarget) {
+    case CaptureTarget::Text:
+        if (segs.empty() || segs.back().kind != EntryCapture::Segment::Text)
+            segs.emplace_back();
+        segs.back().text.append(p, n);
+        break;
+    case CaptureTarget::PartOpen:
+        segs.back().open.append(p, n);
+        break;
+    case CaptureTarget::PartBody:
+        segs.back().text.append(p, n);
+        break;
+    case CaptureTarget::PartClose:
+        segs.back().close.append(p, n);
+        break;
+    }
+}
+
+void Writer::writeCount(std::size_t total, std::size_t rest, const std::string& container)
+{
+    if (!capture || partOpen) {
+        Stream() << total;
+        return;
+    }
+    Stream().flush();
+    EntryCapture::Segment s;
+    s.kind = EntryCapture::Segment::Count;
+    s.text = std::to_string(rest);
+    s.name = container;
+    capture->segments.push_back(std::move(s));
+    captureTarget = CaptureTarget::Text;
+    // The file still gets the number, past the tap: the capture's is the
+    // segment, whose final value whoever composes the entry decides.
+    const std::string digits = std::to_string(total);
+    tappedBuf->sputn(digits.data(), static_cast<std::streamsize>(digits.size()));
+}
+
+bool Writer::beginPart(const Persistence& container, const char* name, const Persistence& prop,
+                       int64_t key, const std::string& elide)
+{
+    if (!capture)
+        return false;
+    if (partOpen) {
+        ++partNesting;
+        return false;
+    }
+    Stream().flush();
+    EntryCapture::Segment s;
+    s.kind = EntryCapture::Segment::Part;
+    s.name = name;
+    s.key = key;
+    s.elide = elide;
+    s.claimed = propertySink && propertySink->claim(container, name, prop, key);
+    capture->segments.push_back(std::move(s));
+    captureTarget = CaptureTarget::PartOpen;
+    partOpen = true;
+    return capture->segments.back().claimed;
+}
+
+void Writer::beginBody()
+{
+    if (!capture || !partOpen || partNesting)
+        return;
+    Stream().flush();
+    captureTarget = CaptureTarget::PartBody;
+    // The body is written at no indentation, so that its bytes are the
+    // bytes a capture of the property on its own produces and the two hash
+    // the same (sec 23.3). The wrapper keeps the entry's indentation.
+    bodyIndent = indent;
+    indent = 0;
+    indBuf[0] = 0;
+}
+
+void Writer::endBody()
+{
+    if (!capture || !partOpen || partNesting)
+        return;
+    Stream().flush();
+    captureTarget = CaptureTarget::PartClose;
+    indent = 0;
+    while (indent < bodyIndent)
+        incInd();
+}
+
+void Writer::endPart()
+{
+    if (!capture || !partOpen)
+        return;
+    if (partNesting) {
+        --partNesting;
+        return;
+    }
+    Stream().flush();
+    captureTarget = CaptureTarget::Text;
+    partOpen = false;
+}
+
+void Writer::beginTap(TapSink sink)
+{
+    if (tapBuf)
+        THROWM(Base::RuntimeError, "Writer::beginTap(): a tap is already open")
+    std::ostream& os = Stream();
+    os.flush();
+    tappedBuf = os.rdbuf();
+    tapBuf = std::make_unique<TapBuf>(tappedBuf, std::move(sink));
+    os.rdbuf(tapBuf.get());
+}
+
+void Writer::endTap()
+{
+    if (!tapBuf)
+        return;
+    std::ostream& os = Stream();
+    os.flush();
+    os.rdbuf(tappedBuf);
+    tappedBuf = nullptr;
+    tapBuf.reset();
+}
+
+// After TapBuf is complete: the unique_ptr's deleter is instantiated here.
+Writer::~Writer() = default;
 
 // ----------------------------------------------------------------------------
 
@@ -437,6 +715,22 @@ void ZipWriter::putNextEntry(const char *file, const char *obj) {
     ZipStream.putNextEntry(file);
 }
 
+bool ZipWriter::putRawEntry(const char* file, const RawEntry& entry)
+{
+    // zipios writes no zip64: a member it cannot describe goes the long way.
+    constexpr uint64_t limit = 0xFFFFFFFFu;
+    if (entry.size >= limit || entry.compressedSize >= limit) {
+        return false;
+    }
+    Writer::putNextEntry(file);
+    zipios::ZipCDirEntry header(file);
+    header.setMethod(static_cast<zipios::StorageMethod>(entry.method));
+    header.setCrc(entry.crc);
+    header.setSize(static_cast<zipios::uint32>(entry.size));
+    ZipStream.putRawEntry(header, entry.data, entry.compressedSize);
+    return true;
+}
+
 void ZipWriter::writeFiles()
 {
     // use a while loop because it is possible that while
@@ -446,10 +740,7 @@ void ZipWriter::writeFiles()
     while (index < FileList.size()) {
         stepProgress(base, FileList.size());
         FileEntry entry = FileList[index];
-        putNextEntry(entry.FileName.c_str());
-        indent = 0;
-        indBuf[0] = 0;
-        entry.Object->SaveDocFile(*this);
+        writeEntry(entry);
         index++;
     }
 }
@@ -467,11 +758,45 @@ StringWriter::StringWriter() {
     setSplitXML(false);
     setPreferBinary(false);
     this->StrStream << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+    this->StrStream.setf(ios::fixed, ios::floatfield);
 }
 
 void StringWriter::writeFiles() {
     if(!FileList.empty()) {
         THROWM(Base::FileException, "StringWriter does not support saving into multiple files")
+    }
+}
+
+// ----------------------------------------------------------------------------
+
+class NullWriter::NullBuf : public std::streambuf
+{
+protected:
+    int overflow(int c) override { return traits_type::not_eof(c); }
+    std::streamsize xsputn(const char*, std::streamsize n) override { return n; }
+};
+
+NullWriter::NullWriter()
+    : _buf(std::make_unique<NullBuf>())
+    , _stream(nullptr)
+{
+    _stream.rdbuf(_buf.get());
+    _stream.precision(std::numeric_limits<double>::digits10 + 1);
+    _stream.setf(ios::fixed, ios::floatfield);
+}
+
+NullWriter::~NullWriter()
+{
+    endTap();
+}
+
+void NullWriter::writeFiles()
+{
+    size_t index = 0;
+    while (index < FileList.size()) {
+        FileEntry entry = FileList[index];
+        writeEntry(entry);
+        index++;
     }
 }
 
@@ -497,7 +822,12 @@ void FileWriter::putNextEntry(const char* file, const char *obj)
     std::string fileName = DirName + "/" + file;
     this->FileStream.open(Base::FileInfo(fileName),
                           std::ios::out | std::ios::binary | std::ios::trunc);
+    // One float format for every writer, the archive's (ZipWriter): a
+    // value has to serialise to the same bytes whichever writer it goes
+    // through, or the log cannot hold one copy of it (TransactionLog.md
+    // 23.3).
     this->FileStream << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+    this->FileStream.setf(ios::fixed, ios::floatfield);
 }
 
 bool FileWriter::shouldWrite(const std::string& /*name*/, const Base::Persistence* /*obj*/) const
@@ -526,10 +856,7 @@ void FileWriter::writeFiles()
                 fi.createDirectory();
             }
 
-            putNextEntry(entry.FileName.c_str());
-            indent = 0;
-            indBuf[0] = 0;
-            entry.Object->SaveDocFile(*this);
+            writeEntry(entry);
             this->FileStream.close();
         }
 

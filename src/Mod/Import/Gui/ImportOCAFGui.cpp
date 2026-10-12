@@ -43,64 +43,15 @@ ImportOCAFGui::ImportOCAFGui(Handle(TDocStd_Document) hDoc,
     : ImportOCAF2(hDoc, pDoc, name)
 {}
 
-void ImportOCAFGui::applyFaceColors(Part::Feature* part, const std::vector<App::Color>& colors)
-{
-    auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
-        Gui::Application::Instance->getViewProvider(part));
-    if (!vp) {
-        return;
-    }
-    if (colors.empty()) {
-        return;
-    }
-
-    if (colors.size() == 1) {
-        vp->ShapeColor.setValue(colors.front());
-        // The alpha component is an opacity (Base/Color.h), and Transparency
-        // is a percentage of the other kind: an opaque STEP colour used to
-        // import as Transparency 100 -- a fully transparent part.
-        vp->Transparency.setValue(100 * colors.front().transparency());
-    }
-    else {
-        vp->DiffuseColor.setValues(colors);
-    }
-}
-
 void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
                                        const std::vector<App::MaterialAppearance>& mats, bool pbr)
 {
+    // The looks are the object's (docs/ShapeAppearanceDesign.md sec 14.6.7)
+    ImportOCAF2::applyFaceMaterials(part, mats, pbr);
     auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
         Gui::Application::Instance->getViewProvider(part));
     if (!vp || mats.empty()) {
         return;
-    }
-    // The mode first, so the collapse baselines follow it while the values
-    // land. The materials carry the same tag, so the assignment below
-    // restates it rather than converting them away.
-    vp->ShapeAppearance.setPBR(pbr);
-    // Collapse a uniform list to one entry: a single-entry appearance is
-    // the whole-object form, whose scalar path every consumer handles.
-    if (std::all_of(mats.begin() + 1, mats.end(), [&](const App::MaterialAppearance& m) {
-            return m == mats[0];
-        })) {
-        vp->ShapeAppearance.setValue(mats[0]);
-    }
-    else {
-        vp->ShapeAppearance.setValues(mats);
-        // Which of those materials the object IS, decided here where the
-        // shape is in hand: an imported list states one per face and
-        // nothing about the body colour, and the mirror holds the
-        // constructor's grey, which occurs in no imported list
-        // (docs/ShapeAppearanceDesign.md 12.4). Area, not count: a green
-        // board with five hundred gold pads is decided the wrong way by
-        // count.
-        std::vector<double> areas;
-        if (vp->getFaceWeights(areas)) {
-            vp->ShapeAppearance.deriveBase(nullptr, &areas);
-        }
-        else {
-            vp->ShapeAppearance.deriveBase();
-        }
     }
 
     // Per-face images arrive UV mapped -- a glTF mesh carries its own
@@ -125,55 +76,6 @@ void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
     }
 }
 
-void ImportOCAFGui::applyEdgeColors(Part::Feature* part, const std::vector<App::Color>& colors)
-{
-    auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
-        Gui::Application::Instance->getViewProvider(part));
-    if (!vp) {
-        return;
-    }
-    if (colors.size() == 1) {
-        vp->LineColor.setValue(colors.front());
-    }
-    else {
-        vp->LineColorArray.setValues(colors);
-    }
-}
-
-void ImportOCAFGui::applyLinkColor(App::DocumentObject* obj, int index, App::Color color)
-{
-    auto vp =
-        dynamic_cast<Gui::ViewProviderLink*>(Gui::Application::Instance->getViewProvider(obj));
-    if (!vp) {
-        return;
-    }
-    if (index < 0) {
-        vp->OverrideMaterial.setValue(true);
-        vp->ShapeAppearance.setDiffuseColor(color);
-        return;
-    }
-    if (vp->OverrideMaterialList.getSize() <= index) {
-        vp->OverrideMaterialList.setSize(index + 1);
-    }
-    vp->OverrideMaterialList.set1Value(index, true);
-    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
-    if (vp->MaterialList.getSize() <= index) {
-        vp->MaterialList.setSize(index + 1, mat);
-    }
-    mat.diffuseColor = color;
-    vp->MaterialList.set1Value(index, mat);
-}
-
-void ImportOCAFGui::applyElementColors(App::DocumentObject* obj,
-                                       const std::map<std::string, App::Color>& colors)
-{
-    auto vp = Gui::Application::Instance->getViewProvider(obj);
-    if (!vp) {
-        return;
-    }
-    (void)colors;
-}
-
 void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
                                         const Import::RenderMaterial& mat)
 {
@@ -182,28 +84,12 @@ void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
     // graph nodes from them); the metalness and roughness factors are
     // material data and land on the appearance instead. The base color
     // factor is already applied through the color labels.
+    // ... which is the object's look, and the object's to take
+    ImportOCAF2::applyRenderMaterial(part, mat);
     auto vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
         Gui::Application::Instance->getViewProvider(part));
     if (!vp || !mat.valid) {
         return;
-    }
-
-    // applyFaceMaterials has normally put the exact per-face factors on
-    // the appearance already, and a whole-object value must not flatten
-    // them -- so this is the fallback for a shape whose faces did NOT all
-    // resolve to a PBR material, where the appearance is still Phong and
-    // these two are the only PBR data the file gave us.
-    if (!vp->ShapeAppearance.isPBR() && (mat.metallic >= 0.0 || mat.roughness >= 0.0)) {
-        // convertPBR rather than setPBR: it carries the Phong reading's
-        // look across the mode change instead of re-reading the same
-        // slots as PBR values, which would restate colour as metalness.
-        vp->ShapeAppearance.convertPBR(true);
-        if (mat.metallic >= 0.0) {
-            vp->ShapeAppearance.setMetallic(float(mat.metallic));
-        }
-        if (mat.roughness >= 0.0) {
-            vp->ShapeAppearance.setRoughness(float(mat.roughness));
-        }
     }
 
     auto setFile = [vp](const char* name, const std::string& path, const char* doc) {

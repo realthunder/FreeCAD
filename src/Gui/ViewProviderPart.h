@@ -24,6 +24,7 @@
 #define GUI_VIEWPROVIDER_ViewProviderPart_H
 
 #include "ActiveObjectList.h"
+#include "LinkLooks.h"
 #include "ViewProviderDragger.h"
 #include "ViewProviderOriginGroup.h"
 #include "ViewProviderPythonFeature.h"
@@ -56,6 +57,8 @@ public:
     void setElementColors(const std::map<std::string, App::Color> &colors) override;
 
     void finishRestoring() override;
+    void attach(App::DocumentObject *obj) override;
+    void beforeDelete() override;
 
 protected:
     App::PropertyLinkSub *getColoredElementsProperty() const;
@@ -72,6 +75,9 @@ protected:
 
 private:
     bool prevColorOverride = false;
+    /// OverrideMaterial, ShapeAppearance and OverrideColorList as names
+    /// over what the part holds (docs/ShapeAppearanceDesign.md sec 14.6.4)
+    LinkLooks looks;
 };
 
 using ViewProviderPartPython = ViewProviderPythonFeatureT<ViewProviderPart>;

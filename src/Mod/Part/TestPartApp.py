@@ -31,7 +31,6 @@ from parttests.Geom2d_tests import Geom2dTests
 from parttests.regression_tests import RegressionTests
 from parttests.TestFaceMakerUnifiedPlanar import *
 from parttests.TestFaceMakerUnifiedNonPlanar import *
-from parttests.ElementNameTest import ElementNameTest
 from parttests.HLRProjectionTest import HLRProjectionTest
 from parttests.TestLinkArray import (
     TestLinkArrayClasses,
@@ -40,7 +39,12 @@ from parttests.TestLinkArray import (
     TestLinkArrayReferences,
     TestLinkArraySuppression,
 )
+from parttests.PrimitiveNamesTest import PrimitiveNamesTest, PrimitiveNamesBodyTest
+from parttests.ElementAppearanceTest import ElementAppearanceMadeTest, ElementAppearanceMergeTest, ElementAppearanceNamesTest, ElementAppearanceLinkTest, ElementAppearanceLinkMergeTest, ElementAppearanceFileTest
+from parttests.ElementNameTest import ElementNameTest, LoftCapNameTest
 from parttests.ShapeListTest import ShapeListTest
+from parttests.ShapeDiffTest import ShapeDiffTest, ShapeAtAStateTest, KeptShapesTest
+from parttests.ShapeDiffTest import ShapeMaterialTest
 from parttests.TopoShapeListTest import TopoShapeListTest
 
 #---------------------------------------------------------------------------

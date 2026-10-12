@@ -243,17 +243,30 @@ public:
     //@{
     /// Accessor for parameter ArchiveBlobStore
     ///
-    /// Serve the included files of a document archive out of one copy
-    /// of the archive in the transient directory, and give each its own
-    /// file only when something asks for a path. Requires
-    /// ArchiveRandomAccess. Turn off to write every included file out
-    /// during the restore, which on a monitored filesystem costs a file
-    /// create per entry.
+    /// Keep a document's included files in a pack store: a few zip
+    /// segment files in the transient directory instead of a file per
+    /// blob. A blob gets a file of its own only when something asks for
+    /// a path. Turn off for a file per blob.
     static const bool & getArchiveBlobStore();
     static const bool & defaultArchiveBlobStore();
     static void removeArchiveBlobStore();
     static void setArchiveBlobStore(const bool &v);
     static const char *docArchiveBlobStore();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BlobSegmentSize
+    ///
+    /// Cap of one pack store segment, in KB. A segment is rewritten
+    /// whole when content is added to it or dropped from it, so this
+    /// bounds the cost of every such rewrite. Content over a quarter of
+    /// it is kept as a file of its own.
+    static const long & getBlobSegmentSize();
+    static const long & defaultBlobSegmentSize();
+    static void removeBlobSegmentSize();
+    static void setBlobSegmentSize(const long &v);
+    static const char *docBlobSegmentSize();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -298,6 +311,22 @@ public:
     static void removeDedupShapePCurves();
     static void setDedupShapePCurves(const bool &v);
     static const char *docDedupShapePCurves();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StableShapeBytes
+    ///
+    /// Write a shape's file from the shape alone, not from what was
+    /// done with it: 2D curves on surfaces no face of the saved shape
+    /// carries are left out, so an unchanged shape saves to the same
+    /// bytes. Nothing the shape needs is lost. Needs the realthunder OCCT
+    /// fork; ignored without it.
+    static const bool & getStableShapeBytes();
+    static const bool & defaultStableShapeBytes();
+    static void removeStableShapeBytes();
+    static void setStableShapeBytes(const bool &v);
+    static const char *docStableShapeBytes();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -598,6 +627,154 @@ public:
     static void removeTransactionOnRecompute();
     static void setTransactionOnRecompute(const bool &v);
     static const char *docTransactionOnRecompute();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLog
+    ///
+    /// Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The
+    /// log is always on; what this chooses is whether a save writes the
+    /// history into the file: 2 (the default) writes it, 1 keeps it in
+    /// the document transient directory only, where it dies with the
+    /// session. 0 switches the log off, for A/B checks.
+    static const long & getTransactionLog();
+    static const long & defaultTransactionLog();
+    static void removeTransactionLog();
+    static void setTransactionLog(const long &v);
+    static const char *docTransactionLog();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogIdentity
+    ///
+    /// Record the user and host name in the transaction log session
+    /// row (sec 13.3, privacy). Off by default.
+    static const bool & getTransactionLogIdentity();
+    static const bool & defaultTransactionLogIdentity();
+    static void removeTransactionLogIdentity();
+    static void setTransactionLogIdentity(const bool &v);
+    static const char *docTransactionLogIdentity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogDerived
+    ///
+    /// What the transaction log does with derived values, i.e. values
+    /// written by their own object recompute (sec 10): 0 none (the op
+    /// notes the change, no value), 1 cache (evictable tier), 2 full.
+    static const long & getTransactionLogDerived();
+    static const long & defaultTransactionLogDerived();
+    static void removeTransactionLogDerived();
+    static void setTransactionLogDerived(const long &v);
+    static const char *docTransactionLogDerived();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogSnapshotTransactions
+    ///
+    /// The transaction log takes an unnamed version (sec 16.3) every
+    /// this many committed transactions since the last version; 0 for
+    /// none. A snapshot serialises the document like a save, without
+    /// writing an archive. With the time rule of AutoSaveTimeout, it
+    /// bounds how much a crash recovery replays (sec 25.3).
+    static const long & getTransactionLogSnapshotTransactions();
+    static const long & defaultTransactionLogSnapshotTransactions();
+    static void removeTransactionLogSnapshotTransactions();
+    static void setTransactionLogSnapshotTransactions(const long &v);
+    static const char *docTransactionLogSnapshotTransactions();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogKeepVersions
+    ///
+    /// How many unnamed versions the transaction log keeps (sec 16.3):
+    /// when a version is added, the oldest unnamed ones over this count
+    /// are evicted -- never a named one, never the newest. 0 keeps all.
+    static const long & getTransactionLogKeepVersions();
+    static const long & defaultTransactionLogKeepVersions();
+    static void removeTransactionLogKeepVersions();
+    static void setTransactionLogKeepVersions(const long &v);
+    static const char *docTransactionLogKeepVersions();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogCompactSize
+    ///
+    /// When the file-scope state of the transaction log is compacted on
+    /// its own (docs/TransactionLog.md sec 27.48, 27.49), in KB: after a
+    /// trim, a branch deletion or a squash, once the names estimated to be
+    /// referred to by nothing and the strings of the file hasher nothing
+    /// holds come to this many bytes together. 0 never.
+    static const long & getTransactionLogCompactSize();
+    static const long & defaultTransactionLogCompactSize();
+    static void removeTransactionLogCompactSize();
+    static void setTransactionLogCompactSize(const long &v);
+    static const char *docTransactionLogCompactSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ClosePinnedVersion
+    ///
+    /// When the last link pinned to a version of a file goes, what
+    /// happens to the document that showed it (docs/TransactionLog.md
+    /// sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to
+    /// ask, 0 keeps it open.
+    static const long & getClosePinnedVersion();
+    static const long & defaultClosePinnedVersion();
+    static void removeClosePinnedVersion();
+    static void setClosePinnedVersion(const long &v);
+    static const char *docClosePinnedVersion();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogDeltaHops
+    ///
+    /// How long a reverse-delta chain the transaction log allows (sec
+    /// 23.2): an entity superseded by a newer one is re-encoded as a
+    /// patch against it unless the chain below it would then be this
+    /// many hops from a full entity. 0 stores everything full.
+    static const long & getTransactionLogDeltaHops();
+    static const long & defaultTransactionLogDeltaHops();
+    static void removeTransactionLogDeltaHops();
+    static void setTransactionLogDeltaHops(const long &v);
+    static const char *docTransactionLogDeltaHops();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogDeltaRatio
+    ///
+    /// The largest patch the transaction log keeps, as a percent of the
+    /// full compressed size (sec 23.2); a patch over it means the codec
+    /// found nothing to share and the entity stays full.
+    static const long & getTransactionLogDeltaRatio();
+    static const long & defaultTransactionLogDeltaRatio();
+    static void removeTransactionLogDeltaRatio();
+    static void setTransactionLogDeltaRatio(const long &v);
+    static const char *docTransactionLogDeltaRatio();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogVerify
+    ///
+    /// A composed snapshot (sec 23.3) serialises the properties it
+    /// would have taken from the log anyway and compares: a mismatch
+    /// names a value changed without aboutToSetValue (sec 23.6). Always
+    /// on in a debug build.
+    static const bool & getTransactionLogVerify();
+    static const bool & defaultTransactionLogVerify();
+    static void removeTransactionLogVerify();
+    static void setTransactionLogVerify(const bool &v);
+    static const char *docTransactionLogVerify();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

@@ -509,7 +509,7 @@ int SketchAnalysis::detectMissingPointOnPointConstraints(double precision, bool 
     PointConstraints pointConstr;
 
     // Build the list of sketch vertices
-    const std::vector<Part::Geometry*>& geom = sketch->getInternalGeometry();
+    const std::vector<const Part::Geometry*>& geom = sketch->getInternalGeometry();
     for (std::size_t i = 0; i < geom.size(); i++) {
         auto gf = GeometryFacade::getFacade(geom[i]);
 
@@ -686,12 +686,12 @@ void SketchAnalysis::makeMissingPointOnPointCoincidentOneByOne()
 
 int SketchAnalysis::detectMissingVerticalHorizontalConstraints(double angleprecision)
 {
-    const std::vector<Part::Geometry*>& geom = sketch->getInternalGeometry();
+    const std::vector<const Part::Geometry*>& geom = sketch->getInternalGeometry();
 
     verthorizConstraints.clear();
 
     for (std::size_t i = 0; i < geom.size(); i++) {
-        Part::Geometry* g = geom[i];
+        const Part::Geometry* g = geom[i];
 
         if (const auto* segm = dynamic_cast<const Part::GeomLineSegment*>(g)) {
             Base::Vector3d dir = segm->getEndPoint() - segm->getStartPoint();
@@ -762,9 +762,9 @@ int SketchAnalysis::detectMissingEqualityConstraints(double precision)
 {
     EqualityConstraints equalConstr;
 
-    const std::vector<Part::Geometry*>& geom = sketch->getInternalGeometry();
+    const std::vector<const Part::Geometry*>& geom = sketch->getInternalGeometry();
     for (std::size_t i = 0; i < geom.size(); i++) {
-        Part::Geometry* g = geom[i];
+        const Part::Geometry* g = geom[i];
         equalConstr.addGeometry(g, int(i));
     }
 
@@ -1018,7 +1018,7 @@ std::vector<Base::Vector3d> SketchAnalysis::getOpenVertices() const
 std::set<int> SketchAnalysis::getDegeneratedGeometries(double tolerance) const
 {
     std::set<int> delInternalGeometries;
-    const std::vector<Part::Geometry*>& geom = sketch->getInternalGeometry();
+    const std::vector<const Part::Geometry*>& geom = sketch->getInternalGeometry();
     for (std::size_t i = 0; i < geom.size(); i++) {
         auto gf = GeometryFacade::getFacade(geom[i]);
 
@@ -1026,7 +1026,7 @@ std::set<int> SketchAnalysis::getDegeneratedGeometries(double tolerance) const
             continue;
         }
 
-        if (auto curve = dynamic_cast<Part::GeomCurve*>(gf->getGeometry())) {
+        if (auto curve = dynamic_cast<const Part::GeomCurve*>(gf->getGeometry())) {
             double len = curve->length(curve->getFirstParameter(), curve->getLastParameter());
             if (len < tolerance) {
                 delInternalGeometries.insert(static_cast<int>(i));

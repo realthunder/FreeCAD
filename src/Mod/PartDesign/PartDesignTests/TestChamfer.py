@@ -20,6 +20,7 @@
 #***************************************************************************
 
 import os
+import ArchiveMembers
 import unittest
 
 import FreeCAD
@@ -77,8 +78,7 @@ class TestChamfer(unittest.TestCase):
             # none of the fork's ChamferInfo
             with zipfile.ZipFile(src) as zin, \
                     zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
-                for item in zin.infolist():
-                    data = zin.read(item.filename)
+                for item, data in ArchiveMembers.members(src):
                     if item.filename == "Document.xml":
                         text = data.decode("utf-8")
                         text = re.sub(r'ProgramVersion="[^"]*"',

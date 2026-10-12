@@ -10,6 +10,7 @@
 # write them.
 
 import os
+import ArchiveMembers
 import re
 import tempfile
 import unittest
@@ -52,8 +53,7 @@ def flagged(sketch):
 def rewriteSketches(source, target, edit):
     """Copy a saved document with the XML of each sketch passed through edit()."""
     with zipfile.ZipFile(source) as zin, zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as out:
-        for item in zin.infolist():
-            data = zin.read(item.filename)
+        for item, data in ArchiveMembers.members(source):
             if item.filename == "Document.xml":
                 text = data.decode("utf-8")
                 text = re.sub(

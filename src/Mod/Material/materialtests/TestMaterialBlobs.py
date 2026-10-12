@@ -38,6 +38,8 @@ import tempfile
 import unittest
 import zipfile
 
+import ArchiveMembers
+
 import FreeCAD
 import Materials
 
@@ -55,6 +57,7 @@ class MaterialBlobTestCases(unittest.TestCase):
         self.steelName = self.MaterialManager.getMaterial(STEEL).Name
         self.tmp = tempfile.mkdtemp(prefix="fc_material_blob_")
         self.docs = []
+        self.history = ArchiveMembers.HistoryLeftOut()
 
     def tearDown(self):
         for name in list(self.docs):
@@ -62,6 +65,7 @@ class MaterialBlobTestCases(unittest.TestCase):
                 FreeCAD.closeDocument(name)
         shutil.rmtree(self.tmp, ignore_errors=True)
         self.restoreSaveMaterialCards()
+        self.history.release()
 
     # -- settings this case depends on -------------------------------------
 
@@ -145,9 +149,7 @@ class MaterialBlobTestCases(unittest.TestCase):
         the same file, with the material element saying something this
         installation cannot resolve.
         """
-        source = zipfile.ZipFile(path)
-        items = [(info, source.read(info.filename)) for info in source.infolist()]
-        source.close()
+        items = ArchiveMembers.members(path)
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
             for info, data in items:
                 if info.filename == "Document.xml":
@@ -335,7 +337,7 @@ class MaterialBlobTestCases(unittest.TestCase):
         def card(path):
             names = [n for n in self.blobEntries(path) if n.endswith(".FCMat")]
             self.assertEqual(len(names), 1)
-            return zipfile.ZipFile(path).read(names[0])
+            return ArchiveMembers.readFile(path, names[0])
 
         self.assertEqual(card(first), card(second))
 
@@ -380,5 +382,5 @@ class MaterialBlobTestCases(unittest.TestCase):
 
         names = [n for n in self.blobEntries(project) if n.endswith(".FCMat")]
         self.assertEqual(len(names), 1)
-        stored = zipfile.ZipFile(project).read(names[0]).decode("utf-8")
+        stored = ArchiveMembers.readFile(project, names[0]).decode("utf-8")
         self.assertEqual(stored, obj.ShapeMaterial.CanonicalForm)

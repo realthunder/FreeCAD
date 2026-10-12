@@ -38,6 +38,8 @@
 #include <fastsignals/signal.h>
 #include <bitset>
 #include <string>
+#include <utility>
+#include <vector>
 #include <FCGlobal.h>
 
 // WARNING! define this to static thread_local if FreeCAD ever decides to use
@@ -101,6 +103,10 @@ public:
                      // italic under "Show all" so that a reader who goes
                      // looking knows what it is.
                      // See docs/MaterialStorage.md 15.6.
+
+        PropOwnerValue = 20, // corresponding to Prop_OwnerValue; one of the
+                             // static bits below, out of their run because
+                             // the user bits end it
 
         // The following bits are corresponding to PropertyType set when the
         // property added. These types are meant to be static, and cannot be
@@ -194,6 +200,14 @@ public:
      */
     std::string getFileName(const char *postfix=nullptr, const char *prefix=nullptr) const;
 
+    /** Name a property that no container registered
+     *
+     * For a property held inside another one, which is saved through it:
+     * its file is named after it like any property's (getFileName()). \a
+     * name must outlive this property.
+     */
+    void setNameInHolder(const char *name) { myName = name; }
+
     /// Get the class name of the associated property editor item
     virtual const char* getEditorName() const { return ""; }
 
@@ -256,6 +270,41 @@ public:
      */
     virtual void afterRestore() {}
 
+    /** A saved value of this property as the things it is made of
+     * (docs/TransactionLog.md sec 31.8): for a property that holds many
+     * things each known by something of its own -- a sheet's cells by
+     * their address, an object's expressions by their path, a list of
+     * links by the object -- so that two branches that each changed
+     * another of them need not be one value against the other.
+     *
+     * `fragment` is what Save() wrote. Each item is one thing: what it is
+     * known by, and its saved text, which is all that is compared -- two
+     * items of one key are the same thing when their text is. False for a
+     * property that is one value, which is every property unless it says
+     * otherwise, and for a value it cannot take apart (one that names
+     * other documents, say).
+     */
+    using SavedElements = std::vector<std::pair<std::string, std::string>>;
+    virtual bool splitSaved(const std::string &fragment, SavedElements &elements) const
+    {
+        (void)fragment;
+        (void)elements;
+        return false;
+    }
+    /// The saved value those things make, in that order.
+    virtual bool joinSaved(const SavedElements &elements, std::string &fragment) const
+    {
+        (void)elements;
+        (void)fragment;
+        return false;
+    }
+    /// For splitSaved(): the elements `<tag .../>` of a saved value, each
+    /// with the value of its attribute `key`, as written. Attribute values
+    /// are written encoded, so there is no `"` or `>` inside one. False for
+    /// a tag with no such attribute or no end.
+    static bool savedTags(const std::string &fragment, const char *tag, const char *key,
+                          SavedElements &elements);
+
     /** Called before calling DocumentObject::onDocumentRestored()
      *
      * This function is called after finished calling Property::afterRestore()
@@ -294,6 +343,11 @@ public:
     virtual bool isTouched() const {
         return _StatusBits.test(Touched);
     }
+    /// The Touched bit alone. isTouched() may say more: a link also reads
+    /// as touched once its target's revision moved (PropertyLink::isTouched).
+    bool hasTouchedBit() const {
+        return _StatusBits.test(Touched);
+    }
     /// Reset this property touched
     virtual void purgeTouched() {
         _StatusBits.reset(Touched);
@@ -325,6 +379,29 @@ public:
     virtual Property *Copy() const = 0;
     /// Paste the value from the property (mainly for Undo/Redo and transactions)
     virtual void Paste(const Property &from) = 0;
+
+    /** Whether this value, a Copy(), may be written on another thread.
+     *
+     * The transaction log serialises the copies a commit takes on its
+     * worker (docs/TransactionLog.md sec 27.99). That is safe for a copy
+     * that owns its value outright, which is the default. A copy that
+     * shares data the main thread may still change in place answers false
+     * and is serialised on the main thread as the commit takes it: a shape
+     * whose TShapes are not frozen (ImmutableShapeValues off, or an OCCT
+     * without the flag) shares them with the live value and every other
+     * holder, so the worker would read them while the main thread edits
+     * them -- a crash, or bytes that are not the committed value.
+     */
+    virtual bool canSaveOffThread() const { return true; }
+
+    /** Holds, for a reader on another thread, what this value shares with
+     * others that is not to change under that reader, until what is
+     * returned is let go of -- on any thread. Asked on the main thread of a
+     * value that answered yes to canSaveOffThread(), as it is handed over.
+     * Null where there is nothing to hold, which is the default. A shape
+     * holds its element map (docs/TransactionLog.md sec 31.31).
+     */
+    virtual std::shared_ptr<void> holdForOffThread() const { return {}; }
 
     /// Set value by interpolate between two values
     virtual void interpolate(const Property &from, const Property &to, float t) {
@@ -396,6 +473,9 @@ public:
     friend class PropertyContainer;
     friend struct PropertyData;
     friend class DynamicProperty;
+    /// Brackets a restore from a transaction-log value with aboutToSetValue()
+    /// and hasSetValue() (docs/TransactionLog.md sec 24.5).
+    friend class PropertyValueRestorer;
 
 private:
     /** Status bits of the property
@@ -824,6 +904,20 @@ public:
 
 protected:
 
+    /** The list, for writing (docs/TransactionLog.md 23.6).
+     *
+     * The one non-const path to the values, and it needs a live guard,
+     * which it marks: the write is then bracketed by aboutToSetValue()
+     * and hasSetValue() whatever the caller forgets. A write that
+     * reaches the list any other way is invisible to undo, recompute,
+     * the view provider and the transaction log, which is why the
+     * member is private and this is the only door.
+     */
+    ListT& mutableValues(atomic_change& guard) {
+        guard.aboutToChange();
+        return _lValueList;
+    }
+
     void setPyValues(const std::vector<PyObject*>& vals, const std::vector<int>& indices) override
     {
         if (indices.empty()) {
@@ -847,7 +941,7 @@ protected:
 
     virtual T getPyValue(PyObject* item) const = 0;
 
-protected:
+private:
     ListT _lValueList;
 };
 

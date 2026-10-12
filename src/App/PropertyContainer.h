@@ -54,6 +54,7 @@ enum PropertyType
   Prop_Output      = 8, /*!< Modified property doesn't touch its parent container */
   Prop_NoRecompute = 16,/*!< Modified property doesn't touch its container for recompute */
   Prop_NoPersist   = 32,/*!< Property won't be saved to file at all */
+  Prop_OwnerValue  = 64,/*!< Part of a value the container's owner holds: put back with that even where the container's own values are not (a view provider's look for each element its object names) */
 };
 
 struct AppExport PropertyData
@@ -171,6 +172,10 @@ public:
         /// content written to the file and the reference an elision compares
         /// against, so the two can never drift apart.
         std::string content;
+        /// The transaction log's hash of `content` (docs/TransactionLog.md
+        /// 23.3): what a composed snapshot compares a property's stored
+        /// value against instead of serialising it.
+        std::string hash;
     };
 
     /// Record the stand-in's eligible properties. Canonical settings come

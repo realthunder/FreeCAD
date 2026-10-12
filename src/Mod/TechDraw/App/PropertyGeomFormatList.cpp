@@ -57,9 +57,13 @@ PropertyGeomFormatList::~PropertyGeomFormatList()
 
 void PropertyGeomFormatList::setSize(int newSize)
 {
+    if (newSize == static_cast<int>(_lValueList.size()))
+        return;
+    aboutToSetValue();
     for (unsigned int i = newSize; i < _lValueList.size(); i++)
         delete _lValueList[i];
     _lValueList.resize(newSize);
+    hasSetValue();
 }
 
 int PropertyGeomFormatList::getSize() const

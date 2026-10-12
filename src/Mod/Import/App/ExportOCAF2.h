@@ -80,6 +80,30 @@ public:
     explicit ExportOCAF2(Handle(TDocStd_Document) hDoc,
                          GetShapeColorsFunc func = GetShapeColorsFunc());
 
+    /** @name The looks, asked of the objects
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.7: what a shape's elements
+     * are drawn as is the object's, and what a link lays over what it
+     * shows the link's, so an export with no view provider has them. These
+     * are a GetShapeColorsFunc and a GetShapeAppearanceFunc.
+     */
+    //@{
+    /** The colours an object draws its faces or edges in
+     *
+     * @param subname: "Face*" or "Edge*" for every element of the kind,
+     *                 or the hidden marker and "*" for what is not shown
+     * @return The kind's own colour under its name ("Face"), and a colour
+     *         for each element that differs ("Face3"); for a link the
+     *         elements it gives a colour, by their paths
+     */
+    static std::map<std::string, App::Color> objectColors(App::DocumentObject* obj,
+                                                         const char* subname);
+    /// The whole materials of an object's faces, where they say what
+    /// colours cannot
+    static bool objectAppearance(App::DocumentObject* obj,
+                                 std::vector<App::MaterialAppearance>& mats, bool& pbr);
+    //@}
+
     void setGetRenderMaterial(GetRenderMaterialFunc func)
     {
         getRenderMaterial = std::move(func);

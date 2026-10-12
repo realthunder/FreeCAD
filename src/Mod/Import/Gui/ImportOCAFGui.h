@@ -36,13 +36,8 @@ public:
     ImportOCAFGui(Handle(TDocStd_Document) hDoc, App::Document* pDoc, const std::string& name);
 
 private:
-    void applyFaceColors(Part::Feature* part, const std::vector<App::Color>& colors) override;
     void applyFaceMaterials(Part::Feature* part,
                             const std::vector<App::MaterialAppearance>& mats, bool pbr) override;
-    void applyEdgeColors(Part::Feature* part, const std::vector<App::Color>& colors) override;
-    void applyLinkColor(App::DocumentObject* obj, int index, App::Color color) override;
-    void applyElementColors(App::DocumentObject* obj,
-                            const std::map<std::string, App::Color>& colors) override;
     void applyRenderMaterial(Part::Feature* part,
                              const Import::RenderMaterial& mat) override;
 };

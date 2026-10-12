@@ -1127,7 +1127,9 @@ platform would archive with `emar`.  `-fvisibility=hidden -flto` cut the
 wheel 427 to 368 KB and the hop cost by a third.
 
 The time budget (both runtimes): two stages, a soft interrupt through
-CPython's emscripten signal handling on a shared `int32` buffer, then a
+CPython's emscripten signal handling on a shared `int32` buffer -- the
+word written on the guest's own thread, by `Isolate::RequestInterrupt`
+(sec 12, "A soft interrupt written from another thread") -- then a
 hard `Isolate::TerminateExecution` (wasmtime: epoch interruption);
 `Expression/Sandbox:BudgetMs` 5000, `GraceMs` 1000; outcomes
 `Interrupted` / `Terminated`; `Watchdog` in
@@ -8965,7 +8967,9 @@ host's choosing.  A client's `name` is reduced to a plain file name
 (`QFileInfo::fileName` first, so `../../.ssh/config` arrives as
 `config`), the same name twice does not overwrite what a panel may still
 be pointing at, and 16 MB is the cap -- a chooser's file is a font or a
-hatch pattern.
+hatch pattern.  (Since 2026-10-05 the cap is a setting, the preference
+`UploadLimitMB` of `BaseApp/Preferences/SceneShare` or `FC_SERVE_UPLOAD_MB`,
+16 unless set: `docs/ShareAccess.md` sec 2.4.)
 
 **The proof, 2026-09-22:** `scripts/demo-filechooserpanel.py` (new -- a
 panel whose chooser is watched on `fileNameSelected`, reporting the path
@@ -9642,13 +9646,16 @@ The puppeteer knobs they need are in `docs/Testing.md`: `PUPPETEER_PATH`,
 `CHROME`, `CHROME_LIBS`, and emsdk's node.
 
 **Getting a phone onto it again** (this session's recipe):
-`FC_SERVE_TOKEN=<secret> FC_SERVE_TRUST_PROXY=1
+`FC_SERVE_TOKEN=<secret> FC_SERVE_INVITE=<who> FC_SERVE_TRUST_PROXY=1
 scripts/renderer-serve.sh scripts/demo-taskpanel.py 8077`, then
 `cloudflared tunnel --protocol http2 --url http://127.0.0.1:8077`.
 **QUIC is blocked outbound on this box**, so without `--protocol http2`
 the tunnel comes up degraded and says so.  The page is
-`/fcviewer.html?doc=<name>&token=<secret>`, with `&panel`, `&console` or
-`&sheet` to open a card on load.  The bundle is `npm run build` in
+`/fcviewer.html?doc=<name>&token=<secret>&client=<who>`, with `&panel`,
+`&console` or `&sheet` to open a card on load.  Since 2026-10-04 the token
+alone admits to look: `FC_SERVE_INVITE` says whose it is, and the page that
+gives that name in `client=` may click and type (`docs/ShareAccess.md` sec
+2.3).  The bundle is `npm run build` in
 `src/Gui/Renderer/web` into `build/wasm/web`, `npm run gate` is the pure
 gate and `npm run typecheck` the types.  The viewer bundle answers
 before the door, so the PAGE loads without a token while every route
@@ -11435,6 +11442,31 @@ sockets, any network for the reference image, a webview escape hatch.
   NOT set (it changes every allocation FreeCAD and OCCT make; RULED
   2026-09-14: leave it).  Reset for a package install only; a library edit drops one
   module (`lib.drop`), never the guest.
+- **A soft interrupt written from another thread can be lost** (found
+  2026-10-06, chasing `ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped`,
+  which had failed once in a gate run and passed alone).  pyodide takes
+  the interrupt buffer's word with a read and then a write of zero
+  (`_Py_CheckEmscriptenSignals_Helper`: `let result = buf[0]; buf[0] = 0`),
+  every fifty bytecode checks.  The watchdog thread's `signal.store(2)`
+  landing between the two is read as nothing and wiped: the loop runs
+  on, the hard stage ends it 700 ms later, and the guest is dropped --
+  a `TimeoutError` still, "terminated" instead of "interrupted", and a
+  boot for the next evaluation.  Traced: the soft stage at 300 ms, the
+  word zero when the call came back, the call not back until the hard
+  stage.  Forty copies of the case side by side: 4 of 280 runs.  It is
+  not the machine being slow -- pinned to one core beside nine busy
+  loops, ten times slower, it passes; the reply to an interrupt takes
+  1 ms.  Built: the watchdog asks V8 for an interrupt
+  (`Isolate::RequestInterrupt`) and the word is written from its
+  callback, on the guest's thread at a stack check, where that read and
+  that write have nothing between them; a request the call did not live
+  to see finds its flag cleared.  400 of 400 the same way after.  The
+  browser console's guest on the page is written to while it is
+  suspended on a host call (7.20, *Interrupt*), which is one thread and
+  safe.  Its guest in a worker (C6) is written to from the page while
+  it runs (`session.ts`, `interrupt()`), two threads, and has this as
+  read, not run: an Interrupt press that lands in the gap does nothing,
+  and the next one stops the loop.  Left as it is.
 - V8 calls the near-heap-limit callback from the LAST-RESORT GC that
   follows a failed array buffer allocation, not only at the heap's
   limit: a callback that stops the guest there stops it for a refused

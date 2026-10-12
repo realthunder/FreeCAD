@@ -26,6 +26,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <unordered_map>
 #include <vector>
 
 #include <BRep_Tool.hxx>
@@ -135,7 +136,7 @@ FC_LOG_LEVEL_INIT("Sketch", true, true)
 // clang-format off
 
 void SketchObject::initExternalGeo() {
-    std::vector<Part::Geometry *> geos;
+    std::vector<const Part::Geometry*> geos;
     auto HLine = GeometryTypedFacade<Part::GeomLineSegment>::getTypedFacade();
     auto VLine = GeometryTypedFacade<Part::GeomLineSegment>::getTypedFacade();
     HLine->getTypedGeometry()->setPoints(Base::Vector3d(0,0,0),Base::Vector3d(1,0,0));
@@ -195,12 +196,13 @@ int SketchObject::toggleIntersection(const std::vector<int> &geoIds, bool defini
         auto it = refs.find(ExternalGeometryFacade::getFacade(geo)->getRef());
         if (it == refs.end())
             continue;
-        geo = geo->clone();
-        auto egf = ExternalGeometryFacade::getFacade(geo);
+        auto copy = geo->clone();
+        auto egf = ExternalGeometryFacade::getFacade(copy);
         egf->setFlag(ExternalGeometryExtension::Intersection, it->second);
         egf->setFlag(ExternalGeometryExtension::Cut, it->second);
         if (defining)
             egf->setFlag(ExternalGeometryExtension::Defining, it->second);
+        geo = copy;
     }
     ExternalGeo.setValues(geos);
     ExternalTypes.setValues(types);
@@ -304,6 +306,10 @@ void SketchObject::migrateExternalTypes()
     // before the second has the first. Of a reference of both kinds only a
     // rebuild can tell the pieces apart.
     unsplitExternalRefs.clear();
+    // A flag set here is a change to ExternalGeo, made through its guard
+    // (docs/TransactionLog.md 23.6), which marks the property on the first
+    // write only.
+    Part::PropertyGeometryList::atomic_change guard(ExternalGeo, false);
     for (std::size_t i = 0; i < externalGeoRef.size() && i < types.size(); ++i) {
         const std::string &ref = externalGeoRef[i];
         if (types[i] == static_cast<long>(ExtType::Both)) {
@@ -318,7 +324,12 @@ void SketchObject::migrateExternalTypes()
                 auto iter = externalGeoMap.find(id);
                 if (iter == externalGeoMap.end())
                     continue;
-                auto egf = ExternalGeometryFacade::getFacade(ExternalGeo[iter->second]);
+                auto said = ExternalGeometryFacade::getFacade(ExternalGeo[iter->second]);
+                if (said->testFlag(ExternalGeometryExtension::Intersection)
+                        && said->testFlag(ExternalGeometryExtension::Cut))
+                    continue;
+                auto egf = ExternalGeometryFacade::getFacade(
+                        ExternalGeo.mutableValue(guard, iter->second));
                 egf->setFlag(ExternalGeometryExtension::Intersection);
                 egf->setFlag(ExternalGeometryExtension::Cut);
             }
@@ -354,8 +365,8 @@ int SketchObject::toggleExternalGeometryFlag(const std::vector<int> &geoIds,
                 if(gid == geoId)
                     continue;
                 int idx = -gid-1;
-                auto &g = geos[idx];
-                g = g->clone();
+                auto g = geos[idx]->clone();
+                geos[idx] = g;
                 auto egf = ExternalGeometryFacade::getFacade(g);
                 egf->setFlag(flag, value);
                 for (size_t i=1; i<flags.size(); ++i)
@@ -363,11 +374,12 @@ int SketchObject::toggleExternalGeometryFlag(const std::vector<int> &geoIds,
                 idSet.erase(gid);
             }
         }
-        geo = geo->clone();
-        egf->setGeometry(geo);
-        egf->setFlag(flag, value);
+        auto copy = geo->clone();
+        geo = copy;
+        auto mut = ExternalGeometryFacade::getFacade(copy);
+        mut->setFlag(flag, value);
         for (size_t i=1; i<flags.size(); ++i)
-            egf->setFlag(flags[i], value);
+            mut->setFlag(flags[i], value);
         if (value || flag != ExternalGeometryExtension::Frozen)
             update = true;
         touched = true;
@@ -389,8 +401,8 @@ int SketchObject::detachExternal(const std::vector<int> &geoIds) {
     for(int geoId : geoIds) {
         if(geoId > GeoEnum::RefExt || -geoId-1>=ExternalGeo.getSize())
             continue;
-        auto &geo = geos[-geoId-1];
-        geo = geo->clone();
+        auto geo = geos[-geoId-1]->clone();
+        geos[-geoId-1] = geo;
         auto egf = ExternalGeometryFacade::getFacade(geo);
         egf->setFlag(ExternalGeometryExtension::Detached);
         touched = true;
@@ -634,11 +646,11 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
 
     SketchObject* psObj = static_cast<SketchObject*>(pObj);
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
     const std::vector<Sketcher::Constraint*>& cvals = Constraints.getValues();
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     std::vector<Constraint*> newcVals(cvals);
 
@@ -646,7 +658,7 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
 
     int nextcid = cvals.size();
 
-    const std::vector<Part::Geometry*>& svals = psObj->getInternalGeometry();
+    const std::vector<const Part::Geometry*>& svals = psObj->getInternalGeometry();
 
     const std::vector<Sketcher::Constraint*>& scvals = psObj->Constraints.getValues();
 
@@ -676,7 +688,7 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
             }
             auto copy = geo->copy();
             auto egf = ExternalGeometryFacade::getFacade(copy);
-            egf->setId(++geoLastId);
+            egf->setId(newGeoId());
             if (!egf->getRef().empty()) {
                 auto &refs = this->externalGeoRefMap[egf->getRef()];
                 refs.push_back(geoLastId);
@@ -730,7 +742,7 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
         solverNeedsUpdate=true;
     }
 
-    for (std::vector<Part::Geometry *>::const_iterator it=svals.begin(); it != svals.end(); ++it){
+    for (std::vector<const Part::Geometry*>::const_iterator it=svals.begin(); it != svals.end(); ++it){
         Part::Geometry *geoNew = (*it)->copy();
         // The source sketch is flipped relative to this one. The geometry is in
         // sketch coordinates, so mirror about this sketch's own origin and axes
@@ -1193,7 +1205,7 @@ int SketchObject::delAllExternal()
 {
     int count = 0; // the remaining count of the detached external geometry
     std::map<int,int> indexMap; // the index map of the remain external geometry
-    std::vector<Part::Geometry*> geos; // the remaining external geometry
+    std::vector<const Part::Geometry*> geos; // the remaining external geometry
     for(int i=0;i<ExternalGeo.getSize();++i) {
         auto geo = ExternalGeo[i];
         auto egf = ExternalGeometryFacade::getFacade(geo);
@@ -1352,8 +1364,8 @@ int SketchObject::attachExternal(
 
     std::string ref = externalGeoRef.back();
     for(auto geoId : idSet) {
-        auto &geo = geos[-geoId-1];
-        geo = geo->clone();
+        auto geo = geos[-geoId-1]->clone();
+        geos[-geoId-1] = geo;
         ExternalGeometryFacade::getFacade(geo)->setRef(ref);
     }
 
@@ -1396,8 +1408,8 @@ int SketchObject::syncGeometry(const std::vector<int> &geoIds) {
     }
     for(int geoId : idSet) {
         if(geoId <= GeoEnum::RefExt && -geoId-1 < ExternalGeo.getSize()) {
-            auto &geo = geos[-geoId-1];
-            geo = geo->clone();
+            auto geo = geos[-geoId-1]->clone();
+            geos[-geoId-1] = geo;
             ExternalGeometryFacade::getFacade(geo)->setFlag(ExternalGeometryExtension::Sync);
             touched = true;
         }
@@ -2939,7 +2951,7 @@ void SketchObject::rebuildExternalGeometry(bool defining)
                 taken[next] = true;
             }
             else
-                ids[i] = ++geoLastId;
+                ids[i] = newGeoId();
         }
 
         // In case a projection reduces output geometries, delete them
@@ -2959,6 +2971,9 @@ void SketchObject::rebuildExternalGeometry(bool defining)
     }
 
     auto geoms = ExternalGeo.getValues();
+    // The geometry made above is still ours to write; what ExternalGeo holds
+    // is not, and is copied before a flag is written to it below.
+    std::unordered_map<const Part::Geometry*, Part::Geometry*> fresh;
 
     // now update the geometries
     for(auto &geos : newGeos) {
@@ -2973,7 +2988,9 @@ void SketchObject::rebuildExternalGeometry(bool defining)
                 if (linkDefining != linkIsDefiningMap.end())
                     ExternalGeometryFacade::getFacade(geo.get())->setFlag(
                             ExternalGeometryExtension::Defining, linkDefining->second);
-                geoms.push_back(geo.release());
+                auto g = geo.release();
+                fresh[g] = g;
+                geoms.push_back(g);
                 continue;
             }
             // This is an existing geometry. Update it while keeping the old
@@ -2985,25 +3002,38 @@ void SketchObject::rebuildExternalGeometry(bool defining)
                     ExternalGeometryExtension::Intersection, cut);
             ExternalGeometryFacade::getFacade(geo.get())->setFlag(
                     ExternalGeometryExtension::Cut, cut);
-            geoms[it->second] = geo.release();
+            auto g = geo.release();
+            fresh[g] = g;
+            geoms[it->second] = g;
         }
     }
 
     // Check for any missing references
     bool hasError = false;
-    for(auto geo : geoms) {
+    for(auto &geo : geoms) {
         auto egf = ExternalGeometryFacade::getFacade(geo);
-        egf->setFlag(ExternalGeometryExtension::Sync,false);
-        if(egf->getRef().empty())
-            continue;
-        if(!refSet.count(egf->getRef())) {
+        bool hasRef = !egf->getRef().empty();
+        bool missing = hasRef && !refSet.count(egf->getRef());
+        if(missing) {
             FC_ERR( "External geometry " << getFullName() << ".e" << egf->getId()
                     << " missing reference: " << egf->getRef());
             hasError = true;
-            egf->setFlag(ExternalGeometryExtension::Missing,true);
-        } else {
-            egf->setFlag(ExternalGeometryExtension::Missing,false);
         }
+        if(!egf->testFlag(ExternalGeometryExtension::Sync)
+                && (!hasRef || egf->testFlag(ExternalGeometryExtension::Missing) == missing))
+            continue;
+        Part::Geometry *mut;
+        auto f = fresh.find(geo);
+        if (f != fresh.end())
+            mut = f->second;
+        else {
+            mut = geo->clone();
+            geo = mut;
+        }
+        auto megf = ExternalGeometryFacade::getFacade(mut);
+        megf->setFlag(ExternalGeometryExtension::Sync,false);
+        if(hasRef)
+            megf->setFlag(ExternalGeometryExtension::Missing,missing);
     }
 
     std::set<int> reversedGeoIds;
@@ -3088,12 +3118,13 @@ void SketchObject::fixExternalGeometry(const std::vector<int> &geoIds) {
             continue;
         }
 
-        geo = geo->clone();
-        egf->setGeometry(geo);
-        egf->setFlag(ExternalGeometryExtension::Missing,false);
+        auto copy = geo->clone();
+        geo = copy;
+        auto mut = ExternalGeometryFacade::getFacade(copy);
+        mut->setFlag(ExternalGeometryExtension::Missing,false);
         ref = objName + "." + Data::elementMapPrefix();
         elements.front().name.appendToBuffer(ref);
-        egf->setRef(ref);
+        mut->setRef(ref);
         objs.push_back(obj);
         subs.emplace_back();
         elements.front().index.appendToStringBuffer(subs.back());
@@ -3138,7 +3169,13 @@ void SketchObject::updateGeometryRefs() {
     bool touched = false;
     auto geos = ExternalGeo.getValues();
     if(refMap.empty()) {
+        // A reference or index corrected here is a change to ExternalGeo,
+        // made through its guard; the guard signals it when it goes out of
+        // scope, so this branch does not set values itself.
+        Part::PropertyGeometryList::atomic_change guard(ExternalGeo, false);
+        int i = -1;
         for(auto geo : geos) {
+            ++i;
             auto egf = ExternalGeometryFacade::getFacade(geo);
             if(egf->getRefIndex()<0) {
                 if (egf->getId() < 0 && egf->getRef().size()) {
@@ -3167,18 +3204,18 @@ void SketchObject::updateGeometryRefs() {
                     } else
                         FC_LOG("Update undo/redo external reference " << egf->getRef() << " -> "
                                 << externalGeoRef[it->second] << " in " << getFullName());
-                    touched = true;
-                    egf->setRef(externalGeoRef[it->second]);
+                    ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, i))
+                        ->setRef(externalGeoRef[it->second]);
                 }
                 continue;
             }
-            else if(egf->getRefIndex() < (int)externalGeoRef.size()
+            auto mut = ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, i));
+            if(egf->getRefIndex() < (int)externalGeoRef.size()
                     && egf->getRef() != externalGeoRef[egf->getRefIndex()])
             {
-                touched = true;
-                egf->setRef(externalGeoRef[egf->getRefIndex()]);
+                mut->setRef(externalGeoRef[egf->getRefIndex()]);
             }
-            egf->setRefIndex(-1);
+            mut->setRefIndex(-1);
         }
     }else{
         for(auto &v : refMap) {
@@ -3188,8 +3225,8 @@ void SketchObject::updateGeometryRefs() {
             for(long id : it->second) {
                 auto iter = externalGeoMap.find(id);
                 if(iter!=externalGeoMap.end()) {
-                    auto &geo = geos[iter->second];
-                    geo = geo->clone();
+                    auto geo = geos[iter->second]->clone();
+                    geos[iter->second] = geo;
                     auto egf = ExternalGeometryFacade::getFacade(geo);
                     FC_LOG(getFullName() << " ref change on ExternalEdge"
                             << iter->second-1 << ' ' << egf->getRef() << " -> " << v.second);

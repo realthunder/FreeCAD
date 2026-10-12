@@ -53,7 +53,11 @@ PropertyTopoShapeList::~PropertyTopoShapeList() = default;
 
 void PropertyTopoShapeList::setSize(int newSize)
 {
+    if (newSize == static_cast<int>(_lValueList.size()))
+        return;
+    aboutToSetValue();
     _lValueList.resize(newSize);
+    hasSetValue();
 }
 
 int PropertyTopoShapeList::getSize() const
@@ -257,8 +261,7 @@ App::Property *PropertyTopoShapeList::Copy() const
     std::vector<TopoShape> copiedShapes;
     for (auto& shape : _lValueList) {
         BRepBuilderAPI_Copy copy(shape.getShape());
-        TopoDS_Shape* newShape = new TopoDS_Shape(copy.Shape());
-        copiedShapes.emplace_back(*newShape);
+        copiedShapes.emplace_back(copy.Shape());
     }
     p->setValues(copiedShapes);
     return p;

@@ -107,7 +107,9 @@ public:
     /// the wire (docs/SceneServerPort.md sec 7.1): the POSIX head
     /// reader below today, a Beast parser after stage 2.
     struct HttpRequest {
-        std::string method;   ///< "GET" or "POST"; nothing else gets here
+        /// "GET" or "POST" -- or "OPTIONS", a browser asking ahead of a
+        /// request from another origin; nothing else gets here
+        std::string method;
         std::string path;     ///< the request target up to its '?'
         std::string query;    ///< what followed the '?', if anything
         /// Names lowercased (they match case-insensitively), values
@@ -153,6 +155,9 @@ public:
         /// `Access-Control-Allow-Headers: *` -- the /log beacon's
         /// preflight wants it.
         bool allowAnyHeader = false;
+        /// The answer to a browser asking ahead (OPTIONS): the verbs the
+        /// server speaks, and how long the answer holds.
+        bool preflight = false;
         /// Cross-origin isolation on this answer: what a page needs
         /// before the browser gives it a SharedArrayBuffer, which is how
         /// the Python console runs its guest in a worker where there is
@@ -183,6 +188,9 @@ public:
     /// never participate in an ordering cycle.
     std::mutex tokenMutex;
     std::string tokenSecret;
+    /// The one person the shared token was issued to (SceneServer.h,
+    /// setTokenInvitee); empty for none. Guarded by tokenMutex.
+    std::string tokenInvitee;
 
     std::string tokenNow()
     {
@@ -194,6 +202,11 @@ public:
     /// setTrustProxy). Atomic rather than mutexed: one bool read on
     /// every accepted connection.
     std::atomic<bool> trustProxy{false};
+
+    /// Whether the proxy in front signs anyone in (SceneServer.h,
+    /// setIdentityDoor): off, which is the default, no header is taken
+    /// for an identity.
+    std::atomic<bool> identityDoor{false};
 
     /// The configured identity header name (SceneServer.h,
     /// setIdentityHeader), stored lowercase; empty = recognize the
@@ -251,7 +264,7 @@ public:
     /// is the client's own invention. Empty when nothing asserted one.
     std::string assertedIdentity(const HttpRequest &req)
     {
-        if (!trustProxy.load())
+        if (!trustProxy.load() || !identityDoor.load())
             return {};
         if (!isLoopback(req.peerIp))
             return {};
@@ -404,7 +417,90 @@ public:
         bool admitted = false;
         ClientAccess access = ClientAccess::Edit;
         uint64_t grant = 0;   ///< admitting grant id; 0 = legacy door
+        /// Admitted on an invitation issued to its one name (invitedBy).
+        bool invited = false;
+        /// One of the browsers its grant counts (SceneGrant::maxUsers);
+        /// \a enrol: not yet, and to be added to them.
+        bool enrolled = false;
+        bool enrol = false;
     };
+
+    /// What is asking (SceneGrant::maxUsers): a plain request for
+    /// something of the scene, or a hello -- either says which browser it
+    /// is and may be enrolled, and one that does not say is none of the
+    /// grant's (docs/TransactionLog.md sec 30.40); a connection judged
+    /// again, which is enrolled or is not; or a plain request for what is
+    /// not the scene's -- the console beacon, which can carry no header,
+    /// and a mount's files -- which the token opens whoever holds it.
+    enum class Ask { Fetch, Hello, Again, Open };
+
+    /// The header a plain request says which browser it is in: the id the
+    /// hello gives as `device`. A header and never the URL, which is what
+    /// gets copied, logged and kept in a history.
+    static constexpr const char *kDeviceHeader = "x-fc-device";
+
+    /// The record of browsers (SceneServer.h, SceneDevice), by key, and
+    /// the count that says it or an enrolment changed. tokenMutex.
+    std::map<std::string, SceneDevice> deviceRecord;
+    uint64_t deviceEpochCounter = 0;
+    /// No more than this are remembered: a record is what an admitted
+    /// hello leaves, and a token many hold must not grow it without end.
+    static constexpr size_t kDeviceRecordMax = 4096;
+
+    /// The key of the id a hello gave (SceneDevice::key); empty when it
+    /// gave none worth the name. An id is what a browser generated: long
+    /// enough not to be guessed, and of nothing a URL or a log could not
+    /// carry.
+    static std::string deviceKeyOf(const std::string &id)
+    {
+        if (id.size() < 16 || id.size() > 128)
+            return {};
+        for (unsigned char c : id) {
+            if (!std::isalnum(c) && c != '-' && c != '_')
+                return {};
+        }
+        return sha1Hex(id.data(), id.size());
+    }
+
+    /// Whether \a grant is an invitation the host issued to one named
+    /// person, and \a client that person (docs/TransactionLog.md sec 30.6
+    /// U6): it has a token, which is a secret, and its name field spells
+    /// a name out rather than a pattern, which is the host saying whose
+    /// it is. An easing the server minted for a rename names nobody the
+    /// host chose, and an open invitation makes nobody anyone.
+    static bool invitedBy(const SceneGrant &grant, const std::string &client)
+    {
+        return !grant.liveOnly && !grant.token.empty() && !grant.client.empty()
+            && grant.client.find_first_of("*?") == std::string::npos
+            && grant.client == client;
+    }
+
+    /// The shared token as an invitation: there is a token, the host has
+    /// named the one person it was issued to, and \a client is that name.
+    static bool tokenInvites(const std::string &secret,
+                             const std::string &invitee,
+                             const std::string &client)
+    {
+        return !secret.empty() && !invitee.empty() && client == invitee;
+    }
+
+    bool hasTokenInvitee()
+    {
+        std::lock_guard<std::mutex> guard(tokenMutex);
+        return grantList.empty() && !tokenSecret.empty() && !tokenInvitee.empty();
+    }
+
+    /// Only a user who is known may write (docs/TransactionLog.md sec
+    /// 30.6 U4): a connection with no verified identity and no
+    /// invitation to its name is view-only, whatever its grant says --
+    /// the rule a host grant already had for an identity it does not
+    /// name literally (docs/ShareAccess.md sec 2.2), extended to edit.
+    static ClientAccess writerRule(ClientAccess access,
+                                   const std::string &identity, bool invited)
+    {
+        return access != ClientAccess::View && identity.empty() && !invited
+            ? ClientAccess::View : access;
+    }
 
     /// Whether a host grant's identity pattern makes \a identity a host
     /// (docs/ShareAccess.md sec 2.2): only a literal naming the verified
@@ -432,16 +528,31 @@ public:
     /// Judge a presentation against a grant list (docs/ShareAccess.md
     /// §2): the most specific matching grant decides, and no match —
     /// or a banned best match — refuses.
+    ///
+    /// A grant that counts its users (SceneGrant::maxUsers) is matched by
+    /// the browser as well: \a device its key, \a record what is known
+    /// of it. A hello from a browser it has enrolled, or has room to
+    /// enrol, matches; one with no id, one the host turned off, and one
+    /// past the count do not, and fall to whatever lesser grant there
+    /// is. A plain request for the scene is judged as a hello is, by the
+    /// browser its header names (Ask::Fetch); only what is not the
+    /// scene's is opened by the token alone (Ask::Open).
     static Judgement judgeWith(const std::vector<SceneGrant> &list,
                                const std::string &token,
                                const std::string &identity,
                                const std::string &client,
-                               const std::string &address)
+                               const std::string &address,
+                               const std::string &device = std::string(),
+                               const std::map<std::string, SceneDevice>
+                                   *record = nullptr,
+                               Ask ask = Ask::Fetch)
     {
         Judgement out;
         const std::string addr = portlessAddress(address);
         const SceneGrant *best = nullptr;
         int64_t bestScore = -1;
+        bool bestMember = false;
+        bool bestJoins = false;
         for (const auto &g : list) {
             if (!g.token.empty() && !secretEqual(g.token, token))
                 continue;
@@ -449,6 +560,26 @@ public:
                     || !patternMatches(g.client, client)
                     || !patternMatches(g.address, addr))
                 continue;
+            const bool counts = g.maxUsers > 0 && g.access != 2;
+            bool member = false;
+            bool joins = false;
+            if (counts && ask != Ask::Open) {
+                if (device.empty())
+                    continue;
+                if (record) {
+                    auto known = record->find(device);
+                    if (known != record->end() && !known->second.enabled)
+                        continue;
+                }
+                member = std::find(g.devices.begin(), g.devices.end(), device)
+                    != g.devices.end();
+                if (!member) {
+                    if (ask == Ask::Again
+                            || int(g.devices.size()) >= g.maxUsers)
+                        continue;
+                    joins = true;
+                }
+            }
             // Identity outranks name outranks address: the verified
             // part first, then what a person chose, then where they
             // happen to be. The token is a filter, not a rank — a ban
@@ -456,18 +587,32 @@ public:
             int64_t score = (int64_t(specificityOf(g.identity)) * 8192
                              + specificityOf(g.client)) * 8192
                             + specificityOf(g.address);
+            // Of two that are otherwise alike, the one that knows the
+            // browser is the more particular.
+            score = score * 2 + (member || joins ? 1 : 0);
             if (score > bestScore) {
                 bestScore = score;
                 best = &g;
+                bestMember = member;
+                bestJoins = joins;
             }
         }
         if (!best || best->access == 2)
             return out;
         out.admitted = true;
-        out.access = best->access == 1 ? ClientAccess::View
+        out.invited = identity.empty() && invitedBy(*best, client);
+        out.enrolled = bestMember || bestJoins;
+        out.enrol = bestJoins;
+        out.access = writerRule(
+            best->access == 1 ? ClientAccess::View
             : best->access == 3 && hostIdentity(best->identity, identity)
                 ? ClientAccess::Host
-                : ClientAccess::Edit;
+                : ClientAccess::Edit,
+            identity, out.invited || out.enrolled);
+        // What the token alone opened under a grant that counts its
+        // users said nothing of who it is: it is nobody known.
+        if (best->maxUsers > 0 && ask == Ask::Open && !out.invited)
+            out.access = writerRule(out.access, identity, false);
         out.grant = best->id;
         return out;
     }
@@ -475,16 +620,71 @@ public:
     /// The door: the grant list when one is set, else the legacy
     /// shared token (SceneServer.h, setGrants).
     Judgement judge(const std::string &token, const std::string &identity,
-                    const std::string &client, const std::string &address)
+                    const std::string &client, const std::string &address,
+                    const std::string &device = std::string(),
+                    Ask ask = Ask::Fetch)
     {
         std::lock_guard<std::mutex> guard(tokenMutex);
         if (grantList.empty()) {
+            // The shared token, or no token at all, is an open
+            // invitation: it says nothing of who holds it.
             Judgement out;
             out.admitted = tokenSecret.empty()
                 || secretEqual(token, tokenSecret);
+            // -- unless the host has said whose the token is, which makes
+            // it an invitation to that one name (sec 30.6 U6).
+            out.invited = identity.empty() && out.admitted
+                && tokenInvites(tokenSecret, tokenInvitee, client);
+            out.access = writerRule(ClientAccess::Edit, identity, out.invited);
             return out;
         }
-        return judgeWith(grantList, token, identity, client, address);
+        Judgement out = judgeWith(grantList, token, identity, client, address,
+                                  device, &deviceRecord, ask);
+        if (out.admitted && out.enrol) {
+            // The browser becomes one of the grant's (SceneGrant::
+            // maxUsers): from here it is known, and counted.
+            for (auto &g : grantList) {
+                if (g.id == out.grant) {
+                    g.devices.push_back(device);
+                    ++deviceEpochCounter;
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /// Keep what an admitted hello said of its browser (SceneDevice):
+    /// the name its user gives, the identity it came with, when. Every
+    /// door's, not only a grant that counts: the record is what lets the
+    /// host see one browser under another token.
+    void noteDevice(const std::string &key, const std::string &name,
+                    const std::string &identity)
+    {
+        if (key.empty())
+            return;
+        const double now = std::chrono::duration<double>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::lock_guard<std::mutex> guard(tokenMutex);
+        auto it = deviceRecord.find(key);
+        if (it == deviceRecord.end()) {
+            if (deviceRecord.size() >= kDeviceRecordMax)
+                return;
+            SceneDevice d;
+            d.key = key;
+            d.first = now;
+            d.enrolledAs = name;
+            it = deviceRecord.emplace(key, std::move(d)).first;
+            ++deviceEpochCounter;
+        }
+        SceneDevice &d = it->second;
+        if (d.name != name || d.identity != identity)
+            ++deviceEpochCounter;
+        if (d.enrolledAs.empty())
+            d.enrolledAs = name;
+        d.name = name;
+        d.identity = identity;
+        d.last = now;
     }
 
     bool grantsActive()
@@ -1215,6 +1415,15 @@ public:
         /// stops; once the host sets it in the roster, that stands.
         SelectionRoute selection = SelectionRoute::None;
         bool selectionByHost = false;
+        /// Admitted on an invitation issued to its one name (invitedBy);
+        /// connMutex. With no verified identity this is what lets it
+        /// write.
+        bool invited = false;
+        /// The browser this is (SceneDevice::key), from its hello; and
+        /// whether its grant counts it among its users
+        /// (Judgement::enrolled), which also lets it write. connMutex.
+        std::string deviceKey;
+        bool enrolled = false;
         /// The host asked this connection closed (guarded by
         /// connMutex): its farewell is on the outbox, and its own loop
         /// sends that and hangs up. Set only through kick().
@@ -1394,16 +1603,29 @@ public:
     /// The sharing UI's roster-changed cue. Guarded by handlerMutex
     /// like the group handlers; invoked with no lock held.
     std::function<void()> clientsChanged;
+    /// Each served document's own roster cue (setRosterNotifier), by
+    /// document name. Kept here rather than on the group, so firing them
+    /// needs handlerMutex alone and never waits behind a serialization
+    /// holding the payload lock.
+    std::map<std::string, std::function<void()>> rosterNotifiers;
 
     void notifyClientsChanged()
     {
         std::function<void()> notify;
+        // Each served document's own cue too: its source records who
+        // came and who left.
+        std::vector<std::function<void()>> rosters;
         {
             std::lock_guard<std::mutex> guard(handlerMutex);
             notify = clientsChanged;
+            rosters.reserve(rosterNotifiers.size());
+            for (auto &entry : rosterNotifiers)
+                rosters.push_back(entry.second);
         }
         if (notify)
             notify();
+        for (auto &roster : rosters)
+            roster();
     }
 
     /// Mint the live-only easing for a renamed connection
@@ -1452,11 +1674,15 @@ public:
     void rejudgeConnections()
     {
         std::vector<SceneGrant> list;
+        std::map<std::string, SceneDevice> record;
         std::string secret;
+        std::string invitee;
         {
             std::lock_guard<std::mutex> guard(tokenMutex);
             list = grantList;
+            record = deviceRecord;
             secret = tokenSecret;
+            invitee = tokenInvitee;
         }
         bool changed = false;
         {
@@ -1468,11 +1694,21 @@ public:
                 if (list.empty()) {
                     entry.admitted = secret.empty()
                         || conn->presentedToken == secret;
+                    // What the host set by hand stands, where it may.
+                    entry.invited = entry.admitted && conn->identity.empty()
+                        && tokenInvites(secret, invitee, conn->client);
+                    entry.access = writerRule(conn->access, conn->identity,
+                                              entry.invited);
+                    entry.enrolled = false;
                 }
                 else {
+                    // A browser its grant no longer counts -- forgotten,
+                    // turned off -- is not enrolled again here: that takes
+                    // a hello.
                     entry = judgeWith(list, conn->presentedToken,
                                       conn->identity, conn->client,
-                                      conn->matchAddr);
+                                      conn->matchAddr, conn->deviceKey,
+                                      &record, Ask::Again);
                 }
                 if (!entry.admitted) {
                     conn->queueText(
@@ -1481,13 +1717,18 @@ public:
                     changed = true;
                 }
                 else {
-                    if (!list.empty() && conn->access != entry.access) {
+                    if (conn->access != entry.access) {
                         applyAccess(*conn, entry.access);
                         // told, as a mode set by hand is
                         conn->queueText(configJson(conn->access,
                                                    conn->selection));
                         changed = true;
                     }
+                    if (conn->invited != entry.invited
+                            || conn->enrolled != entry.enrolled)
+                        changed = true;
+                    conn->invited = entry.invited;
+                    conn->enrolled = entry.enrolled;
                     conn->grant = entry.grant;
                 }
             }
@@ -1513,6 +1754,10 @@ public:
             info.identity = conn->identity;
             info.grant = conn->grant;
             info.viewer = conn->viewer;
+            info.invited = conn->invited;
+            info.device = conn->deviceKey;
+            info.enrolled = conn->enrolled;
+            info.authorized = conn->authorized;
             info.access = conn->access;
             info.selection = conn->selection;
             info.connectedMs = uint64_t(
@@ -1541,6 +1786,11 @@ public:
                 if (conn->id == id) {
                     // A host is a verified person, never a chosen name
                     if (access == ClientAccess::Host && conn->identity.empty())
+                        return false;
+                    // and a writer is someone known (sec 30.6 U4)
+                    if (writerRule(access, conn->identity,
+                                   conn->invited || conn->enrolled)
+                            != access)
                         return false;
                     applyAccess(*conn, access);
                     // Tell the client its mode, so its UI can say so.
@@ -2062,6 +2312,10 @@ public:
     {
         if (!conn.identity.empty())
             return "id:" + conn.identity;
+        // One of the browsers a grant counts is a user of its own, where
+        // every other connection of a grant is the grant's.
+        if (conn.enrolled && !conn.deviceKey.empty())
+            return "dev:" + conn.deviceKey;
         if (conn.grant)
             return "grant:" + std::to_string(conn.grant);
         if (conn.matchAddr.empty() || isLoopback(conn.matchAddr))
@@ -2183,6 +2437,17 @@ public:
         // gets nothing.
         std::string wsKey = req.header("sec-websocket-key");
 
+        // A browser asking ahead, before a request from another origin
+        // that carries a header of its own -- which browser it is
+        // (kDeviceHeader). It asks with no token and no header, so it is
+        // answered before the door, and told nothing but that it may ask.
+        if (req.method == "OPTIONS") {
+            reply.status = 204;
+            reply.allowAnyHeader = true;
+            reply.preflight = true;
+            return Route::Reply;
+        }
+
         // The viewer bundle answers before the door: it is the
         // published viewer code, not scene bytes, and the browser
         // fetches the page's subresources without the link's ?token=
@@ -2197,19 +2462,49 @@ public:
             return Route::Reply;
 
         std::string presentedToken = queryValue(query, "token");
-        Judgement entry = judge(presentedToken, identity,
-                                queryValue(query, "client"),
-                                fwd.empty() ? peerIp : fwd);
+        const std::string askedAs = queryValue(query, "client");
+        const std::string askedFrom = fwd.empty() ? peerIp : fwd;
+        // A socket says which browser it is in its hello: under a grant
+        // that counts its users (SceneGrant::maxUsers) the upgrade is not
+        // admitted by it, and waits for that. A plain request says it in
+        // a header, and is judged as the hello is: a browser the grant
+        // has, or has room for, and no other (sec 30.40). The first load
+        // comes before the hello, so it is what enrols a new browser.
+        const std::string device = wsKey.empty()
+            ? deviceKeyOf(req.header(kDeviceHeader)) : std::string();
+        Judgement entry = judge(presentedToken, identity, askedAs, askedFrom,
+                                device,
+                                wsKey.empty() ? Ask::Fetch : Ask::Again);
+        if (entry.admitted && entry.enrol)
+            noteDevice(device, askedAs, identity);
         bool authorized = entry.admitted;
-        if (!authorized && wsKey.empty()) {
-            reply.status = 403;
+        // Refused, in the socket's words for it: `Refused` where grants
+        // judge -- the link may be right and this browser not one of its
+        // -- and `BadToken` where one token is the whole door. The page
+        // says which.
+        auto refuse = [&] {
+            static const char grantsWord[] = "Refused";
+            static const char tokenWord[] = "BadToken";
+            const char *word = grantsActive() ? grantsWord : tokenWord;
+            reply.set(403, "text/plain", "no-store");
+            reply.body.assign(word, word + std::strlen(word));
             return Route::Reply;
+        };
+        if (wsKey.empty()) {
+            // What is not the scene's is the token's to open, as it was:
+            // a mount's files, and the beacon below.
+            if (!authorized
+                    && !judge(presentedToken, identity, askedAs, askedFrom,
+                              std::string(), Ask::Open).admitted)
+                return refuse();
+            // A gated mount (SceneServer.h, setHttpMount): behind the
+            // door, ahead of the scene routes, which share no prefix with
+            // one.
+            if (serveMount(req, true, reply))
+                return Route::Reply;
+            if (!authorized && path != "/log")
+                return refuse();
         }
-
-        // A gated mount (SceneServer.h, setHttpMount): behind the door,
-        // ahead of the scene routes, which share no prefix with one.
-        if (wsKey.empty() && serveMount(req, true, reply))
-            return Route::Reply;
 
         // /blob?key=<content key>: one out-of-band texture payload
         // (SceneDump.h, v26). Content addressed and immutable, so the
@@ -2457,6 +2752,7 @@ public:
         conn.authorized = boot.entry.admitted;
         conn.admitted = boot.entry.admitted;
         applyAccess(conn, boot.entry.access);
+        conn.invited = boot.entry.invited;
         conn.grant = boot.entry.grant;
         conn.presentedToken = boot.presentedToken;
         conn.addr = boot.addr;
@@ -2885,7 +3181,8 @@ public:
         {
             auto &r = parser.get();
             req.method = std::string(r.method_string());
-            if (req.method != "GET" && req.method != "POST")
+            if (req.method != "GET" && req.method != "POST"
+                    && req.method != "OPTIONS")
                 return false;
             splitTarget(std::string(r.target()), req);
             for (const auto &f : r) {
@@ -2912,6 +3209,11 @@ public:
             res.set(http::field::access_control_allow_origin, "*");
             if (reply.allowAnyHeader)
                 res.set(http::field::access_control_allow_headers, "*");
+            if (reply.preflight) {
+                res.set(http::field::access_control_allow_methods,
+                        "GET, POST");
+                res.set(http::field::access_control_max_age, "86400");
+            }
             if (reply.isolate) {
                 res.set("Cross-Origin-Embedder-Policy", "require-corp");
                 if (reply.isolateDocument) {
@@ -3395,10 +3697,23 @@ public:
                 }
                 std::string name;
                 jsonStr(json, "client", name);
+                // Which browser this is (SceneDevice): the id it keeps,
+                // known here by its hash only.
+                std::string device;
+                jsonStr(json, "device", device);
+                const std::string deviceKey = deviceKeyOf(device);
+                {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.deviceKey = deviceKey;
+                }
                 const bool grants = grantsActive();
-                if (grants || !conn.authorized) {
+                // Judged when a grant may match the name, when the door has
+                // not opened yet, and when the shared token is an
+                // invitation to one name: the name only exists now.
+                if (grants || !conn.authorized || hasTokenInvitee()) {
                     Judgement entry = judge(offered, conn.identity, name,
-                                            conn.matchAddr);
+                                            conn.matchAddr, deviceKey,
+                                            Ask::Hello);
                     if (!entry.admitted) {
                         std::lock_guard<std::mutex> guard(connMutex);
                         conn.queueText(grants
@@ -3412,14 +3727,14 @@ public:
                     conn.admitted = true;
                     conn.presentedToken = offered;
                     conn.grant = entry.grant;
-                    if (grants) {
-                        applyAccess(conn, entry.access);
-                        // Said at once, so the page offers only what
-                        // this connection may do
-                        if (entry.access != ClientAccess::Edit)
-                            conn.queueText(configJson(conn.access,
-                                                      conn.selection));
-                    }
+                    conn.invited = entry.invited;
+                    conn.enrolled = entry.enrolled;
+                    applyAccess(conn, entry.access);
+                    // Said at once, so the page offers only what this
+                    // connection may do
+                    if (entry.access != ClientAccess::Edit)
+                        conn.queueText(configJson(conn.access,
+                                                  conn.selection));
                     // The user is known only now when the grant or the
                     // name decided it (sec 7.4).
                     if (!admitUser(conn)) {
@@ -3429,6 +3744,18 @@ public:
                         return;
                     }
                 }
+                else {
+                    // Admitted at the upgrade on the shared token: its
+                    // mode was decided there and is said here, where a
+                    // viewer is first listening.
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    if (conn.access != ClientAccess::Edit)
+                        conn.queueText(configJson(conn.access,
+                                                  conn.selection));
+                }
+                // The record of browsers takes every admitted hello,
+                // whichever door admitted it.
+                noteDevice(deviceKey, name, conn.identity);
             }
             else if (!conn.authorized) {
                 return;
@@ -3477,14 +3804,19 @@ public:
                 jsonStr(json, "name", name);
                 if (conn.authorized && grantsActive()) {
                     std::string token;
+                    std::string deviceKey;
                     uint64_t fromGrant;
                     {
                         std::lock_guard<std::mutex> guard(connMutex);
                         token = conn.presentedToken;
+                        deviceKey = conn.deviceKey;
                         fromGrant = conn.grant;
                     }
+                    // The browser is who it was under another name: one a
+                    // grant counts stays counted, and the name is a label.
                     Judgement entry = judge(token, conn.identity, name,
-                                            conn.matchAddr);
+                                            conn.matchAddr, deviceKey,
+                                            Ask::Again);
                     if (!entry.admitted) {
                         addEasing(conn, token, name, fromGrant);
                     }
@@ -3492,11 +3824,48 @@ public:
                         std::lock_guard<std::mutex> guard(connMutex);
                         conn.grant = entry.grant;
                     }
+                    // An invitation is to one name (docs/TransactionLog.md
+                    // sec 30.6 U6): under another the connection is
+                    // whoever it says it is, and no longer writes.
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.invited = entry.admitted && entry.invited;
+                    conn.enrolled = entry.admitted && entry.enrolled;
+                    const ClientAccess now =
+                        writerRule(conn.access, conn.identity,
+                                   conn.invited || conn.enrolled);
+                    if (now != conn.access) {
+                        applyAccess(conn, now);
+                        conn.queueText(configJson(conn.access,
+                                                  conn.selection));
+                    }
                 }
+                else if (conn.authorized && hasTokenInvitee()) {
+                    // The shared token issued to one name: the same rule.
+                    std::string token;
+                    {
+                        std::lock_guard<std::mutex> guard(connMutex);
+                        token = conn.presentedToken;
+                    }
+                    const Judgement entry = judge(token, conn.identity, name,
+                                                  conn.matchAddr);
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.invited = entry.admitted && entry.invited;
+                    const ClientAccess now =
+                        writerRule(conn.access, conn.identity, conn.invited);
+                    if (now != conn.access) {
+                        applyAccess(conn, now);
+                        conn.queueText(configJson(conn.access,
+                                                  conn.selection));
+                    }
+                }
+                std::string renamed;
                 {
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.client = name;
+                    if (conn.authorized)
+                        renamed = conn.deviceKey;
                 }
+                noteDevice(renamed, name, conn.identity);
                 notifyClientsChanged();
                 return;
             }
@@ -3953,10 +4322,20 @@ SceneStreamServer::Private *SceneStreamServer::ensure()
             if (*env)
                 pimpl->tokenSecret = env;
         }
+        // and whose it is, beside it (SceneServer.h, setTokenInvitee)
+        if (const char *env = std::getenv("FC_SERVE_INVITE"))
+            pimpl->tokenInvitee = env;
         if (const char *env = std::getenv("FC_SERVE_TRUST_PROXY"))
             pimpl->trustProxy.store(std::atoi(env) != 0);
         if (const char *env = std::getenv("FC_SERVE_IDENTITY_HEADER"))
             pimpl->identityHeaderName = lowered(env);
+        // Whoever starts the serve has to say that its proxy signs people
+        // in (SceneServer.h, setIdentityDoor). Naming the header the door
+        // uses says it too.
+        if (const char *env = std::getenv("FC_SERVE_IDENTITY_DOOR"))
+            pimpl->identityDoor.store(std::atoi(env) != 0);
+        else if (!pimpl->identityHeaderName.empty())
+            pimpl->identityDoor.store(true);
     }
     return pimpl;
 }
@@ -3988,6 +4367,20 @@ void SceneStreamServer::setToken(const std::string &token)
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->tokenMutex);
     p->tokenSecret = token;
+}
+
+void SceneStreamServer::setTokenInvitee(const std::string &name)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    p->tokenInvitee = name;
+}
+
+std::string SceneStreamServer::tokenInvitee()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    return p->tokenInvitee;
 }
 
 void SceneStreamServer::setIdentityHeader(const std::string &name)
@@ -4044,6 +4437,50 @@ std::vector<SceneGrant> SceneStreamServer::grants()
     return p->grantList;
 }
 
+void SceneStreamServer::setDevices(const std::vector<SceneDevice> &list)
+{
+    Private *p = ensure();
+    {
+        std::lock_guard<std::mutex> guard(p->tokenMutex);
+        p->deviceRecord.clear();
+        for (const auto &d : list) {
+            if (!d.key.empty())
+                p->deviceRecord[d.key] = d;
+        }
+    }
+    // One turned off is out, where a grant counted it.
+    p->rejudgeConnections();
+}
+
+std::vector<SceneDevice> SceneStreamServer::devices()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    std::vector<SceneDevice> out;
+    out.reserve(p->deviceRecord.size());
+    for (const auto &entry : p->deviceRecord)
+        out.push_back(entry.second);
+    return out;
+}
+
+bool SceneStreamServer::device(const std::string &key, SceneDevice &out)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    auto it = p->deviceRecord.find(key);
+    if (it == p->deviceRecord.end())
+        return false;
+    out = it->second;
+    return true;
+}
+
+uint64_t SceneStreamServer::deviceEpoch()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    return p->deviceEpochCounter;
+}
+
 uint64_t SceneStreamServer::addGrant(SceneGrant grant)
 {
     Private *p = ensure();
@@ -4091,6 +4528,16 @@ void SceneStreamServer::setTrustProxy(bool on)
 bool SceneStreamServer::trustProxy()
 {
     return ensure()->trustProxy.load();
+}
+
+void SceneStreamServer::setIdentityDoor(bool on)
+{
+    ensure()->identityDoor.store(on);
+}
+
+bool SceneStreamServer::identityDoor()
+{
+    return ensure()->identityDoor.load();
 }
 
 void SceneStreamServer::setConnectionCaps(int users, int perUser)
@@ -4361,6 +4808,17 @@ void SceneStreamServer::setClientClosedHandler(
     g->clientClosedHandler = std::move(handler);
 }
 
+void SceneStreamServer::setRosterNotifier(std::function<void()> notifier,
+                                          const std::string &doc)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    if (notifier)
+        p->rosterNotifiers[doc] = std::move(notifier);
+    else
+        p->rosterNotifiers.erase(doc);
+}
+
 bool SceneStreamServer::sendControl(uint64_t client, const std::string &json)
 {
     Private *p = ensure();
@@ -4469,6 +4927,7 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
         g->bridgeHandler = nullptr;
         g->workNotifier = nullptr;
         g->clientClosedHandler = nullptr;
+        pimpl->rosterNotifiers.erase(doc);
     }
     // The document left the listing; tell the menus.
     pimpl->pushDocs();

@@ -24,11 +24,14 @@
 #ifndef PART_FEATURE_H
 #define PART_FEATURE_H
 
+#include <array>
+#include <map>
 #include <string>
 #include <vector>
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
+#include <App/PropertyElementAppearance.h>
 #include <Mod/Material/App/PropertyMaterial.h>
 #include <Mod/Part/PartGlobal.h>
 
@@ -68,7 +71,42 @@ public:
     PropertyPartShape Shape;
     /// The physical material card assigned to this shape
     Materials::PropertyMaterial ShapeMaterial;
-    App::PropertyLinkSubHidden ColoredElements;
+    /** @name What the shape's elements look like
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6: what an object looks like is
+     * a value of the object and is made by the object, with a view provider
+     * and without. PartFeatureAppearance.cpp.
+     */
+    //@{
+    /// The looks stated of the object and of its elements, and what is
+    /// drawn of them
+    App::PropertyElementAppearance ElementAppearance;
+    /// A face no name paints takes the look of the face it was made from
+    App::PropertyBool MapFaceColor;
+    App::PropertyBool MapLineColor;
+    App::PropertyBool MapPointColor;
+    /// The transparency of the source face is taken with its colour
+    App::PropertyBool MapTransparency;
+    /// The looks are taken from the sources though the object names none
+    App::PropertyBool ForceMapColors;
+    //@}
+    /** @name The looks, by the names they have always had
+     *
+     * Names over ElementAppearance, with no value of their own and not
+     * written to a file (docs/ShapeAppearanceDesign.md sec 14.6.1): what
+     * the property editor shows, and what a script with no view provider
+     * writes. A view provider has the same names, over the same value.
+     */
+    //@{
+    /// The faces as they are drawn. A write is taken apart (writeFaces())
+    App::PropertyAppearanceList ShapeAppearance;
+    /// The object's own colour, and how far it is seen through
+    App::PropertyColor ShapeColor;
+    App::PropertyPercent Transparency;
+    /// The own colour of the edges, and of the vertices
+    App::PropertyColor LineColor;
+    App::PropertyColor PointColor;
+    //@}
     App::PropertyBool ValidateShape;
     App::PropertyBool InvalidShape;
     App::PropertyEnumeration FixShape;
@@ -87,6 +125,153 @@ public:
     /// Assign the appearance half of the material card
     void setMaterialAppearance(const App::MaterialAppearance& material) override;
     App::MaterialRenderProperties getMaterialRenderProperties() const override;
+
+    /** @name Making what is drawn (docs/ShapeAppearanceDesign.md sec 14.6.2) */
+    //@{
+    /** Make the drawn looks of the faces, edges and vertices again
+     *
+     * From what ElementAppearance states -- the object's own look, the
+     * looks given by number, the names, each at the elements it is now --
+     * and, where the Map* properties say so, from the looks of the elements
+     * these were made from. Kept in ElementAppearance. No recompute, and no
+     * change to undo.
+     *
+     * @param sourceDoc: where the objects the shape was made from are, if
+     *                   not in this object's document
+     * @param forceMap: take the looks of the sources now though the object
+     *                  names none: a copy of another object's shape, made
+     *                  once. What is taken is then stated, by number, as an
+     *                  import's looks are, since nothing will make it again.
+     * @param whileRestoring: make it though the document is being read.
+     *                  Nothing is made then, since a file has what is drawn
+     *                  -- but a file written before the looks were the
+     *                  object's has not, and who takes such a file's looks
+     *                  into the object asks for what is drawn of them.
+     */
+    void updateAppearance(App::Document *sourceDoc = nullptr, bool forceMap = false,
+                          bool whileRestoring = false);
+    bool getDrawnAppearance(int kind, App::AppearanceList &list) const override;
+    void onSourceAppearanceChanged() override;
+    /** What the names paint and what the sources hand on
+     *
+     * The part of updateAppearance() that is of a shape and not of where
+     * its looks are kept, for a view provider that keeps them itself as
+     * every one did before the looks were the object's: one that shows a
+     * shape of no Part::Feature, which a child view provider on a link does
+     * (docs/ShapeAppearanceDesign.md sec 14.6.11). Each array is by
+     * App::PropertyElementAppearance::Kind.
+     */
+    struct ElementLooks
+    {
+        /// In: each kind's own look, and whether its sources are asked
+        std::array<App::MaterialAppearance, 3> own;
+        std::array<bool, 3> fromSources {{false, false, false}};
+        /// In: whether a face takes its source's transparency with its colour
+        bool sourceTransparency {false};
+        /// Out: an element's number to the place of its name
+        std::array<std::map<int, int>, 3> named;
+        /// Out: the looks the sources hand on, by element
+        std::array<std::map<int, App::MaterialAppearance>, 3> handedOn;
+    };
+    /// \a owner is the object whose shape \a shape is; \a names its names
+    /// of the elements given a look, in the order of what they are given
+    static void mapElementLooks(const App::DocumentObject *owner, const TopoShape &shape,
+                                const std::vector<App::PropertyLinkBase::ShadowSub> &names,
+                                App::Document *sourceDoc, ElementLooks &looks);
+    /** Whether the shape is made from other objects
+     *
+     * Only then are the looks of the elements it was made from asked for
+     * (unless ForceMapColors). The objects this one links to, by default.
+     */
+    virtual bool hasBaseFeature() const;
+
+    /** The own look taking the material card's while it follows it
+     *
+     * docs/MaterialStorage.md sec 15.3. Nothing where the card says nothing
+     * of a look, or where a look was chosen since.
+     */
+    void applyMaterialAppearance();
+    /** The look an object has that nobody gave one
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.10, ruled: every object is
+     * given a look when it is made, by the object, so that one made with no
+     * view provider is the colour it would be made with one. The faces are
+     * the material card's -- the default card is the preference's shape
+     * colour, or a random one where that is asked for -- and the edges and
+     * vertices the preferences' line and vertex colours. Each still counts
+     * as a look nobody chose (PropertyElementAppearance::isFollowingMaterial()).
+     */
+    void giveDefaultAppearance() override;
+    /// Whether there is a card's look to go back to from a chosen one
+    bool canResetAppearanceToMaterial() const;
+    /// The card's look again, and following it from now on
+    bool resetAppearanceToMaterial();
+
+    /** What a link in the way lays over an element of what it shows
+     *
+     * A face made from a face seen through a link takes the look the link
+     * gives it. The link holds that (App::LinkAppearance,
+     * docs/ShapeAppearanceDesign.md sec 14.6.4), and with no function given
+     * here the link is asked. The Gui gives one, which is asked first: it
+     * knows a link that draws through a view provider of its own, whose
+     * looks are that one's, and a link that holds none.
+     *
+     * @param mapped: the element, as the object the link shows names it
+     * @param obj: the object the element's history leads to; changed to
+     *             what the link shows of it
+     * @param shown: set where the link draws through a view provider of
+     *               its own: the looks are then that one's
+     *               (ShapeAppearance, LineColorArray, PointColorArray)
+     * @param color: the colour laid over, if any is
+     * @return Whether \a color was given
+     */
+    using LinkLookFunc = bool (*)(const Data::MappedName &mapped, App::DocumentObject *&obj,
+                                  const App::PropertyContainer *&shown, App::Color &color);
+    static void setLinkLookFunc(LinkLookFunc func);
+
+    /** Whether the looks an object's elements of a type have may be taken by
+     * the shapes made from it
+     *
+     * The Gui answers, for a view provider whose colours only follow a
+     * preference and are no setting of the object's; with no function set
+     * every object's may.
+     *
+     * @param obj: the object a shape was made from
+     * @param type: TopAbs_FACE, TopAbs_EDGE or TopAbs_VERTEX
+     */
+    using MapsLooksFunc = bool (*)(const App::DocumentObject *obj, int type);
+    static void setMapsLooksFunc(MapsLooksFunc func);
+    //@}
+
+    /** @name A write to what is drawn, given to what is stated
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.3. The names above and a view
+     * provider's end here.
+     */
+    //@{
+    /** A write to the list of the faces, taken apart
+     *
+     * The base to the object's own look, each face the write changed to
+     * its name or its number with the fields that changed as its own, a
+     * face that came back to the object's look let go.
+     *
+     * @param before: the list as it was
+     * @param after: the list as the write would leave it
+     */
+    void writeFaces(const App::AppearanceList &before, const App::AppearanceList &after);
+    /// The object's own colour and no more: what is seen through it stays
+    void writeOwnColor(const App::Color &color);
+    /// The own transparency, and that of every face that states a colour
+    void writeOwnTransparency(long percent);
+    /// The own look, its shading model, finish and texture left as they are
+    void writeOwnMaterial(const App::MaterialAppearance &look);
+    /** The colours of the edges, or of the vertices
+     *
+     * @param kind: App::PropertyElementAppearance::Edge or Vertex
+     * @param values: one colour is the kind's own; more are one an element
+     */
+    void writeColors(int kind, const std::vector<App::Color> &values);
+    //@}
 
     PyObject* getPyObject() override;
 
@@ -172,7 +357,11 @@ public:
      * it was before each change, newest first.  The request is answered from
      * the newest generation that holds 'element' (a mapped name goes through
      * that generation's own element map, an indexed name is taken by
-     * position), by searching the live shape for the same geometry.
+     * position), by searching the live shape for the same geometry.  Where
+     * the request names its referrer and a generation is retained for it,
+     * only such a generation answers: it is the one the reference was
+     * resolved against, and the element's number is a position in it and in
+     * no other.
      *
      * When no generation of this feature holds the element and the request
      * names its referrer, a referrer in another document is answered from
@@ -185,6 +374,17 @@ public:
                                                        const App::PropertyLinkBase *referrer = nullptr,
                                                        const App::DocumentObject *obj = nullptr,
                                                        const char *subname = nullptr) const override;
+
+    /** The shape another branch had, kept for a reference a merge took
+     * from that branch (docs/TransactionLog.md sec 31.22).
+     *
+     * A generation as any other, with the property that persists it made
+     * at once: the caller fills it. The referrer holds this one and no
+     * other; whether it is still needed is asked once the recompute is
+     * over, or at the next save, as for a referrer released.
+     */
+    App::Property *retainElementEvidence(const App::PropertyLinkBase *referrer,
+                                         App::Property *evidence = nullptr) override;
 
     const std::vector<const char*>& getElementTypes(bool all=false) const override;
 
@@ -232,7 +432,7 @@ public:
     PartParams.declare_properties()
     ]]]*/
 
-    // Auto generated code (Tools/params_utils.py:1437)
+    // Auto generated code (Tools/params_utils.py:1459)
     App::PropertyLinkList *getShapeContentsProperty(bool force=false);
     App::PropertyBool *getShapeContentSuppressedProperty(bool force=false);
     App::PropertyLinkHidden *getShapeContentReplacementProperty(bool force=false);
@@ -240,8 +440,6 @@ public:
     App::PropertyBool *getShapeContentDetachedProperty(bool force=false);
     App::PropertyLinkHidden *get_ShapeContentOwnerProperty(bool force=false);
     //[[[end]]]
-
-    fastsignals::signal<void (App::Document *)> signalMapShapeColors;
 
     static Feature *create(const TopoShape &s,
                            const char *name = nullptr,
@@ -262,8 +460,19 @@ protected:
     App::DocumentObjectExecReturn *execute() override;
     void onBeforeChange(const App::Property* prop) override;
     void onChanged(const App::Property* prop) override;
+    /// ColoredElements, of a file older than ElementAppearance: its names
+    void handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                   const char *PropName) override;
+    /// A new object is given a look (giveDefaultAppearance())
+    void setupObject() override;
     void unsetupObject() override;
     void onDocumentRestored() override;
+    /// The change of a property that what is drawn is made of
+    void onAppearanceChanged(const App::Property* prop);
+    /// Whether \a prop is one of the names over ElementAppearance
+    bool isLookName(const App::Property* prop) const;
+    /// The names take what ElementAppearance has now
+    void mirrorLooks();
 
     // Return true if need to apply the shape placement to the Placement property
     virtual bool shouldApplyPlacement();
@@ -294,6 +503,9 @@ protected:
      * a search by geometry finds nothing where the shape used to be.
      */
     void setShapeMotion(const Base::Matrix4D *motion);
+
+    /// The shape property the element's registered prefix selects
+    const Data::ComplexGeoData* getElementGeometry(const char*& element) const override;
 
     /** Keep or let go of every retained generation.
      *
@@ -336,6 +548,10 @@ private:
     /// setShapeMotion(), while it is said
     Base::Matrix4D _shapeMotion;
     bool _hasShapeMotion = false;
+    /// Inside updateAppearance(): what it writes is no reason to run it
+    bool _updatingAppearance {false};
+    /// Inside mirrorLooks(): what it sets is no write to the looks
+    bool _mirroringLooks {false};
 };
 
 class FilletBase : public Part::Feature

@@ -25,6 +25,12 @@
 #ifndef _PreComp_
 # include <TopoDS_Wire.hxx>
 # include <TopExp_Explorer.hxx>
+# include <BOPAlgo_ArgumentAnalyzer.hxx>
+# include <BOPAlgo_MakerVolume.hxx>
+# include <BRep_Tool.hxx>
+# include <BRepAdaptor_Surface.hxx>
+# include <BRepBuilderAPI_Copy.hxx>
+# include <BRepTools_History.hxx>
 # include <BRepAlgoAPI_Cut.hxx>
 # include <BRepAlgoAPI_Fuse.hxx>
 # include <BRepBuilderAPI_MakeSolid.hxx>
@@ -100,6 +106,55 @@ void sortWiresByNesting(std::vector<Part::TopoShape>& wires)
                      [](const WireInfo& a, const WireInfo& b) { return a.depth < b.depth; });
     for (std::size_t i = 0; i < infos.size(); ++i)
         wires[i] = std::move(infos[i].wire);
+}
+
+// Whether a face of the shape is not flat. A loft's side leaves a flat end
+// to one side of it; a curved end it may go through.
+bool hasCurvedFace(const Part::TopoShape& shape)
+{
+    for (TopExp_Explorer it(shape.getShape(), TopAbs_FACE); it.More(); it.Next()) {
+        BRepAdaptor_Surface surface(TopoDS::Face(it.Current()), Standard_False);
+        if (surface.GetType() != GeomAbs_Plane)
+            return true;
+    }
+    return false;
+}
+
+// Whether faces of the shape pass through each other, as the boolean
+// operations see it: the question they ask of their arguments.
+bool intersectsItself(const Part::TopoShape& shape)
+{
+    BOPAlgo_ArgumentAnalyzer check;
+    check.SetShape1(BRepBuilderAPI_Copy(shape.getShape()).Shape());
+    check.SelfInterMode() = true;
+    check.SetRunParallel(true);
+    check.Perform();
+    return check.HasFaulty();
+}
+
+// The solids the faces of a shell enclose once they are cut where they pass
+// through each other. A loft between curved faces may run a side through
+// its own end: the lines of a ruled side that leave a cylinder for points
+// beside it are chords of it. The shell is closed and is no boundary of a
+// solid then -- every boolean operation on it is a matter of luck, a fuse
+// keeping both sides of the end inside the result, a common coming back
+// empty -- while the regions its faces enclose are solids, one each side of
+// the end. Empty where the faces enclose nothing.
+std::vector<Part::TopoShape> enclosedSolids(const Part::TopoShape& shell,
+                                            const App::StringHasherRef& hasher)
+{
+    BOPAlgo_MakerVolume maker;
+    for (TopExp_Explorer it(shell.getShape(), TopAbs_FACE); it.More(); it.Next())
+        maker.AddArgument(it.Current());
+    maker.SetIntersect(true);
+    maker.SetAvoidInternalShapes(true);
+    maker.SetRunParallel(true);
+    maker.Perform();
+    if (maker.HasErrors() || maker.Shape().IsNull())
+        return {};
+    Part::TopoShape made(0, hasher);
+    made.makESHAPE(maker.Shape(), Part::MapperHistory(maker.History()), {shell});
+    return made.getSubTopoShapes(TopAbs_SOLID);
 }
 
 } // anonymous namespace
@@ -233,6 +288,7 @@ App::DocumentObjectExecReturn *Loft::execute(void)
 
         TopoShape result(0,hasher);
         std::vector<TopoShape> shapes;
+        bool curvedEnd = false;
 
         if (SplitProfile.getValue()) {
             for (auto &wires : wiresections) {
@@ -287,6 +343,9 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 }
             }
             
+            curvedEnd = (!front.isNull() && hasCurvedFace(front))
+                     || (!back.isNull() && hasCurvedFace(back));
+
             if (!front.isNull() || !back.isNull()) {
                 BRepBuilderAPI_Sewing sewer;
                 sewer.SetTolerance(Precision::Confusion());
@@ -311,17 +370,30 @@ App::DocumentObjectExecReturn *Loft::execute(void)
             shapes = result.getSubTopoShapes(TopAbs_SHELL);
         }
 
+        std::vector<TopoShape> solids;
         for (auto &s : shapes) {
-            //build the solid
-            s = s.makESolid();
-            BRepClass3d_SolidClassifier SC(s.getShape());
-            SC.PerformInfinitePoint(Precision::Confusion());
-            if ( SC.State() == TopAbs_IN)
-                s.setShape(s.getShape().Reversed(),false);
-            if (Linearize.getValue())
-                s.linearize(true, false);
-            this->fixShape(s);
+            // A side that goes through a curved end: the solids the faces
+            // enclose, in place of a closed shell that bounds none
+            std::vector<TopoShape> parts;
+            if (curvedEnd && intersectsItself(s))
+                parts = enclosedSolids(s, hasher);
+            if (parts.empty()) {
+                //build the solid
+                s = s.makESolid();
+                BRepClass3d_SolidClassifier SC(s.getShape());
+                SC.PerformInfinitePoint(Precision::Confusion());
+                if ( SC.State() == TopAbs_IN)
+                    s.setShape(s.getShape().Reversed(),false);
+                parts.push_back(s);
+            }
+            for (auto &part : parts) {
+                if (Linearize.getValue())
+                    part.linearize(true, false);
+                this->fixShape(part);
+                solids.push_back(part);
+            }
         }
+        shapes = std::move(solids);
 
         AddSubShape.setValue(result.makECompound(shapes, nullptr, false));
         if (isRecomputePaused())

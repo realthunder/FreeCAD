@@ -35,6 +35,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/DocumentParams.h>
 #include <App/FileBlobManager.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
@@ -137,6 +138,11 @@ void AutoSaver::slotDeleteDocument(const App::Document& Doc)
 
 void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
 {
+    // With the transaction log on, the log is the autosave: every commit is
+    // written as it happens, and a crashed session is recovered from it
+    // (docs/TransactionLog.md sec 22.1, 25.3). No recovery file is written.
+    if (App::DocumentParams::getTransactionLog() != 0)
+        return;
     Gui::WaitCursor wc;
     App::Document* doc = App::GetApplication().getDocument(name.c_str());
 
@@ -353,6 +359,7 @@ class RecoveryRunnable : public QRunnable
 public:
     RecoveryRunnable(const std::set<std::string>& modes, const char* dir, const char* file, const App::Property* p)
         : prop(p->Copy())
+        , hold(p->holdForOffThread())
         , writer(dir)
     {
         writer.setModes(modes);
@@ -383,6 +390,8 @@ public:
 
 private:
     App::Property* prop;
+    /// What the copy shares with the live value, held until it is written
+    std::shared_ptr<void> hold;
     Base::FileWriter writer;
     QString dirName;
     QString fileName;
@@ -410,9 +419,17 @@ void RecoveryWriter::writeFiles()
                 fi.createDirectory();
             }
 
-            // For properties a copy can be created and then this can be written to disk in a thread
+            // For properties a copy can be created and then this can be written to disk in a thread.
+            // Not one whose copy shares what the main thread may still change in place -- a shape
+            // that is not frozen (App::Property::canSaveOffThread, docs/TransactionLog.md sec
+            // 27.99, 31.28): that one is written here, as it stands.
+            const App::Property* prop = nullptr;
             if (entry.Object->isDerivedFrom(App::Property::getClassTypeId())) {
-                const auto* prop = static_cast<const App::Property*>(entry.Object);
+                prop = static_cast<const App::Property*>(entry.Object);
+                if (!prop->canSaveOffThread())
+                    prop = nullptr;
+            }
+            if (prop) {
                 QThreadPool::globalInstance()->start(new RecoveryRunnable(getModes(), DirName.c_str(), entry.FileName.c_str(), prop));
             }
             else {

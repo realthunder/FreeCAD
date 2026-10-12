@@ -52,6 +52,8 @@ inline T &any_cast(boost::any &value) {
 #include <vector>
 #include <FCConfig.h>
 
+#include "PropertyLinks.h"
+
 namespace Base {
 class PythonVariables;
 }
@@ -399,6 +401,36 @@ public:
     const std::string &getSubObjectName(bool newStyle) const;
     const std::string &getSubObjectName() const;
 
+    /// The element path's shadow and the string ids it holds
+    /// (docs/TransactionLog.md sec 27.75).
+    const PropertyLinkBase::ShadowSub &getShadowSub() const {
+        return shadowSub;
+    }
+    /// The ids a file gave for the shadow, held once the reference resolves
+    /// against its target (sec 27.77).
+    void setSavedShadowIds(std::vector<long> ids) {
+        shadowSub.savedIds = std::move(ids);
+    }
+    /** A shadow a file gave for an element path into another table (sec
+     * 27.82): the working name as saved, and the name stored in the owner's
+     * table with the owner's ids it names, looked up when the path resolves,
+     * as a link's is (sec 27.80).
+     */
+    void setSavedShadow(std::string first, std::string stored, std::vector<long> ids) {
+        shadowSub.first = std::move(first);
+        shadowSub.stored = std::move(stored);
+        shadowSub.pending = !shadowSub.stored.empty();
+        shadowSub.savedIds = std::move(ids);
+        if (shadowSub.second.empty())
+            shadowSub.second = subObjectName.getString();
+    }
+
+    /// The mapped name a file gave for the element path, which is its
+    /// shadow once the path registers (sec 31.22)
+    void setGivenShadow(std::string first) {
+        shadowSub.given = std::move(first);
+    }
+
     using SubNameMap = std::map<std::pair<App::DocumentObject*,std::string>,std::string>;
     void importSubNames(const SubNameMap &subNameMap);
 
@@ -557,7 +589,9 @@ protected:
     String  documentName;
     String  documentObjectName;
     String  subObjectName;
-    std::pair<std::string,std::string> shadowSub;
+    /// Holds the string ids of the element it names, as a link's does
+    /// (docs/TransactionLog.md sec 27.75)
+    PropertyLinkBase::ShadowSub shadowSub;
     std::vector<Component> components;
     bool documentNameSet;
     bool documentObjectNameSet;

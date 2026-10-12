@@ -75,6 +75,7 @@ Property::~Property()
 {
     Transaction::removePendingProperty(this);
     Document::removePendingProperty(this);
+    TransactionCopyCache::drop(_id);
 }
 
 const char* Property::getName() const
@@ -153,6 +154,7 @@ short Property::getType() const
     GET_PTYPE(Transient);
     GET_PTYPE(NoRecompute);
     GET_PTYPE(NoPersist);
+    GET_PTYPE(OwnerValue);
     return type;
 }
 
@@ -166,6 +168,7 @@ void Property::syncType(unsigned type) {
     SYNC_PTYPE(Output);
     SYNC_PTYPE(NoRecompute);
     SYNC_PTYPE(NoPersist);
+    SYNC_PTYPE(OwnerValue);
 }
 
 const char* Property::getGroup() const
@@ -316,8 +319,16 @@ void Property::hasSetValue()
     // break the claim that execute() will not change it.
     bool changed = false;
     if (father && _old) {
-        if(isSame(*_old)) {
+        // Taken out for the compare: reading the value may serve a deferred
+        // restore, whose setValue() comes back here and would free the copy
+        // under the compare (PropertyPartShape::serveFromBlob, reached from
+        // isSame() when a restore to a version wrote a shape named by its
+        // blob -- docs/TransactionLog.md sec 27.60).
+        std::unique_ptr<Property> old = std::move(_old);
+        if(isSame(*old)) {
             FC_TRACE("no change of " << getFullName());
+            if (!_old)
+                _old = std::move(old);
             return;
         }
         _old.reset();
@@ -349,6 +360,10 @@ void Property::aboutToSetValue()
         }
         father->onBeforeChange(this);
     }
+    // Whatever the log kept of this property's last committed value is
+    // stale now: taken by the transaction recording this write, if one
+    // was, and dropped otherwise (docs/TransactionLog.md sec 25.4).
+    TransactionCopyCache::drop(_id);
 }
 
 void Property::verifyPath(const ObjectIdentifier &p) const
@@ -379,6 +394,8 @@ unsigned long Property::getStatus() const
 
 void Property::setStatus(const StatusBits &bits, bool on)
 {
+    if(bits.test(Legacy))
+        _StatusBits.set(Legacy, on);
     if(on)
         setStatusValue((_StatusBits | bits).to_ulong());
     else
@@ -394,6 +411,13 @@ void Property::setStatusValue(unsigned long status) {
         |(1<<PropOutput)
         |(1<<PropHidden)
         |(1<<PropNoPersist)
+        |(1<<PropOwnerValue)
+        // What this build says of the property, not what a saved status
+        // does: a name over a value kept elsewhere. Taken from a file
+        // written before the name was one, from a default or from an undo,
+        // the name was a value again -- in the log, in an undo and, at
+        // schema 5, in the file. Set by name alone (setStatus()).
+        |(1<<Legacy)
         |(1<<Busy);
 
     status &= ~mask;
@@ -418,6 +442,11 @@ void Property::setStatus(Status pos, bool on) {
             touch();
         else
             purgeTouched();
+        return;
+    }
+    if(pos == Legacy) {
+        // Not through setStatusValue(), which leaves it as it is
+        _StatusBits.set(Legacy, on);
         return;
     }
     auto bits = _StatusBits;
@@ -565,9 +594,23 @@ void PropertyLists::Save (Base::Writer &writer) const
     // A class that streams must implement saveXML too -- ForceXML has always
     // required that of it -- so this branch cannot reach the base class throw
     // where the file branch would not have.
+    //
+    // Not below schema 5. "The form the reader has always taken" is this
+    // fork's reader: upstream's reads a list that streams from its entry and
+    // from nowhere else, so a float, vector, colour or material list written
+    // inline at schema 4 -- the format written for upstream -- came back
+    // empty there, a two point polygon as one point at the origin. Schema 0
+    // is no document's (an export, a content dump) and is read by this build;
+    // and so is a list that is no property of its container but held inside
+    // one (the looks an object's ElementAppearance holds), which upstream
+    // steps over with the property it does not know.
     const long inlineLimit = DocumentParams::getInlineListSize();
+    const PropertyContainer *owner = getContainer();
+    const bool forUpstream = writer.getSchemaVersion() > 0 && writer.getSchemaVersion() < 5
+        && owner && hasName() && owner->getPropertyByName(getName()) == this;
     if (writer.isForceXML() || !canSaveStream(writer)
-            || (inlineLimit > 0 && static_cast<long>(getSaveSize(writer)) <= inlineLimit)) {
+            || (inlineLimit > 0 && !forUpstream
+                && static_cast<long>(getSaveSize(writer)) <= inlineLimit)) {
         writer.Stream() << writer.ind() << '<' << element << " count=\"" <<  getSize() <<"\" ";
         if(!saveXML(writer))
             writer.Stream() << writer.ind() << "</" << element << ">\n";
@@ -576,6 +619,30 @@ void PropertyLists::Save (Base::Writer &writer) const
             << writer.addFile(getFileName(writer.isPreferBinary()?".bin":".txt"), this) 
             << "\"/>\n";
     }
+}
+
+bool Property::savedTags(const std::string &fragment, const char *tag, const char *key,
+                         SavedElements &elements)
+{
+    const std::string open = std::string("<") + tag + " ";
+    const std::string attr = std::string(" ") + key + "=\"";
+    for (std::size_t at = fragment.find(open); at != std::string::npos;
+         at = fragment.find(open, at)) {
+        const std::size_t end = fragment.find("/>", at);
+        if (end == std::string::npos)
+            return false;
+        const std::string text = fragment.substr(at, end + 2 - at);
+        const std::size_t name = text.find(attr);
+        if (name == std::string::npos)
+            return false;
+        const std::size_t from = name + attr.size();
+        const std::size_t to = text.find('"', from);
+        if (to == std::string::npos)
+            return false;
+        elements.emplace_back(text.substr(from, to - from), text);
+        at = end + 2;
+    }
+    return true;
 }
 
 void PropertyLists::Restore(Base::XMLReader &reader)

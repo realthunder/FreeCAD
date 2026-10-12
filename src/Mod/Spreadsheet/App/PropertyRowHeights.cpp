@@ -119,6 +119,7 @@ void PropertyRowHeights::setValue(int row, int height)
 void PropertyRowHeights::Restore(Base::XMLReader& reader)
 {
     int Cnt;
+    std::map<int, int> values;
 
     // Row info
     reader.readElement("RowInfo");
@@ -134,7 +135,9 @@ void PropertyRowHeights::Restore(Base::XMLReader& reader)
                 int row = App::decodeRow(name);
                 int rowHeight = atoi(height);
 
-                setValue(row, rowHeight);
+                if (rowHeight >= 0) {
+                    values[row] = rowHeight;
+                }
             }
         }
         catch (...) {
@@ -142,6 +145,11 @@ void PropertyRowHeights::Restore(Base::XMLReader& reader)
         }
     }
     reader.readEndElement("RowInfo");
+
+    // The whole of what is held: read into the heights that were there, one
+    // set on another branch of the file stayed when the log put this value
+    // back (docs/TransactionLog.md sec 31.6).
+    setValues(values);
 }
 
 PyObject* PropertyRowHeights::getPyObject()

@@ -148,7 +148,7 @@ class ElementItem : public QTreeWidgetItem
 {
 public:
     ElementItem(QTreeWidget *parent, Sketcher::SketchObject *sketch,
-            int elementnr, Part::Geometry *geo)
+            int elementnr, const Part::Geometry *geo)
         : QTreeWidgetItem(parent)
         , ElementNbr(elementnr)
         , isLineSelected(false)
@@ -1081,7 +1081,7 @@ void TaskSketcherElements::slotElementsChanged()
     groupRoles = collectGroupRoles();
     // Build up ListView with the elements
     Sketcher::SketchObject* sketch = sketchView->getSketchObject();
-    const std::vector<Part::Geometry*>& vals = sketch->Geometry.getValues();
+    const std::vector<const Part::Geometry*>& vals = sketch->Geometry.getValues();
 
     int currentRow = -1;
     auto currentIndex = ui->elementsWidget->currentIndex();
@@ -1103,7 +1103,7 @@ void TaskSketcherElements::slotElementsChanged()
         itemMap[item->ElementNbr] = item;
     }
 
-    const std::vector< Part::Geometry * > &ext_vals = sketchView->getSketchObject()->getExternalGeometry();
+    const std::vector<const Part::Geometry*> &ext_vals = sketchView->getSketchObject()->getExternalGeometry();
     for(int i=2;i<(int)ext_vals.size();++i) {
         auto item = new ElementItem(ui->elementsWidget,sketch, -i-1, ext_vals[i]);
         item->setElement(sketch,item->activePart, filterindex);
@@ -1211,7 +1211,7 @@ void TaskSketcherElements::setGeometryLayers(const std::set<int> &geoIds, int la
     auto sketch = sketchView->getSketchObject();
     std::vector<int> changing;
     for (int geoId : geoIds) {
-        const std::vector<Part::Geometry*> &geometry = sketch->Geometry.getValues();
+        const std::vector<const Part::Geometry*> &geometry = sketch->Geometry.getValues();
         if (geoId >= 0 && geoId < (int)geometry.size()
                 && int(getSafeGeomLayerId(geometry[geoId])) != layer)
             changing.push_back(geoId);

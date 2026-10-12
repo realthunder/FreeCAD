@@ -28,6 +28,7 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 
 #include <cinttypes>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -36,6 +37,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
+#include "MappedName.h"
 #include "Property.h"
 
 namespace Base {
@@ -110,7 +112,71 @@ class AppExport PropertyLinkBase : public Property, public ScopedLink
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 public:
     bool canShareDefault() const override { return true; }
-    using ShadowSub = std::pair<std::string,std::string>;
+
+    /** A sub-element reference as resolved: the new style (mapped) name in
+     * first, the old style one in second -- a pair, as it always was -- and
+     * the string ids the element's name holds.
+     *
+     * The mapped name names string ids by number, as text; nothing held
+     * them, so a string table compacted while the element was gone dropped
+     * what the reference names, and the element coming back was named anew
+     * (docs/TransactionLog.md sec 27.75). The ids are the element map's for
+     * the element, which include the names it was made from, not only those
+     * its text shows. They are saved beside the shadow and held again from
+     * the numbers once the reference registers against its target: no
+     * lookup, no parse of the name. Never compared: two shadows are the same
+     * when their names are.
+     */
+    struct ShadowSub : std::pair<std::string, std::string>
+    {
+        using Names = std::pair<std::string, std::string>;
+        ShadowSub() = default;
+        ShadowSub(std::string newName, std::string oldName)
+            : Names(std::move(newName), std::move(oldName))
+        {}
+        ShadowSub(const Names& names) : Names(names) {}
+        ShadowSub(Names&& names) : Names(std::move(names)) {}
+
+        bool operator==(const ShadowSub& other) const
+        {
+            return static_cast<const Names&>(*this) == static_cast<const Names&>(other);
+        }
+        bool operator!=(const ShadowSub& other) const
+        {
+            return !(*this == other);
+        }
+
+        /// The ids held, from the target's element map
+        Data::ElementIDRefs sids;
+        /// Read from a file and not yet held: ids of the owner's table, which
+        /// is the target's for a reference within one table. Held when the
+        /// reference registers.
+        std::vector<long> savedIds;
+
+        /** A reference whose names are another table's -- into another
+         * document, or through a link to one (docs/TransactionLog.md sec
+         * 27.76 item 5): the element part of 'first' with its string ids
+         * imported into the owner's table. This is what the file keeps; the
+         * working form, 'first', is looked up from it in the target's table
+         * when the reference registers. Empty for a reference within one
+         * table.
+         */
+        std::string stored;
+        /// The owner's ids 'stored' names, held
+        Data::ElementIDRefs storedIds;
+        /// 'first' is not yet looked up from 'stored': restored and not
+        /// registered, or looked up and missing (then 'first' is empty)
+        bool pending = false;
+
+        /** The mapped name a file gave beside the element of an
+         * expression's path (docs/TransactionLog.md sec 31.22), until the
+         * path registers. An expression says its element in its text, and
+         * a path with no name beside it takes the one that element has
+         * where it registers; with this, it registers as it was saved, as
+         * a link does.
+         */
+        std::string given;
+    };
 
     PropertyLinkBase();
     ~PropertyLinkBase() override;
@@ -134,6 +200,29 @@ public:
         (void)reverse;
         (void)notify;
     }
+
+    /** Take the element numbers of this value from its mapped names
+     *
+     * For a value written against other shapes than the ones here
+     * (docs/TransactionLog.md sec 31.22): one a merge takes from another
+     * branch names each element by its number in that branch's shape, with
+     * the mapped name beside it. Every reference that has a mapped name is
+     * looked up by it in the object as it is now, and takes the number it
+     * has there.
+     *
+     * A mapped name the shape does not have is one the other branch made,
+     * which a recompute brings, or one of an element changed or gone here.
+     * As for any reference whose element went, the element is searched for
+     * by its geometry -- in the value the reference was written against,
+     * which 'evidence' has the feature keep
+     * (GeoFeature::retainElementEvidence) and says whether it did. Found,
+     * the reference is of the element found; else, and with no evidence, it
+     * is marked missing and nothing is searched: the number is of no shape
+     * this feature ever had, and looked up by position in one of them it is
+     * some other element.
+     */
+    using ElementEvidence = std::function<bool(GeoFeature *feature, PropertyLinkBase *referrer)>;
+    virtual void followElementReferences(const ElementEvidence &evidence = {});
 
     /// Clear internal element reference registration
     void unregisterElementReference();
@@ -771,6 +860,9 @@ public:
 
     void Save(Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
+    /// By the object linked (docs/TransactionLog.md sec 31.8).
+    bool splitSaved(const std::string &fragment, SavedElements &elements) const override;
+    bool joinSaved(const SavedElements &elements, std::string &fragment) const override;
 
     Property *Copy() const override;
     void Paste(const Property &from) override;
@@ -924,6 +1016,7 @@ public:
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
 
@@ -1082,6 +1175,7 @@ public:
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
     bool upgrade(Base::XMLReader &reader, const char *typeName);
@@ -1211,8 +1305,34 @@ public:
     const char *getDocumentPath() const;
     const char *getObjectName() const;
 
+    /** @name Pinned links (docs/TransactionLog.md sec 16.5, 27)
+     *
+     * A link to another file may be pinned to one of the file's versions: it
+     * then resolves to that version, opened as a document of its own, and not
+     * to the file's live state. A link to an object of a version document is
+     * pinned to that version. When the version cannot be found the link warns
+     * and resolves to the file, keeping its pin for the next open.
+     */
+    //@{
+    /// Pin to version `version` (0 unpins), whose uuid is `uuid` if known;
+    /// an undoable change of the link's value. Throws when the link is not
+    /// to another saved file.
+    void setPin(int64_t version, const std::string& uuid = std::string());
+    int64_t getPinVersion() const { return _pinVersion; }
+    const std::string& getPinUuid() const { return _pinUuid; }
+    /// The pinned version could not be opened and the link shows the file.
+    bool pinFellBack() const { return _pinFellBack; }
+    /// Every loaded link pinned to a version of the file at `path`.
+    static std::vector<PropertyXLink*> getPinsTo(const std::string& path);
+    /// The branch of the linked file a live link follows (sec 27.23): set
+    /// when the link is to an editable instance of a version, whose name
+    /// carries its branch; empty for a link to the file.
+    const std::string& getLiveBranch() const { return _liveBranch; }
+    //@}
+
     int checkRestore(std::string *msg=nullptr) const override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
 
@@ -1341,6 +1461,18 @@ protected:
     std::string docName;
     std::string objectName;
     std::string stamp;
+    int64_t _pinVersion {0};
+    std::string _pinUuid;
+    bool _pinFellBack {false};
+    /// A live link to a branch of the file (docs/TransactionLog.md sec
+    /// 27.23): to whatever document holds it.
+    std::string _liveBranch;
+    /// Restored pinned to a version of its own file: resolved in
+    /// afterRestore(), once the document's history is read (sec 27.20).
+    bool _restoreSelf {false};
+    /// The link's file is its owner's own (sec 27.20): set when it resolves,
+    /// so a Save As, which renames the owner's file, still saves it as such.
+    bool _selfFile {false};
     PathResolveMode resolveMode = PathResolveMode::Dynamic;
     std::vector<std::string> _SubList;
     std::vector<ShadowSub> _ShadowSubList;
@@ -1440,6 +1572,7 @@ public:
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
 
@@ -1461,6 +1594,8 @@ public:
 
     void updateElementReference(
             DocumentObject *feature,bool reverse=false, bool notify=false) override;
+
+    void followElementReferences(const ElementEvidence &evidence = {}) override;
 
     bool referenceChanged() const override;
 

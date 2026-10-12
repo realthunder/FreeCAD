@@ -2708,6 +2708,50 @@ TEST_F(PropertyAppearanceListTest, theMirrorWinsWhenTheListNamesIt)
     EXPECT_TRUE(other.getBase() == pad);
 }
 
+// An object given a transparency and then a colour for each face, the colours
+// opaque, is in an older file as both: faces not seen through and a
+// Transparency that says what the object would be. The mirror names the
+// colour and no face has its transparency -- the count made one of the faces
+// the object, and the 30 came back as 0.
+TEST_F(PropertyAppearanceListTest, theMirrorKeepsItsTransparency)
+{
+    const App::MaterialAppearance body = redMaterial();
+    App::MaterialAppearance pad = redMaterial();
+    pad.diffuseColor = packed(0x00ff00ff);
+    std::vector<App::MaterialAppearance> values {body, pad, body, pad, body, pad};
+
+    App::Color hint = body.diffuseColor;
+    hint.setTransparency(0.3F);
+
+    App::PropertyAppearanceList prop;
+    prop.setValues(values);
+    EXPECT_FALSE(prop.namesDiffuse(hint));
+    prop.deriveBase(&hint);
+    // the object is the mirror's colour, seen through as the mirror says,
+    // and every face overrides it with what it has
+    EXPECT_EQ(prop.getBase().diffuseColor, hint);
+    EXPECT_FLOAT_EQ(prop.getBase().transparency, 0.3F);
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({0, 1, 2, 3, 4, 5}));
+    expectEntries(prop, values);
+
+    // The same where the faces that are not overrides wear the colour
+    App::PropertyAppearanceList mostly;
+    values = {body, body, body, body, pad, pad};
+    mostly.setValues(values);
+    mostly.deriveBase(&hint);
+    EXPECT_EQ(mostly.getBase().diffuseColor, hint);
+    EXPECT_EQ(mostly.getOverrides(), std::vector<uint32_t>({0, 1, 2, 3, 4, 5}));
+    expectEntries(mostly, values);
+
+    // A mirror in a colour no face has declines still
+    App::PropertyAppearanceList other;
+    other.setValues(values);
+    App::Color grey = App::MaterialAppearance().diffuseColor;
+    grey.setTransparency(0.3F);
+    other.deriveBase(&grey);
+    EXPECT_TRUE(other.getBase() == body);
+}
+
 TEST_F(PropertyAppearanceListTest, theSparseFormRoundTripsBothForkEncodings)
 {
     App::MaterialAppearance painted = fullyPaintedMaterial();
@@ -2791,6 +2835,83 @@ TEST_F(PropertyAppearanceListTest, anOverrideListAFileStatesIsChecked)
     }
 }
 
+TEST_F(PropertyAppearanceListTest, overridingFacesThatFollowOnAreWrittenAsRanges)
+{
+    // An import gives every face a colour by its number, and stated a face
+    // at a time their numbers were half of what its looks cost in the file
+    const int count = 600;
+    auto colour = [](int i) {
+        return packed(((static_cast<uint32_t>(i) * 2654435761U) & 0xffff0000U) | 0x00007fffU);
+    };
+    auto binaryDocFile = [](const App::PropertyAppearanceList& prop) {
+        Base::StringWriter writer;
+        writer.setPreferBinary(true);
+        writer.setSchemaVersion(5);
+        prop.SaveDocFile(writer);
+        return writer.getString();
+    };
+    auto painted = [&](const std::vector<int>& faces) {
+        auto prop = std::make_unique<App::PropertyAppearanceList>();
+        prop->setSize(count, redMaterial());
+        for (int i : faces) {
+            prop->setDiffuseColor(i, colour(i));
+        }
+        return prop;
+    };
+    std::vector<int> all;
+    std::vector<int> other;
+    std::vector<int> spans;
+    for (int i = 0; i < count; ++i) {
+        all.push_back(i);
+        if (i % 2 == 0) {
+            other.push_back(i);
+        }
+        if ((i >= 10 && i < 110) || i >= 300) {
+            spans.push_back(i);
+        }
+    }
+    const auto every = painted(all);
+    const auto scattered = painted(other);
+    const auto two = painted(spans);
+    ASSERT_EQ(every->getOverrides().size(), static_cast<std::size_t>(count));
+
+    // Four bytes a colour and next to nothing for which faces they are of
+    const std::string everyFile = binaryDocFile(*every);
+    EXPECT_LT(everyFile.size(), static_cast<std::size_t>(count) * 4 + 200);
+    // No two of every other face follow on: a face at a time is the shorter
+    const std::string scatteredFile = binaryDocFile(*scattered);
+    EXPECT_GE(scatteredFile.size(), static_cast<std::size_t>(count / 2) * 8);
+    const std::string twoFile = binaryDocFile(*two);
+    EXPECT_LT(twoFile.size(), spans.size() * 4 + 200);
+
+    const std::vector<std::pair<const App::PropertyAppearanceList*, const std::string*>> cases = {
+        {every.get(), &everyFile},
+        {scattered.get(), &scatteredFile},
+        {two.get(), &twoFile},
+    };
+    for (const auto& v : cases) {
+        App::PropertyAppearanceList back;
+        restoreBinaryDocFile(back, *v.second);
+        ASSERT_EQ(back.getSize(), count);
+        EXPECT_EQ(back.getOverrides(), v.first->getOverrides());
+        for (int i = 0; i < count; ++i) {
+            ASSERT_TRUE(back.getDiffuseColor(i) == v.first->getDiffuseColor(i)) << i;
+        }
+    }
+
+    // What a file says of ranges is no more evidence than the rest of it.
+    // The one range of every face is the last 600 in the entry: a face too
+    // many overruns the count the head states, and one too few falls short
+    const auto at = everyFile.rfind(std::string("\x58\x02\x00\x00", 4));
+    ASSERT_NE(at, std::string::npos);
+    for (char length : {'\x59', '\x57'}) {
+        std::string wrong = everyFile;
+        wrong[at] = length;
+        App::PropertyAppearanceList prop;
+        EXPECT_THROW(restoreBinaryDocFile(prop, wrong), Base::Exception);
+    }
+}
+
 TEST_F(PropertyAppearanceListTest, anAppearanceCardKeepsThePaintedFaces)
 {
     // 12.2, and the reason the base exists at all: assigning the object a
@@ -2820,6 +2941,34 @@ TEST_F(PropertyAppearanceListTest, anAppearanceCardKeepsThePaintedFaces)
     prop.clearOverride(5);
     EXPECT_FALSE(prop.hasOverrides());
     EXPECT_TRUE(prop.getMaterial(5).diffuseColor == packed(0x0000ffff));
+}
+
+TEST_F(PropertyAppearanceListTest, anEntryGivenItsCardInAnotherColourIsWritten)
+{
+    // Two materials naming one card compare equal whatever their colours
+    // (MaterialAppearance::operator==), and set1Value took that for nothing
+    // to write: a face painted over an object that wears a card kept the
+    // object's colour.
+    App::MaterialAppearance card;
+    card.uuid = "f0e1d2c3-b4a5-6978-8a9b-0c1d2e3f4050";
+    card.diffuseColor = packed(0x0000ffff);
+    App::PropertyAppearanceList prop;
+    prop.setSize(4, card);
+    App::MaterialAppearance painted = card;
+    painted.diffuseColor = packed(0xff0000ff);
+    painted.shininess = 0.25F;
+    ASSERT_TRUE(painted == card);
+
+    prop.set1Value(2, painted);
+    EXPECT_TRUE(prop.isOverride(2));
+    EXPECT_TRUE(prop.getDiffuseColor(2) == packed(0xff0000ff));
+    EXPECT_FLOAT_EQ(prop.getShininess(2), 0.25F);
+    EXPECT_TRUE(prop.getDiffuseColor(1) == packed(0x0000ffff));
+
+    // and written again it is nothing: the storage is not so much as copied
+    const App::AppearanceList before = prop.getList();
+    prop.set1Value(2, painted);
+    EXPECT_TRUE(prop.getList().isSameData(before));
 }
 
 TEST_F(PropertyAppearanceListTest, aListOfOneEntryHasNoOverrides)
@@ -2959,4 +3108,67 @@ TEST_F(PropertyAppearanceListTest, theFollowFlagRidesBothForkEncodings)
     App::PropertyAppearanceList old;
     restoreFromXML(old, saveToXML(prop, 4));
     EXPECT_FALSE(old.isFollowingMaterial());
+}
+
+// A name over a value kept elsewhere (docs/ShapeAppearanceDesign.md sec
+// 14.6.3): with a writer, a write is handed over and the value left as it
+// was, and the keeper's value comes back by mirrorList().
+TEST_F(PropertyAppearanceListTest, aWriteToANameIsHandedToWhoKeepsTheValue)
+{
+    App::PropertyAppearanceList prop;
+    prop.setSize(4, redMaterial());
+    const App::AppearanceList kept = prop.getList();
+
+    int writes = 0;
+    int touchedEntry = -2;
+    App::AppearanceList was;
+    App::AppearanceList wanted;
+    prop.setWriter([&](const App::AppearanceList &before, const App::AppearanceList &after,
+                       int touched) {
+        ++writes;
+        was = before;
+        wanted = after;
+        touchedEntry = touched;
+    });
+    ASSERT_TRUE(prop.hasWriter());
+
+    // An entry, the base, and a paste: each handed over, none taken
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_EQ(writes, 1);
+    EXPECT_TRUE(was.isSameData(kept));
+    EXPECT_EQ(wanted.getMaterial(2).diffuseColor, packed(0x00ff00ff));
+    EXPECT_EQ(wanted.getMaterial(1).diffuseColor, packed(0xff0000ff));
+    EXPECT_TRUE(prop.getList().isSameData(kept));
+
+    App::MaterialAppearance blue = redMaterial();
+    blue.diffuseColor = packed(0x0000ffff);
+    prop.setBase(blue);
+    EXPECT_EQ(writes, 2);
+    EXPECT_EQ(wanted.getBase().diffuseColor, packed(0x0000ffff));
+    EXPECT_TRUE(prop.getList().isSameData(kept));
+
+    App::PropertyAppearanceList other;
+    other.setSize(2, blue);
+    prop.Paste(other);
+    EXPECT_EQ(writes, 3);
+    EXPECT_EQ(wanted.getSize(), 2);
+    EXPECT_TRUE(prop.getList().isSameData(kept));
+
+    // A write that changes nothing is no write
+    prop.setDiffuseColor(2, packed(0xff0000ff));
+    EXPECT_EQ(writes, 3);
+
+    // What the keeper has: the same storage, not a copy
+    prop.mirrorList(wanted);
+    EXPECT_TRUE(prop.getList().isSameData(wanted));
+    EXPECT_EQ(prop.getSize(), 2);
+    EXPECT_EQ(writes, 3);
+
+    // Without one it is a store again
+    prop.setWriter(nullptr);
+    EXPECT_FALSE(prop.hasWriter());
+    prop.setDiffuseColor(0, packed(0x00ff00ff));
+    EXPECT_EQ(writes, 3);
+    EXPECT_EQ(prop.getMaterial(0).diffuseColor, packed(0x00ff00ff));
+    (void)touchedEntry;
 }

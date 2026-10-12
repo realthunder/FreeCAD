@@ -321,6 +321,14 @@ public:
      */
     int checkElementMap(std::vector<std::string> * problems = nullptr) const;
 
+    /** Whether the element map carries the external marker as written
+     * before it named its document (docs/TransactionLog.md sec 27.76 item
+     * 4), in a name or in a string a name refers to: a shape that crossed a
+     * document boundary keeping the other table's ids as text, whose owner
+     * recomputes once on restore.
+     */
+    bool hasLegacyCrossing() const;
+
     /// Append the Tag (if and only if it is non zero) into the element map
     virtual void reTagElementMap(long tag,
                                  App::StringHasherRef hasher,
@@ -394,6 +402,40 @@ public:
 
     /** Flush an internal buffering for element mapping */
     virtual void flushElementMap() const;
+
+    /** Holds this geometry's element map, and its children's, for a reader
+     * on another thread -- a copy the transaction log saves on its worker
+     * -- until what is returned is let go of, on any thread. A map is one
+     * object, shared by every copy of the geometry and edited in place, so
+     * while it is held nothing edits it: a name made meanwhile waits
+     * (deferElementName). Called on the main thread, where it first takes
+     * in the names that waited. Null for a geometry with no map. With the
+     * check on (FC_ELEMENTMAP_CHECK in the environment, or
+     * setElementMapCheck) an edit of a held map is counted and reported
+     * (docs/TransactionLog.md sec 31.28, 31.31).
+     */
+    std::shared_ptr<void> holdElementMap() const;
+    /// Whether a reader on another thread has the element map now
+    bool isElementMapHeld() const;
+    /** Puts a name beside the element map to wait, for a caller that may
+     * not write the map: any thread but the main one, and the main one
+     * while the map is held. Lock free. 'lower' is what the name was made
+     * of. Until it is taken in the name is found as one the map has; it is
+     * taken in by the main thread once nobody holds the map, unless the
+     * map moved on under it -- the element was named, one of 'lower' no
+     * longer names what it did, or the name is another element's by then.
+     * A map that is replaced takes its waiting names with it.
+     */
+    void deferElementName(const IndexedName &element, const MappedName &name,
+                          const ElementIDRefs &sids,
+                          const std::vector<MappedName> &lower) const;
+    /// Takes in the names that wait, where nobody holds the map. The main
+    /// thread's alone. A hold and a save on the main thread do it too.
+    void mergeDeferredElementNames();
+    /// Turns the check of holdElementMap() on or off, for a test.
+    static void setElementMapCheck(bool on);
+    /// How many edits of a held element map the check has seen.
+    static unsigned long elementMapEditsWhileHeld();
     virtual unsigned long getElementMapReserve() const { return 0; }
     //@}
 

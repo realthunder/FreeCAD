@@ -44,14 +44,17 @@
 #include "Document.h"
 #include "DocumentParams.h"
 #include "DocumentObject.h"
+#include "TransactionValue.h"
 #include "DocumentObjectExtension.h"
 #include "DocumentObjectGroup.h"
+#include "ElementAppearanceMerge.h"
 #include "Expression.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
 #include "InputStratum.h"
 #include "Link.h"
 #include "ObjectIdentifier.h"
+#include "PropertyElementAppearance.h"
 #include "PropertyExpressionEngine.h"
 #include "PropertyLinks.h"
 
@@ -348,6 +351,29 @@ void DocumentObject::unfreeze(bool noRecompute)
     touch(noRecompute);
 }
 
+int DocumentObject::getLogTouchedBits() const
+{
+    return (StatusBits.test(ObjectStatus::Touch) ? LogTouch : 0)
+        | (StatusBits.test(ObjectStatus::Enforce) ? LogEnforce : 0)
+        | (_enforceRecompute ? LogRequested : 0);
+}
+
+void DocumentObject::setLogTouchedBits(int bits)
+{
+    StatusBits.set(ObjectStatus::Enforce, (bits & LogEnforce) != 0);
+    _enforceRecompute = (bits & LogRequested) != 0;
+    const bool touch = (bits & LogTouch) != 0;
+    if (touch == StatusBits.test(ObjectStatus::Touch))
+        return;
+    StatusBits.set(ObjectStatus::Touch, touch);
+    if (_pDoc) {
+        if (touch)
+            _pDoc->signalTouchedObject(*this);
+        else
+            _pDoc->signalPurgeTouchedObject(*this);
+    }
+}
+
 /**
  * @brief Enforces this document object to be recomputed.
  * This can be useful to recompute the feature without
@@ -553,8 +579,13 @@ int DocumentObject::isExporting() const {
 }
 
 std::string DocumentObject::getExportName(bool forced) const {
-    if(!isAttachedToDocument())
+    if(!isAttachedToDocument()) {
+        // Removed, and a transaction-log capture is asking for the name it
+        // had (docs/TransactionLog.md sec 24.3).
+        if (auto name = CaptureNames::find(this))
+            return *name;
         return {};
+    }
 
     if(!forced && !isExporting())
         return *pcNameInDocument;
@@ -1011,6 +1042,20 @@ void DocumentObject::onBeforeChange(const Property* prop)
 {
     // Store current name in oldLabel, to be able to easily retrieve old name of document object later
     // when renaming expressions.
+    // A pinned version refuses every change to its data, before anything
+    // changes (docs/TransactionLog.md sec 27.22). Exempt as checkUserEdit
+    // exempts them: Visibility is view state, TreeRank the tree's own
+    // ordering, ViewObject the mirror of the view provider; and a property
+    // never saved is a cache. A link letting go of a document that closes,
+    // or taking it back when it opens again, is not a change to this one.
+    auto link = dynamic_cast<const PropertyLinkBase*>(prop);
+    if (_pDoc && !testStatus(ObjectStatus::Destroy) && !testStatus(ObjectStatus::Remove)
+            && prop != &Visibility && prop != &TreeRank && prop != &ViewObject
+            && !(prop->getType() & Prop_NoPersist) && !prop->testStatus(Property::PropNoPersist)
+            && !(link && (link->testFlag(PropertyLinkBase::LinkDetached)
+                          || link->testFlag(PropertyLinkBase::LinkRestoring))))
+        _pDoc->checkNotFrozen(prop->getName() ? prop->getName() : "a property");
+
     if (prop == &Label)
         oldLabel = Label.getStrValue();
 
@@ -1494,6 +1539,67 @@ void DocumentObject::onDocumentRestored()
     callExtension(&DocumentObjectExtension::onExtendedDocumentRestored);
     if(Visibility.testStatus(Property::Output))
         Visibility.setStatus(Property::NoModify,true);
+}
+
+std::vector<std::string> DocumentObject::getMergeUnit(const char* prop) const
+{
+    // The looks of an object's elements are one value, merged by what they
+    // are given to: a unit of one property, whatever kind of object holds it
+    // (docs/ShapeAppearanceDesign.md sec 14.6.5).
+    if (prop && Base::freecad_dynamic_cast<PropertyElementAppearance>(getPropertyByName(prop)))
+        return {prop};
+    return {};
+}
+
+bool DocumentObject::mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
+                               const MergeUnitSide& theirs, MergeUnitState& merged,
+                               std::vector<MergeUnitNote>& notes) const
+{
+    if (base.size() == 1) {
+        const std::string& prop = base.begin()->first;
+        if (auto store = Base::freecad_dynamic_cast<PropertyElementAppearance>(
+                    getPropertyByName(prop.c_str())))
+            return mergeElementAppearance(*store, prop, base, ours, theirs, merged, notes);
+    }
+    return false;
+}
+
+bool DocumentObject::getMergePlaces(const MergeUnitState&, std::string&,
+                                    std::vector<MergePlace>&) const
+{
+    return false;
+}
+
+bool DocumentObject::nameMergePlaces(MergeUnitState&, const std::vector<std::string>&) const
+{
+    return false;
+}
+
+bool DocumentObject::importMintedIds(const char*, std::string&, std::map<long, long>&, bool)
+{
+    return false;
+}
+
+bool DocumentObject::importMintedName(std::string&, const std::map<long, long>&) const
+{
+    return false;
+}
+
+bool DocumentObject::pairMintedIds(const char*, const std::string&, const std::string&,
+                                   std::map<long, long>&) const
+{
+    return false;
+}
+
+bool DocumentObject::isMergedByElement(const Property* prop) const
+{
+    if (!prop)
+        return false;
+    if (prop->isDerivedFrom(PropertyLinkList::getClassTypeId())) {
+        auto group = getExtensionByType<GroupExtension>(true);
+        return group && prop == &group->Group;
+    }
+    return true;
 }
 
 void DocumentObject::onUndoRedoFinished()

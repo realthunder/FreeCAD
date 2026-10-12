@@ -71,7 +71,7 @@ std::string PythonConverter::convert(const Sketcher::Constraint* constraint, Geo
 }
 
 std::string PythonConverter::convert(const std::string& doc,
-                                     const std::vector<Part::Geometry*>& geos,
+                                     const std::vector<const Part::Geometry*>& geos,
                                      Mode mode)
 {
     if (geos.empty()) {

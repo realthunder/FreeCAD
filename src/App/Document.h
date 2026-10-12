@@ -34,6 +34,7 @@
 #include "PropertyStandard.h"
 #include "PropertyFile.h"
 
+#include <functional>
 #include <memory>
 #include <map>
 #include <type_traits>
@@ -55,6 +56,12 @@ namespace App
     class DocumentPy; // the python document class
     class Application;
     class FileBlobManager;
+    class FileHistory;
+    class PropertyXLink;
+    class TransactionLogCore;
+    struct LogVersion;
+    class TransactionLog;
+    struct LogBranch;
     class Transaction;
     class StringHasher;
     using StringHasherRef = Base::Reference<StringHasher>;
@@ -89,6 +96,16 @@ public:
         RestoreDrain = 15, // View-side catch-up on a finished restore: the work runs in
                            // full, but nothing it does may modify the document.
                            // See RestoreDrainGuard.
+        Initializing = 16, // Being constructed by Application::newDocument: the
+                           // writes that set it up open no implicit transaction
+        VersionDoc = 17, // A version of a file opened as a document of its own
+                         // (docs/TransactionLog.md sec 27.7): read-only as a
+                         // partial document is -- save refuses it
+        FrozenVersion = 18, // The instance of a version that pins show
+                            // (docs/TransactionLog.md sec 27.22): every
+                            // change to its data is refused
+        OpenedForPin = 19, // Opened because a link pinned it, not by hand:
+                           // offered for closing when its pins go (sec 27.30)
     };
 
     /** @name Properties */
@@ -186,6 +203,15 @@ public:
     fastsignals::signal<void (const App::Document&)> signalUndo;
     /// signal on redo
     fastsignals::signal<void (const App::Document&)> signalRedo;
+    /// signal after the branches of the document's transaction log changed
+    /// (docs/TransactionLog.md sec 26): a switch, a new branch, a trim or a
+    /// deleted branch
+    fastsignals::signal<void (const App::Document&)> signalBranchesChanged;
+    /// signal on a frozen version document opened for a pin when the last
+    /// link pinned to it lets go (docs/TransactionLog.md sec 27.21 Q5, 27.30):
+    /// unpinned, deleted, re-pinned, or its document closed. What becomes of
+    /// the document is the Gui's (DocumentParams ClosePinnedVersion).
+    fastsignals::signal<void (const App::Document&)> signalPinsReleased;
     /** signal on load/save document
      * this signal is given when the document gets streamed.
      * you can use this hook to write additional information in
@@ -241,7 +267,9 @@ public:
     /// Save the document to the file in Property Path
     bool save ();
     bool saveAs(const char* file);
-    bool saveCopy(const char* file) const;
+    /// Save a copy under another name; `withHistory` false leaves the
+    /// embedded history out of the copy (docs/TransactionLog.md sec 13.3).
+    bool saveCopy(const char* file, bool withHistory = true) const;
     void save(Base::Writer &writer, bool archive) const;
     /// Restore the document from the file in Property Path
     void restore (const char *filename=nullptr,
@@ -320,6 +348,626 @@ public:
      * archive entries itself. See App::FileBlobManager.
      */
     FileBlobManager& getFileBlobManager() const;
+    /** The history of the file this document is (docs/TransactionLog.md
+     * sec 27.7): the blob store and the directory the log lives in, shared
+     * by every document of the file. Made on first use, in this document's
+     * transient directory.
+     */
+    FileHistory& getFileHistory() const;
+    /** The transaction log, or null when the mode is off
+     * (DocumentParams::TransactionLog). Created on the first commit
+     * after the mode is set, in the transient directory.
+     */
+    TransactionLog* getTransactionLog() const;
+    /** An unnamed version of the document as it stands (docs/TransactionLog.md
+     * sec 16.3): the serialisation of a save -- blobs made, Document.xml
+     * and GuiDocument.xml streamed -- into the log and nothing on disk but
+     * the store. Taken on the cadence DocumentParams::TransactionLogSnapshot*
+     * gives, at commit, or on demand. Returns the version number, 0 when
+     * there is no log or the document is not in a state to snapshot.
+     */
+    int64_t snapshotToLog();
+    /** Save to the log only (docs/TransactionLog.md sec 27.22, 27.28): the
+     * log records a version of the document, named `name` so that it is
+     * kept, and the file is written again with the new history in it -- its
+     * other members copied as they are stored, so what the file opens as
+     * does not change. For any editable document of a saved file that
+     * carries its history. Returns the version; throws when refused.
+     */
+    int64_t saveToLog(const char* name = "Saved to history");
+    /** Restore the document to a version of its log (docs/TransactionLog.md
+     * sec 24.5): one forward transaction, kind `restore`, that makes the
+     * document what the version was -- objects the version lacks removed,
+     * those it has recreated under their ids and names, dynamic properties
+     * and every differing value set -- and an undo step like any. The
+     * version is materialised and read into a scratch document to compare
+     * against; this document is never reloaded. View providers are not
+     * restored. Throws if the version is missing or cannot be read; false
+     * when there is no log.
+     */
+    bool restoreVersion(int64_t num);
+    /** Open version `num` of this document's file as a document of its own
+     * (docs/TransactionLog.md sec 27.5, 27.7): on the file's one log, at
+     * that version, named `<file>@v<num>`, with status VersionDoc. A
+     * version open already -- a version document of it, or a document
+     * whose branch has not changed since -- is returned instead. Its first
+     * change puts it on a branch: the one whose tip the version is if no
+     * document holds it, else a new one, `<branch>@v<num>`. Throws when
+     * there is no log or no such version.
+     *
+     * This is the editable instance (sec 27.22), named
+     * `<file>@<branch>@v<num>` (27.23); the frozen one, which pins show,
+     * is opened by openFileVersion() with `frozen`.
+     */
+    Document* openVersion(int64_t num, bool createView = true);
+    /** Pin `link` to version `version` of the file it links to
+     * (docs/TransactionLog.md sec 16.5, 27.7); 0 pins the version the linked
+     * document is -- the file on disk, or a version document's own. The
+     * version is named, the file noted as pinned so it saves with its history
+     * whatever the preference (27.5 ruling 1), and its document marked
+     * modified. The link's change is an undoable write. Returns the version.
+     */
+    static int64_t pinLink(PropertyXLink& link, int64_t version = 0);
+    /// This file is pinned by a link: its log says so, or a loaded link is.
+    bool isPinned() const;
+    /** Save a version document over its file (docs/TransactionLog.md sec
+     * 27.16), which a plain save() refuses: the document takes its branch
+     * if it has none, as its first change would, and the file is written
+     * from it and reopens on that branch. The document keeps its name.
+     * Returns the version the save became; throws on failure.
+     */
+    int64_t saveVersionAsFile();
+    /** Name every version document of this document's file for where it
+     * is now (docs/TransactionLog.md sec 27.23): `<file>@v<num>` and
+     * `<label>@v<num>` for the frozen instance, `<file>@<branch>@v<num>`
+     * and `<label>@<branch>@v<num>` for an editable one -- its branch, or
+     * the one its first change will take. After a branch is made, renamed
+     * or switched to, and after a save moves a version tail.
+     */
+    void refreshVersionNames();
+    /// A frozen version (FrozenVersion, sec 27.22), throwing `what` refused.
+    void checkNotFrozen(const char* what) const;
+    /** The same for a file's history, whether or not a document of the file
+     * is open (docs/TransactionLog.md sec 27.13; FileHistory::openFile()).
+     * `from`, when given, is the document of the file it is named after.
+     * `frozen` opens the instance a pin shows (sec 27.22): status
+     * FrozenVersion, named `<file>@v<num>`, every change refused; a version
+     * has at most one of each.
+     */
+    static Document* openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
+                                     bool createView = true, const Document* from = nullptr,
+                                     bool frozen = false);
+
+    /** What a name of parseName() opens (docs/TransactionLog.md sec 27.23,
+     * 27.24): with no `branch`, the frozen instance of version `num`; with
+     * a branch and a version, the editable instance at that version; with a
+     * branch and no version, the document holding the branch, or else the
+     * branch's head opened as an editable instance. Throws when there is no
+     * such version or branch.
+     */
+    static Document* openFileBranch(const std::shared_ptr<FileHistory>& history,
+                                    const std::string& branch, int64_t num,
+                                    bool createView = true);
+
+    /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
+     * branch `name` from version `version`, or else from log row `seq`, or
+     * else from the current head, and switches to it; the fork version is
+     * named if it was not (a row with no version gets one). Its object ids
+     * start a random stride above every other branch's. Returns its id, 0
+     * when there is no log; throws on a name taken or a fork not found.
+     */
+    int64_t createBranch(const std::string& name, int64_t version = 0, int64_t seq = 0);
+    /** Make the document the head of branch `name`, in place: the tip left
+     * is snapshotted, the head's newest version checked out and its tail
+     * replayed, the undo and redo stacks become the branch's own steps
+     * since the document was opened. Not an undo step; a `switch` record
+     * goes on the branch arrived on. Throws if there is no such branch.
+     */
+    bool switchBranch(const std::string& name);
+    /** Rename branch `name` to `newName` (docs/TransactionLog.md sec 26).
+     * Throws if there is no such branch or the new name is empty or taken.
+     */
+    bool renameBranch(const std::string& name, const std::string& newName);
+    /** Trim branch `name` (docs/TransactionLog.md sec 16.7): its rows up to
+     * version `version` -- else up to the version at its head -- and its
+     * unnamed versions before it go, but never a row another branch's
+     * history holds, a named version, or one a branch forked from. The
+     * version kept is named if it was not. With `bridge`, where another
+     * branch shares the history, the rows from the newest shared one up to
+     * the kept version become one row of their net change instead of going,
+     * so the two still meet in rows (sec 27.71). Returns the rows removed.
+     */
+    size_t trimBranch(const std::string& name, int64_t version = 0, bool bridge = true);
+    /** Delete branch `name` (sec 16.7): the branch, the rows only it holds,
+     * and its versions but those another branch forked from. Not the
+     * branch the document is on. Returns the rows removed.
+     */
+    size_t deleteBranch(const std::string& name);
+    /// What compactFileState() dropped.
+    struct CompactResult
+    {
+        size_t names = 0;     ///< object names freed
+        size_t geoIds = 0;    ///< objects whose last geometry id was forgotten
+        size_t strings = 0;   ///< strings dropped from the file's hasher
+    };
+    /** Compact the file-scope state (docs/TransactionLog.md sec 27.47): the
+     * name and last geometry id of every object nothing refers to any more
+     * -- no document of the file holds it, no op names it, no version has
+     * it -- are forgotten, in memory and in the store, so the name is free
+     * again; and the strings of the file's hasher nothing holds go. The
+     * counters stay. Nothing without a log.
+     */
+    CompactResult compactFileState();
+    /** Make a branch at the head this document is on and open it in a
+     * second document of the file, this one staying where it is
+     * (docs/TransactionLog.md sec 30.3 S.a) -- `<branch>~<n>` when no name
+     * is given. The new branch names this one as its target, the one its
+     * merges go to and come from unless another is named; neither follows
+     * the other. Throws when the name is taken.
+     */
+    Document* openNewBranch(const std::string& name = std::string(), bool createView = true);
+    /// Where the branch this document is on stands against the branch it
+    /// was made from (sec 30.3 S.a), by the rows stored so far.
+    struct BranchState
+    {
+        std::string branch;
+        std::string target;   ///< the branch it was made from; empty for none
+        size_t ahead {0};     ///< operations here its target does not hold
+        size_t behind {0};    ///< operations of its target not held here
+    };
+    BranchState branchState();
+
+    /// What _noteDroppedRows estimated (sec 27.48).
+    struct CompactEstimate
+    {
+        size_t objects = 0;       ///< objects left referred to by nothing, these rows
+        size_t bytes = 0;         ///< their name and geometry-id entries, in bytes
+        size_t totalBytes = 0;    ///< the file's estimate since the last compaction
+        size_t strings = 0;       ///< strings of the file's hasher nothing holds
+        size_t stringBytes = 0;   ///< and their bytes
+        bool compacted = false;
+    };
+    /** Squash the rows between versions `from` and `to` (sec 16.7) into one
+     * `squash` transaction whose ops are the net change -- undone, replayed
+     * and browsed like any. Both versions stay; unnamed ones between go.
+     * Refused (throws) when `from` is not behind `to` on one history, or a
+     * branch forks, or a named version sits, between them. Returns the rows
+     * folded.
+     */
+    size_t squashVersions(int64_t from, int64_t to);
+
+    /// One change the other branch made, as a merge sees it
+    /// (docs/TransactionLog.md sec 28.2 item 3).
+    struct MergeChange
+    {
+        /** `take`: ours has not changed it, theirs goes in. `same`: both
+         * left it the same. `conflict`: both changed it, differently -- a
+         * side must be picked. `view`: a conflict on a view-provider
+         * property, which keeps ours unless picked otherwise (sec 28.6 Q2).
+         * `derived`: a value theirs' recompute wrote, not merged; its owner
+         * is recomputed. `unit`: a property that is one thing with others
+         * of its object (DocumentObject::getMergeUnit, sec 31.5) and goes
+         * by the side picked for the conflict whose `key` it has. `merge`:
+         * both changed it, and it holds many things each known by something
+         * of its own (Property::splitSaved, sec 31.8): what goes in is
+         * `merged`, ours with what theirs did to the things ours left
+         * alone, and nothing is asked. `name`: a value of ours as it is
+         * with what expressions named by its place named instead (sec
+         * 31.11) -- `merged`; it goes in where the merge writes nothing
+         * else to that property.
+         */
+        std::string kind;
+        /// `set`, `addprop`, `delprop`, `create`, `remove`, `revive`: an
+        /// object ours removed and theirs changed, or `unit`: the conflict
+        /// of such properties together, which writes nothing itself.
+        std::string op;
+        /// What a pick names it by: `<object>.<property>`, `.<property>` for
+        /// the document's own, `view:<object>.<property>`, `<object>`.
+        std::string key;
+        std::string ckind;    ///< `doc`, `obj` or `view`
+        long cid {0};
+        std::string object;   ///< the object's name
+        std::string prop;
+        std::string ptype;
+        /// The value at the base, ours and theirs, as entity refs; empty
+        /// where the property is not there.
+        std::string base, ours, theirs;
+        bool derived {false};   ///< a value theirs' recompute wrote
+        std::string note;     ///< why, where the kind alone does not say
+        /// Of a `merge`: the merged value, as an entity ref, and what
+        /// became of each thing theirs changed.
+        std::string merged;
+        struct Element
+        {
+            std::string key;      ///< what the thing is known by: `B2`, `Length`, `Pad001`
+            /// `added`, `changed` or `removed`, by theirs.
+            std::string change;
+            /// Whose it is in the merge. `theirs` where ours left it
+            /// alone. Where ours changed it too, and differently, the one
+            /// that wrote it last (user ruling, sec 31.8) -- `byTime`.
+            std::string side;
+            bool byTime {false};
+        };
+        std::vector<Element> elements;
+    };
+    /// What merging a branch would do (sec 28.2 item 9).
+    struct MergePreview
+    {
+        std::string branch;
+        int64_t ours {0};     ///< this document's head
+        int64_t theirs {0};   ///< the row merged in
+        int64_t base {-1};    ///< the newest row both histories hold
+        /// Ours has changed nothing since the base: theirs is taken whole,
+        /// derived values included (sec 28.6 Q1) -- and what it changed is
+        /// computed again all the same (sec 31.7).
+        bool fastForward {false};
+        /// This branch has not moved since the base at all -- records
+        /// only -- and the base is on both chains (sec 30.4 P1): theirs'
+        /// rows, oldest first, which the merge takes as they are, writing
+        /// no row of its own. Empty when it writes one.
+        std::vector<int64_t> forward;
+        std::vector<MergeChange> changes;
+        size_t conflicts {0};
+    };
+    /// What a merge did.
+    struct MergeResult
+    {
+        int64_t seq {0};      ///< the merge row, 0 when none was written
+        /// The rows taken as they are (sec 30.4 P1); `seq` is then the
+        /// last of them, the head merged in.
+        size_t forwarded {0};
+        /// The conflicts nobody picked a side for: the merge was refused
+        /// and nothing moved (sec 28.6 Q3).
+        std::vector<MergeChange> unresolved;
+        std::vector<std::string> failed;   ///< objects whose recompute failed
+        /// The merge wrote its row and nothing of the document: there is
+        /// nothing to undo, and it is no undo step (sec 31.14).
+        bool unchanged {false};
+        MergePreview preview;
+    };
+    /** What merging branch `branch` into the one this document is on would
+     * do (docs/TransactionLog.md sec 28): the base, and every change the
+     * other branch made since. Read only. With `version`, the branch up to
+     * that version of it. Throws when there is no such branch, or the two
+     * share no history in the log's rows.
+     */
+    MergePreview previewMerge(const std::string& branch, int64_t version = 0);
+    /** What one property, or one object, is at two rows of the log
+     * (docs/TransactionLog.md sec 32.10). */
+    struct StateChange
+    {
+        std::string ckind;    ///< `doc`, `obj` or `view`
+        long cid {0};
+        std::string object;   ///< the object's name; empty for the document's own
+        /// Empty for an object that is at one of the two only, said once
+        /// before its properties.
+        std::string prop;
+        std::string ptype;
+        /// The value at each, as entity refs; empty where the property is
+        /// not there, or is a derived value the log did not keep.
+        std::string a, b;
+        bool derived {false};   ///< a value a recompute wrote
+        bool inA {true};        ///< the object is there at a
+        bool inB {true};        ///< and at b
+    };
+    /** What differs between two rows of the log, `a` and `b`: every
+     * property some row on the way from the one to the other set, where it
+     * is not at b what it was at a, and every object made or removed on
+     * the way. 0 is the row this document is on. The two may be on
+     * different branches: the way goes back from a to where the two
+     * histories meet and on to b. Read only, but for an implicit
+     * transaction, which is committed as previewMerge() commits one. Throws
+     * where the log has no way between the two.
+     */
+    std::vector<StateChange> compareStates(int64_t a = 0, int64_t b = 0);
+
+    /** @name Values kept in the file (docs/TransactionLog.md sec 32.11)
+     *
+     * What a recompute wrote -- a shape -- is in the log while the document
+     * is open, and is left out of the history a save writes unless a version
+     * kept reaches it. A value kept is written. Kept one by one, or all of
+     * an object's. This is the log's, not the document's: no property, no
+     * undo step.
+     */
+    //@{
+    /// The value property `prop` of object `cid` has at row `seq` (0: the
+    /// row the document is on), as a ref: what the last row of that row's
+    /// branch at or before it set. Empty where no row did.
+    std::string logValueAt(int64_t seq, long cid, const std::string& prop);
+    /** Keep the value property `prop` of object `cid` has at row `seq`, or
+     * with `keep` false let it go. With no `prop`, every property of the
+     * object a recompute wrote. Returns the refs kept or let go: none where
+     * the log holds no such value.
+     */
+    std::vector<std::string> keepLogValue(long cid, const std::string& prop = std::string(),
+                                          int64_t seq = 0, bool keep = true);
+    struct KeptValue
+    {
+        std::string ref;
+        long cid {0};
+        std::string object;   ///< the object's name, where the document has it
+        std::string prop;
+        int64_t seq {0};      ///< the row it was asked for at
+    };
+    std::vector<KeptValue> keptLogValues();
+    /// Let go of the kept value `ref`, whether a row still names it or not:
+    /// false where it was not kept.
+    bool releaseLogValue(const std::string& ref);
+    /// Keep every value of object `cid` the log has and will have.
+    void keepLogValuesOf(long cid, bool keep = true);
+    std::vector<long> keptLogObjects();
+    //@}
+    /** Merge branch `branch` into the one this document is on (sec 28):
+     * one transaction of kind `merge`, undone like any, whose second parent
+     * is the head merged in. `picks` names a side, `ours` or `theirs`, per
+     * conflict key; `fallback` is the side of every conflict not picked.
+     * A conflict with no side refuses the merge: nothing moves, and the
+     * result lists them. The other branch is left as it is.
+     *
+     * When this branch has not moved since the base (sec 30.4 P1) the
+     * merge is a fast-forward: the other branch's rows are taken as they
+     * are, this branch's head moves onto them, the document follows as a
+     * switch arrives -- its undo steps the rows of the chain -- and no
+     * row is written. Records this branch made since the base, a save or
+     * a snapshot, are written again after the rows taken, and their
+     * versions stay at the base.
+     */
+    MergeResult mergeBranch(const std::string& branch,
+                            const std::map<std::string, std::string>& picks = {},
+                            const std::string& fallback = std::string(), int64_t version = 0);
+    /** What applying rows `rows` of the log to this document would do
+     * (docs/TransactionLog.md sec 31.12): rows of another branch, picked
+     * one by one. Read as a merge's preview is: each value the rows set
+     * is taken where the document still has what it had before them, is
+     * `same` where it has what they made it, and is otherwise for a side
+     * to be picked, or merged by what it holds. Throws for a row of this
+     * branch's own history, and for rows that change an object this
+     * document has not: the row that made it was not picked.
+     */
+    MergePreview previewPick(const std::vector<int64_t>& rows);
+    /** Apply rows `rows` here: one transaction of kind `pick`, undone like
+     * any. No branch is merged by it -- the rows stay their branch's, and
+     * a merge of it later finds what was applied the same on both sides.
+     * `picks` and `fallback` as for mergeBranch().
+     *
+     * For this and for mergeBranch(): `picks` may also name the key of a
+     * change that asks nothing -- one taken, or merged by what it holds --
+     * with `ours`, and it is left out. A merge that leaves something out
+     * is never a fast-forward, and the branch is merged all the same:
+     * what was left out is not asked again.
+     */
+    MergeResult pickRows(const std::vector<int64_t>& rows,
+                         const std::map<std::string, std::string>& picks = {},
+                         const std::string& fallback = std::string());
+    /// mergeBranch() and pickRows(): `rows` for the second.
+    MergeResult _merge(const std::string& branch,
+                       const std::map<std::string, std::string>& picks,
+                       const std::string& fallback, int64_t version,
+                       const std::vector<int64_t>* rows);
+
+    /// A merge undone at the head of this branch, with nothing since
+    /// (docs/TransactionLog.md sec 31.21).
+    struct UndoneMerge
+    {
+        int64_t seq {0};      ///< the merge's row; 0 where there is none
+        int64_t before {0};   ///< the row the merge was made on
+        std::string branch;   ///< the branch it merged
+        size_t rows {0};      ///< the merge's rows and those of its undoing
+    };
+    /** The merge undone at the head, which rollBackMerge() would take out:
+     * the head of the branch is a merge, what was computed after it, its
+     * undo, and any redo and undo of it again that leave it undone. None
+     * where the head is anything else, and where the rows cannot go --
+     * another document of the file stands on one, a branch was made from
+     * one, a version somebody named was taken at one.
+     */
+    UndoneMerge undoneMerge();
+    /** Roll the merge undone at the head back (sec 31.21, 31.23): the
+     * branch is put back on the row the merge was made on, the rows of the
+     * merge and of its undoing leave the log with the unnamed versions
+     * taken at them, and the other branch is no longer merged -- a merge
+     * of it asks everything again. The document is in that state already
+     * and does not change; its undo steps are the branch's rows again, and
+     * the merge is no longer there to redo. What the next merge does of
+     * itself, as an operation of its own. Returns what was rolled back,
+     * `seq` 0 where there was nothing to.
+     */
+    UndoneMerge rollBackMerge();
+    /// rollBackMerge() and _merge(): the rows out, where there are any.
+    bool _rollBackUndoneMerge();
+
+    /// A branch of another copy of the file, as importFork() can take it.
+    struct ForkBranch
+    {
+        std::string name;
+        /// The branch the copy's file reopens on: the one an import takes
+        /// when none is named (sec 30.14 F6).
+        bool current {false};
+        bool closed {false};
+        /// It shares no history with this file, and is offered all the same
+        /// (sec 30.22): what it is now comes as a branch from nothing.
+        bool independent {false};
+        /// The row here its history parts from this file's, 0 when the two
+        /// share none; and how many operations it has made since.
+        int64_t base {0};
+        size_t ahead {0};
+    };
+    /** The branches of the copy of this file at `path` (docs/TransactionLog.md
+     * sec 30.13, 30.14 F6): what importFork() offers. A file that carries no
+     * history offers one thing, itself, under no name. Throws when the file
+     * cannot be read, or is this document's own.
+     */
+    std::vector<ForkBranch> forkBranches(const std::string& path);
+    /// What importFork() did.
+    struct ImportResult
+    {
+        std::string branch;   ///< the branch here the rows went to
+        std::string from;     ///< the copy's branch they came from
+        int64_t base {0};     ///< the row here both histories hold
+        size_t rows {0};      ///< rows brought over
+        /// Rows with nothing to bring: records, and rows whose every value
+        /// was derived.
+        size_t skipped {0};
+        /// The copy's named versions that came as versions of the branch (F5).
+        size_t versions {0};
+        /// The branch is an earlier import's, continued (F7).
+        bool extended {false};
+        /// The branch hangs off no row of this file (sec 30.22): the file
+        /// shares no history with it, or names no save of it.
+        bool independent {false};
+        /// The copy's row the import stopped at, 0 when it took them all,
+        /// and why (F8). The rows before it are in. -1 when what could not
+        /// come is the file as found, which is a state and no row.
+        int64_t stoppedAt {0};
+        std::string reason;
+        /// The copy's new objects whose names this file had given to others
+        /// (sec 30.4 P4): its name, the one it came under.
+        std::map<std::string, std::string> renamed;
+        int64_t seq {0};      ///< the import's record, 0 when nothing came
+    };
+    /** Bring a branch of another copy of this file in as a branch here
+     * (docs/TransactionLog.md sec 30.13, 30.14): the copy's history is
+     * read without its document, the newest row both hold found, and its
+     * rows after that replayed -- in a document of their own at that row,
+     * this one staying where it is -- each committed as a row of this log
+     * under the author and the identity it had. Objects the copy made come
+     * under new ids, and under new names where theirs are taken; derived
+     * values are left out, and whoever merges the branch recomputes.
+     *
+     * `branch` names the copy's branch, the one its file reopens on when
+     * empty. `sender` is who sent the file, when it was sent by a client
+     * of a served document (sec 30.20 H7): the import's record names them.
+     * The rows keep the authors the file gives them. The branch here is named after the file -- and after the
+     * copy's branch when that is not its file's -- and a second import of
+     * the same copy continues it. A row that cannot be applied ends the
+     * import, the rows before it kept. Nothing is merged: that is
+     * mergeBranch().
+     *
+     * A file that carries no history comes as one row (sec 30.19): the
+     * difference between the file as it is and the state at the save its
+     * `Version` names, on a branch from that save's row; brought again,
+     * changed, as one more row on that branch. A file whose history is
+     * there but is not its tip -- edited where there is no log -- comes as
+     * the branch that was the file's, then that one row, then what it has
+     * done since.
+     *
+     * A file that shares no history with this one -- none in its rows, no
+     * save of this file's named by its `Version` -- comes all the same (sec
+     * 30.22), as an independent branch: what it is, as one row on a branch
+     * from nothing, an object of it taken for one of this file's where its
+     * id and its name are that object's. mergeBranch() merges such a branch
+     * by what the two documents hold, with no base to compare against.
+     *
+     * Throws when the file cannot be read, or a branch asked for by name
+     * is not there or shares no history.
+     */
+    ImportResult importFork(const std::string& path, const std::string& branch = std::string(),
+                            const std::string& sender = std::string());
+
+    /// An imported branch that waits to be merged (sec 30.20 H1, 30.23).
+    struct ImportRequest
+    {
+        std::string branch;                 ///< the branch here
+        std::string file;                   ///< the file it came from
+        std::string from;                   ///< the copy's branch, empty for a file with none
+        std::vector<std::string> authors;   ///< who made its rows
+        std::string sender;                 ///< who sent the file, when someone did (H7)
+        double when {0};                    ///< when it was last brought
+        size_t rows {0};                    ///< the operations it has to give
+        /// The conflicts the merge's preview finds; -1 when it was not
+        /// asked for, or could not be made.
+        int conflicts {-1};
+        bool independent {false};
+        int64_t stoppedAt {0};
+    };
+    /** The requests (docs/TransactionLog.md sec 30.20 H1): the branches an
+     * import made that the branch this document is on has not taken. Not a
+     * table: worked out from the branches' own marks and from what this
+     * branch's history holds, each time. With `preview`, each is put to
+     * previewMerge() -- one that has nothing to give is left out, and the
+     * rest say how many conflicts it finds; that reads values, and costs
+     * what a merge's preview costs.
+     */
+    std::vector<ImportRequest> importRequests(bool preview = true);
+
+    /// A file someone sent to be merged, kept in the log (sec 30.29).
+    struct SentFile
+    {
+        /// Its `request` row, as numbered now: a fast-forward gives a
+        /// record another number, and the file goes with it.
+        int64_t seq {0};
+        std::string name;         ///< the file's name
+        std::string hash;         ///< the blob that holds it
+        int64_t size {0};
+        std::string sender;       ///< who sent it
+        std::string senderKind;   ///< how that name is known: Actor's kinds
+        double when {0};          ///< when it came
+        /// The branch it was brought in to; empty until it is. Its bytes
+        /// are held until that branch is merged or deleted.
+        std::string branch;
+    };
+    /** Keep `bytes`, a file someone sent to be merged, in the log
+     * (docs/TransactionLog.md sec 30.28, 30.29): a `request` row named
+     * `name` under whoever acts, saying who sent it, and the bytes as one
+     * blob. Nothing of the file is read -- not opened, not unpacked (sec
+     * 30.20 H6). It is saved with the history and recovered with it.
+     * Returns the row. Throws when the document keeps no log.
+     */
+    int64_t keepSentFile(const std::string& bytes, const std::string& name,
+                         const std::string& sender = std::string(),
+                         const std::string& senderKind = std::string());
+    /// The sent files the log holds, oldest first.
+    std::vector<SentFile> sentFiles();
+    /// Let the file of row `seq` go unread, with a record saying so. False
+    /// when none is held.
+    bool dropSentFile(int64_t seq);
+    /// Write the bytes of the file of row `seq` to `path`, as they came.
+    void writeSentFile(int64_t seq, const std::string& path);
+    /** Bring the file of row `seq` in: importFork() of its bytes, the
+     * import's record naming the file and who sent it. The file stays held
+     * until the branch it came to is merged into this one or deleted; one
+     * that has nothing to give is let go at once.
+     */
+    ImportResult importSentFile(int64_t seq, const std::string& branch = std::string());
+
+    /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
+     * document what the session that crashed with transient directory
+     * `oldDir` had -- its newest version, the log's tail replayed over it --
+     * taking over that session's log and blobs, so undo and the log reach
+     * across the crash. Nothing it writes is a transaction; one `recover`
+     * row records it. False when `oldDir` holds no log.
+     */
+    bool recoverFromLog(const std::string& oldDir);
+    /** Undo log row `seq` though it is not the last step (docs/TransactionLog.md
+     * sec 24.4): a new transaction, an undo step itself, applying the row
+     * reversed. Refused, with the conflicts reported, when an op since
+     * changed a property the row left in a state, a created object is
+     * gone, or a removed object's name or id is taken. Derived values are
+     * not restored; their owners are touched. Returns whether it ran.
+     */
+    bool undoLogged(int64_t seq);
+
+    /** How App reaches an object's view provider (docs/TransactionLog.md
+     * sec 24.9): the Gui registers a resolver; without one (FreeCADCmd)
+     * view state is out of reach and left alone.
+     */
+    using ViewResolver = std::function<PropertyContainer*(const DocumentObject*)>;
+    static void setViewResolver(ViewResolver resolver);
+    /// The view provider of `obj`, or null.
+    static PropertyContainer* viewOf(const DocumentObject* obj);
+    /** Called when an implicit transaction opens outside any invocation
+     * (docs/TransactionLog.md sec 24.10): a GUI event that is not a command
+     * has nothing that returns to close it. The Gui registers one that
+     * commits the implicit transactions once control is back in its event
+     * loop; without one (FreeCADCmd) the next invocation, explicit open,
+     * save or close commits it, as before.
+     */
+    static void setImplicitCloser(std::function<void()> closer);
+    /// Whether writes are recorded into transactions at all: undo is on,
+    /// or the log is (which records without keeping undo steps).
+    bool transactionsWanted() const;
+    /// Commit the active transaction if it is an implicit one.
+    void commitImplicitTransaction();
 
     /** Tell the manager which included files a save has to carry.
      *
@@ -339,6 +987,10 @@ public:
     static const std::vector<long>& getWritableSchemaVersions();
     /// Newest writable schema version.
     static long getCurrentSchemaVersion();
+    /** The archive member a schema-5 file keeps its string table in
+     * (docs/TransactionLog.md sec 27.50 item 1), read before the objects.
+     */
+    static const char* stringTableName();
     /// Schema version this document asks to be written with -- the user's
     /// cap, validated against the writable list.
     long getSaveSchemaVersion() const;
@@ -611,8 +1263,18 @@ public:
     bool isIn(const DocumentObject *pFeat) const;
     /// Returns a Name of an Object or 0
     const char *getObjectName(DocumentObject *pFeat) const;
-    /// Returns a Name of an Object or 0
-    std::string getUniqueObjectName(const char *Name) const;
+    /** A name no object of the document has. For a new object (`id` 0), also
+     * none the file's name table gives another object, in any version or
+     * branch (docs/TransactionLog.md sec 27.40 item 3); an object coming
+     * back under its id keeps its name when the document has it free.
+     */
+    std::string getUniqueObjectName(const char *Name, long id = 0) const;
+    /** A new geometry id for `obj`, above `floor` -- the largest it holds --
+     * and, when the document has a file history, above every id `obj` had
+     * in any version or branch of the file (docs/TransactionLog.md sec
+     * 27.40 item 4). Sketcher's geometry ids.
+     */
+    long nextGeoId(const DocumentObject& obj, long floor) const;
     /// Returns a name of the form prefix_number. d specifies the number of digits.
     std::string getStandardObjectName(const char *Name, int d) const;
     /// Returns a list of document's objects including the dependencies
@@ -742,8 +1404,26 @@ public:
     std::vector<std::string> getAvailableRedoNames() const;
     /// Will REDO one step, returns False if no redo was done (Redos == 0).
     bool redo(int id=0) ;
-    /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback
+    /** Whether the next undo (or redo) of whoever acts goes through the log
+     * (docs/TransactionLog.md sec 30.10): someone has written since the
+     * step, so it is taken back as a transaction of its own, with a
+     * recompute of what it leaves to one. A caller holding a
+     * TransactionGuard lets go of it first: the guard defers the touches a
+     * recompute works from.
+     */
+    bool stepNeedsLog(bool undo) const;
+    /// Why the last undo() or redo() was refused, empty when it was not.
+    const std::string& undoRefusal() const;
+    /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback,
+    /// or replaying transaction log rows (a branch switch, a crash recovery)
     bool isPerformingTransaction() const;
+    /** Whether the document is being rebuilt from its transaction log: a
+     * branch switch or a crash recovery replaying rows, or a restore to a
+     * version (docs/TransactionLog.md sec 27.67). What it writes comes from
+     * the log, and an object that makes objects of its own on demand -- an
+     * Origin its axes and planes -- must wait for the log to supply them.
+     */
+    bool isReplaying() const;
     /// \internal add or remove property from a transactional object
     void addOrRemovePropertyOfObject(TransactionalObject*, Property *prop, bool add);
     //@}
@@ -826,6 +1506,13 @@ public:
      * owner of the hasher, i.e. if addStringHasher() returns true during save.
      */
     StringHasherRef getStringHasher(int index=-1) const;
+    /** The external marker a name of this document's gets where a shape of
+     * it crosses into the table `hasher` of another document
+     * (docs/TransactionLog.md sec 27.76 item 4): `;:X#<id>`, `<id>` being
+     * this document's Uid as a string of `hasher`, so a stored name says
+     * which document even when the crossing object is gone.
+     */
+    std::string externalTagPostfix(const StringHasherRef &hasher) const;
 
     /// Return the document's own hasher regardless of UseHasher
     StringHasherRef getHasher() const;
@@ -938,6 +1625,161 @@ protected:
     /// @return 0 if succeeded, 1 if failed, -1 if aborted by user.
     int _recomputeFeature(DocumentObject* Feat);
     void _clearRedos();
+    /// Sec 30.10: the redo steps of whoever acts, which a new step of
+    /// theirs ends; every one when the log is off.
+    void _clearMyRedos();
+    /// What one undo (or redo) of whoever acts takes, in the order it is
+    /// taken (docs/TransactionLog.md sec 33.4): the user's step with the
+    /// implicit ones that go with it. Empty for nothing to take.
+    std::vector<Transaction*> _myRun(bool undo) const;
+    /// Take the steps of _myRun(); false when there is none or one refused.
+    bool _takeRun(bool undo);
+    /// Take the one undo (or redo) step of `id`, from its copies or through
+    /// the log; false when refused.
+    bool _takeStep(bool undo, int id);
+    /// Whether a step of `run`, taken in its order from where the document
+    /// stands, goes through the log.
+    bool _runNeedsLog(const std::vector<Transaction*>& run) const;
+    /// Whether `step` can be applied as it is: the document is in the state
+    /// the step left.
+    bool _atState(const Transaction* step) const;
+    /// Take `step` back through the log as a transaction of its own; false
+    /// when refused. It leaves a cold step on the other stack.
+    bool _revertStep(bool undo, Transaction* step);
+    /// What a cold step reverts (docs/TransactionLog.md sec 24.3), read
+    /// from the log and checked against the document before anything moves.
+    struct ColdRevert;
+    /// Read and check the revert of cold `step`; false, with the reason
+    /// reported, when it cannot be applied -- the undo is then refused.
+    bool _prepareRevert(int64_t seq, const std::string& name, ColdRevert& revert);
+    /// Apply a checked revert, recorded into the open undo record.
+    void _applyRevert(ColdRevert& revert);
+    /// Log the inverse an undo or redo just recorded (docs/TransactionLog.md
+    /// sec 24.2); `applied` is the step it applied, `cold` its revert when
+    /// it was a cold one.
+    void logInverse(const Transaction& applied, const char* kind,
+                    const ColdRevert* cold = nullptr);
+    /// Write version `num` out as an unpacked project; returns its directory.
+    std::string _materialiseVersion(int64_t num, const std::string& where = std::string());
+    /// `blobsInStore`: a schema-5 version's blobs go into the file's blob
+    /// store, not onto disk, for a document that restores from that store
+    /// (docs/TransactionLog.md sec 27.25 item 2).
+    static std::string materialiseVersion(TransactionLogCore& log, int64_t num,
+                                          const std::string& dir, bool blobsInStore = false);
+    /// Apply the log's rows after `after` forward, folded (sec 25.2 item
+    /// 3); returns the rows applied and sets `last` to the last one.
+    /// `head` 0 is the log's head; with `whole`, a row that cannot be applied
+    /// stops the replay with `*whole` false instead of ending it early.
+    size_t _replayLog(int64_t after, int64_t& last, int64_t head = 0, bool* whole = nullptr);
+    /// The undo and redo stacks the rows after `after` on the current
+    /// branch's chain leave, as cold stubs.
+    void _rebuildUndoFromLog(int64_t after = 0);
+    /// Make this document what `version` (a scratch document holding a
+    /// version) is, recorded into the open transaction (sec 24.5); the view
+    /// providers too when `views`, or under ViewObjectTransaction.
+    void _applyVersion(Document& version, bool views = false);
+    /// Version `num` read into a document of its own as openFileVersion()
+    /// reads one -- joined to this file's history, blobs by hash, no view,
+    /// no log (sec 27.60) -- handed to `fn`, and closed.
+    void _readVersion(int64_t num, const std::function<void(Document&)>& fn);
+    /// Restore this new document from `dir`, a materialised version of the
+    /// file `history` records, as a version document named `fileName`.
+    void _restoreAsVersion(const std::shared_ptr<FileHistory>& history, const std::string& dir,
+                           const std::string& fileName);
+    /// Sec 27.7: share `history`, another document's of the same file.
+    void _joinHistory(const std::shared_ptr<FileHistory>& history);
+    int64_t _snapshotToLog(const char* kind);
+    /// openFileVersion() once it is known no open document is the version.
+    static Document* _openVersionDocument(const std::shared_ptr<FileHistory>& history,
+                                          const LogVersion& version, bool createView,
+                                          const Document* from, bool frozen);
+    /// The log's head was moved (sec 30.4 P1, a fast-forward): the
+    /// document follows from the state at row `from`, with nothing recorded.
+    void _followHead(int64_t from);
+    /// The document an import's rows are replayed in (docs/TransactionLog.md
+    /// sec 30.15): the one holding branch `mine`, or that branch opened; with
+    /// no branch yet, a version document moved to row `base` and put on a
+    /// new branch named `stem`, which `mine` becomes. `scratch` says it was
+    /// opened for the import, and is the import's to close.
+    Document* _importReplay(int64_t base, const std::string& stem, LogBranch& mine, bool& scratch);
+    /// The end of an import: its record on the branch, the maps kept with the
+    /// branch (`keep`), the replay's document left as a version and closed.
+    void _finishImport(Document* replay, bool scratch, int64_t branch, const std::string& file,
+                       const std::string& record, const std::string& keep, ImportResult& result);
+    /// Make this document what `from`, a document of another copy of the
+    /// file, is (sec 30.19), recorded into the open transaction; the maps
+    /// are added to. Throws when something of it cannot come. `same` are
+    /// the objects of the other copy that are objects of this file (sec
+    /// 30.33), by its id for each: one not here comes under its own id.
+    void _applyForeignState(Document& from, std::map<long, long>& ids,
+                            std::map<std::string, std::string>& names,
+                            std::map<std::string, std::string>& renamed,
+                            const Document* kin = nullptr,
+                            const std::map<long, long>* same = nullptr);
+    /// _applyForeignState() as one row of this document's log, the file its
+    /// author. False, the row rolled back and `result` saying why, when it
+    /// could not come.
+    bool _importStateRow(Document& from, const std::string& file, std::map<long, long>& ids,
+                         std::map<std::string, std::string>& names, ImportResult& result,
+                         const Document* kin = nullptr,
+                         const std::map<long, long>* same = nullptr);
+    /// importFork() of a file with no history (sec 30.19): one row against
+    /// the save its `Version` names.
+    /// Let go every sent file whose branch was merged into this one or is
+    /// gone (sec 30.29).
+    void _releaseSentFiles();
+    ImportResult _importState(const std::string& path, const std::string& file,
+                              const std::string& saveId, const std::string& hash,
+                              const std::string& sender);
+    /// Sec 26: refuse a branch operation in the middle of something else;
+    /// an implicit transaction is committed first.
+    void _checkBranchable(const char* what);
+    /// Sec 26: the tip snapshotted and the last id kept, before leaving.
+    void _leaveBranch();
+    /// Sec 26: the state at the log's head, checked out in place, unrecorded.
+    void _checkoutHead(int64_t fromHead = -1);
+    /// Move the document from the state at row `fromHead` to the state at
+    /// row `toSeq` through the rows between them (sec 27.34); false when a
+    /// row cannot be reverted or applied, or the chains do not meet.
+    bool _moveAlongLog(int64_t fromHead, int64_t toSeq, bool views);
+    /// Sec 26: the undo stacks of the branch arrived on. The id counter is
+    /// the file's and does not move (sec 27.40 item 1).
+    void _arriveOnBranch();
+    /// The document's ids and names, into the file's history just joined.
+    void _noteObjectsInHistory() const;
+    /// The object ids the ops of `rows` name: taken before they go.
+    std::set<long> _objectIdsOfRows(const std::vector<int64_t>& rows);
+    /** After rows went (sec 27.48): how many of `named`, the objects their
+     * ops named, nothing refers to now -- no op left names it, no document
+     * of the file holds it; versions are not read, hence an estimate --
+     * added to the file's estimate in bytes, and compactFileState() run
+     * when that and the strings nothing holds reach TransactionLogCompactSize.
+     */
+    CompactEstimate _noteDroppedRows(const std::set<long>& named);
+    /** The string table as the file's member (docs/TransactionLog.md sec
+     * 27.50 item 1), compacted first (item 4, 27.51 Q3): the whole table,
+     * written after Document.xml and named here with its content hash; or,
+     * snapshotting for the log, named and not written (item 2).
+     */
+    void _saveStringTable(Base::Writer& writer);
+    /// Read the member `read` was named to, before the objects -- or not,
+    /// when the log or an earlier open has the table in memory (item 3).
+    void _restoreStringTable(Base::XMLReader& reader, StringHasher& read);
+    /** Drop the strings of the document's hasher that nothing in memory
+     * holds and, when it is the file's, no retained version or value of the
+     * log uses (item 4): from memory and from the store. Keep-all keeps
+     * every one. Returns how many went.
+     */
+    std::size_t _compactStrings();
+    /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
+    /// the log, the oldest beyond it become cold stubs; without it, they go.
+    /// The undo stack only: its steps are deleted oldest first, the order
+    /// that never touches an object an older step already destroyed, and
+    /// the redo stack cannot be trimmed from its far end in that order.
+    /// Delete a transaction, draining the log's queue first when that
+    /// destroys an object a queued copy may link to.
+    void _deleteTransaction(Transaction* t);
+    void _trimHotWindow(std::list<Transaction*>& stack, std::map<int, Transaction*>& map);
 
     /// refresh the internal dependency graph
     void _rebuildDependencyList(
@@ -955,13 +1797,25 @@ protected:
      * This function creates an actual transaction regardless of Application
      * AutoTransaction setting.
      */
-    int _openTransaction(const char* name=nullptr, int id=0);
+    int _openTransaction(const char* name=nullptr, int id=0, bool implicit=false);
+    void _openImplicitTransaction();
     /// Internally called by App::Application to commit the Command transaction.
     void _commitTransaction(bool notify=false);
     /// Internally called by App::Application to abort the running transaction.
     void _abortTransaction();
 
     void _addOrRemoveProperty(TransactionalObject*, Property *prop, bool add);
+
+    /// Close the Document.xml tap restore(const char*) opened for the log.
+    void endRestoreTap(Base::XMLReader& reader);
+    /// A version was taken: the snapshot cadence starts over.
+    void noteVersionTaken();
+    /// Set (or clear) the History and Version properties for a save
+    /// (docs/TransactionLog.md sec 16.4, embedded mode).
+    void embedHistory(bool archive);
+    /// Continue the log from the History property's copy when the guard
+    /// agrees that the file is the save that wrote it.
+    bool adoptEmbeddedHistory();
 
 private:
     // # Data Member of the document +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

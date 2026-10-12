@@ -64,7 +64,6 @@ set(PartGui_UIC_SRCS
     DlgProjectionOnSurface.ui
     SectionCutting.ui
     ShapeFromMesh.ui
-    # TaskFaceColors.ui
     TaskShapeBuilder.ui
     TaskLoft.ui
     TaskOffset.ui
@@ -152,6 +151,8 @@ SET(PartGui_SRCS
     PreCompiled.h
     PropertyEnumAttacherItem.cpp
     PropertyEnumAttacherItem.h
+    ShapeDiffView.cpp
+    ShapeDiffView.h
     ShapeObserver.cpp
     ShapeObserver.h
     SoFCShapeObject.cpp
@@ -244,9 +245,6 @@ SET(PartGui_SRCS
     SectionCutting.ui
     ShapeFromMesh.cpp
     ShapeFromMesh.h
-    # TaskFaceColors.cpp
-    # TaskFaceColors.h
-    # TaskFaceColors.ui
     TaskShapeBuilder.cpp
     TaskShapeBuilder.h
     TaskShapeBuilder.ui

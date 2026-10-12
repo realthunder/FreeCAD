@@ -28,12 +28,15 @@
 # include <mutex>
 # include <sstream>
 # include <unordered_map>
+# include <unordered_set>
+# include <boost/algorithm/string/predicate.hpp>
 # include <Bnd_Box.hxx>
 # include <BRepBndLib.hxx>
 # include <BRepBuilderAPI_Copy.hxx>
 # include <BRepBuilderAPI_Transform.hxx>
 # include <BRepTools.hxx>
 # include <BRep_Builder.hxx>
+# include <BRep_TFace.hxx>
 # include <BRepTools_ShapeSet.hxx>
 # include <OSD_OpenFile.hxx>
 # include <TopExp.hxx>
@@ -47,6 +50,7 @@
 # include <TopTools_IndexedMapOfShape.hxx>
 
 # include <TopoDS.hxx>
+# include <TopoDS_Iterator.hxx>
 #endif // _PreComp_
 
 #include <App/Application.h>
@@ -54,6 +58,7 @@
 #include <App/DocumentParams.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectIdentifier.h>
+#include <App/TransactionValue.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
@@ -69,6 +74,17 @@
 #include "PartParams.h"
 #include "PartPyCXX.h"
 #include "PropertyShapeStore.h"
+#include <BRep_Builder.hxx>
+#include <BRep_PointOnCurve.hxx>
+#include <BRep_PointOnCurveOnSurface.hxx>
+#include <BRep_PointOnSurface.hxx>
+#include <BRep_CurveOn2Surfaces.hxx>
+#include <BRep_GCurve.hxx>
+#include <BRep_TEdge.hxx>
+#include <BRep_TFace.hxx>
+#include <BRep_TVertex.hxx>
+#include <TopoDS_Iterator.hxx>
+
 #include "PropertyTopoShape.h"
 #include "ShapeCongruence.h"
 #include "ShapeRefSet.h"
@@ -94,6 +110,31 @@ PropertyPartShape::~PropertyPartShape()
 
 namespace
 {
+
+/** Freeze a value: every TShape refuses a change to its geometry or topology.
+ *
+ * docs/TransactionLog.md sec 23.6, tier 2. The flag is the OCCT fork's
+ * Immutable, not Locked -- the mesher still writes its caches -- and it is
+ * per TShape, not recursive, so the walk visits every sub-shape. Children
+ * are marked before their parent, so a marked TShape stands for its whole
+ * subtree and a sub-shape shared with an earlier value is not walked again.
+ * Never cleared: whoever wants a different shape makes a new one.
+ */
+void freeze(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull() || shape.Immutable())
+        return;
+    for (TopoDS_Iterator it(shape, false, false); it.More(); it.Next())
+        freeze(it.Value());
+    shape.TShape()->Immutable(true);
+}
+
+/// The switch (PartParams ImmutableShapeValues) is read per value set.
+void makeImmutable(const TopoDS_Shape& shape)
+{
+    if (PartParams::getImmutableShapeValues())
+        freeze(shape);
+}
 
 /** The shortest text that reads back as the very same double.
  *
@@ -201,9 +242,21 @@ struct ParsedShape
  * and it is why equal-but-unshared duplicates cost one parse and one
  * tessellation instead of N (docs/SharedShapeStorage.md sec 12.5).
  *
- * Keyed on the blob rather than on its hash: a blob belongs to one document,
- * and sharing a TShape across documents is not this cache's decision to make.
- * The weak handle is what says an entry has outlived its content.
+ * A blob is one blob manager's, and a manager is a file's
+ * (docs/TransactionLog.md sec 27.10): every document of one file -- its own,
+ * its versions, its branches -- shares it, and so shares the parse. Two
+ * files holding the same bytes have two blobs. With shape values frozen
+ * (PartParams ImmutableShapeValues, sec 23.13) nothing can change a TShape
+ * in place, so a parse belongs to the bytes: it is kept under the content
+ * hash, every blob of those bytes finds it (sec 27.25 item 4), and it is
+ * kept for a while after the last of them has gone (item 5). With them not
+ * frozen a parse belongs to one blob and goes with it.
+ *
+ * A file that borrows holds its sources' TShapes, so its parse is only as
+ * good as theirs being the ones the cache still hands out. Each entry names
+ * the files it borrowed from, and a sweep keeps what a kept entry names
+ * (sec 31.9): a compound kept without the box it was built over came back,
+ * after a reopen, over a box that was no longer the box object's shape.
  */
 class ShapeParseCache
 {
@@ -217,45 +270,167 @@ public:
     /** The parse of this file, or null.
      *
      * The pointer is into the map's own node, so it survives anything but the
-     * erasure of this entry -- which the sweep only does once the blob has
-     * expired, i.e. once the caller has stopped holding it.
+     * erasure of this entry -- which the sweep only does once every blob that
+     * held it has expired, i.e. once the caller has stopped holding its own.
      */
-    const ParsedShape* get(const App::FileBlobHandle& blob) const
+    const ParsedShape* get(const App::FileBlobHandle& blob)
     {
         std::lock_guard<std::mutex> guard(_mutex);
-        auto found = _entries.find(blob.get());
-        if (found == _entries.end() || found->second.blob.expired())
+        const std::string& hash = blob->hash();
+        if (!PartParams::getImmutableShapeValues()) {
+            // The hash is checked because a released blob's address can be a
+            // new blob's.
+            auto found = _own.find(blob.get());
+            if (found == _own.end() || found->second.released()
+                    || found->second.hash != hash) {
+                return nullptr;
+            }
+            found->second.used = ++_tick;
+            return &found->second.parsed;
+        }
+        // The same bytes parsed before: by this blob, by another file's, or
+        // by one released since -- a branch switched away from and back, a
+        // version closed and opened again.
+        auto found = _shared.find(hash);
+        if (found == _shared.end())
             return nullptr;
+        found->second.hold(blob);
+        found->second.used = ++_tick;
         return &found->second.parsed;
     }
 
-    const ParsedShape* put(const App::FileBlobHandle& blob, ParsedShape parsed)
+    /** Enter a parse, with the hashes of the files it borrowed from. */
+    const ParsedShape* put(const App::FileBlobHandle& blob, ParsedShape parsed,
+                           std::vector<std::string> sources)
     {
         std::lock_guard<std::mutex> guard(_mutex);
         // Swept here rather than on every read: an entry costs a handle and a
         // shape, and the sweep is what keeps a document's whole geometry from
-        // being held alive by files nothing refers to any more.
-        if (_entries.size() >= _sweepAt) {
-            for (auto it = _entries.begin(); it != _entries.end();) {
-                it = it->second.blob.expired() ? _entries.erase(it) : std::next(it);
-            }
-            _sweepAt = std::max<std::size_t>(64, _entries.size() * 2);
+        // being held alive by files nothing refers to any more -- but for the
+        // few released last, kept with shape values frozen (item 5).
+        if (_own.size() + _shared.size() >= _sweepAt)
+            sweep();
+        const std::string& hash = blob->hash();
+        if (!PartParams::getImmutableShapeValues()) {
+            Entry& entry = _own[blob.get()];
+            entry = Entry();
+            entry.hold(blob);
+            entry.hash = hash;
+            entry.sources = std::move(sources);
+            entry.parsed = std::move(parsed);
+            entry.used = ++_tick;
+            return &entry.parsed;
         }
-        Entry& entry = _entries[blob.get()];
-        entry.blob = blob;
-        entry.parsed = std::move(parsed);
+        auto [found, entered] = _shared.try_emplace(hash);
+        Entry& entry = found->second;
+        // One parse for the bytes: entered while this one was being made, the
+        // first is the one others already hold, and this one is dropped.
+        if (entered) {
+            entry.hash = hash;
+            entry.sources = std::move(sources);
+            entry.parsed = std::move(parsed);
+        }
+        entry.hold(blob);
+        entry.used = ++_tick;
         return &entry.parsed;
     }
 
 private:
     struct Entry
     {
-        std::weak_ptr<App::FileBlob> blob;
+        /// The blobs this parse is the content of: one when shape values are
+        /// not frozen, every one of the same bytes when they are.
+        std::vector<std::weak_ptr<App::FileBlob>> holders;
+        std::string hash;
+        /// The content hashes of the files this one borrowed from.
+        std::vector<std::string> sources;
         ParsedShape parsed;
+        uint64_t used {0};
+
+        bool released() const
+        {
+            for (const auto& holder : holders) {
+                if (!holder.expired())
+                    return false;
+            }
+            return true;
+        }
+
+        void hold(const App::FileBlobHandle& blob)
+        {
+            bool held = false;
+            auto keep = holders.begin();
+            for (auto& holder : holders) {
+                if (holder.expired())
+                    continue;
+                if (!holder.owner_before(blob) && !blob.owner_before(holder))
+                    held = true;
+                if (&*keep != &holder)
+                    *keep = std::move(holder);
+                ++keep;
+            }
+            holders.erase(keep, holders.end());
+            if (!held)
+                holders.emplace_back(blob);
+        }
     };
+
+    void sweep()
+    {
+        for (auto it = _own.begin(); it != _own.end();) {
+            if (it->second.released())
+                it = _own.erase(it);
+            else
+                ++it;
+        }
+        // Kept: what a blob still holds, the released ones used last, and
+        // whatever any of those borrowed from, however long ago that was
+        // used. Dropping a source frees next to nothing -- its borrower holds
+        // its TShapes -- and costs the sharing: the next read of the source
+        // parses it again, into shapes its kept borrower does not have.
+        std::vector<const Entry*> reach;
+        std::vector<std::pair<uint64_t, const Entry*>> released;
+        for (const auto& kv : _shared) {
+            if (kv.second.released())
+                released.emplace_back(kv.second.used, &kv.second);
+            else
+                reach.push_back(&kv.second);
+        }
+        std::sort(released.begin(), released.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        const std::size_t keep = PartParams::getImmutableShapeValues() ? _keepReleased : 0;
+        for (std::size_t i = 0; i < keep && i < released.size(); ++i)
+            reach.push_back(released[i].second);
+        std::unordered_set<const Entry*> kept;
+        while (!reach.empty()) {
+            const Entry* entry = reach.back();
+            reach.pop_back();
+            if (!kept.insert(entry).second)
+                continue;
+            for (const auto& source : entry->sources) {
+                auto found = _shared.find(source);
+                if (found != _shared.end())
+                    reach.push_back(&found->second);
+            }
+        }
+        for (auto it = _shared.begin(); it != _shared.end();) {
+            if (kept.count(&it->second))
+                ++it;
+            else
+                it = _shared.erase(it);
+        }
+        _sweepAt = std::max<std::size_t>(64, (_own.size() + _shared.size()) * 2);
+    }
+
     mutable std::mutex _mutex;
-    std::unordered_map<const App::FileBlob*, Entry> _entries;
+    /// Shape values not frozen: a blob's own parse.
+    std::unordered_map<const App::FileBlob*, Entry> _own;
+    /// Shape values frozen: the parse of the bytes, by content hash.
+    std::unordered_map<std::string, Entry> _shared;
     std::size_t _sweepAt {64};
+    /// Released parses a sweep keeps, the most recently used first (item 5).
+    static constexpr std::size_t _keepReleased = 32;
+    uint64_t _tick {0};
 };
 
 /** Parse a stored geometry file, resolving whatever it borrows.
@@ -334,7 +509,11 @@ const ParsedShape* parseBlob(App::FileBlobManager& manager,
     }
     // Cached even when the parse failed: a file that cannot be read does not
     // get read again once per referrer.
-    return ShapeParseCache::instance().put(blob, std::move(parsed));
+    std::vector<std::string> borrowed;
+    borrowed.reserve(sources.size());
+    for (const auto& source : sources)
+        borrowed.push_back(source->hash());
+    return ShapeParseCache::instance().put(blob, std::move(parsed), std::move(borrowed));
 }
 
 /** The owner table for the save in progress.
@@ -387,6 +566,76 @@ TopoDS_Shape PropertyPartShape::shapeForSave(Base::Writer& writer) const
     return shape.Located(TopLoc_Location());
 }
 
+namespace {
+
+/** A face on top holds its geometry itself, so the new top node is a new
+ * TShape: its surface is the original's, placed by `motion` where the
+ * original's is placed, and the surface and the triangulation are shared
+ * (sec 27.37). The wires, moved by `motion` as any other top's children,
+ * line up with it: a pcurve is found by the surface and the location its
+ * face's surface is at, and the motion cancels out of that.
+ */
+void moveOwnSurface(const TopoDS_Shape& shape, const TopoDS_Shape& top,
+                    const TopLoc_Location& motion)
+{
+    auto from = occ::down_cast<BRep_TFace>(shape.TShape());
+    auto to = occ::down_cast<BRep_TFace>(top.TShape());
+    to->Location(motion * from->Location());
+    to->NaturalRestriction(from->NaturalRestriction());
+    to->Triangulations(from->Triangulations(), from->ActiveTriangulation());
+}
+
+/** `shape` moved by `motion` with its top location unchanged, sharing all it
+ * can (docs/TransactionLog.md sec 27.25 item 3, 27.35, 27.37).
+ *
+ * The motion cannot go on the top: the top location is the object's
+ * Placement. It goes one level down instead -- a new top node whose children
+ * are the shared ones, each moved. Every face and edge below is the same
+ * TShape as the original's, triangulation included, so two instances of a
+ * part share their meshes. A face on top shares its surface and mesh too
+ * (moveOwnSurface()). An edge or a vertex on top never comes here: a motion
+ * is found by congruence, which needs three vertices to recover a frame
+ * (shapeCongruenceKey()). A motion that scales, which OCCT refuses as a
+ * location, is copied as before. Null when it cannot be done this way.
+ */
+TopoDS_Shape shallowMove(const TopoDS_Shape& shape, const TopLoc_Location& motion)
+{
+    switch (shape.ShapeType()) {
+        case TopAbs_COMPOUND:
+        case TopAbs_COMPSOLID:
+        case TopAbs_SOLID:
+        case TopAbs_SHELL:
+        case TopAbs_WIRE:
+        case TopAbs_FACE:
+            break;
+        default:
+            return {};
+    }
+    if (std::abs(motion.Transformation().ScaleFactor() - 1.0) > 1e-12)
+        return {};
+    // Built on the TShape alone, the location and orientation put back after:
+    // the children come as the TShape holds them, and Add() would move each by
+    // the inverse of a located top and reverse it under a reversed one -- a
+    // reversed face came back with its wires turned (sec 27.85).
+    TopoDS_Shape plain;
+    plain.TShape(shape.TShape());
+    TopoDS_Shape top = plain.EmptyCopied();
+    if (shape.ShapeType() == TopAbs_FACE)
+        moveOwnSurface(shape, top, motion);
+    BRep_Builder builder;
+    for (TopoDS_Iterator it(shape, Standard_False, Standard_False); it.More(); it.Next())
+        builder.Add(top, it.Value().Moved(motion));
+    top.Closed(shape.Closed());
+    top.Orientable(shape.Orientable());
+    top.Infinite(shape.Infinite());
+    top.Convex(shape.Convex());
+    top.Location(shape.Location(), false);
+    top.Orientation(shape.Orientation());
+    return top;
+}
+
+}  // namespace
+
 TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) const
 {
     TopoDS_Shape geometry = shape;
@@ -396,12 +645,20 @@ TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) con
     // someone reads. An App::Link that replaces its source's placement with
     // its own reads exactly that, and would then draw this geometry where
     // the instance it was borrowed from sits, which is what a first attempt
-    // at this did to 1146 links. So the motion costs a copy of the geometry
-    // and leaves the location meaning what it has always meant.
+    // at this did to 1146 links. So the motion goes one level down, into a
+    // new top node over the shared children (shallowMove()), and leaves the
+    // location meaning what it has always meant; only a shape that holds its
+    // own geometry at the top is copied.
     if (!_RestoreMotion.IsIdentity() && !geometry.IsNull()) {
-        BRepBuilderAPI_Transform moved(geometry, _RestoreMotion.Transformation(), Standard_True);
-        if (moved.IsDone())
-            geometry = moved.Shape();
+        TopoDS_Shape moved = shallowMove(geometry, _RestoreMotion);
+        if (!moved.IsNull()) {
+            geometry = moved;
+        }
+        else {
+            BRepBuilderAPI_Transform copy(geometry, _RestoreMotion.Transformation(), Standard_True);
+            if (copy.IsDone())
+                geometry = copy.Shape();
+        }
     }
     if (_RestoreLoc.IsIdentity() || geometry.IsNull())
         return geometry;
@@ -410,11 +667,7 @@ TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) con
 
 App::FileBlobManager& PropertyPartShape::blobManager() const
 {
-    if (auto container = getContainer()) {
-        if (auto doc = container->getOwnerDocument())
-            return doc->getFileBlobManager();
-    }
-    return App::FileBlobManager::defaultManager();
+    return App::FileBlobManager::managerFor(getContainer());
 }
 
 bool PropertyPartShape::usesBlob(Base::Writer& writer) const
@@ -490,7 +743,12 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     // Below a face the association *is* the identity of a geometry object, so
     // this is sound only while that object can be named across files: off
     // wherever the geometry is not shared, whatever the setting says.
-    refs.setSubFaceBorrowing(geometry ? PartParams::getBorrowBelowFace() : 0);
+    // And not an edge or a vertex under a stable write: the lender leaves out
+    // the 2D curves its own faces do not use, and the borrower's faces are
+    // exactly the ones that use them. A face keeps its own (sec 23.12).
+    const int belowFace = refs.IsStableBytes() ? PartParams::getBorrowBelowFace() & 1
+                                               : PartParams::getBorrowBelowFace();
+    refs.setSubFaceBorrowing(geometry ? belowFace : 0);
     refs.build(root);
     const std::string plan = refs.plan();
 
@@ -567,33 +825,30 @@ void PropertyPartShape::storeBlob(Base::Writer& writer, ShapeRefSet* refs) const
 {
     auto& manager = blobManager();
     const char* ext = shapeBlobExtension(writer);
-    const std::string path = manager.uniquePath(std::string("shape.") + ext);
     try {
-        {
-            Base::ofstream out(Base::FileInfo(path),
-                               std::ios::out | std::ios::binary | std::ios::trunc);
-            if (!out) {
-                FC_ERR("Cannot write the geometry of " << getFullName() << " to " << path);
-                return;
-            }
-            // Even a null shape is written, for the same reason SaveDocFile
-            // writes one: an empty member is an error to whatever reads it.
-            const TopoDS_Shape shape = shapeForSave(writer);
-            if (!refs)
-                TopoShape(shape).exportBinary(out, true);
-            else
-                refs->write(shape, out);
+        // Serialised in memory and handed over as bytes: the store packs it
+        // (docs/FileBlobsManager.md sec 15.7), so a save of an imported
+        // model is no longer a file per shape.
+        std::ostringstream out(std::ios::out | std::ios::binary);
+        // Even a null shape is written, for the same reason SaveDocFile
+        // writes one: an empty member is an error to whatever reads it.
+        const TopoDS_Shape shape = shapeForSave(writer);
+        if (!refs)
+            TopoShape(shape).exportBinary(out, true);
+        else
+            refs->write(shape, out);
+        if (!out) {
+            FC_ERR("Cannot serialize the geometry of " << getFullName());
+            return;
         }
-        _blob = manager.adoptFile(path.c_str(), ext);
+        _blob = manager.adoptBytes(out.str(), ext);
     }
     catch (const Base::Exception& e) {
         FC_ERR("Failed to store the geometry of " << getFullName() << ": " << e.what());
-        Base::FileInfo(path).deleteFile();
     }
     catch (const Standard_Failure& e) {
         FC_ERR("Failed to serialize the geometry of " << getFullName() << ": "
                                                       << e.GetMessageString());
-        Base::FileInfo(path).deleteFile();
     }
 }
 
@@ -821,6 +1076,13 @@ void PropertyPartShape::validateShape(App::DocumentObject *obj)
     // neither fixed nor allowed to flag the owner invalid.
     if (Feature::isBaseShapeVersion(this))
         return;
+    // An undo, a redo or an abort puts back a value the document had, checked
+    // when it was made, and InvalidShape comes back with it in the same
+    // transaction. Checking again is a full BRepCheck -- 16 s for one polar
+    // pattern (docs/TransactionLog.md sec 27.64) -- and a fix() would make
+    // the value put back other than the one recorded.
+    if (obj->getDocument()->isPerformingTransaction())
+        return;
     if (auto feat = Base::freecad_dynamic_cast<Part::Feature>(obj)) {
         if (_Shape.isNull()) {
             feat->InvalidShape.setValue(false);
@@ -853,8 +1115,14 @@ void PropertyPartShape::setValue(const TopoShape& sh)
     // the transaction takes there is a Copy(), which carries no blob.
     aboutToSetValue();
     dropBlob(sh.getShape());
-    _Shape = sh;
-    _ShapeNoName.setShape(sh.getShape(), true);
+    // Made on copies of frozen inputs (ThawInputs, sec 27.82): what the
+    // algorithm did not change goes back to the values' own.
+    TopoShape shared(sh);
+    if (ThawInputs::active())
+        shared.setShape(ThawInputs::shareBack(sh.getShape()), false);
+    makeImmutable(shared.getShape());
+    _Shape = shared;
+    _ShapeNoName.setShape(shared.getShape(), true);
     _ShapeNoName.Tag = -1;
     auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
     if(obj) {
@@ -880,30 +1148,229 @@ void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
     // Announced first, see setValue(const TopoShape&).
     aboutToSetValue();
     dropBlob(sh);
+    const TopoDS_Shape shared = ThawInputs::shareBack(sh);
+    makeImmutable(shared);
     auto obj = dynamic_cast<App::DocumentObject*>(getContainer());
     if(obj)
         _Shape.Tag = obj->getID();
-    _Shape.setShape(sh,resetElementMap);
-    _ShapeNoName.setShape(sh, true);
+    _Shape.setShape(shared,resetElementMap);
+    _ShapeNoName.setShape(shared, true);
     _ShapeNoName.Tag = -1;
     validateShape(obj);
     hasSetValue();
     _Ver.clear();
 }
 
+namespace {
+thread_local ThawInputs* _thawInputs = nullptr;
+}
+
+ThawInputs::ThawInputs()
+    : outer(_thawInputs)
+{
+    _thawInputs = this;
+}
+
+ThawInputs::~ThawInputs()
+{
+    _thawInputs = outer;
+}
+
+bool ThawInputs::active()
+{
+    return _thawInputs != nullptr;
+}
+
+const TopoShape& ThawInputs::copyOf(const void* key, const TopoShape& shape)
+{
+    if (!_thawInputs || shape.isNull() || !shape.getShape().Immutable())
+        return shape;
+    auto& entry = _thawInputs->copies[key];
+    if (entry.copy.isNull() || !entry.source.IsEqual(shape.getShape())) {
+        entry.source = shape.getShape();
+        // The element map as it is: the copy keeps every index.
+        TopoShape copy(shape);
+        copy.setShape(_thawInputs->thaw(shape.getShape()), false);
+        entry.copy = std::move(copy);
+    }
+    return entry.copy;
+}
+
+/// The representations of an edge a copy has: EmptyCopy() leaves out the
+/// polygons.
+static int copiedCurves(const BRep_TEdge* edge)
+{
+    int count = 0;
+    for (const auto& rep : edge->Curves()) {
+        if (rep->IsKind(STANDARD_TYPE(BRep_GCurve))
+                || rep->IsKind(STANDARD_TYPE(BRep_CurveOn2Surfaces)))
+            ++count;
+    }
+    return count;
+}
+
+/// Whether a copy still carries what its original does: tolerance, point,
+/// surface and how many representations.
+static bool sameContent(const TopoDS_Shape& copy, const TopoDS_Shape& original)
+{
+    switch (copy.ShapeType()) {
+    case TopAbs_VERTEX: {
+        auto a = static_cast<const BRep_TVertex*>(copy.TShape().get());
+        auto b = static_cast<const BRep_TVertex*>(original.TShape().get());
+        return a->Tolerance() == b->Tolerance() && a->Pnt().IsEqual(b->Pnt(), 0.)
+            && a->Points().Size() == b->Points().Size();
+    }
+    case TopAbs_EDGE: {
+        auto a = static_cast<const BRep_TEdge*>(copy.TShape().get());
+        auto b = static_cast<const BRep_TEdge*>(original.TShape().get());
+        return a->Tolerance() == b->Tolerance() && copiedCurves(a) == copiedCurves(b)
+            && a->SameParameter() == b->SameParameter() && a->SameRange() == b->SameRange()
+            && a->Degenerated() == b->Degenerated();
+    }
+    case TopAbs_FACE: {
+        auto a = static_cast<const BRep_TFace*>(copy.TShape().get());
+        auto b = static_cast<const BRep_TFace*>(original.TShape().get());
+        return a->Tolerance() == b->Tolerance() && a->Surface() == b->Surface()
+            && a->NaturalRestriction() == b->NaturalRestriction();
+    }
+    default:
+        return true;
+    }
+}
+
+bool ThawInputs::unchanged(const TopoDS_Shape& copy,
+                           std::map<const TopoDS_TShape*, bool>& memo) const
+{
+    const TopoDS_TShape* tshape = copy.TShape().get();
+    auto res = memo.emplace(tshape, false);
+    if (!res.second)
+        return res.first->second;
+    // A copy the algorithm left alone, and all it holds. Modified() is set
+    // by BRep_Builder, not by a tolerance set on the TShape itself (ShapeFix
+    // does that), so what a copy carries is compared too.
+    auto orig = originals.find(tshape);
+    bool same = orig != originals.end() && !tshape->Modified()
+        && sameContent(copy, orig->second);
+    for (TopoDS_Iterator child(copy, false, false); same && child.More(); child.Next())
+        same = unchanged(child.Value(), memo);
+    res.first->second = same;
+    return same;
+}
+
+TopoDS_Shape ThawInputs::restore(const TopoDS_Shape& shape,
+                                 std::map<const TopoDS_TShape*, bool>& memo,
+                                 std::map<const TopoDS_TShape*, TopoDS_Shape>& done) const
+{
+    if (shape.IsNull())
+        return shape;
+    const TopoDS_TShape* tshape = shape.TShape().get();
+    auto it = done.find(tshape);
+    if (it == done.end()) {
+        TopoDS_Shape plain;
+        plain.TShape(shape.TShape());
+        TopoDS_Shape bare = plain;
+        if (unchanged(plain, memo)) {
+            bare = originals.at(tshape);
+        }
+        else {
+            // Rebuilt only when a child comes back as something else.
+            std::vector<TopoDS_Shape> children;
+            bool differs = false;
+            for (TopoDS_Iterator child(plain, false, false); child.More(); child.Next()) {
+                children.push_back(restore(child.Value(), memo, done));
+                differs = differs || !children.back().IsSame(child.Value());
+            }
+            if (differs) {
+                bare = plain.EmptyCopied();
+                BRep_Builder builder;
+                for (const auto& child : children)
+                    builder.Add(bare, child);
+                bare.Free(plain.Free());
+                bare.Checked(plain.Checked());
+                bare.Orientable(plain.Orientable());
+                bare.Closed(plain.Closed());
+                bare.Infinite(plain.Infinite());
+                bare.Convex(plain.Convex());
+            }
+        }
+        it = done.emplace(tshape, bare).first;
+    }
+    TopoDS_Shape res = it->second;
+    res.Location(shape.Location(), false);
+    res.Orientation(shape.Orientation());
+    return res;
+}
+
+TopoDS_Shape ThawInputs::shareBack(const TopoDS_Shape& shape)
+{
+    if (!_thawInputs || _thawInputs->originals.empty() || shape.IsNull())
+        return shape;
+    std::map<const TopoDS_TShape*, bool> memo;
+    std::map<const TopoDS_TShape*, TopoDS_Shape> done;
+    return _thawInputs->restore(shape, memo, done);
+}
+
+TopoDS_Shape ThawInputs::thaw(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull())
+        return shape;
+    auto it = tshapes.find(shape.TShape().get());
+    if (it == tshapes.end()) {
+        TopoDS_Shape plain;
+        plain.TShape(shape.TShape());
+        TopoDS_Shape copy = plain.EmptyCopied();
+        BRep_Builder builder;
+        for (TopoDS_Iterator child(plain, false, false); child.More(); child.Next())
+            builder.Add(copy, thaw(child.Value()));
+        if (plain.ShapeType() == TopAbs_VERTEX) {
+            // EmptyCopied() keeps a vertex's point only; its parameters go
+            // across as new objects, not shared with the frozen original.
+            auto from = static_cast<const BRep_TVertex*>(plain.TShape().get());
+            auto to = static_cast<BRep_TVertex*>(copy.TShape().get());
+            for (const auto& pr : from->Points()) {
+                occ::handle<BRep_PointRepresentation> rep;
+                if (pr->IsPointOnCurve())
+                    rep = new BRep_PointOnCurve(pr->Parameter(), pr->Curve(), pr->Location());
+                else if (pr->IsPointOnCurveOnSurface())
+                    rep = new BRep_PointOnCurveOnSurface(pr->Parameter(), pr->PCurve(),
+                                                         pr->Surface(), pr->Location());
+                else if (pr->IsPointOnSurface())
+                    rep = new BRep_PointOnSurface(pr->Parameter(), pr->Parameter2(),
+                                                  pr->Surface(), pr->Location());
+                if (!rep.IsNull())
+                    to->ChangePoints().Append(rep);
+            }
+        }
+        copy.Free(plain.Free());
+        copy.Checked(plain.Checked());
+        copy.Orientable(plain.Orientable());
+        copy.Closed(plain.Closed());
+        copy.Infinite(plain.Infinite());
+        copy.Convex(plain.Convex());
+        // What the algorithm changes marks itself Modified (shareBack).
+        copy.TShape()->Modified(false);
+        originals.emplace(copy.TShape().get(), plain);
+        it = tshapes.emplace(shape.TShape().get(), copy).first;
+    }
+    TopoDS_Shape res = it->second;
+    res.Location(shape.Location(), false);
+    res.Orientation(shape.Orientation());
+    return res;
+}
+
 const TopoDS_Shape& PropertyPartShape::getValue() const
 {
     ensureRestored();
-    return _Shape.getShape();
+    return ThawInputs::copyOf(this, _Shape).getShape();
 }
 
 TopoShape PropertyPartShape::getShape() const
 {
     ensureRestored();
     _Shape.initCache(-1);
-    auto res = _Shape;
+    auto res = ThawInputs::copyOf(this, _Shape);
     if (Feature::isElementMappingDisabled(getContainer()))
-        return _ShapeNoName;
+        return ThawInputs::copyOf(&_ShapeNoName, _ShapeNoName);
     else if (!res.Tag) {
         if (auto parent = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer()))
             res.Tag = parent->getID();
@@ -962,12 +1429,12 @@ Base::Matrix4D PropertyPartShape::getTransform() const
 void PropertyPartShape::transformGeometry(const Base::Matrix4D &rclTrf)
 {
     ensureRestored();
-    // Unlike a placement this rewrites the geometry itself, so whatever was
-    // stored for it no longer describes the value.
-    _blob.reset();
-    aboutToSetValue();
-    _Shape.transformGeometry(rclTrf);
-    hasSetValue();
+    // Unlike a placement this rewrites the geometry itself: a new value made
+    // from the held one, which stays as it was, and set like any other so the
+    // stored blob, the unnamed copy and the freeze all follow.
+    TopoShape shape(_Shape);
+    shape.transformGeometry(rclTrf);
+    setValue(shape);
 }
 
 PyObject *PropertyPartShape::getPyObject()
@@ -1015,7 +1482,47 @@ App::Property *PropertyPartShape::Copy() const
     } else
         prop->_Shape = this->_Shape;
     prop->_Ver = this->_Ver;
+    // The file the value was last written to goes with it: a copy that
+    // knows its content's hash can answer for it (contentBlob(), and the
+    // BlobRef mode in Save()) instead of exporting the geometry again. It
+    // is dropped with the value like the original's, and holds the file
+    // alive for as long as the copy lives.
+    prop->_blob = this->_blob;
+    prop->_blobMotion = this->_blobMotion;
     return prop;
+}
+
+bool PropertyPartShape::canSaveOffThread() const
+{
+    // A frozen value's TShapes are all marked (freeze() marks children
+    // first), and what may still change on them -- the mesher's caches --
+    // is written under the OCCT fork's lock (sec 27.98). Anything else is
+    // shared with whoever else holds it, and may be edited in place.
+    ensureRestored();
+    if (_Shape.isNull())
+        return true;
+    if (!_Shape.getShape().Immutable())
+        return false;
+    // The other thing a copy shares with the live value is the shape's
+    // cache, and an element map not made yet is made from it: Save() asks
+    // for the map (ComplexGeoData::Save, getElementMapSize), which sets it
+    // and clears the sub-shapes the cache holds (resetElementMap) -- on the
+    // worker, while the main thread hands those out (Shape.Faces): a
+    // SIGSEGV in Cache::Info::_getTopoShape, about one frozen run of the
+    // suite in seven (docs/TransactionLog.md sec 31.27). Made here, on the
+    // thread that asks, the worker's Save finds it there and writes
+    // nothing to the cache.
+    _Shape.flushElementMap();
+    return true;
+}
+
+std::shared_ptr<void> PropertyPartShape::holdForOffThread() const
+{
+    // The map is one object for every copy of the shape, and edited in
+    // place by whoever edits it: held while the reader has it, a name made
+    // meanwhile waits beside it (docs/TransactionLog.md sec 31.28, 31.31).
+    ensureRestored();
+    return _Shape.holdElementMap();
 }
 
 void PropertyPartShape::Paste(const App::Property &from)
@@ -1098,6 +1605,13 @@ void PropertyPartShape::Save (Base::Writer &writer) const
     if(owner) {
         if(!owner->isExporting())
             version = _Ver.size()?_Ver:owner->getElementMapVersion(this);
+    }else if(App::capturingDocument()) {
+        // A detached copy the transaction log captures writes the version
+        // its owner's save would, hasher prefix and all: without it, every
+        // value read back from the log -- a switch, a cold undo -- failed
+        // the version check, and once saved again asked for a recompute at
+        // the next open (docs/TransactionLog.md sec 27.72).
+        version = _Ver.size()?_Ver:getElementMapVersion();
     }else
         version = _Ver.size()?_Ver:_Shape.getElementMapVersion();
     writer.Stream() << " ElementMap=\"" << version << '"';
@@ -1118,7 +1632,15 @@ void PropertyPartShape::Save (Base::Writer &writer) const
 
     bool binary = writer.getMode("BinaryBrep");
     bool toXML = writer.getFileVersion()>1 && writer.isForceXML()>=(binary?3:2);
-    if(_blob && usesBlob(writer)) {
+    if (_blob && writer.getMode("BlobRef")) {
+        // A writer that wants the content's hash and not the content: the
+        // transaction log's capture of a copy (docs/TransactionLog.md sec
+        // 20.2, decision 6b). The blob is the value's bytes as last saved,
+        // dropped whenever the value changes (dropBlob), so naming it is
+        // exact; the log holds the file through contentBlob(). No note to
+        // a manager: nothing is being saved.
+        writer.Stream() << " hash=\"" << _blob->hash() << "\"/>\n";
+    } else if(_blob && usesBlob(writer)) {
         // The geometry is a file of its own in the blob store, named after
         // this property and shared by content. Noted again here for the same
         // reason PropertyFileIncluded does: it costs nothing, and a property
@@ -1211,6 +1733,17 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
         _RestoreHash = reader.getAttribute("hash");
         if (!_RestoreHash.empty()) {
             FC_TRACE(getFullName() << " restores from blob " << _RestoreHash);
+            // The file the value being replaced was kept in is not the one
+            // awaited. A property being loaded holds none; a live one -- a
+            // value the transaction log puts back -- does, and
+            // ensureRestored() takes whatever file is held for the one that
+            // arrived: the shape stayed the old value's, under the new
+            // one's name (docs/TransactionLog.md sec 31.6). Kept alive until
+            // the manager has answered, in case it is the same file.
+            const App::FileBlobHandle replaced = _blob;
+            _blob.reset();
+            _blobPlan.clear();
+            _blobMotion = TopLoc_Location();
             _PendingManager = &blobManager();
             _PendingManager->addPendingReferrer(_RestoreHash, this);
             _RestorePending = true;
@@ -1243,6 +1776,14 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
         _Shape.Hasher = owner->getDocument()->getStringHasher(hasher_idx);
         if(save_hasher)
             _Shape.Hasher->Restore(reader);
+    } else if(owner && boost::starts_with(_Ver, "1.")) {
+        // A value the transaction log captured from a detached copy names no
+        // hasher index, and its version's "1." says it used the document's.
+        // The element map below is read with whatever hasher _Shape holds: a
+        // live object's is still the document's, but an object the log
+        // recreates has none, and its map lost every string id it held
+        // (docs/TransactionLog.md sec 27.74).
+        _Shape.Hasher = owner->getDocument()->getStringHasher();
     }
 
     if(has_ver) {
@@ -1309,6 +1850,19 @@ void PropertyPartShape::afterRestore()
     }
     else if (_Shape.getElementMapSize() == 0)
         _Shape.Hasher.reset();
+    else if (_Shape.hasLegacyCrossing()) {
+        // A shape that crossed a document boundary before a name named its
+        // document keeps the other table's ids as text, which this table
+        // reads as its own strings (docs/TransactionLog.md sec 27.76 item
+        // 4): recomputed once, it imports them.
+        auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+        if (owner && owner->getNameInDocument() && owner->getDocument()
+                  && !owner->getDocument()->testStatus(App::Document::PartialDoc)) {
+            FC_WARN("Recomputation required for " << owner->getFullName()
+                    << ": its element names crossed a document boundary as text");
+            owner->getDocument()->addRecomputeObject(owner);
+        }
+    }
     // What PropertyComplexGeoData::afterRestore() does, against the same
     // data getComplexData() would pick -- but without the ensureRestored()
     // that accessor runs: the restore-failure flag comes from the XML map
@@ -1693,7 +2247,7 @@ PyObject *PropertyFilletEdges::getPyObject()
     Py::List list(getSize());
     std::vector<FilletElement>::const_iterator it;
     int index = 0;
-    for (it = _lValueList.begin(); it != _lValueList.end(); ++it) {
+    for (it = getValues().begin(); it != getValues().end(); ++it) {
         Py::Tuple ent(3);
         ent.setItem(0, Py::Long(it->edgeid));
         ent.setItem(1, Py::Float(it->radius1));
@@ -1723,7 +2277,7 @@ FilletElement PropertyFilletEdges::getPyValue(PyObject *item) const
 
 bool PropertyFilletEdges::saveXML(Base::Writer &writer) const {
     writer.Stream() << ">\n";
-    for(auto &v : _lValueList)
+    for(auto &v : getValues())
         writer.Stream() << v.edgeid << ' ' << v.radius1 << ' ' << v.radius2 << '\n';
     return false;
 }
@@ -1741,7 +2295,7 @@ void PropertyFilletEdges::restoreXML(Base::XMLReader &reader)
 
 void PropertyFilletEdges::saveStream(Base::OutputStream &str) const
 {
-    for (const auto & it : _lValueList) {
+    for (const auto & it : getValues()) {
         str << it.edgeid << it.radius1 << it.radius2;
     }
 }
@@ -1757,14 +2311,15 @@ void PropertyFilletEdges::restoreStream(Base::InputStream &str, unsigned uCt)
 
 App::Property *PropertyFilletEdges::Copy() const
 {
-    PropertyFilletEdges *p= new PropertyFilletEdges();
-    p->_lValueList = _lValueList;
+    PropertyFilletEdges *p = new PropertyFilletEdges();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = getValues();
     return p;
 }
 
 void PropertyFilletEdges::Paste(const Property &from)
 {
-    setValue(dynamic_cast<const PropertyFilletEdges&>(from)._lValueList);
+    setValue(dynamic_cast<const PropertyFilletEdges&>(from).getValues());
 }
 
 // -------------------------------------------------------------------------

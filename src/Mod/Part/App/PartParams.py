@@ -141,6 +141,13 @@ Params = [
     ParamUInt("LoftMaxDegree", 5,
         doc = "Maximum surface degree given to new PartDesign lofts. Kept between\n"
               "2 and the highest degree the kernel supports."),
+    ParamBool("ImmutableShapeValues", "Part::initOCCTExtension() >= 2",
+        "Freeze a shape property's value when it is set: every TShape gets the\n"
+        "OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
+        "or topology throws instead of changing the value behind the property\n"
+        "(docs/TransactionLog.md sec 23.6, 23.12). Unless set, on exactly when\n"
+        "the OCCT loaded at run time is the fork at extension version 2 or\n"
+        "later, which is where the flag is honoured."),
     # The long form, kept here; the documentation shown is the short one below.
     # Report a shape operation whose input shapes carry no element map, so
     # the result cannot be named either. This is off by default because an
@@ -155,6 +162,13 @@ Params = [
         "Report shape operations whose inputs carry no element names, so the\n"
         "result cannot be named either. For workbench developers. 0 off, 1 once\n"
         "per operation and recompute, 2 every occurrence."),
+    # What a face takes from the face it was made from is made by the object
+    # (docs/ShapeAppearanceDesign.md sec 14.6), which reads these where it is
+    # made; the view provider reads the same ones.
+    _PartGuiParams['MapFaceColor'],
+    _PartGuiParams['MapLineColor'],
+    _PartGuiParams['MapPointColor'],
+    _PartGuiParams['MapTransparency'],
     _MinimumDeviation,
     _MeshDeviation,
     _MeshAngularDeflection,
