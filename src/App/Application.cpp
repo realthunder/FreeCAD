@@ -481,7 +481,8 @@ void Application::renameDocument(const char *OldName, const char *NewName)
     THROWM(Base::RuntimeError, "Renaming document internal name is no longer allowed!")
 }
 
-Document* Application::newDocument(const char * Name, const char * UserName, bool createView, bool tempDoc)
+Document* Application::newDocument(const char * Name, const char * UserName, bool createView,
+                                   bool tempDoc, bool clearTemp)
 {
     auto getNameAndLabel = [this](const char * Name, const char * UserName) -> std::tuple<std::string, std::string> {
         bool defaultName = (!Name || Name[0] == '\0');
@@ -527,8 +528,11 @@ Document* Application::newDocument(const char * Name, const char * UserName, boo
     // return the temporary document if it exists
     if (tempDoc) {
         auto it = DocMap.find(name);
-        if (it != DocMap.end() && it->second->testStatus(Document::TempDoc))
+        if (it != DocMap.end() && it->second->testStatus(Document::TempDoc)) {
+            if (clearTemp)
+                it->second->clearDocument();
             return it->second;
+        }
     }
 
     // create the FreeCAD document
@@ -582,6 +586,11 @@ Document* Application::newDocument(const char * Name, const char * UserName, boo
     // set the old document active again if the new is temporary
     if (tempDoc && oldActiveDoc)
         setActiveDocument(oldActiveDoc);
+
+    // Nothing to empty, but its ids are to start as an emptied one's do and
+    // not at random
+    if (tempDoc && clearTemp)
+        doc->clearDocument();
 
     return doc;
 }
