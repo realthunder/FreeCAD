@@ -802,7 +802,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views". ANSWERED 15:35: the label seen is '...and the panels that are open', "ellipsed strangely"; the button first commits the relevant settings (for when auto apply is off) and then applies to the views | OPEN; both points answered 15:35 |
 | 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
 | 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
-| 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too | OPEN; two points of the note-taker's under the entry |
+| 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8228,7 +8228,7 @@ a. A changed default reaches only who has not set the value: the
    looked up whether any theme writes them.)
 b. The browser viewer, if it carries defaults of its own for the two.
 
-## 73. The close button, the "toggle panel in view" button and the overlay title buttons do not follow a dark or light theme; the toggle button shows with no view-owned task panel -- OPEN
+## 73. The close button, the "toggle panel in view" button and the overlay title buttons do not follow a dark or light theme; the toggle button shows with no view-owned task panel -- OPEN, both points answered 2026-10-12 15:49
 
 **2026-10-12 15:44, the reporter:** "new defect, the close button and toggle
 panel in view button should be dark/light theme aware. also, when there is
@@ -8256,6 +8256,27 @@ a. WHERE the two buttons of point 1 are: on the title bar of the Tasks
 b. Point 2, "no view owned task panel": hidden when no task panel is open
    at all, or when the panel that is open belongs to no view (a panel
    not tied to a view)? Both, by the note-taker's reading.
+
+**2026-10-12 15:49, the reporter answers the two points:** "a, the close
+button in panels docked to main window. b, there can be multiple page in
+task panel, some are not owned by any view (e.g. PartDesign task
+watchers). if no view owned panels there, then no show in view toggle
+button"
+
+The note-taker's reading:
+- a. The close button is the one on the title bar of a panel DOCKED to
+  the main window -- every such panel, not the Tasks panel alone. The
+  note-taker's guess of the place was right as far as "docked, not an
+  overlay". By the source read above the toggle button sits on the title
+  bar of the dock that holds the Tasks panel; that it is the same title
+  bar the reporter means for it is the note-taker's reading, not said.
+- b. The task panel can hold SEVERAL pages at once, and some are owned
+  by no view -- the reporter's example: PartDesign's task watchers. The
+  rule asked: the toggle button is shown only while at least one page
+  there is owned by a view; with none, no button. So a task panel that
+  is open but holds watcher pages only shows no toggle button.
+- Still not said: under WHICH theme the buttons are the hard ones to see.
+  It does not change what is asked -- they follow the theme either way.
 
 READ in the source, nothing run:
 - The button "Show this task panel in its view" is `_actTaskHost` of the
