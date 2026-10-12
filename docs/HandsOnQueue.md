@@ -800,7 +800,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
 | 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | OPEN; the five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
 | 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views" | OPEN; two points of the note-taker's under the entry |
-| 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | OPEN; the three points answered 15:29, the first as the note-taker reads it; the "search box" of point b was the note-taker's mistake, there is none |
+| 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8161,6 +8161,15 @@ The note-taker's reading, by letter:
   dialog" in point b above are WITHDRAWN. Settings are searched from the
   omni search here, which is not part of this entry.
 - c. Yes: Enter with the focus on the OK button still closes the dialog.
+
+**2026-10-12 15:33, the reporter, on point a:** "a, I mean commit only
+'auto apply' option is on, else do nothing."
+
+So the reading above HOLDS and is the reporter's own now: Enter in an edit
+box commits the value when the auto apply option ("Apply preferences at
+once", `General/AutoApplyPreference`) is on, and does nothing when it is
+off; the dialog is not closed by it either way. Nothing of this entry is
+left unanswered.
 
 ## Inbox
 
