@@ -84,12 +84,21 @@ def run():
         # longest one: the parameters outnumber the commands since the
         # Python modules' settings are listed (1400 to some 600), and their
         # rows have no icon to make.
+        # Told by most of its first rows, not by the first alone: a
+        # workbench of the user's may name a command without an underscore,
+        # and that one may sort first ("Title (FSChangeParams)").
         commands = None
+        firsts = {}
         for w in lists:
-            first = str(w.model().index(0, 0).data(Qt.DisplayRole) or "")
-            if w.model().rowCount() and "_" in first and first.rstrip().endswith(")"):
+            head = [str(w.model().index(i, 0).data(Qt.DisplayRole) or "")
+                    for i in range(min(40, w.model().rowCount()))]
+            firsts[len(head)] = head[:2]
+            named = [t for t in head if " (" in t and t.rstrip().endswith(")")]
+            if head and len(named) * 2 > len(head) and any("_" in t for t in named):
                 commands = w
         rows = commands.model().rowCount() if commands else 0
+        if not commands:
+            note("NOTE the lists' first rows: %s" % firsts)
         if not check("the command list is there", rows > 300, "%d lists, the commands' %d rows" % (len(lists), rows)):
             return
         t = time.perf_counter()

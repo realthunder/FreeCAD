@@ -525,8 +525,15 @@ def the_page_moves_into_its_view():
     QTest.mouseClick(one.label, LEFT)
     settle(300)
     check("a click on a widget that takes no focus does too", active_is("a1"))
-    claim("and a click back into the other view makes that one the active view",
-          lambda: click_into("a2") is None and active_is("a2"))
+    if hasattr(ctypes, "windll"):
+        # click_into() has no click of the real pointer to make there, and
+        # the one it sends through Qt does not make a 3D view the active one
+        note("NOTE not claimed on Windows: a click back into the other view makes that one"
+             " the active view")
+        click_into("a2")
+    else:
+        claim("and a click back into the other view makes that one the active view",
+              lambda: click_into("a2") is None and active_is("a2"))
     # What the click picked in a2 is not this test's business
     FreeCADGui.Selection.clearSelection()
 
