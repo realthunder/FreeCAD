@@ -805,6 +805,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
 | 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63). ANSWERED 16:04: the name is `Std_DisplayStyle`; `Std_DrawStyle` takes its old icon back and the new command the split cube; the new command to the RIGHT of `Std_DrawStyle`, in the View menu too; the overlap is not looked into for its own sake | OPEN; the four points answered 16:04; the context menu not named in the answer |
 | 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered |
+| 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none | OPEN; a reading of the code by the note-taker and two points under the entry, nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8442,6 +8443,46 @@ migration, nothing that turns it off in a configuration that has it stored
 as on; the reporter switches their own off by hand. Nothing of this entry
 is left unanswered.
 
+## 76. An overlay panel at the navigation cube's side leaves room for the cube even where it covers no cube -- OPEN
+
+**2026-10-12 16:15, the reporter:** "new defect, any panel in overlay mode
+that is docked at the side of navicube leaves space for the navicube. this
+should only be on if the cube is actually blocked by the panel. For
+example, if now the panel is overlaying a techdraw page, then it should not
+leave any space"
+
+The note-taker's reading:
+- Today: an overlay panel on the side of the window where the navigation
+  cube's corner is, is cut short (or set in) by the size of the cube,
+  whatever lies under it.
+- Asked: the room is left ONLY when the panel would cover a cube that is
+  really there. The reporter's example: the panel lies over a TechDraw
+  page, which has no cube -- no room left.
+
+READ in the source, nothing run -- a guess at the cause:
+- `src/Gui/OverlayManager.cpp`, about lines 725 to 761: with
+  `DockOverlayCheckNaviCube` on ("Check Navigation Cube", on by default)
+  the corner to keep clear is first taken from the PREFERENCE
+  (`CornerNaviCube`); it is corrected -- to "none", or to that view's own
+  corner -- only when the active window IS a 3D view. With a TechDraw
+  page (or a spreadsheet) as the active window nothing corrects it, and
+  the room is left for a cube that is not there. That fits the
+  reporter's example.
+- The same lines go by the ACTIVE view alone: with several view cells
+  side by side, the room is left by the active view's cube and its
+  corner, and not by whether the panel lies over the cell whose cube it
+  would cover. So "actually blocked" asks for more than the fix of the
+  example: the cube's own rectangle on the screen against the panel's.
+
+NOT said, the note-taker's count:
+a. With view cells: a panel on the right, a 3D view in the left cell and
+   a TechDraw page in the right one -- no room, since the cube it could
+   cover is not under it? (That is what "actually blocked" says; asked
+   only because it is the dearer case to build.)
+b. When the answer changes while working -- another tab or cell made
+   active, a cell resized -- the panel changes its length at that
+   moment: wanted so?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -8450,4 +8491,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 75 are of 2026-10-12)
+entries 68 to 76 are of 2026-10-12)
