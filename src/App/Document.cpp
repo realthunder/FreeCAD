@@ -4333,24 +4333,30 @@ private:
                     std::vector<Base::FileInfo> backup;
                     std::vector<Base::FileInfo> files = di.getDirectoryContent();
                     for (const Base::FileInfo& it : files) {
-                        if (it.isFile()) {
-                            std::string file = it.fileName();
-                            std::string fext = it.extension();
-                            std::string fextUp = fext;
-                            std::transform(fextUp.begin(), fextUp.end(), fextUp.begin(),(int (*)(int))toupper);
-                            // re-enforcing identification of the backup file
+                        std::string file = it.fileName();
+                        std::string fext = it.extension();
+                        std::string fextUp = fext;
+                        std::transform(fextUp.begin(), fextUp.end(), fextUp.begin(),(int (*)(int))toupper);
+                        // re-enforcing identification of the backup file
 
 
-                            // old case : the name starts with the full name of the project and follows with numbers
-                            if ((startsWith(file, fn) &&
-                                 (file.length() > fn.length()) &&
-                                 checkDigits(file.substr(fn.length()))) ||
-                                 // .FCBak case : The bame starts with the base name of the project + "."
-                                 // + complement with no "." + ".FCBak"
-                                 ((fextUp == "FCBAK") && startsWith(file, pbn) &&
-                                 (checkValidComplement(file, pbn, fext)))) {
+                        // old case : the name starts with the full name of the project and follows with numbers
+                        if ((startsWith(file, fn) &&
+                             (file.length() > fn.length()) &&
+                             checkDigits(file.substr(fn.length()))) ||
+                             // .FCBak case : The bame starts with the base name of the project + "."
+                             // + complement with no "." + ".FCBak"
+                             ((fextUp == "FCBAK") && startsWith(file, pbn) &&
+                             (checkValidComplement(file, pbn, fext)))) {
+                            // Asked last, and of the entries with a backup's
+                            // name alone: it is a question to the file
+                            // system, and every entry of the directory was
+                            // asked it at every save -- half a minute a save
+                            // in a directory of 3400 on a box whose file
+                            // system is watched (the Python suite's temporary
+                            // directory, 2026-10-12)
+                            if (it.isFile())
                                 backup.push_back(it);
-                            }
                         }
                     }
 
