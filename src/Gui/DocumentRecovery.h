@@ -58,6 +58,8 @@ public:
     void accept() override;
     bool foundDocuments() const;
 
+    bool eventFilter(QObject*, QEvent*) override;
+
 protected:
     void closeEvent(QCloseEvent*) override;
     void contextMenuEvent(QContextMenuEvent*) override;
@@ -71,6 +73,17 @@ private:
     /// The items whose check box is ticked; recovery and cleanup act on these
     QList<QTreeWidgetItem*> checkedItems() const;
     void updateButtons();
+    /** The check box in the header of the first column, for all the rows at
+     * once (docs/HandsOnQueue.md entry 80): ticked with every row ticked,
+     * empty with none, half with some. Drawn as the header's icon, a check
+     * indicator as the rows have it, so the header stays the style's own.
+     */
+    void updateHeaderCheck();
+    /// A click on it: every row that has a check box is ticked -- the ones
+    /// with a warning too --, or, when they all are, none is
+    void toggleAllChecks();
+    /// The part of the header that is the box, in the header's viewport
+    QRect headerCheckRect() const;
     /// Delete the transient directories of \a items, after asking
     void removeItems(const QList<QTreeWidgetItem*>& items);
 

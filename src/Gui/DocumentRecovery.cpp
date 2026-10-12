@@ -44,8 +44,12 @@
 # include <QMap>
 # include <QMenu>
 # include <QMessageBox>
+# include <QMouseEvent>
+# include <QPainter>
 # include <QProgressDialog>
+# include <QSignalBlocker>
 # include <QStyle>
+# include <QStyleOptionViewItem>
 # include <QSet>
 # include <QTextStream>
 # include <QTimer>
@@ -195,6 +199,9 @@ public:
     Ui_DocumentRecovery ui;
     bool recovered;
     QList<Info> recoveryInfo;
+    /// What the header's check box shows, and whether any row has a box
+    Qt::CheckState headerCheck = Qt::Unchecked;
+    bool headerCheckable = false;
 
     Info getRecoveryInfo(const QFileInfo&) const;
     void writeRecoveryInfo(const Info&) const;
@@ -308,6 +315,11 @@ DocumentRecovery::DocumentRecovery(const QList<QFileInfo>& dirs,
     tree->header()->setSortIndicator(-1, Qt::AscendingOrder);
     tree->setSortingEnabled(true);
 
+    // A press on the header's check box is not one on the header: it sorts
+    // nothing
+    tree->header()->viewport()->installEventFilter(this);
+    tree->headerItem()->setToolTip(0, tr("The check box ticks every document, or none"));
+
     connect(tree, &QTreeWidget::itemChanged, this, &DocumentRecovery::updateButtons);
     updateButtons();
 
@@ -361,6 +373,111 @@ void DocumentRecovery::updateButtons()
     bool checked = !checkedItems().isEmpty();
     d_ptr->ui.buttonCleanup->setEnabled(checked);
     d_ptr->ui.buttonBox->button(QDialogButtonBox::Ok)->setEnabled(d_ptr->recovered || checked);
+    updateHeaderCheck();
+}
+
+namespace {
+
+/// A check indicator as the rows of  tree have it
+QIcon checkIndicator(QTreeWidget* tree, Qt::CheckState state, bool enabled)
+{
+    QStyle* style = tree->style();
+    QStyleOptionViewItem option;
+    option.initFrom(tree);
+    const int width = style->pixelMetric(QStyle::PM_IndicatorWidth, &option, tree);
+    const int height = style->pixelMetric(QStyle::PM_IndicatorHeight, &option, tree);
+    const qreal ratio = tree->devicePixelRatioF();
+    QPixmap pixmap(int(width * ratio), int(height * ratio));
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+
+    option.rect = QRect(0, 0, width, height);
+    option.features |= QStyleOptionViewItem::HasCheckIndicator;
+    option.state &= ~(QStyle::State_On | QStyle::State_Off | QStyle::State_NoChange
+                      | QStyle::State_HasFocus | QStyle::State_MouseOver);
+    option.state.setFlag(QStyle::State_Enabled, enabled);
+    option.state |= state == Qt::Checked ? QStyle::State_On
+        : state == Qt::PartiallyChecked ? QStyle::State_NoChange : QStyle::State_Off;
+    QPainter painter(&pixmap);
+    style->drawPrimitive(QStyle::PE_IndicatorItemViewItemCheck, &option, &painter, tree);
+    return QIcon(pixmap);
+}
+
+}  // namespace
+
+void DocumentRecovery::updateHeaderCheck()
+{
+    QTreeWidget* tree = d_ptr->ui.treeWidget;
+    int boxes = 0;
+    int ticked = 0;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* item = tree->topLevelItem(i);
+        // A recovered row has no check box any more
+        if (!(item->flags() & Qt::ItemIsUserCheckable))
+            continue;
+        ++boxes;
+        if (item->checkState(0) == Qt::Checked)
+            ++ticked;
+    }
+    d_ptr->headerCheckable = boxes > 0;
+    d_ptr->headerCheck = ticked == 0 ? Qt::Unchecked
+        : ticked == boxes ? Qt::Checked : Qt::PartiallyChecked;
+    tree->headerItem()->setIcon(0, checkIndicator(tree, d_ptr->headerCheck, boxes > 0));
+    // For whoever asks from outside, a test for one: what the box shows
+    tree->setProperty("allChecked", int(d_ptr->headerCheck));
+}
+
+void DocumentRecovery::toggleAllChecks()
+{
+    QTreeWidget* tree = d_ptr->ui.treeWidget;
+    // Half ticked, a click ticks the rest
+    const Qt::CheckState to = d_ptr->headerCheck == Qt::Checked ? Qt::Unchecked : Qt::Checked;
+    {
+        // One update for them all, not one a row
+        QSignalBlocker block(tree);
+        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* item = tree->topLevelItem(i);
+            if (item->flags() & Qt::ItemIsUserCheckable)
+                item->setCheckState(0, to);
+        }
+    }
+    updateButtons();
+}
+
+QRect DocumentRecovery::headerCheckRect() const
+{
+    const QHeaderView* header = d_ptr->ui.treeWidget->header();
+    const int margin = style()->pixelMetric(QStyle::PM_HeaderMargin, nullptr, header);
+    const int icon = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, header);
+    const int width = std::min(header->sectionSize(0), icon + 2 * margin + 4);
+    int left = header->sectionViewportPosition(0);
+    // The style puts a section's icon before its text
+    if (header->isRightToLeft())
+        left += header->sectionSize(0) - width;
+    return {left, 0, width, header->height()};
+}
+
+bool DocumentRecovery::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == d_ptr->ui.treeWidget->header()->viewport() && d_ptr->headerCheckable) {
+        switch (event->type()) {
+            case QEvent::MouseButtonPress:
+            case QEvent::MouseButtonDblClick:
+            case QEvent::MouseButtonRelease: {
+                auto mouse = static_cast<QMouseEvent*>(event);
+                if (mouse->button() == Qt::LeftButton
+                    && headerCheckRect().contains(mouse->position().toPoint())) {
+                    if (event->type() == QEvent::MouseButtonRelease)
+                        toggleAllChecks();
+                    return true;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    return QDialog::eventFilter(watched, event);
 }
 
 DocumentRecovery::~DocumentRecovery() = default;
