@@ -2791,6 +2791,15 @@ CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:press
   color: White;
 }
 
+/* The Linux backend has buttons of its own in place of the ones above, and
+   each fills itself with its palette's window colour before it draws. With
+   no ground said here that colour is the application's and not the theme's:
+   a light square, under a glyph in the theme's light text colour, on a dark
+   title bar. A background set here is what Qt puts in that palette. */
+LinuxWindowButton {
+  background-color: @PrimaryColor;
+}
+
 /* Start page file cards ----------------------------------------------------
 
 One reused widget paints every recent file and example card on the Start
