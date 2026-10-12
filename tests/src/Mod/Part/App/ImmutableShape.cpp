@@ -65,6 +65,7 @@
 #include <gp_Ax2.hxx>
 
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <future>
 #include <thread>
@@ -935,6 +936,50 @@ TEST(ImmutableShapeTest, aWireMergeCopiesAFrozenVertex)
     EXPECT_EQ(firstCopies, 1);
 }
 
+// A widening that is rounding is none (docs/TransactionLog.md sec 33.10): the
+// end of the edge added sits where the frozen one's does, one ulp wider. The
+// wire keeps the frozen edge and its vertex, where it made a copy of each to
+// grow by nothing.
+TEST(ImmutableShapeTest, aWireMergeCopiesNothingForRounding)
+{
+    BRep_Builder builder;
+    const TopoDS_Edge first = BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(10, 0, 0)).Edge();
+    const TopoDS_Edge second = BRepBuilderAPI_MakeEdge(gp_Pnt(10, 0, 0), gp_Pnt(10, 5, 0)).Edge();
+    TopoDS_Vertex join, secondStart, secondEnd;
+    TopExp::Vertices(first, secondStart, join);
+    TopExp::Vertices(second, secondStart, secondEnd);
+    const double joinTol = BRep_Tool::Tolerance(join);
+    builder.UpdateVertex(secondStart, std::nextafter(joinTol, 1.0));
+    ASSERT_GT(BRep_Tool::Tolerance(secondStart), joinTol);
+    setImmutable(first);
+
+    BRepBuilderAPI_MakeWire mkWire;
+    EXPECT_NO_THROW(mkWire.Add(first));
+    EXPECT_NO_THROW(mkWire.Add(second));
+    ASSERT_TRUE(mkWire.IsDone());
+    const TopoDS_Wire wire = mkWire.Wire();
+    EXPECT_TRUE(BRepCheck_Analyzer(wire).IsValid());
+
+    bool holdsFirst = false;
+    for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next()) {
+        EXPECT_FALSE(it.Current().TShape()->Thawed());
+        holdsFirst = holdsFirst || it.Current().TShape() == first.TShape();
+    }
+    EXPECT_TRUE(holdsFirst);
+    TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+    TopExp::MapShapesAndAncestors(wire, TopAbs_VERTEX, TopAbs_EDGE, ancestors);
+    int shared = 0;
+    for (int i = 1; i <= ancestors.Extent(); ++i) {
+        EXPECT_FALSE(ancestors.FindKey(i).TShape()->Thawed());
+        if (ancestors(i).Extent() == 2) {
+            ++shared;
+            EXPECT_EQ(ancestors.FindKey(i).TShape(), join.TShape());
+        }
+    }
+    EXPECT_EQ(shared, 1);
+    EXPECT_EQ(BRep_Tool::Tolerance(join), joinTol);
+}
+
 // A vertex parameter is derived data like a pcurve (docs/TransactionLog.md sec
 // 23.14): a frozen vertex put on a new edge -- as the offset algorithm puts an
 // input edge's ends, INTERNAL, on the edge it extends -- takes a parameter on
@@ -1014,7 +1059,7 @@ TEST(ImmutableShapeTest, aParameterOnANewPCurveLeavesTheFaceBytes)
 // sec 23.15).
 namespace {
 
-TopoDS_Wire wireOfUnequalTolerances()
+TopoDS_Wire wireOfUnequalTolerances(double wideTolerance = 2e-7)
 {
     BRep_Builder builder;
     BRepBuilderAPI_MakeWire mkWire;
@@ -1024,9 +1069,9 @@ TopoDS_Wire wireOfUnequalTolerances()
     mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0, 5, 0), gp_Pnt(0, 0, 0)).Edge());
     const TopoDS_Wire wire = mkWire.Wire();
     const TopoDS_Edge wide = TopoDS::Edge(TopExp_Explorer(wire, TopAbs_EDGE).Current());
-    builder.UpdateEdge(wide, 2e-7);
+    builder.UpdateEdge(wide, wideTolerance);
     for (TopExp_Explorer it(wide, TopAbs_VERTEX); it.More(); it.Next())
-        builder.UpdateVertex(TopoDS::Vertex(it.Current()), 2e-7);
+        builder.UpdateVertex(TopoDS::Vertex(it.Current()), wideTolerance);
     return wire;
 }
 
@@ -1080,6 +1125,37 @@ TEST(ImmutableShapeTest, aFaceOnAFrozenWireThawsWhatMustGrow)
     }
     EXPECT_EQ(thawed, 3);
     EXPECT_EQ(same, 1);
+}
+
+// A growth that is rounding is none. A tolerance that came through the root of
+// a squared distance sits a few 1e-14 above the 1e-7 it stands for; a frozen
+// edge under a face of such a tolerance was copied to grow by nothing, and the
+// copy then lay beside the original wherever the edge is shared -- a refine's
+// sewing merged the two into a new edge and renamed every face on it, on the
+// one platform whose boolean left that rounding (docs/TransactionLog.md sec
+// 33.10).
+TEST(ImmutableShapeTest, aFaceOnAFrozenWireCopiesNothingForRounding)
+{
+    const TopoDS_Wire wire = wireOfUnequalTolerances(1.0000006e-7);
+    setImmutable(wire);
+    const std::vector<double> tolerances = tolerancesOf(wire);
+
+    TopoDS_Face face;
+    EXPECT_NO_THROW(face = BRepBuilderAPI_MakeFace(wire, true).Face());
+    ASSERT_FALSE(face.IsNull());
+    EXPECT_TRUE(BRepCheck_Analyzer(face).IsValid());
+    EXPECT_EQ(tolerancesOf(wire), tolerances);
+    // The face holds the wire as it is: nothing thawed, every edge the wire's.
+    const TopoDS_Shape faceWire = TopExp_Explorer(face, TopAbs_WIRE).Current();
+    EXPECT_FALSE(faceWire.TShape()->Thawed());
+    EXPECT_EQ(faceWire.TShape(), wire.TShape());
+    int edges = 0;
+    for (TopExp_Explorer it(face, TopAbs_EDGE); it.More(); it.Next()) {
+        ++edges;
+        EXPECT_FALSE(it.Current().TShape()->Thawed());
+        EXPECT_TRUE(it.Current().Immutable());
+    }
+    EXPECT_EQ(edges, 4);
 }
 
 // The same on a wire that is placed and holds an edge reversed, as a pattern
