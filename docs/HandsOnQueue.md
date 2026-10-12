@@ -80,6 +80,34 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 00:56: THE COPY STAGED AT 17:52 CAN END BY ITSELF WHEN THE
+PREFERENCES ARE OPENED -- heap corruption, seven sessions of ten, no crash
+log. Entry 82. It is fixed by the commit that already waits for the push,
+`23e57d647c`; the copy under test does not have it.** From the build
+session (its message of 00:56, written here 00:57; its log `ce73bb0b0b`).
+Nothing is pushed, nothing staged; "I have no word for a restage and am
+not making one."
+- THE COPY UNDER TEST (`22ece75a08`, staged 2026-10-12 17:52) HAS, AS OF
+  NOW, three defects that are fixed locally:
+  1. entry 82: opening the Preferences can end the program, at once or
+     later;
+  2. entry 79: a file saved with it can die at a later load (it loads on
+     another try);
+  3. entry 53: under Qt's drawing a TechDraw view can come up without
+     its geometry after an open with no recompute.
+- The stage of 14:04 (`4474fcb17e`): not entry 82 (the include came
+  with `22ece75a08`); entry 79 yes; entry 53's regression not known.
+- WAITING for the reporter's word, three things now: the push of
+  `23e57d647c`; a RESTAGE -- not asked of the reporter in so many
+  words, the build session says only that it has no word for one; and
+  entry 47 part (a), a choice of three (the block of 00:19 below).
+- Both full suites on the code of `5d63c7152d`: ctest 955 of 955; the
+  Python suite "Ran 3645 tests in 804.008s, OK (skipped=52, expected
+  failures=6)".
+- Entry 66: the material change of entry 47 takes nothing off the
+  preferences' first opening; the "most of the 1.8 s" of 23:17 is
+  withdrawn by the build session.
+
 **2026-10-13 00:19: TWO things wait for the reporter's word, not one: the
 push of `23e57d647c`, and entry 47 part (a), a choice of three.** The
 note-taker had written that part (a) was "not put as a question" -- WRONG:
@@ -1065,7 +1093,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | DONE `b20c825573` and, the reporter's three changes of 22:15, `8fed56f3df`; STAGED 2026-10-10 09:44: the tool button wears the split cube (the reporter's pick of the three, "for now"); "All views" and the setting `View/SyncLightSettings` are gone and "Apply all" is a button that copies the active view's lights to every other open 3D view once; "Direction" raises Coin's light dragger in the view, drawn over the model, its arrow orange (the build session's choice). `display-style-menu.py` 34 PASS. For the reporter to TRY: the handle by hand, and the menu as a popup. As first built, with the icon and the way the light's direction is set left open: the Display style menu has the style as ONE combo box with icons (the active view's), the anti-aliasing as another (applies at once), and a Lights section in place of the Light Sources preference page, which is gone -- headlight, fill light, ambient light, a switch, a colour and an intensity each; a change is stored in the active view's properties (`Light_*`), or in every open 3D view's with "All views" ticked (the remembered setting `View/SyncLightSettings`, for all the light settings); "Save as default" writes the view's lights into the preferences; "Direction" is a toggle (the button or Escape). `tests/gui/display-style-menu.py` 24 PASS; fifteen other GUI tests around it, no FAIL. OPEN in it, by the reporter's words of the evening: (a) the ICON -- the three offered were turned down, two directions offered after a search, not answered; (b) the light's DIRECTION by the Coin light manipulator, as the shadow light has it -- next session. Three things for the reporter to TRY by hand (`docs/HandsOnLog.md`). The reporter about 22:15 (all three done since, as the head of this cell says): one of the build session's three icons goes on the tool button "for now" (WHICH did not reach it -- no picture came; asked); the check box "All views" becomes a BUTTON "Apply all"; the light handle with the manipulator. The request as answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59) |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | STAGED 2026-10-10 09:44, fixed `66ccd277b9`: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, fixed `dfdfc04c5c`, staged with it: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
-| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
+| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | 2026-10-13 00:56: the material change `3e64f3e9d6` takes NOTHING off the first opening (2.20 s on the staged copy, 2.23 and 1.99 s with it) -- the build session's "most of the 1.8 s" of 23:17 is WITHDRAWN by it; and opening the preferences on the copy staged 2026-10-12 17:52 can end the program, entry 82. MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, pushed 2026-10-12 17:56; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; FIXED `22ece75a08`; its test `task-panel-clear-of-docks.py` 21 claims, no FAIL, on the staged build. As it stood in work at 16:36: the cause CONFIRMED and reproduced by a test on the old build (the note-taker's guess held); the fix, `OverlayManager::occupied()` no longer skips a dock that is not see-through at the moment. OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
 | 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | DONE `bbe8525de7` but for the reporter's point 1, local, NOT pushed, NOT staged (21:03): after the fix no dock is solid when docks are put into overlays together; its own test `overlay-see-through.py` 58 claims, no FAIL. Point 1 as before: the transparent mode itself NOT seen broken by the build session -- if it still is on the next stage, which panel, the eye pressed or not, the pointer over it or not. Before, 18:57: in the main tree, uncommitted, in a build started 18:44. A DEFECT found and reproduced by the build session on the staged copy under Dark: of the docks put into overlays together all but the tree view stay SOLID until the pointer has been in the overlay and out again, or the eye is pressed; a fix is written, in that build. The transparent mode itself it could NOT see broken; whether that defect is what the reporter meant is NOT known. Before, 17:58: points 2 to 4 and the two settings written in a second working copy, not built. Point 1 ANSWERED by the reporter 17:07, said to the build session: "overlay has a setting, 'transparent mode' to control this behavior, but right now it seems borken, fix it" -- so the overlay's transparent mode does not keep a hovered panel see-through, to be found and fixed; not looked into yet. The five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
@@ -1081,6 +1109,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | FIXED `9b9a479164`, local, NOT pushed, NOT staged (23:17): on the build before the fix the detector fired on the first load of the re-saved file; with it, twelve loads of that file and two of the original wrote no crash log, the picture the same to the pixel; the detector stays in. NOT shown: that the staged copy crashes -- it has the same code. FOUND 22:09, the cause named: a repaint during the restore builds a PartDesign feature's visual on demand, which reads the `SuppressedShape` still parked from the load; serving it announces a change, and the answer to that regroups the view provider's children and takes roots out of the scene root under the walk. WHICH FILES, CORRECTED by the build session 22:20 (its "every file saved since the suppression port, 2026-10-03" is WITHDRAWN): a file SAVED BY A BUILD THAT HAS THE MERGE of 2026-10-12 (`ffb143c047`) -- so by the stage of 14:04 or of 17:52, both EXPOSED -- at any later load, one load in a few on this box; the stages before 2026-10-12 are not exposed by its reading of the code, which no run has shown; the file is not damaged; no crash seen on the staged copy itself. The fix: a regrouping asked for during such a walk waits until the walk is over. Before, 21:03, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
 | 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | DONE `53a231cc72`, local, NOT pushed, NOT staged (23:17): its own test `recovery-dialog-check-all.py` 13 claims, no FAIL; "Start Recovery" cannot be pressed with nothing ticked. As built: the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, local, NOT pushed, NOT staged (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
+| 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), local, NOT pushed, NOT in the copy under test; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. NO word for a restage yet |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5809,7 +5838,8 @@ more load-time changes IN WORK, uncommitted, not tested.** From the build sessio
   - the material library asked the file system for its own directory
     once a MATERIAL: 0.4 to 1.6 s of the first document of a session,
     "and most of the 1.8 s of entry 66's first opening of the
-    preferences";
+    preferences" [the part on entry 66 WITHDRAWN by the build session
+    2026-10-13 00:56: measured, nothing off that opening];
   - a section view and a hatch read their pattern file at every restore,
     drawn or not; now when first drawn. (Two changes; with the one above,
     the three.)
@@ -8206,7 +8236,7 @@ which document); whether the whole picture is turned -- background and all
 -- or the object alone against a right-way-up view; and whether it is
 mirrored top to bottom or left to right on the screen.
 
-## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- MEASURED; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`; the first opening and a reset under a theme not changed, three proposals and one question for the reporter -- proposal 2 DONE `ee9583a247` under entry 47, STAGED 2026-10-12 14:04, the opening not measured again (see `docs/HandsOnLog.md`)
+## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- MEASURED; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`; the first opening and a reset under a theme not changed, three proposals and one question for the reporter -- proposal 2 DONE `ee9583a247` under entry 47, STAGED 2026-10-12 14:04, the opening measured again 2026-10-13: the material change of entry 47 takes nothing off it; the copy staged 2026-10-12 17:52 can die at this dialog, entry 82 (see `docs/HandsOnLog.md`)
 
 **2026-10-09 19:58, from the build session: MEASURED before anything was
 changed, and the freeze FIXED `6073d32437`; local, not pushed, not staged.**
@@ -8350,13 +8380,27 @@ and the question are as they were.
 **2026-10-12 23:17, a pointer from entry 47:** by the build session, a
 change in work under entry 47 -- the material library asking the file
 system for its own directory once a material -- is "most of the 1.8 s"
-of this entry's first opening of the preferences. Written, in a build,
+of this entry's first opening of the preferences [WITHDRAWN by the
+build session 2026-10-13 00:56: measured, nothing off it; the block below].
+Written, in a build,
 uncommitted, not tested; the opening is NOT measured again. (From the build session's message of 23:17, written here 23:19)
 
 **2026-10-13 00:15, the pointer from entry 47 again:** the change is
 COMMITTED, `3e64f3e9d6`, local, not staged. What is measured with it is
 a load (entry 47); this entry's first opening of the preferences is NOT
 measured again. (From the build session's message of 2026-10-13 00:15, written here 00:17)
+
+**2026-10-13 00:56, the first opening MEASURED AGAIN -- the material change
+takes nothing off it; and the staged copy can die at this dialog.**
+From the build session's message of 2026-10-13 00:56, written here 00:57.
+- "Entry 66 (a): the material change takes nothing off the preferences'
+  first opening (2.20 s staged, 2.23 and 1.99 s now), so the 1.8 s that
+  entry put down to the Material module is not what `3e64f3e9d6`
+  stopped."
+- So the pointer of 2026-10-12 23:17 above -- "most of the 1.8 s" -- is
+  WITHDRAWN by the build session; the first opening is as it was.
+- Opening the Preferences on the copy staged 2026-10-12 17:52 can end
+  the program: entry 82.
 
 ## 67. Removing a TechDraw page outside a transaction crashes -- FIXED `39b548048b`, STAGED 2026-10-12 14:04, pushed 2026-10-12 17:56; a delete by hand with undo off for the reporter to try (see `docs/HandsOnLog.md`)
 
@@ -9712,6 +9756,67 @@ The note-taker's notes:
   thousands of entries on this box is where it would show" -- the build
   session.
 
+## 82. The copy staged 2026-10-12 17:52 can end by itself when the Preferences are opened: heap corruption, the include of a second working copy -- FIXED already by `23e57d647c`, local, NOT pushed, NOT in the copy under test; found 2026-10-13 00:56
+
+**2026-10-13 00:56, from the build session** (found and measured by it, NOT
+reported by the reporter; the number is the note-taker's; From the build session's message of 2026-10-13 00:56, written here 00:57). Its
+heading: "THE COPY STAGED AT 17:52 DIES WHEN THE PREFERENCES ARE OPENED".
+- MEASURED: sessions that open Edit > Preferences twice and close it, a
+  fresh profile, no document; "eight on each build turn about, plus two
+  before". The staged copy (`22ece75a08`) ended with 0xC0000374, heap
+  corruption, in SEVEN OF TEN -- "while the dialog was being built,
+  after its first close, or at the session's end with the work done".
+  Its build of the night: NONE of ten.
+- No crash log comes of it: "Windows ends a process on heap corruption
+  without one."
+- THE CAUSE, "read in the sources and not shown under a debugger": the
+  include reported at 18:57, which "did more than 'does not compile on
+  another box'". `22ece75a08` has
+  `#include "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"`
+  in `DlgSettingsUI.cpp`. From 16:41 to 18:48 that file in the build
+  session's second working copy was entry 69's, "with three members
+  more"; the staged `FreeCADGui.dll` was built at 17:35. The file that
+  MAKES the preference page (`resource.cpp`) includes the main tree's
+  header. "So the page is allocated by the size of one class and
+  constructed by the code of another, three pointers longer: 24 bytes
+  written past the end of the block, every time the preferences are
+  built."
+- The fix is `23e57d647c` (2026-10-12 18:18), "in every build of mine
+  since 20:00, NOT in the copy under test".
+- The stage of 14:04 "has none of the include's effect (the include came
+  with `22ece75a08`)".
+- Nothing pushed, nothing staged: "I have no word for a restage and am
+  not making one."
+
+READ by the note-taker in the repository, nothing run:
+- `git grep fcad-wt 22ece75a08 -- src`: the include is line 53 of
+  `src/Gui/PreferencePages/DlgSettingsUI.cpp` in the staged commit; none
+  at HEAD.
+- `src/Gui/resource.cpp` line 49 in the staged commit:
+  `#include "PreferencePages/DlgSettingsUI.h"` -- the main tree's.
+- `.conda/user-app/bin/FreeCADGui.dll` is dated 2026-10-12 17:35.
+- NOT read: what the header in the second working copy held at 17:35;
+  that is the build session's account.
+
+The note-taker's notes, none of it said by the build session:
+- With a document open, a program that ends like this takes the unsaved
+  work with it. The measured sessions had no document.
+- The hand checks of entries 70 and 71 are IN the Preferences dialog,
+  and those of 72, 75 and 76 pass through it to see a setting: on the
+  copy staged at 17:52 they all run into this.
+- A guess, NOT said by the reporter: the Document Recovery dialog of
+  entry 80 (reported 2026-10-12 21:37) is shown at a start after the
+  program did not end properly; a death of this kind, or of entry 79's,
+  would bring it up.
+- origin/LinkVibe (`5de7d97293`) carries the same include: on another
+  box it does not compile; on a box that HAS that path it would build
+  into this.
+- NOT known: whether the reporter has seen the staged copy end by
+  itself since 17:52 -- at the Preferences, later, or at exit. If so:
+  the time, and what was open, under this entry.
+- NOT ASKED of the reporter in so many words: a restage of a build with
+  the three local fixes (this, 79, 53).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -9721,4 +9826,4 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it)
+and 81 found by it; entry 82 is of 2026-10-13, found by it)
