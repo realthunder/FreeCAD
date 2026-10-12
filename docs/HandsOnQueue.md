@@ -977,7 +977,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
 | 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space. ANSWERED 18:29: NO new mode -- from the property view the omni search opens with text already typed that leads to the current object, document or view and ends with a dot, so the list shows all its properties; Ctrl+F applies in the tree view and the property view ONLY; the tree's "Search..." menu item is kept and opens the omni search; opened from the tree view it scrolls the tree by itself as before and sets and clears the item's background as before | DONE `b70dab6401`, local, NOT pushed, NOT staged (21:03): its own test `omni-search-from-tree-and-property-view.py` 18 claims, no FAIL; found by it and fixed with it: opened on a lone dot (several objects selected) the omni search selected the first object in place of them all with the tree's "sync view" on. Before, 18:57: written in a second working copy, not built; the build session's choices on the three smaller points are under the entry, one of them (g) against the note-taker's reading. The four points answered 18:29 |
 | 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | OPEN, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
-| 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all" | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry |
+| 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | OPEN; the three points answered 21:40, nothing left unanswered |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -9255,7 +9255,7 @@ The note-taker's notes:
 - Nothing is asked of the reporter here. If the staged copy dies at a
   load, the time and the file are worth a note under this entry.
 
-## 80. The file recovery dialog: a check box in the first column that selects all or none (a change request) -- OPEN
+## 80. The file recovery dialog: a check box in the first column that selects all or none (a change request) -- OPEN, the three points answered 2026-10-12 21:40
 
 **2026-10-12 21:37, the reporter:** "new request, in file recovery prompt
 dialog, add check box in first column to toggle select all"
@@ -9292,6 +9292,19 @@ c. "Check all" and the rows with WARNINGS, which start unchecked on
    purpose: checked with the rest -- the note-taker's reading of
    "select all" -- or left out? And a row already recovered has no check
    box and is not touched.
+
+**2026-10-12 21:40, the reporter answers the three points:** "a yes. b yes. c
+yes"
+
+The note-taker's reading:
+- a. Point a held two places; "yes" is taken for the one put as the
+  guess: the check box sits in the HEADER of the first column, beside
+  "Document Name". Not a row of its own.
+- b. Yes: with only some rows checked the box shows a half state, and a
+  click on it then checks all.
+- c. Yes: "check all" checks the rows with warnings too. A row already
+  recovered has no check box and is not touched.
+Nothing of this entry is left unanswered.
 
 ## Inbox
 
