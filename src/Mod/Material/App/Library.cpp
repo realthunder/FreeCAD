@@ -145,6 +145,16 @@ Qt::CaseSensitivity Library::caseSensitivity() const
 
 QString Library::getDirectoryPath() const
 {
+    // The directory is kept in its canonical form already (canonical(), in
+    // the constructor and in setDirectory()). Asked for again at every call
+    // it was a round of questions to the file system for each part of the
+    // path -- and getRelativePath() calls this once a material as a library
+    // is read, which the first Part feature made in a session brings about:
+    // a quarter of a second of the first document opened, by the load's own
+    // clock (docs/HandsOnQueue.md entry 47). A directory that did not exist
+    // when it was set has no canonical form and is still asked.
+    if (!_directory.isEmpty())
+        return _directory;
     return QDir(_directory).canonicalPath();
 }
 
