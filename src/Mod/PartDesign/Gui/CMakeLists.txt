@@ -125,6 +125,8 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderBoolean.h
     ViewProviderSolid.cpp
     ViewProviderSolid.h
+    ViewProviderSolidBody.cpp
+    ViewProviderSolidBody.h
     ViewProviderSplit.cpp
     ViewProviderSplit.h
     ViewProviderAddSub.cpp

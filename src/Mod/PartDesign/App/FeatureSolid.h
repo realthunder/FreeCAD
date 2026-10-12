@@ -30,7 +30,10 @@ namespace PartDesign
 {
 
 /**
- * Solid feature produced by Split
+ * Solid feature produced by Split: one piece of what it cuts apart.
+ *
+ * Not the persistent group of a body's solid, which is SolidBody. The type
+ * name stays as it is: a build knows a saved object by it.
  */
 class PartDesignExport Solid : public Part::Feature
 {

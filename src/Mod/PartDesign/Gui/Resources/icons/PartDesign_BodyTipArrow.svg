@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- The tip of a body: the solid that is the body's shape and takes its new
+     features. Two chevrons, so that it differs from the tip of a solid in
+     shape as well as in colour. -->
+<svg
+   xmlns="http://www.w3.org/2000/svg"
+   width="48"
+   height="64"
+   viewBox="0 0 48 64"
+   version="1.1">
+  <path
+     d="M 3,9 H 14 L 28,32 14,55 H 3 L 17,32 Z"
+     style="fill:#00d000;stroke:#1a1a1a;stroke-width:4;stroke-linejoin:round;" />
+  <path
+     d="M 20,9 H 31 L 45,32 31,55 H 20 L 34,32 Z"
+     style="fill:#00d000;stroke:#1a1a1a;stroke-width:4;stroke-linejoin:round;" />
+</svg>

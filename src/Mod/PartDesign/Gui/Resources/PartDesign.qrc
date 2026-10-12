@@ -56,6 +56,9 @@
         <file>icons/PartDesign_Split.svg</file>
         <file>icons/PartDesign_Solid.svg</file>
         <file>icons/PartDesign_Solid_Active.svg</file>
+        <file>icons/PartDesign_SolidBody.svg</file>
+        <file>icons/PartDesign_TipArrow.svg</file>
+        <file>icons/PartDesign_BodyTipArrow.svg</file>
         <file>icons/PartDesign_ShapeBinder.svg</file>
         <file>icons/PartDesign_Sprocket.svg</file>
         <file>icons/PartDesign_SubShapeBinder.svg</file>

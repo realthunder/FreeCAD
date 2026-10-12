@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- One solid of a body: a block, with the bracket of a group around it -->
+<svg
+   xmlns="http://www.w3.org/2000/svg"
+   width="64"
+   height="64"
+   viewBox="0 0 64 64"
+   version="1.1">
+  <!-- top, left and right face of the block -->
+  <path
+     d="M 34,10 56,21 34,32 12,21 Z"
+     style="fill:#8ab4f0;stroke:#0b1521;stroke-width:2;stroke-linejoin:round;" />
+  <path
+     d="M 12,21 34,32 V 58 L 12,47 Z"
+     style="fill:#3465a4;stroke:#0b1521;stroke-width:2;stroke-linejoin:round;" />
+  <path
+     d="M 34,32 56,21 V 47 L 34,58 Z"
+     style="fill:#204a87;stroke:#0b1521;stroke-width:2;stroke-linejoin:round;" />
+  <!-- the bracket -->
+  <path
+     d="M 12,5 H 4 V 59 H 12"
+     style="fill:none;stroke:#729fcf;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;" />
+</svg>

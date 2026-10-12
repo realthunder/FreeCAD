@@ -44,6 +44,7 @@
 #include "FeaturePy.h"
 #include "Body.h"
 #include "ShapeBinder.h"
+#include "SolidBody.h"
 
 FC_LOG_LEVEL_INIT("PartDesign", true, true)
 
@@ -128,14 +129,27 @@ void Feature::onChanged(const App::Property *prop)
     if (!this->isRestoring() 
             && this->getDocument()
             && !this->getDocument()->isPerformingTransaction()) {
-        if (prop == &NewSolid) 
+        if (prop == &NewSolid) {
             onNewSolidChanged();
+            // The feature now starts a solid, or joined the one before it
+            if (auto body = getFeatureBody())
+                body->syncSolidBodies(true);
+        }
+        else if (prop == &BaseFeature) {
+            if (auto body = getFeatureBody())
+                body->touchSolidBodies();
+        }
         else if (prop == &Visibility && Visibility.getValue()) {
             if (auto body = Body::findBodyOf(this)) {
                 auto siblings = body->getSiblings(this);
                 for (auto feat : siblings) {
                     if (feat != this && feat->Visibility.getValue())
                         feat->Visibility.setValue(false);
+                }
+                // The solid body's own shape is another view of the same solid
+                if (auto solid = body->getSolidBody(this)) {
+                    if (solid->Visibility.getValue())
+                        solid->Visibility.setValue(false);
                 }
                 body->signalSiblingVisibilityChanged(siblings);
             }

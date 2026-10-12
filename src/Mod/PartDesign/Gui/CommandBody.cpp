@@ -49,6 +49,7 @@
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureBase.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
+#include <Mod/PartDesign/App/SolidBody.h>
 #include <Mod/Part/Gui/PartParams.h>
 #include <Mod/Part/App/PartParams.h>
 
@@ -666,15 +667,25 @@ void CmdPartDesignMoveTip::activated(int iMsg)
                 QObject::tr( "Couldn't determine a body for the selected feature '%s'.", selFeature->Label.getValue() ) );
         return;
     } else if ( !selFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId () ) &&
+            !selFeature->isDerivedFrom(PartDesign::SolidBody::getClassTypeId () ) &&
             selFeature != body && body->BaseFeature.getValue() != selFeature ) {
         QMessageBox::warning (nullptr, QObject::tr( "Selection error" ),
                 QObject::tr( "Only a solid feature can be the tip of a body." ) );
         return;
     }
 
+    // In a body that keeps solid bodies there is a tip for each solid, and
+    // one solid that is the tip of the body. A feature under a solid body
+    // becomes the tip of its solid; a solid body becomes the tip of the body.
+    auto selSolid = Base::freecad_dynamic_cast<PartDesign::SolidBody>(selFeature);
+    auto ownerSolid = selSolid ? nullptr : body->getSolidBody(selFeature);
+
     App::DocumentObject* oldTip = body->Tip.getValue();
-    if (oldTip == selFeature) { // it's not generally an error, so print only a console message
-        Base::Console().Message ("%s is already the tip of the body\n", selFeature->getNameInDocument () );
+    if (selSolid ? body->getTipSolidBody() == selSolid
+                 : (ownerSolid ? ownerSolid->Tip.getValue() == selFeature
+                               : oldTip == selFeature)) {
+        // it's not generally an error, so print only a console message
+        Base::Console().Message ("%s is already the tip\n", selFeature->getNameInDocument () );
         return;
     }
 
@@ -682,6 +693,13 @@ void CmdPartDesignMoveTip::activated(int iMsg)
 
     if (selFeature == body) {
         FCMD_OBJ_CMD(body,"Tip = None");
+    } else if (selSolid) {
+        FCMD_OBJ_CMD(body,"Tip = " << getObjectCmd(selSolid));
+        if (selSolid->Tip.getValue())
+            FCMD_OBJ_SHOW(selSolid->Tip.getValue());
+    } else if (ownerSolid) {
+        FCMD_OBJ_CMD(ownerSolid,"Tip = " << getObjectCmd(selFeature));
+        FCMD_OBJ_SHOW(selFeature);
     } else {
         FCMD_OBJ_CMD(body,"Tip = " << getObjectCmd(selFeature));
 
