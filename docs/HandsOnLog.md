@@ -6226,3 +6226,61 @@ Nothing of this evening is pushed or staged: origin/LinkVibe is
 `5de7d97293`, the copy under test `22ece75a08` of 17:52. The copy under
 test has entry 79's crash and what was pushed has the include of the top
 of this section.
+
+## The night of 2026-10-12 to 13: entry 47 further, and entry 53 again -- all LOCAL, not pushed, not staged
+
+The reporter, about 22:45: "Once done. Continue fix the issues in the
+notes". The queue's inbox was empty and its entries done or with the
+reporter but for entry 47, so that one. Evidence as above, `s1`: `g-q-*`,
+`g-r-*` the first build of these changes, `g-t-*`, `g-u-*` the second,
+`prof48-rp*` four sampled loads.
+
+| # | State | In one line |
+|---|---|---|
+| 47 | `3e64f3e9d6` | the material library asked the file system for the canonical form of its own directory once a material while it was read (`Library::getDirectoryPath`), and the first Part feature of a session reads the libraries: the restore's "addObject" 1.82 s -> 1.52 to 1.60 s, its total 6.46 s -> 6.17 to 6.25 s, three loads of the original each way |
+| 47 | `00fa69e485`, NO gain shown | a section view made its hatch lines at every restore, drawn or not: it opened its pattern file, which a document in the blob form first writes out. Made when first drawn now; a hatch object's own copy of the same at a restore is gone. The time between the restore and the end of the open is what it was, 2.76 to 2.93 s against 2.84 s |
+| 53, again | FIXED `5d63c7152d` | `techdraw-page-before-its-view-providers.py` passed on the build of 2026-10-12 11:21 and fails two claims on the copy staged at 17:52 and since: under Qt's drawing the view of a page opened and not recomputed has no outline until something repaints it. The repaint the view provider asks for "a turn later" can come from the progress bar's own pump, inside the slice, with the document still restoring. Asked again until it is not. 12 of 12. Which change of the afternoon moved the timing was not looked for |
+
+**What that gap is, and a correction to what I wrote above.** I put the
+3 s between the restore and the end of the open down to TechDraw's answer
+to "the document is restored", from the samples. By the clock the change
+to the section views took nothing off it. One of the sampled profiles
+shows why: 1.6 sampled seconds of the open are the recompute question
+("Some document(s) require recomputation for migration purpose") waiting
+for my script to answer it, with the restore's slices running inside its
+event loop. So that gap, in every load I have measured since 2026-10-10,
+holds a wait that is the measuring script's.
+
+**A second thing the measuring did.** Two of three loads of the resaved
+file on the first build showed the model at 13 s where it had come at 8 to
+9 s. The slices' own times were the same in all three. Sampled: a picture
+of the view is a file creation (`BGFXView::writeDumpImage`, 3 of 15
+sampled seconds in `CreateFileW` in the slowest load) and the slices run
+nested inside the picture's event pump; one picture a second held the
+load back. With the picture schedule of the twelve loads of 22:3x (every
+2 s), six loads of the resaved file on the second build: the open 6.7 to
+6.9 s (6.9 to 8.2 s in the twelve), the model whole at 8.0 s in all six
+(in nine of the twelve). The original, three loads: the open 9.9 to
+10.2 s, the model in the picture asked for at 8 s after it, which was
+taken at 8.3 to 8.9 s.
+
+TechDraw's GUI tests on the second build, no FAIL:
+`techdraw-page-before-its-view-providers.py` 12,
+`techdraw-page-backend-hatch.py` 39, `techdraw-never-shown-page-exports.py`
+10, `techdraw-page-items-when-needed.py` 10,
+`techdraw-dimension-click-no-recompute.py` 12,
+`techdraw-page-backend-single-draw.py` 17; on the first,
+`techdraw-page-backend-switch.py` 11 and `techdraw-section-line-click.py`
+10, and the Material and TechDraw ctests 49 of 49.
+
+**Both suites on `5d63c7152d`** (the build of 2026-10-13 00:0x, a
+temporary directory that started empty): ctest 955 of 955 (`ctest16.log`);
+Python "Ran 3645 tests in 804.008s, OK (skipped=52, expected failures=6)"
+(`pytest16.log`).
+
+**Entry 66 (a), the preferences' first opening: the material change takes
+nothing off it.** A fresh profile, no document, the dialog opened twice
+(`e66b.py`, `g-v-pref-*`): the first opening 2.20 s on the staged copy,
+2.23 and 1.99 s on this build; the second 0.19 to 0.20 s on both. So the
+1.8 s that entry put down to the Material module reading its library is
+not the question this change stopped asking.
