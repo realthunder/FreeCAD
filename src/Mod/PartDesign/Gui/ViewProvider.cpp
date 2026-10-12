@@ -705,6 +705,18 @@ void ViewProvider::updateVisual()
     }
 }
 
+void ViewProvider::show()
+{
+    SolidBodyHighlight highlight(getObject());
+    inherited::show();
+}
+
+void ViewProvider::hide()
+{
+    SolidBodyHighlight highlight(getObject());
+    inherited::hide();
+}
+
 void ViewProvider::onChanged(const App::Property* prop) {
     if (prop == &IconColor) {
         pxTipIcon = QPixmap();

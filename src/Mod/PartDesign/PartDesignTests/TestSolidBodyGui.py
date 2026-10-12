@@ -22,7 +22,8 @@
 # ***************************************************************************
 
 """The tree side of PartDesign::SolidBody: what is listed under what, the
-arrows that mark the tips, and moving a tip by dropping its arrow.
+arrows that mark the tips, and moving a tip by dropping its arrow. And where
+in the 3D view a solid body is highlighted when it is selected.
 
 The arrows are extra icons of the tree items. A drag of one is carried out by
 the view providers (ViewProvider.canDragIcon/canDropIcon/dropIcon), which is
@@ -248,3 +249,150 @@ class TestSolidBodyGui(unittest.TestCase):
         self.assertEqual(self.Body.isElementVisible(first.Name), 1)
         b.ViewObject.Visibility = True
         self.assertFalse(first.Visibility)
+
+    # -- where a solid body is highlighted -----------------------------------------------
+    #
+    # A selection, a preselection and a show on top are all drawn on the nodes
+    # ViewProvider.getDetailPath() ends at. The solid body's own are switched
+    # off while its features draw the solid, so the path is theirs then.
+
+    def path(self, sub, vobj=None):
+        """What getDetailPath() answers: the objects whose root is on the
+        path, whether every switch on it is on, and the detail"""
+        from pivy import coin
+
+        path = coin.SoPath()
+        detail = (vobj or self.Body.ViewObject).getDetailPath(sub, path, True)
+        nodes = [path.getNode(i) for i in range(path.getLength())]
+        roots = {}
+        for obj in self.Doc.Objects:
+            roots[obj.ViewObject.RootNode.this.__int__()] = obj.Name
+        on = True
+        for node in nodes:
+            if node.isOfType(coin.SoSwitch.getClassTypeId()):
+                if coin.cast(node, "SoSwitch").whichChild.getValue() == coin.SO_SWITCH_NONE:
+                    on = False
+        names = [roots[n.this.__int__()] for n in nodes if n.this.__int__() in roots]
+        return names, on, detail
+
+    def faceIndex(self, detail):
+        from pivy import coin
+
+        self.assertIsNotNone(detail)
+        return coin.cast(detail, "SoFaceDetail").getPartIndex()
+
+    def testSolidBodyIsHighlightedOnItsTip(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        self.assertEqual(self.path("Solid001."), (["Body", "Box003"], True, None))
+        self.assertEqual(self.path("Solid."), (["Body", "Box001"], True, None))
+        # asked as the feature is: one row and the other end at the same nodes
+        self.assertEqual(self.path("Solid001.")[0], self.path("Box003.")[0])
+        self.assertEqual(self.path("Solid001.")[0], self.path("Solid001.Box003.")[0])
+
+    def testElementOfSolidBodyIsHighlightedOnItsTip(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        for index in (1, 4, 6):
+            names, on, detail = self.path("Solid001.Face%d" % index)
+            self.assertEqual((names, on), (["Body", "Box003"], True))
+            self.assertEqual(self.faceIndex(detail), index - 1)
+        # the face it is on the solid body's own shape
+        center = second.Shape.getElement("Face4").CenterOfMass
+        self.assertTrue(center.isEqual(d.Shape.getElement("Face4").CenterOfMass, 1e-7))
+        names, on, detail = self.path("Solid001.Edge3")
+        self.assertEqual((names, on), (["Body", "Box003"], True))
+        self.assertIsNotNone(detail)
+
+    def testMappedElementOfSolidBody(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        mapped = second.Shape.getElementMappedName("Face4")
+        self.assertTrue(mapped)
+        # as a selection has it: the mapped name alone, and with the indexed
+        # one behind it
+        for sub in ("Solid001.;%s" % mapped, "Solid001.;%s.Face4" % mapped):
+            names, on, detail = self.path(sub)
+            self.assertEqual((names, on), (["Body", "Box003"], True), sub)
+            self.assertEqual(self.faceIndex(detail), 3, sub)
+
+    def testSolidSeenThroughAnotherFeature(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        c.ViewObject.Visibility = True
+        self.assertFalse(d.Visibility)
+        self.assertEqual(self.path("Solid001."), (["Body", "Box002"], True, None))
+        # an element of the solid is not one of that feature: the solid, whole
+        self.assertEqual(self.path("Solid001.Face1"), (["Body", "Box002"], True, None))
+        # the other solid is where it was
+        self.assertEqual(self.path("Solid."), (["Body", "Box001"], True, None))
+
+    def testHiddenSolidIsLeftWithItsOwnNodes(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        d.ViewObject.Visibility = False
+        self.assertFalse(c.Visibility or d.Visibility or second.Visibility)
+        names, on, detail = self.path("Solid001.")
+        self.assertEqual((names, on), (["Body", "Solid001"], False))
+
+    def testShownSolidShapeIsHighlightedItself(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        second.ViewObject.Visibility = True
+        self.assertFalse(c.Visibility or d.Visibility)
+        self.assertEqual(self.path("Solid001."), (["Body", "Solid001"], True, None))
+        names, on, detail = self.path("Solid001.Face4")
+        self.assertEqual((names, on), (["Body", "Solid001"], True))
+        self.assertEqual(self.faceIndex(detail), 3)
+
+    def testFeatureUnderSolidBodyIsHighlightedAsBefore(self):
+        a, b, c, d = self.twoSolids()
+        names, on, detail = self.path("Solid001.Box003.Face4")
+        self.assertEqual((names, on), (["Body", "Box003"], True))
+        self.assertEqual(self.faceIndex(detail), 3)
+        # a hidden feature is not on screen, and is not made to look so
+        names, on, detail = self.path("Solid001.Box002.")
+        self.assertEqual((names, on), (["Body", "Box002"], False))
+
+    def testLinkToSolidBodyKeepsItsOwnNodes(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        link = self.Doc.addObject("App::Link", "Link")
+        link.LinkedObject = second
+        self.Doc.recompute()
+        for sub in ("", "Face4"):
+            names, on, detail = self.path(sub, link.ViewObject)
+            self.assertEqual(names, ["Link"], sub)
+            self.assertTrue(on, sub)
+        self.assertEqual(self.faceIndex(self.path("Face4", link.ViewObject)[2]), 3)
+        # and the solid body is highlighted on its tip all the same
+        self.assertEqual(self.path("Solid001.")[0], ["Body", "Box003"])
+
+    def testSelectionOfSolidBodyStaysWhileItsFeaturesAreShownAndHidden(self):
+        # The highlight is moved to the feature the solid is then seen through
+        # (SolidBodyHighlight); the selection itself is not touched by that
+        a, b, c, d = self.twoSolids()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, "Body", "Solid001.")
+        Gui.Selection.addSelection(self.Doc.Name, "Body", "Solid001.Face4")
+        Gui.Selection.addSelection(self.Doc.Name, "Body", "Solid.")
+
+        def selected():
+            return sorted(
+                sub for s in Gui.Selection.getSelectionEx("", 0) for sub in s.SubElementNames
+            )
+
+        before = selected()
+        # the face by its mapped name, which is how a selection keeps it
+        self.assertEqual(len(before), 3)
+        self.assertEqual(before[:2], ["Solid.", "Solid001."])
+        self.assertTrue(before[2].endswith(".Face4"))
+        c.ViewObject.Visibility = True
+        self.assertEqual(selected(), before)
+        c.ViewObject.dropIcon(d, SOLID_TIP)
+        self.assertEqual(selected(), before)
+        d.ViewObject.dropIcon(c, SOLID_TIP)
+        self.assertEqual(selected(), before)
+        d.ViewObject.Visibility = False
+        self.assertEqual(selected(), before)
+        Gui.Selection.clearSelection()

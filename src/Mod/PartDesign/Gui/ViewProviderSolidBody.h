@@ -23,9 +23,12 @@
 #ifndef PARTGUI_ViewProviderSolidBody_H
 #define PARTGUI_ViewProviderSolidBody_H
 
+#include <vector>
+
 #include <QByteArray>
 #include <QCoreApplication>
 
+#include <App/DocumentObserver.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
 
@@ -65,6 +68,28 @@ PartDesignGuiExport bool isSolidTip(const PartDesign::Body *body,
                                     const App::DocumentObject *feature);
 //@}
 
+/** Keeps the highlight of a selected solid body on what draws the solid
+ *
+ * A selection of a solid body is highlighted on the feature the solid is seen
+ * through (ViewProviderSolidBody::getDetailPath()), and that is asked once,
+ * when the selection is made. Held while a feature is shown or hidden, this
+ * takes the highlight off before that changes and puts it back after, on
+ * whichever feature the solid is seen through then. Nothing else of the
+ * selection changes.
+ */
+class PartDesignGuiExport SolidBodyHighlight
+{
+public:
+    ///  feature is the one about to be shown or hidden
+    explicit SolidBodyHighlight(const App::DocumentObject *feature);
+    ~SolidBodyHighlight();
+    SolidBodyHighlight(const SolidBodyHighlight &) = delete;
+    SolidBodyHighlight &operator=(const SolidBodyHighlight &) = delete;
+
+private:
+    std::vector<App::SubObjectT> selections;
+};
+
 /** View provider of PartDesign::SolidBody
  *
  * In the tree the solid body holds the features of its solid. In the 3D view
@@ -100,6 +125,15 @@ public:
     bool canReorderObject(App::DocumentObject *, App::DocumentObject *) override;
     bool reorderObjects(const std::vector<App::DocumentObject *> &, App::DocumentObject *) override;
 
+    /** The scene path of the solid, or of an element of it
+     *
+     * While the solid body's own shape is hidden its nodes draw nothing, and
+     * a highlight set on them shows nothing. The path is then that of the
+     * feature the solid is seen through, so selecting the solid body, or
+     * hovering over it in the tree, highlights the solid in the 3D view.
+     */
+    bool getDetailPath(const char *subname, SoFullPath *path, bool append, SoDetail *&det) const override;
+
     bool canDelete(App::DocumentObject *obj) const override;
     /// Deleting a solid body deletes the solid: every feature it holds
     bool onDelete(const std::vector<std::string> &) override;
@@ -107,6 +141,10 @@ public:
 protected:
     void setupContextMenu(QMenu *menu, QObject *receiver, const char *member) override;
     bool setEdit(int ModNum) override;
+
+private:
+    /// The feature the solid is seen through in the 3D view, or null
+    Gui::ViewProviderDocumentObject *shownFeature() const;
 };
 
 } // namespace PartDesignGui

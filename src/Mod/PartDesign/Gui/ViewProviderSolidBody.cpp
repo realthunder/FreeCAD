@@ -26,9 +26,13 @@
 # include <QAction>
 # include <QMenu>
 # include <QMessageBox>
+# include <QTimer>
+# include <Inventor/SoFullPath.h>
+# include <Inventor/nodes/SoSeparator.h>
 #endif
 
 #include <App/Document.h>
+#include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Gui/ActionFunction.h>
@@ -37,7 +41,10 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/OwnNodesPath.h>
+#include <Gui/Selection/Selection.h>
 #include <Gui/Tree.h>
+#include <Gui/ViewParams.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Mod/PartDesign/App/SolidBody.h>
@@ -144,11 +151,122 @@ void PartDesignGui::dropTipIcon(App::DocumentObject *source,
     }
 }
 
+SolidBodyHighlight::SolidBodyHighlight(const App::DocumentObject *feature)
+{
+    if (!feature || !feature->isAttachedToDocument() || feature->isRestoring())
+        return;
+    auto body = PartDesign::Body::findBodyOf(feature);
+    auto solid = body ? body->getSolidBody(feature) : nullptr;
+    if (!solid || !Gui::Selection().isSelected(
+                solid, "", Gui::ResolveMode::OldStyleElement))
+        return;
+
+    // The solid body or an element of it, by whichever path it was selected.
+    // Taken off while the path still ends where the highlight was put.
+    for (auto &sel : Gui::Selection().getSelectionT(
+                solid->getDocument()->getName(), Gui::ResolveMode::NoResolve)) {
+        if (sel.getSubObject() != solid)
+            continue;
+        Gui::Selection().updateSelection(false, sel.getDocumentName().c_str(),
+                sel.getObjectName().c_str(), sel.getSubName().c_str());
+        selections.push_back(std::move(sel));
+    }
+}
+
+SolidBodyHighlight::~SolidBodyHighlight()
+{
+    // As a shown object gets its own highlight back
+    // (ViewProviderDocumentObject::show())
+    if (selections.empty() || !Gui::ViewParams::getUpdateSelectionVisual())
+        return;
+    for (auto &sel : selections) {
+        Gui::Selection().updateSelection(true, sel.getDocumentName().c_str(),
+                sel.getObjectName().c_str(), sel.getSubName().c_str());
+    }
+}
+
+namespace {
+
+/** Puts back a highlight that went with the one of another selection
+ *
+ * A solid body and the feature it is seen through are highlighted on the same
+ * nodes. Under the render type "Legacy" a highlight is taken off the nodes
+ * themselves, so with both selected, deselecting one clears what the other
+ * still has to show. The render engine keeps a highlight by its selection,
+ * and needs none of this.
+ */
+class SolidBodySelectionObserver : public Gui::SelectionObserver
+{
+public:
+    SolidBodySelectionObserver()
+        : Gui::SelectionObserver(true, Gui::ResolveMode::NoResolve)
+    {}
+
+    void onSelectionChanged(const Gui::SelectionChanges &msg) override
+    {
+        if (msg.Type != Gui::SelectionChanges::RmvSelection
+                || Gui::ViewParams::isUsingRenderer())
+            return;
+        auto removed = msg.Object.getSubObject();
+        if (!removed)
+            return;
+
+        // What shares the nodes with it: the features of a solid body, the
+        // solid body of a feature
+        std::vector<App::DocumentObject*> others;
+        if (auto solid = Base::freecad_dynamic_cast<PartDesign::SolidBody>(removed))
+            others = solid->Group.getValues();
+        else {
+            auto body = PartDesign::Body::findBodyOf(removed);
+            if (auto solid = body ? body->getSolidBody(removed) : nullptr)
+                others.push_back(solid);
+        }
+        bool selected = false;
+        for (auto obj : others) {
+            if (obj && Gui::Selection().isSelected(
+                        obj, "", Gui::ResolveMode::OldStyleElement)) {
+                selected = true;
+                break;
+            }
+        }
+        if (!selected)
+            return;
+
+        std::vector<App::SubObjectT> again;
+        for (auto &sel : Gui::Selection().getSelectionT(
+                    msg.Object.getDocumentName().c_str(), Gui::ResolveMode::NoResolve)) {
+            if (std::find(others.begin(), others.end(), sel.getSubObject()) != others.end())
+                again.push_back(std::move(sel));
+        }
+        if (again.empty())
+            return;
+        // Once every view has taken the highlight off. Hidden first: a view
+        // still holds the selection as shown, and shows it again only after
+        // it was told otherwise. One no longer selected by then is left out
+        // by the selection itself.
+        QTimer::singleShot(0, QCoreApplication::instance(), [again]() {
+            for (auto &sel : again) {
+                for (bool show : {false, true}) {
+                    Gui::Selection().updateSelection(show, sel.getDocumentName().c_str(),
+                            sel.getObjectName().c_str(), sel.getSubName().c_str());
+                }
+            }
+        });
+    }
+};
+
+} // anonymous namespace
+
 PROPERTY_SOURCE(PartDesignGui::ViewProviderSolidBody, PartGui::ViewProviderPart)
 
 ViewProviderSolidBody::ViewProviderSolidBody()
 {
     sPixmap = "PartDesign_SolidBody.svg";
+
+    // Lives as long as the application: the selection it listens to is gone
+    // before a static of this library would be
+    static auto observer = new SolidBodySelectionObserver;
+    (void)observer;
 }
 
 ViewProviderSolidBody::~ViewProviderSolidBody() = default;
@@ -264,6 +382,65 @@ bool ViewProviderSolidBody::reorderObjects(const std::vector<App::DocumentObject
     // means what it means to the body
     auto vp = bodyViewProvider(getObject());
     return vp && vp->reorderObjects(objs, before);
+}
+
+Gui::ViewProviderDocumentObject *ViewProviderSolidBody::shownFeature() const
+{
+    auto owner = Base::freecad_dynamic_cast<PartDesign::SolidBody>(getObject());
+    if (!owner)
+        return nullptr;
+
+    // The tip where it is shown: it has the shape the solid body has. Else
+    // the latest of the features that are.
+    Gui::ViewProviderDocumentObject *shown = nullptr;
+    for (auto obj : owner->Group.getValues()) {
+        auto vp = Base::freecad_dynamic_cast<Gui::ViewProviderDocumentObject>(
+                Gui::Application::Instance->getViewProvider(obj));
+        if (!vp || !vp->isShow())
+            continue;
+        if (obj == owner->Tip.getValue())
+            return vp;
+        shown = vp;
+    }
+    return shown;
+}
+
+bool ViewProviderSolidBody::getDetailPath(
+        const char *subname, SoFullPath *path, bool append, SoDetail *&det) const
+{
+    if (!subname)
+        subname = "";
+
+    // Only the solid itself and an element of it: a path going on into a
+    // feature is followed by the base class. And only where the features are
+    // drawn beside this object, under the group the path has come to. A Link
+    // to the solid body draws a copy of the nodes of this object alone, with
+    // a visibility of its own, and is left with those. So is a caller that
+    // keeps something on the path and asks for this object's own nodes.
+    if (append && !isShow() && path->getLength()
+            && !Gui::OwnNodesPath::wanted()
+            && (!*subname || Data::isElementName(subname))
+            && !Data::hasMissingElement(subname)) {
+        auto owner = Base::freecad_dynamic_cast<PartDesign::SolidBody>(getObject());
+        auto vp = shownFeature();
+        SoNode *tail = path->getTail();
+        if (owner && vp && tail->isOfType(SoGroup::getClassTypeId())
+                && static_cast<SoGroup*>(tail)->findChild(vp->getRoot()) >= 0) {
+            std::string element;
+            if (*subname && vp->getObject() == owner->Tip.getValue()) {
+                // The shape here is that of the tip, element for element.
+                // A mapped name is one of this shape, so it is turned into
+                // the indexed one here.
+                auto indexed = owner->Shape.getShape().getElementName(subname).index;
+                if (indexed)
+                    element = indexed.toString();
+            }
+            // An element of the solid on a feature that is not its tip is
+            // not to be found there: the solid, whole
+            return vp->getDetailPath(element.c_str(), path, true, det);
+        }
+    }
+    return inherited::getDetailPath(subname, path, append, det);
 }
 
 bool ViewProviderSolidBody::canDelete(App::DocumentObject *) const
