@@ -1079,9 +1079,15 @@ void Body::syncSolidBodies(bool force)
             // Named Solid, Solid001: a path names an object with a dot behind
             // it (Body.Solid001.Face1), so it is never read as the element Solid1
             doc->addObject(solid, "Solid", false);
+            // An object added as one is not set up by the document, and has
+            // no look until it is given one
+            solid->giveDefaultAppearance();
             solid->_Body.setValue(this);
             // Its features draw the solid; this object's shape is for referencing
             solid->Visibility.setValue(false);
+            // Of the body's material, as its features are, until given another
+            if (solid->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID())
+                solid->ShapeMaterial.setValue(ShapeMaterial.getValue());
             assigned[i] = solid;
             created.push_back(solid);
             // Behind the first feature of the solid, never in front of the

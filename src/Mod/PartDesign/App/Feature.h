@@ -94,6 +94,18 @@ public:
 
     void onChanged(const App::Property* prop) override;
 
+    /** Take the look of the solid body this feature belongs to
+     *
+     * A solid body given a look gives it to its features: the own look of
+     * the faces of a feature nobody gave one is its solid body's, and stays
+     * a look nobody chose (App::PropertyElementAppearance::isFollowingMaterial()).
+     * A feature given a look of its own keeps that.
+     *
+     * @param always: also the look of a solid body that was given none, for
+     * when that takes the place of one it was given
+     */
+    void followSolidBodyLook(bool always = false);
+
     App::DocumentObject *getSubObject(const char *subname, 
         PyObject **pyObj, Base::Matrix4D *pmat, bool transform, int depth) const override;
 

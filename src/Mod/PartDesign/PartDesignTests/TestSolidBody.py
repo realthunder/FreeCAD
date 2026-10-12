@@ -530,6 +530,227 @@ class TestSolidBody(unittest.TestCase):
         self.assertEqual(self.Doc.UndoCount, count)
         self.assertEqual(self.shown(first), ["Box"])
 
+    # -- the look and the material of a solid ------------------------------------------
+    #
+    # A solid body given a look gives it to its features; one given a look of
+    # its own keeps that. Its material card is theirs.
+
+    RED = (1.0, 0.0, 0.0)
+    GREEN = (0.0, 1.0, 0.0)
+    BLUE = (0.0, 0.0, 1.0)
+
+    def rgb(self, obj):
+        return tuple(round(c, 3) for c in obj.ShapeColor[:3])
+
+    def drawn(self, obj):
+        """The colours the faces of an object are drawn in"""
+        faces = obj.ElementAppearance.Faces
+        return {tuple(round(c, 3) for c in faces[i].DiffuseColor[:3]) for i in range(len(faces))}
+
+    def testFeaturesTakeTheLookOfTheirSolidBody(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        grey = self.rgb(c)
+        self.assertNotEqual(grey, self.RED)
+        first.ShapeColor = self.RED
+        self.assertEqual(self.rgb(a), self.RED)
+        self.assertEqual(self.rgb(b), self.RED)
+        self.Doc.recompute()
+        self.assertEqual(self.drawn(a), {self.RED})
+        self.assertEqual(self.drawn(b), {self.RED})
+        self.assertEqual(self.drawn(first), {self.RED})
+        # the other solid is not its
+        for obj in (c, d, second):
+            self.assertEqual(self.rgb(obj), grey)
+            self.assertEqual(self.drawn(obj), {grey})
+
+    def testTransparencyOfASolidBody(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.Transparency = 40
+        self.assertEqual(a.Transparency, 40)
+        self.assertEqual(b.Transparency, 40)
+        self.assertEqual(c.Transparency, 0)
+
+    def testFeatureGivenALookKeepsIt(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        a.ShapeColor = self.BLUE
+        first.ShapeColor = self.RED
+        self.assertEqual(self.rgb(a), self.BLUE)
+        self.assertEqual(self.rgb(b), self.RED)
+        self.Doc.recompute()
+        # the faces Box001 has of Box are Box's colour still
+        self.assertEqual(self.drawn(b), {self.RED, self.BLUE})
+        # given one after its solid body was: the same
+        first.ShapeColor = self.GREEN
+        self.assertEqual(self.rgb(a), self.BLUE)
+        self.assertEqual(self.rgb(b), self.GREEN)
+        b.ShapeColor = self.RED
+        first.ShapeColor = self.BLUE
+        self.assertEqual(self.rgb(b), self.RED)
+
+    def testFeatureGivingUpItsLookTakesTheSolidBodys(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.ShapeColor = self.RED
+        b.ShapeColor = self.GREEN
+        self.assertEqual(self.rgb(b), self.GREEN)
+        b.ElementAppearance.clear()
+        self.assertEqual(self.rgb(b), self.RED)
+        first.ShapeColor = self.BLUE
+        self.assertEqual(self.rgb(b), self.BLUE)
+
+    def testNewFeatureTakesTheLook(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.ShapeColor = self.RED
+        self.Body.Tip = b
+        e = self.box("Box004", 8)
+        self.Doc.recompute()
+        self.assertEqual(self.Body.getSolidBody(e), first)
+        self.assertEqual(self.rgb(e), self.RED)
+
+    def testFeatureLeavingASolidKeepsWhatItHad(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.ShapeColor = self.RED
+        b.NewSolid = True
+        self.Doc.recompute()
+        self.assertInStep()
+        other = self.Body.getSolidBody(b)
+        self.assertNotEqual(other, first)
+        self.assertEqual(self.rgb(b), self.RED)
+        # and takes the look its new solid body is given
+        other.ShapeColor = self.GREEN
+        self.assertEqual(self.rgb(b), self.GREEN)
+        self.assertEqual(self.rgb(a), self.RED)
+
+    def testFeatureJoiningASolidTakesItsLook(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.ShapeColor = self.RED
+        second.ShapeColor = self.GREEN
+        self.assertEqual(self.rgb(c), self.GREEN)
+        # Box002 and what follows it are of the first solid now
+        c.NewSolid = False
+        self.Doc.recompute()
+        self.assertEqual(self.Body.getSolidBody(c), first)
+        self.assertEqual(self.rgb(c), self.RED)
+        self.assertEqual(self.rgb(d), self.RED)
+
+    def testLookOfASolidBodyIsUndone(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        grey = self.rgb(a)
+        self.Doc.UndoMode = 1
+        self.Doc.openTransaction("colour")
+        first.ShapeColor = self.RED
+        self.Doc.commitTransaction()
+        self.assertEqual(self.rgb(b), self.RED)
+        self.Doc.undo()
+        self.assertEqual(self.rgb(first), grey)
+        self.assertEqual(self.rgb(a), grey)
+        self.assertEqual(self.rgb(b), grey)
+        self.Doc.redo()
+        self.assertEqual(self.rgb(a), self.RED)
+        self.assertEqual(self.rgb(b), self.RED)
+
+    def testLookOfASolidBodyAfterAReload(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.ShapeColor = self.RED
+        b.ShapeColor = self.GREEN
+        self.Doc.recompute()
+        saved = self.tempFile("PartDesignTestSolidBody_look.FCStd")
+        self.Doc.saveAs(saved)
+        App.closeDocument(self.Doc.Name)
+        doc = App.openDocument(saved)
+        try:
+            body = doc.getObject("Body")
+            first = body.SolidBodies[0]
+            a, b = doc.getObject("Box"), doc.getObject("Box001")
+            self.assertEqual(self.rgb(first), self.RED)
+            self.assertEqual(self.rgb(a), self.RED)
+            self.assertEqual(self.rgb(b), self.GREEN)
+            # which of them was given its look is in the file
+            first.ShapeColor = self.BLUE
+            self.assertEqual(self.rgb(a), self.BLUE)
+            self.assertEqual(self.rgb(b), self.GREEN)
+        finally:
+            App.closeDocument(doc.Name)
+
+    def testSolidBodySavedWithNoLookIsGivenOne(self):
+        # what a solid body made before it was given a look when made is
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.ElementAppearance.clear()
+        saved = self.tempFile("PartDesignTestSolidBody_nolook.FCStd")
+        self.Doc.saveAs(saved)
+        App.closeDocument(self.Doc.Name)
+        doc = App.openDocument(saved)
+        try:
+            first = doc.getObject("Body").SolidBodies[0]
+            self.assertEqual(self.rgb(first), self.rgb(doc.getObject("Box002")))
+            first.ShapeColor = self.RED
+            self.assertEqual(self.rgb(doc.getObject("Box")), self.RED)
+            self.assertEqual(self.rgb(doc.getObject("Box001")), self.RED)
+        finally:
+            App.closeDocument(doc.Name)
+
+    def twoCards(self):
+        import Materials
+
+        materials = Materials.MaterialManager().Materials
+        steel = [m for m in materials.values() if m.Name == "Steel-Generic"][0]
+        other = [m for m in materials.values() if m.Name == "Aluminum-Generic"][0]
+        return steel, other
+
+    def testMaterialOfASolidBodyIsItsFeatures(self):
+        steel, aluminum = self.twoCards()
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        default = self.Body.ShapeMaterial.UUID
+        self.assertEqual(first.ShapeMaterial.UUID, default)
+        first.ShapeMaterial = steel
+        for obj in (a, b):
+            self.assertEqual(obj.ShapeMaterial.UUID, steel.UUID)
+        for obj in (c, d, second, self.Body):
+            self.assertEqual(obj.ShapeMaterial.UUID, default)
+        # the material of a feature is its solid body's, and so its siblings'
+        d.ShapeMaterial = aluminum
+        for obj in (c, d, second):
+            self.assertEqual(obj.ShapeMaterial.UUID, aluminum.UUID)
+        for obj in (a, b, first):
+            self.assertEqual(obj.ShapeMaterial.UUID, steel.UUID)
+        # a feature added takes the one of the solid it is added to
+        self.Body.Tip = b
+        e = self.box("Box004", 8)
+        self.Doc.recompute()
+        self.assertEqual(self.Body.getSolidBody(e), first)
+        self.assertEqual(e.ShapeMaterial.UUID, steel.UUID)
+
+    def testMaterialOfTheBodyIsEverySolids(self):
+        steel, aluminum = self.twoCards()
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        first.ShapeMaterial = aluminum
+        self.Body.ShapeMaterial = steel
+        for obj in (a, b, c, d, first, second):
+            self.assertEqual(obj.ShapeMaterial.UUID, steel.UUID)
+
+    def testNewSolidBodyIsOfTheBodysMaterial(self):
+        steel, aluminum = self.twoCards()
+        a = self.box("Box")
+        self.Doc.recompute()
+        self.Body.ShapeMaterial = steel
+        b = self.box("Box001", 100, newSolid=True)
+        self.Doc.recompute()
+        for solid in self.solidBodies():
+            self.assertEqual(solid.ShapeMaterial.UUID, steel.UUID)
+        self.assertEqual(a.ShapeMaterial.UUID, steel.UUID)
+        self.assertEqual(b.ShapeMaterial.UUID, steel.UUID)
+
     # -- what a build without SolidBody reads ----------------------------------------
 
     def testSiblingsAreGroupedUnderTheLastFeature(self):

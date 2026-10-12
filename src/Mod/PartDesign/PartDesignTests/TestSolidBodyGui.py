@@ -271,6 +271,42 @@ class TestSolidBodyGui(unittest.TestCase):
         # and the other solid stayed as it was
         self.assertTrue(d.ViewObject.Visibility)
 
+    # -- the look of a solid --------------------------------------------------------------
+
+    def look(self, obj):
+        return tuple(round(c, 3) for c in obj.ViewObject.ShapeColor[:3])
+
+    def testLookGivenToTheViewOfASolidBodyIsItsFeatures(self):
+        red, green, blue = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        grey = self.look(d)
+        first.ViewObject.ShapeColor = red
+        self.assertEqual(self.look(a), red)
+        self.assertEqual(self.look(b), red)
+        self.assertEqual(self.look(c), grey)
+        self.assertEqual(self.look(d), grey)
+        # a feature given its own keeps it
+        b.ViewObject.ShapeColor = green
+        first.ViewObject.ShapeColor = blue
+        self.assertEqual(self.look(a), blue)
+        self.assertEqual(self.look(b), green)
+
+    def testLookOfTheSolidOfTheBodysTip(self):
+        # the view of the body takes the look of its tip and gives its own to
+        # it: neither is a look somebody gave that feature
+        red, green = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        self.assertEqual(self.Body.Tip, d)
+        second.ViewObject.ShapeColor = red
+        self.assertEqual(self.look(c), red)
+        self.assertEqual(self.look(d), red)
+        second.ViewObject.ShapeColor = green
+        self.assertEqual(self.look(c), green)
+        self.assertEqual(self.look(d), green)
+        self.assertTrue(d.MapFaceColor)
+
     # -- where a solid body is highlighted -----------------------------------------------
     #
     # A selection, a preselection and a show on top are all drawn on the nodes

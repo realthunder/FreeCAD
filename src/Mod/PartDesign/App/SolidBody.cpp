@@ -27,6 +27,7 @@
 #include <Base/Tools.h>
 
 #include "Body.h"
+#include "Feature.h"
 #include "SolidBody.h"
 
 using namespace PartDesign;
@@ -187,6 +188,70 @@ void SolidBody::onChanged(const App::Property* prop)
         }
     }
     inherited::onChanged(prop);
+
+    if (prop == &Group)
+        handOn(true, true);
+    else if (prop == &ShapeMaterial)
+        handOn(true, false);
+    else if (prop == &ElementAppearance)
+        handOn(false, true);
+}
+
+void SolidBody::onDocumentRestored()
+{
+    // One made before a solid body was given a look when it is made
+    if (!ElementAppearance.hasBase(App::PropertyElementAppearance::Face)) {
+        try {
+            giveDefaultAppearance();
+        }
+        catch (Base::Exception &e) {
+            e.ReportException();
+        }
+    }
+    // And had no material of its own: it is of its features', which were
+    // of the body's, and would give them the default one otherwise
+    if (auto tip = Base::freecad_dynamic_cast<Part::Feature>(Tip.getValue())) {
+        if (hasFeature(tip) && tip->ShapeMaterial.getValue().getUUID()
+                                    != ShapeMaterial.getValue().getUUID())
+            ShapeMaterial.setValue(tip->ShapeMaterial.getValue());
+    }
+    lookGiven = isLookGiven();
+    inherited::onDocumentRestored();
+}
+
+bool SolidBody::isLookGiven() const
+{
+    using Store = App::PropertyElementAppearance;
+    return ElementAppearance.hasBase(Store::Face)
+        && !ElementAppearance.isFollowingMaterial(Store::Face);
+}
+
+void SolidBody::handOn(bool card, bool look)
+{
+    // Given, or given until now: its features go back to what it has instead
+    bool handLook = false;
+    if (look) {
+        bool given = isLookGiven();
+        handLook = given || lookGiven;
+        lookGiven = given;
+    }
+
+    auto doc = getDocument();
+    if (!doc || !isAttachedToDocument() || isRestoring()
+            || doc->testStatus(App::Document::Restoring)
+            || doc->isPerformingTransaction())
+        return;
+
+    for (auto obj : Group.getValues()) {
+        auto feature = Base::freecad_dynamic_cast<PartDesign::Feature>(obj);
+        if (!feature)
+            continue;
+        if (card && feature->ShapeMaterial.getValue().getUUID()
+                        != ShapeMaterial.getValue().getUUID())
+            feature->ShapeMaterial.setValue(ShapeMaterial.getValue());
+        if (handLook)
+            feature->followSolidBodyLook(true);
+    }
 }
 
 App::DocumentObject *SolidBody::getSubObject(const char *subname,

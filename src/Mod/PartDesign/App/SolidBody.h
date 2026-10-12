@@ -68,6 +68,7 @@ public:
     App::DocumentObjectExecReturn *execute() override;
     short mustExecute() const override;
     void onChanged(const App::Property* prop) override;
+    void onDocumentRestored() override;
 
     const char* getViewProviderName() const override {
         return "PartDesignGui::ViewProviderSolidBody";
@@ -100,6 +101,20 @@ public:
 
     /// Set Shape from Tip; what execute() does
     App::DocumentObjectExecReturn *updateShape();
+
+private:
+    /// Whether somebody gave the faces a look (it is not the material card's)
+    bool isLookGiven() const;
+    /** Give the features what is the solid's
+     *
+     * The material card to every one of them: a solid is of one material.
+     * The own look of the faces, if somebody gave this object one, to each
+     * feature nobody gave a look (PartDesign::Feature::followSolidBodyLook()).
+     */
+    void handOn(bool card, bool look);
+
+    /// isLookGiven() as it last was: a look taken away again is handed on too
+    bool lookGiven = false;
 };
 
 } //namespace PartDesign

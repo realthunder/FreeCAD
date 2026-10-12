@@ -5075,3 +5075,67 @@ Gui behaviour and the value in two objects.
 
 *Left open with it:* whether the fall back is for faces and transparency
 alone or for lines and points too.
+
+#### 14.6.13 A solid body's look is its features' (2026-10-12)
+
+The object 14.6.12 waited for is there: `PartDesign::SolidBody`, one for
+each solid of a body that holds more than one. The user, with it:
+
+> "I also want appearance/material assigned in solidbody to be inherited
+> by all its feature"
+
+and, to "should a look set on a feature itself win over the solid body's,
+or the solid body's over everything below it -- I'd make the feature win":
+"ok, go" -- said to a message that also offered to build something else,
+so it is taken as the answer and not more than that. **Taken as ruled: a
+solid body's look is what its features fall back to, and a feature given
+a look of its own keeps it.** The rest of what follows is *mine*, built so
+that could be tried, and the user's to overrule.
+
+*How.* By the follow a look nobody chose already has
+(`PropertyElementAppearance::isFollowingMaterial()`, 14.6.10): a feature
+that follows takes the own look of its solid body's faces as its own,
+still as a look nobody chose (`PartDesign::Feature::followSolidBodyLook()`,
+which is `followMaterial()` with the solid body's look for the card's). So
+the look is the feature's value, drawn and mapped on by the code that is
+there, written to the file, and read by a build that knows no solid body.
+A feature somebody gave a look does not follow and is left alone; given
+back (`Reset appearance to material`, or `ElementAppearance.clear()`) it
+takes its solid body's again.
+
+*When.* The solid body's own look changes
+(`SolidBody::onChanged(ElementAppearance)`); a feature joins it (`Group`);
+a feature's own look or card changes while it follows. A solid body nobody
+gave a look hands nothing on -- its features keep the card's -- except in
+place of a look it was given and is no more.
+
+*What it is not.*
+
+- Faces only: colour, transparency and the rest of the faces' own look.
+  14.6.12's open point on lines and points is still open.
+- A face painted on the solid body's own shape (`Body.Solid.Face3`) is that
+  shape's, and no feature's.
+- A feature that leaves a solid keeps the look it had there until its new
+  solid body is given one.
+- The body's own look is as 14.6.12 found it: mirrored with its tip by the
+  view provider. Nothing of that was touched, and a body of one solid has
+  no solid body.
+
+*The material card* (`ShapeMaterial`), with it. Upstream's rule, a body is
+one solid of one material (0804d80ebf), is each solid's where a body keeps
+solid bodies: a solid body's card is its features', a feature's is its
+solid body's and so its siblings', a feature added takes the one of the
+solid it joins, and a new solid body starts with the body's. The body's
+card is still every feature's, through them every solid body's.
+
+*Found on the way.* A solid body was added to the document as an object
+(`Document::addObject(DocumentObject*, ...)`), which does not set an object
+up: it had no look, drew `(0.14, 0.14, 0.14)` where nothing was mapped
+onto it, and a colour given to it did not end the follow
+(`PropertyElementAppearance::setBase()` on a kind with no own look states
+the look and leaves the flag). It is given its default look where it is
+made now, and one read from a file without is given one then.
+
+Tests: `PartDesignTests.TestSolidBody` (the look and the material of a
+solid), `TestSolidBodyGui` (given through the view provider, and the solid
+of the body's tip, twice).

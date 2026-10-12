@@ -163,14 +163,45 @@ void Feature::onChanged(const App::Property *prop)
         }
         else if (prop == &ShapeMaterial) {
             // A body is one solid of one material: its features share it
-            // (upstream 0804d80ebf)
+            // (upstream 0804d80ebf). In a body that keeps solid bodies each
+            // solid is, and the features of one share theirs.
             if (auto body = Body::findBodyOf(this)) {
-                if (body->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID())
-                    body->ShapeMaterial.setValue(ShapeMaterial.getValue());
+                Part::Feature *owner = body->getSolidBody(this);
+                if (!owner)
+                    owner = body;
+                if (owner->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID())
+                    owner->ShapeMaterial.setValue(ShapeMaterial.getValue());
             }
         }
     }
     Part::Feature::onChanged(prop);
+
+    // A look of its own taken away again, or a card's taken meanwhile: the
+    // solid body's look is the one this feature has while it has none
+    if (prop == &ElementAppearance || prop == &ShapeMaterial)
+        followSolidBodyLook();
+}
+
+void Feature::followSolidBodyLook(bool always)
+{
+    auto doc = getDocument();
+    if (!doc || !isAttachedToDocument() || isRestoring()
+            || doc->testStatus(App::Document::Restoring)
+            || doc->isPerformingTransaction())
+        return;
+    auto body = getFeatureBody();
+    auto solid = body ? body->getSolidBody(this) : nullptr;
+    if (!solid)
+        return;
+
+    using Store = App::PropertyElementAppearance;
+    const Store &given = solid->ElementAppearance;
+    if (!always && (!given.hasBase(Store::Face) || given.isFollowingMaterial(Store::Face)))
+        return;
+    // A look somebody gave this feature outranks its solid body's
+    if (!ElementAppearance.isFollowingMaterial(Store::Face))
+        return;
+    ElementAppearance.followMaterial(Store::Face, given.getBase(Store::Face));
 }
 
 void Feature::onNewSolidChanged()
