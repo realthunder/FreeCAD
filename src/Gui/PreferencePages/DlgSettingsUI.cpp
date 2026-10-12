@@ -50,7 +50,7 @@ DlgSettingsUI.define()
 #include <Gui/ExprParams.h>
 #include <Gui/OverlayParams.h>
 // Auto generated code (Tools/params_utils.py:652)
-#include "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"
+#include "Gui/PreferencePages/DlgSettingsUI.h"
 using namespace Gui::Dialog;
 /* TRANSLATOR Gui::Dialog::DlgSettingsUI */
 
