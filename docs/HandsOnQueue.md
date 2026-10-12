@@ -803,7 +803,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
 | 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
 | 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
-| 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63) | OPEN; four points of the note-taker's under the entry |
+| 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63). ANSWERED 16:04: the name is `Std_DisplayStyle`; `Std_DrawStyle` takes its old icon back and the new command the split cube; the new command to the RIGHT of `Std_DrawStyle`, in the View menu too; the overlap is not looked into for its own sake | OPEN; the four points answered 16:04; the context menu not named in the answer |
 | 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly | OPEN; by the source `ShowAxisCross` is off by default already -- which setting is meant is the first of three points of the note-taker's under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -8301,7 +8301,7 @@ READ in the source, nothing run:
 - Entries 69 (the overlay's look) and 30 (the overlay preset, its look
   the theme's) are about the same panels.
 
-## 74. `Std_DrawStyle`: its new combo box overlaps the draw style selection; the command back to the plain list, the customized menu to a new command beside it -- OPEN
+## 74. `Std_DrawStyle`: its new combo box overlaps the draw style selection; the command back to the plain list, the customized menu to a new command beside it -- OPEN, the four points answered 2026-10-12 16:04
 
 **2026-10-12 15:58, the reporter:** "New defect/request, the Std_DrawStyle
 command, the newly added combo box overlaps with draw style selection. I
@@ -8339,6 +8339,21 @@ c. Which side of `Std_DrawStyle` in the toolbar, and in the View menu
 d. The first sentence's overlap: is it still to be looked into for its
    own sake (it may be in the new command's menu too, whatever drew the
    combo over its neighbours), or does it go with the combo?
+
+**2026-10-12 16:04, the reporter answers the four points:** "entry 74. a,
+Std_DisplayStyle. b, yes. c, Std_DisplayStyle on the right side of
+Std_DrawStyle, yes view menu too. d, no"
+
+The note-taker's reading, by letter:
+- a. The new command is `Std_DisplayStyle`. The slip is settled.
+- b. Yes: `Std_DrawStyle` takes its OLD icon back (the icon of the style
+  in use), and `Std_DisplayStyle` takes the split cube of entry 63.
+- c. `Std_DisplayStyle` stands to the RIGHT of `Std_DrawStyle` in the
+  toolbar, and it goes into the View menu too. The view's CONTEXT menu,
+  the third place the question named, is not in the answer -- the
+  note-taker's count: not said, neither yes nor no.
+- d. No: the overlap is not looked into for its own sake; it goes with
+  the combo box.
 
 READ in the source, nothing run:
 - `StdCmdDrawStyle` is in `src/Gui/CommandView.cpp` (about line 785); no
