@@ -999,7 +999,13 @@ bool Document::undoLogged(int64_t seq)
     d->activeUndoTransaction->LogKind = "undo";
     d->activeUndoTransaction->Inverts = seq;
     mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
-    _applyRevert(revert);
+    {
+        // As in _revertStep: the values of a row go back whole and in no
+        // order, and object code working one of them out of the others on
+        // the way gets it wrong (docs/TransactionLog.md sec 33.12).
+        Base::FlagToggler<bool> flag(d->undoing);
+        _applyRevert(revert);
+    }
     _commitTransaction(false);
     return true;
 }
