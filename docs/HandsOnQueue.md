@@ -797,6 +797,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, not pushed; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
+| 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view | OPEN, not looked at by the build session; a reading of the code by the note-taker under the entry, nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -7902,6 +7903,56 @@ not pushed, not staged.** The account is in `docs/HandsOnLog.md`
 on the staged copy: delete a TechDraw page with undo switched off. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
 2026-10-12"); the head of this file has the whole of the message.
 
+## 68. A task panel in its view moves under the overlaid tree view when the mouse hovers a tree item -- OPEN
+
+**2026-10-12 14:55, the reporter:** "new defect. when showing editing task
+panel in view and tree view is overlay mode on the same side, the editing
+task panel is aware of the tree view panel and show beside it as expected.
+however, when mouse hover in tree view item, the task panel moves under the
+tree view"
+
+The note-taker's reading of the report:
+- The setting: task panels shown in their views (`View/TaskPanelInView`,
+  "Task panels in their views"), the panel placed "Over the view"; the
+  tree view docked as an overlay on the side the panel is on.
+- Right: with the mouse elsewhere the panel stands clear of the tree, to
+  its inner side.
+- Wrong: the mouse over an item of the tree, and the panel moves to where
+  the tree is, under it.
+- NOT said, to ask if it matters: which side; whether the panel comes back
+  when the mouse leaves the tree; whether it is an item only or anywhere
+  on the tree panel; which workbench's task panel (any, by the wording);
+  whether the tree's overlay is in an auto-hide or mouse-through mode. The
+  copy is the one staged 2026-10-12 14:04 (`4474fcb17e`) if the reporter
+  restarted after it -- not asked.
+
+Pointers, the note-taker's, READ in the source, nothing run -- a guess at
+the cause, to be checked by the build session before it is believed:
+- The panel takes its room from `roomIn()`
+  (`src/Gui/TaskView/TaskPanelHost.cpp`, about line 100), which cuts out
+  of the view every rectangle `OverlayManager::occupied()` answers, and it
+  lays itself out again at every `OverlayManager::layoutChanged`.
+- `OverlayManager::occupied()` (`src/Gui/OverlayManager.cpp`, about line
+  2105) SKIPS an overlay whose `isOverlaid()` is false.
+- The overlay under the mouse, the one with the focus and the one being
+  revealed are taken out of overlay mode while that lasts
+  (`setOverlayMode(false)`, `OverlayManager.cpp` about lines 687 to 704),
+  which is what makes a hovered tree opaque and able to take the mouse;
+  the others are put back with `setOverlayMode(true)`.
+- So, if the reading holds: the moment the tree is hovered it stops
+  counting as occupying its strip, the next layout pass tells the task
+  panel, and the panel takes the whole width -- under the tree. It would
+  then come back when the mouse leaves. A dock that is shown and laid
+  over the view takes its room whether it is see-through at the moment
+  or not; `occupied()` asks the wrong question of it.
+- Why "an item" and not the panel's empty part: not explained by this
+  reading (with mouse-through on, the empty part of an overlay may not
+  count as under the mouse) -- a second guess, weaker than the first.
+
+Evidence: `..\dl\handson\2026-10-12\entry68\mcp_console.log`, the
+reporter's report log copied 14:56 (its last line is of 14:28; nothing in
+its tail names this).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -7909,4 +7960,5 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-entries 46 to 66; entry 67 is of 2026-10-11, found by the build session)
+entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
+entry 68 is of 2026-10-12)
