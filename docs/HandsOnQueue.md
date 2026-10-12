@@ -802,6 +802,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views". ANSWERED 15:35: the label seen is '...and the panels that are open', "ellipsed strangely"; the button first commits the relevant settings (for when auto apply is off) and then applies to the views | OPEN; both points answered 15:35 |
 | 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
 | 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
+| 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too | OPEN; two points of the note-taker's under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8227,6 +8228,56 @@ a. A changed default reaches only who has not set the value: the
    looked up whether any theme writes them.)
 b. The browser viewer, if it carries defaults of its own for the two.
 
+## 73. The close button, the "toggle panel in view" button and the overlay title buttons do not follow a dark or light theme; the toggle button shows with no view-owned task panel -- OPEN
+
+**2026-10-12 15:44, the reporter:** "new defect, the close button and toggle
+panel in view button should be dark/light theme aware. also, when there is
+no view owned task panel, the toggle button show be hidden"
+
+**2026-10-12 15:45, the reporter adds** (sent while the note above was being
+written down): "also check overlay title buttons, make them dark/light aware
+too"
+
+The note-taker's reading, three things:
+1. The close button and the button that toggles a task panel into its
+   view are drawn the same under a dark and a light theme, so under one
+   of the two they are hard to see; they shall follow the theme.
+2. The toggle button is shown when no task panel is owned by a view; it
+   shall be hidden then.
+3. The title buttons of an overlay panel: to be CHECKED for the same, and
+   made to follow a dark or light theme too.
+
+NOT said, the note-taker's count:
+a. WHERE the two buttons of point 1 are: on the title bar of the Tasks
+   panel while it is docked (not an overlay) -- the note-taker's guess,
+   since point 3 names the overlay's title buttons as another place -- or
+   on the header of a task panel shown in its view? And under which
+   theme they are the hard ones to see.
+b. Point 2, "no view owned task panel": hidden when no task panel is open
+   at all, or when the panel that is open belongs to no view (a panel
+   not tied to a view)? Both, by the note-taker's reading.
+
+READ in the source, nothing run:
+- The button "Show this task panel in its view" is `_actTaskHost` of the
+  overlay manager (`src/Gui/OverlayManager.cpp`, about lines 498 to 530,
+  1074): it is put in front of the Overlay, Float and Close buttons on
+  the title bar of the dock that holds the Tasks panel (`_taskActions`).
+  Nothing in what was read hides it when there is no panel to send.
+- The icons are set in code from ONE file each, whatever the theme:
+  `qss:overlay/close.svg`, `float.svg`, `overlay.svg`, `taskhost.svg`
+  (`refreshIcons()`, about line 526); the header of a panel in its view
+  takes `qss:overlay/mode.svg` and `taskhost.svg`
+  (`src/Gui/TaskView/TaskPanelHost.cpp`, about lines 650 and 664).
+- `src/Gui/Stylesheets/overlay` has light twins for some icons
+  (`close_light`, `close_lighter`, `float_light`, `mode_light`,
+  `overlay_light`, `taskshow_light`, `transparent_light`) and NONE for
+  `taskhost`, `autohide`, `edithide`, `editshow`; `Dark.qss` and
+  `Darker.qss` name `overlay/close_light.svg` for one close button.
+  Which button takes which, and by which rule, was not followed
+  through.
+- Entries 69 (the overlay's look) and 30 (the overlay preset, its look
+  the theme's) are about the same panels.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -8235,4 +8286,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 72 are of 2026-10-12)
+entries 68 to 73 are of 2026-10-12)
