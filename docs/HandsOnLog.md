@@ -5962,3 +5962,267 @@ session"): origin/LinkVibe at `11070a22ff`, a merge with `a98ad48342`, the
 one commit the remote had gained (App: a temporary document comes
 emptied). That merge is NOT built or tested here; the stage is the commit
 before it.
+
+## The evening of 2026-10-12: what was pushed did not compile elsewhere; entries 69, 73 and 78; entry 47's second named -- all LOCAL, not pushed, not staged
+
+The reporter: "continus as planned", then at about 18:30 "The box is quiet
+now. Resume speed test as you see fit". Evidence:
+`..\dl\handson\2026-10-12\s1` (`g-h-*` the tests on the build of the stage,
+`g-i-*` and `g-j-*` on the builds of this evening, `g-rs-*` and `g-rd-*`
+the restart probe on the staged copy and on the new build, `g-q-*` and
+`prof47-*` the quiet loads and their profiles).
+
+**What was pushed at 17:56 compiles on this box alone -- FIXED
+`23e57d647c`, not pushed.** `22ece75a08` was regenerated with cog from the
+second working copy, and cog writes the path it is run with where a
+generated file names its source: `src/Gui/PreferencePages/DlgSettingsUI.cpp`
+had `#include "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"`,
+and the comments of `DlgSettingsUI.h`, `OverlayParams.h` and `ViewParams.h`
+the same path. Found when a regeneration from `src/Gui` turned those lines
+into a diff. The reporter was told at once and asked for the word to push.
+Cog is run from `src/Gui` of the MAIN tree, never from a second copy.
+
+**ctest on the build of the stage (`22ece75a08`): 954 of 955.** The one:
+`testOmniSearch::test_everySettingIsDocumentedBriefly`, "over 400
+characters: Gui::ViewParams::TaskPanelInView (495)" -- entry 70's text.
+Said in six lines, `97e1ee791d`. The Python suite on that build was
+stopped by hand at 18:33, 1504 tests in and no failure up to there, to
+give the loads below a quiet box; it has no result.
+
+| # | State | In one line |
+|---|---|---|
+| 73 | FIXED `2d945c8268`; its test 44 of 44 | the rewritten measure ran on the build of the stage: 43 of 44, and the Dark glyphs a dim grey. The icon files are black at half opacity, so `#d0d0d0` ended 54 to 71 of 255 over a dark title bar where the same glyph is 59 to 120 darker than a light one. Drawn in white: 66 to 104 |
+| 72 | its side effect was the test's, `846d40819a` | `selection-on-top-hidden-edges.py`: nothing is drawn wrong. Of an edge on the outline the half over the face beside it is behind that face and dimmed like a hidden edge, in both renderers; of a line two pixels wide that leaves one pixel, which the render engine smooths over two. The claim was a precondition that kept the hidden edges' claims from running under the render engine at all: 18 of 18 now, the hidden edges 0.44 to 0.48 of a visible one there, 0.50 to 0.51 under Coin |
+| 78 | DONE `b70dab6401`, its test 18 of 18 | the tree panel's own search box is gone; Ctrl+F and "Search..." in a tree view open the omni search with `/ ` typed (`OmniSearchBox::open(text, tree)`), and the box scrolls and marks in the tree view it was opened from, as it already did in the main one. Ctrl+F in the property view types what leads to the thing shown and a dot: `/ Box.` and `/ Box.ViewObject.` (Data and View tab) for one object, `/ .` and `/ .ViewObject.` for several, `/ Doc#.` and `/ Doc#.ActiveView.` with nothing selected. Found by its test: a lone `.` was looked up in the tree, named the first selected object, and with the tree's "sync view" on SELECTED it in place of them all; a query with a leading dot is not looked up in the tree any more |
+
+**Entry 47 on a quiet box, 18:34 to 18:43** (the dev build of
+`22ece75a08`, no addons, `g-q-*`): the open 11.8, 11.5, 8.3, 8.8 and
+10.1 s; the model's first pixels 6 to 7 s after it in three loads of five,
+7 to 8.4 and 8 to 9 in the other two. 2026-10-11 had 5 to 6. So the second
+the morning's merge put on the wait is there on a quiet box too.
+
+It is named, from the load's own log and two sampled profiles
+(`prof47-qp1-samples.txt`, `prof47-qp2-samples.txt`; `profnew.py` lists
+what is in them and in no profile of before, `profwho.py` who calls a
+function and what is inside it):
+
+- **The looks of an older file, taken over when it is read: about 0.4 s.**
+  `PartGui::ViewProviderPartExt::finishAppearance`, 0.56 and 0.66 sampled
+  seconds, all of it new. For a file that has no `ElementAppearance` yet
+  every Part view provider takes its object's looks over, and then asks for
+  everything that depends on its object and for the dependency list of all
+  of that (`App::Document::getDependencyList`, 0.30 and 0.38 s of it) to
+  make again what was made from it before -- once an object. The view
+  providers' "finish" by the load's log: 1.58 s on 2026-10-10, 2.09 to
+  2.12 s now. The control, 20:14 to 20:19 on the build of this evening,
+  turn about with the original (`g-j-orig-*`, `g-j-resaved-*`):
+  `ctl\scanner-resaved.FCStd`, the same document saved by this build, has
+  "finish" at 1.69 and 1.70 s. NOT changed: one pass when the view
+  providers are all done would do what the pass per object does, and needs
+  a signal for that moment, which the looks' design (the other branch's)
+  does not have. The reporter's to decide.
+- **Included files written to disk when first asked for by a path: 0.4 to
+  1.6 sampled seconds.** `App::FileBlobManager::materialize` under
+  `PropertyFileIncluded::getValue`: a section view's hatch pattern at the
+  open (`DrawViewSection::makeLineSets`), a page's template and image when
+  the page is shown. A handful of files, each a file creation, which is
+  what is dear on this box (`ofstream` open 1.3 of 1.58 s in one profile,
+  `setPermissions` 0.31 of 0.44 s in the other); the two profiles differ
+  by a second in it. NOT changed.
+
+What the control showed beside it, NOT explained: the resaved file opens
+in 7.0 to 7.1 s where the original takes 10.1 to 10.6 s, its view
+providers' "update" is 0.005 s where the original's is 2.6 s, and its
+visuals take 1.0 s where the original's take 2.4 to 2.7 s -- and the model
+is on the screen no sooner after the open, 7 to 9 s. From the open asked
+to the model: about 15 s resaved, about 18 s original.
+
+| # | State | In one line |
+|---|---|---|
+| 69 | DONE `bbe8525de7`, its test 58 of 58; the reporter's point 1 NOT settled | the settings `View/DockOverlayThemeItemColor` (on) and `View/DockOverlayAlpha` (150), the tree's and the property view's item backing, the task panel's ground, the Qt properties. And a defect, reproduced on the staged copy under Dark (`g-rs-a1`, `g-rs-b1`): of the docks put into overlays together all but the tree view stay SOLID -- property view, selection view, transaction log -- until the pointer has been in the overlay and out, or the eye is pressed. The look was given to the widgets an overlay held when its mode was set; `OverlayTabWidget::addWidget` has it set again. On the new build none is solid (`g-rd-*`). The transparent mode itself I could not see broken: with the eye on a dock with the focus keeps its look, first session and after a restart, Dark and Light. Whether the defect is what "transparent mode ... seems borken" means is not known |
+
+**Tests on the builds of this evening** (the merged head `11070a22ff`
+with everything above; the last build 20:30). ctest: 955 of 955 (13
+minutes, `ctest11.log`). GUI tests, no FAIL:
+`overlay-see-through.py` 58, `omni-search-from-tree-and-property-view.py`
+18, `overlay-title-buttons-theme.py` 44, `selection-on-top-hidden-edges.py`
+18, `task-panel-clear-of-docks.py` 21, `navicube-clear-of-panels.py` 16,
+`overlay-preset-follows-the-theme.py` 45, `task-panel-place.py` 59,
+`task-panel-combo.py` 66, `display-style-menu.py` 38 (it had failed one
+claim on the stage, another the run before: not seen again),
+`task-panel-owner.py` 34 (it had not started: the launcher's guard hands
+the script to `exec`, which puts no directory on the path; the guard
+does now), `omni-search-recent-items.py` 18, `omni-search-highlighted-row.py`
+20, `omni-search-slash-word.py` 10, and the three of `51380b613c`:
+`omni-search-first-bring-up.py` 8, `task-panel-in-view.py` 89,
+`task-panel-overlay.py` 43.
+
+**Entry 69, what `bbe8525de7` has, by the reporter's points.**
+- Point 1, "when the panel is moved to overlay mode change its background
+  to transparent": the defect of the row above, fixed. Nothing else was
+  changed for it; the transparent mode (the eye) is as it was.
+- Point 2, the tree view: an item of an OVERLAID tree is backed with the 3D
+  view's background colour -- `View/BackgroundColor2` where
+  `View/Gradient` or `View/RadialGradient` is on, `View/BackgroundColor`
+  otherwise -- at the opacity of `View/DockOverlayAlpha`. Read when the
+  item is painted, so it follows a theme and a change of the 3D view's
+  colour by itself. A docked tree is as it was.
+- Point 3, the property view, overlaid: what has no row is clear; an
+  ordinary row is backed as a tree item is; an alternate row keeps the
+  overlay sheet's `alternate-background-color`, at `View/DockOverlayAlpha`.
+- Point 4, the task panel, in an overlaid Tasks tab and in its view: the
+  theme's `DialogBackgroundColor` at `View/DockOverlayAlpha`.
+- The settings, both on the preference page "Display / UI" among the
+  overlay ones and in the omni search: `View/DockOverlayThemeItemColor`
+  ("Item background follows the theme", on) -- off, the tree view's own
+  `TreeView/ItemBackground` is used as it is stored, its own alpha and
+  all, and nothing while that is empty; `View/DockOverlayAlpha` ("Overlay
+  background opacity", 150, 0 to 255).
+- The Qt properties: `overlayItemBackground` (a brush) and `overlayAlpha`
+  (an integer, -1 for "the setting") on `Gui--TreeWidget` and on
+  `Gui--PropertyEditor--PropertyEditor`; a sheet's
+  `qproperty-overlayItemBackground` is used with the alpha it states. The
+  task panel's ground a sheet overrides by stating
+  `QSint--ActionGroup QFrame[class="content"] { background-color: ... }`.
+
+**Entry 47, part (a): the question for the reporter.** Reading a file that
+was last saved before the looks were moved to the object costs about
+0.4 s here, once a load, until the file is saved again. Three ways:
+1. Leave it. The cost goes with the first save by the new version, and
+   that save takes three seconds off the open by itself (measured above,
+   not explained).
+2. One pass when all view providers are restored, in place of the pass
+   each one makes for everything that depends on its object. It needs a
+   signal for "the view providers of this document are all done", which
+   the progressive restore does not give yet; the looks' code is the
+   other branch's, so it is that branch's change or agreed with it.
+3. Keep the pass per object and make it cheaper: ask for the dependency
+   list of the dependents already taken over only, and skip it where
+   there are none. About half of it, by my estimate, not measured.
+Mine: 1, and 2 if files of before the change stay in use for long.
+
+**Entry 79 (the queue's number): a crash at the load of the resaved file
+-- OPEN.** One of three loads of `ctl\scanner-resaved.FCStd` on the build
+of 20:01 died at 20:17:00 (`g-j-resaved-2-dev`): access violation in
+`CoinRT4!SoAction::traverse`, reading 0. The stack is in the test home's
+`crash.log`, the locals in its `crash.dmp`:
+
+    Gui::Document::runDeferredRestoreSlice     Document.cpp 3812, phase one,
+      Base::SequencerLauncher::next              between two objects
+      Gui::SequencerBar::setValue -> pumpEvents
+        ... paint of the main window, of the 3D view ...
+        Gui::View3DInventorViewer::renderScene
+        SoRenderManagerP::setClippingPlanes      a bounding box of the scene
+          Gui::SoFCUnifiedSelection::getBoundingBox
+          SoGroup::getBoundingBox                lastchildindex 160, i 159
+          SoChildList::traverse                  node 0
+          SoAction::traverse(0)
+
+The walk counted 161 children of the scene root when it began and found
+none at index 159: the list was shortened under it (`SbPList::operator[]`
+past the end gives 0). Coin checks for that in a debug build only. What
+takes roots out of the scene root INSIDE the walk is not on the stack;
+the places that do (`View3DInventorViewer::removeViewProvider`, from
+`Gui::Document::handleChildren3D`) are called from the document's
+signals and the restore's slices, none from a traversal that I could
+find by reading. Not seen again in seven loads under cdb.
+
+**Entry 79, the cause.** A detector was built in for it
+(`SoFCUnifiedSelection::boundingBoxWalks()`, asked by the viewer where it
+adds and removes a view provider's root; it writes who did into the crash
+log the first three times). It named the culprit on the first load
+(`g-m-resaved-1-dev\home\crash-2026_10_12-22_03_16_968.log`):
+
+    SoRenderManagerP::setClippingPlanes          the repaint's bounding box
+      Gui::SoFCUnifiedSelection::getBoundingBox  the walk of the scene root
+        PartGui::SoFCCoordinate3::getBoundingBox a visual built on demand
+          PartDesignGui::ViewProvider::updateVisual        ViewProvider.cpp 683
+            PropertyPartShape::getShape -> ensureRestored -> serveFromBlob
+              PropertyPartShape::setValue -> hasSetValue   the serve announces
+                App::DocumentObject::onChanged -> signalChangedObject
+                  Gui::Document::slotChangedObject
+                    Gui::Document::handleChildren3D
+                      View3DInventorViewer::removeViewProvider
+
+The visual of a PartDesign feature is built on demand inside the walk; it
+reads `SuppressedShape`, which is still parked from the load; serving a
+parked shape sets the property, the set is announced, and the document
+answers an announced change by regrouping the view provider's children --
+taking the roots of claimed ones out of the scene root under the walk.
+
+Why the original `scanner.FCStd` never showed it and the same document
+saved again by this build did -- READ in the two files, the mechanism
+between them my reading of the code, not shown by a run: both carry
+`SuppressedShape` for their 126 PartDesign features. The original, and the
+copy a build of 2026-10-11 saved, name a file for it
+(`file="Pad.SuppressedShape.brp"`); the copy this build saved names a blob
+(`hash="d483..."`), the form the morning's merge brought. A shape that
+names a file is served by the restore's own slices before a view provider
+exists; one that names a blob stays parked until something asks for it,
+and the first to ask can be the visual built inside a walk. So what is
+exposed is a file SAVED BY A BUILD THAT HAS THE MERGE -- the stages of
+2026-10-12 14:04 and 17:52 and this evening's builds --, at any later
+load, one load in a few here. I first wrote "a file saved before the
+property was stored"; that was wrong, the original has the property. The
+feature's own `Shape` is served the same way from the same place, so the
+hole is not that one property's.
+
+Fixed in `Gui::Document::handleChildren3D`: asked for while a scene root is
+walking its children, the regrouping is put on a list and done by a queued
+call once the walk is over. The detector stays.
+
+Entry 79 FIXED `9b9a479164`. On the build with it (22:29), twelve loads of
+`ctl\scanner-resaved.FCStd` and two of the original (`g-p-resaved-*`,
+`g-p-orig-*`): no crash log -- the detector's, which had fired on the
+first load of the build before, or a crash's -- and the picture the same
+to the pixel, 98659 of 464380. The open 6.9 to 8.2 s resaved, 10.1 and
+10.2 s original.
+
+| # | State | In one line |
+|---|---|---|
+| 80 | DONE `53a231cc72`, its test 13 of 13 | "in file recovery prompt dialog, add check box in first column to toggle select all", in the header, half ticked with some rows ticked, the rows with a warning ticked by it too. The box is the header's icon, a check indicator as the rows have it; a press on it is taken before the header sees it and sorts nothing; a recovered row has no box and is not counted. The test leaves three documents of a dead session in the cache directory before the start-up's check runs |
+| 81 (the queue's number) | FIXED `b3e1247e6d`; the gain for the reporter NOT measured | saving over an existing file, `BackupPolicy::applyTimeStamp` lists the file's directory and asked `isFile()` of EVERY entry before looking at its name: one question to the file system an entry, at every save. The Python suite, saving into a temporary directory of mine that had grown to 3400 entries, took half a minute a save (a sample of its thread: `Document::save -> applyTimeStamp -> isFile`). The name is looked at first now. For the reporter it is what saving into a folder of many files costs on this box |
+
+**The Python suite has no result from before 22:40.** Three starts: on
+the build of the stage, stopped by me at 18:33 for the quiet loads (1504
+tests, no failure); on the code of `51380b613c`, stopped at 21:49 after an
+hour (1647 tests, no failure) -- entry 81; and with ctest on the build of
+22:03, stopped at once because that build lacked entry 79's fix.
+
+**Entry 47: why the resaved file opens three seconds sooner and shows the
+model no sooner -- by the load's own log** (`g-j-orig-2`, `g-j-resaved-3`).
+The original: "677 objects, 1651 files, xml 3.08 s, files 3.38 s, total
+6.46 s", then 2.8 s between the restore and the projection groups, the
+open 10.1 s. The resaved: "686 objects, 263 files, xml 2.71 s, files
+0.13 s, total 2.84 s", then 3.2 s, the open 7.1 s. The three seconds are
+the FILES: a document in the merge's form does not read its 1400 shape
+and property files while it opens; they are blobs, served when the view
+providers are restored or when first asked for. The work has moved behind
+the open, which is why the model is on the screen no sooner after it. And
+the view providers' record is 464 properties where it was 10665 (the
+looks are the object's), 0.01 s where it was 0.4 s.
+
+The 3 s both files spend between the restore and the end of the open is
+TechDraw answering "the document is restored" (two sampled profiles, 1.3
+and 2.0 sampled s): every section view read its hatch pattern file, which
+is first written out where the document keeps it as a blob (0.56 and
+1.12 s); every projection group item of a file that stored no projection
+projects again (0.4, 0.5 s; a file saved by this version stores it); a
+page brings its views up to date (0.16, 0.26 s).
+
+**Both suites on `b3e1247e6d`** (the build of 22:29, a temporary directory
+that started empty): ctest 955 of 955 (`ctest13.log`); Python "Ran 3645
+tests in 804.529s, OK (skipped=52, expected failures=6)" (`pytest13.log`)
+-- thirteen minutes, where the run before it had done 1647 tests in an
+hour (entry 81). GUI tests on that build, no FAIL:
+`recovery-dialog-check-all.py` 13, `overlay-see-through.py` 58,
+`omni-search-from-tree-and-property-view.py` 18,
+`overlay-title-buttons-theme.py` 44, `task-panel-in-view.py` 89,
+`task-panel-place.py` 59, `task-panel-combo.py` 66,
+`navicube-clear-of-panels.py` 16, `selection-on-top-hidden-edges.py` 18,
+`close-during-view-provider-drain.py` 7.
+
+Nothing of this evening is pushed or staged: origin/LinkVibe is
+`5de7d97293`, the copy under test `22ece75a08` of 17:52. The copy under
+test has entry 79's crash and what was pushed has the include of the top
+of this section.
