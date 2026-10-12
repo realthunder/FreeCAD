@@ -91,6 +91,19 @@ def drawn(obj):
     return None, 0
 
 
+def inView(doc, obj):
+    """Whether the root of `obj`'s view is in the scene of `doc`'s 3D view."""
+    try:
+        from pivy import coin
+    except ImportError:
+        return "no pivy"
+    search = coin.SoSearchAction()
+    search.setNode(obj.ViewObject.RootNode)
+    search.setSearchingAll(True)
+    search.apply(Gui.getDocument(doc.Name).ActiveView.getSceneGraph())
+    return search.getPath() is not None
+
+
 def bar(parent):
     for w in parent.findChildren(QtWidgets.QWidget):
         if w.objectName() == "TransactionDiffBar":
@@ -176,8 +189,61 @@ def drive(seen, cut):
         part(diff, "diffMode").setCurrentIndex(1)
         settle()
 
-    # Not modal (sec 32.15): the document is in reach while it is open
+    # What the merge would make (sec 32.17): made when its pair is chosen,
+    # in a document of its own, and nothing of this one moves
     doc = cut.Document
+    if diff:
+        pair = part(diff, "diffPair")
+        was = (doc.UndoCount, doc.RedoCount, len(doc.getTransactionLog()),
+               [(o.Name, tuple(o.State)) for o in doc.Objects], App.ActiveDocument.Name)
+        seen["result docs before"] = [n for n in App.listDocuments() if "_merged" in n]
+        part(diff, "diffMode").setCurrentIndex(0)
+        pair.setCurrentIndex(3)
+        settle()
+        seen["result"] = cut.ViewObject.getValueDiff()
+        seen["result said"] = part(diff, "diffStatus").text()
+        seen["result docs"] = [n for n in App.listDocuments() if "_merged" in n]
+        now = (doc.UndoCount, doc.RedoCount, len(doc.getTransactionLog()),
+               [(o.Name, tuple(o.State)) for o in doc.Objects], App.ActiveDocument.Name)
+        seen["result left"] = (was[:2] == now[:2] and now[2] - was[2] in (0, 1)
+                               and was[3:] == now[3:], [r["kind"] for r in
+                                                        doc.getTransactionLog()[was[2]:]])
+        seen["result open"] = mergeDialog() is dialog
+        # With no change selected: of the object chosen
+        tree.clearSelection()
+        settle()
+        part(diff, "diffMode").setCurrentIndex(1)
+        settle()
+        seen["result whole"] = (cut2.ViewObject.getValueDiff(), cut.ViewObject.getValueDiff(),
+                                part(diff, "diffStatus").text())
+        # What the merge makes and the document has not: all of it new,
+        # drawn in this document's view by the view the result has of it
+        made = App.getDocument(seen["result docs"][0]).getObject("Ball")
+        seen["made"] = (made is not None and doc.getObject("Ball") is None,
+                        made.ViewObject.getValueDiff() if made else None,
+                        inView(doc, made) if made else None,
+                        made.ViewObject.Visibility if made else None)
+        for i in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(i)
+            if item.text(1) == "Ball" and item.text(2) == "":
+                tree.setCurrentItem(item)
+        settle()
+        seen["made alone"] = (made.ViewObject.getValueDiff() if made else None,
+                              cut2.ViewObject.getValueDiff())
+        tree.clearSelection()
+        settle()
+        # Asked again it is there already
+        pair.setCurrentIndex(0)
+        settle()
+        seen["made other pair"] = (made.ViewObject.getValueDiff() if made else None,
+                                   inView(doc, made) if made else None)
+        pair.setCurrentIndex(3)
+        settle()
+        seen["result once"] = [n for n in App.listDocuments() if "_merged" in n]
+        pair.setCurrentIndex(0)
+        settle()
+
+    # Not modal (sec 32.15): the document is in reach while it is open
     seen["not modal"] = (not dialog.isModal()
                          and QtWidgets.QApplication.activeModalWidget() is None)
     tree.clearSelection()
@@ -219,6 +285,18 @@ def drive(seen, cut):
     doc.commitTransaction()
     wait()
     seen["stale"] = stale()
+    # Stale, the result is of a document that is no more: closed, and none
+    # made from here
+    if diff:
+        pair = part(diff, "diffPair")
+        pair.setCurrentIndex(0)
+        settle()
+        pair.setCurrentIndex(3)
+        settle()
+        seen["stale result"] = ([n for n in App.listDocuments() if "_merged" in n],
+                                part(diff, "diffStatus").text())
+    # The side a conflict starts on is a setting (sec 32.17)
+    App.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt("MergeConflictSide", 1)
     QtCore.QTimer.singleShot(300, lambda: driveAgain(seen, dialog))
     part(dialog, "again").click()
 
@@ -237,6 +315,30 @@ def driveAgain(seen, before):
             if tree.topLevelItem(i).text(1) == "Box" and tree.topLevelItem(i).text(2) == "Length"]
         seen["again fresh"] = (part(dialog, "stale").isVisible(),
                                part(dialog, "merge").isEnabled())
+        # The conflict starts on theirs, as the setting says; the result is
+        # made with the sides as they are, and again when one changes
+        doc = seen["doc"]
+        cut = doc.getObject("Cut")
+        diff = bar(dialog)
+        sides = [c for c in tree.findChildren(QtWidgets.QComboBox)
+                 if [c.itemText(i) for i in range(c.count())] == ["ours", "theirs"]]
+        seen["starts on"] = [c.currentText() for c in sides]
+        for i in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(i)
+            if item.text(1) == "Cut" and item.text(2) == "Shape":
+                tree.setCurrentItem(item)
+        settle()
+        pair = part(diff, "diffPair")
+        pair.setCurrentIndex(3)
+        settle()
+        seen["side theirs"] = (cut.ViewObject.getValueDiff(), part(diff, "diffStatus").text(),
+                               [n for n in App.listDocuments() if "_merged" in n])
+        for c in sides:
+            c.setCurrentIndex(0)
+        settle()
+        seen["side ours"] = (cut.ViewObject.getValueDiff(), part(diff, "diffStatus").text(),
+                             [n for n in App.listDocuments() if "_merged" in n])
+    App.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt("MergeConflictSide", 0)
     seen["rows"] = len(seen["doc"].getTransactionLog())
     dialog.reject()
 
@@ -922,6 +1024,12 @@ def run():
         box.Length = 14
         doc.recompute()
         doc.commitTransaction()
+        # And an object main has not, which the result of a merge has
+        doc.openTransaction("side: a ball")
+        ball = doc.addObject("Part::Sphere", "Ball")
+        ball.Placement.Base = App.Vector(40, 0, 0)
+        doc.recompute()
+        doc.commitTransaction()
         doc.switchTransactionBranch("main")
         settle()
         box, cut = doc.getObject("Box"), doc.getObject("Cut")
@@ -961,7 +1069,8 @@ def run():
                   and bool(seen.get("theirs said")))
             check("dialog: the pairs (%r)" % (seen.get("pairs"),),
                   seen.get("pairs") == ["ours against theirs", "base against ours",
-                                        "base against theirs", "nothing"])
+                                        "base against theirs", "ours against the result",
+                                        "nothing"])
             check("dialog: base against ours, base against theirs",
                   (seen.get("base ours") or {}).get("by.name") == 7
                   and (seen.get("base theirs") or {}).get("by.name") == 7
@@ -979,6 +1088,57 @@ def run():
                   and material.get("volume.removed") == 0
                   and "by.name" not in material
                   and " added, " in (seen.get("material said") or ""))
+            # Ours is 10 x 11 and the result 14 x 11: theirs' length, ours'
+            # width, which a merge of the two makes and neither side has
+            result = seen.get("result") or {}
+            check("result: made when asked for, in a document of its own (%r, %r)"
+                  % (seen.get("result docs before"), seen.get("result docs")),
+                  seen.get("result docs before") == [] and len(seen.get("result docs") or []) == 1)
+            check("result: ours against it, by the material (%r)" % seen.get("result said"),
+                  result.get("material") == 1
+                  and abs(result.get("volume.added", 0) - (14 * 11 - 10 * 11) * 12) < 1e-3
+                  and result.get("volume.removed") == 0)
+            check("result: nothing of the document moved -- no step, no redo lost, no row "
+                  "but the tip's version (%r)" % (seen.get("result left"),),
+                  (seen.get("result left") or [False])[0] is True
+                  and set(seen["result left"][1]) <= {"snapshot"})
+            check("result: the dialog is still the one open", seen.get("result open") is True)
+            whole = seen.get("result whole") or ({}, {}, "")
+            check("result: with no change selected, of the object chosen and no other (%r)"
+                  % (whole[2],), whole[0].get("by.name", 0) > 0 and whole[1] == {})
+            made = seen.get("made") or (None, None, None, None)
+            check("result: what the merge makes and the document has not is drawn in its "
+                  "view, all of it new (%r)" % (made,),
+                  made[0] is True and (made[1] or {}).get("added", 0) >= 1
+                  and (made[1] or {}).get("same", 0) == 0
+                  and made[2] in (True, "no pivy") and made[3] is False)
+            alone = seen.get("made alone") or (None, None)
+            check("result: the line that makes it selected, that object alone (%r)" % (alone,),
+                  (alone[0] or {}).get("added", 0) >= 1 and alone[1] == {})
+            other = seen.get("made other pair") or (None, None)
+            check("result: another pair chosen, nothing shown of it (%r)" % (other,),
+                  other[0] == {})
+            check("result: asked again, the one made is shown",
+                  seen.get("result once") == seen.get("result docs"))
+            check("result: stale with the dialog, its document closed and none made (%r)"
+                  % (seen.get("stale result"),),
+                  (seen.get("stale result") or [None])[0] == []
+                  and "preview again" in (seen.get("stale result") or ["", ""])[1])
+            check("a conflict starts on the side the setting says (%r)"
+                  % (seen.get("starts on"),), seen.get("starts on") == ["theirs"])
+            theirs2 = seen.get("side theirs") or ({}, "", [])
+            check("result: with theirs' side, the length theirs gave it (%r)" % (theirs2[1],),
+                  theirs2[0].get("material") == 1
+                  and abs(theirs2[0].get("volume.removed", 0) - (15 - 14) * 13 * 12) < 1e-3
+                  and len(theirs2[2]) == 1)
+            ours2 = seen.get("side ours") or ({}, "", [])
+            check("result: the side changed, it is made again -- ours kept, and the cut "
+                  "is what it was (%r)" % (ours2[1],),
+                  ours2[0].get("volume.removed", -1) == 0
+                  and ours2[0].get("volume.added", -1) == 0
+                  and len(ours2[2]) == 1 and ours2[2] != theirs2[2])
+            check("result: gone with the dialog",
+                  [n for n in App.listDocuments() if "_merged" in n] == [])
             check("dialog closed: nothing left in the view",
                   view.getValueDiff() == {} and drawn(cut)[0] is None
                   and doc.getObject("Cut2").ViewObject.getValueDiff() == {})

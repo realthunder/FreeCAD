@@ -100,7 +100,9 @@ public:
      * merge's preview the value at the base and at each side -- and an
      * empty ref is the value the object has now. The ref "-" is no value:
      * the property, or its object, was not there, and all of the other
-     * value is new or gone. What is shown is no part of the document: no
+     * value is new or gone. "doc:" and a document's name is the value the
+     * object of this id has in that document, which is open: what a merge
+     * would make (sec 32.17). What is shown is no part of the document: no
      * object, no property written, no undo step.
      */
     //@{

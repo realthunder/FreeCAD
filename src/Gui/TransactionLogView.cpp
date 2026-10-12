@@ -84,7 +84,10 @@
 #include "FileDialog.h"
 #include "SceneRequests.h"
 #include "Selection.h"
+#include "View3DInventor.h"
+#include "View3DInventorViewer.h"
 #include "ViewProviderDocumentObject.h"
+#include "WaitCursor.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
 
@@ -363,12 +366,16 @@ public:
         std::string a;
         std::string b;
     };
-    /// Property `prop` of object `cid`, and its values for each pair.
+    /// Property `prop` of object `cid`, and its values for each pair. With
+    /// `document`, of the object in that open document and not in the one
+    /// the values are of: what a merge would make and the document has not
+    /// (sec 32.17). It is shown whatever is chosen -- it cannot be.
     struct Value
     {
         long cid {0};
         std::string prop;
         std::vector<Pair> pairs;
+        std::string document;
     };
     /// The ref of a property that was not there: everything of the other
     /// value is new, or gone.
@@ -432,7 +439,13 @@ public:
         _said->setObjectName(QStringLiteral("diffStatus"));
         layout->addWidget(_said, 1);
         QObject::connect(_pair, qOverload<int>(&QComboBox::currentIndexChanged), this,
-                         [this](int) { update(); });
+                         [this](int index) {
+                             // Whoever gives the values may have this pair's
+                             // to make first
+                             if (_pairChosen)
+                                 _pairChosen(index);
+                             update();
+                         });
         QObject::connect(_mode, qOverload<int>(&QComboBox::currentIndexChanged), this,
                          [this](int) { update(); });
         QObject::connect(_position, &QSlider::valueChanged, this, [this](int) { update(); });
@@ -511,10 +524,14 @@ public:
             setDocument(doc);
         _chosenOnly = chosenOnly;
         for (const auto& value : values) {
-            auto obj = doc ? doc->getObjectByID(value.cid) : nullptr;
+            App::Document* of = value.document.empty()
+                                    ? doc
+                                    : App::GetApplication().getDocument(value.document.c_str());
+            auto obj = of ? of->getObjectByID(value.cid) : nullptr;
             if (!obj)
                 continue;
-            _values.push_back({App::DocumentObjectT(obj), value.prop, value.pairs});
+            _values.push_back({App::DocumentObjectT(obj), value.prop, value.pairs,
+                               !value.document.empty()});
         }
         _note = note;
         update();
@@ -523,7 +540,28 @@ public:
     /// One value, shown over its object wherever that is
     void setValue(App::Document* doc, long cid, const std::string& prop, std::vector<Pair> pairs)
     {
-        setValues(doc, {{cid, prop, std::move(pairs)}}, false);
+        setValues(doc, {{cid, prop, std::move(pairs), std::string()}}, false);
+    }
+
+    /// The pair chosen now, by its place
+    int pair() const
+    {
+        return _pair->currentIndex();
+    }
+
+    /// Called when another pair is chosen, before its values are shown: for
+    /// a pair whose values are made only when asked for (sec 32.17).
+    void whenPairChosen(std::function<void(int)> fn)
+    {
+        _pairChosen = std::move(fn);
+    }
+
+    /// What is said after what was found while pair `index` is chosen, in
+    /// place of the note setValues() was given.
+    void setPairNote(int index, const QString& note)
+    {
+        _pairNotes[index] = note;
+        update();
     }
 
     void clear()
@@ -537,6 +575,7 @@ private:
         App::DocumentObjectT object;
         std::string prop;
         std::vector<Pair> pairs;
+        bool elsewhere {false};   ///< of another document's object
     };
 
     static ViewProviderDocumentObject* viewOf(const App::DocumentObjectT& which)
@@ -693,8 +732,9 @@ private:
             auto obj = value.object.getObject();
             if (!obj)
                 continue;
-            changed.insert(obj);
-            if (_chosenOnly && !chosen.count(obj))
+            if (!value.elsewhere)
+                changed.insert(obj);
+            if (_chosenOnly && !value.elsewhere && !chosen.count(obj))
                 continue;
             auto view = viewOf(value.object);
             // One thing of an object at a time: its first value that shows
@@ -772,8 +812,10 @@ private:
             _pending.stop();
         if (_picking != NotPicking)
             text = QObject::tr("Pick an object in the tree or the view");
-        if (!_note.isEmpty() && index >= 0 && index < _pair->count() - 1)
-            text += (text.isEmpty() ? QString() : QStringLiteral("; ")) + _note;
+        auto own = _pairNotes.find(index);
+        const QString note = own != _pairNotes.end() ? own->second : _note;
+        if (!note.isEmpty() && index >= 0 && index < _pair->count() - 1)
+            text += (text.isEmpty() ? QString() : QStringLiteral("; ")) + note;
         _said->setText(text);
     }
 
@@ -794,6 +836,8 @@ private:
     QTimer _again;
     QTimer _pending;
     QString _note;
+    std::map<int, QString> _pairNotes;
+    std::function<void(int)> _pairChosen;
     std::vector<App::DocumentObjectT> _shown;
 };
 
@@ -2306,11 +2350,19 @@ class MergeDialog: public QDialog
 public:
     enum Column { Kind, Object, Property, Base, Ours, Theirs, Takes, Columns };
 
+    /// What the merge would make, with the sides given (sec 32.17)
+    using Outcome = std::function<App::Document::MergeOutcome(
+        const std::map<std::string, std::string>&)>;
+    /// The pairs of the bar, by their place
+    enum Pair { OursTheirs, BaseOurs, BaseTheirs, OursResult };
+
     /// `rows`: the preview is of rows picked out of the log (sec 31.12),
     /// applied here, and not of a branch merged.
     MergeDialog(const App::Document::MergePreview& preview, const QString& ours,
-                App::TransactionLog* log, App::Document* doc, QWidget* parent, bool rows = false)
+                App::TransactionLog* log, App::Document* doc, QWidget* parent, bool rows = false,
+                Outcome outcome = Outcome())
         : QDialog(parent)
+        , _outcome(std::move(outcome))
     {
         setObjectName(QStringLiteral("TransactionMergeDialog"));
         setWindowTitle((rows ? QObject::tr("Apply %1 to %2") : QObject::tr("Merge %1 into %2"))
@@ -2391,8 +2443,14 @@ public:
             if (conflict || c->kind == "view") {
                 auto side = new QComboBox(_tree);
                 side->addItems({QStringLiteral("ours"), QStringLiteral("theirs")});
+                // A conflict starts on the side the setting says, ours
+                // unless it was changed; a view's keeps ours (sec 28.6 Q2)
+                if (conflict && App::DocumentParams::getMergeConflictSide() == 1)
+                    side->setCurrentIndex(1);
                 _tree->setItemWidget(item, Takes, side);
                 _sides.emplace_back(c->key, side);
+                QObject::connect(side, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                                 [this](int) { sidesChanged(); });
                 if (conflict) {
                     _conflicts.push_back(side);
                     QFont bold = item->font(Kind);
@@ -2457,25 +2515,50 @@ public:
                                      item->setCheckState(Kind, changed->checkState(Kind));
                              }
                              _linking = false;
+                             sidesChanged();
                          });
 
         // The change selected, in the 3D view (sec 32.9). Ours is what the
         // document has: an empty ref.
-        _diff = new TransactionDiffBar(this, {QObject::tr("ours against theirs"),
-                                              QObject::tr("base against ours"),
-                                              QObject::tr("base against theirs")});
+        // And ours against what the merge would make (sec 32.17): made
+        // when it is asked for, in a document of its own.
+        QStringList pairs {QObject::tr("ours against theirs"), QObject::tr("base against ours"),
+                           QObject::tr("base against theirs")};
+        if (_outcome)
+            pairs << QObject::tr("ours against the result");
+        _diff = new TransactionDiffBar(this, pairs);
         layout->addWidget(_diff);
-        auto pairsOf = [](const App::Document::MergeChange& c) {
-            return std::vector<TransactionDiffBar::Pair> {
-                {!c.theirs.empty(), std::string(), c.theirs},
-                {!c.base.empty(), c.base, std::string()},
-                {!c.base.empty() && !c.theirs.empty(), c.base, c.theirs}};
-        };
-        auto show = [this, doc, pairsOf]() {
+        _home = doc ? doc->getName() : "";
+        _show = [this, doc]() {
+            // The result's value of a property, where it has been made and
+            // has one: what the object of this id has in its document. Of
+            // a fast-forward the result is theirs.
+            auto pairsOf = [this](const App::Document::MergeChange& c) {
+                std::vector<TransactionDiffBar::Pair> pairs {
+                    {!c.theirs.empty(), std::string(), c.theirs},
+                    {!c.base.empty(), c.base, std::string()},
+                    {!c.base.empty() && !c.theirs.empty(), c.base, c.theirs}};
+                if (_resultIsTheirs)
+                    pairs.push_back(pairs.front());
+                else
+                    pairs.push_back({_result.count({c.cid, c.prop}) > 0, std::string(),
+                                     _resultRef});
+                return pairs;
+            };
+            // What the result has and the document has not -- theirs made
+            // it: all of it new, drawn by the view the result's document
+            // has of it
+            auto madeThere = [this](long cid, const std::string& prop) {
+                return TransactionDiffBar::Value {
+                    cid, prop, {{}, {}, {}, {true, TransactionDiffBar::NoValue, std::string()}},
+                    resultDocument()};
+            };
             const auto items = _tree->selectedItems();
             if (!items.isEmpty()) {
                 const auto* c = _changes[items.front()->data(Object, Qt::UserRole).toInt()];
-                if (c->ckind != "obj" || c->prop.empty())
+                if (c->ckind == "obj" && c->prop.empty() && _there.count(c->cid))
+                    _diff->setValues(doc, {madeThere(c->cid, _there[c->cid])}, false);
+                else if (c->ckind != "obj" || c->prop.empty())
                     _diff->clear();
                 else
                     _diff->setValue(doc, c->cid, c->prop, pairsOf(*c));
@@ -2484,26 +2567,59 @@ public:
             // No change selected: all of them, over what the view shows
             // (sec 32.10). What theirs made has no object here.
             std::vector<TransactionDiffBar::Value> values;
+            std::set<std::pair<long, std::string>> listed;
             int made = 0;
             for (const auto* c : _changes) {
                 if (c->ckind != "obj")
                     continue;
-                if (c->prop.empty())
+                if (c->prop.empty()) {
                     made += c->op == "create" ? 1 : 0;
-                else
-                    values.push_back({c->cid, c->prop, pairsOf(*c)});
+                }
+                else {
+                    values.push_back({c->cid, c->prop, pairsOf(*c), std::string()});
+                    listed.insert({c->cid, c->prop});
+                }
+            }
+            for (const auto& made : _there)
+                values.push_back(madeThere(made.first, made.second));
+            // The result reaches further than the changes: what is made of
+            // what changed is computed again, and no line here says so
+            for (const auto& value : _result) {
+                if (listed.count(value))
+                    continue;
+                values.push_back({value.first, value.second,
+                                  {{}, {}, {}, {true, std::string(), _resultRef}},
+                                  std::string()});
             }
             _diff->setValues(doc, values, true,
                              made ? QObject::tr("%n object(s) of theirs are not in the document",
                                                 "", made)
                                   : QString());
         };
-        QObject::connect(_tree, &QTreeWidget::itemSelectionChanged, this, show);
+        QObject::connect(_tree, &QTreeWidget::itemSelectionChanged, this, [this]() { _show(); });
+        _diff->whenPairChosen([this](int index) {
+            if (index == OursResult)
+                makeResult();
+        });
+        // The result's document closed by another hand: its views leave
+        // the 3D views before they go with it
+        //NOLINTBEGIN
+        _resultGone = Application::Instance->signalDeleteDocument.connect(
+            [this](const Gui::Document& gone) {
+                if (_resultRef.empty() || !gone.getDocument()
+                        || resultDocument() != gone.getDocument()->getName())
+                    return;
+                takeOutViewsThere();
+                _result.clear();
+                _resultRef.clear();
+                _made = false;
+            });
+        //NOLINTEND
         // What is selected as it opens is chosen; more is picked from here,
         // the document being in reach (sec 32.15)
         _diff->setDocument(doc);
         _diff->chooseSelected();
-        show();
+        _show();
 
         // The document stays in reach while this is open (sec 32.15), and
         // may be changed under it
@@ -2537,16 +2653,32 @@ public:
         resize(900, 480);
     }
 
+    ~MergeDialog() override
+    {
+        dropResult();
+    }
+
     /// What exec would not return: the preview is to be made again
     enum { Again = 2 };
 
     /// The document changed and the preview is no longer what would be
-    /// done: nothing is merged from here.
+    /// done: nothing is merged from here, and the result made is of a
+    /// document that is no more.
     void setStale()
     {
         _merge->setEnabled(false);
         _stale->show();
         _again->show();
+        _isStale = true;
+        dropResult();
+        _diff->setPairNote(OursResult, QObject::tr("the document has changed: preview again"));
+        _show();
+    }
+
+    /// The document the result was made in, where it stands; for a check
+    std::string resultDocument() const
+    {
+        return _resultRef.empty() ? std::string() : _resultRef.substr(4);
     }
 
     /// What a preview says, to tell whether one made later says another
@@ -2582,8 +2714,158 @@ public:
 private:
     void setAll(int index)
     {
+        // One result for them all, and not one for each
+        _settingAll = true;
         for (auto side : _conflicts)
             side->setCurrentIndex(index);
+        _settingAll = false;
+        sidesChanged();
+    }
+
+    /// The views of what the result has and the document has not, where
+    /// its document still stands
+    std::vector<ViewProviderDocumentObject*> viewsThere() const
+    {
+        std::vector<ViewProviderDocumentObject*> views;
+        const std::string name = resultDocument();
+        auto there = name.empty() ? nullptr : App::GetApplication().getDocument(name.c_str());
+        for (const auto& made : _there) {
+            auto obj = there ? there->getObjectByID(made.first) : nullptr;
+            auto view = obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                                  Application::Instance->getViewProvider(obj))
+                            : nullptr;
+            if (view)
+                views.push_back(view);
+        }
+        return views;
+    }
+
+    /// The 3D views of the document the merge is of
+    std::vector<View3DInventorViewer*> viewers() const
+    {
+        std::vector<View3DInventorViewer*> out;
+        auto doc = App::GetApplication().getDocument(_home.c_str());
+        auto gui = doc ? Application::Instance->getDocument(doc) : nullptr;
+        if (!gui)
+            return out;
+        for (auto view : gui->getMDIViewsOfType(View3DInventor::getClassTypeId()))
+            out.push_back(static_cast<View3DInventor*>(view)->getViewer());
+        return out;
+    }
+
+    /// Out of the views, before the document they are of goes
+    void takeOutViewsThere()
+    {
+        for (auto view : viewsThere()) {
+            view->hideValueDiff();
+            for (auto viewer : viewers())
+                viewer->removeViewProvider(view);
+        }
+        _there.clear();
+    }
+
+    /// Close the document the result was made in, and forget its values
+    void dropResult()
+    {
+        _result.clear();
+        _resultIsTheirs = false;
+        _made = false;
+        takeOutViewsThere();
+        const std::string name = resultDocument();
+        _resultRef.clear();
+        if (!name.empty() && App::GetApplication().getDocument(name.c_str()))
+            App::GetApplication().closeDocument(name.c_str());
+    }
+
+    /// A side was picked, or a change left out: the result made is of
+    /// other sides, and is made again where it is what is looked at.
+    void sidesChanged()
+    {
+        if (_settingAll || !_made)
+            return;
+        dropResult();
+        if (_diff->pair() == OursResult)
+            makeResult();
+        else
+            _show();
+    }
+
+    /// What the merge would make, with the sides as they are picked now
+    /// (sec 32.17): made once, and again when a side changes.
+    void makeResult()
+    {
+        if (!_outcome || _made || _isStale || _making)
+            return;
+        Base::StateLocker guard(_making);
+        dropResult();
+        QString note;
+        try {
+            Gui::WaitCursor wait;
+            const auto outcome = _outcome(picks());
+            _made = true;
+            if (outcome.theirs) {
+                _resultIsTheirs = true;
+                note = QObject::tr("a fast-forward: the result is theirs");
+            }
+            else if (outcome.document) {
+                _resultRef = std::string("doc:") + outcome.document->getName();
+                int made = 0;
+                for (const auto& value : outcome.values) {
+                    if (value.here) {
+                        _result.insert({value.cid, value.prop});
+                        continue;
+                    }
+                    // What the merge makes: the view the result's document
+                    // has of it goes into this document's 3D views, where
+                    // the merge would show it -- what it is made of, which
+                    // theirs hid, is left out. Its own picture is not
+                    // drawn: what is shown of it is all of it as new.
+                    ++made;
+                    auto obj = outcome.document->getObjectByID(value.cid);
+                    auto view = obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                                          Application::Instance->getViewProvider(obj))
+                                    : nullptr;
+                    if (!view || !view->isShow())
+                        continue;
+                    view->hide();
+                    if (auto pick = Base::freecad_dynamic_cast<App::PropertyBool>(
+                            view->getPropertyByName("Selectable")))
+                        pick->setValue(false);
+                    for (auto viewer : viewers())
+                        viewer->addViewProvider(view);
+                    _there[value.cid] = value.prop;
+                }
+                QStringList parts;
+                if (outcome.values.empty())
+                    parts << QObject::tr("the result is the document as it is");
+                if (made)
+                    parts << QObject::tr("%n object(s) made by the merge", "", made);
+                if (!outcome.removed.empty())
+                    parts << QObject::tr("%n object(s) are removed", "",
+                                         static_cast<int>(outcome.removed.size()));
+                if (!outcome.failed.empty()) {
+                    QStringList names;
+                    for (const auto& name : outcome.failed)
+                        names << QString::fromStdString(name);
+                    parts << QObject::tr("%n object(s) fail to compute in the result: %1", "",
+                                         static_cast<int>(names.size()))
+                                 .arg(names.join(QStringLiteral(", ")));
+                }
+                note = parts.join(QStringLiteral("; "));
+            }
+            else if (!outcome.unresolved.empty()) {
+                note = QObject::tr("%n conflict(s) have no side", "",
+                                   static_cast<int>(outcome.unresolved.size()));
+            }
+            else {
+                note = QObject::tr("the result is the document as it is");
+            }
+        }
+        catch (Base::Exception& e) {
+            note = QObject::tr("no result: %1").arg(QString::fromUtf8(e.what()));
+        }
+        _diff->setPairNote(OursResult, note);
+        _show();
     }
 
     QTreeWidget* _tree {nullptr};
@@ -2598,6 +2880,23 @@ private:
     /// The rows that go in with nothing asked: each may be unticked.
     std::vector<QTreeWidgetItem*> _taken;
     bool _linking {false};
+    /// What the merge would make (sec 32.17): how it is made, the values
+    /// it has of the objects the document has, and what they are read by
+    /// -- "doc:" and the name of the document it was made in.
+    Outcome _outcome;
+    fastsignals::scoped_connection _resultGone;
+    std::string _home;   ///< the document the merge is of, by name
+    std::function<void()> _show;
+    std::set<std::pair<long, std::string>> _result;
+    /// What the result has and the document has not, shown: the geometry
+    /// of each, by its id
+    std::map<long, std::string> _there;
+    std::string _resultRef;
+    bool _resultIsTheirs {false};
+    bool _made {false};
+    bool _making {false};
+    bool _isStale {false};
+    bool _settingAll {false};
 };
 
 } // namespace
@@ -2715,8 +3014,12 @@ void TransactionLogView::mergeBranch(const QString& name)
             }
             App::LogBranch mine;
             l->store().getBranch(l->branch(), mine);
-            QPointer<MergeDialog> dialog(
-                new MergeDialog(preview, QString::fromStdString(mine.name), l, _doc, this));
+            App::Document* doc = _doc;
+            QPointer<MergeDialog> dialog(new MergeDialog(
+                preview, QString::fromStdString(mine.name), l, _doc, this, false,
+                [doc, name](const std::map<std::string, std::string>& sides) {
+                    return doc->previewMergeResult(name.toStdString(), sides);
+                }));
             const int answer = askBeside(
                 *dialog, MergeDialog::said(preview),
                 [this, name]() { return MergeDialog::said(_doc->previewMerge(name.toStdString())); },
@@ -2810,8 +3113,12 @@ void TransactionLogView::applyRows(const QString& seqs)
             }
             App::LogBranch mine;
             l->store().getBranch(l->branch(), mine);
-            QPointer<MergeDialog> dialog(
-                new MergeDialog(preview, QString::fromStdString(mine.name), l, _doc, this, true));
+            App::Document* doc = _doc;
+            QPointer<MergeDialog> dialog(new MergeDialog(
+                preview, QString::fromStdString(mine.name), l, _doc, this, true,
+                [doc, rows](const std::map<std::string, std::string>& sides) {
+                    return doc->previewPickResult(rows, sides);
+                }));
             const int answer = askBeside(
                 *dialog, MergeDialog::said(preview),
                 [this, rows]() { return MergeDialog::said(_doc->previewPick(rows)); },

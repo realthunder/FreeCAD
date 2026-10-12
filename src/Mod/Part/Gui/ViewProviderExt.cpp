@@ -2747,12 +2747,29 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
     if (!diffView || diffProp != prop || diffA != a || diffB != b) {
         hideValueDiff();
         // An empty ref is the value the object has now, and "-" none: no
-        // shape, against which all of the other is new, or gone
+        // shape, against which all of the other is new, or gone. "doc:" and
+        // a name is the value the object of this id has in that document
+        // (sec 32.17).
+        auto elsewhere = [&](const std::string &ref) -> const Part::PropertyPartShape * {
+            if (ref.compare(0, 4, "doc:") != 0)
+                return nullptr;
+            auto other = App::GetApplication().getDocument(ref.c_str() + 4);
+            auto there = other ? other->getObjectByID(obj->getID()) : nullptr;
+            return there ? Base::freecad_dynamic_cast<Part::PropertyPartShape>(
+                                   there->getPropertyByName(prop))
+                         : nullptr;
+        };
         auto at = [&](const std::string &ref, Part::TopoShape &shape) {
             if (ref == "-")
                 return true;
             if (ref.empty())
                 shape = shapeProp->getShape();
+            else if (ref.compare(0, 4, "doc:") == 0) {
+                auto held = elsewhere(ref);
+                if (!held)
+                    return false;
+                shape = held->getShape();
+            }
             else if (!Part::ShapeDiff::valueShape(*obj->getDocument(), ref, obj->getID(), shape))
                 return false;
             return !shape.isNull();
@@ -2761,9 +2778,9 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
         if (!at(a, shapeA) || !at(b, shapeB) || (shapeA.isNull() && shapeB.isNull()))
             return false;
         // What a value is known by, for what is kept of the two: its ref,
-        // and of the object's own shape nothing but the shape
+        // and of a shape some object has nothing but the shape
         auto known = [&](const std::string &ref) {
-            return ref.empty() || ref == "-"
+            return ref.empty() || ref == "-" || ref.compare(0, 4, "doc:") == 0
                 ? std::string()
                 : std::string(obj->getDocument()->getName()) + ":" + ref;
         };
