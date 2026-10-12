@@ -30,6 +30,9 @@ the view providers (ViewProvider.canDragIcon/canDropIcon/dropIcon), which is
 what is called here; the tree only finds the icon under the cursor.
 """
 
+import os
+import tempfile
+import time
 import unittest
 
 import FreeCAD
@@ -453,3 +456,60 @@ class TestSolidBodyGui(unittest.TestCase):
         d.ViewObject.Visibility = False
         self.assertEqual(selected(), before)
         Gui.Selection.clearSelection()
+
+
+class TestOpenedBodyGui(unittest.TestCase):
+    """A file that was only opened is not a modified document.
+
+    The origin of a body is sized to what the body holds a moment after a
+    load (Gui::ViewProviderOriginGroupExtension). That is fitted to the model
+    and not an edit: the tab of a document nobody touched got the mark of a
+    modified one, and closing it asked to save. The same of an App::Part is
+    in Test/PartGroupView.py.
+    """
+
+    def setUp(self):
+        self.path = os.path.join(tempfile.gettempdir(), "PartDesignTestOpenedBody.FCStd")
+        self.Doc = None
+
+    def tearDown(self):
+        if self.Doc:
+            App.closeDocument(self.Doc.Name)
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+    def reopened(self, make):
+        doc = App.newDocument("PartDesignTestOpenedBody")
+        make(doc)
+        doc.recompute()
+        # saved before its origin is sized, so the load has it to size
+        doc.saveAs(self.path)
+        App.closeDocument(doc.Name)
+        self.Doc = App.openDocument(self.path)
+        return self.Doc
+
+    def assertOpenedUnmodified(self, doc):
+        from PySide import QtWidgets
+
+        view = Gui.getDocument(doc.Name)
+        origin = [o for o in doc.Objects if o.isDerivedFrom("App::Origin")][0]
+        made = tuple(origin.ViewObject.Size)
+        self.assertFalse(view.Modified)
+        # the sizing waits out the load, 300 ms at a time
+        sized = False
+        until = time.time() + 5.0
+        while time.time() < until and not sized:
+            QtWidgets.QApplication.processEvents()
+            time.sleep(0.02)
+            sized = tuple(origin.ViewObject.Size) != made
+        self.assertTrue(sized, "the origin was not sized, so nothing was tested")
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(view.Modified)
+
+    def testBody(self):
+        def make(doc):
+            body = doc.addObject("PartDesign::Body", "Body")
+            box = body.newObjectAt("PartDesign::AdditiveBox", "Box")
+            box.Length = box.Width = box.Height = 10
+
+        self.assertOpenedUnmodified(self.reopened(make))

@@ -1540,8 +1540,11 @@ void Document::slotChangedObject(const App::DocumentObject& Obj, const App::Prop
             signalChangedObject(static_cast<ViewProviderDocumentObject&>(*viewProvider), Prop);
     }
 
-    // a property of an object has changed
-    if(!Prop.testStatus(App::Property::NoModify) && !isModified()) {
+    // a property of an object has changed. Its ViewObject is its view
+    // provider saying one of its own did, which is no edit while that is
+    // fitted to the model (ViewProviderDocumentObject::onChanged())
+    if(!Prop.testStatus(App::Property::NoModify) && !isModified()
+            && !(&Prop == &Obj.ViewObject && App::DerivedViewWrites::active())) {
         FC_LOG(Prop.getFullName() << " modified");
         setModified(true);
     }

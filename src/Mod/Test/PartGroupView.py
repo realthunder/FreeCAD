@@ -21,6 +21,8 @@
 # ***************************************************************************
 """What the view of an App::Part does with what the Part holds.
 
+Two things, each of which was wrong with nothing but stock objects.
+
 Where a plain group inside the Part is selected. A selection, a
 preselection, a show on top and a view's own visibility are all drawn on the
 nodes ViewProvider.getDetailPath() ends at. The Part lays everything it
@@ -29,10 +31,18 @@ holds flat under one node, a plain group's children beside the group
 ended at that node: the group selected lit the whole Part, and the group
 hidden in one view hid the whole Part.
 
+And a Part that was only opened. Its origin is sized to what it holds a
+moment after the load (Gui::ViewProviderOriginGroupExtension), which is
+fitted to the model and no edit: the document nobody touched was a modified
+one, and closing it asked to save.
+
 Needs the GUI: run it through scripts/sandbox-gui-gate.py, or in the running
 application. Skips headless.
 """
 
+import os
+import tempfile
+import time
 import unittest
 
 import FreeCAD
@@ -92,3 +102,44 @@ class PartGroupPathCases(unittest.TestCase):
         self.assertEqual(self.path(self.Part, "Out.")[0], ["Part", "Out"])
         self.assertEqual(self.path(self.Part, "")[0], ["Part"])
 
+
+class PartOpenedCases(unittest.TestCase):
+    def setUp(self):
+        if not FreeCAD.GuiUp:
+            self.skipTest("needs the GUI")
+        self.path = os.path.join(tempfile.gettempdir(), "PartGroupViewOpened.FCStd")
+        self.Doc = None
+
+    def tearDown(self):
+        if self.Doc:
+            App.closeDocument(self.Doc.Name)
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+    def testOpenedPartIsNotModified(self):
+        import FreeCADGui
+        from PySide import QtWidgets
+
+        doc = App.newDocument("PartGroupViewOpened")
+        part = doc.addObject("App::Part", "Part")
+        part.addObject(doc.addObject("Part::Box", "Box"))
+        doc.recompute()
+        # saved before its origin is sized, so the load has it to size
+        doc.saveAs(self.path)
+        App.closeDocument(doc.Name)
+        self.Doc = doc = App.openDocument(self.path)
+
+        view = FreeCADGui.getDocument(doc.Name)
+        origin = [o for o in doc.Objects if o.isDerivedFrom("App::Origin")][0]
+        made = tuple(origin.ViewObject.Size)
+        self.assertFalse(view.Modified)
+        # the sizing waits out the load, 300 ms at a time
+        sized = False
+        until = time.time() + 5.0
+        while time.time() < until and not sized:
+            QtWidgets.QApplication.processEvents()
+            time.sleep(0.02)
+            sized = tuple(origin.ViewObject.Size) != made
+        self.assertTrue(sized, "the origin was not sized, so nothing was tested")
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(view.Modified)
