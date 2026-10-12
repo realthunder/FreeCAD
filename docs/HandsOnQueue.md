@@ -797,7 +797,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, not pushed; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
-| 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view | OPEN, not looked at by the build session; a reading of the code by the note-taker under the entry, nothing run |
+| 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -7903,7 +7903,7 @@ not pushed, not staged.** The account is in `docs/HandsOnLog.md`
 on the staged copy: delete a TechDraw page with undo switched off. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
 2026-10-12"); the head of this file has the whole of the message.
 
-## 68. A task panel in its view moves under the overlaid tree view when the mouse hovers a tree item -- OPEN
+## 68. A task panel in its view moves under the overlay panel on its side (tree view and property view) while the mouse is over that panel -- OPEN
 
 **2026-10-12 14:55, the reporter:** "new defect. when showing editing task
 panel in view and tree view is overlay mode on the same side, the editing
@@ -7948,6 +7948,28 @@ the cause, to be checked by the build session before it is believed:
 - Why "an item" and not the panel's empty part: not explained by this
   reading (with mouse-through on, the empty part of an overlay may not
   count as under the mouse) -- a second guess, weaker than the first.
+
+**2026-10-12 15:03, the reporter answers the five points left open:**
+"left side. yes it comes back. there are two views in the left overlay
+panel, tree view and property view. task panel moves when mouse over any
+part on the left overlay panel. tree view is not auto hide or mouse
+through. yes latest stage"
+
+The note-taker's reading:
+- Side: LEFT. The left overlay holds TWO views, the tree view and the
+  property view.
+- The panel COMES BACK when the mouse leaves.
+- It is not "a tree item": the mouse over ANY part of the left overlay
+  panel moves the task panel. This corrects the first report's wording
+  and the heading's.
+- The overlay is neither auto-hidden nor mouse-through.
+- Seen on the latest stage: 2026-10-12 14:04, `4474fcb17e`.
+- Against the guess above, still nothing run: the answers FIT it -- any
+  part of the hovered panel, and back again when the mouse leaves, is
+  what a panel taken out of overlay mode while under the mouse, and so
+  left out of `occupied()`, would give. The weaker second guess ("why an
+  item and not the empty part") is dropped: there is no such difference.
+  That it fits is not proof; the build session's to show.
 
 Evidence: `..\dl\handson\2026-10-12\entry68\mcp_console.log`, the
 reporter's report log copied 14:56 (its last line is of 14:28; nothing in
