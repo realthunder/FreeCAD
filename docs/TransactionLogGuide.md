@@ -147,6 +147,26 @@ Right-click a row:
 | **Branch from here...** | A new branch whose history ends at this row, switched to. |
 | **Roll back the merge of X...** | Appears when the last thing done was undoing a merge: takes the merge and its undo out of the log, so X counts as not merged. |
 
+### Edit > Undo and the log
+
+Edit > Undo and Redo work on the steps you named; the log records more.
+
+- **A change made without a name goes with the step before it.** A
+  recompute, or a property set from the Python console, is an `implicit`
+  row. It is not in the undo list. One Undo takes the named step and the
+  implicit rows after it; one Redo puts them back.
+- **Several steps at once.** The arrow beside Undo lists the steps, newest
+  first. Clicking one undoes every step from the newest down to it. The same
+  for Redo. Steps in the middle cannot be picked there: for one of those,
+  **Undo row N** in the row's menu.
+- **A step that cannot be undone or redone** is said in a dialog, with the
+  reason -- most often that something written since changed what the step
+  set, and which row did. Nothing in the document moves. **Skip this step**
+  leaves it where it is and takes the step after it; **Cancel** does nothing.
+  The step stays in the list, and is asked about again the next time.
+- A change made without a name does not empty the redo list, as a named step
+  does. A redo is refused only if that change set the same property.
+
 ## 6. Seeing a change in the 3D view
 
 The two lines at the bottom of the panel show, in the 3D view, how a

@@ -18716,3 +18716,95 @@ mechanism on Linux. `aWireMergeCopiesNothingForRounding`. The case of
 off: Python 3132 OK both ways, ctest 920 of 920 both ways, the 19 Gui
 checks with no failure. The Windows box, with the first part of the
 rule by hand in its kernel: the names of that test the same on and off.
+
+### 33.11 A step refused is said, and can be gone past
+
+**Ruled (user, 2026-10-12):** every change made without a name rides
+along with the step before it (33.4 as built; the narrower way, only
+recomputes, was offered and declined); and a refusal is said in a
+dialog, with a way past the step.
+
+**When a step is refused.** Only where it is taken through the log:
+it is not the newest thing written -- another author's step lies above
+it, or a change with no name came between an undo and its redo -- or
+it is past the hot window. Then: a property it set was written again
+since, to another value (`Length of id 12 was changed since, by row
+57`); an object it made is gone, or one it removed cannot come back
+under its name or id; or its row or a value is no longer in the log.
+For one user an undo is refused only for a step whose history was
+trimmed, and a redo where a change with no name set what it sets.
+
+**What there was.** The reason went to the report view and nowhere
+else: the command looked as if it did nothing. And `undo()` takes the
+newest step first, so every further one tried the same step: nothing
+below it could be reached from Edit > Undo.
+
+**Built.**
+
+- `Document::undoSkipping(skip)` / `redoSkipping(skip)`, Python
+  `undo(skip)` / `redo(skip)`: the step after the `skip` newest of the
+  actor's, with the implicit ones that go with it (`_myRun(undo,
+  skip)`). It has steps above it, so it goes through the log, selective
+  as 30.10 item 3 has it, and is refused in its turn where what it left
+  was changed since. Fewer steps than were to be left: nothing.
+  `UndoRefusal` in Python is why the last one did nothing.
+- `Gui::Document::undo(steps, ask)` / `redo`: with `ask`, a refused
+  step is said in a dialog -- the step's name, the reasons with each
+  object by its label, and the step after it offered: **Skip this
+  step** takes that one and leaves the refused one where it is,
+  **Cancel** nothing. With no step after it, the reason and **OK**.
+  Asked with no guard held and the document not marked as in a
+  transaction. `ask` is the user's own undo: the view's Undo and Redo
+  messages, so Ctrl+Z, the menu and the arrow's list. A script's and a
+  client's (`SceneControl`, which answers `Refused` itself) are not
+  asked.
+- The arrow's list sends one message a step; it stops at one after
+  which the list is no shorter, where each further message tried the
+  refused step again.
+
+**A range of steps.** Checked, as asked: the arrow beside Undo lists
+the named steps newest first, and clicking one takes every step from
+the newest down to it -- a range from the top, and no other. The log
+panel takes several rows as selected, and **Undo row N** acts on the
+one clicked alone; several rows of this branch are undone one at a
+time. Not built: an undo of the rows selected.
+
+**Tests.** Python `testAStepRefusedIsSaidAndGonePast`: an undo leaving
+the newest step, fewer steps than to be left, a redo refused by a
+write with no name -- the reason, nothing moved, no row -- the step
+after it taken with its shape, the refused one still refused. Gui
+check `scripts/transaction-log-undo-check.py` (13, `$UNDOCHECK_OUT`),
+through `Std_Undo` and `Std_Redo`: no dialog for a step that goes; the
+refused redo said with its reason and the object's label, the step
+after it offered; cancelled, nothing moved; gone past, the step after
+redone with its shape; the refused one alone said with nothing
+offered.
+
+### 33.12 Two things a step taken through the log met
+
+Found on the Windows box once 33.4 was merged: LinkVibe's two tests do
+`undo()`, `recompute()`, `redo()`, the recompute is now a step that
+does not end the redo, and the redo goes through the log
+(`_revertStep`) where it used to come from the step's copies. Taken
+from LinkVibe as it was built there (`26b48d53fc`).
+
+- **A property replaced under its name.** A row that removed a dynamic
+  property and added one of the same name and another type -- a pattern
+  changing its kind, whose `Offset` is a length or an angle -- was
+  reverted into an object with no such property: the one in place kept
+  the removed one from coming back, and was then removed as the row's
+  addition. The one in place goes first, and is not removed again.
+- **Not reacted to.** The values went back with object code reacting
+  to each, in the order of a hash map: a pattern given its suppressed
+  indices before its grid worked the positions out of them on the grid
+  of before. They go back under the flag an undo sets
+  (`isPerformingTransaction()`), as the same revert already did for a
+  cold step with the document at its state; the recompute after is
+  outside it. The panel's **Undo row** (`undoLogged`) applied its row
+  the same unguarded way and is now under the flag too: a row's values
+  are whole, and nothing has to be worked out of them.
+
+**Gates** for 33.11 and 33.12, the freeze on and off: Python 3133 OK
+both ways, ctest 920 of 920 both ways, the 20 Gui checks with no
+failure. On the Windows box, 33.1 to 33.10 merged into LinkVibe with
+33.12's first form: ctest 850 of 850, Python 3641 OK.

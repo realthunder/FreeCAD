@@ -5444,6 +5444,69 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(doc.RedoNames, [])
         self.assertEqual(doc.UndoNames, ["taller"])
 
+    def testAStepRefusedIsSaidAndGonePast(self):
+        # Sec 33.11: a redo is refused where what it would set was changed
+        # since -- here by a write with no name, which leaves the redo list
+        # (sec 33.4). The document says why, nothing moves, and the step
+        # after it can be taken with the refused one left where it is.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("Refused"))
+        doc.UndoMode = 1
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+
+        def step(name, prop, value):
+            doc.openTransaction(name)
+            setattr(box, prop, value)
+            doc.commitTransaction()
+            doc.recompute()
+
+        step("longer", "Length", 20)
+        step("wider", "Width", 20)
+
+        # An undo that leaves the newest step: the one before it.
+        doc.undo(1)
+        self.assertEqual(doc.UndoRefusal, "")
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Width.Value, 20.0)
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertEqual(doc.UndoNames, ["wider"])
+        self.assertEqual(doc.RedoNames, ["longer"])
+        doc.undo()
+        self.assertAlmostEqual(box.Width.Value, 10.0)
+        self.assertEqual(doc.UndoNames, [])
+        self.assertEqual(doc.RedoNames, ["wider", "longer"])
+        # Fewer steps than were to be left: nothing.
+        doc.redo(2)
+        self.assertEqual(doc.RedoNames, ["wider", "longer"])
+        self.assertEqual(doc.UndoRefusal, "")
+
+        # A write with no name on what "wider" sets.
+        box.Width = 15
+        doc.recompute()
+        self.assertEqual(doc.RedoNames, ["wider", "longer"])
+        rows = len(doc.getTransactionLog())
+        doc.redo()
+        self.assertIn("Width of id %d was changed since, by row" % box.ID, doc.UndoRefusal)
+        self.assertAlmostEqual(box.Width.Value, 15.0)
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertEqual(doc.RedoNames, ["wider", "longer"])
+        self.assertEqual(len(doc.getTransactionLog()), rows)
+
+        # Past it: the step after, with its shape; the refused one stays.
+        doc.redo(1)
+        self.assertEqual(doc.UndoRefusal, "")
+        self.assertAlmostEqual(box.Length.Value, 20.0)
+        self.assertAlmostEqual(box.Width.Value, 15.0)
+        self.assertAlmostEqual(box.Shape.Volume, 20 * 15 * 10.0)
+        self.assertNotIn("Touched", box.State)
+        self.assertEqual(doc.RedoNames, ["wider"])
+        self.assertEqual(doc.UndoNames, ["longer"])
+        doc.redo()
+        self.assertIn("was changed since", doc.UndoRefusal)
+        self.assertEqual(doc.RedoNames, ["wider"])
+
     def testAFeatureRefusedAFrozenInputRunsOnACopy(self):
         # Sec 27.82: an algorithm that writes into a frozen input throws
         # LockedShape; the feature runs once more on copies of its inputs,
