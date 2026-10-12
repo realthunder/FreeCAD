@@ -74,6 +74,7 @@
 #endif
 #include "ActionFunction.h"
 #include "MainWindow.h"
+#include "OwnNodesPath.h"
 #include "ViewPlacement.h"
 #include "Document.h"
 #include "SoFCUnifiedSelection.h"
@@ -1831,6 +1832,9 @@ void ViewProviderShaderBinding::applyPathBindings(
             // subname resolves through to the tail shape's SoDetail
             std::string sub = t.second;
             sub += element;
+            // The target's own nodes: a binding is rebuilt with the
+            // bindings, not when a target is shown or hidden
+            OwnNodesPath ownNodes;
             CoinPtr<SoPath> path = new SoPath(10);
             viewer->appendDetailPath(path, vpd);
             SoDetail *det = nullptr;

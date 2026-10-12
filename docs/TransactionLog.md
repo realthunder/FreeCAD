@@ -3234,6 +3234,16 @@ lists every row with its view and data ops. What it found:
   planes and axes -- seven view providers) after the model changes, from
   a deferred call outside any transaction: a view-only step the user never
   made. It now runs under `App::DerivedViewWrites`.
+  And under it the document is not marked modified either (2026-10-12).
+  The refit is also scheduled when a load ends, 300 ms on, and a document
+  that was only opened -- a body, or a stock `App::Part` -- had the mark of
+  a modified one half a second later and asked to save on close. Two doors
+  set the flag and both stand down: `ViewProviderDocumentObject::
+  onChanged()`, and `Gui::Document::slotChangedObject()` for the object's
+  `ViewObject`, which a view provider touches after every change of its
+  own. Measured: `Gui.Document.Modified` False at open, `Size` 25 -> 10 at
+  0.45 s, True from there; after, False throughout. Tests:
+  `Test/PartGroupView.py`, `PartDesignTests.TestSolidBodyGui.TestOpenedBodyGui`.
 - The tree's visibility (eye) and unselectable icons write `Visibility`
   and `Selectable` with no command. With the log on each click now opens a
   named transaction ("Toggle visibility", "Toggle selectability"); off,

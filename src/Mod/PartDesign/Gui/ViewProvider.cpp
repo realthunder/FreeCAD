@@ -61,6 +61,7 @@
 #include <Mod/PartDesign/App/FeatureExtrusion.h>
 #include <Mod/PartDesign/App/FeatureHole.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
+#include <Mod/PartDesign/App/SolidBody.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "TaskFeatureParameters.h"
@@ -68,6 +69,7 @@
 #include "ViewProvider.h"
 #include "ViewProviderPy.h"
 #include "ViewProviderBody.h"
+#include "ViewProviderSolidBody.h"
 #include "Utils.h"
 
 using namespace PartDesignGui;
@@ -166,14 +168,18 @@ void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* 
                     receiver, member);
         act->setData(QVariant((int)EditToggleSupress));
 
-        if (!body->AutoGroupSolids.getValue() && feat->_Siblings.getSize()) {
+        // Grouping by hand is for a body that groups a solid under its last
+        // feature; one that keeps solid bodies has them do it
+        const bool manualGroup = !body->AddSolidBody.getValue()
+                              && !body->AutoGroupSolids.getValue();
+        if (manualGroup && feat->_Siblings.getSize()) {
             act = menu->addAction(QObject::tr("Ungroup solid feature"), receiver, member);
             act->setData(QVariant((int)EditExpandSiblings));
         }
 
         auto siblings = body->getSiblings(feat);
         if ( siblings.size() > 1) {
-            if (!body->AutoGroupSolids.getValue()) {
+            if (manualGroup) {
                 auto it = std::find(siblings.begin(), siblings.end(), feat);
                 if (it != siblings.end()) {
                     int pos = it - siblings.begin();
@@ -204,7 +210,8 @@ void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* 
             act->setData(QVariant((int)EditSelectSiblings));
         }
 
-        if (body->Tip.getValue() != feat) {
+        if (body->AddSolidBody.getValue() ? !isSolidTip(body, feat)
+                                          : body->Tip.getValue() != feat) {
             if (Gui::Application::Instance->commandManager().addTo("PartDesign_MoveTip", menu)) {
                 menu->actions().back()->setData(QVariant((int)EditSetTip));
             }
@@ -698,6 +705,18 @@ void ViewProvider::updateVisual()
     }
 }
 
+void ViewProvider::show()
+{
+    SolidBodyHighlight highlight(getObject());
+    inherited::show();
+}
+
+void ViewProvider::hide()
+{
+    SolidBodyHighlight highlight(getObject());
+    inherited::hide();
+}
+
 void ViewProvider::onChanged(const App::Property* prop) {
     if (prop == &IconColor) {
         pxTipIcon = QPixmap();
@@ -707,7 +726,8 @@ void ViewProvider::onChanged(const App::Property* prop) {
         auto body = PartDesign::Body::findBodyOf(getObject());
         if (feature && body) {
             auto siblings = body->getSiblings(feature);
-            if(feature->_Siblings.getSize()) {
+            // Not where the body writes _Siblings itself (Body::syncSolidBodies())
+            if(feature->_Siblings.getSize() && !body->AddSolidBody.getValue()) {
                 if (siblings.size() && siblings.front() == feature)
                     feature->_Siblings.setValues();
             }
@@ -849,6 +869,12 @@ QPixmap ViewProvider::getTagIcon() const
     if (!feat)
         return QPixmap();
 
+    // No tag where the body keeps solid bodies: the solid a feature belongs
+    // to is the one it is listed under, and the tips are marked by arrows
+    auto body = PartDesign::Body::findBodyOf(feat);
+    if (body && body->AddSolidBody.getValue())
+        return QPixmap();
+
     unsigned long color = IconColor.getValue().getPackedValue();
     if (!color && !isSetTipIcon && !feat->_Siblings.getSize())
         return QPixmap();
@@ -881,8 +907,20 @@ QPixmap ViewProvider::getTagIcon() const
     return pxTipIcon;
 }
 
-static QByteArray _IconTag("PartDesign::Tag");
+static const QByteArray &_IconTag = featureTagIconTag();
 static QByteArray _SuppressedTag("PartDesign::Suppressed");
+
+QPixmap ViewProvider::getTipArrowIcon() const
+{
+    // In the colour of the solid, as the tag is; one of its own where the
+    // body has a single solid and gave it none
+    unsigned long color = IconColor.getValue().getPackedValue() >> 8;
+    if (!color)
+        color = 0x729fcf;
+    std::map<unsigned long, unsigned long> colormap;
+    colormap[0xffffff] = color;
+    return Gui::BitmapFactory().pixmapFromSvg("PartDesign_TipArrow.svg", QSizeF(48,64), colormap);
+}
 
 void ViewProvider::getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &icons) const
 {
@@ -892,9 +930,17 @@ void ViewProvider::getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &i
         return;
     }
 
-    QPixmap px = getTagIcon();
-    if (!px.isNull())
-        icons.emplace_back(_IconTag,px);
+    auto body = PartDesign::Body::findBodyOf(feat);
+    if (body && body->AddSolidBody.getValue()) {
+        // The arrow first, ahead of any other extra icon
+        if (body->isSolidFeature(feat) && isSolidTip(body, feat))
+            icons.emplace_back(solidTipIconTag(), getTipArrowIcon());
+    }
+    else {
+        QPixmap px = getTagIcon();
+        if (!px.isNull())
+            icons.emplace_back(_IconTag,px);
+    }
 
     if(feat->Suppress.getValue())
         icons.emplace_back(_SuppressedTag, Gui::BitmapFactory().pixmap("PartDesign_Suppressed.svg"));
@@ -943,13 +989,50 @@ QString ViewProvider::getToolTip(const QByteArray &tag) const
             return QObject::tr("Feature suppressed. ALT + click this icon to unsppress.");
         else if (tag == _IconTag) {
             if (isSetTipIcon)
-                return QObject::tr("This is the tip of the body. New feature will be inserted after it.");
+                return QObject::tr("This is the tip of the body. New feature will be inserted after it.\n\n"
+                                "Drag this icon onto another feature of the body to move the tip there.");
             else
                 return QObject::tr("Alt + click this icon to set this feature as the tip of the body.\n"
                                 "New feature will be inserted after it.");
         }
+        else if (tag == solidTipIconTag()) {
+            auto body = PartDesign::Body::findBodyOf(getObject());
+            auto solid = body ? body->getSolidBody(getObject()) : nullptr;
+            if (!solid)
+                return QObject::tr("Body tip: this feature is the tip of the body. The body has its shape,\n"
+                                "and a new feature is inserted after it.\n\n"
+                                "Drag this arrow onto another feature of the body to move the tip there.");
+            QString label = QString::fromUtf8(solid->Label.getValue());
+            if (body->getTipSolidBody() == solid)
+                return QObject::tr("Solid tip: this feature is the tip of solid '%1'. The solid has its shape,\n"
+                                "and a new feature of the solid is inserted after it.\n"
+                                "The solid is the tip of the body as well, so the body has that shape too.\n\n"
+                                "Drag this arrow onto another feature of the same solid to move the tip there.\n"
+                                "To make another solid the tip of the body, drag the double arrow of '%1'.").arg(label);
+            return QObject::tr("Solid tip: this feature is the tip of solid '%1'. The solid has its shape,\n"
+                            "and a new feature of the solid is inserted after it.\n\n"
+                            "Drag this arrow onto another feature of the same solid to move the tip there.").arg(label);
+        }
     }
     return inherited::getToolTip(tag);
+}
+
+bool ViewProvider::canDragIcon(const QByteArray &tag) const
+{
+    if (tag == solidTipIconTag())
+        return true;
+    // The tag of a body without solid bodies: only the one that is the tip
+    return tag == _IconTag && isSetTipIcon;
+}
+
+bool ViewProvider::canDropIcon(App::DocumentObject *source, const QByteArray &tag) const
+{
+    return canDropTipIcon(source, tag, getObject());
+}
+
+void ViewProvider::dropIcon(App::DocumentObject *source, const QByteArray &tag)
+{
+    dropTipIcon(source, tag, getObject());
 }
 
 bool ViewProvider::onDelete(const std::vector<std::string> &)
@@ -1127,9 +1210,14 @@ std::vector<App::DocumentObject*> ViewProvider::claimChildren(void) const
     auto children = inherited::claimChildren();
     res.insert(res.end(), children.begin(), children.end());
     auto feature = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());
-    if (feature) {
-        const auto &siblings = feature->_Siblings.getValues();
-        res.insert(res.end(), siblings.begin(), siblings.end());
+    if (feature && feature->_Siblings.getSize()) {
+        // Under a body that keeps solid bodies _Siblings is only a record
+        // for builds without them; the solid body holds the features here
+        auto body = PartDesign::Body::findBodyOf(feature);
+        if (!body || !body->AddSolidBody.getValue()) {
+            const auto &siblings = feature->_Siblings.getValues();
+            res.insert(res.end(), siblings.begin(), siblings.end());
+        }
     }
     return res;
 }

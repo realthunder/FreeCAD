@@ -38,6 +38,46 @@ the given dependencies.
             </UserDocu>
         </Documentation>
     </Methode>
+    <Methode Name="getSolidBody">
+        <Documentation>
+            <UserDocu>
+getSolidBody(feature) -> SolidBody or None
+
+Return the solid body holding the given feature of this body.
+            </UserDocu>
+        </Documentation>
+    </Methode>
+    <Methode Name="syncSolidBodies">
+        <Documentation>
+            <UserDocu>
+syncSolidBodies()
+
+Bring the solid bodies in step with the solids of this body: one for each
+solid once there is more than one solid (while AddSolidBody is on), none for
+a solid whose features are all gone. Done by the body whenever a feature is
+added or removed and at each recompute; call it after changing BaseFeature or
+Group by hand.
+            </UserDocu>
+        </Documentation>
+    </Methode>
+    <Attribute Name="Solids" ReadOnly="true">
+        <Documentation>
+            <UserDocu>The solids of this body, each as the list of its features in history order</UserDocu>
+        </Documentation>
+    <Parameter Name="Solids" Type="List" />
+    </Attribute>
+    <Attribute Name="SolidBodies" ReadOnly="true">
+        <Documentation>
+            <UserDocu>The solid bodies of this body</UserDocu>
+        </Documentation>
+    <Parameter Name="SolidBodies" Type="List" />
+    </Attribute>
+    <Attribute Name="TipSolidBody" ReadOnly="true">
+        <Documentation>
+            <UserDocu>The solid body of the solid holding Tip, or None</UserDocu>
+        </Documentation>
+    <Parameter Name="TipSolidBody" Type="Object" />
+    </Attribute>
     <Attribute Name="VisibleFeature" ReadOnly="true">
         <Documentation>
             <UserDocu>Return the visible feature of this body</UserDocu>

@@ -38,6 +38,7 @@
 #include "Body.h"
 #include "Feature.h"
 #include "FeatureSolid.h"
+#include "SolidBody.h"
 #include "AuxGroup.h"
 
 using namespace PartDesign;
@@ -124,9 +125,11 @@ bool AuxGroup::isObjectAllowed(const App::DocumentObject *obj) const
             && !isDatum
             && !type.isDerivedFrom(Feature::getClassTypeId())
             && !type.isDerivedFrom(Solid::getClassTypeId())
+            && !type.isDerivedFrom(SolidBody::getClassTypeId())
             && !type.isDerivedFrom(AuxGroup::getClassTypeId());
     case OtherGroup:
         return !type.isDerivedFrom(AuxGroup::getClassTypeId())
+            && !type.isDerivedFrom(SolidBody::getClassTypeId())
             && !type.isDerivedFrom(PartDesign::Feature::getClassTypeId())
             && PartDesign::Body::isAllowed(type);
     default:

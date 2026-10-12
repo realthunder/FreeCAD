@@ -38,6 +38,7 @@ SET(Test_SRCS
     SandboxMirrorBench.py
     ViewProviderHooks.py
     ViewProviderChain.py
+    PartGroupView.py
     FeaturePythonChain.py
     SandboxProgram.py
     SandboxProgramFixtures.py

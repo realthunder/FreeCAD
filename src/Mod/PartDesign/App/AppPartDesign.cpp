@@ -66,6 +66,7 @@
 #include "FeatureTransformed.h"
 #include "FeatureWrap.h"
 #include "ShapeBinder.h"
+#include "SolidBody.h"
 
 
 namespace PartDesign {
@@ -174,6 +175,7 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::FeatureBase                 ::init();
     PartDesign::FeatureWrap                 ::init();
     PartDesign::AuxGroup                    ::init();
+    PartDesign::SolidBody                   ::init();
 
     PyMOD_Return(mod);
 }

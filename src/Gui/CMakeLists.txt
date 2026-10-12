@@ -1006,6 +1006,7 @@ SET(View3D_SRCS
     View3DInventorViewer.h
     ViewerContext.h
     ViewVisibility.h
+    OwnNodesPath.h
     MirrorViewer.h
     OmniControl.h
     SceneControl.h

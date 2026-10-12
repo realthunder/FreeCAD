@@ -47,6 +47,7 @@
 #include "DatumPlane.h"
 #include "AuxGroup.h"
 #include "ShapeBinder.h"
+#include "SolidBody.h"
 
 #include <Mod/Part/App/PartParams.h>
 
@@ -66,6 +67,12 @@ Body::Body() {
 
     ADD_PROPERTY_TYPE(AutoGroupSolids,(false),"Base",(App::PropertyType)(App::Prop_Output),
             "Auto group features of a solid under the latest feature");
+
+    // Off here and switched on in setupObject(): a body restored from a
+    // document that never had the property keeps the grouping it was saved with
+    ADD_PROPERTY_TYPE(AddSolidBody,(false),"Base",(App::PropertyType)(App::Prop_Output),
+            "Group the features of each solid under a solid body once the body\n"
+            "has more than one solid. AutoGroupSolids is ignored while this is on");
 }
 
 /*
@@ -236,6 +243,7 @@ bool Body::isAllowed(const Base::Type &type)
     return (type.isDerivedFrom(PartDesign::Feature::getClassTypeId()) ||
             type.isDerivedFrom(Part::Datum::getClassTypeId())   ||
             type.isDerivedFrom(PartDesign::Solid::getClassTypeId())   ||
+            type.isDerivedFrom(PartDesign::SolidBody::getClassTypeId()) ||
             type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
             type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
             type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()) ||
@@ -259,7 +267,11 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
         return static_cast<const PartDesign::Feature*>(feature)->getFeatureBody();
     if (feature->isDerivedFrom<PartDesign::AuxGroup>())
         return static_cast<const PartDesign::AuxGroup*>(feature)->getBody();
-    
+    if (feature->isDerivedFrom<PartDesign::SolidBody>()) {
+        if (auto body = static_cast<const PartDesign::SolidBody*>(feature)->getBody())
+            return body;
+    }
+
     return Base::freecad_dynamic_cast<Body>(BodyBase::findBodyOf(feature));
 }
 
@@ -365,6 +377,10 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
         THROWM(Base::ValueError, "Body: the feature we should insert relative to is not part of that body")
     }
 
+    // The feature is in Group before it has its BaseFeature: the solids are
+    // looked at when both are set
+    SolidBodySyncGuard syncGuard(this);
+
     //ensure that all origin links are ok
     relinkToOrigin(feature);
 
@@ -411,6 +427,15 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
 
 void Body::setTip(App::DocumentObject *feature)
 {
+    // A solid body stands for its own tip feature: Tip is always a feature
+    if (auto solid = Base::freecad_dynamic_cast<SolidBody>(feature)) {
+        if (solid->getBody() != this)
+            return;
+        feature = solid->Tip.getValue();
+        if (!feature && solid->Group.getSize())
+            feature = solid->Group.getValues().back();
+    }
+
     if (!feature || Tip.getValue() == feature
                  || !isSolidFeature(feature)
                  || !Group.find(feature->getNameInDocument()))
@@ -474,6 +499,10 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
     // another, which raises no error and only shows up as wrong geometry at the
     // next recompute. setBaseProperty() already reroutes by matching on the
     // link; this is the counterpart for removal.
+    //
+    // The solid bodies are looked at once the reroute below is complete.
+    SolidBodySyncGuard syncGuard(this);
+
     auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(feature);
     const bool headsOwnSolid = feat && feat->NewSolid.getValue();
     // Predecessor inside the same solid group; null when this feature heads one
@@ -513,6 +542,18 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
     std::vector<App::DocumentObject*> model = Group.getValues();
     std::vector<App::DocumentObject*>::iterator it = std::find(model.begin(), model.end(), feature);
 
+    // The tip of the feature's solid moves the same way, and takes the body's
+    // with it when this solid is the body's tip (SolidBody::onChanged()).
+    if (auto solid = getSolidBody(feature)) {
+        if (solid->Tip.getValue() == feature) {
+            App::DocumentObject* newTip = siblingBase;
+            if (!newTip && !siblingSuccessors.empty()) {
+                newTip = siblingSuccessors.front();
+            }
+            solid->Tip.setValue(newTip);
+        }
+    }
+
     // Adjust Tip feature if it is pointing to the deleted object, preferring
     // this feature's own solid group over whatever happens to sit beside it.
     if (Tip.getValue() == feature) {
@@ -524,9 +565,15 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
             // Last solid of its group: fall back to a positional neighbour, as
             // any remaining solid is a better tip than none.
             newTip = getPrevSolidFeature(feature);
-        }
-        if (!newTip) {
-            newTip = getNextSolidFeature(feature);
+            if (!newTip) {
+                newTip = getNextSolidFeature(feature);
+            }
+            // The neighbour's solid becomes the body's tip where it is
+            // rolled back to, not where the neighbour happens to be.
+            auto solid = getSolidBody(newTip);
+            if (solid && solid->hasFeature(solid->Tip.getValue())) {
+                newTip = solid->Tip.getValue();
+            }
         }
         Tip.setValue(newTip);
     }
@@ -547,6 +594,10 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
 App::DocumentObjectExecReturn *Body::execute()
 {
     Part::BodyBase::execute();
+
+    // Whatever changed the solids without saying it was done: a script
+    // setting BaseFeature, a feature removed from the document directly
+    syncSolidBodies();
 
     App::DocumentObject* tip = Tip.getValue();
     if (!tip) {
@@ -642,14 +693,18 @@ void Body::onChanged (const App::Property* prop) {
             }
         }
         else if( prop == &Group ) {
+            touchSolidBodies();
             //if the FeatureBase was deleted we set the BaseFeature link to nullptr
             if (BaseFeature.getValue() &&
-               (Group.getValues().empty() || 
+               (Group.getValues().empty() ||
                 (!Group.getValues().front()->isDerivedFrom<FeatureBase>()
                  && Group.getValues().front()!=BaseFeature.getValue())))
             {
                 BaseFeature.setValue(nullptr);
             }
+        }
+        else if (prop == &AddSolidBody) {
+            syncSolidBodies(true);
         }
         else if (prop == &ShapeMaterial) {
             // A body is one solid of one material (upstream 0804d80ebf). Its
@@ -670,6 +725,26 @@ void Body::onChanged (const App::Property* prop) {
         }
         else if (prop == &Tip) {
             FC_TRACE("tip changed");
+            auto tip = Tip.getValue();
+            if (auto solid = Base::freecad_dynamic_cast<SolidBody>(tip)) {
+                // A solid body given as the tip stands for its own tip
+                // feature. Tip holds a feature always: that is what a build
+                // without SolidBody reads, and it gets the same body shape.
+                App::DocumentObject *feature = nullptr;
+                if (solid->getBody() == this) {
+                    feature = solid->Tip.getValue();
+                    if (!feature && solid->Group.getSize())
+                        feature = solid->Group.getValues().back();
+                }
+                Tip.setValue(feature);
+            }
+            else if (tip) {
+                // The solid the tip is in becomes the body's tip, rolled
+                // back to that feature
+                auto solid = getSolidBody(tip);
+                if (solid && solid->Tip.getValue() != tip)
+                    solid->Tip.setValue(tip);
+            }
         }
     }
 
@@ -679,6 +754,7 @@ void Body::onChanged (const App::Property* prop) {
 void Body::setupObject () {
     Part::BodyBase::setupObject ();
     AutoGroupSolids.setValue(Part::PartParams::getAutoGroupSolids());
+    AddSolidBody.setValue(true);
 
     // make sure the origins are created
     getOrigin()->getX();
@@ -772,7 +848,328 @@ void Body::onDocumentRestored()
     if (Tip.getValue())
         Tip.touch();
 
+    // Checked at the next recompute; nothing is made while restoring
+    if (AddSolidBody.getValue())
+        touchSolidBodies();
+
     DocumentObject::onDocumentRestored();
+}
+
+std::vector<std::vector<App::DocumentObject*>> Body::getSolids() const
+{
+    std::vector<std::vector<App::DocumentObject*>> res;
+
+    std::vector<App::DocumentObject*> features;
+    std::set<App::DocumentObject*> featureSet;
+    for (auto obj : Group.getValues()) {
+        if (obj && obj->isAttachedToDocument() && isSolidFeature(obj)
+                && featureSet.insert(obj).second)
+            features.push_back(obj);
+    }
+
+    // A feature follows its BaseFeature; one whose base is not a solid
+    // feature of this body starts a solid
+    std::map<App::DocumentObject*, std::vector<App::DocumentObject*>> successors;
+    std::vector<App::DocumentObject*> heads;
+    for (auto obj : features) {
+        App::DocumentObject *base = nullptr;
+        if (auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(obj))
+            base = feat->BaseFeature.getValue();
+        if (base && base != obj && featureSet.count(base))
+            successors[base].push_back(obj);
+        else
+            heads.push_back(obj);
+    }
+
+    std::set<App::DocumentObject*> visited;
+    auto collect = [&](App::DocumentObject *head) {
+        std::vector<App::DocumentObject*> solid;
+        std::vector<App::DocumentObject*> stack{head};
+        while (!stack.empty()) {
+            auto obj = stack.back();
+            stack.pop_back();
+            if (!visited.insert(obj).second)
+                continue;
+            solid.push_back(obj);
+            auto it = successors.find(obj);
+            if (it != successors.end())
+                stack.insert(stack.end(), it->second.rbegin(), it->second.rend());
+        }
+        if (!solid.empty())
+            res.push_back(std::move(solid));
+    };
+    for (auto head : heads)
+        collect(head);
+    // Features left over base each other in a cycle. Still a solid to show.
+    for (auto obj : features) {
+        if (!visited.count(obj))
+            collect(obj);
+    }
+    return res;
+}
+
+std::vector<SolidBody*> Body::getSolidBodies() const
+{
+    std::vector<SolidBody*> res;
+    for (auto obj : Group.getValues()) {
+        if (obj && obj->isAttachedToDocument() && obj->isDerivedFrom<SolidBody>())
+            res.push_back(static_cast<SolidBody*>(obj));
+    }
+    return res;
+}
+
+SolidBody *Body::getSolidBody(const App::DocumentObject *feature) const
+{
+    if (!feature || !feature->isAttachedToDocument())
+        return nullptr;
+    for (auto obj : Group.getValues()) {
+        if (obj && obj->isDerivedFrom<SolidBody>()
+                && static_cast<SolidBody*>(obj)->hasFeature(feature))
+            return static_cast<SolidBody*>(obj);
+    }
+    return nullptr;
+}
+
+SolidBody *Body::getTipSolidBody() const
+{
+    return getSolidBody(Tip.getValue());
+}
+
+Body::SolidBodySyncGuard::SolidBodySyncGuard(Body *body)
+    : bodyT(body)
+{
+    if (body)
+        ++body->solidBodySyncBlocked;
+}
+
+Body::SolidBodySyncGuard::~SolidBodySyncGuard()
+{
+    auto body = Base::freecad_dynamic_cast<Body>(bodyT.getObject());
+    if (!body || --body->solidBodySyncBlocked > 0)
+        return;
+    try {
+        body->syncSolidBodies();
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+    }
+    catch (...) {
+        FC_ERR("Failed to update the solid bodies of " << body->getFullName());
+    }
+}
+
+void Body::removeSolidBody(SolidBody *solid)
+{
+    if (!solid || !solid->isAttachedToDocument())
+        return;
+    // Emptied first, so that nothing done on the way out acts on features
+    // it no longer has
+    if (solid->Tip.getValue())
+        solid->Tip.setValue(nullptr);
+    if (solid->Group.getSize())
+        solid->Group.setValues();
+    getDocument()->removeObject(solid->getNameInDocument());
+}
+
+void Body::syncSolidBodies(bool force)
+{
+    if (force)
+        touchSolidBodies();
+    if (!solidBodyTouched || solidBodySyncing || solidBodySyncBlocked > 0)
+        return;
+
+    auto doc = getDocument();
+    if (!doc || !isAttachedToDocument() || isRestoring()
+            || testStatus(App::Remove)
+            || doc->testStatus(App::Document::Restoring)
+            || doc->isPerformingTransaction())
+        return;
+
+    // Not while one of the features is being edited: a 'New shape' box
+    // ticked and unticked would leave a solid body behind for a solid that
+    // was never made. Accepting the edit recomputes, and that comes here.
+    for (auto obj : Group.getValues()) {
+        if (obj && obj->testStatus(App::ObjEditing))
+            return;
+    }
+
+    Base::StateLocker guard(solidBodySyncing);
+    solidBodyTouched = false;
+
+    // Taken by name: removing one may take others with it
+    std::vector<App::DocumentObjectT> existing;
+    for (auto solid : getSolidBodies())
+        existing.emplace_back(solid);
+
+    if (!AddSolidBody.getValue()) {
+        // _Siblings is left as it is: it holds each solid grouped under its
+        // last feature, which is the grouping this body goes back to
+        for (auto &objT : existing)
+            removeSolidBody(static_cast<SolidBody*>(objT.getObject()));
+        solidBodyTouched = false;
+        return;
+    }
+
+    const auto solids = getSolids();
+    std::map<App::DocumentObject*, int> solidOf;
+    std::map<App::DocumentObject*, int> orderOf;
+    for (int i=0; i<(int)solids.size(); ++i) {
+        int order = 0;
+        for (auto obj : solids[i]) {
+            solidOf[obj] = i;
+            orderOf[obj] = order++;
+        }
+    }
+
+    // A solid body stays with the solid holding the earliest of its features
+    // still there. Where two ask for one solid -- two solids were joined --
+    // the one whose feature comes first in it keeps it, and the other looks
+    // for a solid holding a later feature of its own.
+    std::vector<SolidBody*> assigned(solids.size(), nullptr);
+    std::vector<SolidBody*> pending;
+    for (auto &objT : existing) {
+        auto solid = static_cast<SolidBody*>(objT.getObject());
+        if (solid->_Body.getValue() != this)
+            solid->_Body.setValue(this);
+        pending.push_back(solid);
+    }
+    while (!pending.empty()) {
+        // For each solid, the claimant whose earliest feature comes first
+        std::map<int, std::pair<int, SolidBody*>> claims;
+        std::vector<SolidBody*> losers;
+        for (auto solid : pending) {
+            bool claimed = false;
+            for (auto obj : solid->Group.getValues()) {
+                auto it = solidOf.find(obj);
+                if (it == solidOf.end() || assigned[it->second])
+                    continue;
+                int order = orderOf[obj];
+                auto res = claims.emplace(it->second, std::make_pair(order, solid));
+                if (!res.second) {
+                    if (res.first->second.first <= order) {
+                        losers.push_back(solid);
+                    }
+                    else {
+                        losers.push_back(res.first->second.second);
+                        res.first->second = std::make_pair(order, solid);
+                    }
+                }
+                claimed = true;
+                break;
+            }
+            if (!claimed)
+                removeSolidBody(solid);
+        }
+        for (auto &v : claims)
+            assigned[v.first] = v.second.second;
+        pending.swap(losers);
+    }
+
+    // Every solid gets one once there are two solids. A lone solid keeps the
+    // one it has, and is given none.
+    std::vector<SolidBody*> created;
+    if (solids.size() > 1) {
+        auto group = Group.getValues();
+        for (int i=0; i<(int)solids.size(); ++i) {
+            if (assigned[i])
+                continue;
+            // Not made the document's active object: that stays the feature
+            // whose arrival made the second solid
+            auto solid = new SolidBody();
+            // Named Solid, Solid001: a path names an object with a dot behind
+            // it (Body.Solid001.Face1), so it is never read as the element Solid1
+            doc->addObject(solid, "Solid", false);
+            // An object added as one is not set up by the document, and has
+            // no look until it is given one
+            solid->giveDefaultAppearance();
+            solid->_Body.setValue(this);
+            // Its features draw the solid; this object's shape is for referencing
+            solid->Visibility.setValue(false);
+            // Of the body's material, as its features are, until given another
+            if (solid->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID())
+                solid->ShapeMaterial.setValue(ShapeMaterial.getValue());
+            assigned[i] = solid;
+            created.push_back(solid);
+            // Behind the first feature of the solid, never in front of the
+            // body's base feature
+            auto it = std::find(group.begin(), group.end(), solids[i].front());
+            group.insert(it == group.end() ? it : it+1, solid);
+        }
+        if (!created.empty()) {
+            // User3 is to skip GeoFeatureGroupExtension group check
+            Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::User3, &Group);
+            Group.setValues(group);
+        }
+    }
+
+    auto bodyTip = Tip.getValue();
+    std::vector<SolidBody*> changed;
+    for (int i=0; i<(int)solids.size(); ++i) {
+        const auto &features = solids[i];
+        auto solid = assigned[i];
+
+        // What a build without SolidBody shows: the solid's features under
+        // its last one, latest first. A solid with no solid body is not
+        // grouped.
+        PartDesign::Feature *last = nullptr;
+        std::vector<App::DocumentObject*> siblings;
+        if (solid) {
+            for (auto rit = features.rbegin(); rit != features.rend(); ++rit) {
+                auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(*rit);
+                if (!feat)
+                    continue;
+                if (!last)
+                    last = feat;
+                else
+                    siblings.push_back(feat);
+            }
+        }
+        for (auto obj : features) {
+            auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(obj);
+            if (!feat)
+                continue;
+            if (feat == last) {
+                if (feat->_Siblings.getValues() != siblings)
+                    feat->_Siblings.setValues(siblings);
+            }
+            else if (feat->_Siblings.getSize())
+                feat->_Siblings.setValues();
+        }
+
+        if (!solid)
+            continue;
+
+        bool touched = false;
+        if (solid->Group.getValues() != features) {
+            solid->Group.setValues(features);
+            touched = true;
+        }
+        // The body's tip is the tip of its solid. Otherwise the solid stays
+        // rolled back to where it was, or ends at its last feature.
+        App::DocumentObject *tip = solid->Tip.getValue();
+        if (std::find(features.begin(), features.end(), bodyTip) != features.end())
+            tip = bodyTip;
+        else if (std::find(features.begin(), features.end(), tip) == features.end())
+            tip = features.back();
+        if (solid->Tip.getValue() != tip) {
+            solid->Tip.setValue(tip);
+            touched = true;
+        }
+        if (touched)
+            changed.push_back(solid);
+    }
+
+    // In a recompute these have had their turn already, or never get one
+    if (doc->testStatus(App::Document::Recomputing)) {
+        for (auto solid : changed) {
+            std::unique_ptr<App::DocumentObjectExecReturn> ret(solid->updateShape());
+            solid->purgeTouched();
+        }
+    }
+
+    // The changes made here are not news
+    solidBodyTouched = false;
 }
 
 Body::Relation
@@ -884,6 +1281,11 @@ int Body::isElementVisible(const char *element) const
         }
         return 0;
     }
+    if (obj && obj->isDerivedFrom<SolidBody>()) {
+        // A solid is seen through one of its features, or through the solid
+        // body's own shape when that was asked for
+        return static_cast<SolidBody*>(obj)->isSolidVisible() ? 1 : 0;
+    }
     return -1;
 }
 
@@ -894,6 +1296,24 @@ int Body::setElementVisible(const char *element, bool visible)
         auto group = static_cast<AuxGroup*>(obj);
         for (auto child : group->Group.getValues())
             child->Visibility.setValue(visible);
+        return 1;
+    }
+    if (obj && obj->isDerivedFrom<SolidBody>()) {
+        auto solid = static_cast<SolidBody*>(obj);
+        if (!visible) {
+            if (solid->Visibility.getValue())
+                solid->Visibility.setValue(false);
+            for (auto child : solid->Group.getValues()) {
+                if (child->Visibility.getValue())
+                    child->Visibility.setValue(false);
+            }
+        }
+        else if (!solid->isSolidVisible()) {
+            // Showing a solid shows what it was last seen through, the
+            // feature it is rolled back to if nothing is remembered
+            if (auto target = solid->getShowTarget())
+                target->Visibility.setValue(true);
+        }
         return 1;
     }
     return -1;

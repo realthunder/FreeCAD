@@ -27,6 +27,7 @@
 #include <deque>
 #include <fastsignals/signal.h>
 
+#include <App/DocumentObserver.h>
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
 
@@ -38,6 +39,7 @@ namespace PartDesign
 {
 
 class Feature;
+class SolidBody;
 
 class PartDesignExport Body : public Part::BodyBase
 {
@@ -50,6 +52,13 @@ public:
 
     App::PropertyBool SingleSolid;
     App::PropertyBool AutoGroupSolids;
+    /** Give each solid of a body with more than one a SolidBody
+     *
+     * On for a body made by this build; off in a document of a build that
+     * had no SolidBody, which then groups as it always did. While on,
+     * AutoGroupSolids is not looked at.
+     */
+    App::PropertyBool AddSolidBody;
 
     Body();
 
@@ -194,6 +203,58 @@ public:
                                                  bool all=true,
                                                  bool reversed=false) const;
 
+    /** @name Solid bodies
+     *
+     * The features of a body form solids: a feature belongs to the solid of
+     * its BaseFeature, and one with none starts a solid. With AddSolidBody
+     * on, a body of more than one solid keeps a SolidBody for each.
+     */
+    //@{
+    /// The solids of this body, each as its features in history order
+    std::vector<std::vector<App::DocumentObject*>> getSolids() const;
+
+    /// The SolidBody objects of this body, in Group order
+    std::vector<SolidBody*> getSolidBodies() const;
+
+    /// The SolidBody holding the given feature, or null
+    SolidBody *getSolidBody(const App::DocumentObject *feature) const;
+
+    /// The SolidBody of the solid holding Tip, or null
+    SolidBody *getTipSolidBody() const;
+
+    /// Note that the solids may have changed. Makes or removes nothing.
+    void touchSolidBodies() {
+        solidBodyTouched = true;
+    }
+
+    /** Bring the SolidBody objects in step with the solids
+     *
+     * Makes one for each solid without when there is more than one solid,
+     * removes one whose features are all gone, and updates what each lists.
+     * A SolidBody stays with the solid holding the earliest of its features
+     * still there. Also writes Feature::_Siblings the way a build without
+     * SolidBody groups a solid, under its last feature.
+     *
+     * Does nothing unless touchSolidBodies() was called or \a force is set,
+     * and waits while a SolidBodySyncGuard is alive. This adds and removes
+     * objects, so it is called where an operation ends, never from a change
+     * of a single property.
+     */
+    void syncSolidBodies(bool force = false);
+
+    /// Holds syncSolidBodies() back while alive, and calls it at the end
+    class PartDesignExport SolidBodySyncGuard
+    {
+    public:
+        explicit SolidBodySyncGuard(Body *body);
+        ~SolidBodySyncGuard();
+        SolidBodySyncGuard(const SolidBodySyncGuard&) = delete;
+        SolidBodySyncGuard &operator=(const SolidBodySyncGuard&) = delete;
+    private:
+        App::DocumentObjectT bodyT;
+    };
+    //@}
+
     virtual int isElementVisible(const char *element) const override;
     virtual int setElementVisible(const char *element, bool visible) override;
 
@@ -217,7 +278,13 @@ protected:
     virtual bool getChildDefaultExport(App::DocumentObject *obj, int reason) const override;
 
 private:
+    void removeSolidBody(SolidBody *solid);
+
+private:
     bool showTip = false;
+    bool solidBodyTouched = false;
+    bool solidBodySyncing = false;
+    int solidBodySyncBlocked = 0;
 };
 
 } //namespace PartDesign

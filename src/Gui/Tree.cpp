@@ -418,6 +418,26 @@ static TreeWidget *_LastSelectedTreeWidget;
 const int TreeWidget::DocumentType = 1000;
 const int TreeWidget::ObjectType = 1001;
 static bool _DraggingActive;
+
+// A drag that carries one of an item's extra icons instead of the selected
+// objects (ViewProvider::canDragIcon()). Armed by a press on such an icon,
+// active from the drag that press starts until the drag ends.
+struct DraggingIcon
+{
+    App::DocumentObjectT object;
+    QByteArray tag;
+    // An image, not a pixmap: this is a static, made before the application is
+    QImage image;
+    bool armed = false;
+    bool active = false;
+
+    void clear()
+    {
+        *this = DraggingIcon();
+    }
+};
+static DraggingIcon _DraggingIcon;
+
 static bool _Dropping;
 static int _DropID;
 static Qt::DropActions _DropActions;
@@ -501,7 +521,13 @@ public:
         if (!_DraggingActive) {
             QPixmap pxObj, pxObj2;
             int count = 0;
-            for (auto &sel : Gui::Selection().getCompleteSelection()) {
+            if (_DraggingIcon.active) {
+                // The icon is what is dragged, so the icon is what is shown
+                if (!_DraggingIcon.image.isNull())
+                    pxObj = QPixmap::fromImage(_DraggingIcon.image.scaled(iconSize, iconSize,
+                                Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            }
+            else for (auto &sel : Gui::Selection().getCompleteSelection()) {
                 auto vp = Application::Instance->getViewProvider(sel.pObject);
                 if (!vp)
                     continue;
@@ -2318,6 +2344,7 @@ bool TreeWidget::eventFilter(QObject *o, QEvent *ev) {
             qApp->removeEventFilter(this);
             ToolTip::hideText();
             _DraggingActive = false;
+            _DraggingIcon.clear();
             for (auto tree : TreeWidget::Instances)
                 tree->setAutoScroll(false);
             qApp->restoreOverrideCursor();
@@ -2373,6 +2400,11 @@ bool TreeWidget::eventFilter(QObject *o, QEvent *ev) {
     }
     case QEvent::MouseButtonRelease: {
         QMouseEvent *me = static_cast<QMouseEvent*>(ev);
+        // However the drag ends, it does not leave an icon behind for the
+        // next drop to find
+        struct IconDragEnd {
+            ~IconDragEnd() { _DraggingIcon.clear(); }
+        } iconDragEnd;
         _DraggingActive = false;
         for (auto tree : TreeWidget::Instances)
             tree->setAutoScroll(false);
@@ -2767,7 +2799,8 @@ void TreeWidget::onToolTipTimer()
         }
     }
 
-    if (_DraggingActive) {
+    // Not for a dragged icon: no object is being moved, copied or linked
+    if (_DraggingActive && !_DraggingIcon.active) {
         static QRegularExpression regex(QStringLiteral("shift|ctrl|alt"),
                                         QRegularExpression::CaseInsensitiveOption);
         if (tag != Gui::treeNoIconTag() && info.indexOf(regex) < 0) {
@@ -3008,6 +3041,40 @@ void TreeWidget::mousePressEvent(QMouseEvent *event) {
     Base::StateLocker flag(pimpl->mousePressed);
     QByteArray tag;
     auto oitem = pimpl->itemHitTest(event->pos(), &tag);
+
+    // A press on an icon its view provider lets go of: the drag this press
+    // may start carries that icon, see startDrag()
+    _DraggingIcon.clear();
+    if (oitem && event->button() == Qt::LeftButton
+              && !(event->modifiers() & Qt::AltModifier)
+              && tag != treeVisibilityIconTag()
+              && tag != treeUnselectableIconTag())
+    {
+        try {
+            SelectionContext sctx(oitem->getSubObjectT());
+            ViewProviderDocumentObject* vp = oitem->object();
+            if (vp->canDragIcon(tag)) {
+                std::vector<std::pair<QByteArray, QPixmap> > icons;
+                vp->getExtraIcons(icons);
+                for (auto &v : icons) {
+                    if (v.first == tag) {
+                        _DraggingIcon.image = v.second.toImage();
+                        break;
+                    }
+                }
+                _DraggingIcon.object = App::DocumentObjectT(vp->getObject());
+                _DraggingIcon.tag = tag;
+                _DraggingIcon.armed = true;
+            }
+        } catch (Base::Exception &e) {
+            e.ReportException();
+        } catch (std::exception &e) {
+            FC_ERR("C++ exception: " << e.what());
+        } catch (...) {
+            FC_ERR("Unknown exception");
+        }
+    }
+
     if (oitem) {
         setCurrentItem(oitem, 0, QItemSelectionModel::NoUpdate);
         if ((event->modifiers() & Qt::AltModifier)
@@ -3074,6 +3141,9 @@ void TreeWidget::mouseReleaseEvent(QMouseEvent *ev)
 {
     pimpl->tooltipItem = nullptr;
     ToolTip::hideText();
+    // Released where it was pressed: no drag came of it
+    if (!_DraggingActive)
+        _DraggingIcon.clear();
     if (ev->modifiers() & Qt::AltModifier) {
         QByteArray tag;
         auto oitem = pimpl->itemHitTest(ev->pos(), &tag);
@@ -3132,6 +3202,7 @@ void TreeWidget::startDragging() {
         return;
     if(selectedItems().empty())
         return;
+    _DraggingIcon.clear();
     _DropActions = model()->supportedDragActions();
     qApp->installEventFilter(this);
     pimpl->setDragCursor(Qt::DragMoveCursor);
@@ -3147,6 +3218,11 @@ void TreeWidget::startDrag(Qt::DropActions supportedActions)
     // of the time)
     if(selectedItems().empty())
         return;
+
+    // The press that led here was on an icon that can be dragged: the drag
+    // carries the icon, and leaves the selected objects where they are
+    _DraggingIcon.active = _DraggingIcon.armed && _DraggingIcon.object.getObject();
+    _DraggingIcon.armed = false;
 
     _DropActions = supportedActions;
     qApp->installEventFilter(this);
@@ -3231,6 +3307,35 @@ void TreeWidget::Private::checkDropEvent(QDropEvent *event, bool *pReplace, int 
     }
     if (pTarget)
         *pTarget = targetItem;
+
+    if (_DraggingIcon.active) {
+        // An icon is dragged, not the selection: the item under the cursor
+        // says whether it takes it, and nothing else is asked
+        replace = false;
+        this->setReorderingItem(nullptr);
+        event->setDropAction(Qt::MoveAction);
+        event->ignore();
+        auto source = _DraggingIcon.object.getObject();
+        if (!source || !targetItem || targetItem->type() != TreeWidget::ObjectType) {
+            master->leaveEvent(0);
+            return;
+        }
+        if (!action)
+            this->checkItemEntered(targetItem, tag);
+        auto targetItemObj = static_cast<DocumentObjectItem*>(targetItem);
+        try {
+            SelectionContext sctx(targetItemObj->getSubObjectT());
+            if (targetItemObj->object()->canDropIcon(source, _DraggingIcon.tag))
+                event->accept();
+        } catch (Base::Exception &e){
+            e.ReportException();
+        } catch (std::exception &e) {
+            FC_ERR("C++ exception: " << e.what());
+        } catch (...) {
+            FC_ERR("Unknown exception");
+        }
+        return;
+    }
 
     auto items = master->selectedItems();
 
@@ -3471,6 +3576,37 @@ void TreeWidget::dropEvent(QDropEvent *event)
     pimpl->setReorderingItem(nullptr);
     if (!event->isAccepted())
         return;
+
+    if (_DraggingIcon.active) {
+        // The drop of a dragged icon is the target's to carry out
+        QTreeWidgetItem* iconTarget = nullptr;
+        if (_SelUpMenus.size()) {
+            QPoint pos = viewport()->mapToGlobal(event->pos());
+            auto menu = _SelUpMenus.back();
+            auto action = menu->actionAt(menu->mapFromGlobal(pos));
+            if (action)
+                iconTarget = selectUp(action, nullptr, false);
+        }
+        if (!iconTarget)
+            iconTarget = itemAt(event->pos());
+        auto source = _DraggingIcon.object.getObject();
+        QByteArray iconTag = _DraggingIcon.tag;
+        _DraggingIcon.clear();
+        if (!source || !iconTarget || iconTarget->type() != TreeWidget::ObjectType)
+            return;
+        auto targetItemObj = static_cast<DocumentObjectItem*>(iconTarget);
+        try {
+            SelectionContext sctx(targetItemObj->getSubObjectT());
+            targetItemObj->object()->dropIcon(source, iconTag);
+        } catch (Base::Exception &e) {
+            e.ReportException();
+        } catch (std::exception &e) {
+            FC_ERR("C++ exception: " << e.what());
+        } catch (...) {
+            FC_ERR("Unknown exception");
+        }
+        return;
+    }
 
     Base::StateLocker guard(_Dropping);
     if (++_DropID == 0)

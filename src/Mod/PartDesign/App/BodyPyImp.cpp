@@ -25,6 +25,7 @@
 
 #include "Mod/PartDesign/App/Body.h"
 #include "Mod/PartDesign/App/Feature.h"
+#include "Mod/PartDesign/App/SolidBody.h"
 
 // inclusion of the generated files (generated out of ItemPy.xml)
 #include "BodyPy.h"
@@ -134,6 +135,58 @@ PyObject* BodyPy::newObjectAt(PyObject *args)
             return res->getPyObject();
         Py_Return;
     } PY_CATCH;
+}
+
+PyObject* BodyPy::getSolidBody(PyObject *args)
+{
+    PyObject* featurePy;
+    if (!PyArg_ParseTuple(args, "O!", &(App::DocumentObjectPy::Type), &featurePy))
+        return nullptr;
+
+    PY_TRY {
+        auto feature = static_cast<App::DocumentObjectPy*>(featurePy)->getDocumentObjectPtr();
+        if (auto solid = getBodyPtr()->getSolidBody(feature))
+            return solid->getPyObject();
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* BodyPy::syncSolidBodies(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    PY_TRY {
+        getBodyPtr()->syncSolidBodies(true);
+        Py_Return;
+    } PY_CATCH;
+}
+
+Py::List BodyPy::getSolids() const
+{
+    Py::List res;
+    for (auto &solid : getBodyPtr()->getSolids()) {
+        Py::List features;
+        for (auto obj : solid)
+            features.append(Py::asObject(obj->getPyObject()));
+        res.append(features);
+    }
+    return res;
+}
+
+Py::List BodyPy::getSolidBodies() const
+{
+    Py::List res;
+    for (auto solid : getBodyPtr()->getSolidBodies())
+        res.append(Py::asObject(solid->getPyObject()));
+    return res;
+}
+
+Py::Object BodyPy::getTipSolidBody() const
+{
+    if (auto solid = getBodyPtr()->getTipSolidBody())
+        return Py::asObject(solid->getPyObject());
+    return Py::Object();
 }
 
 Py::Object BodyPy::getVisibleFeature() const {

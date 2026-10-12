@@ -401,7 +401,10 @@ void ViewProviderDocumentObject::onChanged(const App::Property* prop)
     if (prop && !prop->testStatus(App::Property::NoModify)
              && pcDocument
              && !pcDocument->isModified()
-             && testStatus(Gui::ViewStatus::TouchDocument)) {
+             && testStatus(Gui::ViewStatus::TouchDocument)
+             // Fitted to the model, not edited: an origin sized after a
+             // load made a document that was only opened a modified one
+             && !App::DerivedViewWrites::active()) {
         if (prop)
             FC_LOG(prop->getFullName() << " changed");
         pcDocument->setModified(true);

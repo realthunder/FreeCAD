@@ -39,6 +39,8 @@ set(PartDesign_TestScripts
     PartDesignTests/TestVarSet.py
     PartDesignTests/TestBaseFeature.py
     PartDesignTests/TestBodyMaterial.py
+    PartDesignTests/TestSolidBody.py
+    PartDesignTests/TestSolidBodyGui.py
     PartDesignTests/TestPad.py
     PartDesignTests/TestExtrudeSides.py
     PartDesignTests/TestPocket.py

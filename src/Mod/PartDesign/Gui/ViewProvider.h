@@ -59,6 +59,9 @@ public:
     App::DocumentObject *getPickedVisibilityTarget() const override;
     void updateData(const App::Property*) override;
     void onChanged(const App::Property* prop) override;
+    /// Shown or hidden, the feature takes the highlight of its solid body along
+    void show() override;
+    void hide() override;
 
     void setTipIcon(bool onoff);
 
@@ -83,8 +86,14 @@ public:
     bool isSuppressed() const override;
     bool iconMouseEvent(QMouseEvent *, const QByteArray &tag) override;
     QString getToolTip(const QByteArray &tag) const override;
+    /// The tip icon of a feature can be dragged onto another to move the tip
+    bool canDragIcon(const QByteArray &tag) const override;
+    bool canDropIcon(App::DocumentObject *source, const QByteArray &tag) const override;
+    void dropIcon(App::DocumentObject *source, const QByteArray &tag) override;
 
     QPixmap getTagIcon() const override;
+    /// The arrow marking the tip of a solid, in the colour of the solid
+    QPixmap getTipArrowIcon() const;
 
     bool canDragObjects() const override {return false;}
     bool canDragObject(App::DocumentObject*) const override {return false;}

@@ -1843,7 +1843,12 @@ bool LinkView::linkGetDetailPath(const char *subname, SoFullPath *path, SoDetail
 
         info.appendToPath(path);
 
-        if(info.isGroup!=0 && *subname == 0)
+        // A plain group laid flat beside its children (isGroup<0) has no
+        // node here that holds them, and answering with the path so far
+        // named everything in the container: a group selected in an
+        // App::Part lit the whole Part. Its own nodes are what it is
+        // selected by anywhere else, and they are below.
+        if(info.isGroup>0 && *subname == 0)
             return true;
 
         if(info.isLinked()) {

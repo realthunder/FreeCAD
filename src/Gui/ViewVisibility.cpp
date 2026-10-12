@@ -42,6 +42,7 @@
 #include <Base/Console.h>
 
 #include "Application.h"
+#include "OwnNodesPath.h"
 #include "RenderParams.h"
 #include "SoFCUnifiedSelection.h"
 #include "View3DInventor.h"
@@ -232,6 +233,10 @@ bool resolveEntry(const VisibilityEntry &entry,
     // (append), and of it the selection roots: what a traversal's stack
     // holds when it reaches that object's switch, and what the render
     // cache composes the draw's key of.
+    // The object's own nodes, wherever it is seen through others: the key
+    // is resolved again when the structure changes, not when something is
+    // shown or hidden.
+    OwnNodesPath ownNodes;
     CoinPtr<SoPath> path(new SoPath(10));
     SoDetail *det = nullptr;
     const bool ok = vp->getDetailPath(entry.subname.c_str(),

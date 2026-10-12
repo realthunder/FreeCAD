@@ -56,6 +56,7 @@
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
 #include "RenderParams.h"
+#include "OwnNodesPath.h"
 #include "ViewProviderExtension.h"
 #include "ViewProviderLink.h"
 #include "ViewProviderPy.h"
@@ -1033,6 +1034,23 @@ bool ViewProvider::getElementPicked(const SoPickedPoint *pp, std::string &subnam
     return true;
 }
 
+static int _OwnNodesPath;
+
+OwnNodesPath::OwnNodesPath()
+{
+    ++_OwnNodesPath;
+}
+
+OwnNodesPath::~OwnNodesPath()
+{
+    --_OwnNodesPath;
+}
+
+bool OwnNodesPath::wanted()
+{
+    return _OwnNodesPath > 0;
+}
+
 bool ViewProvider::getDetailPath(const char *subname, SoFullPath *pPath, bool append, SoDetail *&det) const {
     if(pcRoot->findChild(pcModeSwitch) < 0) {
         // this is possible in case of editing, where the switch node
@@ -1384,4 +1402,18 @@ bool ViewProvider::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
         return (res = ext->extensionIconMouseEvent(ev, tag));
     });
     return res;
+}
+
+bool ViewProvider::canDragIcon(const QByteArray &) const
+{
+    return false;
+}
+
+bool ViewProvider::canDropIcon(App::DocumentObject *, const QByteArray &) const
+{
+    return false;
+}
+
+void ViewProvider::dropIcon(App::DocumentObject *, const QByteArray &)
+{
 }

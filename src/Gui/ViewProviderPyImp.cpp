@@ -29,6 +29,7 @@
 # include <Inventor/nodes/SoSwitch.h>
 # include <QByteArray>
 # include <QDataStream>
+# include <QPixmap>
 #endif
 
 #include <Base/BoundBoxPy.h>
@@ -416,6 +417,70 @@ PyObject* ViewProviderPy::canReorderObject(PyObject *args)
             }
         }
         return Py::new_reference_to(Py::Boolean(ret));
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderPy::getExtraIcons(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        std::vector<std::pair<QByteArray, QPixmap> > icons;
+        getViewProviderPtr()->getExtraIcons(icons);
+        Py::List res;
+        for (auto &v : icons)
+            res.append(Py::String(v.first.constData()));
+        return Py::new_reference_to(res);
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderPy::getIconToolTip(PyObject *args)
+{
+    const char *tag;
+    if (!PyArg_ParseTuple(args, "s", &tag))
+        return nullptr;
+    PY_TRY {
+        QString tip = getViewProviderPtr()->getToolTip(QByteArray(tag));
+        return Py::new_reference_to(Py::String(tip.toUtf8().constData()));
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderPy::canDragIcon(PyObject *args)
+{
+    const char *tag;
+    if (!PyArg_ParseTuple(args, "s", &tag))
+        return nullptr;
+    PY_TRY {
+        bool ret = getViewProviderPtr()->canDragIcon(QByteArray(tag));
+        return Py::new_reference_to(Py::Boolean(ret));
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderPy::canDropIcon(PyObject *args)
+{
+    PyObject *source;
+    const char *tag;
+    if (!PyArg_ParseTuple(args, "O!s", &App::DocumentObjectPy::Type, &source, &tag))
+        return nullptr;
+    PY_TRY {
+        bool ret = getViewProviderPtr()->canDropIcon(
+                static_cast<App::DocumentObjectPy*>(source)->getDocumentObjectPtr(),
+                QByteArray(tag));
+        return Py::new_reference_to(Py::Boolean(ret));
+    } PY_CATCH;
+}
+
+PyObject* ViewProviderPy::dropIcon(PyObject *args)
+{
+    PyObject *source;
+    const char *tag;
+    if (!PyArg_ParseTuple(args, "O!s", &App::DocumentObjectPy::Type, &source, &tag))
+        return nullptr;
+    PY_TRY {
+        getViewProviderPtr()->dropIcon(
+                static_cast<App::DocumentObjectPy*>(source)->getDocumentObjectPtr(),
+                QByteArray(tag));
+        Py_Return;
     } PY_CATCH;
 }
 

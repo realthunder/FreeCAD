@@ -61,6 +61,7 @@
 #include "ViewProviderScaled.h"
 #include "ViewProviderShapeBinder.h"
 #include "ViewProviderSolid.h"
+#include "ViewProviderSolidBody.h"
 #include "ViewProviderSplit.h"
 #include "ViewProviderThickness.h"
 #include "ViewProviderDefeaturing.h"
@@ -171,6 +172,7 @@ PyMOD_INIT_FUNC(PartDesignGui)
     PartDesignGui::ViewProviderBase          ::init();
     PartDesignGui::ViewProviderWrap          ::init();
     PartDesignGui::ViewProviderAuxGroup      ::init();
+    PartDesignGui::ViewProviderSolidBody     ::init();
 
      // add resources and reloads the translators
     loadPartDesignResource();

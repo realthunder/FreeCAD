@@ -65,6 +65,7 @@
 #include <Mod/PartDesign/App/FeatureWrap.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 #include <Mod/PartDesign/App/AuxGroup.h>
+#include <Mod/PartDesign/App/SolidBody.h>
 
 #include "ViewProviderBody.h"
 #include "Utils.h"
@@ -159,23 +160,51 @@ void ViewProviderBody::setupContextMenu(QMenu* menu, QObject* receiver, const ch
         this->doubleClicked();
     });
 
-    act = menu->addAction(body->AutoGroupSolids.getValue() ? 
-                          tr("Disable auto solid group") : tr("Enable auto solid group"));
+    act = menu->addAction(tr("Auto create solid body"));
+    act->setToolTip(tr("Group the features of each solid under a solid body once the body\n"
+                       "has more than one solid. Switched off, the features of a solid can be\n"
+                       "grouped under its last feature, as documents made before solid bodies do."));
+    act->setCheckable(true);
+    act->setChecked(body->AddSolidBody.getValue());
     func->trigger(act,
         [this]() {
             auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
             if (!body)
                 return;
-            App::AutoTransaction committer("Toggle solid group");
+            App::AutoTransaction committer("Toggle auto create solid body");
             try {
-                body->AutoGroupSolids.setValue(!body->AutoGroupSolids.getValue());
+                FCMD_OBJ_CMD(body, "AddSolidBody = "
+                        << (body->AddSolidBody.getValue() ? "False" : "True"));
+                Gui::Command::updateActive();
             } catch (Base::Exception &e) {
                 e.ReportException();
-                QMessageBox::critical(Gui::getMainWindow(), tr("Auto group"),
-                        tr("Toggle auto group failed. Please check report view for more details."));
+                QMessageBox::critical(Gui::getMainWindow(), tr("Auto create solid body"),
+                        tr("Toggle auto create solid body failed. Please check report view for more details."));
                 committer.close(true);
             }
         });
+
+    // Grouping under the last feature is what a body does that keeps no
+    // solid bodies
+    if (!body->AddSolidBody.getValue()) {
+        act = menu->addAction(body->AutoGroupSolids.getValue() ?
+                              tr("Disable auto solid group") : tr("Enable auto solid group"));
+        func->trigger(act,
+            [this]() {
+                auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
+                if (!body)
+                    return;
+                App::AutoTransaction committer("Toggle solid group");
+                try {
+                    body->AutoGroupSolids.setValue(!body->AutoGroupSolids.getValue());
+                } catch (Base::Exception &e) {
+                    e.ReportException();
+                    QMessageBox::critical(Gui::getMainWindow(), tr("Auto group"),
+                            tr("Toggle auto group failed. Please check report view for more details."));
+                    committer.close(true);
+                }
+            });
+    }
 
     act = menu->addAction(tr("Toggle auto auxiliary group"));
     func->trigger(act,
@@ -424,6 +453,11 @@ bool ViewProviderBody::checkSiblings()
     if (!body)
         return true;
 
+    // A body that keeps solid bodies writes _Siblings itself, as a record for
+    // builds that have none (Body::syncSolidBodies()). Nothing to group here.
+    if (body->AddSolidBody.getValue())
+        return false;
+
     Base::StateLocker guard(checkingSiblings);
 
     bool touched = false;
@@ -533,11 +567,26 @@ void ViewProviderBody::updateData(const App::Property* prop)
             }
         }
 
+        // The arrow of the body's tip is on the solid body holding it
+        for (auto solid : body->getSolidBodies()) {
+            if (auto vp = Gui::Application::Instance->getViewProvider(solid))
+                vp->signalChangeIcon();
+        }
+
         if (tip)
             copyColorsfromTip(tip);
 
     } else if (prop == &body->AutoGroupSolids) {
         checkSiblings();
+    } else if (prop == &body->AddSolidBody) {
+        // Tags or arrows, and features under a solid body or under the
+        // last feature of their solid
+        for (auto obj : body->Group.getValues()) {
+            if (auto vp = Gui::Application::Instance->getViewProvider(obj))
+                vp->signalChangeIcon();
+        }
+        if (!checkSiblings())
+            buildExport();
     }
 
     // The body's own look, before and after what the object has is taken:
@@ -846,6 +895,10 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
     if (PartDesign::Body::findBodyOf(obj) == body)
         return false;
 
+    // A solid body is made by the body of its solid, and goes nowhere else
+    if (obj->isDerivedFrom(PartDesign::SolidBody::getClassTypeId()))
+        return false;
+
     if (!body->getPrevSolidFeature()
             && !body->BaseFeature.getValue()
             && obj->isDerivedFrom(Part::Feature::getClassTypeId()))
@@ -899,7 +952,8 @@ bool ViewProviderBody::canDragAndDropObject(App::DocumentObject * obj) const
 
 bool ViewProviderBody::canDragObject(App::DocumentObject *obj) const
 {
-    if (obj->isDerivedFrom(PartDesign::AuxGroup::getClassTypeId()))
+    if (obj->isDerivedFrom(PartDesign::AuxGroup::getClassTypeId())
+            || obj->isDerivedFrom(PartDesign::SolidBody::getClassTypeId()))
         return false;
     PartDesign::Body* body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
     if (!body)
@@ -1060,8 +1114,12 @@ int ViewProviderBody::replaceObject(App::DocumentObject *oldObj, App::DocumentOb
         return 0;
     App::AutoTransaction committer("Reorder body feature");
     bool needCheckSiblings = false;
-    if (!_reorderObject(body, newObj, oldObj, true, needCheckSiblings))
-        return 0;
+    {
+        // The solid bodies are looked at when the features have their new bases
+        PartDesign::Body::SolidBodySyncGuard syncGuard(body);
+        if (!_reorderObject(body, newObj, oldObj, true, needCheckSiblings))
+            return 0;
+    }
     if (needCheckSiblings) {
         checkingSiblings = false;
         if (!checkSiblings())
@@ -1088,11 +1146,15 @@ bool ViewProviderBody::reorderObjects(const std::vector<App::DocumentObject *> &
     App::AutoTransaction committer("Reorder body feature");
     bool needCheckSiblings = false;
 
-    last = before;
-    for (auto obj : objs) {
-        if (!_reorderObject(body, obj, last, false, needCheckSiblings))
-            return false;
-        last = obj;
+    {
+        // The solid bodies are looked at when the features have their new bases
+        PartDesign::Body::SolidBodySyncGuard syncGuard(body);
+        last = before;
+        for (auto obj : objs) {
+            if (!_reorderObject(body, obj, last, false, needCheckSiblings))
+                return false;
+            last = obj;
+        }
     }
     if (needCheckSiblings) {
         checkingSiblings = false;
@@ -1124,8 +1186,10 @@ bool ViewProviderBody::_reorderObject(PartDesign::Body *body,
     auto firstFeat = Base::freecad_dynamic_cast<PartDesign::Feature>(newObj);
 
     // In case the old object has self sibling group, repoint the old object to
-    // the earliest sibling
-    if (i > j && secondFeat && secondFeat->_Siblings.getSize()) {
+    // the earliest sibling. Not under a solid body, where every feature has
+    // its own row and _Siblings is no grouping.
+    if (i > j && secondFeat && secondFeat->_Siblings.getSize()
+              && !body->AddSolidBody.getValue()) {
         const auto & siblings = secondFeat->_Siblings.getValues();
         for (auto rit=siblings.rbegin(); rit!=siblings.rend(); ++rit) {
             auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(*rit);
