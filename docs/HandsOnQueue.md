@@ -804,6 +804,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
 | 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
 | 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63) | OPEN; four points of the note-taker's under the entry |
+| 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly | OPEN; by the source `ShowAxisCross` is off by default already -- which setting is meant is the first of three points of the note-taker's under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8349,6 +8350,51 @@ READ in the source, nothing run:
   "Apply all" brings, the icon's two directions) are about the menu that
   moves; they move with it.
 
+## 75. `ShowAxisCross` off by default; the navigation cube's axis cross drawn on top of the cube (a change request) -- OPEN
+
+**2026-10-12 16:01, the reporter:** "new request, make ShowAxisCross default
+false. Make axis cross in navicube show on top of the cube so it can be
+seen clearly"
+
+The note-taker's reading:
+1. The default of `ShowAxisCross` becomes false.
+2. The axes drawn with the navigation cube are drawn ON TOP of the cube --
+   not hidden by its faces -- so that they are seen clearly.
+
+READ in the source, nothing run -- and the first point does not fit what
+was read:
+- `View/ShowAxisCross` ("Show axis cross": the axis cross at the origin
+  of the 3D views) has the default FALSE already (`src/Gui/ViewParams.py`,
+  about line 841), and the one place read that asks for it falls back to
+  that default (`src/Gui/CommandDoc.cpp`, about line 703).
+- The setting next to it that IS on by default: `View/CornerCoordSystem`
+  ("Show coordinate system in the corner": the small coordinate system
+  in the corner of every 3D view), default TRUE (about line 835).
+- The cube's own axes: `NaviCube/ShowCS` ("Show coordinate system on the
+  cube": the X, Y and Z axes at a corner of the navigation cube), default
+  TRUE (`src/Gui/NaviCubeParams.py`, about line 58).
+- The preference pack template for the view
+  (`src/Gui/PreferencePackTemplates/View.cfg`) writes
+  `CornerCoordSystem` 1 and `ShowAxisCross` 0.
+- The reporter's own configuration (`%APPDATA%\FreeCAD\user.cfg`, as
+  saved 15:41, only read): `CornerCoordSystem` 1, `ShowAxisCross` 0. So
+  no axis cross at the origin is switched on there; what the reporter
+  sees beside the cube is the corner's coordinate system.
+
+NOT said, the note-taker's count:
+a. WHICH setting is to be off by default. The note-taker's guess, NOT the
+   reporter's words: the one in the corner, `CornerCoordSystem` -- with
+   the cube's axes made clear by point 2 the corner's become a second
+   copy of the same thing. Or is an axis cross at the origin seen in the
+   reporter's views although the default is off -- then something sets
+   it (a theme, a preset, the reporter's own configuration) and that is
+   another matter.
+b. "on top of the cube": the axes drawn over the cube's faces wherever
+   they pass behind them (never hidden), where they are now -- or the
+   axes MOVED, to stand above the cube?
+c. A changed default reaches only who has not set the value; a theme or
+   preset that writes it keeps its own.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -8357,4 +8403,4 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 74 are of 2026-10-12)
+entries 68 to 75 are of 2026-10-12)
