@@ -1113,8 +1113,14 @@ class BlobExportImportCases(BlobTestCase):
         target = self.newDocument("BlobTarget")
         first = self.fileObject(source, "File1", b"shared", saveName="a.txt")
         second = self.fileObject(source, "File2", b"shared", saveName="b.txt")
-        target.copyObject([first, second])
+        copies = target.copyObject([first, second])
+        # A copy's content is restored out of memory into the pack store, and
+        # has a file only once asked for a path.
+        self.assertEqual(len(set(copy.File for copy in copies)), 1)
         self.assertEqual(len(self.storedBlobs(target)), 1)
+        project = self.projectPath("target.FCStd")
+        target.saveAs(project)
+        self.assertEqual(len(self.blobEntries(project)), 1)
 
     def testCopyCarriesOnlyTheExportedSubset(self):
         """A clipboard buffer must not carry blobs of unrelated objects."""
@@ -1122,8 +1128,14 @@ class BlobExportImportCases(BlobTestCase):
         target = self.newDocument("BlobTarget")
         wanted = self.fileObject(source, "File1", b"wanted")
         self.fileObject(source, "File2", b"unrelated")
-        target.copyObject([wanted])
+        copies = target.copyObject([wanted])
+        # As above: asked for its path first. What the store holds without a
+        # file is not seen by the count, so the saved target is counted too.
+        self.assertContent(copies[0], b"wanted")
         self.assertEqual(len(self.storedBlobs(target)), 1)
+        project = self.projectPath("target.FCStd")
+        target.saveAs(project)
+        self.assertEqual(len(self.blobEntries(project)), 1)
 
 
 # ---------------------------------------------------------------------------
