@@ -1034,13 +1034,13 @@ bool Document::_atState(const Transaction* step) const
     return !d->transactionLog || step->StateAfter == d->stateToken;
 }
 
-bool Document::stepNeedsLog(bool undo) const
+bool Document::stepNeedsLog(bool undo, int skip) const
 {
     if (!d->iUndoMode)
         return false;
     // What one undo takes (sec 33.4): the user's step and the implicit
     // ones that go with it.
-    const auto run = _myRun(undo);
+    const auto run = _myRun(undo, skip);
     // An open transaction is committed first. The actor's own is then the
     // step, where the document stands; another's is a write past the
     // actor's newest.
@@ -1140,13 +1140,17 @@ bool Document::_revertStep(bool undo, Transaction* step)
     return true;
 }
 
-std::vector<Transaction*> Document::_myRun(bool undo) const
+std::vector<Transaction*> Document::_myRun(bool undo, int skip) const
 {
     // docs/TransactionLog.md sec 33.4: an implicit step -- a write with no
     // transaction open, a recompute -- is no step of its own to whoever
     // undoes. It goes with the user's step it followed: one undo takes that
     // step and the implicit ones above it, one redo the step and the
     // implicit ones it then finds under it.
+    //
+    // `skip` leaves that many of them where they are and gives the one
+    // after (sec 33.11): what is taken when a step was refused and the user
+    // goes on past it.
     const auto& stack = undo ? mUndoTransactions : mRedoTransactions;
     const bool authors = d->transactionLog != nullptr;
     const auto actor = ActorScope::current();
@@ -1157,18 +1161,26 @@ std::vector<Transaction*> Document::_myRun(bool undo) const
             continue;
         if (undo) {
             run.push_back(step);
-            if (!step->Implicit)
-                return run;
+            if (!step->Implicit) {
+                if (skip-- <= 0)
+                    return run;
+                run.clear();
+            }
         }
         else {
-            if (!step->Implicit && !run.empty())
-                break;
+            if (!step->Implicit && !run.empty()) {
+                if (skip <= 0)
+                    return run;
+                --skip;
+                run.clear();
+            }
             run.push_back(step);
         }
     }
     // Implicit steps with no step of the user's below them: nothing to
-    // undo, as when no log recorded them.
-    if (undo)
+    // undo, as when no log recorded them. And nothing where there are
+    // fewer steps than were to be left.
+    if (undo || skip > 0)
         run.clear();
     return run;
 }
@@ -1233,14 +1245,14 @@ bool Document::_takeStep(bool undo, int id)
     return true;
 }
 
-bool Document::_takeRun(bool undo)
+bool Document::_takeRun(bool undo, int skip)
 {
     if (d->activeUndoTransaction)
         _commitTransaction(true);
     // Ids, not steps: a commit on the way -- a write some observer makes --
     // can turn a step into a cold one of the same id.
     std::vector<int> ids;
-    for (auto step : _myRun(undo))
+    for (auto step : _myRun(undo, skip))
         ids.push_back(step->getID());
     if (ids.empty())
         return false;
@@ -1315,6 +1327,24 @@ bool Document::undo(int id)
     }
 
     return false;
+}
+
+bool Document::undoSkipping(int skip)
+{
+    OperationScope scope;   // sec 27.38
+    if (!d->iUndoMode)
+        return false;
+    d->undoRefusal.clear();
+    return _takeRun(true, skip < 0 ? 0 : skip);
+}
+
+bool Document::redoSkipping(int skip)
+{
+    OperationScope scope;   // sec 27.38
+    if (!d->iUndoMode)
+        return false;
+    d->undoRefusal.clear();
+    return _takeRun(false, skip < 0 ? 0 : skip);
 }
 
 bool Document::redo(int id)

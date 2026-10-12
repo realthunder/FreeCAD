@@ -202,12 +202,20 @@ object of this document.
     </Methode>
     <Methode Name="undo">
       <Documentation>
-        <UserDocu>Undo one transaction</UserDocu>
+        <UserDocu>undo(skip=0)
+
+Undo one step: the newest transaction with a name, and the changes made
+without one after it. 'skip' leaves that many of the newest steps as they are
+and undoes the one after: for a step that was refused. UndoRefusal says why
+an undo did nothing.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="redo">
       <Documentation>
-        <UserDocu>Redo a previously undone transaction</UserDocu>
+        <UserDocu>redo(skip=0)
+
+Redo a previously undone step. 'skip' leaves that many of the steps next to
+be redone as they are and redoes the one after.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="clearUndos">
@@ -893,6 +901,12 @@ Reorder object(s) in the tree view before a given object
         <UserDocu>Number of possible Redos</UserDocu>
       </Documentation>
       <Parameter Name="RedoCount" Type="Int"/>
+    </Attribute>
+    <Attribute Name="UndoRefusal" ReadOnly="true">
+      <Documentation>
+        <UserDocu>Why the last undo() or redo() was refused, empty when it was not</UserDocu>
+      </Documentation>
+      <Parameter Name="UndoRefusal" Type="String"/>
     </Attribute>
     <Attribute Name="UndoNames" ReadOnly="true">
       <Documentation>

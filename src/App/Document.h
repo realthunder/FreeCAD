@@ -1389,7 +1389,15 @@ public:
      * TransactionGuard lets go of it first: the guard defers the touches a
      * recompute works from.
      */
-    bool stepNeedsLog(bool undo) const;
+    bool stepNeedsLog(bool undo, int skip = 0) const;
+    /** undo() and redo() leaving the `skip` newest steps of whoever acts
+     * where they are (docs/TransactionLog.md sec 33.11): for a step that was
+     * refused and is gone past. The step taken has others above it, so it
+     * goes through the log, and is refused in its turn where what it left
+     * was changed since.
+     */
+    bool undoSkipping(int skip);
+    bool redoSkipping(int skip);
     /// Why the last undo() or redo() was refused, empty when it was not.
     const std::string& undoRefusal() const;
     /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback,
@@ -1607,9 +1615,9 @@ protected:
     /// What one undo (or redo) of whoever acts takes, in the order it is
     /// taken (docs/TransactionLog.md sec 33.4): the user's step with the
     /// implicit ones that go with it. Empty for nothing to take.
-    std::vector<Transaction*> _myRun(bool undo) const;
+    std::vector<Transaction*> _myRun(bool undo, int skip = 0) const;
     /// Take the steps of _myRun(); false when there is none or one refused.
-    bool _takeRun(bool undo);
+    bool _takeRun(bool undo, int skip = 0);
     /// Take the one undo (or redo) step of `id`, from its copies or through
     /// the log; false when refused.
     bool _takeStep(bool undo, int id);

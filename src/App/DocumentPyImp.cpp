@@ -588,20 +588,30 @@ Py::Boolean DocumentPy::getHasPendingTransaction() const {
 
 PyObject*  DocumentPy::undo(PyObject * args)
 {
-    if (!PyArg_ParseTuple(args, ""))
+    int skip = 0;
+    if (!PyArg_ParseTuple(args, "|i", &skip))
         return nullptr;
-    if (getDocumentPtr()->getAvailableUndos())
-        getDocumentPtr()->undo();
-    Py_Return;
+    PY_TRY {
+        if (skip > 0)
+            getDocumentPtr()->undoSkipping(skip);
+        else if (getDocumentPtr()->getAvailableUndos())
+            getDocumentPtr()->undo();
+        Py_Return;
+    } PY_CATCH;
 }
 
 PyObject*  DocumentPy::redo(PyObject * args)
 {
-    if (!PyArg_ParseTuple(args, ""))
+    int skip = 0;
+    if (!PyArg_ParseTuple(args, "|i", &skip))
         return nullptr;
-    if (getDocumentPtr()->getAvailableRedos())
-        getDocumentPtr()->redo();
-    Py_Return;
+    PY_TRY {
+        if (skip > 0)
+            getDocumentPtr()->redoSkipping(skip);
+        else if (getDocumentPtr()->getAvailableRedos())
+            getDocumentPtr()->redo();
+        Py_Return;
+    } PY_CATCH;
 }
 
 PyObject* DocumentPy::clearUndos(PyObject * args)
@@ -863,6 +873,11 @@ Py::Int DocumentPy::getUndoCount() const
 Py::Int DocumentPy::getRedoCount() const
 {
     return Py::Int((long)getDocumentPtr()->getAvailableRedos());
+}
+
+Py::String DocumentPy::getUndoRefusal() const
+{
+    return Py::String(getDocumentPtr()->undoRefusal());
 }
 
 Py::List DocumentPy::getUndoNames() const

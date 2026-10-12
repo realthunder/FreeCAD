@@ -258,12 +258,14 @@ bool MDIView::onMsg(const char* pMsg,const char** ppReturn)
     if(!getGuiDocument())
         return false;
 
+    // The user's own undo: a step refused is said and may be gone past
+    // (docs/TransactionLog.md sec 33.11).
     if(strcmp("Undo",pMsg) == 0 ) {
-        getGuiDocument()->undo(1);
+        getGuiDocument()->undo(1, true);
         return true;
     }
     else  if(strcmp("Redo",pMsg) == 0 ) {
-        getGuiDocument()->redo(1);
+        getGuiDocument()->redo(1, true);
         return true;
     }
     else if (strcmp("Save",pMsg) == 0) {
