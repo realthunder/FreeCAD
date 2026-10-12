@@ -1,8 +1,9 @@
-# GUI check of docs/TransactionLog.md sec 33.4 and 33.11: the user's own undo
-# and redo. A change made with no name does not empty the redo list; a redo
-# it stands in the way of is refused, and the refusal is said in a dialog with
-# its reason and the step after it offered, where it only went to the report
-# view. One GUI run in a fresh user home, given this script at startup:
+# GUI check of docs/TransactionLog.md sec 33.4, 33.11 and 33.13: the user's
+# own undo and redo. A change made with no name does not empty the redo list;
+# a redo it stands in the way of is refused, and the refusal is said in a
+# dialog with its reason and the step after it offered, where it only went to
+# the report view. And several rows of the log panel undone at once are one
+# step. One GUI run in a fresh user home, given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
 #   QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-ur \
@@ -72,6 +73,90 @@ def command(name, press=None):
     return seen[0] if seen else None
 
 
+def panel():
+    dock = None
+    for w in Gui.getMainWindow().findChildren(QtWidgets.QWidget):
+        if w.metaObject().className() == "Gui::DockWnd::TransactionLogView":
+            dock = w
+    if dock is None:
+        return None
+    parent = dock.parentWidget()
+    if isinstance(parent, QtWidgets.QDockWidget):
+        parent.show()
+    dock.show()
+    settle()
+    return dock
+
+
+def severalRows():
+    # Sec 33.13: what the panel's "Undo N rows" does with the rows selected.
+    doc = App.newDocument("Rows")
+    doc.UndoMode = 1
+    box = doc.addObject("Part::Box", "Box")
+    doc.recompute()
+    settle()
+
+    def step(name, prop, value):
+        doc.openTransaction(name)
+        setattr(box, prop, value)
+        doc.commitTransaction()
+        doc.recompute()
+
+    step("longer", "Length", 20)
+    step("wider", "Width", 20)
+    step("longest", "Length", 30)
+    step("higher", "Height", 20)
+    settle()
+    dock = panel()
+    check("the log panel is there", dock is not None)
+    if dock is None:
+        return
+
+    def seqs(*names):
+        rows = {t["name"]: t["seq"] for t in doc.getTransactionLog() if t["kind"] == "user"}
+        return ",".join(str(rows[n]) for n in names)
+
+    told = []
+
+    def undoRows(rows):
+        QtCore.QMetaObject.invokeMethod(dock, "undoRows", QtCore.Qt.DirectConnection,
+                                        QtCore.Q_ARG(str, rows))
+        # What the panel says of it, read before anything else moves the log
+        told[:] = [l.text() for l in dock.findChildren(QtWidgets.QLabel)]
+        doc.recompute()
+        settle()
+
+    def said(text):
+        return any(text in t for t in told)
+
+    # Two rows on one property, another row between them on another one.
+    before = len(doc.getTransactionLog())
+    undoRows(seqs("longer", "longest"))
+    check("two rows on one property undone together: %r %r"
+          % (box.Length.Value, doc.UndoNames[:1]),
+          box.Length.Value == 10 and box.Width.Value == 20 and box.Height.Value == 20
+          and doc.UndoNames[:1] == ["Undo longer, longest"])
+    undos = [t for t in doc.getTransactionLog()[before:] if t["kind"] == "undo"]
+    check("as one row of the log, which names no one row it inverts: %r"
+          % ([(t["name"], t["inverts"]) for t in undos],),
+          len(undos) == 1 and undos[0]["inverts"] == 0)
+    check("its shape with it: %.1f" % box.Shape.Volume,
+          abs(box.Shape.Volume - 10 * 20 * 20) < 1e-6)
+    answer = command("Std_Undo")
+    check("and one step: a single undo brings both back: %r" % (box.Length.Value,),
+          answer is None and box.Length.Value == 30 and box.Width.Value == 20)
+
+    # A row that is not selected, in the way of the older one selected.
+    names = list(doc.UndoNames)
+    before = len(doc.getTransactionLog())
+    undoRows(seqs("longer", "higher"))
+    check("a row not selected in the way: none is undone: %r %r"
+          % (box.Length.Value, box.Height.Value),
+          box.Length.Value == 30 and box.Height.Value == 20 and list(doc.UndoNames) == names
+          and len(doc.getTransactionLog()) == before)
+    check("and the panel says so", said("Undo of 2 rows refused"))
+
+
 def run():
     p = App.ParamGet("User parameter:BaseApp/Preferences/Document")
     mode = p.GetInt("TransactionLog", 2)
@@ -134,6 +219,7 @@ def run():
         said = command("Std_Undo")
         check("the step redone is undone as any: %r" % (doc.UndoNames,),
               said is None and box.Width.Value == 10 and doc.UndoNames == [])
+        severalRows()
         check("no dialog left", not refusals())
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

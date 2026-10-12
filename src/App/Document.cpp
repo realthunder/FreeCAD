@@ -251,6 +251,10 @@ struct Document::ColdRevert
     /// Undo of a row that is not the tip (sec 24.4): checked against the
     /// ops after it, and derived values left to recompute.
     bool selective {false};
+    /// The rows undone with this one in one step (sec 33.13), itself among
+    /// them: the newer ones are taken back before it is, so what they did
+    /// is not something done since to the selective check.
+    const std::set<int64_t>* together {nullptr};
     /// Revert the row's view ops too (sec 24.9); a restore to a version
     /// does only under ViewObjectTransaction.
     bool views {true};
@@ -656,8 +660,13 @@ struct StepTouched
  * overwrites nothing done since. Derived properties are not checked: the
  * selective undo leaves them to recompute. The log's pending afters must
  * be resolved. Returns the conflicts, empty when there are none.
+ *
+ * `together` names the rows undone with it in one step (sec 33.13), newest
+ * first: an op of one of them is gone by the time this row is taken back,
+ * so the op that counts is the newest of a row that is not among them.
  */
-std::string checkSelective(TransactionLog& log, int64_t seq, const std::vector<LogOp>& ops)
+std::string checkSelective(TransactionLog& log, int64_t seq, const std::vector<LogOp>& ops,
+                           const std::set<int64_t>* together = nullptr)
 {
     // The state each property is left in by the row: its last op's after,
     // or "gone" for a dynamic property it removed.
@@ -681,10 +690,28 @@ std::string checkSelective(TransactionLog& log, int64_t seq, const std::vector<L
         why << " row " << seq << " is not on this branch;";
         return why.str();
     }
+    // Each row's place on this branch: the row under it.
+    std::map<int64_t, int64_t> under;
+    if (together) {
+        for (const auto& r : rows)
+            under[r.seq] = r.parent;
+    }
     for (const auto& kv : left) {
         LogOp later;
-        if (!log.store().lastOpOn(std::get<0>(kv.first), std::get<1>(kv.first),
-                                  std::get<2>(kv.first), seq, log.head(), later))
+        bool found = false;
+        for (int64_t upto = log.head(); upto > seq;) {
+            if (!log.store().lastOpOn(std::get<0>(kv.first), std::get<1>(kv.first),
+                                      std::get<2>(kv.first), seq, upto, later))
+                break;
+            if (!together || !together->count(later.txn)) {
+                found = true;
+                break;
+            }
+            // Of a row taken back before this one: what was there under it.
+            auto it = under.find(later.txn);
+            upto = it == under.end() ? 0 : it->second;
+        }
+        if (!found)
             continue;
         std::string now = later.op == "delprop" ? std::string("-")
                         : later.op == "set"     ? later.vafter
@@ -779,7 +806,7 @@ bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& 
             }
         }
         if (revert.selective)
-            why << checkSelective(*log, seq, revert.log.ops);
+            why << checkSelective(*log, seq, revert.log.ops, revert.together);
         if (views)
             FC_LOG("cold " << name << ": " << views << " view op(s) not reverted");
     }
@@ -975,40 +1002,116 @@ void Document::_trimHotWindow(std::list<Transaction*>& stack, std::map<int, Tran
 
 bool Document::undoLogged(int64_t seq)
 {
+    return undoLogged(std::vector<int64_t> {seq});
+}
+
+bool Document::undoLogged(const std::vector<int64_t>& seqs)
+{
     OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 24.4: a new transaction applying row
     // `seq` reversed, refused when anything since changed what it touched.
+    // Several rows (sec 33.13) are one such transaction: taken back newest
+    // first, each from the state it left, and all of them or none.
     if (isPerformingTransaction() || d->committing)
         return false;
     auto log = getTransactionLog();
     if (!log)
         return false;
+    const std::set<int64_t> rows(seqs.begin(), seqs.end());
+    if (rows.empty())
+        return false;
+    const bool several = rows.size() > 1;
     if (d->activeUndoTransaction)
         _commitTransaction(true);
     log->resolvePending();
-    std::string name;
-    for (const auto& t : log->store().transactions(seq, 1)) {
-        if (t.seq == seq)
-            name = t.name;
+    std::map<int64_t, std::string> names;
+    for (int64_t seq : rows) {
+        for (const auto& t : log->store().transactions(seq, 1)) {
+            if (t.seq == seq)
+                names[seq] = t.name;
+        }
     }
-    ColdRevert revert;
-    revert.selective = true;
-    if (!_prepareRevert(seq, name, revert))
-        return false;
+    if (several) {
+        // What the log alone can say is asked of every row before any is
+        // taken back: a row changed since refuses them all with nothing
+        // written, and each one that is in the way is named.
+        std::string all;
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            const std::string why = checkSelective(*log, *it, log->store().ops(*it), &rows);
+            if (why.empty())
+                continue;
+            FC_ERR("Cannot undo '" << names[*it] << "' of " << getName() << " from the log:"
+                   << why);
+            all += why;
+        }
+        if (!all.empty()) {
+            d->undoRefusal = all;
+            return false;
+        }
+    }
 
-    _clearMyRedos();
-    d->activeUndoTransaction = new Transaction(0);
-    d->activeUndoTransaction->Name = "Undo " + name;
-    d->activeUndoTransaction->LogKind = "undo";
-    d->activeUndoTransaction->Inverts = seq;
-    mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
-    {
+    std::string stepName;
+    if (several) {
+        // Named by what it undid, oldest first; the row it inverts is not
+        // one row, so the log names none.
+        std::string name;
+        std::size_t said = 0;
+        std::size_t named = 0;
+        for (int64_t seq : rows) {
+            if (names[seq].empty())
+                continue;
+            ++named;
+            if (said == 3)
+                continue;
+            name += (said++ ? ", " : "") + names[seq];
+        }
+        if (!said)
+            name = std::to_string(rows.size()) + " rows";
+        else if (named > said)
+            name += " and " + std::to_string(named - said) + " more";
+        stepName = "Undo " + name;
+    }
+    else {
+        stepName = "Undo " + names[*rows.begin()];
+    }
+    Transaction* step = nullptr;
+    for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+        // Read once the newer rows are taken back: what a row needs of the
+        // document -- an object still there, a name still free -- is asked
+        // of the document those leave.
+        ColdRevert revert;
+        revert.selective = true;
+        if (several)
+            revert.together = &rows;
+        if (!_prepareRevert(*it, names[*it], revert)) {
+            if (!step)
+                return false;
+            // A newer row is taken back already: put back, so nothing moves.
+            const std::string why = d->undoRefusal;
+            _abortTransaction();
+            if (!d->activeUndoTransaction)
+                signalAbortTransaction(*this);
+            d->undoRefusal = why;
+            return false;
+        }
+        if (!step) {
+            step = new Transaction(0);
+            step->Name = stepName;
+            step->LogKind = "undo";
+            step->Inverts = several ? 0 : *rows.begin();
+            mUndoMap[step->getID()] = step;
+            d->activeUndoTransaction = step;
+        }
         // As in _revertStep: the values of a row go back whole and in no
         // order, and object code working one of them out of the others on
         // the way gets it wrong (docs/TransactionLog.md sec 33.12).
         Base::FlagToggler<bool> flag(d->undoing);
         _applyRevert(revert);
     }
+
+    // The redo steps end here, with every row taken back: a refusal above
+    // leaves them as they were.
+    _clearMyRedos();
     _commitTransaction(false);
     return true;
 }

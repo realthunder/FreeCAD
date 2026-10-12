@@ -946,6 +946,13 @@ public:
      * not restored; their owners are touched. Returns whether it ran.
      */
     bool undoLogged(int64_t seq);
+    /** Undo several log rows as one step (docs/TransactionLog.md sec 33.13):
+     * one new transaction applying them reversed, newest first. A row is
+     * refused as one alone is, except that what the other rows of the set
+     * did is not held against it; if any is refused none is undone. The
+     * step is named by what it undid and names no single row it inverts.
+     */
+    bool undoLogged(const std::vector<int64_t>& seqs);
 
     /** How App reaches an object's view provider (docs/TransactionLog.md
      * sec 24.9): the Gui registers a resolver; without one (FreeCADCmd)

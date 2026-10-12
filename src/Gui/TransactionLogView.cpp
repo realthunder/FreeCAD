@@ -3348,6 +3348,29 @@ void TransactionLogView::onSnapshot()
         _versions->setCurrentItem(_versions->topLevelItem(_versions->topLevelItemCount() - 1));
 }
 
+void TransactionLogView::undoRows(const QString& seqs)
+{
+    if (!_doc)
+        return;
+    std::vector<int64_t> rows;
+    for (const QString& part : seqs.split(QLatin1Char(','), Qt::SkipEmptyParts))
+        rows.push_back(part.trimmed().toLongLong());
+    if (rows.empty())
+        return;
+    try {
+        if (!_doc->undoLogged(rows)) {
+            _status->setText(
+                rows.size() == 1
+                    ? tr("Undo of row %1 refused -- the report view says why").arg(rows.front())
+                    : tr("Undo of %1 rows refused -- the report view says why")
+                          .arg(rows.size()));
+        }
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("undo of row " << seqs.toStdString() << ": " << e.what());
+    }
+}
+
 void TransactionLogView::onTransactionContextMenu(const QPoint& pos)
 {
     transactionMenu(_transactions->itemAt(pos), _transactions->viewport()->mapToGlobal(pos));
@@ -3364,22 +3387,33 @@ void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& gl
     // Sec 24.4: undo this row though it is not the last step. Only a row
     // with ops has anything to undo.
     const int64_t seq = item->data(TxnSeq, Qt::UserRole).toLongLong();
-    const QString kind = item->text(TxnKind);
-    menu.addSeparator();
-    auto undoRow = menu.addAction(tr("Undo row %1").arg(seq));
-    undoRow->setToolTip(tr("A new transaction applying this row reversed; refused when "
-                           "anything since changed what it touched (sec 24.4)"));
-    undoRow->setEnabled(_doc
-                        && (kind == QLatin1String("user") || kind == QLatin1String("implicit")
-                            || kind == QLatin1String("undo") || kind == QLatin1String("redo")
-                            || kind == QLatin1String("pick")));
-    // Sec 31.12: the rows selected, or this one, applied here -- rows of
-    // another branch; this branch's own are what undo and redo are for.
+    // The rows selected, or this one where it is not among them.
+    QList<QTreeWidgetItem*> rows = _transactions->selectedItems();
+    if (!rows.contains(item))
+        rows = {item};
     QStringList picked;
-    for (auto selected : _transactions->selectedItems())
-        picked << QString::number(selected->data(TxnSeq, Qt::UserRole).toLongLong());
-    if (!picked.contains(QString::number(seq)))
-        picked = QStringList {QString::number(seq)};
+    bool undoable = _doc != nullptr;
+    for (auto row : rows) {
+        picked << QString::number(row->data(TxnSeq, Qt::UserRole).toLongLong());
+        const QString kind = row->text(TxnKind);
+        undoable = undoable
+            && (kind == QLatin1String("user") || kind == QLatin1String("implicit")
+                || kind == QLatin1String("undo") || kind == QLatin1String("redo")
+                || kind == QLatin1String("pick"));
+    }
+    menu.addSeparator();
+    // Sec 33.13: several rows selected are undone as one step.
+    auto undoRow = menu.addAction(picked.size() == 1 ? tr("Undo row %1").arg(seq)
+                                                     : tr("Undo %1 rows").arg(picked.size()));
+    undoRow->setToolTip(picked.size() == 1
+                            ? tr("A new transaction applying this row reversed; refused when "
+                                 "anything since changed what it touched (sec 24.4)")
+                            : tr("One new transaction applying these rows reversed, newest "
+                                 "first; refused when anything else since changed what they "
+                                 "touched (sec 33.13)"));
+    undoRow->setEnabled(undoable);
+    // Sec 31.12: the same rows applied here -- rows of another branch;
+    // this branch's own are what undo and redo are for.
     bool mine = false;
     if (auto l = log()) {
         for (const auto& t : l->store().history(l->head()))
@@ -3428,13 +3462,7 @@ void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& gl
         return;
     }
     if (chosen == undoRow) {
-        try {
-            if (!_doc->undoLogged(seq))
-                _status->setText(tr("Undo of row %1 refused -- the report view says why").arg(seq));
-        }
-        catch (Base::Exception& e) {
-            FC_ERR("undo of row " << seq << ": " << e.what());
-        }
+        undoRows(picked.join(QLatin1Char(',')));
         return;
     }
     if (chosen == copyScript) {

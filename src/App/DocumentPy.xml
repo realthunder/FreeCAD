@@ -455,7 +455,13 @@ Undo row `seq` of the transaction log though it is not the last step
 applies the row reversed. Refused -- False, with the conflicts reported --
 when anything done since changed a property the row set, a created object
 is gone, or a removed object's name or id is taken. Derived values are not
-restored; their objects are touched for recompute. False if there is no log.</UserDocu>
+restored; their objects are touched for recompute. False if there is no log.
+
+undoTransactionFromLog([seq, ...]) -> bool
+
+Several rows as one step (sec 33.13): one transaction applies them reversed,
+newest first. What the other rows of the list did is not held against a row;
+if any is refused none is undone.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="nameTransactionVersion">
