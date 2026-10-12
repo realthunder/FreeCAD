@@ -80,6 +80,33 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-12 22:09: entry 79's CAUSE FOUND -- any file saved by a build
+since 2026-10-03 can crash at its next load; a fix written, not tested.
+Entry 80 built. A new finding, entry 81: saving into a large folder is
+slow. ALL LOCAL, nothing staged or pushed; the fix of what was pushed
+still waits for the reporter's word.** From the build session (its message
+headed "state at 22:12", received 22:09, written here 22:10);
+origin/LinkVibe is still `5de7d97293`, the stage still `22ece75a08`.
+- STILL WAITING for the reporter's word: the push of `23e57d647c` (the
+  block of 18:57 below).
+- 79: the cause is found and named; the fix is in a build that is
+  running, to be shown by twelve loads of the re-saved file writing no
+  crash log. UNCOMMITTED.
+- 80: written from the reporter's three answers and built; its test not
+  through yet. UNCOMMITTED.
+- 81, new, the number the note-taker's: the backup step of a save asks
+  the file system about every entry of the file's folder; changed to ask
+  only about backups. UNCOMMITTED, not measured for the reporter.
+- The Python suite has NO result yet, stopped twice by the build
+  session; the second time at 21:49, 1647 tests in, no failure -- it
+  crawled for the reason of entry 81. Both suites are to run again in an
+  empty temporary folder after the loads and the GUI tests of the
+  running build: "results not before about 23:30".
+- What the staged copy of 17:52 has of this: entry 79's crash CAN
+  happen there (the note-taker's conclusion from "since the suppression
+  port", not said by the build session in those words); nothing of 69,
+  78, 80, 81 nor the white glyphs of 73.
+
 **2026-10-12 21:03: entries 69 and 78 DONE and committed, entry 73's glyphs
 built and tested; a NEW crash at a load, entry 79, OPEN. ALL LOCAL: nothing
 since the stage of 17:52 is staged or pushed, and the fix of what was
@@ -976,8 +1003,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-clear-of-panels.py` 16 claims, no FAIL. As it stood in work at 16:36: the docks leave no room, `DockOverlayCheckNaviCube` removed; new `View/DockOverlayMoveNaviCube`, on by default; the cube slides along its edge clear of overlaid docks and of a task panel over its view, and back. OPEN; the request turned 16:18; the two points of before fall away; the three new ones answered 16:20: the cube slides along its edge in the same corner; with the setting off a panel simply covers it; it moves for a momentary panel too and comes back; nothing left unanswered |
 | 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
 | 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space. ANSWERED 18:29: NO new mode -- from the property view the omni search opens with text already typed that leads to the current object, document or view and ends with a dot, so the list shows all its properties; Ctrl+F applies in the tree view and the property view ONLY; the tree's "Search..." menu item is kept and opens the omni search; opened from the tree view it scrolls the tree by itself as before and sets and clears the item's background as before | DONE `b70dab6401`, local, NOT pushed, NOT staged (21:03): its own test `omni-search-from-tree-and-property-view.py` 18 claims, no FAIL; found by it and fixed with it: opened on a lone dot (several objects selected) the omni search selected the first object in place of them all with the tree's "sync view" on. Before, 18:57: written in a second working copy, not built; the build session's choices on the three smaller points are under the entry, one of them (g) against the note-taker's reading. The four points answered 18:29 |
-| 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | OPEN, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
-| 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | OPEN; the three points answered 21:40, nothing left unanswered |
+| 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | FOUND 22:09, the cause named; a fix WRITTEN, uncommitted, in a build, NOT tested: a repaint during the restore builds a PartDesign feature's visual on demand, which reads the `SuppressedShape` still parked from the load; serving it announces a change, and the answer to that regroups the view provider's children and takes roots out of the scene root under the walk. So EVERY file saved by a build since the suppression port (2026-10-03) can do it at its next load, one load in a few on this box. The fix: a regrouping asked for during such a walk waits until the walk is over. Before, 21:03, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
+| 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | IN WORK 2026-10-12 22:09, in the working tree, uncommitted, built; its test not through yet (the test's fault, the build session says): the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
+| 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | IN WORK 2026-10-12 22:09, `src/App/Document.cpp`, uncommitted, in a build, NOT tested: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -9218,7 +9246,7 @@ written here 21:04.
   marked however the box is opened); the reporter has not said
   otherwise.
 
-## 79. A crash at the load of `scanner.FCStd` saved again by this version: the scene root's children change under a repaint -- OPEN, the cause not found, not reproduced since
+## 79. A crash at the load of `scanner.FCStd` saved again by this version: the scene root's children change under a repaint -- FOUND 2026-10-12 22:09: any file saved since 2026-10-03 can do it; a fix written, in a build, not tested, not committed
 
 **2026-10-12 21:03, from the build session** (its message headed "state at
 21:05"; found by it on entry 47, NOT reported by the reporter; the number
@@ -9255,7 +9283,41 @@ The note-taker's notes:
 - Nothing is asked of the reporter here. If the staged copy dies at a
   load, the time and the file are worth a note under this entry.
 
-## 80. The file recovery dialog: a check box in the first column that selects all or none (a change request) -- OPEN, the three points answered 2026-10-12 21:40
+**2026-10-12 22:09: the CAUSE IS FOUND; a fix is written, uncommitted, in a
+build that is running -- NOT tested yet.** From the build session's message headed "state at 22:12", received 22:09,
+written here 22:10.
+- How it was found: a detector built in -- it logs who takes a view
+  provider's root out of a scene root while a scene root walks its
+  children for a bounding box. It named the culprit on the FIRST load of
+  the re-saved file, 22:03.
+- The chain:
+  1. a repaint pumped by the restore asks for the scene's bounding box;
+  2. inside that walk the visual of a PartDesign feature is built on
+     demand (`SoFCCoordinate3::getBoundingBox` ->
+     `PartDesignGui::ViewProvider::updateVisual`) and reads
+     `SuppressedShape`, still parked from the load;
+  3. serving a parked shape sets the property and announces it;
+  4. `Gui::Document::slotChangedObject` answers by regrouping the view
+     provider's children (`handleChildren3D`), which takes the roots of
+     claimed children out of the scene root -- under the walk.
+- Why the ORIGINAL `scanner.FCStd` never showed it: a file saved before
+  `SuppressedShape` was stored has nothing parked there.
+- So: EVERY file saved by a build since the suppression port
+  (2026-10-03) can do it at its next load -- "one load in a few here".
+  This answers the note-taker's "NOT known" above: the original file
+  no, any file saved since, yes.
+- The fix: a regrouping asked for during such a walk is put on a list
+  and done by a queued call when the walk is over. To be shown by twelve
+  loads of the re-saved file writing no crash log.
+
+The note-taker's note: the staged copy of 17:52 is a build since
+2026-10-03, so by the above a file the reporter has saved with it, or
+with the stages before it since that date, can die at a load -- with a
+PartDesign feature in it, as far as the chain says. That conclusion is
+the note-taker's, not a sentence of the build session's. If it happens:
+the time and the file, under this entry.
+
+## 80. The file recovery dialog: a check box in the first column that selects all or none (a change request) -- IN WORK 2026-10-12 22:09, built, uncommitted, its test not through; the three points answered 2026-10-12 21:40
 
 **2026-10-12 21:37, the reporter:** "new request, in file recovery prompt
 dialog, add check box in first column to toggle select all"
@@ -9306,6 +9368,47 @@ The note-taker's reading:
   recovered has no check box and is not touched.
 Nothing of this entry is left unanswered.
 
+**2026-10-12 22:09, from the build session: IN WORK -- written from the
+three answers, built, uncommitted; its test not through yet.** From the build session's message headed "state at 22:12", received 22:09,
+written here 22:10.
+- A check box in the HEADER of the first column of Document Recovery,
+  drawn as the header's icon: ticked with every row ticked, empty with
+  none, half with some.
+- A click ticks every row that has a check box, the ones with a warning
+  too; or unticks them all when all are ticked.
+- A click on the header's TEXT still sorts.
+- A recovered row has no box and is not touched.
+- Its first picture: the box half ticked beside "Document Name", over
+  two ticked rows and one with a warning.
+- The test (`tests/gui/recovery-dialog-check-all.py`, new) stopped at
+  its fourth claim -- "my test's fault", fixed, not run through yet.
+
+## 81. Saving a document is slow in a folder with many entries: the backup step asks the file system about every entry -- IN WORK 2026-10-12 22:09, uncommitted, not tested, not measured for the reporter
+
+**2026-10-12 22:09, from the build session** (its message headed "state at
+22:12"; found by it while its Python suite crawled, NOT reported by the
+reporter; the number is the note-taker's, written here 22:10):
+- Seen: the Python suite took half a minute a SAVE. It was stopped at
+  21:49, 1647 tests in, no failure.
+- The cause: `App::Document`'s backup step lists the whole directory of
+  the file at every save and asks the file system about EVERY entry
+  (`isFile`). The temporary directory the build session's runs share had
+  grown to 3400 entries, and on this box each such question is slow.
+- Changed: it asks only the entries whose name is a backup's
+  (`src/App/Document.cpp`). UNCOMMITTED, in the build that is running;
+  no result of a test or a timing on it yet.
+- The build session's words on what it means for the reporter: "This is
+  the user's cost too when saving into a large folder on this box -- not
+  measured there."
+
+The note-taker's notes:
+- Near it: entry 47's 10 s (`ee9583a247`), the same kind of thing -- a
+  folder listed and every file asked about, dear on this box whose file
+  system answers each question slowly.
+- NOT known: what a save costs the reporter in their own folders, and
+  from how many entries on it is felt. If saving has felt slow in a
+  folder with many files, that is worth a line here.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -9314,5 +9417,5 @@ it is read before each entry is started and moved up into the table.
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
-entries 68 to 80 are of 2026-10-12, 77 said to the build session, 79
-found by it)
+entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
+and 81 found by it)
