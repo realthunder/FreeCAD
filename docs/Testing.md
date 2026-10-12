@@ -175,7 +175,9 @@ reaches and what arguments the Proxy is handed, per the table in
 a view provider is made (docs/TransactionLog.md sec 27.19); `ViewProviderChain` (17) is the view half of the
 proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
 spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
-`FeaturePythonChain`, is headless and rides the Python suite.
+`FeaturePythonChain`, is headless and rides the Python suite. `PartGroupView`
+(2) is a third that needs no guest: where a plain group inside an `App::Part`
+is selected.
 
 The whole default list, run the way the script's header says (`xcb` under
 Xvfb, `FCX_PYODIDE` set), is **70 cases in 13 modules, OK, none skipped**
