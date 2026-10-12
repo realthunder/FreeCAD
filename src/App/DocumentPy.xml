@@ -720,6 +720,35 @@ For both, `picks` may also give 'ours' to the key of a change that asks
 nothing -- a 'take', a 'merge' -- and it is left out.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="previewTransactionMergeResult">
+      <Documentation>
+        <UserDocu>previewTransactionMergeResult(branch, picks={}, fallback='', version=0) -> dict
+
+What mergeTransactionBranch() with these arguments would make
+(docs/TransactionLog.md sec 32.17): this document as it is, read into a
+document of its own with no log and no view, what the merge takes written
+to it, and recomputed. Nothing of this document moves -- no step, no row
+but its tip as an unnamed version where it is none, no redo lost.
+{'document', 'theirs', 'values', 'removed', 'failed', 'unresolved',
+'preview'}: 'document' is that document, the caller's to close with
+App.closeDocument(), its objects under the ids this document's have; None
+where the merge would be refused ('unresolved'), brings nothing, or is a
+fast-forward -- 'theirs': what it makes is the other branch. 'values' is
+the geometry of every object the merge made, wrote or computed, each
+{'cid', 'object', 'prop', 'here'} -- 'here' says this document has the
+object; 'removed' the ids of the objects it removes; 'failed' the names
+of those whose recompute failed there. Raises as the merge does, and
+where a transaction is open.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="previewTransactionPickResult">
+      <Documentation>
+        <UserDocu>previewTransactionPickResult(rows, picks={}, fallback='') -> dict
+
+What pickTransactions() with these arguments would make, as
+previewTransactionMergeResult() says it.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getTransactionForkBranches">
       <Documentation>
         <UserDocu>getTransactionForkBranches(path) -> list of dict

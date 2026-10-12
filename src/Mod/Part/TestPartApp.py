@@ -45,6 +45,7 @@ from parttests.ElementNameTest import ElementNameTest, LoftCapNameTest
 from parttests.ShapeListTest import ShapeListTest
 from parttests.ShapeDiffTest import ShapeDiffTest, ShapeAtAStateTest, KeptShapesTest
 from parttests.ShapeDiffTest import ShapeMaterialTest
+from parttests.ShapeDiffTest import MergedResultTest
 from parttests.TopoShapeListTest import TopoShapeListTest
 from parttests.FilletCornerTest import FilletCornerTest
 

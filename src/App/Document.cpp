@@ -6468,7 +6468,7 @@ void Document::_restoreAsVersion(const std::shared_ptr<FileHistory>& history,
     restore(dir.c_str(), false);
 }
 
-void Document::_readVersion(int64_t num, const std::function<void(Document&)>& fn)
+Document* Document::_openReadVersion(int64_t num, const std::string& stem, bool active)
 {
     // Sec 27.58, 27.60: read as openFileVersion() reads a version -- joined to
     // this file's history, so a blob is found by its hash in the store the
@@ -6488,25 +6488,48 @@ void Document::_readVersion(int64_t num, const std::function<void(Document&)>& f
         ~Cleanup() { Base::FileInfo(dir).deleteDirectoryRecursive(); }
     } cleanup {dir};
 
-    // A new document becomes the active one; the active one is handed back.
+    // A new document becomes the active one; the active one is handed back
+    // -- here, or with `active` by the caller once it has done with this one.
     auto& app = GetApplication();
-    Document* active = app.getActiveDocument();
+    Document* was = app.getActiveDocument();
     const std::string name = app.getUniqueDocumentName(
-        (std::string(getName()) + "_read_v" + std::to_string(num)).c_str(), true);
+        (std::string(getName()) + stem).c_str(), true);
     Document* version = app.newDocument(name.c_str(), name.c_str(), false, true, false);
     if (!version)
         THROWM(Base::RuntimeError, "cannot make the version's document");
+    auto handBack = [&app, was]() {
+        if (was && app.getActiveDocument() != was)
+            app.setActiveDocument(was);
+    };
+    try {
+        version->setUndoMode(0);
+        std::string file = FileName.getStrValue();
+        FileHistory::splitVersion(file);
+        version->_restoreAsVersion(history, dir,
+                                   file.empty() ? file : file + "@v" + std::to_string(num));
+    }
+    catch (...) {
+        app.closeDocument(name.c_str());
+        handBack();
+        throw;
+    }
+    if (!active)
+        handBack();
+    return version;
+}
+
+void Document::_readVersion(int64_t num, const std::function<void(Document&)>& fn)
+{
+    auto& app = GetApplication();
+    Document* active = app.getActiveDocument();
+    Document* version = _openReadVersion(num, "_read_v" + std::to_string(num), true);
+    const std::string name = version->getName();
     std::unique_ptr<void, std::function<void(void*)>> closer(
         version, [&app, name, active](void*) {
             app.closeDocument(name.c_str());
             if (active && app.getActiveDocument() != active)
                 app.setActiveDocument(active);
         });
-    version->setUndoMode(0);
-    std::string file = FileName.getStrValue();
-    FileHistory::splitVersion(file);
-    version->_restoreAsVersion(history, dir,
-                               file.empty() ? file : file + "@v" + std::to_string(num));
     fn(*version);
 }
 
@@ -10685,10 +10708,63 @@ bool Document::_rollBackUndoneMerge()
     return true;
 }
 
+namespace {
+
+/// The version that is the tip of the chain `head` ends: the newest on it,
+/// where only records follow -- the rule _leaveBranch() takes none by. False
+/// where the tip is no version.
+bool tipVersion(TransactionStore& store, int64_t head, LogVersion& tip)
+{
+    const std::set<int64_t> onChain = chainPoints(store, head);
+    bool have = false;
+    for (const auto& v : store.versions()) {
+        if (!onChain.count(v.seq))
+            continue;
+        if (!have || v.seq > tip.seq || (v.seq == tip.seq && v.num > tip.num)) {
+            tip = v;
+            have = true;
+        }
+    }
+    if (!have)
+        return false;
+    const auto rows = store.chain(head);
+    for (auto it = rows.rbegin(); it != rows.rend() && it->seq > tip.seq; ++it) {
+        if (!store.ops(it->seq).empty())
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+Document::MergeOutcome Document::previewMergeResult(const std::string& branch,
+                                                    const std::map<std::string, std::string>& picks,
+                                                    const std::string& fallback, int64_t version)
+{
+    MergeOutcome outcome;
+    MergeResult result = _merge(branch, picks, fallback, version, nullptr, &outcome);
+    outcome.preview = std::move(result.preview);
+    outcome.unresolved = std::move(result.unresolved);
+    outcome.failed = std::move(result.failed);
+    return outcome;
+}
+
+Document::MergeOutcome Document::previewPickResult(const std::vector<int64_t>& rows,
+                                                   const std::map<std::string, std::string>& picks,
+                                                   const std::string& fallback)
+{
+    MergeOutcome outcome;
+    MergeResult result = _merge(pickLabel(rows), picks, fallback, 0, &rows, &outcome);
+    outcome.preview = std::move(result.preview);
+    outcome.unresolved = std::move(result.unresolved);
+    outcome.failed = std::move(result.failed);
+    return outcome;
+}
+
 Document::MergeResult Document::_merge(const std::string& branch,
                                        const std::map<std::string, std::string>& picks,
                                        const std::string& fallback, int64_t version,
-                                       const std::vector<int64_t>* rows)
+                                       const std::vector<int64_t>* rows, MergeOutcome* outcome)
 {
     OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 28: theirs' changes since the base, less
@@ -10704,8 +10780,11 @@ Document::MergeResult Document::_merge(const std::string& branch,
     struct Release
     {
         Document& doc;
+        bool on;
         ~Release()
         {
+            if (!on)
+                return;
             try {
                 doc._releaseSentFiles();
             }
@@ -10715,7 +10794,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
             catch (...) {
             }
         }
-    } release {*this};
+    } release {*this, !outcome};
     auto sideOk = [](const std::string& side) { return side == "ours" || side == "theirs"; };
     if (!fallback.empty() && !sideOk(fallback))
         THROWM(Base::ValueError, "a side is 'ours' or 'theirs', not '" + fallback + "'");
@@ -10726,11 +10805,14 @@ Document::MergeResult Document::_merge(const std::string& branch,
 
     // Sec 31.21: a merge undone, and nothing since, is rolled back before
     // another is made. While its rows stand the other branch counts as
-    // merged, and this merge would bring nothing.
-    _rollBackUndoneMerge();
+    // merged, and this merge would bring nothing. Not for what a merge
+    // would make (sec 32.17), which takes nothing out: the plan leaves the
+    // undone merge out by itself.
+    if (!outcome)
+        _rollBackUndoneMerge();
 
     MergePlan plan;
-    if (rows && d->activeUndoTransaction)
+    if ((rows || outcome) && d->activeUndoTransaction)
         commitImplicitTransaction();
     planMerge(*this, branch, version, plan, rows);
     const bool picked = plan.picked;
@@ -10776,7 +10858,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
     // `all`: every change goes in; else those taken and the conflicts that
     // went theirs' way.
     std::map<std::string, std::string> side;
-    auto touchChanged = [&](bool all) {
+    auto touchChanged = [&](Document& doc, bool all) {
         std::set<long> ids;
         for (const auto& c : pv.changes) {
             if (c.ckind != "obj" || leftOut(c))
@@ -10787,10 +10869,16 @@ Document::MergeResult Document::_merge(const std::string& branch,
                 ids.insert(c.cid);
         }
         for (long cid : ids) {
-            if (auto obj = getObjectByID(cid))
+            if (auto obj = doc.getObjectByID(cid))
                 obj->touch();
         }
     };
+    if (!pv.forward.empty() && outcome) {
+        // The other branch's rows as they are: what the merge makes is
+        // that branch.
+        outcome->theirs = true;
+        return result;
+    }
     if (!pv.forward.empty()) {
         // Sec 30.4 P1, a fast-forward: ours has not moved since the base,
         // so theirs' rows are taken as they are -- each the row it was made
@@ -10854,7 +10942,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
         // what a recompute changes, and a row after theirs' would put this
         // branch ahead of the one it has just taken -- which then takes
         // that row, computes, and is ahead in its turn (sec 31.7).
-        touchChanged(true);
+        touchChanged(*this, true);
         if (compute) {
             std::set<std::string> failedBefore;
             for (auto obj : getObjects()) {
@@ -11041,32 +11129,71 @@ Document::MergeResult Document::_merge(const std::string& branch,
         want.emplace(kv.first, std::move(v));
     }
 
+    // Sec 32.17: what the merge would make, and not the merge. This
+    // document as it is -- its tip, taken as a version where it is none --
+    // is read into a document of its own, with no log and no view, and
+    // what goes in is written to that one. Nothing here moves: no step, no
+    // row but the version's, no redo lost.
+    Document* scratch = nullptr;
+    if (outcome) {
+        if (d->activeUndoTransaction || isPerformingTransaction())
+            THROWM(Base::RuntimeError, "a change of the document is being made: finish it first");
+        _leaveBranch();
+        LogVersion tip;
+        if (!tipVersion(log->store(), log->head(), tip))
+            THROWM(Base::RuntimeError, "the document as it is could not be taken as a version");
+        // Named as no other was: what shows its values knows them by it
+        static int made = 0;
+        scratch = _openReadVersion(tip.num, "_merged" + std::to_string(++made), false);
+    }
+    Document& into = scratch ? *scratch : *this;
+    struct Closer
+    {
+        Document* doc;
+        ~Closer()
+        {
+            if (doc)
+                GetApplication().closeDocument(doc->getName());
+        }
+    } closer {scratch};
+    // What the write below did to it, where no transaction says
+    bool wrote = false;
+    std::set<long> computed;
+    fastsignals::scoped_connection watch;
+    if (scratch) {
+        watch = scratch->signalRecomputedObject.connect(
+            [&computed](const DocumentObject& obj) { computed.insert(obj.getID()); });
+    }
+
     std::set<std::string> failedBefore;
     std::map<long, TouchedState> before;
-    for (auto obj : getObjects()) {
+    for (auto obj : into.getObjects()) {
         before.emplace(obj->getID(), touchedStateOf(*obj));
         if (obj->isError())
             failedBefore.insert(obj->getNameInDocument());
     }
 
-    // Sec 31.21: the tip as it is before a merge that writes, as a version
-    // -- unnamed, and none taken where the tip is one already -- which the
-    // merge undone is rolled back to.
-    if (!picked)
-        _leaveBranch();
+    if (!outcome) {
+        // Sec 31.21: the tip as it is before a merge that writes, as a
+        // version -- unnamed, and none taken where the tip is one already
+        // -- which the merge undone is rolled back to.
+        if (!picked)
+            _leaveBranch();
 
-    _clearMyRedos();
-    d->activeUndoTransaction = new Transaction(0);
-    d->activeUndoTransaction->Name = (picked ? "Apply " : "Merge ") + branch;
-    d->activeUndoTransaction->LogKind = picked ? "pick" : "merge";
-    d->activeUndoTransaction->MergeFrom = picked ? 0 : pv.theirs;
-    mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+        _clearMyRedos();
+        d->activeUndoTransaction = new Transaction(0);
+        d->activeUndoTransaction->Name = (picked ? "Apply " : "Merge ") + branch;
+        d->activeUndoTransaction->LogKind = picked ? "pick" : "merge";
+        d->activeUndoTransaction->MergeFrom = picked ? 0 : pv.theirs;
+        mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+    }
 
     // Ours unchanged since the base: the document moved to theirs' state
     // through the rows, derived values and touched state with it -- and
     // what changed is computed again below all the same (sec 31.7, in
     // place of 28.6 Q1). View state is left to the rule below.
-    const bool moved = pv.fastForward && !anyLeft && _moveAlongLog(pv.ours, pv.theirs, false);
+    const bool moved = !outcome && pv.fastForward && !anyLeft
+                       && _moveAlongLog(pv.ours, pv.theirs, false);
 
     std::vector<std::string> relabelled;
     auto guarded = [&](const char* what, const std::string& name, const std::function<void()>& fn) {
@@ -11084,15 +11211,15 @@ Document::MergeResult Document::_merge(const std::string& branch,
         LogOp o;
         o.ckind = std::get<0>(key);
         o.cid = std::get<1>(key);
-        return opContainer(*this, o);
+        return opContainer(into, o);
     };
     auto skipped = [&](const Key& key) { return moved && std::get<0>(key) != "view"; };
     if (!moved) {
         for (const auto& made : creates) {
-            if (getObjectByID(made.cid))
+            if (into.getObjectByID(made.cid))
                 continue;
             guarded("create", made.name, [&]() {
-                if (getObject(made.name.c_str()))
+                if (into.getObject(made.name.c_str()))
                     throw Base::RuntimeError("name taken by another object");
                 Base::Type type = Base::Type::getTypeIfDerivedFrom(
                     made.type.c_str(), DocumentObject::getClassTypeId(), true);
@@ -11101,7 +11228,8 @@ Document::MergeResult Document::_merge(const std::string& branch,
                 if (!obj)
                     throw Base::RuntimeError("cannot create " + made.type);
                 obj->_Id = made.cid;
-                addObject(obj, made.name.c_str(), false);
+                into.addObject(obj, made.name.c_str(), false);
+                wrote = true;
             });
         }
     }
@@ -11113,6 +11241,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
             if (!c || c->getPropertyByName(std::get<2>(kv.first).c_str()))
                 return;
             addLoggedProperty(*c, kv.second.first, std::get<2>(kv.first), kv.second.second);
+            wrote = true;
         });
     }
     for (const auto& key : delprops) {
@@ -11120,8 +11249,10 @@ Document::MergeResult Document::_merge(const std::string& branch,
             continue;
         guarded("remove property", std::get<2>(key), [&]() {
             auto c = container(key);
-            if (c && c->getPropertyByName(std::get<2>(key).c_str()))
+            if (c && c->getPropertyByName(std::get<2>(key).c_str())) {
                 c->removeDynamicProperty(std::get<2>(key).c_str());
+                wrote = true;
+            }
         });
     }
     // Sec 31.26: a shape holds its object's placement, and one that lands
@@ -11133,7 +11264,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
         if (skipped(kv.first) || std::get<0>(kv.first) != "obj")
             continue;
         const long cid = std::get<1>(kv.first);
-        auto geo = Base::freecad_dynamic_cast<GeoFeature>(getObjectByID(cid));
+        auto geo = Base::freecad_dynamic_cast<GeoFeature>(into.getObjectByID(cid));
         auto shape = geo ? geo->getPropertyOfGeometry() : nullptr;
         if (!shape || !shape->hasName() || std::get<2>(kv.first) != shape->getName()
                 || want.count(Key {"obj", cid, "Placement"}))
@@ -11142,7 +11273,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
     }
     std::vector<Key> landed;
     {
-        CaptureConfig config(*this);
+        CaptureConfig config(into);
         RestoreBatch batch;
         for (auto& kv : want) {
             if (skipped(kv.first))
@@ -11171,6 +11302,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
                 log->restoreBlobsOf(sets[kv.first]);
                 restoreValue(*prop, kv.second);
                 landed.push_back(kv.first);
+                wrote = true;
                 // A label a live object of ours has comes in suffixed, by
                 // the property's own rule (sec 27.41 Q4 (a)).
                 auto obj = Base::freecad_dynamic_cast<DocumentObject>(c);
@@ -11182,11 +11314,12 @@ Document::MergeResult Document::_merge(const std::string& branch,
         batch.finish();
     }
     for (const auto& kv : placed) {
-        auto geo = Base::freecad_dynamic_cast<GeoFeature>(getObjectByID(kv.first));
+        auto geo = Base::freecad_dynamic_cast<GeoFeature>(into.getObjectByID(kv.first));
         if (!geo || geo->Placement.getValue() == kv.second)
             continue;
         guarded("placement of", geo->getNameInDocument(),
                 [&]() { geo->Placement.setValue(kv.second); });
+        wrote = true;
     }
     // Sec 31.22: a value that came in names each element by its number in
     // theirs' shape, and the shapes here are ours', which may count their
@@ -11201,7 +11334,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
     // recompute wrote one, else the base's, where ours' did.
     std::map<GeoFeature*, Property*> evidence;
     auto writtenAgainst = [&](GeoFeature* geo, PropertyLinkBase* referrer) {
-        if (!geo || geo->getDocument() != this)
+        if (!geo || geo->getDocument() != &into)
             return false;
         auto held = evidence.find(geo);
         if (held != evidence.end())
@@ -11248,30 +11381,60 @@ Document::MergeResult Document::_merge(const std::string& branch,
     }
     if (!moved) {
         for (long cid : removes) {
-            if (auto obj = getObjectByID(cid)) {
+            if (auto obj = into.getObjectByID(cid)) {
                 const std::string name = obj->getNameInDocument();
-                guarded("remove", name, [&]() { removeObject(name.c_str()); });
+                guarded("remove", name, [&]() { into.removeObject(name.c_str()); });
+                wrote = true;
             }
         }
         // Derived values are not merged (sec 17.3): the merged definition
         // is recomputed, inside the merge's own step (sec 24.1). Not when
         // nothing of theirs went in: ours is what it was.
-        if (!d->activeUndoTransaction->isEmpty()) {
+        if (outcome ? wrote : !d->activeUndoTransaction->isEmpty()) {
             for (long cid : touch) {
-                if (auto obj = getObjectByID(cid))
+                if (auto obj = into.getObjectByID(cid))
                     obj->touch();
             }
-            touchChanged(false);
-            guarded("recompute", getName(), [&]() { recompute(); });
+            touchChanged(into, false);
+            guarded("recompute", into.getName(), [&]() { into.recompute(); });
         }
     }
     else {
-        touchChanged(true);
+        touchChanged(*this, true);
         guarded("recompute", getName(), [&]() { recompute(); });
     }
-    for (auto obj : getObjects()) {
+    for (auto obj : into.getObjects()) {
         if (obj->isError() && !failedBefore.count(obj->getNameInDocument()))
             result.failed.emplace_back(obj->getNameInDocument());
+    }
+    if (outcome) {
+        // What there is to see of it: the geometry of every object the
+        // merge made, wrote the geometry of, or computed -- which reaches
+        // further than the plan's lines, to what is made of what changed.
+        watch.disconnect();
+        std::set<long> ids = computed;
+        for (const auto& made : creates)
+            ids.insert(made.cid);
+        for (const auto& key : landed) {
+            if (std::get<0>(key) == "obj")
+                ids.insert(std::get<1>(key));
+        }
+        for (long cid : ids) {
+            auto obj = into.getObjectByID(cid);
+            auto geo = Base::freecad_dynamic_cast<GeoFeature>(obj);
+            auto shape = geo ? geo->getPropertyOfGeometry() : nullptr;
+            if (!shape || !shape->hasName())
+                continue;
+            outcome->values.push_back(
+                {cid, obj->getNameInDocument(), shape->getName(), getObjectByID(cid) != nullptr});
+        }
+        for (long cid : removes) {
+            if (getObjectByID(cid) && !into.getObjectByID(cid))
+                outcome->removed.push_back(cid);
+        }
+        outcome->document = scratch;
+        closer.doc = nullptr;
+        return result;
     }
 
     // The row's annotation: what was merged and how each conflict went,

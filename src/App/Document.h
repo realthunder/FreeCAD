@@ -739,11 +739,57 @@ public:
     MergeResult pickRows(const std::vector<int64_t>& rows,
                          const std::map<std::string, std::string>& picks = {},
                          const std::string& fallback = std::string());
-    /// mergeBranch() and pickRows(): `rows` for the second.
+    /// What a merge would make of the document (docs/TransactionLog.md sec
+    /// 32.17).
+    struct MergeOutcome
+    {
+        /** The document the merge was made in: this one as it is, read into
+         * a document of its own with no log and no view, what the merge
+         * takes written to it, and recomputed. Its objects have the ids
+         * this document's have. The caller's to close
+         * (Application::closeDocument). Null where there is none: the
+         * merge would be refused (`unresolved`), brings nothing, or takes
+         * the other branch as it is (`theirs`).
+         */
+        Document* document {nullptr};
+        /// A fast-forward: what the merge makes is the other branch.
+        bool theirs {false};
+        struct Value
+        {
+            long cid {0};
+            std::string object;   ///< its name
+            std::string prop;     ///< its geometry: `Shape`
+            bool here {true};     ///< this document has the object
+        };
+        /// The geometry of every object the merge made, wrote the geometry
+        /// of, or computed.
+        std::vector<Value> values;
+        std::vector<long> removed;         ///< objects of this document the merge removes
+        std::vector<std::string> failed;   ///< objects whose recompute failed there
+        std::vector<MergeChange> unresolved;
+        MergePreview preview;
+    };
+    /** What mergeBranch() with these arguments would make, in a document
+     * of its own (docs/TransactionLog.md sec 32.17). Nothing of this
+     * document moves, and nothing is written to the log but its tip as a
+     * version, unnamed, where it is none already -- what the merge itself
+     * takes first. Throws as mergeBranch() does, and where a transaction
+     * is open.
+     */
+    MergeOutcome previewMergeResult(const std::string& branch,
+                                    const std::map<std::string, std::string>& picks = {},
+                                    const std::string& fallback = std::string(),
+                                    int64_t version = 0);
+    /// The same of pickRows().
+    MergeOutcome previewPickResult(const std::vector<int64_t>& rows,
+                                   const std::map<std::string, std::string>& picks = {},
+                                   const std::string& fallback = std::string());
+    /// mergeBranch() and pickRows(): `rows` for the second. With `outcome`
+    /// it is previewMergeResult(): written to a document of its own.
     MergeResult _merge(const std::string& branch,
                        const std::map<std::string, std::string>& picks,
                        const std::string& fallback, int64_t version,
-                       const std::vector<int64_t>* rows);
+                       const std::vector<int64_t>* rows, MergeOutcome* outcome = nullptr);
 
     /// A merge undone at the head of this branch, with nothing since
     /// (docs/TransactionLog.md sec 31.21).
@@ -1697,6 +1743,10 @@ protected:
     /// reads one -- joined to this file's history, blobs by hash, no view,
     /// no log (sec 27.60) -- handed to `fn`, and closed.
     void _readVersion(int64_t num, const std::function<void(Document&)>& fn);
+    /// The same, left open and the caller's to close: named after this
+    /// document with `stem`. With `active` it is left the active document,
+    /// as a new one is; else the one that was is handed back.
+    Document* _openReadVersion(int64_t num, const std::string& stem, bool active);
     /// Restore this new document from `dir`, a materialised version of the
     /// file `history` records, as a version document named `fileName`.
     void _restoreAsVersion(const std::shared_ptr<FileHistory>& history, const std::string& dir,

@@ -96,6 +96,7 @@ public:
         signalParamChanged("TransactionLogDeltaHops");
         signalParamChanged("TransactionLogDeltaRatio");
         signalParamChanged("TransactionLogVerify");
+        signalParamChanged("MergeConflictSide");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
@@ -166,6 +167,7 @@ public:
     long TransactionLogDeltaHops;
     long TransactionLogDeltaRatio;
     bool TransactionLogVerify;
+    long MergeConflictSide;
     bool RelativeStringID;
     bool HashIndexedName;
     bool EnableMaterialEdit;
@@ -289,6 +291,8 @@ public:
         funcs["TransactionLogDeltaRatio"] = &DocumentParamsP::updateTransactionLogDeltaRatio;
         TransactionLogVerify = this->handle->GetBool("TransactionLogVerify", false);
         funcs["TransactionLogVerify"] = &DocumentParamsP::updateTransactionLogVerify;
+        MergeConflictSide = this->handle->GetInt("MergeConflictSide", 0);
+        funcs["MergeConflictSide"] = &DocumentParamsP::updateMergeConflictSide;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
         HashIndexedName = this->handle->GetBool("HashIndexedName", true);
@@ -539,6 +543,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogVerify(DocumentParamsP *self) {
         self->TransactionLogVerify = self->handle->GetBool("TransactionLogVerify", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMergeConflictSide(DocumentParamsP *self) {
+        self->MergeConflictSide = self->handle->GetInt("MergeConflictSide", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateRelativeStringID(DocumentParamsP *self) {
@@ -876,6 +884,14 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "would have taken from the log anyway and compares: a mismatch\n"
 "names a value changed without aboutToSetValue (sec 23.6). Always\n"
 "on in a debug build."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "MergeConflictSide", "MergeConflictSide", App::ParamInfo::Int, 0)
+        .setTitle("Merge Conflict Side")
+        .setDoc("The side a conflict starts on when a merge, or rows applied, are\n"
+"previewed (docs/TransactionLog.md sec 32.17): 0 ours (the default),\n"
+"1 theirs. It is what the merge dialog shows each conflict picked as,\n"
+"and so what the result is shown with and what is merged unless\n"
+"another side is picked there. A merge asked for by a script with no\n"
+"side for a conflict is refused whatever this says."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID")
         .setDoc("Write the ids in a document's string table as differences from the\n"
@@ -2476,6 +2492,39 @@ void DocumentParams::setTransactionLogVerify(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLogVerify() {
     instance()->handle->RemoveBool("TransactionLogVerify");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docMergeConflictSide() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The side a conflict starts on when a merge, or rows applied, are\n"
+"previewed (docs/TransactionLog.md sec 32.17): 0 ours (the default),\n"
+"1 theirs. It is what the merge dialog shows each conflict picked as,\n"
+"and so what the result is shown with and what is merged unless\n"
+"another side is picked there. A merge asked for by a script with no\n"
+"side for a conflict is refused whatever this says.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getMergeConflictSide() {
+    return instance()->MergeConflictSide;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultMergeConflictSide() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setMergeConflictSide(const long &v) {
+    instance()->handle->SetInt("MergeConflictSide",v);
+    instance()->MergeConflictSide = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeMergeConflictSide() {
+    instance()->handle->RemoveInt("MergeConflictSide");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
