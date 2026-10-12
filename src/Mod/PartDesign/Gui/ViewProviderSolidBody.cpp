@@ -255,6 +255,25 @@ public:
     }
 };
 
+/** What a solid body is seen through: its features, drawn beside it
+ *
+ * A view's own hide of the solid body hides the solid whichever feature
+ * shows it, and a shader bound to the solid body dresses it likewise. Shown
+ * by a view, the solid body shows its own shape, which is the solid: of the
+ * features only one is to be seen at a time, and which is not a view's to
+ * say.
+ */
+std::vector<App::DocumentObject*> seenThroughFeatures(const App::DocumentObject *obj,
+                                                      Gui::SeenThrough::For what)
+{
+    auto owner = Base::freecad_dynamic_cast<PartDesign::SolidBody>(obj);
+    if (!owner)
+        return {};
+    if (what == Gui::SeenThrough::For::Show)
+        return {const_cast<App::DocumentObject*>(obj)};
+    return owner->Group.getValues();
+}
+
 } // anonymous namespace
 
 PROPERTY_SOURCE(PartDesignGui::ViewProviderSolidBody, PartGui::ViewProviderPart)
@@ -267,6 +286,12 @@ ViewProviderSolidBody::ViewProviderSolidBody()
     // before a static of this library would be
     static auto observer = new SolidBodySelectionObserver;
     (void)observer;
+
+    static bool registered;
+    if (!registered) {
+        registered = true;
+        Gui::SeenThrough::add(PartDesign::SolidBody::getClassTypeId(), &seenThroughFeatures);
+    }
 }
 
 ViewProviderSolidBody::~ViewProviderSolidBody() = default;

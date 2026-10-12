@@ -417,6 +417,14 @@ fc_add_gui_test(GuiPerViewResolveSelective_tests_run
                 per-view-resolve-selective.py
                 --timeout 240)
 
+# A view's own visibility of an object that others draw (Gui::SeenThrough,
+# docs/CoinRetirement.md 5.30): a plain group hidden by a view hides what it
+# holds there, a PartDesign solid body the solid whichever feature shows it,
+# and a shader bound to the solid body dresses it through that feature.
+fc_add_gui_test(GuiPerViewSeenThrough_tests_run
+                per-view-seen-through.py
+                --timeout 240)
+
 # Released per-view-shown objects (hidden objects no view shows any more,
 # kept in the capture for a quick show again) are evicted first when
 # memory stands over PerViewShownEvictWatermark, never one a view still

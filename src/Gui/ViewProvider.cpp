@@ -44,6 +44,8 @@
 #include <Base/Tools.h>
 #include <App/AppearanceList.h>
 #include <App/Document.h>
+#include <App/GeoFeatureGroupExtension.h>
+#include <App/GroupExtension.h>
 
 #include "SoMouseWheelEvent.h"
 #include "ViewProvider.h"
@@ -1049,6 +1051,46 @@ OwnNodesPath::~OwnNodesPath()
 bool OwnNodesPath::wanted()
 {
     return _OwnNodesPath > 0;
+}
+
+static std::vector<std::pair<Base::Type, SeenThrough::Members> > &seenThroughTypes()
+{
+    static std::vector<std::pair<Base::Type, SeenThrough::Members> > types;
+    return types;
+}
+
+void SeenThrough::add(const Base::Type &type, Members members)
+{
+    if (!type.isBad() && members)
+        seenThroughTypes().emplace_back(type, members);
+}
+
+std::vector<App::DocumentObject*> SeenThrough::of(const App::DocumentObject *obj, For what)
+{
+    std::vector<App::DocumentObject*> res;
+    if (!obj || !obj->isAttachedToDocument())
+        return res;
+    for (auto &v : seenThroughTypes()) {
+        if (obj->isDerivedFrom(v.first))
+            return v.second(obj, what);
+    }
+    // A plain group shows and hides what it holds, and draws nothing itself.
+    // What a geo feature group holds is under its own nodes.
+    if (what == For::Look || !App::GeoFeatureGroupExtension::isNonGeoGroup(obj))
+        return res;
+    auto group = obj->getExtensionByType<App::GroupExtension>(true);
+    if (!group)
+        return res;
+    for (auto child : group->Group.getValues()) {
+        if (!child || !child->isAttachedToDocument())
+            continue;
+        // One the group remembers as hidden by hand stays so when the
+        // group is shown
+        if (what == For::Show && obj->isElementVisible(child->getNameInDocument()) == 0)
+            continue;
+        res.push_back(child);
+    }
+    return res;
 }
 
 bool ViewProvider::getDetailPath(const char *subname, SoFullPath *pPath, bool append, SoDetail *&det) const {

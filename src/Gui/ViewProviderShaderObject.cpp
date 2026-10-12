@@ -1447,6 +1447,10 @@ struct OccurrenceScan {
     const std::vector<ChainBinding> &chains;
     std::map<const ChainBinding*,
              std::vector<std::pair<App::DocumentObject*, std::string>>> matches;
+    // What a matched occurrence is seen through beside its own nodes
+    // (SeenThrough): the features of a PartDesign solid body
+    std::map<const ChainBinding*,
+             std::vector<std::pair<App::DocumentObject*, std::string>>> seenThrough;
     std::vector<App::DocumentObject*> seq;
     std::set<App::DocumentObject*> onPath;
     size_t visited = 0;
@@ -1500,6 +1504,7 @@ struct OccurrenceScan {
         if (!found.empty()) {
             for (auto m : found)
                 matches[m].emplace_back(base, subname);
+            addSeenThrough(found, base, obj, subname);
         }
         else if (depth < maxDepth && !onPath.count(obj)) {
             onPath.insert(obj);
@@ -1517,6 +1522,58 @@ struct OccurrenceScan {
             onPath.erase(obj);
         }
         seq.resize(seqlen);
+    }
+
+    // The occurrences \a obj at \a base . \a subname is seen through, for
+    // the whole-occurrence bindings among \a found: named as it is, one
+    // step up, and objects of their own where it is one. An element of
+    // the object is not an element of what it is seen through.
+    void addSeenThrough(const std::vector<const ChainBinding*> &found,
+                        App::DocumentObject *base, App::DocumentObject *obj,
+                        const std::string &subname)
+    {
+        const ChainBinding *whole = nullptr;
+        for (auto m : found) {
+            if (m->element.empty())
+                whole = m;
+        }
+        if (!whole)
+            return;
+        auto members = SeenThrough::of(canonObject(obj), SeenThrough::For::Look);
+        if (members.empty())
+            return;
+        std::string parent;
+        if (subname.size() > 1) {
+            auto pos = subname.rfind('.', subname.size() - 2);
+            if (pos != std::string::npos)
+                parent = subname.substr(0, pos + 1);
+        }
+        auto &list = seenThrough[whole];
+        for (auto member : members) {
+            if (subname.empty())
+                list.emplace_back(member, std::string());
+            else
+                list.emplace_back(base, parent + member->getNameInDocument() + ".");
+        }
+    }
+
+    // After the scan: an occurrence bound by name keeps that binding, the
+    // others take the one of the object seen through them.
+    void mergeSeenThrough()
+    {
+        std::set<std::pair<App::DocumentObject*, std::string>> named;
+        for (auto &m : matches) {
+            if (m.first->element.empty())
+                named.insert(m.second.begin(), m.second.end());
+        }
+        for (auto &m : seenThrough) {
+            auto &list = matches[m.first];
+            for (auto &t : m.second) {
+                if (named.insert(t).second)
+                    list.push_back(std::move(t));
+            }
+        }
+        seenThrough.clear();
     }
 };
 } // namespace
@@ -2067,6 +2124,20 @@ void ViewProviderShaderBinding::rebuildAllBindings(App::Document *doc)
     }
 
     {
+        // What a target is seen through beside its own nodes is dressed as
+        // it is, unless it is the target of a binding itself
+        std::vector<std::pair<App::DocumentObject*, ViewProviderShaderBinding*>> more;
+        for (const auto &v : directWinners) {
+            for (auto member : SeenThrough::of(v.first, SeenThrough::For::Look))
+                more.emplace_back(canonObject(member), v.second);
+        }
+        for (const auto &v : more) {
+            if (!isShaderFamily(v.first))
+                directWinners.emplace(v.first, v.second);
+        }
+    }
+
+    {
         std::map<ViewProviderShaderBinding*,
                  std::vector<App::DocumentObject*>> directTargets;
         for (const auto &v : directWinners)
@@ -2083,6 +2154,7 @@ void ViewProviderShaderBinding::rebuildAllBindings(App::Document *doc)
             std::string subname;
             scan.visit(obj, obj, subname, 0);
         }
+        scan.mergeSeenThrough();
         if (scan.capped)
             FC_WARN("ShaderBinding occurrence scan of " << doc->getName()
                     << " truncated at " << OccurrenceScan::maxVisited

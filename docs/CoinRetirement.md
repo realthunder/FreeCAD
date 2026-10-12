@@ -3704,6 +3704,69 @@ lookup made to miss, so every entry resolves as before, counter kept):
 the four count checks FAIL, every behaviour check passes. GUI tests 67/67,
 the rest of ctest (expression-image suites aside) 685/685.
 
+### 5.30 An entry of an object that others draw (2026-10-13)
+
+An entry is a key of the selection roots on the path to its object (5.23),
+and it acts on what is drawn UNDER the root it ends at. Two kinds of object
+are not drawn there. What a plain group holds sits beside the group in the
+scene -- flat under the document's root, or flat under the `App::Part` the
+group is in (`LinkChildrenDirect`) -- and the features of a
+`PartDesign::SolidBody` draw the solid while the solid body's own shape is
+hidden. A view's own hide of either ended at nodes that draw nothing:
+measured, `{"Part.Group.": "0"}` hid no box, and `{"Body.Solid.": "0"}`
+hid nothing while a feature showed the solid.
+
+**The change.** `Gui::SeenThrough` (`OwnNodesPath.h`, beside the scope it
+is the other half of) answers for an object which others it is seen
+through: built in for a plain group (what it holds), registered by type for
+anything else (`ViewProviderSolidBody` registers the features of its
+solid). An entry resolves into its own key and, behind it, one key for each
+of those, named as the object is one step up -- `Part.Box.` for a child of
+`Part.Group.`, a bare key for a child of a top-level group -- and so on
+down a group in a group. The answer depends on the structure only, never on
+what is shown, so it is as current as the entry's own key: the group is on
+the entry's path, and a change of what it holds marks the entry for the
+pass (5.26).
+
+Three rules came with it:
+
+- **An entry given by name outranks one an object stands for.** The derived
+  keys go into the table behind every named entry, and an equal key keeps
+  that order: the group hidden and one child of it shown shows the child.
+- **A show is not the same list as a hide.** A plain group shown by a view
+  shows what it holds except a child the group remembers as hidden by hand
+  (`HiddenChildren`), and never its own nodes, which hold every child once
+  more -- the first cut showed them, and a child hidden by hand was drawn
+  and not picked. A solid body shown by a view shows its own shape, which is
+  the solid, and none of its features: one of them at a time is to be seen,
+  and which is not a view's to say. So an entry of such an object is
+  resolved again when its value flips, the one exception to 5.29.
+- **A shader bound to such an object is on the same list**
+  (`SeenThrough::For::Look`, `ViewProviderShaderBinding`): Scope `Object`
+  puts the program in the root of each feature of the solid, Scope
+  `Instance` binds each of them as an occurrence, and one bound by name
+  keeps its own binding. A plain group is not on it; nothing was changed
+  for a shader bound to a group.
+
+**Not done.** `HiddenChildren` is a map and no link: a child hidden by hand
+while a view's show of its hidden group stands is not taken out until the
+structure changes. An element-scoped shader binding is the solid body's own
+shape's alone (an element of the solid is not one of an earlier feature).
+
+**Test.** `tests/gui/per-view-seen-through.py`, 57 checks by pick and by
+the backend's frame, two views: a group in a Part, a group in the group, a
+top-level group by path and by bare name, a child shown by name, a box
+joining and leaving a hidden group, the show with a child hidden by hand,
+a solid body through its tip and through an earlier feature, its show, and
+the shader. Before-state: every "is hidden" claim of a group, and of a
+solid body seen through a feature, fails.
+
+**Found with it, not looked into.** A shader bound with Scope `Instance`
+draws nothing on the Windows box, on a plain top-level box too: the binding
+is made (`AP bind` in the log) and the frame is unchanged. Scope `Object`
+draws. So the `Instance` half above is checked by the bindings made, not by
+a frame.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is
