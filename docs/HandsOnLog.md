@@ -6284,3 +6284,29 @@ nothing off it.** A fresh profile, no document, the dialog opened twice
 2.23 and 1.99 s on this build; the second 0.19 to 0.20 s on both. So the
 1.8 s that entry put down to the Material module reading its library is
 not the question this change stopped asking.
+
+**The copy staged at 17:52 dies when the preferences are opened -- the
+include of the top of the evening's section, on this box.** Found by the
+timing above: one of its two runs on the staged copy ended with
+`0xC0000374`, heap corruption. Then eight sessions on each build, turn
+about, each opening the preferences twice (`g-w-pref-*`): the staged copy
+ended with `0xC0000374` in SIX of eight (seven of ten with the two
+before) -- while the dialog was being built, after its first close, or at
+the session's end with the script's work done; this build in none of
+ten.
+
+Read in the sources, not shown under a debugger: `22ece75a08` has
+`#include "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"`
+in `DlgSettingsUI.cpp`, and from 16:41 to 18:48 that file in the second
+working copy was entry 69's, with three members more
+(`DockOverlayThemeItemColor`, `labelDockOverlayAlpha`,
+`DockOverlayAlpha`); the staged `FreeCADGui.dll` was built at 17:35.
+`resource.cpp`, which makes the page (`PrefPageProducer<DlgSettingsUI>`),
+includes the main tree's header. So the page is allocated by the size of
+one class and constructed by the code of another, three pointers longer:
+24 bytes written past the end of the block. `23e57d647c` is the fix; it is
+in every build of mine since 20:00 and NOT in the copy under test.
+
+For the reporter: on the staged copy, opening Edit > Preferences can end
+the program, at once or some time after. A restage ends it; so far I have
+no word for one.
