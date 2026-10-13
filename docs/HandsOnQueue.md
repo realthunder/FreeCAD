@@ -90,6 +90,23 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 08:18: the build of the Transaction merge PASSED; both suites
+started on it, no result yet. All LOCAL: not pushed, NOT in the staged
+copy.** From the build session (its message of 08:18, written here
+08:17).
+- Build of `5a5b5ff906` (SolidBody + Transaction, OcctFix inside): 07:31
+  to 08:16, "BUILD-FCAD: OK, 1634 steps, no error line in the log".
+- `git merge origin/OcctFix` run on that head at 08:17: "Already up to
+  date." No third merge commit, no third build.
+- Started 08:17 on the dev build: the full ctest, the full Python suite
+  (its temporary directory starting empty), then four loads of the
+  re-saved scanner file and two of the original, the preferences once,
+  and 30 GUI tests -- "the last days' entries, plus task-panel-side,
+  theme-switch-contrast, sketch-auto-color which the merge changed".
+  Results to follow by name.
+- origin/LinkVibe still `4b52e58423`; the staged copy still the one of
+  06:52:40.
+
 **2026-10-13 07:32: the checks on the copy staged 06:52:40 ALL PASSED.
 SolidBody merged and built; Transaction merged, its build running; OcctFix
 is already in Transaction. The merges are LOCAL: not pushed, NOT in the
