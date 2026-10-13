@@ -1542,7 +1542,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | WRITTEN, in a build, NOT committed (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | FIXED ON A BUILD, NOT committed (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
-| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size | OPEN; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; four points under the entry, NOT ANSWERED |
+| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | OPEN, the four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11980,7 +11980,7 @@ Pointers, the note-taker's, nothing run and the source not followed:
   panels), entry 30 (the Python console's background in the theme
   packs).
 
-## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- OPEN, four points not answered
+## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- OPEN, the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums
 
 **2026-10-13 12:19, the reporter:** "new defect, the App::origin plane and axis
 when blocked, shows a dash line/border, but the dash is too sparse, barely
@@ -12057,6 +12057,32 @@ Pointers, READ in the source by the note-taker, nothing run:
 - Near it: entry 54 (a selection shown on top and what lies behind a
   face), the reporter's word of 2026-09-28 that asked for upstream's
   constant on-screen size as the default.
+
+**2026-10-13 13:23, the reporter answers the four points:** "entry 99. a,
+quarter gap, three quarters line. b, scale 200. c, yes for both questions.
+d, same for all"
+
+The note-taker's reading:
+- a. The dashes: three quarters LINE, a quarter GAP -- the reverse of
+  today's a quarter line (as a 16-bit pattern, 0xFFF0 for today's
+  0xF000).
+- b. "scale 200": the DEFAULT of "Datum scale" (`View/DatumScale`)
+  becomes 200 where it is 100.
+- c. Yes to both: the hidden, dashed parts of the axes and of the
+  planes' borders are picked THROUGH a face in front of them; and the
+  plane's FACE keeps its lowered priority.
+- d. The same for all: the origins of bodies and parts, the local
+  coordinate systems, the datum planes and lines.
+Nothing of this entry is left unanswered.
+
+The note-taker's caution on b, not said by the reporter: the reporter's
+own configuration has `DatumScale` written out at 100.000 (read at
+12:19), and a value that is written wins over a changed default. So on
+the reporter's own copy a new default of 200 changes NOTHING until that
+key is removed or set by hand -- unless the change also carries those
+who still have the old default over (as entry 72's did for its two
+values; how that was done is in its commit). Not asked of the reporter;
+for the build session to decide or to ask.
 
 ## Inbox
 
