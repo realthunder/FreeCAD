@@ -1719,6 +1719,15 @@ bool Document::transactionsWanted() const
     // that transaction in every document (docs/TransactionLog.md sec 27.15).
     if (d->replaying || testStatus(Initializing))
         return false;
+    // Nor does one whose objects are being taken down, to be read in again
+    // (File > Revert) or to leave it empty. What the teardown writes -- to a
+    // view provider, with the log on -- opened an implicit transaction that
+    // named objects deleted a moment later; its commit, queued, ran from the
+    // progress bar of the load that followed, and the log asked a deleted
+    // object what it was (docs/HandsOnQueue.md entry 97; the same record of
+    // freed memory ~Document keeps out of the log with d->closing).
+    if (d->clearing)
+        return false;
     return d->iUndoMode || DocumentParams::getTransactionLog() != 0;
 }
 
@@ -2048,8 +2057,12 @@ void Document::clearDocument()
     d->activeObject = nullptr;
 
     if (!d->objectArray.empty()) {
-        GetApplication().signalDeleteDocument(*this);
-        d->clearDocument();
+        {
+            // no transaction of what the teardown writes, see transactionsWanted()
+            Base::FlagToggler<> clearing(d->clearing);
+            GetApplication().signalDeleteDocument(*this);
+            d->clearDocument();
+        }
         GetApplication().signalNewDocument(*this,false);
     }
 
@@ -5327,6 +5340,8 @@ void Document::restore(Base::XMLReader &reader,
     Document *activeDoc = GetApplication().getActiveDocument();
     if (!d->objectArray.empty()) {
         signal = true;
+        // no transaction of what the teardown writes, see transactionsWanted()
+        Base::FlagToggler<> clearing(d->clearing);
         GetApplication().signalDeleteDocument(*this);
         d->clearDocument();
     }
