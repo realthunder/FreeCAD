@@ -1479,6 +1479,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | OPEN; the points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
 | 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
 | 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost | OPEN; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it, and `Pad039` and `Pad040` have references of the same form; four points under the entry, NOT ANSWERED |
+| 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78) | OPEN; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11281,6 +11282,49 @@ Pointers, the note-taker's, nothing run; the cause is NOT found:
 - Both suites are green on the staged code; no test of theirs is known
   to the note-taker to cover a pocket on a sketch's wire by number.
 
+## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- OPEN, four points not answered
+
+**2026-10-13 11:12, the reporter:** "new request, when Ctrl+F and tree view has
+any selection (use the nearest selected item from mouse), launch omni
+search with the object name pre typed"
+
+The note-taker's reading, not the reporter's words:
+- Entry 78 made Ctrl+F in the tree view open the omni search with "/"
+  and a space typed (its object search), and Ctrl+F in the property
+  view open it with the current object's name and a dot (its
+  properties).
+- Now, in the TREE view: when something is selected there, the omni
+  search opens with the NAME of an object already typed. With several
+  items selected: the selected item nearest to the pointer. With
+  nothing selected: as entry 78 has it.
+
+NOT said, lettered for an answer:
+a. THE TEXT typed: "/ " and then the name, so that it stays the object
+   search of entry 78; or the name alone? And with a DOT after it, as
+   the property view's Ctrl+F does (the list then shows the object's
+   properties), or without (the list shows what matches the name)?
+b. WHICH name: the object's internal name (`Pocket023`) or its label?
+   The note-taker's guess: the internal name -- it is what the omni
+   search's paths are made of.
+c. "nearest ... from mouse": nearest by rows in the tree to where the
+   pointer is; and with the pointer OUTSIDE the tree view (the shortcut
+   pressed from the keyboard): the tree's current item, or the first of
+   the selection?
+d. An item selected inside a container or under a link: the object's
+   own name, or the path that leads to it from the top (`Body.Pad`)?
+A smaller point, not put as blocking: the typed name is taken to be
+selected text, so that typing at once replaces it.
+
+Pointers, the note-taker's, from entry 78 as it was built, nothing run:
+- Entry 78 is `b70dab6401` (staged 2026-10-13 06:52); its test is
+  `tests/gui/omni-search-from-tree-and-property-view.py`. From the
+  property view the text typed "leads to the current object, document
+  or view and ends with a dot"; opened on a lone dot with several
+  objects selected the list is of the properties they share.
+- The tree's own choice of ONE item under the pointer exists already
+  for its tooltip (`TreeWidget`'s hit test at `QCursor::pos()`, entry
+  84); "nearest selected" is new.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11290,5 +11334,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 92 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 93 are of 2026-10-13, 82 found by
 it)
