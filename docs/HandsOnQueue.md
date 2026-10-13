@@ -12963,6 +12963,27 @@ nothing run and the source not opened for this:
   looks like here: `Binder017`'s bounding box about 3.2 mm off in x
   after the recompute.
 
+**2026-10-13 15:18, the reporter, a pointer for the idea:** "app::document
+has api to iterate top level path"
+
+The note-taker's reading: step 1 of the idea -- going through all the
+top-level paths to the binder -- needs no new code; the document
+already has a call for it.
+
+READ by the note-taker in the headers, nothing run, a short search:
+- What the search found by that description is on the OBJECT:
+  `App::DocumentObject::getParents()` (`src/App/DocumentObject.h`, near
+  line 508) -- "Obtain top parents and subnames of this object using
+  its InList ... return all top parents", a list of pairs of a top
+  parent and the path of sub-object names from it down to the object.
+  That is the list the idea walks.
+- On `App::Document` itself the search found
+  `getRootObjects()` and `getRootObjectsIgnoreLinks()` (near line 1530
+  of `src/App/Document.h`) -- the top-level objects, not paths. A call
+  of the document that lists PATHS was not found in the header by the
+  words "top level"; the reporter may mean one of these, or one the
+  short search missed. For the build session to pick.
+
 ## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59; the form decided 15:11, "Appearances#1"
 
 **2026-10-13 14:52, the reporter:** "new request, name 'Appearance' property group
