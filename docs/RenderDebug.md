@@ -2055,6 +2055,16 @@ transform — it bypasses the intermediate objects' nodes, so a shader
 attached to `A2` does not reach that shortcut's Box (it is an instance of
 Box, not of A2).
 
+**Scope=Instance drew nothing from 2026-08-06 to 2026-10-13.** The override
+below is a non-on-top selection entry, and 01eac61f4a moved the opaque
+draws of those into a view of their own (`BGFXView::ViewSelection`, GL's
+draw order for selection lines) without adding that view to the ones where
+a user program is switched in (`BGFXViewSubmit.cpp`). The entry replaced
+the base draw with the same picture: every Scope=Instance and
+Scope=Element binding drew with the stock program, on every backend, and
+nothing said so. `tests/gui/user-shader-inputs.py` now has each claim for
+both scopes.
+
 **Scope=Instance — per-occurrence chain override, the sparse mode.** Each
 target child contributes its **resolved object chain**: a link child
 `Link001 → A1."Assembly2.Box."` registers `[A1, A2, Box]` (the link's own

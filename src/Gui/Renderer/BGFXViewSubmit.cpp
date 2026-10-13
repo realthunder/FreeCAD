@@ -1601,12 +1601,20 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // binary — the standard program stands in, never a black
     // object. Parameter uniforms must be recorded with the
     // consuming draw (see submitDebug).
+    //
+    // ViewSelection with them: a shader bound by its path (Scope
+    // Instance, SoFCRenderCacheManager::addShaderOverride()) arrives as
+    // a non-on-top selection entry that replaces the base draw, and
+    // those have been drawn in a view of their own since the selection
+    // lines were put in GL's order. Left out here, every such binding
+    // drew with the stock program: the frame was the frame without it.
     if (mat.usershader && !mat.usershader->fragmentSource.empty()
             && (mat.usershader->stage == "material"
                 || mat.usershader->stage == "particle")
             && mat.type == Render::Material::Triangle
             && pass == PassNormal && !oitDraw
             && (passView == ViewOpaque || passView == ViewTransparent
+                || passView == ViewSelection
                 || passView == ViewParticles
                 || passView == ViewGroundRefl)) {
         bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(

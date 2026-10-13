@@ -3770,19 +3770,20 @@ that document has a `HiddenChildren` map.
 **Not done.** An element-scoped shader binding is the solid body's own
 shape's alone (an element of the solid is not one of an earlier feature).
 
-**Test.** `tests/gui/per-view-seen-through.py`, 57 checks by pick and by
+**Test.** `tests/gui/per-view-seen-through.py`, 66 checks by pick and by
 the backend's frame, two views: a group in a Part, a group in the group, a
 top-level group by path and by bare name, a child shown by name, a box
-joining and leaving a hidden group, the show with a child hidden by hand,
-a solid body through its tip and through an earlier feature, its show, and
-the shader. Before-state: every "is hidden" claim of a group, and of a
-solid body seen through a feature, fails.
+joining and leaving a hidden group, the show with a child hidden by hand
+before it and with one hidden by hand while it stands, a solid body through
+its tip and through an earlier feature, its show, and the shader in both
+scopes. Before-state: every "is hidden" claim of a group, and of a solid
+body seen through a feature, fails; the child hidden while the show stands
+failed until `dependsOn()`.
 
-**Found with it, not looked into.** A shader bound with Scope `Instance`
-draws nothing on the Windows box, on a plain top-level box too: the binding
-is made (`AP bind` in the log) and the frame is unchanged. Scope `Object`
-draws. So the `Instance` half above is checked by the bindings made, not by
-a frame.
+**Found with it.** A shader bound with Scope `Instance` drew nothing, on a
+plain top-level box too: not this work's and not the Windows box's, but
+every backend's since 2026-08-06 (docs/RenderDebug.md 6.5). Fixed with it,
+which is what let the `Instance` half above be checked by a frame.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 

@@ -1,4 +1,6 @@
-"""A user fragment stage names the varyings it reads, and no more.
+"""Two ways a user program did not come up: its inputs, and its binding.
+
+A user fragment stage names the varyings it reads, and no more.
 
 A fragment program written for the stock vertex stage says what it reads
 of it: '$input v_normal, v_color0, v_vpos' is what docs/RenderDebug.md
@@ -9,15 +11,22 @@ object went on being drawn by the stock program. The renderer now hands the
 compile the vertex stage's whole list in its order (BGFXRenderer.cpp,
 completeInputs()).
 
-Claims, each by the backend's own frame at the middle of a box:
+And a program bound by a path (Scope 'Instance') replaces the draws of
+that occurrence through an entry the renderer draws in a view of its own
+(BGFXView::ViewSelection), where the user program was never switched in:
+since 2026-08-06 every such binding drew with the stock program, on every
+backend.
+
+Claims, each by the backend's own frame at the middle of a box, each for a
+binding of Scope 'Object' and one of Scope 'Instance':
   - a program naming three varyings comes up;
   - so does one naming one, and one naming none;
-  - one naming the whole list is as before;
+  - one naming the whole list comes up;
   - one naming a varying the vertex stage does not hand on does not come
     up, and takes nothing else down: the box is drawn by the stock program.
 
-Scored against the tree before it, on Direct3D: the first two claims FAIL.
-On OpenGL all of it passed before as well.
+Scored against the tree before it: every 'comes up' claim of Scope
+'Instance' FAILs; on Direct3D so do three, one and none of Scope 'Object'.
 """
 import os
 import time
@@ -109,7 +118,8 @@ def run():
         stock = colour(view, middle)
         note("stock %s" % (stock,))
 
-        for name, inputs, rgb, comes in CASES:
+        for scope, name, inputs, rgb, comes in [(s,) + c for s in ("Object", "Instance")
+                                                for c in CASES]:
             want = tuple(shown(float(v)) for v in rgb.split(","))
             program = doc.addObject("App::ShaderProgram", "Program")
             program.FragmentProgram = inputs + (BODY % rgb)
@@ -119,7 +129,7 @@ def run():
             link = doc.addObject("App::Link", "Target")
             link.LinkedObject = box
             binding = doc.addObject("App::ShaderBinding", "Binding")
-            binding.Scope = "Object"
+            binding.Scope = scope
             binding.ElementList = [shader, link]
             doc.recompute()
             link.ViewObject.Visibility = False
@@ -132,18 +142,19 @@ def run():
                 if comes and near(got, want):
                     break
             if comes:
-                check("a program naming %s comes up" % name, near(got, want), (got, want))
+                check("%s: a program naming %s comes up" % (scope, name), near(got, want),
+                      (got, want))
             else:
-                check("a program naming an unknown varying does not come up",
+                check("%s: a program naming an unknown varying does not come up" % scope,
                       not near(got, want), (got, want))
-                check("and the box is drawn by the stock program", near(got, stock),
-                      (got, stock))
+                check("%s: and the box is drawn by the stock program" % scope,
+                      near(got, stock), (got, stock))
             for obj in (binding, link, shader, program):
                 doc.removeObject(obj.Name)
             doc.recompute()
             settle(0.6)
             back = colour(view, middle)
-            check("the binding of %s removed, the box is as it was" % name,
+            check("%s: the binding of %s removed, the box is as it was" % (scope, name),
                   near(back, stock), (back, stock))
     except Exception:
         note("ABORT:\n" + traceback.format_exc())

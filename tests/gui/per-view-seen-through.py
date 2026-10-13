@@ -27,8 +27,9 @@ Claims:
     it, the tip moved included, and leaves the other solid; shown by a view
     where the document hides the solid, its own shape is drawn;
   - a shader bound to the solid body dresses the solid through the feature
-    that shows it (Scope 'Object'). Skipped where a user shader does not
-    come up on a plain box either.
+    that shows it, Scope 'Object' and Scope 'Instance'. Each is skipped
+    where a user shader of that scope does not come up on a plain box
+    either.
 
 Scored against the tree before it: every 'is hidden' claim of a group and
 of a solid body seen through a feature FAILs, and so does the shader's.
@@ -322,11 +323,11 @@ def solids():
     shader.Programs = [prog]
     shader.Demo = "None"
 
-    def bind(target):
+    def bind(target, scope):
         link = doc.addObject("App::Link", "Target")
         link.LinkedObject = target
         look = doc.addObject("App::ShaderBinding", "Look")
-        look.Scope = "Object"
+        look.Scope = scope
         look.ElementList = [shader, link]
         doc.recompute()
         link.ViewObject.Visibility = False
@@ -347,24 +348,34 @@ def solids():
         return False
 
     on_plain = FreeCAD.Vector(85, 0, 5)
-    look, link = bind(plain)
-    works = comes_up(on_plain)
-    unbind(look, link)
-    if not works:
-        note("SKIP the shader claims: a user shader does not come up on a plain box here")
-    else:
-        check("the shader is gone from the plain box", not red(v1, on_plain))
-        look, link = bind(solid)
-        check("a shader on the solid body, seen through its tip", comes_up(points["second"]))
-        check("the other solid is not dressed", not red(v1, points["other"]))
+    # Scope Object puts the program in the roots of what is bound, Scope
+    # Instance binds each occurrence by its path
+    for scope in ("Object", "Instance"):
+        look, link = bind(plain, scope)
+        works = comes_up(on_plain)
+        unbind(look, link)
+        if not works:
+            note("SKIP the shader claims of Scope %s: a user shader does not come up"
+                 " on a plain box here" % scope)
+            continue
+        check("%s: the shader is gone from the plain box" % scope, not red(v1, on_plain))
+        look, link = bind(solid, scope)
+        check("%s: a shader on the solid body, seen through its tip" % scope,
+              comes_up(points["second"]))
+        check("%s: the other solid is not dressed" % scope, not red(v1, points["other"]))
         solid.Tip = a
         a.Visibility = True
         doc.recompute()
         settle(0.6)
-        check("a shader on the solid body, seen through an earlier feature",
+        check("%s: a shader on the solid body, seen through an earlier feature" % scope,
               comes_up(points["first"]))
         unbind(look, link)
-        check("the binding removed, the feature is as it was", not red(v1, points["first"]))
+        check("%s: the binding removed, the feature is as it was" % scope,
+              not red(v1, points["first"]))
+        solid.Tip = b
+        b.Visibility = True
+        doc.recompute()
+        settle(0.6)
     FreeCAD.closeDocument(DOC)
     return True
 
