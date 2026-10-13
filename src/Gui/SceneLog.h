@@ -1,0 +1,59 @@
+/***************************************************************************
+ *   Copyright (c) 2026 Zheng Lei (realthunder) <realthunder.dev@gmail.com>*
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#ifndef GUI_SCENELOG_H
+#define GUI_SCENELOG_H
+
+#include <FCGlobal.h>
+
+namespace Gui
+{
+
+/** The transaction log of a served document, for a client's own panel of it
+ * (docs/TransactionLog.md sec 32.21).
+ *
+ * The desktop's panel is a dock of the host's window, and one widget: a
+ * client is not shown it. A client has a panel of its own, drawn in its
+ * page, and asks the host for what it lists:
+ *
+ *   log.rows   the rows, newest first and a page at a time: who, when,
+ *              what kind, on which branch, how many ops
+ *   log.ops    the ops of one row: object, property, the refs of the value
+ *              before and after, and whether the change can be shown
+ *   log.value  one value by its ref, as the text the log holds
+ *
+ * and is told `log.changed` when the log of a document it has asked the
+ * rows of has more, or other, rows.
+ *
+ * Seeing the log needs the right to edit (ruled 2026-10-13): the three are
+ * registered as ops that write, so a connection that may only look is
+ * answered ViewOnly before any of them runs, and the push goes to no such
+ * connection.
+ *
+ * A row's change is shown as the edit it is (ViewProvider::ValueDiff): the
+ * `edit` op with the row named.
+ */
+GuiExport void installSceneLogOps();
+
+}  // namespace Gui
+
+#endif  // GUI_SCENELOG_H
