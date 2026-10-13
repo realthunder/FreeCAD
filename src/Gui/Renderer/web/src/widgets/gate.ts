@@ -29,6 +29,7 @@ import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilte
          layoutRefs, panelButtonOp, refId, selectionWrite,
          BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_OK } from './protocol.ts';
 import type { Frame } from './protocol.ts';
+import { logAuthor, logOpText, logRefusal, logWhen, mergeNewest } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -701,4 +702,62 @@ function checkImages(): void {
   check(t, 'another size is another fetch', themed.asked === 3, `asked ${themed.asked}`);
 }
 
+/// The transaction log's panel (logpanel.tsx, docs/TransactionLog.md sec
+/// 32.21): what it says of a row and an op, and which rows it keeps when
+/// the host answers again.
+function checkLog(): void {
+  const t = 'log panel';
+  const row = (seq: number, extra: Record<string, unknown> = {}): any => ({
+    seq, parent: seq - 1, kind: 'user', origin: 'gui', name: `row ${seq}`, time: 0,
+    author: 'host', authorKind: 'local', branch: 1, branchName: 'main', ops: 1,
+    here: true, ...extra });
+  const seqs = (rows: Array<{ seq: number }>): string => rows.map((r) => r.seq).join(',');
+
+  // the newest page again, with older ones loaded under it
+  const old = [row(9), row(8), row(7), row(6), row(5), row(4)];
+  const page = [row(11), row(10), row(9), row(8)];
+  check(t, 'the newest page goes on top, the older ones stay under it',
+        seqs(mergeNewest(old, page, true)) === '11,10,9,8,7,6,5,4',
+        seqs(mergeNewest(old, page, true)));
+  check(t, 'on another branch the older ones are not kept',
+        seqs(mergeNewest(old, page, false)) === '11,10,9,8',
+        seqs(mergeNewest(old, page, false)));
+  check(t, 'a page with no rows is no rows', mergeNewest(old, [], true).length === 0);
+  check(t, "what the page says of a row replaces what was said of it",
+        mergeNewest([row(9, { here: true })], [row(9, { here: false })], true)[0].here === false);
+
+  check(t, "the desktop's user stands alone", logAuthor(row(1)) === 'host', logAuthor(row(1)));
+  check(t, 'a name nothing verified says so',
+        logAuthor(row(1, { author: 'ann', authorKind: 'invited' })) === 'ann (invited)');
+  check(t, 'a verified name stands alone',
+        logAuthor(row(1, { author: 'ann', authorKind: 'verified' })) === 'ann');
+
+  const noon = new Date(2026, 9, 13, 12, 0, 0);
+  const sameDay = new Date(2026, 9, 13, 9, 5, 7).getTime() / 1000;
+  const dayBefore = new Date(2026, 9, 12, 9, 5, 7).getTime() / 1000;
+  check(t, 'a row of today says its time', logWhen(sameDay, noon).length > 0
+        && logWhen(dayBefore, noon).length > logWhen(sameDay, noon).length,
+        `${logWhen(sameDay, noon)} | ${logWhen(dayBefore, noon)}`);
+  check(t, 'a row with no time says nothing', logWhen(0, noon) === '');
+
+  const op = (extra: Record<string, unknown>): any => ({
+    idx: 0, op: 'set', kind: 'obj', prop: 'Height', type: 'App::PropertyLength',
+    cid: 7, obj: 'Box', label: 'The box', ...extra });
+  check(t, 'a set names the object by its label and the property',
+        logOpText(op({})) === 'The box: Height', logOpText(op({})));
+  check(t, 'an object made', logOpText(op({ op: 'create', prop: '' })) === 'The box made');
+  check(t, 'an object that is gone is known by the name the log has',
+        logOpText(op({ op: 'remove', prop: '', label: undefined })) === 'Box removed');
+  check(t, 'one with no name by its number',
+        logOpText(op({ label: undefined, obj: undefined })) === '#7: Height');
+  check(t, "the document's own", logOpText(op({ kind: 'doc', prop: 'Comment' }))
+        === 'document: Comment');
+
+  check(t, 'a viewer is told why', logRefusal({ code: 'ViewOnly' }).includes('right to edit'));
+  check(t, 'a document with no log says so', logRefusal({ code: 'NoLog' }).includes('no history'));
+  check(t, 'anything else says what the host said',
+        logRefusal({ code: 'LogError', message: 'boom' }) === 'boom');
+}
+
+checkLog();
 main();

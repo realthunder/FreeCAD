@@ -807,6 +807,142 @@ html.fc-split-forbidden * {
   color: #ffb0b0;
   background: rgba(120, 30, 30, 0.35);
 }
+/* The transaction log's panel (logpanel.tsx, docs/TransactionLog.md sec
+   32.21): a card of the sheet's kind at the other side, three lists one
+   under the other -- the rows, the ops of the one chosen, a value. Each
+   scrolls by itself, so a long one costs the others nothing. */
+.fc-log {
+  pointer-events: auto;
+  position: fixed;
+  left: 16px;
+  top: calc(var(--fc-top, 0px) + 16px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(78vh, 720px);
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(24, 26, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.fc-log-head,
+.fc-log-valuehead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.fc-log-head { cursor: move; }
+.fc-log-valuehead { border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.fc-log-title { font-weight: 600; }
+.fc-log-spacer { flex: 1; }
+.fc-log-branch,
+.fc-log-kind {
+  font-size: 11px;
+  color: #a8b4c4;
+  border: 1px solid rgba(168, 180, 196, 0.35);
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.fc-log-records { display: flex; align-items: center; gap: 4px; color: #a8b4c4; }
+.fc-log-close {
+  font-size: 16px;
+  line-height: 1;
+  color: #e8e8ea;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.fc-log-error {
+  padding: 4px 8px;
+  color: #ffb0b0;
+  background: rgba(120, 30, 30, 0.35);
+}
+.fc-log-empty { padding: 6px 8px; color: #a8b4c4; }
+.fc-log-rows { flex: 2 1 160px; min-height: 90px; overflow: auto; }
+.fc-log-ops {
+  flex: 1 1 90px;
+  min-height: 56px;
+  max-height: 200px;
+  overflow: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.fc-log-rows table { width: 100%; border-collapse: collapse; }
+.fc-log-rows th {
+  position: sticky;
+  top: 0;
+  text-align: left;
+  font-weight: 600;
+  color: #a8b4c4;
+  background: rgb(34, 36, 41);
+  padding: 3px 8px;
+}
+.fc-log-rows td { padding: 3px 8px; white-space: nowrap; }
+.fc-log-rows td:nth-child(2) { white-space: normal; width: 100%; }
+.fc-log-rows tbody tr,
+.fc-log-op { cursor: pointer; }
+.fc-log-rows tbody tr:hover,
+.fc-log-op:hover { background: rgba(255, 255, 255, 0.06); }
+.fc-log-rows tr.fc-log-sel,
+.fc-log-op.fc-log-sel { background: rgba(88, 132, 255, 0.28); }
+.fc-log-num { text-align: right; color: #a8b4c4; }
+.fc-log-record { color: #8a8f98; }
+.fc-log-away { font-style: italic; color: #9aa0aa; }
+.fc-log-op { display: flex; align-items: center; padding: 3px 8px; }
+.fc-log-optext { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-log-more,
+.fc-log-show,
+.fc-log-side {
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.fc-log-more { display: block; margin: 6px auto; }
+.fc-log-show { margin-left: 6px; }
+.fc-log-show:disabled { opacity: 0.5; cursor: default; }
+.fc-log-side.fc-log-sel { background: rgba(88, 132, 255, 0.28); }
+.fc-log-value {
+  flex: 1 1 80px;
+  min-height: 48px;
+  max-height: 180px;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  font: 11px ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #cfd3da;
+}
+@media (max-width: 640px) {
+  .fc-log {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: 100vw;
+    max-height: 70vh;
+    border-radius: 8px 8px 0 0;
+  }
+  .fc-log-close,
+  .fc-log-more,
+  .fc-log-show,
+  .fc-log-side { min-height: 44px; min-width: 44px; }
+  .fc-log-rows td,
+  .fc-log-op { padding-top: 8px; padding-bottom: 8px; }
+}
 /* The grid is DOCUMENT content, not chrome, so it keeps a document's light
    surface even though the panel around it is dark. The host sends the
    desktop's own colours -- black text, the yellow alias background, a green

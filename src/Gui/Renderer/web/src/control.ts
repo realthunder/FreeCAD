@@ -496,6 +496,115 @@ export function onSheetChanged(
   return onPush('sheet.changed', fn);
 }
 
+// ---- The transaction log (docs/TransactionLog.md sec 32.21) ----
+
+/// One row of the log as the host lists it (Gui/SceneLog.cpp).
+export interface LogRow {
+  seq: number;
+  parent: number;
+  kind: string;              // user, implicit, recompute, undo, redo, merge, ...
+  origin: string;
+  name: string;
+  time: number;              // seconds since the epoch
+  author: string;
+  authorKind: string;        // local, verified, invited, declared, enrolled
+  branch: number;
+  branchName: string;
+  inverts?: number;          // the row an undo or a redo is the inverse of
+  merged?: number;           // a merge's second parent
+  ops: number;               // 0: a record, which changed nothing
+  here: boolean;             // of the history the document is at the head of
+}
+
+export interface LogRowsReply {
+  doc: string;
+  rows: LogRow[];            // newest first
+  more: boolean;             // older ones than these exist
+  reset?: boolean;           // more came than a page: start over from these
+  last: number;
+  head: number;
+  branch: number;
+  branchName: string;
+}
+
+/// One op of a row.
+export interface LogOp {
+  idx: number;
+  op: string;                // create, remove, set, addprop, delprop
+  kind: string;              // doc, obj, view
+  prop: string;
+  type: string;
+  before?: string;           // the refs of the value before and after
+  after?: string;
+  derived?: boolean;
+  followed?: boolean;
+  cid?: number;
+  obj?: string;
+  label?: string;
+  here?: boolean;            // the object is in the document now
+  shows?: boolean;           // its view can show the two states
+}
+
+export interface LogOpsReply {
+  doc: string;
+  row: number;
+  name: string;
+  script?: string;
+  ops: LogOp[];
+  count: number;             // how many the row has; `ops` may be fewer
+}
+
+export interface LogValueReply {
+  ref: string;
+  text: string;
+  bytes: number;
+  truncated: boolean;
+  attachments: Array<{ name: string; bytes: number }>;
+}
+
+const withDoc = (doc: string | undefined, fields: Record<string, unknown>) =>
+  (doc ? { doc, ...fields } : fields);
+
+/// A page of rows, newest first: the newest, those before `before`, or
+/// what came after `after`. Asking is also what subscribes this connection
+/// to `log.changed` for the document. For those who may edit: a viewer is
+/// answered ViewOnly.
+export function logRows(
+  doc?: string,
+  range: { before?: number; after?: number; limit?: number } = {},
+): Promise<LogRowsReply> {
+  return sendOp('log.rows', withDoc(doc, range));
+}
+
+export function logOps(row: number, doc?: string): Promise<LogOpsReply> {
+  return sendOp('log.ops', withDoc(doc, { row }));
+}
+
+export function logValue(ref: string, doc?: string): Promise<LogValueReply> {
+  return sendOp('log.value', withDoc(doc, { ref }));
+}
+
+/// The host's "this document's log has other rows now": the document's
+/// name and nothing of the log.
+export function onLogChanged(fn: (msg: { doc: string }) => void): () => void {
+  return onPush('log.changed', fn);
+}
+
+/// Gui::ViewProvider::ValueDiff: the edit that shows a change of an
+/// object's value as its two states.
+export const EDIT_VALUE_DIFF = 6;
+
+/// Show what row `row` made of object `obj`, as the edit it is: the
+/// host's panel of it is mirrored, and comes up by itself (main.tsx).
+///
+/// An edit runs in the view this connection stated, and a page nobody has
+/// clicked in has stated none (docs/ThinClient.md sec 8.10b): the camera
+/// goes up first, as the viewer's own ask for an edit sends it.
+export function showRowChange(obj: string, row: number, doc?: string): Promise<any> {
+  window.fcviewerStateCamera?.();
+  return sendOp('edit', withDoc(doc, { obj, mode: EDIT_VALUE_DIFF, row }));
+}
+
 // ---- The streamed desktop tool bars (docs/ThinClient.md 8.11 item 4) ----
 
 /// Listen for the scene socket going up or down. Returns the unsubscribe.

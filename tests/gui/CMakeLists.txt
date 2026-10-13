@@ -179,6 +179,16 @@ fc_add_gui_test(GuiServeShapeDiffEdit_tests_run serve-shape-diff-edit.py
 fc_add_gui_test(GuiServeShapeDiffBrowser_tests_run serve-shape-diff-browser.py
                 --timeout 600)
 
+# The transaction log read by a served client (Gui/SceneLog.cpp): the rows
+# a page at a time, the ops of one, a value, the cue that there are more;
+# refused to a client that may only look; a row's change shown as the edit
+# it is, by the `edit` op with the row named. And the page's own panel of
+# it in a real browser, which skips where there is no viewer or no browser.
+fc_add_gui_test(GuiServeLog_tests_run serve-log.py
+                --timeout 240)
+fc_add_gui_test(GuiServeLogBrowser_tests_run serve-log-browser.py
+                --timeout 600)
+
 # The preference PerViewEdit: an edit runs in the one view it is started
 # in. The other 3D windows of the document do not join -- they keep the
 # document as it is, and answer "not in edit" -- and with it off every

@@ -5,6 +5,7 @@ import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
 import { SheetPanel } from './sheet';
+import { LogPanel } from './logpanel';
 import { ConsolePanel } from './console';
 import { TaskPanelCard } from './widgets/panel';
 import { HudCard } from './hud';
@@ -18,7 +19,7 @@ import { OmniBox } from './omni';
 import { ToolbarStrip } from './toolbar';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
-import { sendOp, sendRequestFile } from './control';
+import { EDIT_VALUE_DIFF, sendOp, sendRequestFile } from './control';
 import type { CyclesDevice, CyclesState, SelectionItem, Subject } from './control';
 // Extraction only (cssCodeSplit: false emits it as web/inspector.css);
 // the injection below is what actually loads it.
@@ -218,6 +219,12 @@ const [cardOpen, setCardOpen] = createSignal(false);
 const [sheetOpen, setSheetOpen] = createSignal(
   new URLSearchParams(location.search).has('sheet'));
 
+// The transaction log's panel (docs/TransactionLog.md sec 32.21): the page's
+// own card of the served document's history. `?log` is the viewer's console
+// overlay, so on load it is `?history`.
+const [logOpen, setLogOpen] = createSignal(
+  new URLSearchParams(location.search).has('history'));
+
 // The Python console (docs/Sandbox.md 7.20 C4): a guest in this page, booted
 // the first time the panel opens, reaching the served document as this
 // client over the viewer's own socket. `?console` opens it on load. The
@@ -346,7 +353,6 @@ const [taskPanelOpen, setTaskPanelOpen] = createSignal(
 // the last change of an object, its slider and what was found
 // (docs/TransactionLog.md sec 32.19; Gui::ViewProvider::ValueDiff) --
 // brings the card up with it, and takes it away again if it did.
-const EDIT_VALUE_DIFF = 6;
 let panelOpenedForEdit = false;
 window.addEventListener('fc:edit', (e: Event) => {
   const d = (e as CustomEvent).detail ?? {};
@@ -376,6 +382,8 @@ render(() => (
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
                 viewOnly={viewOnly} doc={() => docs().current} />
+    <LogPanel open={logOpen} onClose={() => setLogOpen(false)}
+              viewOnly={viewOnly} doc={() => docs().current} />
     <OmniBox open={omniOpen} onClose={() => setOmniOpen(false)}
              selection={selection} viewOnly={viewOnly} host={isHost} />
     <ConsolePanel open={consoleOpen} onClose={() => setConsoleOpen(false)}
@@ -390,7 +398,7 @@ render(() => (
     <NaviCubeMenu />
     <SceneContextMenu viewOnly={viewOnly} />
     <LauncherMenu
-      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen() || logOpen()
                      || consoleOpen()) && window.innerWidth <= NARROW}
       items={[
         ...docItems(),
@@ -404,6 +412,9 @@ render(() => (
         { label: 'Spreadsheet',
           checked: () => sheetOpen(),
           onSelect: () => setSheetOpen(!sheetOpen()) },
+        ...(viewOnly() ? [] : [{ label: 'History',
+                                 checked: () => logOpen(),
+                                 onSelect: () => setLogOpen(!logOpen()) }]),
         { label: 'Toolbars',
           checked: () => toolbarsOn(),
           onSelect: toggleToolbars },
@@ -420,7 +431,7 @@ render(() => (
       ]}
     />
     <LauncherMenu
-      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen() || logOpen()
                      || consoleOpen()) && window.innerWidth <= NARROW}
       glyph={
         /* Cursor-arrow "select" icon, inline so every device draws the
