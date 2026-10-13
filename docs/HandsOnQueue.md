@@ -1519,6 +1519,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | OPEN; the three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN; a fix in the source, NOT built: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
+| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size | OPEN; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11872,6 +11873,84 @@ Pointers, the note-taker's, nothing run and the source not followed:
   panels), entry 30 (the Python console's background in the theme
   packs).
 
+## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- OPEN, four points not answered
+
+**2026-10-13 12:19, the reporter:** "new defect, the App::origin plane and axis
+when blocked, shows a dash line/border, but the dash is too sparse, barely
+reconizable. make it a bit more dense. and how is origin size controlled
+now? it's current size is too small, coupled with sparse dash made it so
+much worse. also change the picking strategy to prioritize on axis and
+plan border picking. actually there is special handling to lower picking
+priority for original plane. but with this samll size of origin, they are
+all blocked by object, hence non-pickable practically. so make the axis
+and border picking normal would be enought, because they are in on-top
+show group"
+
+The note-taker's reading, not the reporter's words -- three things:
+1. A DEFECT, the dashes: where an origin's axis or the border of one of
+   its planes lies behind an object, it is drawn dashed; the dashes are
+   so far apart that the line can barely be made out. Wanted: "a bit
+   more dense".
+2. A QUESTION, answered below, with a complaint in it: the origin is
+   too small as it is drawn now.
+3. A CHANGE of picking: the axes and the planes' BORDERS are to be
+   picked like any other geometry. The reporter's reasoning: there is a
+   special lowering of the pick priority for the origin's planes; with
+   the origin this small everything of it lies behind the object, so
+   nothing of it can be picked in practice; the axes and borders are
+   drawn in the group shown on top, so normal priority for those two is
+   enough. (The plane's FACE is not named: by the note-taker's reading
+   it keeps its lowered priority.)
+
+The QUESTION answered, READ in the source and in the reporter's
+configuration by the note-taker, nothing run:
+- The size is a setting since the datum sizing was made to follow
+  upstream: `View/DatumScreenSize`, "Constant datum size on screen",
+  ON by default -- origins, coordinate systems and datum elements are
+  drawn at a constant size ON SCREEN, whatever the model's size and the
+  zoom. With it OFF an origin is sized to the objects of its body or
+  part (the fork's older way).
+- The on-screen size is tuned by three more of the same group
+  (`src/Gui/ViewParams.py`): `DatumScale`, "Datum scale", in percent,
+  100; `DatumPlaneSize` 62, a plane's size before the scale;
+  `DatumLineSize` 70, an axis's length before the scale. And
+  `DatumTemporaryScaleFactor` 2: how much the planes grow while a
+  reference is picked from them.
+- The reporter's configuration has all of them at these defaults
+  (`DatumScreenSize` 1, `DatumScale` 100). So "too small" is the
+  default; "Datum scale" at 150 or 200 makes the whole origin that much
+  larger. Whether these are shown on a preference page was not looked
+  for; the omni search finds settings by name.
+
+NOT said, lettered for an answer:
+a. THE DASHES: how dense -- about half line and half gap? Today a
+   quarter is line and three quarters gap (the pattern 0xF000,
+   "dash-skip-skip-skip").
+b. THE SIZE: is a larger DEFAULT wanted ("Datum scale" 150? 200?), or
+   is knowing the setting enough?
+c. THE PICKING: the axes and the borders at normal priority -- also
+   their HIDDEN, dashed parts, so that an axis behind a face is picked
+   THROUGH the face in front of it? (That is what "shown on top" would
+   mean for picking.) And the plane's face keeps its lowered priority?
+d. WHICH things: the origin of a body and of a part only, or a local
+   coordinate system and the datum planes and lines as well -- the same
+   drawing code serves them all?
+
+Pointers, READ in the source by the note-taker, nothing run:
+- The dashes: `src/Gui/ViewProviderDatum.cpp` near line 335 -- the
+  hidden features are drawn in an `SoFCPathAnnotation` (priority -1)
+  with a line width of 2 and `linePattern` 0xF000.
+- The picking: `src/Gui/ViewProviderPlane.cpp` puts the plane's face in
+  an `SoFCLatePickGroup` (near line 79) -- the lowering the reporter
+  speaks of -- and gives the plane and `ViewProviderLine.cpp` the axis
+  a pick style by bounding box.
+- The size: `ViewProviderDatum::updateDatumSize`
+  (`ViewProviderDatum.cpp` near line 201), which reads the settings
+  above.
+- Near it: entry 54 (a selection shown on top and what lies behind a
+  face), the reporter's word of 2026-09-28 that asked for upstream's
+  constant on-screen size as the default.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11881,5 +11960,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 98 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 99 are of 2026-10-13, 82 found by
 it)
