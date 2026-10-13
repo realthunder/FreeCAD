@@ -567,6 +567,9 @@ public:
                    Color,
                    ExportInGroup,
                    TransformAt,
+                   /// The last change of the object's value, shown as two
+                   /// states (ViewProviderDocumentObject::showValueDiff())
+                   ValueDiff,
                    UserEditMode = 100,
     };
 protected:

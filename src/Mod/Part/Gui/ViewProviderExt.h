@@ -63,7 +63,7 @@ struct SimplifiedMesh;
 struct SimplifyStats;
 }
 
-namespace Gui { class SoFCRenderMaterial; }
+namespace Gui { class SoFCRenderMaterial; class EditingRoot; }
 
 namespace PartGui {
 
@@ -383,6 +383,18 @@ public:
     //@{
     void setupContextMenu(QMenu*, QObject*, const char*) override;
     virtual void setEditViewer(Gui::ViewerContext*, int ModNum) override;
+    void unsetEditViewer(Gui::ViewerContext*) override;
+    /** What the edit mode ViewProvider::ValueDiff shows: the property and
+     * the two refs of its last change in the log, and the row's name --
+     * for the task's panel (TaskShapeDiff), which asks showValueDiff() for
+     * them with its own options. Empty outside that edit.
+     */
+    //@{
+    const std::string &editedDiffProperty() const { return diffEditProp; }
+    const std::string &editedDiffBefore() const { return diffEditA; }
+    const std::string &editedDiffAfter() const { return diffEditB; }
+    const std::string &editedDiffRow() const { return diffEditWhat; }
+    //@}
 
     virtual void setShapePropertyName(const char *propName);
     const char *getShapePropertyName() const;
@@ -981,6 +993,16 @@ protected:
     std::string diffProp;
     std::string diffA;
     std::string diffB;
+    /// The edit session whose node what showValueDiff() shows is, and the
+    /// frame the two states are in there; null outside the edit mode
+    /// ViewProvider::ValueDiff, where it hangs under the object's root
+    Gui::EditingRoot *diffSession = nullptr;
+    Base::Matrix4D diffWorld;
+    /// What that edit mode shows (editedDiffProperty() and the rest)
+    std::string diffEditProp;
+    std::string diffEditA;
+    std::string diffEditB;
+    std::string diffEditWhat;
 
     friend class SoFCCoordinate3;
 

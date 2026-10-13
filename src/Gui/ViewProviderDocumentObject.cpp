@@ -44,6 +44,8 @@
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/MaterialAppearance.h>
 #include <App/Origin.h>
+#include <App/TransactionLog.h>
+#include <App/TransactionStore.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 
@@ -679,6 +681,35 @@ void ViewProviderDocumentObject::hideValueDiff()
 std::map<std::string, double> ViewProviderDocumentObject::getValueDiff() const
 {
     return {};
+}
+
+bool ViewProviderDocumentObject::lastValueChange(const char *prop, std::string &before,
+                                                 std::string &after, std::string *what) const
+{
+    App::DocumentObject *obj = getObject();
+    App::Document *doc = obj ? obj->getDocument() : nullptr;
+    App::TransactionLog *log = doc ? doc->getTransactionLog() : nullptr;
+    if (!log || !prop || !prop[0])
+        return false;
+    App::LogOp op;
+    try {
+        App::TransactionStore &store = log->store();
+        if (!store.lastOpOn("obj", obj->getID(), prop, 0, log->head(), op) || op.op != "set")
+            return false;
+        if (what) {
+            const auto rows = store.transactions(op.txn, 1);
+            const std::string name = !rows.empty() && rows.front().seq == op.txn
+                ? rows.front().name : std::string();
+            *what = name.empty() ? "row " + std::to_string(op.txn)
+                                 : name + " (row " + std::to_string(op.txn) + ")";
+        }
+    }
+    catch (const Base::Exception &) {
+        return false;
+    }
+    before = op.vbefore.empty() ? std::string("-") : op.vbefore;
+    after = op.vafter;
+    return true;
 }
 
 void ViewProviderDocumentObject::update(const App::Property* prop)

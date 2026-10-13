@@ -122,6 +122,16 @@ public:
     virtual void hideValueDiff();
     /// What showValueDiff() shows now, as numbers by name; empty where nothing is
     virtual std::map<std::string, double> getValueDiff() const;
+    /** The newest change of property \a prop of this object that the log
+     * holds on the branch the document is on: the refs of the value before
+     * it and after, as showValueDiff() takes them -- "-" for none before,
+     * the object having been made with it, and empty after where the log
+     * holds no ref and the value is the object's own. \a what is given the
+     * row's name and number, for whoever is told.
+     * @return false with no log, or no change of that property in it.
+     */
+    bool lastValueChange(const char *prop, std::string &before, std::string &after,
+                         std::string *what = nullptr) const;
     //@}
     /// Re-read DisplayModeInView from \a view's ObjectDisplayModes
     /// entry for this object (null = no active 3D view, shows "Use
