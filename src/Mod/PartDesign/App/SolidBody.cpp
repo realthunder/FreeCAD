@@ -26,9 +26,13 @@
 #include <set>
 #include <sstream>
 
+#include <Standard_Failure.hxx>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/ElementNamingUtils.h>
+#include <App/MappedElement.h>
+#include <App/PropertyLinks.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 
@@ -66,6 +70,93 @@ void slotChangedObject(const App::DocumentObject &obj, const App::Property &prop
     Base::StateLocker guard(busy);
     for (auto solid : body->getSolidBodies())
         solid->keepOutOfItself();
+}
+
+/** The element of \a before that the element \a sub of \a shown comes from
+ *
+ * By the history of the element: a face the features after \a before left
+ * alone, or made their own version of, has the one it comes from in every
+ * feature before them. False for an element those features made.
+ */
+bool elementBefore(App::DocumentObject *shown, const App::DocumentObject *before,
+                   std::string &sub)
+{
+    if (sub.empty())
+        return true;
+    if (!shown || sub.find('.') != std::string::npos)
+        return false;
+    try {
+        // Not by asking for a history of one type: that one ends at the
+        // first name it cannot find in the shape it started from
+        Data::IndexedName picked(sub.c_str());
+        if (!picked)
+            return false;
+        for (auto &item : Part::Feature::getElementHistory(shown, sub.c_str(), true, false)) {
+            if (item.obj == before && item.index
+                    && strcmp(item.index.getType(), picked.getType()) == 0) {
+                sub = item.index.toString();
+                return true;
+            }
+        }
+    }
+    catch (Base::Exception &) {
+    }
+    catch (Standard_Failure &) {
+    }
+    return false;
+}
+
+/** Turn what \a link has of \a self, named on the shape of \a shown, into
+ * the same of \a before
+ *
+ * All of it or nothing: a link with one element that comes from nothing of
+ * \a before is left as it is. False for a link that names no elements,
+ * which is turned as it is.
+ */
+bool turnElements(App::PropertyLinkBase *link, const App::DocumentObject *self,
+                  App::DocumentObject *shown, App::DocumentObject *before)
+{
+    using SubSet = App::PropertyLinkSubList::SubSet;
+    auto one = Base::freecad_dynamic_cast<App::PropertyLinkSub>(link);
+    auto list = Base::freecad_dynamic_cast<App::PropertyLinkSubList>(link);
+    auto xone = Base::freecad_dynamic_cast<App::PropertyXLink>(link);
+    auto xlist = Base::freecad_dynamic_cast<App::PropertyXLinkSubList>(link);
+    std::vector<SubSet> sets;
+    if (one)
+        sets.emplace_back(one->getValue(), one->getSubValues(false));
+    else if (list)
+        sets = list->getSubListValues(false);
+    else if (xone)
+        sets.emplace_back(xone->getValue(), xone->getSubValues(false));
+    else if (xlist) {
+        for (auto obj : xlist->getValues())
+            sets.emplace_back(obj, xlist->getSubValues(obj, false));
+    }
+    else
+        return false;
+
+    bool found = false;
+    for (auto &set : sets) {
+        if (set.first != self)
+            continue;
+        for (auto &sub : set.second) {
+            if (!elementBefore(shown, before, sub))
+                return true;
+        }
+        set.first = before;
+        found = true;
+    }
+    if (!found)
+        return true;
+    if (one)
+        one->setValue(sets.front().first, sets.front().second);
+    else if (list)
+        list->setSubListValues(sets);
+    else if (xone)
+        xone->setValue(sets.front().first, sets.front().second);
+    else
+        xlist->setSubListValues(sets);
+    return true;
 }
 
 } // anonymous namespace
@@ -255,19 +346,25 @@ void SolidBody::keepOutOfItself()
                 }
                 if (!refers)
                     continue;
-                if (before && before == shown && hasFeature(before)) {
+                if (before && hasFeature(before)) {
                     std::vector<App::Property*> props;
                     cur->getPropertyList(props);
                     for (auto prop : props) {
                         auto link = Base::freecad_dynamic_cast<App::PropertyLinkBase>(prop);
                         if (!link || link->getScope() == App::LinkScope::Hidden)
                             continue;
-                        // Not where the feature is linked beside this object:
-                        // the two would be swapped
                         std::vector<App::DocumentObject*> links;
                         link->getLinks(links, true);
-                        if (std::find(links.begin(), links.end(), this) == links.end()
-                                || std::find(links.begin(), links.end(), before) != links.end())
+                        if (std::find(links.begin(), links.end(), this) == links.end())
+                            continue;
+                        // The names of the elements are those of the feature
+                        // this object has the shape of. A later one than the
+                        // feature before: each by what it comes from
+                        if (before != shown && turnElements(link, this, shown, before))
+                            continue;
+                        // Not where the feature is linked beside this object:
+                        // the two would be swapped
+                        if (std::find(links.begin(), links.end(), before) != links.end())
                             continue;
                         std::unique_ptr<App::Property> copy(
                                 link->CopyOnLinkReplace(cur, this, before));
@@ -282,7 +379,9 @@ void SolidBody::keepOutOfItself()
                     message << cur->getFullName() << " refers to " << getFullName()
                             << ", and " << feature->getFullName() << " of that solid"
                                " is made of it: a solid cannot be made of what"
-                               " refers to it. Refer to a feature of the solid before "
+                               " refers to it, and what is referred to is nothing the"
+                               " solid had before that feature. Refer to a feature of"
+                               " the solid before "
                             << feature->getNameInDocument() << " instead.\n";
                 }
             }

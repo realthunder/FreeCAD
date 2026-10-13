@@ -921,7 +921,18 @@ class TestSolidBody(unittest.TestCase):
         self.assertRecomputes()
         self.assertEqual(self.support(again)[0][0], first.Name)
 
-    def testReferenceWithTheNamesOfAnotherShapeIsLeft(self):
+    def faceAt(self, obj, x, y, z):
+        """The face of the object's shape the point lies on"""
+        import Part
+
+        vertex = Part.Vertex(App.Vector(x, y, z))
+        for i, face in enumerate(obj.Shape.Faces):
+            if face.distToShape(vertex)[0] < 1e-6:
+                return "Face%d" % (i + 1)
+        self.fail("no face of %s at (%s, %s, %s)" % (obj.Name, x, y, z))
+
+    def paddedSolid(self):
+        """Box, Box001 and a pad on a sketch of the first box, the tip of their solid"""
         a, b, c, d = self.twoSolids()
         first, second = self.solidBodies()
         self.Body.Tip = b
@@ -929,12 +940,55 @@ class TestSolidBody(unittest.TestCase):
         sketch = self.sketchOn(a, self.flat(a))
         pad = self.padOn(sketch)
         self.assertRecomputes()
+        self.assertEqual(first.Tip, pad)
+        return a, b, first, sketch, pad
+
+    def testReferenceWithTheNamesOfAnotherShapeIsLeft(self):
+        a, b, first, sketch, pad = self.paddedSolid()
         # the sketch of the pad attached to the solid the pad is the tip of:
-        # the face is one of the pad's shape, not of the box before it
+        # the face is one the pad made, and the box before it has nothing
+        # it comes from
         face = self.flat(first)
         sketch.AttachmentSupport = [(first, face)]
         self.assertEqual(self.support(sketch), [(first.Name, [face])])
         # put right by hand, it recomputes
+        sketch.AttachmentSupport = [(a, self.flat(a))]
+        self.assertRecomputes()
+
+    def testFaceTheLaterFeatureLeftAloneIsTheOneBefore(self):
+        a, b, first, sketch, pad = self.paddedSolid()
+        # picked on the solid as the pad left it: the side of the first box
+        face = self.faceAt(first, 0, 5, 5)
+        sketch.AttachmentSupport = [(first, face)]
+        # the solid as the pad finds it, and the face that one comes from
+        self.assertEqual(self.support(sketch), [(b.Name, [self.faceAt(b, 0, 5, 5)])])
+        self.assertRecomputes()
+
+    def testFaceTheLaterFeatureChangedIsTheOneBefore(self):
+        a, b, first, sketch, pad = self.paddedSolid()
+        # the top of the boxes with the pad standing on it: the pad's own
+        # version of a face Box001 has whole
+        face = self.faceAt(first, 12, 8, 10)
+        before = self.faceAt(b, 12, 8, 10)
+        sketch.AttachmentSupport = [(first, face)]
+        self.assertEqual(self.support(sketch), [(b.Name, [before])])
+        self.assertRecomputes()
+        self.assertAlmostEqual(sketch.Placement.Base.z, 10.0)
+
+    def testWholeSolidBodyNeedsNoName(self):
+        a, b, first, sketch, pad = self.paddedSolid()
+        sketch.MapMode = "ObjectXY"
+        sketch.AttachmentSupport = [(first, "")]
+        self.assertEqual(sketch.AttachmentSupport[0][0], b)
+        self.assertRecomputes()
+
+    def testOneNameOfSeveralLeavesTheLink(self):
+        a, b, first, sketch, pad = self.paddedSolid()
+        # one face Box001 has, one the pad made: nothing is turned by half
+        side = self.faceAt(first, 0, 5, 5)
+        top = self.flat(first)
+        sketch.AttachmentSupport = [(first, side), (first, top)]
+        self.assertEqual(self.support(sketch), [(first.Name, [side, top])])
         sketch.AttachmentSupport = [(a, self.flat(a))]
         self.assertRecomputes()
 

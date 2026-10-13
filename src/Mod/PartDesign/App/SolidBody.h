@@ -113,9 +113,14 @@ public:
      * finds it, which is the feature before it. Where that is the feature
      * this object has the shape of -- the reference was picked on that
      * shape, element for element -- the reference is turned into one to that
-     * feature. Elsewhere the names would be those of another shape: it is
-     * left as it is and said to be wrong, as the recompute would only say
-     * that the document has a cycle.
+     * feature. Elsewhere the names are those of a later shape, and each is
+     * turned into the element of the feature before that it comes from, by
+     * the history of the element: a face the later features left alone, or
+     * made their own version of. A reference to the whole object needs no
+     * name. Where an element comes from nothing the feature before has --
+     * the feature itself made it, or a later one -- the reference is left as
+     * it is and said to be wrong, as the recompute would only say that the
+     * document has a cycle.
      *
      * Called when the tip moves, and when a link of anything in the body
      * changes.
