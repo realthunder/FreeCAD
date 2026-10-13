@@ -1783,6 +1783,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | IN THE SOURCE in the reporter's form, in the build of 15:45 after a compile error of the build session's put right (15:52): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
 | 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility | OPEN; three points under the entry, NOT ANSWERED |
+| 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too) | OPEN; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -13535,6 +13536,45 @@ Pointers, the note-taker's, nothing run and the source not followed:
   October (the handoffs of 2026-10-05 and 2026-10-06): a place where
   the fork's behaviour may have changed.
 
+## 109. A failed dress-up feature: the hover highlight of the missing edges' preview shapes in the edit panel is broken (from the old fork) -- OPEN, three points not answered
+
+**2026-10-13 16:00, the reporter:** "defect (from old fork), when a dress up
+feature fails because of reference name moved, those missing edge preview
+shape hover (in edit panel) highlight is broken"
+
+The note-taker's reading, not the reporter's words:
+- A dress-up feature (a fillet, a chamfer, a draft, a thickness) is in
+  error because one of the edges or faces it refers to is no longer
+  found under its name -- the name has moved.
+- Its edit panel still lists those references and shows the MISSING
+  ones as preview shapes in the view, so that they can be seen and
+  replaced. Hovering one -- in the panel -- should highlight its shape.
+  That highlight is broken.
+- "from old fork": the old fork has the same defect; it is not new
+  with this branch.
+- `scanner.FCStd` has such a feature: `Fillet011`, in error after the
+  migration recompute with "Invalid edge link: ?Edge93" (the build
+  session's measurement of 15:08 under entry 105; entry 17).
+
+NOT said, lettered for an answer:
+a. BROKEN HOW: nothing lights up; the wrong edge lights up; the
+   highlight comes and does not go; or the preview shape itself goes
+   away under the pointer?
+b. WHICH way round: the pointer over a row of the panel's list, the
+   shape in the view to light up -- or the pointer over the preview
+   shape in the view, the row to be marked -- or both?
+c. The references that are NOT missing: do they highlight as they
+   should in the same panel, so that only the missing ones are wrong?
+   And on which feature it was seen (`Fillet011`?).
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- The dress-up panels are in `src/Mod/PartDesign/Gui`
+  (`TaskDressUpParameters.cpp` and the fillet, chamfer, draft and
+  thickness panels on it); a missing reference is one whose name comes
+  back with a "?" before it.
+- Near it: entry 84 (a hover in a list that is answered a moment
+  later), entry 17 (`Fillet011`).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -13544,5 +13584,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 108 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 109 are of 2026-10-13, 82 found by
 it)
