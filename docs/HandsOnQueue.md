@@ -1472,8 +1472,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | IN WORK 2026-10-13 10:17: a fix in the source, NOT built, NOT tested; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
-| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading |
-| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found; two smaller points left, not blocking |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. ONE point for the reporter: is the eye pressed on the panel where it does not pass |
+| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. A fix PLANNED, not written. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10522,6 +10522,13 @@ The note-taker's note: point b is decided by the build session as it
 was before, which is also the note-taker's guess; the reporter has not
 said it. Nothing of this entry waits for the reporter.
 
+**2026-10-13 10:38, the new test shows the defect on the build before the
+fix.** From the build session's message of 2026-10-13 10:38, written here 10:37. "gone to beside the tree before the delay is up" and "a
+widget come to lie over the item" both showed the tip 'Bracket / Internal
+name: Box'. The run's other failures were a command's tip that stays up
+on the offscreen platform and that the test counted; "since taken out of
+the count".
+
 ## 85. The task panel's guest widgets are backed in the wrong colour under the Dark and the Light theme, as if the two were swapped (first said as "background seems to be reverted") -- REPRODUCED 2026-10-13 10:17, the colour of the theme being left; a fix in the source, not built
 
 **2026-10-13 10:07, the reporter:** "new defect, the task panel background seems
@@ -10655,7 +10662,14 @@ The note-taker's note for the reporter: until a stage with the fix, a
 restart of the program after a change of theme should give the right
 colour -- by the build session's reading of the code, not run.
 
-## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known
+**2026-10-13 10:38, the new claims FAIL on the build before the fix, as
+measured.** From the build session's message of 2026-10-13 10:38, written here 10:37. With Dark applied while the docks are overlaid the
+ground is (250,250,250,150); with Light, (44,44,44,150). One older claim
+of the same test, "Dark: the focus is in the tree again", failed in that
+run -- "another FreeCAD of mine was started on the screen during it and
+took the focus; not a regression until a clean run says so".
+
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, one point for the reporter: is the panel's eye pressed
 
 **2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
 pass through no longer works"
@@ -10716,7 +10730,29 @@ Nothing of this entry is left unanswered by the reporter. What a run
 would have to tell, the note-taker's: on which commit the pass-through
 last worked.
 
-## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
+**2026-10-13 10:38, the build session: NOT found yet.** From the build session's message of 2026-10-13 10:38, written here 10:37.
+- Shown so far: the clear parts read alpha 0 to `testAlpha`'s own grab
+  under Dark-Outline (OverlayLeft 96% alpha 0, OverlayRight 91%).
+- Read by it: no commit of 2026-10-12 and nothing in the merges touches
+  `OverlayManager`'s mouse path (the diffs of `22ece75a08~1..bbe8525de7`
+  and `4b52e58423..HEAD`).
+- The pass-through is gated on the panel's EYE
+  (`OverlayTabWidget::isTransparent`: the eye checked, and with
+  `DockOverlayAutoView` an active view that can pan). The reporter's
+  configuration has the eye ON for OverlayLeft and OverlayTop, OFF for
+  OverlayRight.
+- Its first end-to-end run had the eye off, "so it says nothing". Four
+  offscreen end-to-end runs wait for the build: eye off and on, the
+  test's configuration and a copy of the reporter's.
+- ONE point for the reporter, asked by the build session through the
+  note-taker: is the eye of the panel PRESSED where it does not pass?
+The note-taker's note: `DockOverlayAutoView` is 1 in the reporter's
+configuration, so by the above the pass-through is also off whenever
+the active view is one that cannot pan -- a TechDraw page or a
+spreadsheet in front. Whether a 3D view was the active view when it was
+seen is a second thing worth saying.
+
+## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, a fix planned; OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
 
 **2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
 has a darker border, which is unwanted. in addition, mouse hovering draw
@@ -10816,6 +10852,54 @@ Two smaller points left, NOT put as blocking:
   tree view shows it too, and the property view's rows, is not said.
   Since when the border is there is not said either -- d speaks of the
   trail.
+
+**2026-10-13 10:38, the build session: the BORDER is MEASURED -- the
+overlay's outline effect; the hover measured, a trail not reproduced.**
+From the build session's message of 2026-10-13 10:38, written here 10:37. Its message crossed the reporter's answers of 10:36 above.
+- The run, 10:34, on the STAGED copy of 09:36, offscreen, with a COPY of
+  the reporter's configuration, Dark applied through the Themes menu.
+- (1) THE BORDER. The tree's overlay painted as the screen has it, along
+  the middle line of a row: the pixel just left of the backing is
+  (50,50,50) at alpha 170; the backing itself reads (98,98,98) at alpha
+  232 -- "NOT the (124,124,124) at 150 the tree paints".
+  - The cause: the Outline sheets switch on the overlay's outline effect
+    (`Gui--OverlayTabWidget` `qproperty-enableEffect` 1, `effectColor`
+    rgba(50,50,50,200), width 1, blur 2). `OverlayGraphicsEffect::draw`
+    "lays a blurred dark copy of EVERYTHING painted under the picture,
+    to outline text over the 3D view; it outlines the new backing too: a
+    dark rim one pixel and a blur wide, and the dark under the whole
+    backing, which makes it darker and far less see-through than 150.
+    Arithmetic agrees: 124 at 150 over 50 at 200 gives 98 at 232."
+  - "So entry 69's backing has never looked as asked under Dark-Outline
+    / Light-Outline; the test did not see it because the effect sits on
+    the overlay's splitter, above the tree."
+  - The fix PLANNED, "NOT written yet": the effect takes for its outline
+    only what is painted more opaque than the backing's opacity -- text
+    and icons keep their outline, a see-through fill gets none.
+- (2) THE HOVER. With the pointer on a row the WHOLE row is (61,72,90)
+  at 255, solid -- `FreeCAD.qss`'s
+  `QTreeView::item:!selected:hover`, as the note-taker read; the Outline
+  sheets say nothing for it. The rows above and below differ by about
+  345 pixels each while it is there: the effect's halo of that bar.
+  - A trail left behind was NOT reproduced by this run ("it paints the
+    overlay whole each time"). Its reading, "not shown": the bar's halo
+    reaches into the neighbours, a row that is left is repainted alone,
+    and the neighbours keep the halo's rim until the overlay's delayed
+    repaint.
+  - Its proposal, written BEFORE the reporter's answer c reached it: no
+    hover bar at all in an overlaid tree, "or a bar without halo". The
+    reporter's answer c (10:36) decides: the highlight stays, as wide as
+    the item, no trail.
+- (3) The note-taker's answer on the setting "stands".
+
+The note-taker's notes:
+- The measurement says Light-Outline too has the effect under the
+  backing; the reporter's answer b says Light "behave all correct". The
+  two are not at odds -- a dark rim on a light ground may read as a
+  fine line there -- but which it is has not been looked at.
+- Entry 69's "alpha 150" is therefore not what is seen on the screen
+  under the Outline sheets (232 measured under Dark): a defect of entry
+  69's result, to be mended with this entry's fix.
 
 ## Inbox
 
