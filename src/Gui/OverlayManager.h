@@ -166,18 +166,22 @@ public:
      */
     static void paintTextGround(QPainter &painter, const QTextBlock &block,
                                 const QPointF &pos, const QBrush &ground);
-    /** The ground for paintTextGround(): the items' (overlayItemBackground()),
-     * unless the text would not read on it. A theme may keep a text of the
-     * other kind in its text views than in its items -- Classic: black, for
-     * the white page a docked console has, while its overlay sheet gives the
-     * tree a light text on the dark of the 3D view -- and black on that dark
-     * was the "scrambled" text of docs/HandsOnQueue.md entry 111. How light
-     * the text is, is read from the \a count blocks from \a first on, in
-     * the colours their highlighter gives them; too near the ground, the
-     * ground is a light one for a dark text and a dark one for a light, at
-     * the same opacity.
+    /** The ground for paintTextGround(), by one setting
+     * (docs/HandsOnQueue.md entry 111, as ruled): with
+     * View/DockOverlayThemeItemColor on, "Item background follows the
+     * theme", the ground the tree gives its items (overlayItemBackground());
+     * with it off the text view's own background -- \a own where the view
+     * has a colour of its own (the Python console's, Editor/Background), or
+     * else the base colour of the application's palette, which is what the
+     * view stands on when it is docked -- at the overlay's opacity.
+     *
+     * A theme may keep a text of another kind in its text views than in its
+     * items: Classic has a black text in the console, for the white page a
+     * docked one has, and gives the tree a light text on the dark of its 3D
+     * view. Black on that dark was the "scrambled" text of the entry; the
+     * setting off puts it back on its own white.
      */
-    static QBrush overlayTextGround(const QTextBlock &first, int count = 40);
+    static QBrush overlayTextGround(const QColor &own = QColor());
     /** The brush an item of an overlaid tree is backed with while the pointer
      * is on it (docs/HandsOnQueue.md entry 87): the theme's colour for that at
      * the opacity of the item backgrounds, as wide as those. No brush under

@@ -803,10 +803,7 @@ void ReportOutput::paintEvent(QPaintEvent* ev)
     // 98; TextEdit::paintEvent() is the same for the Python console)
     if (testAttribute(Qt::WA_NoSystemBackground)) {
         QTextBlock block = cursorForPosition(QPoint(1, ev->rect().top())).block();
-        // by the text the view shows, not by the strip being painted: one
-        // ground for the whole of it
-        const QBrush ground = OverlayManager::overlayTextGround(
-                cursorForPosition(QPoint(1, 1)).block());
+        const QBrush ground = OverlayManager::overlayTextGround();
         if (ground.style() != Qt::NoBrush) {
             QPainter backing(viewport());
             const QPointF offset(-horizontalScrollBar()->value(), -verticalScrollBar()->value());

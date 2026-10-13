@@ -2310,38 +2310,15 @@ void OverlayManager::paintTextGround(QPainter &painter, const QTextBlock &block,
     }
 }
 
-QBrush OverlayManager::overlayTextGround(const QTextBlock &first, int count)
+QBrush OverlayManager::overlayTextGround(const QColor &own)
 {
-    QBrush ground = overlayItemBackground();
-    if (ground.style() == Qt::NoBrush)
-        return ground;
-    // How light the text is: each colour by the length of what is drawn in it
-    qint64 sum = 0;
-    qint64 length = 0;
-    QTextBlock block = first;
-    for (int i = 0; i < count && block.isValid(); ++i, block = block.next()) {
-        const QTextLayout *layout = block.layout();
-        if (!layout)
-            continue;
-        const auto formats = layout->formats();
-        for (const QTextLayout::FormatRange &range : formats) {
-            if (range.length <= 0 || !range.format.hasProperty(QTextFormat::ForegroundBrush))
-                continue;
-            sum += qint64(qGray(range.format.foreground().color().rgb())) * range.length;
-            length += range.length;
-        }
-    }
-    if (!length)
-        return ground;
-    const int text = int(sum / length);
-    QColor colour = ground.color();
-    // near enough to read badly: a third of the way from black to white
-    if (std::abs(text - qGray(colour.rgb())) >= 96)
-        return ground;
-    const int level = text < 128 ? 232 : 40;
-    colour.setRgb(level, level, level, colour.alpha());
-    ground.setColor(colour);
-    return ground;
+    if (OverlayParams::getDockOverlayThemeItemColor())
+        return overlayItemBackground();
+    // The view's own background. Not its palette's: an overlay's style sheet
+    // has made that one transparent.
+    QColor colour = own.isValid() ? own : QApplication::palette().color(QPalette::Base);
+    colour.setAlpha(overlayAlpha());
+    return QBrush(colour);
 }
 
 QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha)

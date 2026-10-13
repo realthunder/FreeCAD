@@ -11,14 +11,18 @@ and where there is a background the outline is dropped, for a tree item too.
 
 Claims, every dock overlaid and each overlay's transparent mode on, some
 lines written to the console and to the report view:
-  - the console's panel paints a ground at the overlay's opacity over a good
-    part of the rows its text is on -- and nothing at all on a stretch below
-    its last line. The ground is the tree's item ground, or, where the text
-    would not read on that, a light one for a dark text and a dark one for a
-    light (docs/HandsOnQueue.md entry 111: the Classic theme keeps a black
-    text in the console and gives the tree a dark ground);
-  - the text stands out from the ground it got;
+  - the console's panel paints a ground at the overlay's opacity, in the
+    colour of the tree's item ground, over a good part of the rows its text
+    is on -- and nothing at all on a stretch below its last line;
   - the same for the report view;
+  - with "Item background follows the theme" off (View/
+    DockOverlayThemeItemColor) each of the two stands on its OWN background
+    instead, at the same opacity: the console's colour where it has one
+    (Editor/Background), else the base colour of the application's palette
+    (docs/HandsOnQueue.md entry 111, as ruled: "gate by auto tree background
+    color setting. Follow tree item background color if enabled, else use
+    its own widget background" -- the Classic theme keeps a black text in
+    the console and gives the tree's items a dark ground);
   - around the text on that ground there is no outline: no pixel of the
     panel that is darker than the ground and more opaque than it, beyond a
     handful (an outline laid a dark rim under the edge of every glyph).
@@ -119,7 +123,9 @@ def ground_colour():
     return max(seen, key=seen.get) if seen else None
 
 
-def look(name, edit):
+def look(name, edit, own=None):
+    """The ground behind the text of a panel: the tree items' -- or own,
+    a colour, with the setting off"""
     tab = overlay_of(edit)
     if not check("%s: it is in an overlay" % name, tab is not None):
         return
@@ -133,32 +139,16 @@ def look(name, edit):
     image = through(tab, edit.viewport())
     image.save(os.path.join(OUT, name.replace(" ", "-") + ".png"))
     alpha = VIEW.GetInt("DockOverlayAlpha", 180)
-    want = ground_colour()
-    if not check("%s: the tree view beside it has items with a ground to compare with" % name,
-                 want is not None):
-        return
+    if own is None:
+        want = ground_colour()
+        if not check("%s: the tree view beside it has items with a ground to compare with"
+                     % name, want is not None):
+            return
+        which = "in the item ground's colour"
+    else:
+        want = own
+        which = "in its own background's colour"
     w, h = image.width(), image.height()
-    # the ground the panel took: the items', or the light or the dark one of
-    # OverlayManager::overlayTextGround() -- whichever most of its pixels at
-    # the overlay's opacity have
-    counts = {}
-    solid = {}
-    for y in range(0, h):
-        for x in range(0, w):
-            v = image.pixel(x, y)
-            a = (v >> 24) & 255
-            rgb = ((v >> 16) & 255, (v >> 8) & 255, v & 255)
-            if abs(a - alpha) <= 3:
-                for name_, c in (("the items'", want), ("light", (232, 232, 232)),
-                                 ("dark", (40, 40, 40))):
-                    if max(abs(rgb[i] - c[i]) for i in range(3)) <= 6:
-                        counts[name_] = counts.get(name_, 0) + 1
-            elif a >= 250:
-                solid[rgb] = solid.get(rgb, 0) + 1
-    which = max(counts, key=counts.get) if counts else "the items'"
-    items = want
-    want = {"the items'": want, "light": (232, 232, 232), "dark": (40, 40, 40)}[which]
-    note("INFO %s: the ground is %s, %s (the items' is %s)" % (name, which, want, items))
     ground = clear = rim = 0
     rows_with_ground = set()
     last = -1
@@ -180,15 +170,10 @@ def look(name, edit):
     note("INFO %s: %dx%d, ground pixels %d on %d rows (the last at y %d), clear %d, rim %d; "
          "the ground wanted %s at %d" % (name, w, h, ground, len(rows_with_ground), last, clear,
                                          rim, want, alpha))
-    if not check("%s: its text has a ground at the overlay's opacity" % name,
+    if not check("%s: its text has a ground at the overlay's opacity, %s" % (name, which),
                  ground > 400 and len(rows_with_ground) >= 20,
-                 "%d pixels on %d rows, %s" % (ground, len(rows_with_ground), which)):
+                 "%d pixels on %d rows" % (ground, len(rows_with_ground))):
         return
-    if solid:
-        text = max(solid, key=solid.get)
-        gap = abs(QtGui.qGray(*text) - QtGui.qGray(*want))
-        check("%s: the text stands out from its ground" % name, gap >= 60,
-              "most of the text is %s, the ground %s: %d apart in lightness" % (text, want, gap))
     below = [(image.pixel(x, y) >> 24) & 255
              for y in range(min(last + 12, h - 1), min(last + 40, h)) for x in range(0, w, 3)]
     if below:
@@ -236,6 +221,28 @@ def report_step():
     mw().grab().save(os.path.join(OUT, "window.png"))
 
 
+def own_step():
+    """The setting off: each panel on its own background"""
+    VIEW.SetBool("DockOverlayThemeItemColor", False)
+    settle(1500)
+    base = QtWidgets.QApplication.palette().color(QtGui.QPalette.Base)
+    base = (base.red(), base.green(), base.blue())
+    packed = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Editor").GetUnsigned(
+        "Background", 0)
+    mine = ((packed >> 24) & 255, (packed >> 16) & 255, (packed >> 8) & 255) if packed else base
+    note("INFO the setting off: the palette's base %s, the console's own %s" % (base, mine))
+    console = find("Gui::PythonConsole")
+    report = find("Gui::DockWnd::ReportOutput")
+    try:
+        if console is not None:
+            look("the Python console, the setting off", console, mine)
+        if report is not None:
+            look("the report view, the setting off", report, base)
+    finally:
+        VIEW.RemBool("DockOverlayThemeItemColor")
+        settle(600)
+
+
 def finish():
     for name in list(FreeCAD.listDocuments()):
         FreeCAD.closeDocument(name)
@@ -256,5 +263,5 @@ def advance():
     QtCore.QTimer.singleShot(1000, advance)
 
 
-STEPS[:] = [start, console_step, report_step]
+STEPS[:] = [start, console_step, report_step, own_step]
 QtCore.QTimer.singleShot(3000, advance)
