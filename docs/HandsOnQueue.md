@@ -1475,7 +1475,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered |
 | 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. A fix PLANNED, not written. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | OPEN; the four points answered 10:51; one side effect not said: a clear track passes clicks through |
-| 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside | OPEN; a reading of the source by the note-taker, nothing run: two things it could be, the mark Qt draws on a button with a menu or a triangle of the icon's own drawing; three points under the entry, NOT ANSWERED |
+| 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | OPEN; the three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons' | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; three points under the entry, NOT ANSWERED -- one of them: is entry 89's triangle the same mark |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -11039,7 +11039,7 @@ rule of entry 86 (once that works again), so a click beside the handle
 would no longer page the panel. Wanted or not is not said; not put as
 blocking.
 
-## 89. The toolbar icon of Std_DisplayStyle seems to have a triangle laid over it -- OPEN, three points not answered
+## 89. The toolbar icon of Std_DisplayStyle seems to have a triangle laid over it -- OPEN, answered 2026-10-13 10:59: the menu's expansion arrow, much smaller than normal, on the icon; both themes
 
 **2026-10-13 10:54, the reporter:** "new defect, Std_DisplayStyle toolbar icon
 seem to have some triangle overlaid inside"
@@ -11079,6 +11079,30 @@ Pointers, READ by the note-taker, nothing run -- two things it could be:
    read as something laid over the cube.
 Which of the two the reporter sees decides what is to be changed: the
 button's mark, or the picture.
+
+**2026-10-13 10:59, the reporter answers the three points:** "entry 89. a,
+looks like so, but a lot smaller than normal expansion arrow. b, others
+are normal. c, yes both theme"
+
+The note-taker's reading:
+- a. It is the first candidate: the small mark of a button that opens a
+  menu, drawn on the icon -- and "a lot smaller than normal expansion
+  arrow". So not the lighter triangle of the icon's own drawing; the
+  picture stays as it is.
+- b. The other buttons, `Std_DrawStyle` among them, are normal.
+- c. Under both themes. Whether the mark shows in the View menu and the
+  context menu too is not said; a menu entry has no such mark, so
+  nothing is expected there.
+- With entry 90 (`Std_SelUp`, said at 10:56 in between): two buttons
+  whose menu mark sits on the icon. By the source the two are made in
+  different ways -- this one sets `QToolButton::InstantPopup` itself,
+  `Std_SelUp` goes through the common helper -- so one defect or two is
+  for the build session to find. Entry 90's point a (is it the same
+  mark) is as good as answered by a. here; the reporter has not said it
+  in so many words.
+What is wanted is not said in so many words either. The note-taker's
+reading of "others are normal": the mark as the other menu buttons have
+it -- beside the icon, at its normal size.
 
 ## 90. The toolbar button of Std_SelUp: its expansion indicator lies over the icon, unlike the others' -- OPEN, three points not answered
 
