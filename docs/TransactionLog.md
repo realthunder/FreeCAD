@@ -18803,7 +18803,8 @@ asked back and is still open -- it is said again below, plainer.
 
 ![in the browser: lit, and left by Close](images/transaction-log/13-stream-edit.png)
 
-**Still open: where the log's panel and the merge dialog draw.** Said
+**Still open: where the log's panel and the merge dialog draw.**
+(*Ruled since, 2026-10-13: (b), built in 32.24.*) Said
 again, since the wording of 32.19 was not clear. There are three
 places that show a shape's two states, and they share one piece of
 code, `ShapeDiffView`:
@@ -18973,6 +18974,9 @@ All ten are ops that write: a connection that may only look is answered
 `ViewOnly` by the dispatch.
 
 **Three things decided here, each open to be ruled otherwise.**
+(*Ruled since, the same day: 32.23, which gives the first to a client in
+a document served to it from a branch, makes the rest of what moves a
+shared document the host's, and holds a client to its own rows.*)
 
 - *Deleting a branch is the host's.* Every other act is a row, or leaves
   every row where it was: an undo, a restore and a switch are each taken
@@ -19017,8 +19021,8 @@ showed what is no longer so.
 ![the versions of the log in the card](images/transaction-log/15-log-browser-versions.png)
 
 **Left.** "Apply row here" of another branch's row, and "Roll back the
-merge", which are the merge's (the third stage, and the open question of
-32.20). Trim, squash, "Open version", "Branch to document": the first
+merge", which are the merge's (the third stage; the question of 32.20 it
+waited for is ruled, 32.24). Trim, squash, "Open version", "Branch to document": the first
 two take rows away for good, the others open a document the page is not
 joined to. Kept values and requests are the fourth stage.
 
@@ -19037,6 +19041,149 @@ before it wrote a result: PySide releasing a wrapper at a deferred
 delete (`Shiboken::BindingManager::releaseWrapper`), from the event
 loop. It serves nothing and asks none of these ops; alone, on the same
 build, it passed 12 runs of 12 with its 49 checks.
+
+### 32.23 Whose the document's place in its log is; a branch served in a document of its own (2026-10-13)
+
+**Asked (user, 2026-10-13)**, of 32.22: "We established that client can
+only undo its own step. Shall we apply the same in log panel. What does
+that imply." It implied more than the undo: a restore takes back what
+everyone did since a version, and a switch checks the whole document out
+under everyone in it -- a client that may not take back one row of
+another's could do either. **Ruled** the same day: "We shall have a new
+mode to serve a client from a new document loaded from a specific branch
+and he can create, restore or delete any branch from the serving point
+but not before it."
+
+So there are two kinds of served document, and the ops of 32.22 answer by
+which it is (`Reach`, `Gui/SceneLog.cpp`).
+
+**A shared document** is one served as it is: the desktop and every
+client are in it. Where it is in its log is the host's to move. Below
+the host a connection
+
+- takes back **its own rows** -- one, or several as one step. A step is
+  its author's (30.10 item 1): by the user, whichever login, as the Undo
+  button has it; the panel's "Undo row" is the same act for a row that is
+  not the last. Another's row is answered `NotYours`, with whose it is;
+  with one such among those chosen none is taken back;
+- takes a **snapshot**, named or not: it adds a version and moves
+  nothing;
+- and is answered `Forbidden` for the rest -- `log.restore`,
+  `log.branch`, `log.switch`, `log.renameBranch`, `log.deleteBranch`, and
+  `log.nameVersion`, a version's name being what keeps it and nothing
+  saying whose a version is.
+
+The host's connection, and the desktop's own panel, do all of it as
+before, any row included.
+
+**A document served from a branch** (`Gui.serveBranch(doc, name='',
+port=0)`). A branch is made where the document is and opened in a second
+document of the file, with no window (`Document::openNewBranch`, 30.3
+S.a), and that document is served as any is; a client joins it by its
+name (`?doc=`). The first document stays where it is. Where the branch
+forks is **the serving point**. From it on the document is its clients':
+
+- they restore a version, switch, and make, rename and delete branches
+  -- of *the branch served and whatever was branched from it since*,
+  the serving point itself included: a branch made from that row or that
+  version is one of theirs;
+- they do not of anything before: a version, a row to branch from, a
+  branch -- `Forbidden`, "that is before where this document was served
+  from". The rows, versions and branches from before are listed, and
+  said to be (`within`);
+- the branch the document was opened on is not theirs to delete: it is
+  what the reach is counted from;
+- a row is still taken back by who made it, and one from before the
+  serving point not at all, though the same user made it.
+
+*Which branches are theirs* is not kept anywhere: a branch says which it
+was made from (`LogBranch::target`), and theirs are the one served and
+those made from one of theirs. A branch made at the serving point is
+made from a row of the branch the document was served from, so the log
+would say that one; the op says instead the branch the document was on,
+which is what makes it theirs and is also the side its merges default
+to. The serving point is the fork of the branch served
+(`fromSeq`, `fromVersion`), so a branch served again after a restart of
+the host has the same one.
+
+What the client did comes back the way any branch does: the host merges
+it (28, 30.3), the first document being the side it was made from.
+
+**The replies say which.** `log.rows`, `log.versions` and `log.branches`
+carry `host` (the connection is the host's) and `own` (the document was
+served from a branch); a row says `mine` and `within`, a version and a
+branch `within`, the branch served `root`, and the rows' reply the
+`floor`, the row of the serving point. `mayDelete` of 32.22 is gone.
+
+**The page** offers what would be done and says of the rest why not
+(`logmodel.ts`): "Undo row" for rows that are the asker's own and not
+from before; the branch list, "Branch...", "Rename..." and a version's
+acts where the document's place is the asker's to move; "Delete..." for
+the branches that may be. What is from before the serving point is
+listed dimmed. A button that is not offered says in its tip whose it is
+to do.
+
+**This takes back two of the three decisions of 32.22.** Deleting a
+branch was the host's alone, and is now also a client's in a document
+of its own. A row of another branch is still not taken back from here.
+The wait for an open edit stands, for whoever asks.
+
+**Left.** The host starts it from Python; the sharing panel has no
+button for it yet, and says nothing of which document a branch is
+served in. A branch that exists already is not served as it is -- a new
+one is always made. The document opened for the branch has no window
+and is closed by closing it from Python or with the application.
+
+**Tests.** `tests/gui/serve-log-acts.py` (64): the shared document with
+a client that may edit, one that may only look and the host -- what
+each may, each refusal -- and then a branch served, with a client in
+its document: what is its own, what is from before, and the first
+document unmoved. `tests/gui/serve-log-acts-browser.py` (26): Chrome in
+a document served from a branch. `web/src/widgets/gate.ts`: 14 checks
+of the card's model more.
+
+### 32.24 What the host looks at stays the host's (2026-10-13)
+
+**Ruled (user, 2026-10-13)**: "B for Where the log panel's bar and the
+merge dialog draw" -- the question 32.20 left open. The two states that
+the desktop's log panel and its merge dialog draw stay under the
+object's root, as they were, and are not for the clients of a served
+document.
+
+**How.** Under the object's root is the scene every view of the
+document draws and a served document publishes, and the caches of it
+are shared by all of them, so nothing can be left out while it is
+captured: what a view does not show is dropped where it draws (per-view
+visibility, docs/CoinRetirement.md 5.18). The same here. The overlay's
+node (`SoFCPathAnnotation`) has a `hostOnly` field; what is captured
+under one is tagged (`Render::hostOnlyModeId()`, the captured-mode tag
+that per-view shown draws use); a view draws a tagged draw as it is,
+and the snapshot a served document publishes leaves it out
+(`BGFXScene.cpp`). `ShapeDiffView` sets the field where it hangs under
+the object and not where it is an edit session's (32.19), which is
+unchanged: an edit is asked for, and the clients in it see it.
+
+**Seen in a browser**: with the overlay shown on the host by the faces,
+with differences only and by the material, the page draws the object
+and none of the overlay's colours (0 pixels, where 32.18 counted more
+than 20000).
+
+**What is still sent.** The overlay no longer asks for a publish, so
+"differences only" and taking it away send nothing. Showing it, a place
+of the slider and the material still send one push each -- 1.1 kB here,
+1.8 kB the first, where they were 2.5 to 3.1 kB -- carrying the object
+as it was. The cause is not this overlay's: a look set on a view that
+is a second view of an object is announced through the object's own
+property, which the document reports as the object changed, and a
+served document publishes for that. PartDesign's preview is such a
+view too. Not chased: it is the appearance pass-through's, and what it
+costs here is a push with nothing new in it.
+
+**Tests.** `tests/gui/serve-shape-diff.py` (11), restated: what is sent
+for each step, as above. `tests/gui/serve-shape-diff-browser.py` (13,
+one more): the host shows the overlay the desktop's way before the
+page asks for its own edit; it is on the host, under the object, and
+not in the page.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 

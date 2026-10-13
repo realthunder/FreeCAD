@@ -525,30 +525,52 @@ the object goes into an edit, the panel with the slider comes up, and
 
 ![A step's change, shown from the History panel](images/transaction-log/14-log-browser-shown.png)
 
-The panel also does most of what the desktop's does with a step, a version
-and a branch. Whatever you ask is done by the computer that shares the
-document, and the panel says in one line what it did, or in red why it did
-not.
+What the panel lets you do depends on how the document was shared with
+you. Whatever you ask is done by the computer that shares the document,
+and the panel says in one line what it did, or in red why it did not. A
+button that is greyed says in its tip whose it is to press.
+
+**In a document shared as it is**, everybody is in the same document, and
+where it is in its history is for the person sharing it to decide. You can:
+
+- **Undo a step of your own that is not the last.** Click the step, then
+  **Undo row**. To undo several as one, hold Ctrl (or the command key)
+  while clicking, or Shift for all between two; on a phone tick **Several**
+  first. A step is refused when something later changed what it touched,
+  and the panel says what and by which step (section 5). Somebody else's
+  step is theirs to undo, or the sharer's.
+- **Take a version**: **Snapshot...**, with a name to keep it.
+
+Switching branch, making, renaming or deleting one, restoring a version
+and renaming one are the sharer's there.
+
+**In a branch served to you** you have a document of your own: the sharer
+made a branch where their document was and opened it for you, and theirs
+does not move with what you do. From that point on the history is yours:
 
 ![Steps, branches and versions from the History panel](images/transaction-log/15-log-browser-acts.png)
 
-- **Undo a step that is not the last.** Click the step, then **Undo row**.
-  To undo several as one, hold Ctrl (or the command key) while clicking, or
-  Shift for all between two; on a phone tick **Several** first. A step is
-  refused when something later changed what it touched, and the panel says
-  what and by which step (section 5).
 - **Branches.** The list beside the title is the branch the document is on;
   choosing another switches to it. **Branch...** makes one from where the
   document is, **Branch from here...** from the step or the version you
-  clicked, and **Rename...** renames the one you are on. Switching waits
-  until nobody has an edit open. Deleting a branch cannot be undone, so
-  only the person sharing the document is offered it.
-- **Versions**, the second list. **Snapshot...** takes one of the document
-  as it is; give it a name to keep it. Click a version to **Restore** the
+  clicked, **Rename...** renames the one you are on, and **Delete...**
+  removes one you made -- for good. Switching waits until nobody has an
+  edit open.
+- **Versions**, the second list. Click a version to **Restore** the
   document to it -- one step, which undo takes back -- or to name, rename
   or unname it.
+- Undoing a step of your own and taking a version, as above.
 
 ![The versions, from the History panel](images/transaction-log/15-log-browser-versions.png)
+
+What was there before the branch was served to you is listed in grey: you
+can read it, and go back to the point you were served from, but no
+further. The branch you were given is not yours to delete. Your work goes
+back to the sharer's document when they merge your branch (section 10).
+
+The sharer starts this from the Python console, for now:
+`Gui.serveBranch(App.ActiveDocument, "name of the branch")` returns the new
+document, and you join it by its name.
 
 Merging, applying a step of another branch, trimming and squashing are
 done in the desktop's panel for now.
@@ -578,7 +600,8 @@ done in the desktop's panel for now.
 | see what is kept, and let it go | the **Kept** tab |
 | make the file's history shorter | Versions: **Trim...** or **Squash...** |
 | read the history from a browser | the page's menu, **History** (section 12) |
-| undo a step, switch branch or restore a version from a browser | **History**: click the step or the version, then the button under the list (section 12) |
+| undo a step of your own, or take a version, from a browser | **History**: click the step, then **Undo row**; **Snapshot...** (section 12) |
+| give someone a branch of their own to work in from a browser | `Gui.serveBranch(doc, "name")`; they switch, branch and restore there (section 12) |
 | see what one step did to a shape, from a browser | **History**: click the step, then **Show** on its shape |
 
 ## 14. The same from Python
