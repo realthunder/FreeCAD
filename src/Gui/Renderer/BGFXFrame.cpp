@@ -3147,6 +3147,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     || transp || mediumExempt(mat)
                     || !draw.mesh)
                 continue;
+            // ...and not what this view hides of its own accord, which
+            // is not in the prepass: showing or hiding something in the
+            // view changes the maps with the camera still.
+            if (view->visibilityHides(draw))
+                continue;
             hashBytes(h, &draw.mesh->cacheId,
                       sizeof(draw.mesh->cacheId));
             if (!draw.identity)
@@ -5783,9 +5788,17 @@ bool BGFXRenderer::Private::render(const QColor &col,
             // docs/RenderDebug.md §6.5) only substitutes the beauty
             // fill — depth, AO, volumetrics and the debug modes must
             // keep seeing the geometry.
+            //
+            // That is for a draw whose selection is drawn in its place.
+            // One this view hides of its own accord is not in the view
+            // at all, and it was kept here with the others: the cavity
+            // pass darkened its creases onto whatever was seen where it
+            // had been -- what an edit puts away in its view, as a ghost
+            // of its edges (docs/HandsOnQueue.md entry 104).
             if (!draw.material.ontop && isTriangle(draw)
                     && !isTransp(draw)
-                    && !mediumExempt(draw.material)) {
+                    && !mediumExempt(draw.material)
+                    && !view->visibilityHides(draw)) {
                 if (prepassRender && !culled(draw)
                         && !prepassInstancedThisFrame(drawIdx))
                     view->submitPrepass(draw);
