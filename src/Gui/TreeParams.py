@@ -135,7 +135,8 @@ Params = [
         title = 'Item Spacing',
         doc = "Extra height in pixels added to every row of the tree view."),
     ParamHex('ItemBackground', 0, on_change=True, title='Item background color', proxy=ParamColor(),
-        doc = "Tree view item background. Only effective in overlay."),
+        doc = "Tree view item background. Only effective in overlay, and only\n"
+              "while 'Item background follows the theme' is off."),
     ParamInt('ItemBackgroundPadding', 0, on_change=True, title="Item background padding", proxy=ParamSpinBox(0, 100, 1),
         doc = "Tree view item background padding."),
     ParamBool('HideColumn', True, on_change=True, title="Hide extra column",

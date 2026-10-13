@@ -445,7 +445,8 @@ public:
     //@{
     /// Accessor for parameter ItemBackground
     ///
-    /// Tree view item background. Only effective in overlay.
+    /// Tree view item background. Only effective in overlay, and only
+    /// while 'Item background follows the theme' is off.
     static const unsigned long & getItemBackground();
     static const unsigned long & defaultItemBackground();
     static void removeItemBackground();

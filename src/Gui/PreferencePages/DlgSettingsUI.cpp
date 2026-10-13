@@ -47,8 +47,8 @@ DlgSettingsUI.define()
 #include <Gui/ViewParams.h>
 #include <Gui/OpenViewParams.h>
 #include <Gui/TreeParams.h>
-#include <Gui/ExprParams.h>
 #include <Gui/OverlayParams.h>
+#include <Gui/ExprParams.h>
 // Auto generated code (Tools/params_utils.py:652)
 #include "Gui/PreferencePages/DlgSettingsUI.h"
 using namespace Gui::Dialog;
@@ -266,6 +266,17 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     ItemBackground->setEntryName("ItemBackground");
     ItemBackground->setParamGrpPath("TreeView");
     ItemBackground->setAllowTransparency(true);
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutTreeview->addLayout(layoutRow);
+    DockOverlayThemeItemColor = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(DockOverlayThemeItemColor);
+    DockOverlayThemeItemColor->setChecked(Gui::OverlayParams::defaultDockOverlayThemeItemColor());
+    DockOverlayThemeItemColor->setEntryName("DockOverlayThemeItemColor");
+    DockOverlayThemeItemColor->setParamGrpPath("View");
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -702,17 +713,6 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
-    DockOverlayThemeItemColor = new Gui::PrefCheckBox(this);
-    layoutRow->addWidget(DockOverlayThemeItemColor);
-    DockOverlayThemeItemColor->setChecked(Gui::OverlayParams::defaultDockOverlayThemeItemColor());
-    DockOverlayThemeItemColor->setEntryName("DockOverlayThemeItemColor");
-    DockOverlayThemeItemColor->setParamGrpPath("View");
-
-    // Auto generated code (Tools/params_utils.py:486)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:492)
-    layoutOverlay->addLayout(layoutRow);
     labelDockOverlayAlpha = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayAlpha);
     DockOverlayAlpha = new Gui::PrefSpinBox(this);
@@ -1042,6 +1042,7 @@ void DlgSettingsUI::saveSettings()
     SplitDirection->onSave();
     MinimumCellSize->onSave();
     ItemBackground->onSave();
+    DockOverlayThemeItemColor->onSave();
     ItemBackgroundPadding->onSave();
     ResizableColumn->onSave();
     CheckBoxesSelection->onSave();
@@ -1071,7 +1072,6 @@ void DlgSettingsUI::saveSettings()
     DockOverlayWheelDelay->onSave();
     DockOverlayAlphaRadius->onSave();
     DockOverlayMoveNaviCube->onSave();
-    DockOverlayThemeItemColor->onSave();
     DockOverlayAlpha->onSave();
     DockOverlayHintTriggerSize->onSave();
     DockOverlayHintSize->onSave();
@@ -1107,6 +1107,7 @@ void DlgSettingsUI::loadSettings()
     SplitDirection->onRestore();
     MinimumCellSize->onRestore();
     ItemBackground->onRestore();
+    DockOverlayThemeItemColor->onRestore();
     ItemBackgroundPadding->onRestore();
     ResizableColumn->onRestore();
     CheckBoxesSelection->onRestore();
@@ -1136,7 +1137,6 @@ void DlgSettingsUI::loadSettings()
     DockOverlayWheelDelay->onRestore();
     DockOverlayAlphaRadius->onRestore();
     DockOverlayMoveNaviCube->onRestore();
-    DockOverlayThemeItemColor->onRestore();
     DockOverlayAlpha->onRestore();
     DockOverlayHintTriggerSize->onRestore();
     DockOverlayHintSize->onRestore();
@@ -1211,6 +1211,8 @@ void DlgSettingsUI::retranslateUi()
     ItemBackground->setToolTip(QApplication::translate("TreeParams", Gui::TreeParams::docItemBackground()));
     labelItemBackground->setText(QObject::tr("Item background color"));
     labelItemBackground->setToolTip(ItemBackground->toolTip());
+    DockOverlayThemeItemColor->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayThemeItemColor()));
+    DockOverlayThemeItemColor->setText(QObject::tr("Item background follows the theme"));
     ItemBackgroundPadding->setToolTip(QApplication::translate("TreeParams", Gui::TreeParams::docItemBackgroundPadding()));
     labelItemBackgroundPadding->setText(QObject::tr("Item background padding"));
     labelItemBackgroundPadding->setToolTip(ItemBackgroundPadding->toolTip());
@@ -1285,8 +1287,6 @@ void DlgSettingsUI::retranslateUi()
     labelDockOverlayAlphaRadius->setToolTip(DockOverlayAlphaRadius->toolTip());
     DockOverlayMoveNaviCube->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayMoveNaviCube()));
     DockOverlayMoveNaviCube->setText(QObject::tr("Navigation cube moves clear of panels"));
-    DockOverlayThemeItemColor->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayThemeItemColor()));
-    DockOverlayThemeItemColor->setText(QObject::tr("Item background follows the theme"));
     DockOverlayAlpha->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayAlpha()));
     labelDockOverlayAlpha->setText(QObject::tr("Overlay background opacity"));
     labelDockOverlayAlpha->setToolTip(DockOverlayAlpha->toolTip());
@@ -1408,6 +1408,16 @@ void DlgSettingsUI::init()
         TaskPanelInView->onSave();
         TaskView::TaskPlacement::applyToAll();
     });
+
+    // The tree view's own item background colour is used only while "Item
+    // background follows the theme" is off: with that on, the colour cannot
+    // be picked (docs/HandsOnQueue.md entry 87).
+    auto ownColourEnabled = [this](bool followsTheme) {
+        labelItemBackground->setEnabled(!followsTheme);
+        ItemBackground->setEnabled(!followsTheme);
+    };
+    QObject::connect(DockOverlayThemeItemColor, &QCheckBox::toggled, this, ownColourEnabled);
+    ownColourEnabled(DockOverlayThemeItemColor->isChecked());
 
     timer = new QTimer(this);
     timer->setSingleShot(true);
