@@ -6327,3 +6327,143 @@ State at 2026-10-13 01:00: local head `49dca0ebbc`, both suites green on
 `5d63c7152d` (only this log and the generator after it), nothing pushed,
 nothing staged. The copy under test has the queue's entries 82, 79 and
 53's regression; a restage and the push wait for the reporter's word.
+
+## 2026-10-13, the day: the merges, entries 84 to 97 -- PUSHED `724e03c074` and STAGED 13:56; the fixes since LOCAL
+
+The reporter, 06:31: "Fine. Push and restage" (pushed 06:33 at
+`4b52e58423`, staged 06:52); 06:43: "After staging, Merge with remote
+branch SolidBody, build only no test. Onece build pass merge with remote
+branch Transaction. After build pass merge with OcctFix, build and test.";
+09:13: "also sync occt"; 09:20: "after freecad build, stage first, then
+proceed with test". Then a morning of hands-on on the staged copy, the
+entries below, and at 13:53 "re-stage now", "push also".
+
+**The merges.** `origin/SolidBody` (`714003dc33`), then
+`origin/Transaction` (`5a5b5ff906`); `origin/OcctFix` was inside
+Transaction already ("Already up to date"). The OCCT fork synced and
+rebuilt (`a81d25f148`, `tools\build-occt.cmd`, 23 steps). The merged head
+failed two ctests, both one cause: a text of `MergeConflictSide` grown to
+391 characters by the two sides; `47ed30316a`. A FreeCAD configure after
+the OCCT sync hung 11 minutes in "Performing Test _flag_found" once; killed
+and started again it ran through.
+
+**Entries 84 to 97,** each with a GUI test in `tests/gui` unless said.
+Evidence: `..\dl\handson\2026-10-12\s1` (`g-*` the GUI runs, `c-*` the
+console runs, `b-*` the builds), the debugger's log of entry 97 in
+`..\dl\handson\2026-10-13\entry97`.
+
+| # | State | In one line |
+|---|---|---|
+| 69 | answered | why the staged copy did not show the see-through panels with the reporter's configuration: the item backing works under any overlay sheet, but `Dark_overlay.qss` -- what the Dark theme named until entry 30 -- leaves a panel's ground solid, and a theme writes its keys only when it is applied; applying the theme again took the new sheet (the reporter, 10:04) |
+| 84 | `a3acdd0947`, pushed | the tree's tip came up for an item the pointer had left: the timer asked `itemAt(QCursor::pos())`, which still answers beside the view or under a widget laid over it. The item waited for is remembered and the tip shown only with the pointer still on it, in the viewport, nothing over it; a document's row starts its own delay |
+| 85 | `1f01bf3f30`, pushed | a task panel's ground in the colour of the theme being left: the overlay's sheet was made when the keys it is chosen by were written, before the theme's own colours were in force. Made again in the main window's style change, after them |
+| 86 | `8d2e4379c8` | the wheel over the clear part of an overlaid panel did nothing: in `OverlayManager`'s filter `case QEvent::Wheel` fell through into the context menu's case and read `reason()` of a wheel event (2022 code). The reporter's "task panel, no click or wheel through" I could not show: with the panel's eye on, a move and a click pass on the staged copy; their saved configuration has the right overlay's eye off, where nothing passes by design -- asked |
+| 87 | `9b2a76c2dd`, `a4beaec622` | a darker rim round a tree item under Dark: the outline effect outlined the item's own backing; it outlines only what is more opaque than the backing now. The hover: Qt's own bar over the whole row left a trail under the effect; the tree draws its own, over the item as its background is, in the theme's hover colour at the overlay's opacity. "Item background follows the theme" stands in the Tree view group of the preferences, the colour beside it greyed while it is on |
+| 88 | `9b2a76c2dd` | a transparent overlay's scroll bars: no ground, the handle at the overlay's opacity (rules in `OverlayStyleSheet::fromSettings()`) |
+| 89, 90 | `d3e1604e2e` | `Std_DisplayStyle` with a small triangle in its icon, `Std_SelUp`'s arrow over its icon: `setupMenuToolButton()` ran before the action was added to the bar, so the button it styled was not the one shown. After `addAction` at all twelve places |
+| 91 | first form staged, redone | see below |
+| 92 | `518c2026d0` | `Pocket023.Profile` read "Sketch047.2" after the migration recompute: `SketchObject::getElementName` answered a wire's or a face's mapped name with the old-style name (code of 2018 to 2024); it goes to `Part2DObject` for those now. `PartDesignTests/TestSketchWireProfile.py` |
+| 93, 94, 95 | `7f3ef57348` | the omni search opened from the tree types "/ " and the selection's path; Tab on a property leaves the typing in the box; a name typed in small letters is corrected to the object found wherever the property list comes up. A limit told to the reporter: a further step typed small (`/ Crate.placement.`) brings no list, which is the expression completer's |
+| 96 | `cbb01f5de3`; the menu, see below | the close glyph of an overlay is a cross in a square frame (`overlay/close.svg`) |
+| 97 | `3549b0a19f` | File > Revert crashed with a TechDraw page's view open: tearing the document down closes the view, which writes `Visibility` and its group's `HiddenChildren`, and that opened a transaction naming objects then deleted. No transaction is opened while a document clears itself (`DocumentP::clearing`) |
+
+**A wart in the local history.** In `9b2a76c2dd`, `a4beaec622`,
+`d3e1604e2e`, `3549b0a19f` and `518c2026d0` the file `src/Gui/Tree.cpp` is
+mis-assembled and does not compile; `7f3ef57348` and everything after has
+it as built and tested. Cause: the entries were committed one by one out
+of one working tree with a zero-context partial patch
+(`git apply --unidiff-zero`), which put the inserted hunks in the wrong
+places. And a `git reset --soft` of mine at 14:37 took a queue commit of
+the note-taking session into `7f3ef57348`. Neither is put right: rewriting
+the branch needs the reporter's word, and they had them pushed as they
+are (15:58, origin `ed2cb69298`). The lessons: whole files with
+`git commit -o`, never a zero-context patch; no reset below my own newest
+commit while two sessions commit.
+
+**Both suites** on the code staged at 13:56 (the build of 13:07): ctest
+957 of 957 (`ctest27.log`); Python "Ran 3746 tests in 954.199s, OK
+(skipped=52, expected failures=6)" (`pytest27.log`). On the build of 14:10
+(the tip, with the wheel fix and the final hover bar): ctest 957 of 957
+(`ctest28.log`), the Python suite not run again; the new GUI tests and
+their neighbours pass, `overlay-see-through.py` 60 of 62 on the real
+screen (two claims about focus, lost while the reporter worked at it) and
+57 of 59 offscreen (two that need a window larger than the offscreen
+screen's 800 by 800) -- no claim fails in both.
+
+## 2026-10-13, the afternoon: entries 83, 86, 91, 96 and 98 to 113 -- three builds; staged once at 16:55 from the first
+
+The reporter worked hands-on at the staged copy all afternoon and sent
+entries as they came, through the note-taking session; answers to points
+arrived the same way, often minutes apart. Three builds: "r5" (16:48,
+staged 16:55 on "push and then stage"), "r6" (17:44), "r7" (18:20). Five
+parallel jobs, not eight: beside the reporter's two FreeCAD sessions eight
+ran the compiler out of heap. Evidence: `..\dl\handson\2026-10-12\s1`,
+`g-v1-*` (r5), `g-w1-*`, `g-w2-*` (r6), `g-x1-*`, `g-x2-*` (r7), the
+probes `e86t*.py`, `e99*.py`, `e101.py`, `e103.py`, `e105.py`, `e107b.py`,
+`e108*.py`, `e109*.py`, `e110.py`; offscreen (`QT_QPA_PLATFORM=offscreen`)
+wherever a test moves the pointer, on the real screen where it needs
+pictures, the colour scheme or the custom title bar -- those do not move
+the pointer.
+
+| # | State on r7 | In one line |
+|---|---|---|
+| 83 | works, 19 of 19 | a view cell's menu button and its two corner handles slide to just past what `OverlayManager::covered()` reports, each by itself, only if the clear part of the cell is at least two of it wide and high, never one over another (`ViewAreaCell::placeChrome`) |
+| 86 | works; the eye-off case NOT shown by me | the reporter's rule, "pass through as long as fully transparent": `OverlayTabWidget::testAlpha` no longer answers "outside" for a panel with its transparent mode off and the pointer in it, and the filter no longer asks the mode. Shown on the real screen without the pointer: with the eye off and the pointer outside, the Tasks overlay paints nothing over 89% of itself, as with the eye on. What it paints with the pointer IN it and the eye off needs the reporter's pointer |
+| 91 | works, 12 of 12 | the clear button of a reference row: as high as the row's caption button, its glyph cut to what is drawn of it and scaled to that height, the width from the glyph's proportions (23 by 20 beside a caption 20 high, with the reporter's configuration) |
+| 96 | works on the real screen, 19 of 19 | the four "Toggle left/right/top/bottom" menu icons are light under a dark theme: set again when the colour scheme itself changes -- a theme sets its sheet first, its scheme after |
+| 98 | works; one side claim open | in a see-through overlay the Python console and the report view paint the tree's item ground behind each line's text, at paint time (the document is not touched); the outline effect leaves its shadow out wherever the source is at least as opaque as such a ground, which takes the outline off a tree item that has its background too (a change to entry 87) |
+| 99 | a, b work; c DOES NOT | dashes `0xFFF0`; `View/DatumScale` 200 by default; the pick through a face in front is written twice over (a pick-through mark on the datum's dashed part; its paths kept by the render cache manager and asked after the on-top pass) and still ends on the face, offscreen and on the real screen. Not committed. To be instrumented |
+| 100 | in | the Dark theme's border `#4B4B4B` (`GeneralBorderColor`); check boxes and radio buttons keep the lighter grey |
+| 101 | works | View menu: "Split view" (`Std_SplitView`) after "Standard views", "Title, menu and status bars" (`Std_WindowBars`) at the end; group commands that hold the old commands by name |
+| 102 | in | `DockOverlayAlpha` 180 by default |
+| 103 | works, 7 of 7 with the reporter's configuration | each overlay's own title bar has the "show this task panel in its view" button, shown while the Tasks are in that overlay and show a panel that has a view. My first cause was wrong: the button had only ever been on a DOCKED Tasks dock's title bar (docs/TaskPanelPerView.md 14.6 says so) |
+| 104 | the ghost: works, 5 of 5; the show-through: NOT found | what a view hides of its own accord was kept in the depth and normal prepass with the draws whose selection is drawn in their place, and the prepass's cache key did not hold what a view hides. Not scored against a build without the change: there is none left |
+| 105 | works, 13 binder tests | a `Relative` binder with a shape and no context takes the shortest path to itself that leaves the placements it keeps of its supports (`Cache_<support>`) as they are; with none it takes no context and is in error with the reporter's text. No geometry search (the reporter). On scanner.FCStd: `Binder008` in that error after the migration recompute, `Sketch043` and `Pad033` as the file has them |
+| 106 | works, 12 of 12 | a property group's rank is an ending `#<rank>` of its name, not shown; the property view orders by rank, then name, one group a shown name at the largest rank; the object's looks are in "Appearances#1" |
+| 107 | works | since Python 3.12 the dictionary our catch macro hands Python with an exception is the exception instance's argument, and `PP_Fetch_Error_Text` looked for it as the value: every error of ours that crossed Python came back as the dictionary's text. Found again in `PyTools.c`; a cancelled recompute after a link replacement keeps the replacement and says "Recompute cancelled" |
+| 108 | reproduced; a change written, not built | a feature in edit with its body hidden shows no base feature: what a view shows of its own accord is captured only if the capture gets to it, and a hidden body's switch stops it. `edits_108.py`: the containers of a shown occurrence count as shown too, for the capture |
+| 109 | half in | a failed dress-up has no `DressUpShape`; the faces of the shape it keeps still trace back to the missing edges (shown on `Fillet011`). `TaskDressUpParameters::getItemElement` falls back to that shape; the list filled anew drops the mapped name of a missing reference, the second half (`edits_109b.py`) |
+| 110 | works, 7 of 7 with the reporter's configuration | (A) the menu reveal button was 50 or 88 wide by whether its own size or the sheet's `min-width: 80px` had the last word; (B) a plain `QMainWindow::menuBar()` -- any call from Python -- put an empty menu bar into the slot that holds the title bar's spacer, and the guard of 2026-08-29 put back a spacer Qt had hidden and scheduled for deletion. Today's (B) in the reporter's session was set off by a look script of the note-taking session; the reporter had seen it once before |
+| 112 | works, 6 of 6 | a TechDraw page view's ground follows the 3D view's colour or gradient behind `Colors/BackgroundAs3DView`, on by default; Qt paints that ground whichever way the page is drawn, so both ways have it. No check box in the preference page yet |
+| 111, 113 | not started | 113 waits for the reporter's two points |
+
+**Both suites on r7** (a temporary directory that started empty): ctest
+957 of 957 (`ctest31.log`); Python "Ran 3752 tests in 909.870s, FAILED
+(failures=3, skipped=52, expected failures=6)" (`pytest31.log`) -- the
+three are `parttests.ElementAppearanceTest` cases that expected the
+object's group to be named "Appearances"; corrected to "Appearances#1",
+that module again on the same build: 35 OK (`pytest32.log`). The GUI
+tests of r7: every one named above, and of the neighbours on the real
+screen `overlay-see-through.py` 62 of 62 (the clean run owed since the
+morning), `overlay-title-buttons-theme.py` 44, `navicube-clear-of-panels.py`
+16, `task-panel-in-view.py` 89, `task-panel-overlay.py` 43,
+`selection-on-top-hidden-edges.py` 18; offscreen
+`overlay-item-outline-and-hover.py` 34, `overlay-pass-through.py` 14 and 15
+with the reporter's configuration, `toolbar-menu-buttons.py` 11,
+`omni-search-object-typing.py` 16, `tree-tooltip-only-over-its-item.py` 14,
+`task-panel-clear-of-docks.py` 21, `revert-document.py` 12,
+`preferences-tree-item-background.py` 11,
+`overlay-preset-follows-the-theme.py` 45, `theme-switch-contrast.py` 39.
+`overlay-text-ground.py` fails two side claims offscreen (the panel is 28
+pixels wide there) and its console claim with the reporter's
+configuration (50 wide); the report view's ground is there, 67882 pixels
+on 159 rows in the item ground's colour, 16 of an outline's.
+
+**Committed 19:1x, local, twelve commits on `156f45903f`**, each with whole
+files: `6df0613233` (107), `8ef425ceae` (86, 98, 102, 103: they meet in the
+overlay's sources), `648cf34f83` (96 in the menu, 101), `d00ab5ddcf` (83),
+`51075fbda3` (91), `650a6dee96` (106), `00dec0a56d` (105), `038b8b1b1a`
+(104's ghost), `6d1dc1f9f1` (110), `062f56a133` (100), `2a317f254e` (112),
+`6e7232e7c2` (99's default scale). NOT committed: entry 99's dashes and
+its pick (one file holds both, and the pick does not work), entry 109's
+half.
+
+**What the afternoon's mistakes were, so that they are not made again.**
+The copy staged at 16:55 carried three fixes that did not work (96 not
+shown either way, 99 c, 103), found by the first tests half an hour later:
+the reporter asked for the stage before the tests, and got told. The
+offscreen platform is not the screen: it has no colour scheme (96's test
+failed there and passed on the screen), shows an eye-off overlay solid
+where the screen shows it clear, and has no render engine; a claim is
+judged on the platform that can show it. A `git checkout --` of a header
+to take an edit back gives the header a new time and costs a full build.
