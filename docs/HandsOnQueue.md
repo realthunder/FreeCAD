@@ -1420,7 +1420,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | 2026-10-13 00:56: the material change `3e64f3e9d6` takes NOTHING off the first opening (2.20 s on the staged copy, 2.23 and 1.99 s with it) -- the build session's "most of the 1.8 s" of 23:17 is WITHDRAWN by it; and opening the preferences on the copy staged 2026-10-12 17:52 can end the program, entry 82. MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
 | 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, pushed 2026-10-12 17:56; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
 | 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; FIXED `22ece75a08`; its test `task-panel-clear-of-docks.py` 21 claims, no FAIL, on the staged build. As it stood in work at 16:36: the cause CONFIRMED and reproduced by a test on the old build (the note-taker's guess held); the fix, `OverlayManager::occupied()` no longer skips a dock that is not see-through at the moment. OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
-| 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | DONE `bbe8525de7` but for the reporter's point 1, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `overlay-see-through.py` 58 PASS, 0 FAIL] (21:03): after the fix no dock is solid when docks are put into overlays together; its own test `overlay-see-through.py` 58 claims, no FAIL. Point 1 as before: the transparent mode itself NOT seen broken by the build session -- if it still is on the next stage, which panel, the eye pressed or not, the pointer over it or not. Before, 18:57: in the main tree, uncommitted, in a build started 18:44. A DEFECT found and reproduced by the build session on the staged copy under Dark: of the docks put into overlays together all but the tree view stay SOLID until the pointer has been in the overlay and out again, or the eye is pressed; a fix is written, in that build. The transparent mode itself it could NOT see broken; whether that defect is what the reporter meant is NOT known. Before, 17:58: points 2 to 4 and the two settings written in a second working copy, not built. Point 1 ANSWERED by the reporter 17:07, said to the build session: "overlay has a setting, 'transparent mode' to control this behavior, but right now it seems borken, fix it" -- so the overlay's transparent mode does not keep a hovered panel see-through, to be found and fixed; not looked into yet. The five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
+| 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | THE REPORTER 2026-10-13 09:54, on the copy staged 09:36: "why I am not getting it with my current configuration" -- READ by the note-taker, nothing run: their configuration names the overlay sheet `Dark_overlay.qss`, the change was made and tested with the sheets used when none is named (`Dark-Outline.qss`, `Light-Outline.qss`); `Dark_overlay.qss` states a solid task panel ground of its own, which wins by the change's own rule; NOT shown by a run, two points NOT ANSWERED. DONE `bbe8525de7` but for the reporter's point 1, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `overlay-see-through.py` 58 PASS, 0 FAIL] (21:03): after the fix no dock is solid when docks are put into overlays together; its own test `overlay-see-through.py` 58 claims, no FAIL. Point 1 as before: the transparent mode itself NOT seen broken by the build session -- if it still is on the next stage, which panel, the eye pressed or not, the pointer over it or not. Before, 18:57: in the main tree, uncommitted, in a build started 18:44. A DEFECT found and reproduced by the build session on the staged copy under Dark: of the docks put into overlays together all but the tree view stay SOLID until the pointer has been in the overlay and out again, or the eye is pressed; a fix is written, in that build. The transparent mode itself it could NOT see broken; whether that defect is what the reporter meant is NOT known. Before, 17:58: points 2 to 4 and the two settings written in a second working copy, not built. Point 1 ANSWERED by the reporter 17:07, said to the build session: "overlay has a setting, 'transparent mode' to control this behavior, but right now it seems borken, fix it" -- so the overlay's transparent mode does not keep a hovered panel see-through, to be found and fixed; not looked into yet. The five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
 | 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views". ANSWERED 15:35: the label seen is '...and the panels that are open', "ellipsed strangely"; the button first commits the relevant settings (for when auto apply is off) and then applies to the views | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`. SINCE 18:57: ctest found the text of `View/TaskPanelInView` over the 400 characters a setting may have (495); shortened `97e1ee791d`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52. As it stood in work at 16:36: the check box gone and `View/TaskPanelInViewAll` removed as a setting (the build session's choice); a button "Apply to live views" beside "Task panels in their views" stores the setting and applies. OPEN; both points answered 15:35 |
 | 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; FIXED `93b08fd472`; `preferences-enter-in-an-edit-box.py` 12 claims, no FAIL; the box stores a tenth of a second after the key, and only with "Apply preferences at once" on. As it stood in work at 16:36: reproduced by a test on the old build (Return in the author field closed the dialog); the fix in `DlgPreferencesImp::keyPressEvent`. OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
 | 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `selection-on-top-hidden-edges.py` failed two claims since the new defaults -- LOOKED INTO 18:57: the test's fault, not the drawing; the test corrected `846d40819a`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52, 18 of 18. As it stood in work at 16:36: the two defaults changed (1.0 and 1.5); no theme, preset or the browser viewer names either, so points a and b have nothing to decide. OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
@@ -1435,6 +1435,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
+| 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found by reading; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -8904,7 +8905,7 @@ written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
   FAIL.
 - For the reporter to confirm on the staged copy.
 
-## 69. Overlay panels: a transparent background, item backgrounds in the theme's 3D view colour at alpha 150, the task panel at alpha 150 (a change request) -- DONE `bbe8525de7` but for point 1, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; the five points answered 15:21; point 1 answered 17:07: the overlay's transparent mode is broken, to be fixed; a defect of the see-through look found 18:57, whether it is the one meant NOT known
+## 69. Overlay panels: a transparent background, item backgrounds in the theme's 3D view colour at alpha 150, the task panel at alpha 150 (a change request) -- the reporter does NOT get it on the copy staged 2026-10-13 09:36 with their configuration (it names the sheet `Dark_overlay.qss`), two points not answered; DONE `bbe8525de7` but for point 1, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; the five points answered 15:21; point 1 answered 17:07: the overlay's transparent mode is broken, to be fixed; a defect of the see-through look found 18:57, whether it is the one meant NOT known
 
 **2026-10-12 15:12, the reporter:** "new request, when the panel is moved to
 overlay mode change its background to transparent. change default tree view
@@ -9072,6 +9073,83 @@ written here 21:04.
   the 3D view's colour", 17 files. What of points 2 to 4 and of the two
   settings is in it, and under which names, is not in the message; the
   build session's log is the place for it.
+
+**2026-10-13 09:54, the reporter, a question on the copy staged 09:36:**
+"question, how does the overlay opacity fix done. why I am not getting it
+with my current configuration in staged copy"
+
+How it was done, from the commit `bbe8525de7` (its message, read by the
+note-taker):
+- Two new settings, `View/DockOverlayThemeItemColor` (on) and
+  `View/DockOverlayAlpha` (150), on the preference page with the other
+  overlay settings.
+- An item of an OVERLAID tree view and a row of an overlaid property
+  view are painted by the program with the 3D view's background colour
+  (the first colour of a gradient) at that opacity; what has no item is
+  left clear. `TreeWidget` and `PropertyEditor` have the properties
+  `overlayItemBackground` and `overlayAlpha` for a style sheet.
+- A task panel's ground is a RULE the program writes from the settings
+  (the theme's `DialogBackgroundColor` at that opacity) and puts IN
+  FRONT of the overlay style sheet -- "so a sheet that states its own
+  still wins". The two rules `Dark-Outline.qss` and `Light-Outline.qss`
+  carried for it were taken out.
+- A defect fixed on the way: docks put into overlays together stayed
+  solid, all but the first.
+
+READ by the note-taker in the reporter's configuration
+(`%APPDATA%\FreeCAD\user.cfg`, dated 2026-10-13 09:47), nothing run and
+nothing changed:
+- `MainWindow`: `Theme` "Dark", `ColorScheme` "Dark", `StyleSheet`
+  "FreeCAD.qss", **`OverlayActiveStyleSheet` "Dark_overlay.qss"**.
+- `View`: neither `DockOverlayThemeItemColor` nor `DockOverlayAlpha` is
+  there, so both are at their defaults, on and 150.
+  `DockOverlayAutoView` 1.
+- The 3D view's background: `RadialGradient` 1, `BackgroundColor2` a
+  grey of 124, `BackgroundColor3` a grey of 60. The tree view's own
+  `ItemBackground`: a grey of 74 at alpha 150.
+- `OverlayLeft` and `OverlayTop` have `Transparent` 1, `OverlayRight` 0.
+
+The note-taker's reading of why, from the source, NOT shown by a run:
+1. THE SHEET. With no overlay sheet named, the program takes
+   `Dark-Outline.qss` or `Light-Outline.qss`; the change was made on
+   those two, and its test `tests/gui/overlay-see-through.py` names no
+   sheet, so it ran on those two. The reporter's configuration names
+   `Dark_overlay.qss`, which the commit did not touch (last changed
+   2023). That sheet states
+   `QSint--ActionGroup QFrame[class="content"] { background-color: #444444; }`
+   -- a solid ground for the task panel, and by the change's own rule
+   the sheet's wins over the settings'. So the task panel at alpha 150
+   is NOT to be had with this sheet. The same selector is stated once
+   in each of the other four sheets of that family
+   (`Darker_overlay.qss`, `Dark-Modern_overlay.qss`,
+   `Light_overlay.qss`, `Light-Modern_overlay.qss`) -- counted by the
+   note-taker, their colours not read.
+2. NOT determined by reading: what the ground of a tree view or a
+   property view is under `Dark_overlay.qss`; whether the items' backing
+   is seen there.
+3. THE COLOUR, where it does work: with the follow-the-theme setting on
+   and a radial gradient, the code takes `BackgroundColor2` -- in this
+   configuration the LIGHTER of the two (124 against 60), where the
+   tree's own stored item background is a grey of 74. The reporter's
+   first sentence said "the darker one if it's gradient"; the answer b
+   of 2026-10-12 15:21 said "the first color". In this configuration the
+   two are not the same colour.
+4. The items are backed only while the panel is in its see-through
+   state; `OverlayRight` has its transparent mode off, so with the
+   pointer in it that panel is solid as before.
+
+NOT ANSWERED YET, for the reporter:
+a. WHAT is seen, and on which panel: a task panel that is solid; a tree
+   or property view whose empty part is not clear; items with no
+   backing; or the backing in a colour not expected?
+b. Should the five `*_overlay.qss` sheets follow the two settings as the
+   two Outline sheets do (their own task panel colour taken out)? The
+   note-taker's guess: yes. Until then a try by hand: the overlay style
+   sheet in the Preferences set to no sheet of its own (the key
+   `MainWindow/OverlayActiveStyleSheet` empty), which gives the Outline
+   sheet.
+The colour point 3 is for the reporter to say too: the first colour as
+answered, or the darker as first written.
 
 ## 70. The UI preference page: "Apply the setting above to every view at once" has a wrong label and should be a button -- DONE `22ece75a08`, STAGED 2026-10-12 17:52, pushed, both points answered 2026-10-12 15:35
 
@@ -10291,6 +10369,48 @@ Pointers, READ in the source by the note-taker, nothing run:
 - Near it: entry 68 (a task panel in the view kept beside an overlaid
   tree view) and entry 76.
 
+## 84. A tree view item's tooltip is shown when its delay is up even if the pointer has left the item -- OPEN, the cause not found by reading, three points not answered
+
+**2026-10-13 09:56, the reporter:** "new defect, tree view item tooltip has a
+delay, which is acceptable, but when the time is up, only show the tooltip
+if the mouse is still over the item."
+
+The note-taker's reading, not the reporter's words:
+- The delay stays. Seen: the pointer rests on an item, moves away before
+  the tooltip is up, and the tooltip of that item comes all the same.
+- Wanted: when the delay ends, the tooltip is shown only if the pointer
+  is still over the item the delay was started for; otherwise nothing.
+- Which copy is not said; the copy under test at this hour is the stage
+  of 09:36 (`abca255e23`).
+
+NOT said, lettered for an answer:
+a. WHERE the pointer is when the stale tooltip comes: on another item of
+   the tree, on the empty part of the tree, or outside the tree (the 3D
+   view, another panel)?
+b. With the pointer moved to ANOTHER item before the time is up: no
+   tooltip at all, or the delay starts again for the new item and its
+   own tooltip comes? The note-taker's guess: the second.
+c. Is the tree view overlaid or docked when it happens, or both?
+
+Pointers, READ in the source by the note-taker, nothing run; the cause
+is NOT found by reading:
+- `src/Gui/Tree.cpp`: a move of the pointer over an item starts
+  `toolTipTimer` at 300 ms (`TreeWidget::mouseMoveEvent`, two places);
+  `TreeWidget::onToolTipTimer` then looks up the item under the pointer
+  as it is at that moment
+  (`itemHitTest(viewport()->mapFromGlobal(QCursor::pos()))`) and shows
+  that item's text, or hides the tooltip when there is none. It does not
+  remember WHICH item the delay was started for.
+- `src/Gui/Widgets.cpp`: `ToolTip::showText` does not show at once
+  either -- it starts a second timer of 80 ms (`tooltipTimer`), and
+  `ToolTip::onShowTimer` shows the text at the place handed over, with
+  no second look at where the pointer is. So between the two timers the
+  pointer can leave and the tooltip still comes; whether that is what
+  the reporter sees is a guess.
+- A leave of the tree stops the timer and hides the tooltip at some
+  places (`Tree.cpp` near lines 1828 and 4776); which paths do not is
+  not followed.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -10300,5 +10420,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 and 83 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 84 are of 2026-10-13, 82 found by
 it)
