@@ -1874,7 +1874,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
 | 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (B) IN THE REPORTER'S LIVE SESSION TODAY WAS SET OFF BY THE NOTE-TAKER'S OWN SCRIPT (found 17:03): the first look of 16:13:11 called `menuBar()` on the main window, which makes a menu bar and pushes the kit's spacer out -- the tool bar rows slid under the title bar a moment later. The note-taker's "read-only, nothing changed" was WRONG. (A) is the reporter's own finding, before any look. BOTH REPRODUCED by the build session on the real screen, the causes shown, fixes written for the next build: (A) the menu reveal button's width flips between its own 50 and the sheet's 88; (B) ANY `menuBar()` call does it, the window's guard against it no longer works. (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry |
 | 111 | 2026-10-13 | the Python console or the report view overlaid on a TechDraw page drawn by the bgfx renderer: after a change of theme the text in the overlay is SCRAMBLED over the page -- in the same overlay the half that lies over a 3D view is right (a screenshot; said as "new defect and request"). MORE from the reporter 17:10: under LIGHT it is fine; under CLASSIC it is scrambled too, over the 3D view AND over the page; "it seems that the scramble is related to text outline drawing" | OPEN; ANSWERED 17:11: the "request" IS entry 112; before the change of theme the text is right; a page drawn by Qt and the other panels not checked, guessed not related; the eye taken to be beside the point. Nothing waits for the reporter |
-| 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11) | OPEN; three points under the entry, NOT ANSWERED |
+| 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11) ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; one smaller point left, not blocking |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -14421,7 +14421,7 @@ The note-taker's reading:
 - d. The eye: irrelevant, in the reporter's view.
 Nothing of this entry waits for the reporter.
 
-## 112. The background of a TechDraw page's view the same as the 3D view's (a change request) -- OPEN, four points not answered
+## 112. The background of a TechDraw page's view the same as the 3D view's (a change request) -- OPEN, answered 2026-10-13 17:12: around the sheet, the gradient too, the bgfx renderer's pages only
 
 **2026-10-13 17:08, the reporter:** "new request, techdraw page background same
 as 3d view"
@@ -14467,6 +14467,22 @@ Pointers, the note-taker's, nothing run and the source not followed:
 **2026-10-13 17:11: point d ANSWERED** by the reporter's answer a under
 entry 111 ("a, yes"): this IS the request announced with entry 111.
 Points a, b, c of this entry are still not answered.
+
+**2026-10-13 17:12, the reporter answers the three points left:** "entry
+112. a, yes. b, yes. c, only bgfx renderer"
+
+The note-taker's reading:
+- a. Yes: the ground AROUND the sheet only; the paper of the page stays
+  as it is.
+- b. Yes: the GRADIENT too -- the page view's ground is drawn as the 3D
+  view's background is, gradient and all, not one plain colour.
+- c. For a page drawn by the BGFX RENDERER only. A page drawn by Qt
+  keeps the ground it has.
+One smaller point, NOT put as blocking: the second half of point c --
+whether the ground simply FOLLOWS the 3D view's setting (and the theme)
+at all times, or TechDraw gets a setting of its own for it -- is not
+answered in so many words; "same as 3d view" is taken as: it follows,
+no setting.
 
 ## Inbox
 
