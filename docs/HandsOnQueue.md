@@ -1759,6 +1759,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
 | 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | DESIGNED and written as a script, in NO build yet (15:36); "does not move" judged FIRST by the placements the binder keeps of its last update and by the geometry search only where it keeps none -- the build session's choice, NOT the reporter's word, to be told to them. AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. ANSWERED 15:28: OFF HOLD, to be built; "not moved" judged against the shape in the file by a GEOMETRY SEARCH; if no path leaves it unmoved the binder is in ERROR, "No context, please double click the binder in the desired context to refresh"; of equal paths the first that `getParents()` returns. Nothing left unanswered. It had been ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | IN THE SOURCE in the reporter's form, NOT built yet (15:36): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
+| 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot) | OPEN; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -13326,6 +13327,56 @@ is running).** From the build session's message of 2026-10-13 15:36, written her
 The block of 15:08 above (the table with its calls) is of a form that
 never reached a build and is not in the source any more.
 
+## 107. A recompute cancelled with Esc: the error box shows the abort as raw program text -- OPEN, three points not answered
+
+**2026-10-13 15:38, the reporter, with a screenshot:** "new defect, when
+recompute, I press esc to cancel the recompute, the error message pop up
+explaining the abortion is not human readable. See screenshot."
+
+The screenshot, as the note-taker reads it (kept outside the repository,
+`..\dl\handson\2026-10-13\entry107\replace-link-failed.png`): a box
+with the red error mark, titled "Replace link failed", one button "OK",
+and this text:
+"{'sclassname': 'class Base::AbortException', 'sErrMsg': 'Aborted
+operation', 'sfile': '', 'iline': 0, 'sfunction': '', 'swhat': 'Aborted
+operation', 'btranslatable': False, 'breported': False}"
+
+The note-taker's reading, not the reporter's words:
+- A recompute was running; the reporter pressed Esc to cancel it; the
+  program then raised an error box whose text is the abort written out
+  as a program's record -- field names, quotes and braces.
+- The box's title says the recompute was part of a "Replace link"
+  operation; the reporter's sentence speaks of a recompute only.
+- Which copy: by the hour, the stage of 13:56.
+
+NOT said, lettered for an answer:
+a. WHAT should appear after a cancel by Esc: NOTHING at all (the user
+   cancelled, it is no failure), a line in the status bar or the report
+   view, or a box that says in plain words "Recompute cancelled"? The
+   note-taker's guess: no error box.
+b. The OPERATION: was a link being replaced (or unlinked) when the
+   recompute ran, as the title says -- and is the replacement expected
+   to be taken back when the recompute is cancelled, or kept?
+c. ELSEWHERE: only this place, or should every place that shows an
+   error after an Esc be looked through for the same raw text?
+
+Pointers, READ in the source by the note-taker, nothing run:
+- The box is raised in `src/Gui/CommandLink.cpp` near line 677: after
+  the replacement it calls `Command::updateActive()` (the recompute);
+  any `Base::Exception` is caught, the transaction closed as aborted
+  (`committer.close(true)`), and a critical message box is shown with
+  the title "Replace link failed" (or "Unlink failed") and the text
+  `e.what()`.
+- The recompute runs through Python; an abort raised in the program
+  comes back from Python as an exception whose text is the record the
+  screenshot shows -- so `e.what()` is that record, not the two words
+  "Aborted operation" inside it.
+- `src/Gui/Command.cpp` near line 667 has a place that catches
+  `Base::AbortException` by itself, apart from other errors: the way an
+  abort is meant to be told from a failure. This catch does not.
+- Near it: entry 97 and entry 79 (things that happen while a long
+  operation lets events in).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -13335,5 +13386,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 106 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 107 are of 2026-10-13, 82 found by
 it)
