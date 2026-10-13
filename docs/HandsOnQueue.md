@@ -1482,6 +1482,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78) | OPEN; four points under the entry, NOT ANSWERED |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; four points under the entry, NOT ANSWERED |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found | OPEN; three points under the entry, NOT ANSWERED |
+| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11404,6 +11405,45 @@ this one:
   and entry 94 (Tab while a property is resolved) -- all in the same
   step of the same box, and likely to be worked on together.
 
+## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- OPEN, three points not answered
+
+**2026-10-13 11:17, the reporter:** "new request, add a border to the close icon
+for overlay pannel, so it does not look like a icon not found defect"
+
+The note-taker's reading, not the reporter's words:
+- The close button in the title bar of an overlaid panel shows a bare
+  X. A bare X is also what a place looks like where an icon could not
+  be found; so it reads as a defect.
+- Wanted: a border drawn with the X -- the X in a frame -- so that it
+  reads as a button to close.
+
+NOT said, lettered for an answer:
+a. THE BORDER'S SHAPE: a square frame around the X, a rounded one, or a
+   circle? And a line only, or a filled ground under the X?
+b. WHICH buttons: the close button alone, or every button of an
+   overlay's title bar (float, the mode, auto hide, the task panel's
+   own) framed the same way, so that they look of one kind? The
+   note-taker's guess: the close button alone, as said.
+c. WHERE ELSE the same X is shown: the close button of a task panel
+   shown in its view and of a panel docked in the main window (entry
+   73 made those follow the theme) -- framed too, or the overlay's
+   only?
+
+Pointers, READ by the note-taker, nothing run:
+- The icon is `src/Gui/Stylesheets/overlay/close.svg`: 12 by 12, ONE
+  path, the two strokes of an X with round ends, and nothing else.
+  Beside it `close_light.svg`, `close_lighter.svg`, `close_red.svg`.
+  The title buttons are drawn from these files in the colour the
+  overlay sheet states (`Gui--OverlayToolButton` `qproperty-iconColor`,
+  white under the Outline sheets since entry 73, `2d945c8268`).
+- A border could be drawn into the picture (a frame in the file, tinted
+  with the X) or stated by the sheet for the button
+  (`Gui--OverlayToolButton` has `border: none` in
+  `overlay/Dark-Outline.qss`); the reporter says "to the close icon".
+- Near it: entry 73 (the title buttons made dark/light aware), entry 87
+  (the overlay's outline effect lays a dark copy under what is
+  painted -- a thin frame would get it too).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11413,5 +11453,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 95 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 96 are of 2026-10-13, 82 found by
 it)
