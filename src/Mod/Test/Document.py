@@ -1365,6 +1365,47 @@ class UndoRedoCases(unittest.TestCase):
         self.Doc.undo()
         self.assertTrue(self.Doc.recompute() >= 0)
 
+    def testProcessEndedFromAScriptEnds(self):
+        # A commit keeps the values it copied for the next write, and a
+        # copy takes itself out of that cache as it dies. A process ended
+        # with os._exit() while a document with committed transactions is
+        # open leaves copies in it, and on Windows that path still runs the
+        # destructors of the libraries' statics: the cache was torn down
+        # with the copies in it, each looking itself up in what was left,
+        # and the process crashed instead of ending.
+        import subprocess
+        import sys
+
+        exe = os.path.join(
+            FreeCAD.getHomePath(), "bin", "FreeCADCmd" + (".exe" if sys.platform == "win32" else "")
+        )
+        if not os.path.isfile(exe):
+            self.skipTest("no FreeCADCmd beside this build")
+        script = os.path.join(tempfile.gettempdir(), "FreeCADTestEndedFromAScript.py")
+        with open(script, "w") as f:
+            f.write(
+                "import os\n"
+                "import FreeCAD\n"
+                "doc = FreeCAD.newDocument('EndedFromAScript')\n"
+                "doc.openTransaction('make')\n"
+                "obj = doc.addObject('App::FeatureTest', 'Feature')\n"
+                "doc.commitTransaction()\n"
+                "doc.recompute()\n"
+                "doc.openTransaction('change')\n"
+                "obj.Integer = 5\n"
+                "obj.Label = 'changed'\n"
+                "doc.commitTransaction()\n"
+                "doc.recompute()\n"
+                "print('before the end', flush=True)\n"
+                "os._exit(0)\n"
+            )
+        try:
+            done = subprocess.run([exe, script], capture_output=True, timeout=300)
+        finally:
+            os.remove(script)
+        self.assertIn(b"before the end", done.stdout)
+        self.assertEqual(done.returncode, 0)
+
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument("UndoTest")

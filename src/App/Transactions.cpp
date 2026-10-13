@@ -436,8 +436,14 @@ void Transaction::removePendingProperty(Property *prop)
 namespace {
 std::unordered_map<int64_t, TransactionCopyCache::Entry>& copyCache()
 {
-    static std::unordered_map<int64_t, TransactionCopyCache::Entry> cache;
-    return cache;
+    // Never destroyed. A copy's destructor calls drop() for its own id, so
+    // a map torn down with entries in it is looked up half gone by the
+    // first of them. Nothing is left in it when the application quits, but
+    // a process ended from a script with a document open (os._exit()) has
+    // some, and on Windows that path still runs the destructors of this
+    // library's statics: it crashed there instead of ending.
+    static auto cache = new std::unordered_map<int64_t, TransactionCopyCache::Entry>;
+    return *cache;
 }
 }
 
