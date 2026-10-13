@@ -10769,6 +10769,43 @@ The note-taker's reading:
 Nothing is left unanswered by the reporter. NOT known still: on which
 copy it last worked.
 
+**2026-10-13 10:43, the reporter, a hint at where to look:** "I remember the
+passthrough logic checks the widget background color and only passthrough
+if it's completly transparent. maybe the checking got problem"
+
+The note-taker's reading, and what the source says, READ, nothing run:
+- The reporter's memory is right in substance: the event passes only
+  where the panel is completely transparent. What is checked is not a
+  background colour as a setting but the PICTURE of the panel:
+  `OverlayTabWidget::testAlpha` (`src/Gui/OverlayWidgets.cpp`) grabs the
+  panel's splitter once, keeps the picture until the next repaint, and
+  answers 0 only if the pixel under the pointer and every pixel within
+  `View/DockOverlayAlphaRadius` (2 in the reporter's configuration; four
+  times that for the wheel) has alpha 0.
+- By the build session's measurement of 10:38 that picture DOES read
+  alpha 0 on the clear parts under the Outline sheet (96% of the left
+  overlay, 91% of the right). So by that run the check itself answers
+  "clear" -- on a run that is not the reporter's session.
+- What stands around the check, each a place where it "got problem"
+  without the picture being wrong -- candidates, none shown:
+  1. BEFORE it: `OverlayManager.cpp` near line 1945 walks up from the
+     widget under the pointer and asks `testAlpha` only when it arrives
+     at an `OverlayTabWidget`; it stops early at any widget on the way
+     whose window type is not a plain widget. A widget that now lies
+     between -- or over -- would keep the question from being asked.
+  2. THE PICTURE'S AGE: it is thrown away in the panel's own
+     `paintEvent`; a picture grabbed while the panel was solid (the
+     pointer in it) and not renewed would answer "not clear" for good.
+     Entry 69 (`bbe8525de7`) changed when the see-through mode is set.
+  3. THE OUTLINE EFFECT of entry 87: if the grab holds the effect's
+     dark copy, then around every item there are pixels whose alpha is
+     not 0; that would block near items, not on wide clear ground.
+  4. AFTER it: the answer is used only when
+     `DockOverlayAutoMouseThrough` is on (it is) and the pointer has
+     not moved since (`_lastPos`).
+Relayed to the build session as the reporter's hint; not an answer that
+was asked for.
+
 ## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, a fix planned; OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
 
 **2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
