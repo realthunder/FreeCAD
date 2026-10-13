@@ -500,6 +500,37 @@ export function dialogClickOp(standardButton: number): { event: string; args: nu
   return { event: 'clicked', args: [standardButton] };
 }
 
+/// QDialogButtonBox::StandardButton, the three a task panel's box answers
+/// by what they mean and not by which button they are.
+export const BUTTON_OK = 0x400;
+export const BUTTON_CLOSE = 0x200000;
+export const BUTTON_CANCEL = 0x400000;
+
+/// What a click on one button of the TASK PANEL's box asks of the panel
+/// root. The box is drawn with the buttons the host's has -- a task with
+/// Close alone shows Close, not an OK and a Cancel it never had (docs/
+/// TransactionLog.md sec 32.20) -- and each one's standard flag says what
+/// it asks:
+///
+///  - OK is the root's `accept` and Cancel and Close its `reject`: W1's
+///    path, where the host clicks whichever button of its box has that
+///    role, or asks the task itself when the box has none;
+///  - any other standard button is clicked by its flag (`onPanelRequest`,
+///    Gui/Fw/FwPanelMirror.cpp), Apply and Reset among them;
+///  - a button with no flag is nothing the root knows: `undefined`, and
+///    the button's own click is the op.
+///
+/// `leaves` is true of the two a client with no right to edit may still
+/// press: they change nothing.
+export function panelButtonOp(standardButton: number):
+    { op: { event: string; args?: number[] } | undefined; leaves: boolean } {
+  if (standardButton === BUTTON_OK) return { op: { event: 'accept' }, leaves: false };
+  if (standardButton === BUTTON_CANCEL || standardButton === BUTTON_CLOSE)
+    return { op: { event: 'reject' }, leaves: true };
+  if (standardButton) return { op: dialogClickOp(standardButton), leaves: false };
+  return { op: undefined, leaves: false };
+}
+
 /// Escape on a dialog, which is `QDialog::reject()` on the bound view --
 /// Qt's own answer for a box dismissed rather than answered. A box with an
 /// escape button resolves it to that button; one without returns 0, the

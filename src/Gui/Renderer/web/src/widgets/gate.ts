@@ -26,7 +26,8 @@ import { fileURLToPath } from 'node:url';
 import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilter,
          cssColor, dialogClickOp, dialogRejectOp, fileSelectedOp, isDarkColor,
          isDialogRoot, isPanelMirrorId, itemClickOp, itemEditOp, itemExpandOp,
-         layoutRefs, refId, selectionWrite } from './protocol.ts';
+         layoutRefs, panelButtonOp, refId, selectionWrite,
+         BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_OK } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
@@ -251,6 +252,20 @@ function checkDialogs(): void {
         JSON.stringify(dialogClickOp(YES)) === '{"event":"clicked","args":[16384]}',
         JSON.stringify(dialogClickOp(YES)));
   check(t, 'Escape rejects', JSON.stringify(dialogRejectOp()) === '{"event":"reject"}');
+
+  // a TASK PANEL's box: its own buttons, each asking what its flag means
+  const asks = (flag: number): string => JSON.stringify(panelButtonOp(flag));
+  check(t, "a task's OK accepts",
+        asks(BUTTON_OK) === '{"op":{"event":"accept"},"leaves":false}', asks(BUTTON_OK));
+  check(t, "a task's Close leaves, and a viewer may press it",
+        asks(BUTTON_CLOSE) === '{"op":{"event":"reject"},"leaves":true}', asks(BUTTON_CLOSE));
+  check(t, "a task's Cancel leaves",
+        asks(BUTTON_CANCEL) === '{"op":{"event":"reject"},"leaves":true}', asks(BUTTON_CANCEL));
+  check(t, "a task's Apply is clicked by its flag",
+        asks(0x2000000) === '{"op":{"event":"clicked","args":[33554432]},"leaves":false}',
+        asks(0x2000000));
+  check(t, 'a button with no flag is its own click',
+        panelButtonOp(0).op === undefined && !panelButtonOp(0).leaves);
 
   // and what the close leaves behind
   const after = upto(closeAt + 1);
