@@ -105,6 +105,19 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 14:40, a note on this file's HISTORY, not on its text:** the
+queue's change for entry 104 was committed by the note-taker at 14:37:03
+as `2fc8be7d3f`. At 14:37:45 the build session reset the branch to
+`518c2026d0` to redo two of its own commits (read in the reflog), which
+took `2fc8be7d3f` off the branch; its next commit, `7f3ef57348` ("Gui:
+the omni search on an object ..."), carries the same change of this file
+among its source files. The TEXT is identical (compared by the
+note-taker: no difference between the two versions of this file) and
+nothing is lost; only, one change of the queue now sits in a source
+commit of the build session's. Nothing of it was pushed at that moment
+(origin/LinkVibe `724e03c074`). The note-taker leaves the history as it
+is.
+
 **2026-10-13 13:58: STAGED 13:56:06 and PUSHED 13:57, on the reporter's
 word. The staged copy is built from UNCOMMITTED code: it has entries 84,
 85 and 87 to 97, NOT the wheel fix of entry 86 nor the last form of entry
