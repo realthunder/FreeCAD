@@ -1473,6 +1473,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | IN WORK 2026-10-13 10:17: a fix in the source, NOT built, NOT tested; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
 | 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading |
+| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section | OPEN; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10715,6 +10716,74 @@ Nothing of this entry is left unanswered by the reporter. What a run
 would have to tell, the note-taker's: on which commit the pass-through
 last worked.
 
+## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- OPEN, four points not answered
+
+**2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
+has a darker border, which is unwanted. in addition, mouse hovering draw
+some selection highlight, and if I move mouse over a range of item, I see
+a trail of vanishing item borders, probably residue of hover highlight.
+question, what's the setting for auto tree item background item. why it
+is not exposed in UI preference dialog, tree view section"
+
+The note-taker's reading, not the reporter's words -- three things:
+1. A DEFECT: under the Dark theme the backing of a tree item (entry
+   69's, by the note-taker's reading: the overlaid tree view) is drawn
+   with a darker border around it. No border is wanted.
+2. A DEFECT: the pointer over an item draws something like a selection
+   highlight; and moved over a run of items it leaves, for a moment,
+   the borders of the items it has left -- a trail that fades. The
+   reporter's own guess: what is left of the hover highlight.
+3. A QUESTION, answered below; and in it, by the note-taker's reading,
+   a wish: that the setting be found in the tree view section.
+
+The QUESTION answered, READ in the source by the note-taker, nothing run:
+- The setting is `View/DockOverlayThemeItemColor`, shown as "Item
+  background follows the theme", on by default (entry 69, `bbe8525de7`).
+  With it goes `View/DockOverlayAlpha`, "Overlay background opacity",
+  150.
+- It IS on the UI preference page -- but in the section "Overlay",
+  after "Navigation cube moves clear of panels", not in the section
+  "Tree view" (`src/Gui/PreferencePages/DlgSettingsUI.py`,
+  `ParamGroup`). Why: it was made as an overlay setting, because it
+  acts only on an overlaid panel and on the property view as well as on
+  the tree view.
+- The section "Tree view" has "Item background color"
+  (`TreeView/ItemBackground`, "Only effective in overlay"). That colour
+  is used only when "Item background follows the theme" is OFF.
+
+NOT said, lettered for an answer:
+a. THE SETTING'S PLACE: move "Item background follows the theme" (and
+   the opacity with it?) into the section "Tree view", beside "Item
+   background color"; or leave it under "Overlay" and say so beside the
+   colour? The note-taker's guess: move the first, since the one turns
+   the other off.
+b. THE BORDER: on the overlaid tree view only, or the docked one too;
+   under Dark only, or under Light as well with another colour; and on
+   the rows of the property view too?
+c. THE HOVER: is the highlight under the pointer itself not wanted in
+   an overlaid tree, or is it wanted and only the trail the defect?
+d. SINCE WHEN: only since the themes were applied again at about 10:04
+   (entry 69), or before on today's stages?
+
+Pointers, READ by the note-taker, nothing run; the causes are NOT found:
+- The backing is painted in `src/Gui/Tree.cpp` (the item delegate, near
+  line 1005): a filled rectangle, cut to the width of the item's text
+  when the second column is hidden (`TreeView/HideColumn`, 1 in the
+  reporter's configuration) and then widened by 5 pixels; it is a fill,
+  no pen. So a border would come from elsewhere -- the style drawing
+  the item over it, by a guess.
+- The hover: the main sheet of the theme, `Stylesheets/FreeCAD.qss`,
+  states `QTreeView::item:!selected:hover { background-color:
+  @AccentHoverColor; }`. `overlay/Dark-Outline.qss` states nothing for
+  an item under the pointer. A trail would fit rows repainted in part
+  only when the pointer leaves them, the backing being narrower than
+  the row -- a guess.
+- Near it: entry 69 (the backing), entry 85 (the task panel's colour
+  after a change of theme), entry 77 (the Dark borders,
+  `GeneralBorderColor` in `Stylesheets/parameters/Dark.yaml`,
+  `d25fa8539c`) -- whether entry 77's lighter border colour is what now
+  shows around an item is NOT looked into.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -10724,5 +10793,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 86 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 87 are of 2026-10-13, 82 found by
 it)
