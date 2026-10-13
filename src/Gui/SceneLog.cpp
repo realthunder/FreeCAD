@@ -46,8 +46,10 @@
 #include <Base/Exception.h>
 
 #include "Application.h"
+#include "Document.h"
 #include "SceneControl.h"
 #include "SceneLog.h"
+#include "SceneServeSource.h"
 #include "ViewProviderDocumentObject.h"
 #include "Renderer/SceneServer.h"
 
@@ -438,6 +440,400 @@ QJsonObject valueOp(const QJsonObject& req, const std::string& boundDoc, uint64_
     return reply;
 }
 
+/// The rows of the history the document is at the head of
+std::set<int64_t> historyOf(App::TransactionLog* log)
+{
+    std::set<int64_t> rows;
+    for (const auto& t : log->store().history(log->head()))
+        rows.insert(t.seq);
+    return rows;
+}
+
+/// A row that has something to take back: the desktop's panel offers the
+/// same kinds (sec 24.4)
+bool undoableKind(const std::string& kind)
+{
+    return kind == "user" || kind == "implicit" || kind == "undo" || kind == "redo"
+        || kind == "pick";
+}
+
+/** What an act left: the place of the document in its log, which is what
+ * the page lists its rows against. The cue (`log.changed`) follows by
+ * itself; this is so that the one who asked need not wait for it.
+ */
+QJsonObject placeReply(const QJsonValue& id, App::Document* doc, App::TransactionLog* log)
+{
+    QJsonObject reply = okReply(id);
+    App::TransactionStore& store = log->store();
+    reply[QLatin1String("last")] = double(store.lastSeq());
+    reply[QLatin1String("head")] = double(log->head());
+    reply[QLatin1String("branch")] = double(log->branch());
+    App::LogBranch branch;
+    if (store.getBranch(log->branch(), branch))
+        reply[QLatin1String("branchName")] = QString::fromStdString(branch.name);
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    return reply;
+}
+
+/// What a client had selected may be of objects that are gone now
+void objectsMoved(App::Document* doc)
+{
+    if (SceneServeSource* source = SceneServeSource::sourceFor(doc))
+        source->clearClientSelections();
+}
+
+/** An edit is open in the document. What checks the whole document out
+ * under it -- another branch's head -- waits for it to be left: the one in
+ * the edit may be another client, who did not ask.
+ */
+bool editOpen(App::Document* doc)
+{
+    Gui::Document* gdoc = Application::Instance->getDocument(doc);
+    return gdoc && gdoc->getInEdit() != nullptr;
+}
+
+/** `log.undo`: the rows named taken back as one step, though none is the
+ * last (sec 24.4, 33.13). All of them or none; the refusal says which row
+ * is in the way and what changed since.
+ */
+QJsonObject undoRowsOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    std::vector<int64_t> rows;
+    for (const QJsonValue& value : req.value(QLatin1String("rows")).toArray()) {
+        if (value.isDouble() && value.toInteger(0) > 0)
+            rows.push_back(value.toInteger(0));
+    }
+    if (rows.empty())
+        return sceneControlError(id, "BadRequest", QStringLiteral("no rows"));
+    try {
+        App::TransactionStore& store = log->store();
+        const std::set<int64_t> history = historyOf(log);
+        for (int64_t row : rows) {
+            const auto read = store.transactions(row, 1);
+            if (read.empty() || read.front().seq != row)
+                return sceneControlError(id, "UnknownRow", QString::number(row));
+            // A row of another branch is not this document's to take back:
+            // what it set is not here
+            if (!history.count(row))
+                return sceneControlError(
+                    id, "NotHere",
+                    QStringLiteral("row %1 is not of this branch's history").arg(row));
+            if (!undoableKind(read.front().kind) || store.ops(row).empty())
+                return sceneControlError(
+                    id, "NothingToUndo",
+                    QStringLiteral("row %1 changed nothing that is taken back").arg(row));
+        }
+        if (!doc->undoLogged(rows)) {
+            const std::string why = doc->undoRefusal();
+            return sceneControlError(id, "Refused",
+                                     why.empty() ? QStringLiteral("not undone")
+                                                 : QString::fromStdString(why).trimmed());
+        }
+        objectsMoved(doc);
+        return placeReply(id, doc, log);
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "LogError", QString::fromUtf8(e.what()));
+    }
+}
+
+/// `log.versions`: the versions of the log, oldest first as they are numbered
+QJsonObject versionsOp(const QJsonObject& req, const std::string& boundDoc, uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    try {
+        App::TransactionStore& store = log->store();
+        std::map<int64_t, std::string> branches;
+        for (const auto& b : store.branches())
+            branches[b.id] = b.name;
+        const std::set<int64_t> history = historyOf(log);
+        // The newest row of the history that changed the document: a
+        // version at it, or after it with only records between (a save, a
+        // snapshot, a switch), is the document as it stands
+        int64_t changed = 0;
+        for (auto row = history.rbegin(); row != history.rend() && !changed; ++row) {
+            if (!store.ops(*row).empty())
+                changed = *row;
+        }
+        QJsonArray list;
+        for (const App::LogVersion& v : store.versions()) {
+            QJsonObject item;
+            item[QLatin1String("num")] = double(v.num);
+            item[QLatin1String("named")] = v.kind == "named";
+            item[QLatin1String("name")] = QString::fromStdString(v.name);
+            item[QLatin1String("branch")] = double(v.branch);
+            item[QLatin1String("branchName")] = QString::fromStdString(branches[v.branch]);
+            item[QLatin1String("seq")] = double(v.seq);
+            item[QLatin1String("time")] = v.created;
+            // Of the history the document is at the head of; a version
+            // taken at no row is its own branch's
+            const bool here = v.seq > 0 ? history.count(v.seq) > 0 : v.branch == log->branch();
+            item[QLatin1String("here")] = here;
+            item[QLatin1String("head")] = here && v.seq >= changed;
+            list.append(item);
+        }
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("versions")] = list;
+        watchFor(doc, client);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "LogError", QString::fromUtf8(e.what()));
+    }
+}
+
+/// `log.branches`: the branches of the log, and which the document is on
+QJsonObject branchesOp(const QJsonObject& req, const std::string& boundDoc, uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    try {
+        QJsonArray list;
+        for (const App::LogBranch& b : log->store().branches()) {
+            QJsonObject item;
+            item[QLatin1String("id")] = double(b.id);
+            item[QLatin1String("name")] = QString::fromStdString(b.name);
+            item[QLatin1String("head")] = double(b.head);
+            item[QLatin1String("fromVersion")] = double(b.fromVersion);
+            item[QLatin1String("fromSeq")] = double(b.fromSeq);
+            item[QLatin1String("time")] = b.created;
+            // A closed branch is not switched to (sec 26.6)
+            item[QLatin1String("closed")] = b.closed != 0;
+            item[QLatin1String("current")] = b.id == log->branch();
+            list.append(item);
+        }
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("branches")] = list;
+        // Deleting one is the host's (below): said, so that a page does
+        // not offer what would be refused
+        reply[QLatin1String("mayDelete")] = sceneControlAccess() >= Render::ClientAccess::Host;
+        watchFor(doc, client);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "LogError", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.snapshot`: a version of the document as it stands (sec 16.3), named
+ * where a name is given -- a named one is never evicted.
+ */
+QJsonObject snapshotOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string name = req.value(QLatin1String("name")).toString().trimmed().toStdString();
+    try {
+        const int64_t num = doc->snapshotToLog();
+        if (num <= 0)
+            return sceneControlError(id, "Refused",
+                                     QStringLiteral("the document cannot be snapshotted now"));
+        if (!name.empty())
+            log->store().nameVersion(num, name);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("version")] = double(num);
+        // A version is no row, and nothing else says the list of them moved
+        queueTell(doc->getName());
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "LogError", QString::fromUtf8(e.what()));
+    }
+}
+
+/// `log.nameVersion`: name a version, or with no name make it unnamed again
+QJsonObject nameVersionOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const int64_t num = req.value(QLatin1String("version")).toInteger(0);
+    const std::string name = req.value(QLatin1String("name")).toString().trimmed().toStdString();
+    try {
+        App::LogVersion version;
+        if (num <= 0 || !log->store().getVersion(num, version))
+            return sceneControlError(id, "UnknownVersion", QString::number(num));
+        if (!log->store().nameVersion(num, name))
+            return sceneControlError(id, "Refused", QStringLiteral("not named"));
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("version")] = double(num);
+        queueTell(doc->getName());
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "LogError", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.restore`: the document made what a version was, as one step that
+ * undo takes back like any (sec 24.5).
+ */
+QJsonObject restoreOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const int64_t num = req.value(QLatin1String("version")).toInteger(0);
+    try {
+        App::LogVersion version;
+        if (num <= 0 || !log->store().getVersion(num, version))
+            return sceneControlError(id, "UnknownVersion", QString::number(num));
+        if (!doc->restoreVersion(num))
+            return sceneControlError(id, "Refused", QStringLiteral("not restored"));
+        objectsMoved(doc);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("version")] = double(num);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.branch`: a new branch -- from a version, or else from a row, or
+ * else from where the document is -- and the document switched to it
+ * (sec 17, 26).
+ */
+QJsonObject newBranchOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string name = req.value(QLatin1String("name")).toString().trimmed().toStdString();
+    if (name.empty())
+        return sceneControlError(id, "BadRequest", QStringLiteral("no name"));
+    const int64_t version = req.value(QLatin1String("version")).toInteger(0);
+    const int64_t row = req.value(QLatin1String("row")).toInteger(0);
+    try {
+        // From anywhere but where the document is, the document is
+        // checked out
+        if ((version > 0 || (row > 0 && row != log->head())) && editOpen(doc))
+            return sceneControlError(id, "Editing",
+                                     QStringLiteral("an edit is open: leave it first"));
+        const int64_t made = doc->createBranch(name, version, row);
+        if (made <= 0)
+            return sceneControlError(id, "Refused", QStringLiteral("no branch made"));
+        objectsMoved(doc);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("made")] = double(made);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/// `log.switch`: the document made the head of another branch, in place
+QJsonObject switchOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string name = req.value(QLatin1String("name")).toString().toStdString();
+    try {
+        App::LogBranch branch;
+        if (name.empty() || !log->store().findBranch(name, branch))
+            return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        if (branch.id != log->branch() && editOpen(doc))
+            return sceneControlError(id, "Editing",
+                                     QStringLiteral("an edit is open: leave it first"));
+        if (!doc->switchBranch(name))
+            return sceneControlError(id, "Refused", QStringLiteral("not switched"));
+        objectsMoved(doc);
+        return placeReply(id, doc, log);
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/// `log.renameBranch`
+QJsonObject renameBranchOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string name = req.value(QLatin1String("name")).toString().toStdString();
+    const std::string to = req.value(QLatin1String("to")).toString().trimmed().toStdString();
+    if (to.empty())
+        return sceneControlError(id, "BadRequest", QStringLiteral("no name"));
+    try {
+        App::LogBranch branch;
+        if (name.empty() || !log->store().findBranch(name, branch))
+            return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        if (!doc->renameBranch(name, to))
+            return sceneControlError(id, "Refused", QStringLiteral("not renamed"));
+        return placeReply(id, doc, log);
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.deleteBranch`: a branch and the rows only it holds, gone. Nothing
+ * takes that back, so it is the host's to do: a connection that may edit
+ * is answered Forbidden.
+ */
+QJsonObject deleteBranchOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    if (sceneControlAccess() < Render::ClientAccess::Host)
+        return sceneControlError(id, "Forbidden",
+                                 QStringLiteral("deleting a branch is the host's to do"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string name = req.value(QLatin1String("name")).toString().toStdString();
+    try {
+        App::LogBranch branch;
+        if (name.empty() || !log->store().findBranch(name, branch))
+            return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        const size_t rows = doc->deleteBranch(name);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("rows")] = double(rows);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
 }  // namespace
 
 void Gui::installSceneLogOps()
@@ -452,4 +848,15 @@ void Gui::installSceneLogOps()
     registerSceneControlOp(QStringLiteral("log.rows"), true, rowsOp);
     registerSceneControlOp(QStringLiteral("log.ops"), true, opsOp);
     registerSceneControlOp(QStringLiteral("log.value"), true, valueOp);
+    registerSceneControlOp(QStringLiteral("log.versions"), true, versionsOp);
+    registerSceneControlOp(QStringLiteral("log.branches"), true, branchesOp);
+    // And those that do write (sec 32.22)
+    registerSceneControlOp(QStringLiteral("log.undo"), true, undoRowsOp);
+    registerSceneControlOp(QStringLiteral("log.snapshot"), true, snapshotOp);
+    registerSceneControlOp(QStringLiteral("log.nameVersion"), true, nameVersionOp);
+    registerSceneControlOp(QStringLiteral("log.restore"), true, restoreOp);
+    registerSceneControlOp(QStringLiteral("log.branch"), true, newBranchOp);
+    registerSceneControlOp(QStringLiteral("log.switch"), true, switchOp);
+    registerSceneControlOp(QStringLiteral("log.renameBranch"), true, renameBranchOp);
+    registerSceneControlOp(QStringLiteral("log.deleteBranch"), true, deleteBranchOp);
 }

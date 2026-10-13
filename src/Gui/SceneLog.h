@@ -51,6 +51,23 @@ namespace Gui
  *
  * A row's change is shown as the edit it is (ViewProvider::ValueDiff): the
  * `edit` op with the row named.
+ *
+ * And what the panel does with what it lists (sec 32.22), each the call the
+ * desktop's panel makes, run as the connection that asked:
+ *
+ *   log.undo          rows taken back as one step, though none is the last
+ *   log.versions      the versions, and which is the document as it stands
+ *   log.snapshot      a version of the document as it stands
+ *   log.nameVersion   a version named, or unnamed again
+ *   log.restore       the document made what a version was
+ *   log.branches      the branches, and which the document is on
+ *   log.branch        a new branch from here, a row or a version
+ *   log.switch        the document made the head of another branch
+ *   log.renameBranch
+ *   log.deleteBranch  the host's alone: nothing takes it back
+ *
+ * A switch, and a branch from anywhere but where the document is, wait for
+ * an edit that is open to be left (`Editing`).
  */
 GuiExport void installSceneLogOps();
 

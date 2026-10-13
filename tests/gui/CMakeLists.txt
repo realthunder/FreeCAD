@@ -188,6 +188,11 @@ fc_add_gui_test(GuiServeLog_tests_run serve-log.py
                 --timeout 240)
 fc_add_gui_test(GuiServeLogBrowser_tests_run serve-log-browser.py
                 --timeout 600)
+# What the panel does with what it lists (docs/TransactionLog.md sec 32.22):
+# rows taken back, versions, branches, each asked of the host by an editor,
+# a viewer and the host; and the same from the page in a real browser.
+fc_add_gui_test(GuiServeLogActs_tests_run serve-log-acts.py
+                --timeout 300)
 
 # The preference PerViewEdit: an edit runs in the one view it is started
 # in. The other 3D windows of the document do not join -- they keep the
