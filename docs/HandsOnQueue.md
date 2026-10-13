@@ -111,6 +111,28 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 00:12: BOTH SUITES GREEN on the build r15, "which is the
+committed code (99 a+c, 109, 113, 111 as ruled)". Nothing pushed, nothing
+staged: origin `5c0b30ce1b`, the staged copy of 2026-10-13 16:55.** From
+the build session (its message stamped 00:13, written here 00:12); its
+log commit `90ab3880a3` SEEN by the note-taker in `git log`, nothing run.
+- "ctest: '100% tests passed out of 957' (s1\ctest36.log, EXIT 0).
+  Python, whole: 'Ran 3755 tests in 859.336s, OK (skipped=52, expected
+  failures=6)' (s1\pytest36.log) -- three more tests than on r9, the
+  binder's new ones. Ran 23:43 to 00:11 in a temporary directory that
+  started empty."
+- "Not covered by the suites, as always here: the GUI tests (not in
+  ctest on this box) -- those I ran by hand per entry, as reported."
+- "No word from the user on either" -- a push, a restage -- "has
+  reached me." None has reached the note-taker.
+- LOCAL and not pushed, the code: `905d023394` and `023552c8fd` (111),
+  `26f0a30de0` (109), `1109842583` (99), `56504486e6` (113).
+- OPEN WITH THE REPORTER at this hour: entry 108's point a (the base on
+  top and see-through with the body hidden -- wanted so, or the same
+  picture as with it shown); whether the clip plane finding under entry
+  108 and the one odd migration recompute of `scanner.FCStd` become
+  entries.
+
 **2026-10-13 23:46: entries 113 and 111, as ruled at 23:04, WORK on the
 build r15 and are COMMITTED, LOCAL -- `56504486e6` (113), `023552c8fd`
 (111). Origin is still `5c0b30ce1b`, the staged copy still the one of
