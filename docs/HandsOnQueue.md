@@ -1635,6 +1635,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
+| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") | OPEN; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12510,6 +12511,48 @@ Notes, the note-taker's, READ, nothing run:
   opaque than the item backgrounds": that limit moves with the
   setting.
 
+## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- OPEN, three points not answered
+
+**2026-10-13 14:32, the reporter:** "new default, the switch panel to view button
+on task panel no longer visible, even in editing. I tested edit pad"
+
+The note-taker's reading, not the reporter's words:
+- "new default" is taken for "new DEFECT".
+- The Tasks panel has, beside its close button, a button that moves the
+  task panel into its view and back (entry 73's "toggle panel in view"
+  button). It is not to be seen any more -- not even while a feature is
+  being edited; tried with the edit of a PartDesign Pad.
+- Entry 73's answer b (2026-10-12 15:49) asked for that button to be
+  hidden when NO page of the task panel is owned by a view. While a Pad
+  is edited its panel should be one that IS owned by a view -- so by
+  that rule the button belongs there. Hidden then = a defect of that
+  rule, or of something newer.
+- Which copy: the stage of 13:56 by the hour. "no longer": it was seen
+  on an earlier one.
+
+NOT said, lettered for an answer:
+a. GONE or UNSEEN: is there no button at all (no gap for it, nothing
+   under the pointer), or is its place there and answers a click but
+   shows no picture? (Entry 96 found a picture of the same family
+   drawn dark on dark in a menu under Dark.) And under which theme.
+b. WHERE the Tasks panel is when it happens: docked in the main window,
+   in an overlay, or both?
+c. ON WHICH copy it was last seen: the stage of 09:36 this morning, or
+   earlier; and is the setting "task panel in view" on or off
+   (`View/TaskPanelInView`; 0 in the configuration as last written)?
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- Entry 73 (`22ece75a08`, then the white glyphs `2d945c8268`) made the
+  button and its rule; the files are in `src/Gui/TaskView`
+  (`TaskPanelHost.cpp` among them) and the pictures
+  `overlay/taskshow.svg`, `overlay/taskhost.svg`.
+- Changed since in that neighbourhood, each a candidate and none shown:
+  this morning's merges of SolidBody and Transaction; entry 85
+  (`1f01bf3f30`, the overlay's sheet made again at a style change);
+  the uncommitted work of entries 87 to 97 in the stage of 13:56 (the
+  title buttons' pictures of entry 96, the menu buttons of 89 and 90
+  in `Action.cpp`).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -12519,5 +12562,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 102 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 103 are of 2026-10-13, 82 found by
 it)
