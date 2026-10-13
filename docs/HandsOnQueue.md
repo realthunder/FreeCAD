@@ -13977,6 +13977,33 @@ The note-taker's reading:
 A thought of the reporter's, recorded as that; not shown, and nothing
 is asked by it.
 
+**2026-10-13 16:33, the reporter, what moves:** "the logo and the menu
+reveal button does not seem to move, only the docked toolbar moved further
+and sometimes closer"
+
+The note-taker's reading:
+- For (A): the left end of the title bar -- the logo and the button
+  that reveals the menu -- STAYS where it is. What moves is the DOCKED
+  TOOL BAR: at times further from them, at times closer.
+- "the logo and the menu reveal button": said as two things. The
+  readings found ONE widget at the left, the push button
+  `titleBarLogo`; whether the menu reveal button is that same button
+  or a second thing beside it that the scripts did not list (a widget
+  of no width stood at x 90 in the reading of 16:13) is not settled.
+- Against the readings: in all four the tool bar's AREA
+  (`MenuBarLeftArea`) began at x 92 and the tool bar "Workbench" at
+  that area's x 0 -- the same place each time. So either the tool bar
+  was at its usual place at each of those moments and the moves fell
+  between them, or what moves is INSIDE the tool bar (where its first
+  button is drawn), which was not read.
+- So of the two things the note-taker named at 16:29 as not read, the
+  reporter's eye rules out the first (the logo's icon moving) and
+  points at the second: the tool bar and what is in it.
+For a next look on the reporter's word, at a moment the tool bar
+stands further off: the x of `MenuBarLeftArea`, of the tool bar in it,
+and of the tool bar's first button; and the tool bar's own layout
+margins.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
