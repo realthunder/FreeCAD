@@ -1526,7 +1526,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | DONE `53a231cc72`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `recovery-dialog-check-all.py` 13 PASS, 0 FAIL] (23:17): its own test `recovery-dialog-check-all.py` 13 claims, no FAIL; "Start Recovery" cannot be pressed with nothing ticked. As built: the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
-| 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
+| 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request). ANSWERED 13:29: the cell's MENU button and its TWO CORNER handles, each checked by itself; moved only if the cell has area not covered by an overlay panel -- fully covered, or less than 40 left in a dimension, it stays; clear of the same things as the cube, slid as the cube is; NO setting, always; every cell | OPEN; the five points answered 13:29; two smaller points left, not blocking |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | FIXED `a3acdd0947`, local, NOT pushed, NOT staged (11:33): its test `tree-tooltip-only-over-its-item.py` 14 of 14, twice, offscreen. As written 10:17; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; FIXED `1f01bf3f30`, local, NOT pushed, NOT staged (11:33), `overlay-see-through.py` 62 of 62 and with a copy of the reporter's configuration the ground is the applied theme's at once: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
 | 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced |
@@ -10465,7 +10465,7 @@ ended by itself.** From the build session's message of 2026-10-13 07:32, written
 - For the reporter to confirm by hand: Edit > Preferences on the staged
   copy.
 
-## 83. A view cell's menu and handle should slide out from under an overlay panel, as the navigation cube does (a change request) -- OPEN, five points not answered
+## 83. A view cell's menu and handle should slide out from under an overlay panel, as the navigation cube does (a change request) -- OPEN, the five points answered 2026-10-13 13:29: the menu button and the two corner handles, each by itself, only where 40 of the cell is left clear; always, no setting
 
 **2026-10-13 09:52, the reporter:** "new request, view cell menu and handle
 should be aware of overlay panel position and slide out to make accessible
@@ -10520,6 +10520,37 @@ Pointers, READ in the source by the note-taker, nothing run:
   question both could ask.
 - Near it: entry 68 (a task panel in the view kept beside an overlaid
   tree view) and entry 76.
+
+**2026-10-13 13:29, the reporter answers the five points:** "entry 83. a,
+only view cell menu and two corner handle. only if there are actually
+areas not blocked by overlay panel. If they are fully covered or less than
+40 in dimension, don't bother. check separately for each handle/menu. b,
+yes. c, yes. d, no, always. e, yes."
+
+The note-taker's reading:
+- a. WHAT moves: the cell's menu button and its TWO CORNER handles (the
+  grips that split and join cells). Not the border between cells.
+- A CONDITION, new with the answer: one of them is moved only if the
+  cell has area that is NOT covered by an overlay panel. If the cell is
+  fully covered, or what is left clear is less than 40 in a dimension
+  (pixels, by the note-taker's reading; in width or in height), it is
+  left where it is -- "don't bother".
+- "check separately for each handle/menu": each of the three is looked
+  at by itself -- one may be under a panel and move while the others
+  stay.
+- b. Yes: clear of the same things as the cube -- overlaid docks, and a
+  task panel shown over the view.
+- c. Yes: slid along its edge to just past the panel, as the cube is.
+- d. No setting: it is always so; the cube's setting does not govern
+  it.
+- e. Yes: every cell, whatever it shows.
+
+Two smaller points, NOT put as blocking:
+- "less than 40 in dimension": taken as -- the clear part of the cell is
+  narrower OR lower than 40 pixels. Whether it is measured along the
+  edge the thing slides on only is not said.
+- The cube and a button pushed to the same place by the same panel
+  (named at 09:52): still not said which gives way.
 
 ## 84. A tree view item's tooltip is shown when its delay is up even if the pointer has left the item -- FIXED `a3acdd0947`, local, not pushed, NOT staged; the cause read by the build session
 
