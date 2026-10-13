@@ -702,6 +702,9 @@ public:
     DocumentObjectItem *itemHitTest(
             QPoint pos, QByteArray *tag, DocumentItem **docItem = nullptr);
 
+    /// Whether the pointer is over the tree's own area, nothing lying over it
+    bool pointerOverItems() const;
+
     void checkItemEntered(QTreeWidgetItem *item, const QByteArray &tag);
 
     void setupSelectingGroupAction(QMenu &menu, App::Document *doc, std::string &&subname);
@@ -714,6 +717,9 @@ public:
         if (tooltipItem == item) {
             tooltipItem = nullptr;
             ToolTip::hideText();
+        }
+        if (tooltipPending == item) {
+            tooltipPending = nullptr;
         }
         if (firstSyncItem == item) {
             firstSyncItem = nullptr;
@@ -774,6 +780,8 @@ public:
     bool reorderBefore = true;
     QModelIndex reorderingIndex;
     QTreeWidgetItem *tooltipItem = nullptr;
+    /// The item the delay of a tooltip was started for. Compared, never asked
+    QTreeWidgetItem *tooltipPending = nullptr;
     DocumentObjectItem *firstSyncItem = nullptr;
     DocumentObjectItem *nextEditingItem = nullptr;
 
@@ -2712,8 +2720,16 @@ void TreeWidget::mouseMoveEvent(QMouseEvent *event) {
     pimpl->setReorderingItem(nullptr);
 
     QByteArray tag;
-    auto oitem = pimpl->itemHitTest(event->pos(), &tag);
+    DocumentItem *docItem = nullptr;
+    auto oitem = pimpl->itemHitTest(event->pos(), &tag, &docItem);
     pimpl->checkItemEntered(oitem, tag);
+    // What the delay of a tooltip runs for: when it is up, the tip is shown
+    // only with the pointer still over this item (onToolTipTimer()). A
+    // document's row had its tip, the file's name, only when the delay had
+    // been started on an object's row before; it starts one of its own now.
+    pimpl->tooltipPending = oitem ? static_cast<QTreeWidgetItem*>(oitem) : docItem;
+    if (docItem)
+        toolTipTimer->start(300);
     if (oitem) {
         try {
             SelectionContext sctx(oitem->getSubObjectT());
@@ -2749,6 +2765,19 @@ void TreeWidget::onToolTipTimer()
     DocumentItem *docItem = nullptr;
     auto item = pimpl->itemHitTest(
             viewport()->mapFromGlobal(QCursor::pos()), &tag, &docItem);
+    if (!_DraggingActive) {
+        // The delay is up. The tip is for the item the delay was started for,
+        // and only with the pointer still over it (docs/HandsOnQueue.md entry
+        // 84): the pointer may have gone since, and the hit test above still
+        // names an item for a point beside the view, where a column is wider
+        // than the view, or under a widget that lies over the tree.
+        QTreeWidgetItem *hit = item ? static_cast<QTreeWidgetItem*>(item) : docItem;
+        if (!hit || hit != pimpl->tooltipPending || !pimpl->pointerOverItems()) {
+            pimpl->tooltipItem = nullptr;
+            ToolTip::hideText();
+            return;
+        }
+    }
     if (!item) {
         pimpl->tooltipItem = nullptr;
         if (docItem) {
@@ -2890,6 +2919,21 @@ void TreeWidget::onToolTipTimer()
         return;
     ToolTip::showText(this->viewport()->mapToGlobal(pos), tooltip, pixmap, this);
     pimpl->tooltipItem = item;
+}
+
+bool TreeWidget::Private::pointerOverItems() const
+{
+    const QPoint global = QCursor::pos();
+    QWidget *area = master->viewport();
+    if (!area->rect().contains(area->mapFromGlobal(global)))
+        return false;
+    QWidget *under = QApplication::widgetAt(global);
+    if (!under)
+        return false;
+    if (under == area || area->isAncestorOf(under))
+        return true;
+    // A tip that is up may lie over the item it is for
+    return under->window()->windowType() == Qt::ToolTip;
 }
 
 DocumentObjectItem *TreeWidget::Private::itemHitTest(
@@ -4814,6 +4858,11 @@ void TreeWidget::Private::checkItemEntered(QTreeWidgetItem *item, const QByteArr
 
 void TreeWidget::leaveEvent(QEvent *) {
     pimpl->restoreCursor();
+    // No tip for an item the pointer has left; a drag keeps its own
+    if (!_DraggingActive) {
+        toolTipTimer->stop();
+        pimpl->tooltipPending = nullptr;
+    }
     if(!updateBlocked && TreeParams::getPreSelection()) {
         preselectTimer->stop();
         Selection().rmvPreselect();
