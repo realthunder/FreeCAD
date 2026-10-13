@@ -90,6 +90,38 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 08:48: both suites on the merged head `5a5b5ff906` -- the
+Python suite OK; ctest 2 failures of 957, ONE cause, a setting's text the
+Transaction branch brought, over the length limit; fixed in the source
+`47ed30316a`, NOT built yet, the rerun queued. All LOCAL.** From the build
+session (its message of 08:48, written here 08:47).
+- Python suite, 08:30 to 08:43: "Ran 3743 tests in 809.930s", "OK
+  (skipped=52, expected failures=6)". 3645 before the merges.
+- ctest, 08:17 to 08:30: "99% tests passed, 2 tests failed out of 957"
+  (968 with the disabled ones). The two:
+  `ParamRegistryTest.everySettingIsDocumentedBriefly` and
+  `OmniSearch_Tests_run` (its claim
+  `test_everySettingIsDocumentedBriefly`). "Both say the same:
+  `App::DocumentParams::MergeConflictSide` has 520 characters of
+  description, the limit is 400. The setting came with
+  origin/Transaction's last commit `5d8f2e488c`."
+- The fix, `47ed30316a`: "the description shortened to 391 characters in
+  `src/App/DocumentParams.py`, the meaning kept, `DocumentParams.cpp`/`.h`
+  regenerated." NOT built yet -- the loads and GUI tests of the running
+  chain still use the binaries. After them: a build, the full ctest
+  again, and the five omni search GUI tests.
+- The Python suite is NOT RERUN on `47ed30316a`, by the build session's
+  decision: "the change is a description text".
+- Loads on the merged build so far: the re-saved scanner file three
+  times, "EXIT 0, no crash log".
+- Still to come by name: the rest of the loads, the preferences once,
+  the 30 GUI tests, and the ctest rerun.
+The note-taker's note: the shortened text is the OTHER branch's setting
+(Transaction); the change is made on LinkVibe only, so the long text
+stays on origin/Transaction and comes back as a conflict or a failure
+at a next merge unless it is shortened there too. Not said by the build
+session; told to it by the note-taker.
+
 **2026-10-13 08:18: the build of the Transaction merge PASSED; both suites
 started on it, no result yet. All LOCAL: not pushed, NOT in the staged
 copy.** From the build session (its message of 08:18, written here
