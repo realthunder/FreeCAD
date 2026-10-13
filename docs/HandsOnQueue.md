@@ -1477,6 +1477,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | OPEN; the four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | OPEN; the three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | OPEN; the points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
+| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11163,6 +11164,57 @@ The note-taker's reading:
   answered by entry 89's answer of 10:59 ("looks like so").
 Nothing of this entry is left unanswered.
 
+## 91. PartDesign edit panels: the button that clears the link references is stretched -- OPEN, three points not answered
+
+**2026-10-13 11:05, the reporter:** "new defect, part design pocket edit panel,
+but button to 'temporary clear link references for new selection' got
+streched. it shouldn't. this widget layout is reused in dozons of
+partdesign editing panels. so should fix for all of them."
+
+The note-taker's reading, not the reporter's words:
+- In the panel that edits a Pocket, the small button at the end of a
+  reference row -- its tooltip "Temporary clear link references for new
+  selection", an icon and no text -- is drawn stretched. It should keep
+  its small size.
+- The row is one layout used by many PartDesign panels; the fix is to
+  be made where they all get it, not in the Pocket's panel alone.
+- "got streched": it was right before. Since when is not said. The copy
+  under test is the stage of 09:36 (`abca255e23`), with the merges of
+  this morning in it.
+
+NOT said, lettered for an answer:
+a. Stretched HOW: WIDER -- as wide as a button with text -- or TALLER,
+   to the height of the table beside it?
+b. SINCE WHEN: only on today's stage of 09:36 (after the merges), since
+   the themes were applied again at about 10:04, or before?
+c. Under both themes; and with the panel shown where -- docked,
+   overlaid, in its view -- or the same in all?
+
+Pointers, READ by the note-taker, nothing run:
+- The row is the class `LinkSubWidget` in
+  `src/Mod/PartDesign/Gui/TaskSketchBasedParameters.cpp` (constructor
+  near line 395): a level layout with the titled button at the left
+  (`button`, checkable), the table of references (`LinkSubTable`), and
+  `clearButton` at the right -- a `QPushButton` with the icon
+  "edit-cleartext" and that tooltip, added with `Qt::AlignTop`. NO size
+  is set on it: no fixed width, no size policy. Ten files of
+  `src/Mod/PartDesign/Gui` name the class, so one change there reaches
+  all the panels the reporter means.
+- A candidate for the width, NOT shown: the theme's sheet
+  `Stylesheets/FreeCAD.qss` (near line 1187) gives EVERY `QPushButton`
+  `padding: 3px 12px` and `min-width: 80px`. Its rule for a push
+  button directly inside a task panel's box (near line 1581) takes the
+  padding back to 2 px but says nothing of the least width. An
+  icon-only button with no size of its own would be 80 pixels wide by
+  that.
+- That sheet came with `40fc82b6db` (2026-08-22, "adopt upstream's
+  parameterized stylesheet for the Light and Dark themes") -- so by the
+  reading it is not new this morning; which does not fit "got
+  stretched" unless the reporter's panels were under another sheet
+  until the themes were applied again today (entry 69). A guess.
+- Other icon-only push buttons in task panels would be wide the same
+  way if the candidate is right -- not looked for.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11172,5 +11224,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 90 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 91 are of 2026-10-13, 82 found by
 it)
