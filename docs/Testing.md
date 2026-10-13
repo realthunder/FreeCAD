@@ -178,9 +178,11 @@ spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
 `FeaturePythonChain`, is headless and rides the Python suite. `PartGroupView`
 (3) is a third that needs no guest: where a plain group inside an `App::Part`
 is selected, and that a Part which was only opened is not a modified document.
-`TreeEntries` (2) is a fourth: the tree view keeps no entry of an object that
+`TreeEntries` (4) is a fourth: the tree view keeps no entry of an object that
 has no row, counted by `FreeCADGui.treeTableStats()`, so a closed document
-leaves nothing for the next one's objects to be mistaken for.
+leaves nothing for the next one's objects to be mistaken for; and it lists no
+change of an object that is gone (`changedGone`), taken away or closed with
+its document before the tree's next pass.
 
 The whole default list, run the way the script's header says (`xcb` under
 Xvfb, `FCX_PYODIDE` set), is **70 cases in 13 modules, OK, none skipped**

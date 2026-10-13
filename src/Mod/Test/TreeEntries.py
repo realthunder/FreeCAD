@@ -34,9 +34,15 @@ with it.
 How a row goes away without its object: something claims the object, as a
 shader binding claims its shader, and has no row of its own for it yet.
 
-FreeCADGui.treeTableStats() counts the entries, so none of this needs a
-crash to be seen. Needs the GUI: run it through scripts/sandbox-gui-gate.py,
-or in the running application. Skips headless.
+The tree also lists the objects that changed since its last pass, by
+address, and nothing took an object off that list when it went away, or its
+document: until the next pass the list named memory that was freed, and an
+object made at that address in between was taken for a changed one.
+
+FreeCADGui.treeTableStats() counts the entries, and the changes listed of
+objects that are gone, so none of this needs a crash to be seen. Needs the
+GUI: run it through scripts/sandbox-gui-gate.py, or in the running
+application. Skips headless.
 """
 
 import time
@@ -74,6 +80,8 @@ class TreeEntriesCases(unittest.TestCase):
         for name in ("TreeEntries", "TreeEntriesNext"):
             if name in App.listDocuments():
                 App.closeDocument(name)
+
+    NOTHING = {"objects": 0, "entries": 0, "rowless": 0, "changedGone": 0}
 
     def scene(self, name="TreeEntries"):
         """A box, and a shader with its program, each with a row of its own"""
@@ -137,7 +145,7 @@ class TreeEntriesCases(unittest.TestCase):
         doc.recompute()
         App.closeDocument(doc.Name)
         settle()
-        self.assertEqual(self.stats(), {"objects": 0, "entries": 0, "rowless": 0})
+        self.assertEqual(self.stats(), self.NOTHING)
 
         # and the objects of the next document, made where those were, are
         # looked up without finding them
@@ -154,4 +162,23 @@ class TreeEntriesCases(unittest.TestCase):
         self.assertEqual(self.stats()["rowless"], 0)
         App.closeDocument(doc.Name)
         settle()
-        self.assertEqual(self.stats(), {"objects": 0, "entries": 0, "rowless": 0})
+        self.assertEqual(self.stats(), self.NOTHING)
+
+    def testChangeOfAnObjectTakenAwayIsNotKept(self):
+        doc, box, shader = self.scene()
+        box.touch()
+        doc.removeObject(box.Name)
+        # read before the tree's next pass, which empties the list
+        self.assertEqual(self.Gui.treeTableStats()["changedGone"], 0)
+        settle()
+        self.assertEqual(self.Gui.treeTableStats()["changedGone"], 0)
+
+    def testChangeInAClosedDocumentIsNotKept(self):
+        doc, box, shader = self.scene()
+        box.touch()
+        shader.touch()
+        App.closeDocument(doc.Name)
+        self.assertEqual(self.Gui.treeTableStats()["changedGone"], 0)
+        settle()
+        self.assertEqual(self.Gui.treeTableStats()["changedGone"], 0)
+

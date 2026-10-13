@@ -161,6 +161,14 @@ public:
      */
     static void tableStats(int &objects, int &entries, int &rowless);
 
+    /** How many objects the trees still list as changed that are gone
+     *
+     * A change is listed by the object's address until the next pass over
+     * the list. An object taken away in between, or one of a document
+     * closed in between, is taken off the list with it: 0.
+     */
+    static int changedGone();
+
     // Check if obj can be considered as a top level object
     static void checkTopParent(App::DocumentObject *&obj, std::string &subname);
 

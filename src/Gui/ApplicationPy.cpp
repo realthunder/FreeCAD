@@ -118,8 +118,9 @@ PyObject* sTreeTableStats(PyObject * /*self*/, PyObject *args)
         return nullptr;
     int objects = 0, entries = 0, rowless = 0;
     TreeWidget::tableStats(objects, entries, rowless);
-    return Py_BuildValue("{s:i,s:i,s:i}",
-        "objects", objects, "entries", entries, "rowless", rowless);
+    return Py_BuildValue("{s:i,s:i,s:i,s:i}",
+        "objects", objects, "entries", entries, "rowless", rowless,
+        "changedGone", TreeWidget::changedGone());
 }
 
 // FreeCADGui.visualBuildStats(): ViewProvider's visual build accumulators.
@@ -276,7 +277,8 @@ PyMethodDef Application::Methods[] = {
    "What the tree views hold of the documents' objects: objects, how\n"
    "many have an entry, entries, one for each document an object has\n"
    "rows under, and rowless, how many of those have no row. rowless is 0,\n"
-   "and all three are once every document is closed."},
+   "and all three are once every document is closed. changedGone is how\n"
+   "many objects the trees list as changed that are gone, 0 as well."},
   {"visualBuildStats", (PyCFunction) sVisualBuildStats, METH_VARARGS,
    "visualBuildStats() -> dict\n"
    "\n"
