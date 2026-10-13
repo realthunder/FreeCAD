@@ -1928,6 +1928,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (B) IN THE REPORTER'S LIVE SESSION TODAY WAS SET OFF BY THE NOTE-TAKER'S OWN SCRIPT (found 17:03): the first look of 16:13:11 called `menuBar()` on the main window, which makes a menu bar and pushes the kit's spacer out -- the tool bar rows slid under the title bar a moment later. The note-taker's "read-only, nothing changed" was WRONG. (A) is the reporter's own finding, before any look. BOTH REPRODUCED by the build session on the real screen, the causes shown, fixes written for the next build: (A) the menu reveal button's width flips between its own 50 and the sheet's 88; (B) ANY `menuBar()` call does it, the window's guard against it no longer works. (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry. THE REPORTER 17:22 on the point of 17:03: "I remember see it once before" -- the row under the title bar WAS seen once before the note-taker's script; when is not said |
 | 111 | 2026-10-13 | the Python console or the report view overlaid on a TechDraw page drawn by the bgfx renderer: after a change of theme the text in the overlay is SCRAMBLED over the page -- in the same overlay the half that lies over a 3D view is right (a screenshot; said as "new defect and request"). MORE from the reporter 17:10: under LIGHT it is fine; under CLASSIC it is scrambled too, over the 3D view AND over the page; "it seems that the scramble is related to text outline drawing" | OPEN; ANSWERED 17:11: the "request" IS entry 112; before the change of theme the text is right; a page drawn by Qt and the other panels not checked, guessed not related; the eye taken to be beside the point. Nothing waits for the reporter |
 | 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11). ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; the smaller point answered 17:17: A SETTING gates it, by default the same as the 3D view; and the Qt-drawn page too IF it is easy -- to be looked at by the build session |
+| 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -14748,6 +14749,74 @@ where it is shown (TechDraw's preferences, by the note-taker's guess);
 and what "easy" comes to -- to be said back to the reporter with the
 outcome either way.
 
+## 113. A double click on Binder008 under Lens003: "self linking" in the report view -- OPEN, the live session read; two points not answered
+
+**2026-10-13 17:40, the reporter:** "new defect, check live session. when double
+click Binder008 in tree view grouped under Lens003, I got error in report
+view saying '<Exception> PropertyLinks.cpp(4693): self linking'"
+
+The note-taker's reading, not the reporter's words:
+- On the stage of 16:55, after the migration recompute, `Binder008` is
+  in the error entry 105 gave it: "No context, please double click the
+  binder in the desired context to refresh". The reporter does that --
+  a double click on the binder where the tree shows it under `Lens003`
+  -- and gets an error line in place of a context.
+
+READ in the reporter's LIVE session, on the reporter's word ("check live
+session") -- process 103640, the staged copy of 16:55. This time every
+call was checked before it ran: the console's last lines (the server's
+own log), and ONE script that only reads properties and the selection
+(`..\dl\handson\2026-10-13\entry113\binder_look.py`; no property
+set, nothing selected, no recompute, no widget made), 17:41:46:
+- The report view's lines, by the console's log: "<Exception>
+  PropertyLinks.cpp(4693): self linking" at 17:00:19, 17:00:32,
+  17:39:07 and 17:39:13.
+- `Binder008`: a `PartDesign::SubShapeBinder`, label
+  "Binder008(Prism001)"; `Relative` True; `Context` None; `Support`
+  `Body004`; state Touched and Invalid; its status text "No context,
+  please double click the binder in the desired context to refresh".
+- Who names it (its InList): `Binder013`, `Binder014`, `Lens003`,
+  `Binder017`, `Binder018`, `Link032`, `Link044`, `LinkGroup001` ...
+- Its top-level PATHS (`Parents`): ONE -- (`LinkGroup001`,
+  "Binder008.").
+- `Lens003` is a `Part::FeaturePython` (a script-made feature), named
+  by four beams; it shows the binder as its child in the tree but
+  gives NO path to it.
+- The selection at that moment, unresolved: (`Binder008`, no sub
+  names) -- the binder ITSELF, with no parent before it.
+
+READ in the source, nothing run -- why that selection gives the error:
+- `ViewProviderSubShapeBinder::doubleClicked`
+  (`src/Mod/Part/Gui/ViewProviderSubShapeBinder.cpp`) calls
+  `updatePlacement(true)`. For a `Relative` binder that takes the ONE
+  selected thing, checks that it leads to the binder, and uses its
+  top object and path as the context:
+  `self->Context.setValue(parent, parentSub)`.
+- With the selection being the binder itself, "it leads to the binder"
+  is true (an empty path from the binder is the binder), so `parent`
+  is the binder -- and `PropertyXLink::setValue`
+  (`src/App/PropertyLinks.cpp` line 4693) refuses a link to its own
+  owner: "self linking".
+- So: a double click on the binder where the tree shows it under an
+  object that gives no path to it (`Lens003`) -- or at the top level --
+  tries to make the binder its own context. Under `LinkGroup001`, its
+  one real path, the selection would carry that group; that is the
+  context that puts the shape 53 mm off (entry 17).
+- This is old code meeting entry 105's new error text: the text sends
+  the user to a double click, and for this binder the only place where
+  the double click means something is the one the rule had rejected.
+
+NOT said, lettered for an answer:
+a. WHAT SHOULD THE DOUBLE CLICK DO when the binder is selected with no
+   parent (under `Lens003`, or at the top level): take "NO context" as
+   the choice made -- the binder then stays where its shape is, in the
+   document's own coordinates, and the error goes; or say in plain
+   words that this place gives no context, and do nothing?
+b. For `Binder008` in this file: is "no context" (where the file has
+   its shape) the place the reporter WANTS it -- so that a binder
+   should be able to keep an EMPTY context for good, without the error
+   of entry 105 coming back at the next recompute?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -14757,5 +14826,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 112 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it)
