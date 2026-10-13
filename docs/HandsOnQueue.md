@@ -98,6 +98,18 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 11:50: entry 97, the crash at Revert, is REPRODUCED on the
+staged copy and its cause shown: EVERY revert of a document with a
+TechDraw page's view open. A fix is in the source, building. All LOCAL.**
+From the build session (its message of 11:50, written here 11:49).
+- Until a stage with the fix: File > Revert on such a document ends the
+  program, every time. `scanner.FCStd` is such a document.
+- The build session's order after this round, "unless the reporter says
+  otherwise": 92 (what first wrote "2"), 94, 95, 93, 91, 96; 86 waits
+  for the reporter's word on the look into the live session.
+- The reporter's answers on entries 93, 94, 95 and 96 are with the
+  build session.
+
 **2026-10-13 11:33: where each entry of the morning stands. COMMITTED:
 entries 84 and 85. In the source, not committed: 87, 88, 89, 90. NOT
 reproduced: 86. Looked at: 92, 97. Not started: 91, 93 to 96. All LOCAL,
@@ -1505,7 +1517,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | OPEN, answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | OPEN; the three points answered 11:38, nothing left unanswered |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | OPEN; the three points answered 11:40; one reading to confirm (b), and which menu is not said |
-| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | OPEN; the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; two points under the entry, NOT ANSWERED |
+| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN; a fix in the source, NOT built: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11694,7 +11706,7 @@ The note-taker's reading:
   note-taker's reading: every place the icon is shown, so the frame
   belongs in the picture itself and not in one button's style.
 
-## 97. A crash: File > Revert on the loaded scanner document -- OPEN, the stack read from the debugger's log; two points not answered
+## 97. A crash: File > Revert on the loaded scanner document -- REPRODUCED 2026-10-13 11:50 on the staged copy, every revert with a TechDraw page's view open; a fix in the source, not built
 
 **2026-10-13 11:20, the reporter:** "new crash, check cdb and possibly dump, the
 crash happen when I click menu File -> Revert to rever the loaded scanner
@@ -11770,6 +11782,47 @@ only after that sets Restoring; "a write made in between (by whoever
 hears the deletion) opens an implicit transaction that holds the objects
 about to be deleted; its queued commit runs from the progress bar's pump
 and `TransactionLog::onCommit` asks a dead object for its type."
+
+**2026-10-13 11:50, the build session: REPRODUCED, the cause SHOWN; a fix
+in the source, NOT built yet.** From the build session's message of 2026-10-13 11:50, written here 11:49.
+- Reproduced on the STAGED copy of 09:36, offscreen, with
+  `..\2026-10-06\scanner.FCStd`: opened, `Std_Revert`, Yes -> "EXIT
+  -1073741819 with the reporter's stack".
+- The note-taker's two points, answered "from a run, not from the
+  reporter": with the migration recompute first AND without it --
+  "nothing has to be done to the document before, and it is every
+  revert, not once".
+- THE WRITER, shown by observers that write down every change from the
+  moment Yes is pressed: "OPEN TRANSACTION scanner '<implicit>'", then
+  `Page003.Visibility`, `Group._GroupTouched`, `Group.HiddenChildren`,
+  the view provider's `Visibility`, `Page003.ViewObject` -- "and only
+  then the document's deletion".
+- So: the teardown closes the TechDraw page's view, which HIDES THE
+  PAGE -- "a write to the page and to the group it is in, outside any
+  command, so with the transaction log on an implicit transaction of
+  its own; the two objects are deleted a moment later; the commit,
+  queued, reads them". The note-taker's reading of 11:23 "was right in
+  its substance; the family is `Document::~Document`'s, which already
+  keeps this out of the log with `d->closing`".
+- A document of three boxes reverts without a crash on that copy; with
+  a TechDraw page in a group and the page's view open it crashes at the
+  first revert. That document is the new test,
+  `tests/gui/revert-document.py`.
+- The fix, in the source, NOT built: while
+  `Document::restore(XMLReader&)` and `Document::clearDocument()`
+  signal the deletion and delete the objects, the document wants no
+  transaction (a flag `d->clearing` asked by
+  `Document::transactionsWanted()`). Three small changes in
+  `src/App/Document.cpp`, one member in
+  `src/App/private/DocumentP.h`.
+- Waiting for the build: the revert test twice, the scanner file
+  reverted twice with and without the recompute, the tests of entries
+  87 to 90 again (the hover drawn the second way), the tests near
+  them, then BOTH suites.
+The note-taker's note for the reporter: until a stage with the fix,
+File > Revert on a document whose TechDraw page is open ends the
+program -- every time, on this stage and by the history on the stages
+of 2026-10-12 17:52 and 2026-10-13 06:52 as well (those not run).
 
 ## Inbox
 
