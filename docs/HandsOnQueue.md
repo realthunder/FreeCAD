@@ -1475,6 +1475,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered |
 | 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. A fix PLANNED, not written. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | OPEN; the four points answered 10:51; one side effect not said: a clear track passes clicks through |
+| 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside | OPEN; a reading of the source by the note-taker, nothing run: two things it could be, the mark Qt draws on a button with a menu or a triangle of the icon's own drawing; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11037,6 +11038,47 @@ rule of entry 86 (once that works again), so a click beside the handle
 would no longer page the panel. Wanted or not is not said; not put as
 blocking.
 
+## 89. The toolbar icon of Std_DisplayStyle seems to have a triangle laid over it -- OPEN, three points not answered
+
+**2026-10-13 10:54, the reporter:** "new defect, Std_DisplayStyle toolbar icon
+seem to have some triangle overlaid inside"
+
+The note-taker's reading, not the reporter's words:
+- The button of `Std_DisplayStyle` in the toolbar (entry 74, beside
+  `Std_DrawStyle`) shows a triangle inside its icon that does not look
+  as if it belonged there.
+- Which copy is not said; the copy under test is the stage of 09:36
+  (`abca255e23`). The command is in the stages since 2026-10-12 17:52.
+
+NOT said, lettered for an answer:
+a. WHICH triangle: a SMALL one pointing down, at the button's right
+   edge or lower right corner; or a LARGER, lighter one in the upper
+   left of the cube? (The two candidates below.)
+b. Does `Std_DrawStyle` beside it show the same mark, or only this
+   button?
+c. Under both themes; and is it there in the View menu and the context
+   menu too, where the same icon is shown, or on the toolbar only?
+
+Pointers, READ by the note-taker, nothing run -- two things it could be:
+1. THE MENU MARK. The button opens a menu at a click
+   (`src/Gui/DisplayOptions.cpp`: `action()->setMenu(_menu)`,
+   `button->setPopupMode(QToolButton::InstantPopup)`). Qt draws a small
+   arrow on such a button; `Stylesheets/FreeCAD.qss` near line 1365
+   places it (`QToolButton::menu-indicator { subcontrol-position: right
+   center; }`), over the icon when the button is no wider than the
+   icon. The same sheet takes that arrow away for another kind of
+   button (`Gui--SplitButton QToolButton::menu-indicator { image:
+   none; }`), not for this one.
+2. THE ICON'S OWN DRAWING. `src/Gui/Icons/Std_DisplayStyle.svg` (new in
+   `7970f5b7d6`, entry 74) is a cube whose left half is filled and
+   whose right half is lines only. Its filled half is made of three
+   shapes, and one of them IS a triangle -- the left half of the cube's
+   top face, in a lighter colour (#34e0e2 on #16c8ca), with a pale line
+   along its lower edge. At a toolbar's size that lighter triangle may
+   read as something laid over the cube.
+Which of the two the reporter sees decides what is to be changed: the
+button's mark, or the picture.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11046,5 +11088,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 88 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 89 are of 2026-10-13, 82 found by
 it)
