@@ -1501,7 +1501,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | FIXED IN THE SOURCE, its test PASS on a first build, NOT committed (11:33): the common helper was called BEFORE the action was added and took the tool bar's last button, the one of the action before -- in a run of menu buttons each was set up by the next and the last by none (`Std_SelUp`; Edit's Redo too); all twelve callers set up their own button now. The points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
 | 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
 | 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
-| 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78) | OPEN; four points under the entry, NOT ANSWERED |
+| 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | OPEN; the four points answered about 11:34, nothing left unanswered |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; four points under the entry, NOT ANSWERED |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found | OPEN; three points under the entry, NOT ANSWERED |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
@@ -11448,7 +11448,7 @@ The note-taker's notes:
 - What is wrong, by this: a bare "2" shown where `Wire2` is meant; the
   features build as before.
 
-## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- OPEN, four points not answered
+## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- OPEN, the four points answered 2026-10-13 about 11:34: "/ ", the path from the top by internal names, a dot; the last selection in view first
 
 **2026-10-13 11:12, the reporter:** "new request, when Ctrl+F and tree view has
 any selection (use the nearest selected item from mouse), launch omni
@@ -11490,6 +11490,34 @@ Pointers, the note-taker's, from entry 78 as it was built, nothing run:
 - The tree's own choice of ONE item under the pointer exists already
   for its tooltip (`TreeWidget`'s hit test at `QCursor::pos()`, entry
   84); "nearest selected" is new.
+
+**2026-10-13 about 11:34, the reporter answers the four points** (written here
+11:35; it came while the note-taker was writing the block of 11:33):
+"entry 93, a '/ ' then the name and dot. b, internal name. c, tree's last
+selection if it is in view, or else the last selection in view, or else
+the current item, or else the last selection. d, path from the top"
+
+The note-taker's reading:
+- a. The text typed is "/ ", then the name, then a DOT -- so the omni
+  search opens in the object search of entry 78 with the object
+  resolved and its properties listed, as from the property view.
+- b. The INTERNAL name.
+- d. The PATH from the top for an item inside a container or under a
+  link (`Body.Pad.`), each step by its internal name.
+- c. WHICH item, an order of four -- and it replaces the first
+  sentence's "nearest selected item from mouse":
+  1. the tree's LAST selection (the item selected most lately), if it
+     is IN VIEW (shown in the tree's visible part);
+  2. else the last selection that IS in view (the most lately selected
+     of the selected items that are visible);
+  3. else the tree's CURRENT item;
+  4. else the last selection, in view or not.
+  The pointer plays no part any more, by this reading.
+Nothing of this entry is left unanswered. A smaller point the
+note-taker had named, still not said: whether the typed text is
+selected so that typing replaces it. With a dot at its end, meant to be
+typed on from, the note-taker's guess is now: NOT selected, the caret
+after the dot.
 
 ## 94. The omni search: Tab to complete a property takes the focus from the edit box -- OPEN, four points not answered
 
