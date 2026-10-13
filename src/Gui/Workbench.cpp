@@ -738,8 +738,11 @@ MenuItem* StdWorkbench::setupMenuBar() const
     // View
     auto view = new MenuItem( menuBar );
     view->setCommand("&View");
-    *view << "Std_ViewCreate" << "Std_ViewSplitRight" << "Std_ViewSplitDown" << "Std_ViewSplitClose" << "Std_ViewSplitMaximize" << "Std_ViewCellShowObject" <<"Std_OrthographicCamera" << "Std_PerspectiveCamera" << "Std_MainFullscreen" << "Separator"
-          << stdviews << "Std_FreezeViews" << "Std_DrawStyle" << "Std_DisplayStyle" << "Std_SelOptions"
+    // The split view's and its cells' commands are one entry after the
+    // standard views, the main window's bars one at the end
+    // (docs/HandsOnQueue.md entry 101)
+    *view << "Std_ViewCreate" <<"Std_OrthographicCamera" << "Std_PerspectiveCamera" << "Std_MainFullscreen" << "Separator"
+          << stdviews << "Std_SplitView" << "Std_FreezeViews" << "Std_DrawStyle" << "Std_DisplayStyle" << "Std_SelOptions"
           << "Separator" << view3d << zoom
           << "Std_ViewDockUndockFullscreen" << "Std_AxisCross" << "Std_ToggleClipPlane" << "Std_ClipPlaneDragger"
           << "Std_TextureMapping"
@@ -762,11 +765,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_ToggleTransparency"
           << "Std_LinkSelectActions"
           << "Std_TreeViewActions"
-          << "Std_ViewTitleBar"
-          << "Std_ViewFoldTitleBarMenu"
-          << "Std_ViewTitleBarToolBars"
-          << "Std_ShowMenuBar"
-          << "Std_ViewStatusBar";
+          << "Std_WindowBars";
 
     // Tools
     auto tool = new MenuItem( menuBar );

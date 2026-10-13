@@ -12,6 +12,18 @@ Claims, the picture drawn 24 by 24:
   - its centre is drawn: the cross;
   - between the frame and the cross, beside the middle of the left side,
     nothing is drawn: a line, not a filled ground.
+
+The same entry, on the stage of 13:56: "the close icon looks fine on overlay
+title bar. but when viewing in menu, Views -> Dock window overlays, in dark
+theme, hence invisible. light theme looks fine". The file is drawn in black;
+a title button tints it when it paints and a menu does not. The four
+commands that show or hide the overlays of a side now give their action the
+glyph in the colour a title button paints it.
+
+Claims, for Std_DockOverlayToggleLeft, Right, Top and Bottom:
+  - under the Dark theme the action's icon is drawn light;
+  - under the Light theme it is drawn dark;
+  - and Dark again, after Light, light again: it follows a change of theme.
 """
 import os
 import traceback
@@ -64,9 +76,52 @@ def run():
           alpha(image, gap[0], gap[1]) == 0, "%s: alpha %d" % (gap, alpha(image, *gap)))
 
 
+SIDES = ("Left", "Right", "Top", "Bottom")
+
+
+def settle(ms=300):
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(ms, loop.quit)
+    loop.exec()
+
+
+def lightness(icon):
+    """Mean lightness, 0 to 255, of what an icon draws; None if it draws nothing"""
+    image = icon.pixmap(SIZE, SIZE).toImage().convertToFormat(QtGui.QImage.Format_ARGB32)
+    total = count = 0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            if alpha(image, x, y) > 40:
+                pixel = image.pixel(x, y)
+                total += (((pixel >> 16) & 255) * 11 + ((pixel >> 8) & 255) * 16
+                          + (pixel & 255) * 5) // 32
+                count += 1
+    return total / count if count else None
+
+
+def menu_icons(tag, light):
+    if not check("%s applies" % tag, FreeCADGui.applyTheme(tag.split()[0])):
+        return
+    settle(4000)
+    for side in SIDES:
+        command = FreeCADGui.Command.get("Std_DockOverlayToggle" + side)
+        actions = command.getAction() if command else []
+        value = lightness(actions[0].icon()) if actions else None
+        if light:
+            ok = value is not None and value > 200
+        else:
+            ok = value is not None and value < 60
+        check("%s: the menu icon of 'Toggle %s' is drawn %s"
+              % (tag, side.lower(), "light" if light else "dark"), ok,
+              "mean lightness %s" % (None if value is None else round(value)))
+
+
 def start():
     try:
         run()
+        menu_icons("Dark", True)
+        menu_icons("Light", False)
+        menu_icons("Dark again", True)
     except Exception:
         note("ABORT: " + traceback.format_exc().replace("\n", " | "))
     note("DONE")

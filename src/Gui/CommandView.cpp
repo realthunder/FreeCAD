@@ -85,7 +85,11 @@
 #include "MouseSelection.h"
 #include "NavigationStyle.h"
 #include "OverlayParams.h"
+#include <QGuiApplication>
+#include <QStyleHints>
+
 #include "OverlayManager.h"
+#include "OverlayWidgets.h"
 #include "PieMenu.h"
 #include "SceneInspector.h"
 #include "Selection.h"
@@ -2920,6 +2924,41 @@ bool StdCmdViewSplitMaximize::isActive()
 }
 
 //===========================================================================
+// Std_SplitView
+//===========================================================================
+
+/** The commands of the split view and of its cells, as one entry of the View
+ * menu (docs/HandsOnQueue.md entry 101). They are commands in their own
+ * right, with their own shortcuts; this holds them by name.
+ */
+class StdCmdSplitView : public GroupCommand
+{
+public:
+    StdCmdSplitView()
+        :GroupCommand("Std_SplitView")
+    {
+        sGroup        = "Standard-View";
+        sMenuText     = QT_TR_NOOP("Split view");
+        sToolTipText  = QT_TR_NOOP("Split the view area into cells, close or maximize a cell,\n"
+                                   "and choose what a cell shows");
+        sWhatsThis    = "Std_SplitView";
+        sStatusTip    = sToolTipText;
+        eType         = 0;
+        bCanLog       = false;
+
+        addCommand("Std_ViewSplitRight");
+        addCommand("Std_ViewSplitDown");
+        addCommand("Std_ViewSplitClose");
+        addCommand("Std_ViewSplitMaximize");
+        addCommand();
+        addCommand("Std_ViewCellShowObject");
+    }
+
+    const char* className() const override
+    { return "StdCmdSplitView"; }
+};
+
+//===========================================================================
 // Std_ViewCellShowObject
 //
 // The Blender "switch the area's editor" operation: host the selected
@@ -5242,10 +5281,66 @@ void StdCmdDockOverlayToggleTransparent::activated(int iMsg)
 // Std_DockOverlayToggleLeft
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleLeft)
+/** One of the four commands that show or hide the overlays of a side.
+ *
+ * Their icon is the close glyph of an overlay's title bar, a file drawn in
+ * black. A title button tints it when it paints; a menu does not, and in the
+ * menu of a dark theme the glyph was not to be seen
+ * (docs/HandsOnQueue.md entry 96). The action is given the glyph in the
+ * colour a title button would paint it.
+ */
+class StdCmdDockOverlaySide : public Gui::Command
+{
+public:
+    explicit StdCmdDockOverlaySide(const char *name)
+        :Command(name)
+    {}
+
+    Action *createAction() override
+    {
+        Action *action = Command::createAction();
+        applyThemeIcon(action);
+        // A theme sets its sheet first and its scheme after: when the icons
+        // are asked for again at the sheet's change the scheme is still the
+        // one being left, and the glyph stayed black in a dark menu. It is
+        // looked at again when the scheme itself changes.
+        QObject::connect(qGuiApp->styleHints(), &QStyleHints::colorSchemeChanged, action,
+                         [this]() { applyThemeIcon(getAction()); });
+        return action;
+    }
+
+    void refreshIcon() override
+    {
+        Command::refreshIcon();
+        applyThemeIcon(getAction());
+    }
+
+private:
+    void applyThemeIcon(Action *action)
+    {
+        if (!action || !getPixmap())
+            return;
+        QPixmap pixmap = BitmapFactory().pixmap(getPixmap());
+        if (Application::isDarkTheme())
+            pixmap = OverlayToolButton::tinted(pixmap, QColor(0xff, 0xff, 0xff));
+        action->setIcon(QIcon(pixmap));
+    }
+};
+
+#define DEF_STD_CMD_OVERLAY_SIDE(X) class X : public StdCmdDockOverlaySide \
+{\
+public:\
+    X();\
+    const char* className() const override\
+    { return #X; }\
+protected: \
+    void activated(int iMsg) override;\
+};
+
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleLeft)
 
 StdCmdDockOverlayToggleLeft::StdCmdDockOverlayToggleLeft()
-  :Command("Std_DockOverlayToggleLeft")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleLeft")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle left");
@@ -5267,10 +5362,10 @@ void StdCmdDockOverlayToggleLeft::activated(int iMsg)
 // Std_DockOverlayToggleRight
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleRight)
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleRight)
 
 StdCmdDockOverlayToggleRight::StdCmdDockOverlayToggleRight()
-  :Command("Std_DockOverlayToggleRight")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleRight")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle right");
@@ -5292,10 +5387,10 @@ void StdCmdDockOverlayToggleRight::activated(int iMsg)
 // Std_DockOverlayToggleTop
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleTop)
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleTop)
 
 StdCmdDockOverlayToggleTop::StdCmdDockOverlayToggleTop()
-  :Command("Std_DockOverlayToggleTop")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleTop")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle top");
@@ -5317,10 +5412,10 @@ void StdCmdDockOverlayToggleTop::activated(int iMsg)
 // Std_DockOverlayToggleBottom
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleBottom)
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleBottom)
 
 StdCmdDockOverlayToggleBottom::StdCmdDockOverlayToggleBottom()
-  :Command("Std_DockOverlayToggleBottom")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleBottom")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle bottom");
@@ -5606,6 +5701,8 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdViewSplitClose());
     rcCmdMgr.addCommand(new StdCmdViewSplitMaximize());
     rcCmdMgr.addCommand(new StdCmdViewCellShowObject());
+    // after the commands it holds, which it takes by name
+    rcCmdMgr.addCommand(new StdCmdSplitView());
     rcCmdMgr.addCommand(new StdViewScreenShot());
     rcCmdMgr.addCommand(new StdViewLoadImage());
     rcCmdMgr.addCommand(new StdCmdSaveView());
