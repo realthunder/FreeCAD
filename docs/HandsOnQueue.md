@@ -1798,7 +1798,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request). ANSWERED 13:29: the cell's MENU button and its TWO CORNER handles, each checked by itself; moved only if the cell has area not covered by an overlay panel -- fully covered, or less than 40 left in a dimension, it stays [CHANGED by the reporter 13:33: not 40 pixels but TWICE THE SIZE OF THE HANDLE; and when they slide the handles must not overlap one another]; clear of the same things as the cube, slid as the cube is; NO setting, always; every cell | IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52). Prepared as a script 15:36. The five points answered 13:29; two smaller points left, not blocking |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | FIXED `a3acdd0947`, PUSHED 2026-10-13 13:57, STAGED 2026-10-13 13:56 (fixed 11:33): its test `tree-tooltip-only-over-its-item.py` 14 of 14, twice, offscreen. As written 10:17; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; FIXED `1f01bf3f30`, PUSHED 2026-10-13 13:57, STAGED 2026-10-13 13:56 (fixed 11:33), `overlay-see-through.py` 62 of 62 and with a copy of the reporter's configuration the ground is the applied theme's at once: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
-| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced. THE REPORTER RETESTED about 13:38 on the staged copy: the tree view, Python console and report view DO click through but NOT wheel through; the task panel, no click and no wheel. REPRODUCED so by the build session (13:51): THE WHEEL's cause FOUND -- a wheel event falls through into the handling of a context menu event and is read as one (lines of 2022); a fix in the source, NOT built. The Tasks panel's "no click" NOT reproduced with its eye on; the reporter's configuration has that panel's eye OFF. ONE point for the reporter: is the eye of the panel that holds the Tasks pressed, and is a task panel shown in it then. THE TASKS PANEL's cause FOUND (16:12): since entry 69 a task panel has a ground everywhere (alpha 150), and the pass rule passes only where the alpha is 0 -- so over a panel in edit nothing passes; NOT changed yet, a plan of the build session's to be told to the reporter. The reporter about 15:56: "eye pushed or not, same, no pass through". The wheel's fix COMMITTED `8d2e4379c8`, PUSHED 2026-10-13 15:58, NOT in the stage of 13:56 (14:50): on the final build the wheel zooms the view over the tree's and the Tasks panel's clear part, `overlay-pass-through.py` 14 of 14 twice and 15 of 15 with the reporter's configuration |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced. THE REPORTER RETESTED about 13:38 on the staged copy: the tree view, Python console and report view DO click through but NOT wheel through; the task panel, no click and no wheel. REPRODUCED so by the build session (13:51): THE WHEEL's cause FOUND -- a wheel event falls through into the handling of a context menu event and is read as one (lines of 2022); a fix in the source, NOT built. The Tasks panel's "no click" NOT reproduced with its eye on; the reporter's configuration has that panel's eye OFF. ONE point for the reporter: is the eye of the panel that holds the Tasks pressed, and is a task panel shown in it then. THE TASKS PANEL's cause FOUND (16:12): since entry 69 a task panel has a ground everywhere (alpha 150), and the pass rule passes only where the alpha is 0 -- so over a panel in edit nothing passes; NOT changed yet, a plan of the build session's ANSWERED by the reporter 16:13: the plan -- yes; and for the eye, "I want pass through based on transparent background". The reporter about 15:56: "eye pushed or not, same, no pass through". The wheel's fix COMMITTED `8d2e4379c8`, PUSHED 2026-10-13 15:58, NOT in the stage of 13:56 (14:50): on the final build the wheel zooms the view over the tree's and the Tasks panel's clear part, `overlay-pass-through.py` 14 of 14 twice and 15 of 15 with the reporter's configuration |
 | 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. COMMITTED `9b2a76c2dd` and `a4beaec622`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted -- the border and the setting; the hover's bar in an EARLIER form (as wide as the item but about 246 of 255 opaque, with the outline round it). FIXED IN THE SOURCE (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). 12:43: two readings of the build session's on the hover WITHDRAWN by it; a third form is building. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | COMMITTED `9b2a76c2dd`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, measured on a first build (11:33): nothing of the tree's scroll bar more opaque than 150, the handle at 150, the rest clear, Dark and Light. The four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | COMMITTED `d3e1604e2e`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, its test PASS on a first build (11:33): the button did not use the common helper and opened its menu in a mode in which Qt draws a small mark on the icon; it is a menu button like the others now, 44 wide where it was 32. The three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
@@ -1822,6 +1822,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
 | 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry |
 | 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
+| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11089,7 +11090,7 @@ From the build session's message of 2026-10-13 11:33, written here 11:34. `overl
 configuration the panel's ground is the applied theme's right away, Dark,
 Light, Dark".
 
-## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered; RETESTED by the reporter 13:38 -- click passes, the wheel does not; the wheel's cause found 13:51, a fix in the source; the Tasks panel's eye to be said; the wheel's fix COMMITTED `8d2e4379c8`, pushed 2026-10-13 15:58, not staged; the Tasks panel's cause found 16:12 (entry 69's ground), not changed yet
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered; RETESTED by the reporter 13:38 -- click passes, the wheel does not; the wheel's cause found 13:51, a fix in the source; the Tasks panel's eye to be said; the wheel's fix COMMITTED `8d2e4379c8`, pushed 2026-10-13 15:58, not staged; the Tasks panel's cause found 16:12 (entry 69's ground), the plan accepted 16:13, the pass to go by the transparent background, not changed yet
 
 **2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
 pass through no longer works"
@@ -11343,6 +11344,32 @@ The note-taker's notes for the reporter:
   ground, where there is no control, goes to the 3D view); and whether
   with the eye OFF anything should pass at all -- today nothing does,
   by design.
+
+**2026-10-13 16:13, the reporter answers the two things of 16:12:** "entry
+86. 1, yes. 2, I want pass through based on transparent background"
+
+The note-taker's reading:
+- 1. YES to the build session's plan: the task panel's ground counts as
+  nothing for the pass rule where what is under the pointer is no
+  control -- a click or a move there goes to the 3D view, as before
+  entry 69; the wheel there goes to the view only if the panel has
+  nothing to scroll.
+- 2. On the eye: the pass-through is to be decided by the BACKGROUND
+  being transparent -- where the panel shows the view through, the
+  mouse passes -- and not by whether the eye is pressed. So "eye pushed
+  or not, same" is meant as it reads: a panel that LOOKS see-through
+  passes, with the eye off too. That changes what the build session
+  called "by design" at 16:12 (with the eye off nothing passes).
+NOT said, one point: with the eye OFF a panel turns SOLID while the
+pointer is in it (entry 69's own behaviour, so that it can be read and
+used). If the pass goes by the transparent look, the pointer arriving
+over such a panel would pass through where it was see-through and the
+panel could never be entered to be used -- or it turns solid first and
+then nothing is transparent to pass through. Which of the two is
+wanted with the eye off is not said; the note-taker's guess: the eye
+stays the switch for "this panel lets the mouse through", and what
+changes is only the ground of entry 69 under it. To be said by the
+reporter.
 
 ## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, COMMITTED `9b2a76c2dd` and `a4beaec622`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted (border, setting; the hover in an earlier form); OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
 
@@ -13728,6 +13755,65 @@ Two smaller points, NOT put as blocking:
 - A missing reference for which the preview has NO face either (the
   preview could not be made for it): nothing to highlight, as today.
 
+## 110. The margin before the tool bar in the customized title bar is sometimes bigger, and then gone (a regression) -- OPEN, the live session looked into; three points not answered
+
+**2026-10-13 16:11, the reporter:** "regression, sometimes the margin before the
+toolbar docked in customized title bar gets bigger. check my current live
+session of the staged copy"
+
+**2026-10-13 16:14, the reporter, while the note-taker was looking:** "the
+marging is completely gone now, which does not look good either"
+
+The note-taker's reading, not the reporter's words:
+- The title bar made by the program carries a tool bar. The space
+  between what stands at the bar's left end and that tool bar is not
+  steady: sometimes bigger than it should be, and at 16:14 none at all.
+  Neither looks right; a small, steady margin is wanted.
+- "regression": it was right on an earlier copy.
+
+LOOKED INTO in the reporter's LIVE session, on the reporter's word
+("check my current live session") -- the staged copy of 13:56, process
+111300, through its console, by THREE READ-ONLY scripts of the
+note-taker's (they read widgets' places and sizes and print them;
+nothing set, shown, hidden or moved; kept in the session's scratch
+folder). Readings at 16:13:11, 16:13:59 and 16:14:16, all three THE
+SAME:
+- The main window is 1920 wide; the title bar is the top 35 pixels.
+- At its left end a widget 92 pixels wide holds ONE thing: a push
+  button named `titleBarLogo`, 88 pixels wide and 35 high, with an
+  icon of 16 by 16 and no text; 2 pixels of margin left and right of
+  it.
+- Directly after it, at x 92 with no gap, the area `MenuBarLeftArea`,
+  743 wide, holding the tool bar "Workbench" at its own x 0. The
+  area's layout has no margins.
+- So in these readings there is NO margin between the logo's button
+  and the tool bar -- the state the reporter calls "completely gone"
+  at 16:14 -- and the logo's button is 88 pixels wide for a 16-pixel
+  icon, which shows as empty space on both sides of the logo.
+- The state the reporter calls "bigger" was NOT caught: the three
+  readings are alike, and the first was two minutes after the report.
+
+A candidate, the note-taker's, NOT shown: the logo is a PUSH BUTTON
+with no size of its own, and the theme's sheet gives every push button
+a least width of 80 pixels and padding (`Stylesheets/FreeCAD.qss`,
+`QPushButton`, `min-width: 80px`) -- the very rule that stretched the
+clear button of entry 91, and 88 is what it gives. A session, or a
+moment, in which that rule does not reach the button would show it at
+its icon's width, and the space before the tool bar would be another:
+the unsteadiness. Since the themes were applied again this morning
+(entry 69) the reporter's session may be under that rule where it was
+not before -- which would be the "regression". A guess.
+
+NOT said, lettered for an answer:
+a. WHICH space: the empty room around the logo at the far left (the
+   88-pixel button), or a gap between the logo and the first button of
+   the tool bar?
+b. WHEN it changes: after a change of workbench, of theme, of the
+   window's size, after a tool bar is moved -- or with no doing of the
+   reporter's?
+c. HOW BIG is right: the logo with a few pixels around it, the tool
+   bar following at once?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -13737,5 +13823,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 109 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 110 are of 2026-10-13, 82 found by
 it)
