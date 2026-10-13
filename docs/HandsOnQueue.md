@@ -1782,6 +1782,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52); designed 15:36; "does not move" judged FIRST by the placements the binder keeps of its last update and by the geometry search only where it keeps none -- the build session's choice, NOT the reporter's word, to be told to them. AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. ANSWERED 15:28: OFF HOLD, to be built; "not moved" judged against the shape in the file by a GEOMETRY SEARCH; if no path leaves it unmoved the binder is in ERROR, "No context, please double click the binder in the desired context to refresh"; of equal paths the first that `getParents()` returns. Nothing left unanswered. It had been ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | IN THE SOURCE in the reporter's form, in the build of 15:45 after a compile error of the build session's put right (15:52): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
+| 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility | OPEN; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -13494,6 +13495,46 @@ worth knowing: error texts shown since Python 3.12 came in -- in the
 report view, in a feature's status -- have been such records, and will
 read as plain messages again.
 
+## 108. Editing a feature of an invisible body: the step before it is not shown on top, as the old fork shows it -- OPEN, three points not answered
+
+**2026-10-13 15:58, the reporter:** "new defect, when double click to edit a
+feature with invisible body, the feature (previous history step of the
+editing one) is not shown on top. old fork has it show on top regardless
+of body visibility"
+
+The note-taker's reading, not the reporter's words:
+- A PartDesign feature is opened for editing by a double click while
+  the BODY it belongs to is hidden.
+- While a feature is edited, the solid as it stands just BEFORE that
+  feature -- the previous step of the history -- is what the edit is
+  shown against. In the old fork that solid is shown ON TOP during the
+  edit whether the body is visible or not. Here, with the body
+  invisible, it is not.
+- Which copy: by the hour, the stage of 13:56.
+
+NOT said, lettered for an answer:
+a. "not shown on top": not shown AT ALL (it stays hidden with the
+   body), or shown but not on top, so that other objects cover it?
+b. With the body VISIBLE, is the previous step shown on top here as in
+   the old fork -- so that the defect is about the hidden body only?
+c. Per-view edit is on in the reporter's configuration
+   (`View/PerViewEdit` 1): is it the same in every view, or in the
+   edit's view only; and is the edit's own preview shown as expected?
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- Entry 104 is the same scene from another side: during a per-view
+  edit of `Pad033` the body's own drawing is put away in the edit's
+  view, and the reporter found there that hiding the body leaves the
+  edit's preview visible, "which is expected".
+- "Shown on top" during an edit is the on-top group the view keeps for
+  what is being edited and selected (entry 54 was about that group);
+  PartDesign's edit asks for it in `src/Mod/PartDesign/Gui` (the view
+  provider's edit and the task panels). Which part of it looks at the
+  body's visibility is not looked into.
+- The PartDesign edit was reworked to be per view in the first days of
+  October (the handoffs of 2026-10-05 and 2026-10-06): a place where
+  the fork's behaviour may have changed.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -13503,5 +13544,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 107 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 108 are of 2026-10-13, 82 found by
 it)
