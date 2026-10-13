@@ -6536,6 +6536,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 break;
             }
             view->overlayView = int(BGFXView::ViewOverlay0) + slot;
+            view->overlayInScene = ov.second->anchor.sceneCamera;
             // Billboard text in an overlay with its OWN mini camera (corner
             // axis cross, NaviCube axis labels) must size against that
             // camera. sceneCamera overlays (editing / dimension feeds) draw
@@ -6598,6 +6599,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
         view->sweepScreenOffsets();
         view->overlayView = -1;
+        view->overlayInScene = false;
         view->overlayAnchor = nullptr;
         view->overlayRectHeight = 0.f;
     }

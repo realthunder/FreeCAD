@@ -8356,6 +8356,10 @@ public:
                              // ViewGlassLine so the refraction cannot
                              // magnify them (see the enum comment)
     int overlayView = -1; // >= 0: route submits into this overlay view
+    // The overlay being submitted is drawn with the scene's own camera (the
+    // editing graph, the dimensions): content of the scene that is lit as
+    // the scene is. The others are chrome with a camera of their own, flat.
+    bool overlayInScene = false;
     // Anchor + rect pixel height of the overlay currently being submitted (set
     // alongside overlayView); billboard text sizes itself against the overlay's
     // own mini projection + rect instead of the main scene view.
