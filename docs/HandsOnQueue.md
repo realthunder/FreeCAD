@@ -12991,7 +12991,7 @@ context to refresh'. d, the first one returned by getParents()"
 
 The note-taker's reading:
 - a. OFF HOLD: the rule is to be built. The hold of 15:09 is lifted by
-  the reporter, an hour's quarter after it was set.
+  the reporter, nineteen minutes after it was set.
 - b. "Not moved" is judged against the shape the binder has in the
   file, and by a GEOMETRY SEARCH -- the shape resolved under a path is
   looked for by its geometry in the shape kept, rather than by names or
