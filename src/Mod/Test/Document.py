@@ -156,6 +156,29 @@ class DocumentBasicCases(unittest.TestCase):
         self.assertEqual(L1.ExecCount, countChild + 1)
         self.assertEqual(L2.ExecCount, countParent + 1)
 
+    def testErrorThroughPythonIsItsMessage(self):
+        """An error of ours that passes through Python on its way -- a
+        script feature whose execute() fails inside one of our own calls --
+        comes back as its message. Since Python 3.12 it came back as the text
+        of the dictionary that describes it, "{'sclassname': ...", and as no
+        class of ours: a cancelled recompute read like that in an error box
+        (docs/HandsOnQueue.md entry 107)."""
+
+        class Failing:
+            def __init__(self, obj):
+                obj.Proxy = self
+
+            def execute(self, obj):
+                obj.evalExpression("1 +")
+
+        obj = self.Doc.addObject("App::FeaturePython", "Failing")
+        Failing(obj)
+        self.Doc.recompute()
+        self.assertFalse(obj.isValid())
+        status = obj.getStatusString()
+        self.assertNotIn("sclassname", status)
+        self.assertIn("syntax error", status)
+
     def testAbortTransaction(self):
         self.Doc.openTransaction("Add")
         obj = self.Doc.addObject("App::FeatureTest", "Label")
