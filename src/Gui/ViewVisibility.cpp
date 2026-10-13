@@ -190,10 +190,12 @@ void addDependency(const App::DocumentObject *obj,
 bool resolveEntry(const VisibilityEntry &entry,
                   std::vector<uint32_t> &key,
                   std::pair<std::string, std::string> &leaf,
-                  std::vector<const App::DocumentObject *> &deps)
+                  std::vector<const App::DocumentObject *> &deps,
+                  std::vector<std::pair<std::string, std::string>> &steps)
 {
     key.clear();
     deps.clear();
+    steps.clear();
     if (!Application::Instance)
         return false;
     auto doc = App::GetApplication().getDocument(entry.doc.c_str());
@@ -253,6 +255,8 @@ bool resolveEntry(const VisibilityEntry &entry,
     if (key.empty())
         return false;
     leaf = {refs.back().doc, refs.back().obj};
+    for (size_t i = 0; i + 1 < refs.size(); ++i)
+        steps.emplace_back(refs[i].doc, refs[i].obj);
     return true;
 }
 
@@ -467,7 +471,7 @@ void ViewVisibility::sceneChanged(const App::DocumentObject *container)
 
 void ViewVisibility::resolveInto(const VisibilityEntry &entry, Resolution &res)
 {
-    res.ok = resolveEntry(entry, res.entry.key, res.leaf, res.deps);
+    res.ok = resolveEntry(entry, res.entry.key, res.leaf, res.deps, res.steps);
     res.entry.visibility = entry.visible ? 1 : 0;
 }
 
@@ -584,8 +588,15 @@ bool ViewVisibility::commit()
         for (const auto &res : *results) {
             if (!res.ok)
                 continue;
-            if (res.entry.visibility)
+            if (res.entry.visibility) {
                 nowShown.insert(res.leaf);
+                // ... and what it is reached through: a body hidden in the
+                // document kept the capture from the feature this view shows
+                // in it, and an edit showed no base feature with its body
+                // hidden (docs/HandsOnQueue.md entry 108)
+                for (const auto &step : res.steps)
+                    nowShown.insert(step);
+            }
             now.push_back(res.entry);
         }
     }
