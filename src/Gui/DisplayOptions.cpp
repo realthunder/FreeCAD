@@ -172,9 +172,15 @@ void DisplayStyleAction::addTo(QWidget *widget)
     }
     widget->addAction(action());
     if (auto bar = qobject_cast<QToolBar*>(widget)) {
-        // The button has nothing to do but open the menu
-        if (auto button = qobject_cast<QToolButton*>(bar->widgetForAction(action())))
-            button->setPopupMode(QToolButton::InstantPopup);
+        // A menu button as the others in a tool bar are, its mark in a strip
+        // beside the icon: opened instantly, Qt draws a small mark ON the
+        // icon (docs/HandsOnQueue.md entry 89). The button itself has nothing
+        // to do but open the menu, so a click on it opens it too.
+        if (auto button = qobject_cast<QToolButton*>(bar->widgetForAction(action()))) {
+            button->setPopupMode(QToolButton::MenuButtonPopup);
+            button->setObjectName(QStringLiteral("qt_toolbutton_menubutton"));
+            QObject::connect(button, &QToolButton::clicked, button, &QToolButton::showMenu);
+        }
     }
 }
 
