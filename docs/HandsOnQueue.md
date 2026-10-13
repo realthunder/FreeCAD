@@ -1476,6 +1476,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. A fix PLANNED, not written. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | OPEN; the four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside | OPEN; a reading of the source by the note-taker, nothing run: two things it could be, the mark Qt draws on a button with a menu or a triangle of the icon's own drawing; three points under the entry, NOT ANSWERED |
+| 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons' | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; three points under the entry, NOT ANSWERED -- one of them: is entry 89's triangle the same mark |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11079,6 +11080,50 @@ Pointers, READ by the note-taker, nothing run -- two things it could be:
 Which of the two the reporter sees decides what is to be changed: the
 button's mark, or the picture.
 
+## 90. The toolbar button of Std_SelUp: its expansion indicator lies over the icon, unlike the others' -- OPEN, three points not answered
+
+**2026-10-13 10:56, the reporter:** "new defect, Std_SelUp toolbar icon expansion
+indicator overlaps with the icon, unlike others"
+
+The note-taker's reading, not the reporter's words:
+- `Std_SelUp` (go up in the selection's hierarchy) has a button that
+  opens a menu. The small mark that says so -- "expansion indicator" --
+  is drawn ON the icon there. On the other buttons that open a menu it
+  is drawn clear of the icon.
+- Said two minutes after entry 89 (a triangle over the icon of
+  `Std_DisplayStyle`); the two may be one thing -- point a.
+
+NOT said, lettered for an answer:
+a. Is the triangle of entry 89 on `Std_DisplayStyle` the SAME mark as
+   this one -- the menu's indicator on the icon -- so that the two
+   entries are one defect on two buttons? If yes, entry 89's point a is
+   answered by it.
+b. "unlike others": on the others the mark stands BESIDE the icon, in a
+   narrow strip of its own that opens the menu while the icon itself
+   acts at a click? And is that what is wanted for `Std_SelUp` -- or no
+   mark at all?
+c. Which buttons are right, to compare: `Std_DrawStyle`, undo and redo,
+   the views? And the theme it is seen under.
+
+Pointers, READ by the note-taker, nothing run; the cause is NOT found:
+- `src/Gui/Action.cpp`: the helper `setupMenuToolButton` gives a tool
+  button the mode `QToolButton::MenuButtonPopup` (the mark in a strip
+  of its own beside the icon) and the name
+  `qt_toolbutton_menubutton`. It takes the LAST tool button the
+  toolbar has at that moment.
+- `SelUpAction::addTo` (the same file, near line 2473) calls that helper
+  and adds its own action AFTER it. Several other actions there do the
+  two in the same order (undo, redo, and more), so the order alone does
+  not single out `Std_SelUp`; why its button ends up without the strip
+  is not followed.
+- A button left in Qt's default mode with a menu gets a small arrow in
+  its corner, over the icon; `Stylesheets/FreeCAD.qss` near line 1365
+  places such a mark (`QToolButton::menu-indicator
+  { subcontrol-position: right center; }`).
+- `Std_DisplayStyle` (entry 89) sets `QToolButton::InstantPopup` by its
+  own code (`src/Gui/DisplayOptions.cpp`) -- a third mode, which also
+  draws the mark inside the button.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11088,5 +11133,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 89 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 90 are of 2026-10-13, 82 found by
 it)
