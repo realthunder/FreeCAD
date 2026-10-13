@@ -1705,6 +1705,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
 | 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right | OPEN; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- whether this is that, is the first of four points, NOT ANSWERED |
+| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request) | OPEN; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; a proposal asked of the build session; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12784,6 +12785,55 @@ c. WHAT is wanted: that the sketch not break at this recompute; or that
 d. Does `Pad033` still end in an error after the recompute on this
    stage, as it did, or is it silent too now?
 
+## 106. The property group "Appearance" of an object renamed "Object Appearance"; and an ordering of the property groups to be proposed (a change request) -- OPEN, three points not answered
+
+**2026-10-13 14:52, the reporter:** "new request, name 'Appearance' property group
+name in object to 'Object Appearance' so that it does not show as the
+first group in property view. is there any property group ordering
+function, maybe propose one."
+
+The note-taker's reading, not the reporter's words:
+- An object now has a group of properties named "Appearance" (its
+  looks, kept with the object since the merge of 2026-10-12). In the
+  property view that group comes FIRST, before "Base". Wanted: the
+  group is named "Object Appearance", which puts it further down.
+- A question: is there anything that ORDERS the groups? And if not, a
+  proposal for one is asked.
+
+The QUESTION answered, READ in the source by the note-taker, nothing run:
+- There is NO ordering function. The property view keeps its groups in
+  a map keyed by the group's name
+  (`std::map<QString, GroupInfo> groupItems` in
+  `src/Gui/propertyeditor/PropertyModel.h`), and a new group is put at
+  the row its name has in that map
+  (`PropertyModel::getGroupInfo`, `PropertyModel.cpp` near line 265).
+  So the groups stand in the order of their NAMES, capitals before
+  small letters -- "Appearance" before "Base". A property with no
+  group goes under "Base".
+- That is why a rename works as the reporter says: "Object Appearance"
+  comes after "Base" (and before "Object Style").
+- WHERE the object's group "Appearance" is declared the note-taker did
+  NOT find by a short search of `src/App` (only
+  `ShaderObject.cpp` names a group so); it is for the build session to
+  point at.
+
+A proposal is asked of the build session. To start it, three ways the
+note-taker can see, marked as the note-taker's:
+1. A fixed list of the names that come first, in order ("Base", then
+   the ones named), the rest by name after them.
+2. A number of rank a group can be given where its properties are
+   declared; the view orders by rank, then by name.
+3. Leave the order by name and only pin "Base" to the top.
+
+NOT said, lettered for an answer:
+a. THE RENAME at once, by itself, before any ordering is made -- or
+   wait for the ordering and keep the name "Appearance"?
+b. Files and scripts: the group's name is kept with a property in some
+   cases, and a script may ask for it. Is a plain rename enough, the
+   old name not kept anywhere?
+c. For an ordering, WHICH groups the reporter wants first and in what
+   order -- so that a proposal can be tried against it?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -12793,5 +12843,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 105 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 106 are of 2026-10-13, 82 found by
 it)
