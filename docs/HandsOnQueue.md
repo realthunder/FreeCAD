@@ -1783,7 +1783,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | IN THE SOURCE in the reporter's form, in the build of 15:45 after a compile error of the build session's put right (15:52): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
 | 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility | OPEN; three points under the entry, NOT ANSWERED |
-| 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too) | OPEN; three points under the entry, NOT ANSWERED |
+| 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -13536,7 +13536,7 @@ Pointers, the note-taker's, nothing run and the source not followed:
   October (the handoffs of 2026-10-05 and 2026-10-06): a place where
   the fork's behaviour may have changed.
 
-## 109. A failed dress-up feature: the hover highlight of the missing edges' preview shapes in the edit panel is broken (from the old fork) -- OPEN, three points not answered
+## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02
 
 **2026-10-13 16:00, the reporter:** "defect (from old fork), when a dress up
 feature fails because of reference name moved, those missing edge preview
@@ -13574,6 +13574,31 @@ Pointers, the note-taker's, nothing run and the source not followed:
   back with a "?" before it.
 - Near it: entry 84 (a hover in a list that is answered a moment
   later), entry 17 (`Fillet011`).
+
+**2026-10-13 16:02, the reporter turns it into a request:** "about dress up
+hover highlight, it's more of a feature request, because normal highlight
+shows the reference edge in base feature. when the reference is missing, I
+want to highlight the preview fillet face instead"
+
+The note-taker's reading:
+- Not a defect after all, a REQUEST. How it is today: a hover over a
+  reference in the dress-up's edit panel highlights the referenced EDGE
+  on the BASE feature. When the reference is missing there is no such
+  edge to highlight -- which is what looked broken.
+- Wanted: for a missing reference, the hover highlights the PREVIEW
+  FILLET FACE instead -- the face the panel's preview shows for that
+  reference.
+- The three points of 16:00 are overtaken: (a) nothing lights up,
+  because the edge is not there; (b) it is the pointer over the
+  panel's row, the shape in the view to light up; (c) the references
+  that are found highlight as they should.
+
+Two smaller points, NOT put as blocking:
+- "preview fillet face" names the fillet. For the other dress-ups -- a
+  chamfer's face, a draft's or a thickness's -- the same by the
+  note-taker's reading: the preview's face for that reference.
+- A missing reference for which the preview has NO face either (the
+  preview could not be made for it): nothing to highlight, as today.
 
 ## Inbox
 
