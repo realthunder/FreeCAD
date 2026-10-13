@@ -19,6 +19,12 @@
 //
 // Seeing the log needs the right to edit (ruled 2026-10-13): a viewer is
 // answered ViewOnly, which the card says in words.
+//
+// Whose the document's place in its log is (sec 32.23) is the host's to say
+// with every list: in a shared document a client takes back its own rows
+// and takes versions, and the rest is the host's; in a document opened for
+// it from a branch the rest is its own too, from the serving point on. The
+// card offers what would be done and says of the rest why not.
 
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
@@ -27,13 +33,14 @@ import {
   logBranches, logDeleteBranch, logNameVersion, logNewBranch, logOps, logRenameBranch,
   logRestore, logRows, logSnapshot, logSwitchBranch, logUndoRows, logValue, logVersions,
   onConnection, onLogChanged, showRowChange,
-  type LogBranch, type LogOp, type LogOpsReply, type LogRow, type LogValueReply,
-  type LogVersion,
+  type LogBranch, type LogOp, type LogOpsReply, type LogReach, type LogRow,
+  type LogValueReply, type LogVersion,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
 import {
-  actRefusal, branchNameProblem, logAuthor, logOpText, logRefusal, logWhen, mergeNewest,
-  pickRows, rowUndoable, undoLabel, versionText,
+  actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefusal, logWhen,
+  mayMove, mergeNewest, moveWhy, pickRows, rowBranchWhy, rowUndoable, rowUndoWhy, undoLabel,
+  versionText, versionWhy,
 } from './logmodel.ts';
 
 const POS_KEY = 'fcviewer.log.pos';
@@ -79,7 +86,9 @@ export function LogPanel(props: LogPanelProps) {
   })());
   const [tab, setTab] = createSignal<'rows' | 'versions'>('rows');
   const [branches, setBranches] = createSignal<LogBranch[]>([]);
-  const [mayDelete, setMayDelete] = createSignal(false);
+  // Until the host says: nothing but reading is offered
+  const [reach, setReach] = createSignal<LogReach>({ host: false, own: false });
+  const [floor, setFloor] = createSignal<number | undefined>(undefined);
   const [versions, setVersions] = createSignal<LogVersion[]>([]);
   const [version, setVersion] = createSignal<number | null>(null);
   const [ask, setAsk] = createSignal<Ask | null>(null);
@@ -102,6 +111,11 @@ export function LogPanel(props: LogPanelProps) {
   const current = () => branches().find((b) => b.current) ?? null;
   const pickedRows = () => rows().filter((r) => picked().includes(r.seq));
   const chosenVersion = () => versions().find((v) => v.num === version()) ?? null;
+  const chosenRow = () => rows().find((r) => r.seq === selected()) ?? null;
+  /// Why the branch the document is on is not the asker's to move from
+  const hereWhy = () => moveWhy(reach(), current()?.within ?? true);
+  /// Why the rows chosen are not taken back: the first that says
+  const undoWhy = () => pickedRows().map((r) => rowUndoWhy(r, reach())).find((w) => w) ?? '';
 
   /// The newest page, again: on opening, on the host's cue, and when the
   /// socket is back.
@@ -122,6 +136,8 @@ export function LogPanel(props: LogPanelProps) {
       setRows(merged);
       setMore(kept ? more() : r.more);
       at = { head: r.head, branch: r.branch, last: r.last };
+      setReach({ host: r.host, own: r.own });
+      setFloor(r.floor);
       setError('');
       const left = picked().filter((seq) => merged.some((row) => row.seq === seq));
       if (left.length !== picked().length) choose(left);
@@ -145,7 +161,7 @@ export function LogPanel(props: LogPanelProps) {
     try {
       const b = await logBranches(props.doc());
       setBranches(b.branches);
-      setMayDelete(b.mayDelete);
+      setReach({ host: b.host, own: b.own });
     } catch { /* said by the rows */ }
     if (tab() !== 'versions') return;
     try {
@@ -393,8 +409,10 @@ export function LogPanel(props: LogPanelProps) {
           <span class="fc-log-title">History</span>
           <Show when={branches().length}>
             <select class="fc-log-branchsel"
-                    title="the branch the document is on; another switches to it"
-                    disabled={busy()}
+                    title={mayMove(reach())
+                      ? 'the branch the document is on; another switches to it'
+                      : `the branch the document is on; ${moveWhy(reach())}`}
+                    disabled={busy() || !mayMove(reach())}
                     onPointerDown={(e) => e.stopPropagation()}
                     onChange={(e) => {
                       const name = e.currentTarget.value;
@@ -404,7 +422,8 @@ export function LogPanel(props: LogPanelProps) {
                     }}>
               <For each={branches()}>
                 {(b) => (
-                  <option value={b.name} selected={b.current} disabled={b.closed && !b.current}>
+                  <option value={b.name} selected={b.current}
+                          disabled={!b.current && (b.closed || !!moveWhy(reach(), b.within))}>
                     {b.closed ? `${b.name} (closed)` : b.name}
                   </option>
                 )}
@@ -429,16 +448,18 @@ export function LogPanel(props: LogPanelProps) {
             )}
           </For>
           <span class="fc-log-spacer" />
-          <button class="fc-log-act" data-act="new-branch" disabled={busy()}
-                  title="a new branch from where the document is, switched to"
+          <button class="fc-log-act" data-act="new-branch" disabled={busy() || !!hereWhy()}
+                  title={hereWhy() || 'a new branch from where the document is, switched to'}
                   onClick={() => newBranch({}, 'here')}>
             Branch...
           </button>
-          <button class="fc-log-act" data-act="rename-branch" disabled={busy() || !current()}
-                  title="rename the branch the document is on" onClick={renameBranch}>
+          <button class="fc-log-act" data-act="rename-branch"
+                  disabled={busy() || !current() || !!hereWhy()}
+                  title={hereWhy() || 'rename the branch the document is on'}
+                  onClick={renameBranch}>
             Rename...
           </button>
-          <Show when={mayDelete() && branches().length > 1}>
+          <Show when={deletable(branches(), reach()).length}>
             <select class="fc-log-act" data-act="delete-branch" disabled={busy()}
                     title="delete another branch: the rows only it holds go with it"
                     onChange={(e) => {
@@ -447,7 +468,7 @@ export function LogPanel(props: LogPanelProps) {
                       if (name) deleteBranch(name);
                     }}>
               <option value="">Delete...</option>
-              <For each={branches().filter((b) => !b.current)}>
+              <For each={deletable(branches(), reach())}>
                 {(b) => <option value={b.name}>{b.name}</option>}
               </For>
             </select>
@@ -501,9 +522,12 @@ export function LogPanel(props: LogPanelProps) {
                           'fc-log-sel': picked().includes(row.seq),
                           'fc-log-record': row.ops === 0,
                           'fc-log-away': !row.here,
+                          'fc-log-before': reach().own && !row.within,
                         }}
                         data-seq={row.seq}
-                        title={row.here ? undefined : `on branch ${row.branchName}`}
+                        title={!row.here ? `on branch ${row.branchName}`
+                          : reach().own && !row.within ? 'from before this document was served'
+                            : undefined}
                         onClick={(e) => clickRow(row.seq, e)}>
                       <td class="fc-log-num">{row.seq}</td>
                       <td>
@@ -534,16 +558,19 @@ export function LogPanel(props: LogPanelProps) {
             <div class="fc-log-rowacts">
               <button class="fc-log-act" data-act="undo"
                       disabled={busy() || !pickedRows().length
-                                || !pickedRows().every(rowUndoable)}
-                      title={'one new step taking back what the rows chosen did, though none '
-                             + 'is the last; refused when anything since changed what they '
-                             + 'touched'}
+                                || !pickedRows().every((r) => rowUndoable(r, reach()))}
+                      title={undoWhy()
+                             || ('one new step taking back what the rows chosen did, though none '
+                                 + 'is the last; refused when anything since changed what they '
+                                 + 'touched')}
                       onClick={undoPicked}>
                 {undoLabel(picked().length, picked()[0])}
               </button>
               <button class="fc-log-act" data-act="branch-here"
-                      disabled={busy() || selected() === null}
-                      title="a new branch whose history ends at this row, switched to"
+                      disabled={busy() || !chosenRow()
+                                || !!rowBranchWhy(chosenRow()!, reach(), floor())}
+                      title={(chosenRow() && rowBranchWhy(chosenRow()!, reach(), floor()))
+                             || 'a new branch whose history ends at this row, switched to'}
                       onClick={() => newBranch({ row: selected()! }, `row ${selected()}`)}>
                 Branch from here...
               </button>
@@ -638,6 +665,7 @@ export function LogPanel(props: LogPanelProps) {
                           'fc-log-sel': version() === v.num,
                           'fc-log-record': !v.named,
                           'fc-log-away': !v.here,
+                          'fc-log-before': reach().own && !v.within,
                         }}
                         data-num={v.num}
                         onClick={() => setVersion(v.num)}>
@@ -661,25 +689,33 @@ export function LogPanel(props: LogPanelProps) {
 
           <Show when={chosenVersion()}>
             <div class="fc-log-rowacts">
-              <button class="fc-log-act" data-act="restore" disabled={busy()}
-                      title={'one step making the document what this version was; undo takes '
-                             + 'it back'}
+              <button class="fc-log-act" data-act="restore"
+                      disabled={busy() || !!versionWhy(chosenVersion()!, reach())}
+                      title={versionWhy(chosenVersion()!, reach())
+                             || ('one step making the document what this version was; undo '
+                                 + 'takes it back')}
                       onClick={() => restore(chosenVersion()!)}>
                 Restore
               </button>
-              <button class="fc-log-act" data-act="name-version" disabled={busy()}
-                      title="a named version is never evicted"
+              <button class="fc-log-act" data-act="name-version"
+                      disabled={busy() || !!versionWhy(chosenVersion()!, reach())}
+                      title={versionWhy(chosenVersion()!, reach())
+                             || 'a named version is never evicted'}
                       onClick={() => nameVersion(chosenVersion()!)}>
                 {chosenVersion()!.named ? 'Rename...' : 'Name...'}
               </button>
               <Show when={chosenVersion()!.named}>
-                <button class="fc-log-act" data-act="unname-version" disabled={busy()}
+                <button class="fc-log-act" data-act="unname-version"
+                        disabled={busy() || !!versionWhy(chosenVersion()!, reach())}
+                        title={versionWhy(chosenVersion()!, reach()) || undefined}
                         onClick={() => unnameVersion(chosenVersion()!)}>
                   Unname
                 </button>
               </Show>
-              <button class="fc-log-act" data-act="branch-version" disabled={busy()}
-                      title="a new branch from this version, switched to"
+              <button class="fc-log-act" data-act="branch-version"
+                      disabled={busy() || !!versionWhy(chosenVersion()!, reach())}
+                      title={versionWhy(chosenVersion()!, reach())
+                             || 'a new branch from this version, switched to'}
                       onClick={() => newBranch({ version: chosenVersion()!.num },
                                                `version ${chosenVersion()!.num}`)}>
                 Branch from here...

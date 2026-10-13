@@ -514,10 +514,22 @@ export interface LogRow {
   merged?: number;           // a merge's second parent
   ops: number;               // 0: a record, which changed nothing
   here: boolean;             // of the history the document is at the head of
+  mine: boolean;             // made by the one who asks
+  within: boolean;           // made since the serving point, where there is one
 }
 
-export interface LogRowsReply {
+/// Whose the document's place in its log is (docs/TransactionLog.md sec
+/// 32.23): the host's connection may move it anywhere; in a document opened
+/// from a branch to be served (`own`) so may the others, from the serving
+/// point on; in a shared one they may not.
+export interface LogReach {
+  host: boolean;
+  own: boolean;
+}
+
+export interface LogRowsReply extends LogReach {
   doc: string;
+  floor?: number;            // the row the document was served from, in one of its own
   rows: LogRow[];            // newest first
   more: boolean;             // older ones than these exist
   reset?: boolean;           // more came than a page: start over from these
@@ -603,6 +615,7 @@ export interface LogVersion {
   time: number;
   here: boolean;             // of the history the document is at the head of
   head: boolean;             // the document as it stands
+  within: boolean;           // at the serving point or since, where there is one
 }
 
 export interface LogBranch {
@@ -614,22 +627,26 @@ export interface LogBranch {
   time: number;
   closed: boolean;           // not switched to
   current: boolean;          // the one the document is on
+  within: boolean;           // the one served or made from it since, where there is one
+  root?: boolean;            // the one the document was opened on to be served
 }
 
 /// Rows taken back as one step though none is the last: all of them or
-/// none, and a refusal (`Refused`) says which is in the way.
+/// none, and a refusal (`Refused`) says which is in the way. Below the host
+/// a connection takes back its own rows (`NotYours`).
 export function logUndoRows(rows: number[], doc?: string): Promise<LogPlace> {
   return sendOp('log.undo', withDoc(doc, { rows }));
 }
 
-export function logVersions(doc?: string): Promise<LogPlace & { versions: LogVersion[] }> {
+export function logVersions(
+  doc?: string,
+): Promise<LogPlace & LogReach & { versions: LogVersion[] }> {
   return sendOp('log.versions', withDoc(doc, {}));
 }
 
-/// `mayDelete`: deleting a branch is the host's to do.
 export function logBranches(
   doc?: string,
-): Promise<LogPlace & { branches: LogBranch[]; mayDelete: boolean }> {
+): Promise<LogPlace & LogReach & { branches: LogBranch[] }> {
   return sendOp('log.branches', withDoc(doc, {}));
 }
 

@@ -1,35 +1,44 @@
 """A real browser acts on the transaction log from its own panel: rows taken
-back, a version, branches.
+back, a version, branches -- in a document served to it from a branch.
 
-The browser half of docs/TransactionLog.md sec 32.22. tests/gui/
+The browser half of docs/TransactionLog.md sec 32.22 and 32.23. tests/gui/
 serve-log-acts.py checks the ops against synthetic socket clients: each
 act, each refusal, who may. What no synthetic client can check is the page
 (web/src/logpanel.tsx): that the rows chosen have their acts, that an act
-asks its question in the card, that what the host answers is said, and
-that the card follows the host -- the rows, the branch, the versions --
-by itself after each.
+asks its question in the card, that what the host answers is said, that
+the card follows the host -- the rows, the branch, the versions -- by
+itself after each, and that it offers what is the client's to do and not
+the rest.
 
-So this serves a document with a box made taller, wider and deeper, serves
-the built viewer over HTTP with the card open on load (`?history`), and
-lets Chrome do it through scripts/logacts-drive.js. Asserted:
+So this builds a document with a box made taller, wider and deeper, serves
+a branch of it in a document of its own (Gui.serveBranch), in which the
+page's user has made three rows, serves the built viewer over HTTP with
+the card open on load (`?history`) and that document joined, and lets
+Chrome do it through scripts/logacts-drive.js. Asserted:
 
-  - with no row chosen there are no acts on rows, and deleting a branch is
-    not offered to a client that is not the host;
-  - a row chosen is taken back: the card says so, lists the new row first,
-    and the host has what the row set as it was before;
+  - the card lists the rows, its user's own on top and those from before
+    the serving point marked; with no row chosen there are no acts on
+    rows;
+  - a row from before is offered neither to be taken back nor to be
+    branched from, and the card says why;
+  - a row of its own is taken back: the card says so, lists the new row
+    first, and the host has what the row set as it was before;
   - two rows chosen, the second with the key held, are one step;
   - a row taken back already is refused, in the host's words, with nothing
     written;
   - a snapshot is asked a name and listed among the versions as the
-    document as it stands;
+    document as it stands, those from before marked;
   - a branch from here is asked a name -- none is not one -- and is the
     one the card and the host are on; a row the host commits there comes
     into the card;
-  - switching back from the card moves the host; the row of the other
-    branch is listed as away and is not offered to be taken back;
+  - switching back from the card moves the host; the branch the document
+    was served from is not offered to be switched to; the row of the other
+    branch is listed as away and is not offered to be taken back; the
+    branch made is offered to be deleted, and no other;
   - after a change by the host the version kept is no longer the document
     as it stands, and restoring it from the card puts the host back;
-  - the branch is renamed from the card, starting from its name.
+  - the branch is renamed from the card, starting from its name;
+  - none of it moved the document the branch was served from.
 
 Needs the built viewer (build/wasm/fcviewer.html; `ninja -C build/wasm`),
 node, a puppeteer-core install named by PUPPETEER_PATH, and a Chrome named
@@ -74,8 +83,10 @@ RUN_WAIT_S = 300
 TOKEN = "log-acts-invite"
 CLIENT = "log-acts"
 
-state = {"doc": None, "done": False, "run": None, "t0": clock(), "seen_phases": 0,
-         "samples": {}}
+BRANCH = "for-web"
+
+state = {"doc": None, "served": None, "done": False, "run": None, "t0": clock(),
+         "seen_phases": 0, "samples": {}}
 
 
 def note(msg):
@@ -158,10 +169,18 @@ def serve_viewer():
 
 
 def sample():
-    """What the host has: the box, the rows, the branches, the versions."""
-    doc = state["doc"]
+    """What the host has of the document the branch is served in: the box,
+    the rows, the branches, the versions -- and the rows of the first."""
+    doc = state["served"]
     box = doc.getObject("Box")
+    first = state["doc"].getObject("Box")
     return {
+        # (the log is the file's one: its rows are both documents', so the
+        # first is read by what it is and where it stands)
+        "main": ((round(first.Length.Value), round(first.Width.Value),
+                  round(first.Height.Value)),
+                 [b["name"] for b in state["doc"].getTransactionBranches() if b["current"]],
+                 state["doc"].UndoCount),
         "box": (round(box.Length.Value), round(box.Width.Value), round(box.Height.Value)),
         "rows": [(r["seq"], r["name"], r["kind"], len(doc.getTransactionOps(r["seq"])))
                  for r in doc.getTransactionLog()],
@@ -172,7 +191,7 @@ def sample():
 
 
 def change(name, **dims):
-    doc = state["doc"]
+    doc = state["served"]
     doc.openTransaction(name)
     for prop, value in dims.items():
         setattr(doc.getObject("Box"), prop, value)
@@ -238,8 +257,23 @@ def build():
         http_port = serve_viewer()
         note("viewer on %d, scene on %d" % (http_port, port))
         FreeCADGui.serveSetGrants(wsclient.invitation(TOKEN, CLIENT))
+        # A branch of it, in a document of its own, for the page -- whose
+        # user has made three rows there
+        served = FreeCADGui.serveBranch(doc, BRANCH)
+        state["served"] = served
+        served.pushTransactionActor("invited", CLIENT)
+        try:
+            for name, prop, value in (("mine taller", "Height", 20), ("mine wider", "Length", 24),
+                                      ("mine deeper", "Width", 22)):
+                served.openTransaction(name)
+                setattr(served.getObject("Box"), prop, value)
+                served.recompute()
+                served.commitTransaction()
+        finally:
+            served.popTransactionActor()
         url = ("http://127.0.0.1:%d/fcviewer.html?scene=http://127.0.0.1:%d"
-               "&token=%s&client=%s&history" % (http_port, port, TOKEN, CLIENT))
+               "&token=%s&client=%s&doc=%s&history"
+               % (http_port, port, TOKEN, CLIENT, served.Name))
         state["run"] = Run(url)
         state["t0"] = clock()
         state["run"].start()
@@ -289,44 +323,58 @@ def verify():
         listed = s.get("listed", {})
         seq = {r[1]: r[0] for r in listed.get("rows", [])}
         first = (out.get("branch") or {}).get("value", "")
+        rows = out.get("rows") or []
 
         check("the card is up, lists the rows and says the branch the document is on",
               out.get("card") is True and out.get("listed") is True
-              and [r["what"] for r in out.get("rows", [])][:3] == ["deeper", "wider", "taller"]
-              and first and (first, True) in listed.get("branches", [])
-              and listed.get("box") == (14, 12, 16),
-              ([r.get("what") for r in out.get("rows", [])], out.get("branch"),
-               listed.get("branches")))
-        check("with no row chosen there are no acts on rows, and deleting a branch is not "
-              "offered", out.get("noActs") is True and out.get("noDelete") is True,
+              and [r["what"] for r in rows][:3] == ["mine deeper", "mine wider", "mine taller"]
+              and first == BRANCH and (BRANCH, True) in listed.get("branches", [])
+              and listed.get("box") == (24, 22, 20),
+              ([r.get("what") for r in rows], out.get("branch"), listed.get("branches")))
+        check("the rows from before the serving point are marked, its own are not",
+              [r["what"] for r in rows if r.get("before")] == ["deeper", "wider", "taller",
+                                                               "base"]
+              and not any(r.get("before") for r in rows if r["what"].startswith("mine")),
+              [(r.get("what"), r.get("before")) for r in rows])
+        check("with no row chosen there are no acts on rows, and no branch to delete",
+              out.get("noActs") is True and out.get("noDelete") is True,
               (out.get("noActs"), out.get("noDelete")))
+        check("a row from before is offered neither to be taken back nor branched from, "
+              "and the card says why",
+              (out.get("beforeUndo") or {}).get("disabled") is True
+              and "before" in (out.get("beforeUndo") or {}).get("title", "")
+              and (out.get("beforeBranch") or {}).get("disabled") is True
+              and "before" in (out.get("beforeBranch") or {}).get("title", ""),
+              (out.get("beforeUndo"), out.get("beforeBranch")))
 
         undone = s.get("undone", {})
         new = undone.get("rows", [])[len(listed.get("rows", [])):]
-        check("a row chosen is offered to be taken back, by its number",
+        says = out.get("undoSays") or {}
+        check("a row of its own is offered to be taken back, by its number",
               out.get("picked") is True
-              and out.get("undoSays") == {"text": "Undo row %d" % seq.get("wider", 0),
-                                          "disabled": False}, out.get("undoSays"))
+              and says.get("text") == "Undo row %d" % seq.get("mine wider", 0)
+              and says.get("disabled") is False, says)
         check("taken back, the card says so and lists the new row first",
               out.get("undoAsked") is True
-              and said(out.get("undoSaid"), "Row %d undone" % seq.get("wider", 0))
+              and said(out.get("undoSaid"), "Row %d undone" % seq.get("mine wider", 0))
               and out.get("undoListed") is True, (out.get("undoSaid"), out.get("undoListed")))
         check("and the host has what the row set as it was before, by one new row",
-              undone.get("box") == (10, 12, 16)
-              and [r[1] for r in new if r[2] == "undo"] == ["Undo wider"],
+              undone.get("box") == (14, 22, 20)
+              and [r[1] for r in new if r[2] == "undo"] == ["Undo mine wider"],
               (undone.get("box"), new))
 
         undone2 = s.get("undone2", {})
         new2 = [r for r in undone2.get("rows", [])[len(undone.get("rows", [])):]
                 if r[2] == "undo"]
+        two = out.get("twoSays") or {}
         check("two rows chosen, the second with the key held, are offered as two",
-              sorted(out.get("twoPicked") or []) == ["deeper", "taller"]
-              and out.get("twoSays") == {"text": "Undo 2 rows", "disabled": False}
+              sorted(out.get("twoPicked") or []) == ["mine deeper", "mine taller"]
+              and two.get("text") == "Undo 2 rows" and two.get("disabled") is False
               and (out.get("branchHereSays") or {}).get("disabled") is True,
-              (out.get("twoPicked"), out.get("twoSays"), out.get("branchHereSays")))
+              (out.get("twoPicked"), two, out.get("branchHereSays")))
         check("and are one step on the host",
               out.get("twoAsked") is True and said(out.get("twoSaid"), "2 rows undone")
-              and undone2.get("box") == (10, 10, 10) and len(new2) == 1,
+              and undone2.get("box") == (14, 12, 16) and len(new2) == 1,
               (out.get("twoSaid"), undone2.get("box"), new2))
 
         refused = s.get("refused", {})
@@ -347,35 +395,45 @@ def verify():
               (out.get("snapSaid"), snap.get("versions")))
         check("which the card lists among the versions, as the document as it stands",
               out.get("versionsListed") is True and len(kept) == 1
-              and kept[0].get("now") is True and kept[0].get("branch") == first, kept)
+              and kept[0].get("now") is True and kept[0].get("branch") == BRANCH
+              and kept[0].get("before") is False, kept)
+        check("a version from before the serving point is marked",
+              any(v.get("before") for v in out.get("versions") or []),
+              [(v.get("num"), v.get("name"), v.get("before")) for v in out.get("versions") or []])
 
         branched = s.get("branched", {})
+        no_name = out.get("branchNoName") or {}
         check("a branch from here is asked a name, and no name is not one",
-              out.get("branchAsked") is True
-              and out.get("branchNoName") == {"text": "Branch", "disabled": True}
-              and out.get("branchAnswered") is True, out.get("branchNoName"))
+              out.get("branchAsked") is True and no_name.get("text") == "Branch"
+              and no_name.get("disabled") is True and out.get("branchAnswered") is True,
+              no_name)
+        on_try = out.get("onTry") or {}
         check("it is the one the card and the host are on, with nothing moved",
-              said(out.get("branchSaid"), "try")
-              and (out.get("onTry") or {}).get("value") == "try"
-              and sorted((out.get("onTry") or {}).get("options", [])) == sorted([first, "try"])
+              said(out.get("branchSaid"), "try") and on_try.get("value") == "try"
+              and {BRANCH, "try"} <= set(on_try.get("options", []))
               and ("try", True) in branched.get("branches", [])
-              and branched.get("box") == (10, 10, 10),
-              (out.get("branchSaid"), out.get("onTry"), branched.get("branches")))
+              and branched.get("box") == (14, 12, 16),
+              (out.get("branchSaid"), on_try, branched.get("branches")))
         check("a row the host commits there comes into the card", out.get("tryRow") is True)
 
         switched = s.get("switched", {})
         away = [r for r in out.get("rowsSwitched") or [] if r.get("what") == "on try"]
         check("switching back from the card moves the host",
-              out.get("switched") is True and said(out.get("switchSaid"), "On branch " + first)
-              and (out.get("onFirst") or {}).get("value") == first
-              and (first, True) in switched.get("branches", [])
-              and switched.get("box") == (10, 10, 10),
+              out.get("switched") is True and said(out.get("switchSaid"), "On branch " + BRANCH)
+              and (out.get("onFirst") or {}).get("value") == BRANCH
+              and (BRANCH, True) in switched.get("branches", [])
+              and switched.get("box") == (14, 12, 16),
               (out.get("switchSaid"), out.get("onFirst"), switched.get("branches"),
                switched.get("box")))
+        check("the branch the document was served from is not offered to be switched to",
+              sorted(on_try.get("offered", [])) == sorted([BRANCH, "try"])
+              and len(on_try.get("options", [])) > len(on_try.get("offered", [])), on_try)
         check("the row of the other branch is listed as away, and not offered to be taken back",
               len(away) == 1 and away[0].get("away") is True
               and (out.get("awaySays") or {}).get("disabled") is True,
               (away, out.get("awaySays")))
+        check("the branch made is offered to be deleted, and no other",
+              out.get("deletes") == ["try"], out.get("deletes"))
 
         restored = s.get("restored", {})
         changed = [v for v in out.get("versionsChanged") or [] if v.get("name") == "kept"]
@@ -387,18 +445,24 @@ def verify():
                                              "Branch from here..."], out.get("versionActs"))
         check("restoring it from the card puts the host back, by a row of its own",
               out.get("restoreAsked") is True and said(out.get("restoreSaid"), "Restored to kept")
-              and restored.get("box") == (10, 10, 10)
+              and restored.get("box") == (14, 12, 16)
               and any(r[2] == "restore" for r in restored.get("rows", [])),
               (out.get("restoreSaid"), restored.get("box")))
 
         renamed = s.get("renamed", {})
         check("the branch is renamed from the card, starting from its name",
-              out.get("renameAsked") is True and out.get("renameStarts") == first
+              out.get("renameAsked") is True and out.get("renameStarts") == BRANCH
               and out.get("renameAnswered") is True
               and (out.get("renamed") or {}).get("value") == "trunk"
               and ("trunk", True) in renamed.get("branches", [])
-              and not any(n == first for n, _ in renamed.get("branches", [])),
+              and not any(n == BRANCH for n, _ in renamed.get("branches", [])),
               (out.get("renameStarts"), out.get("renamed"), renamed.get("branches")))
+        check("none of it moved the document the branch was served from",
+              renamed.get("main") == listed.get("main")
+              and listed.get("main", ((), [], 0))[0] == (14, 12, 16)
+              and len(listed.get("main", ((), [], 0))[1]) == 1
+              and listed["main"][1][0] != BRANCH,
+              (listed.get("main"), renamed.get("main")))
     except Exception:
         note("FAIL verify:\n" + traceback.format_exc())
     finish()

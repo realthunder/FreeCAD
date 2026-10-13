@@ -45,11 +45,13 @@ const HELPERS = () => {
   window.__fcRows = () => [...document.querySelectorAll('.fc-log-rows:not(.fc-log-versions) tbody tr')]
     .map((tr) => ({seq: Number(tr.dataset.seq), what: first(tr.querySelectorAll('td')[1]),
                    sel: tr.classList.contains('fc-log-sel'),
-                   away: tr.classList.contains('fc-log-away')}));
+                   away: tr.classList.contains('fc-log-away'),
+                   before: tr.classList.contains('fc-log-before')}));
   window.__fcVersions = () => [...document.querySelectorAll('.fc-log-versions tbody tr')]
     .map((tr) => ({num: Number(tr.dataset.num),
                    name: first(tr.querySelectorAll('td')[1]),
                    now: !!tr.querySelector('.fc-log-kind'),
+                   before: tr.classList.contains('fc-log-before'),
                    branch: tr.querySelectorAll('td')[2].innerText.trim()}));
   // A click on the row of that name, with the keys held
   window.__fcClickRow = (name, keys) => {
@@ -61,7 +63,8 @@ const HELPERS = () => {
   window.__fcAct = (name) => document.querySelector(`.fc-log [data-act="${name}"]`);
   window.__fcActSays = (name) => {
     const el = window.__fcAct(name);
-    return el ? {text: (el.textContent || '').trim(), disabled: !!el.disabled} : null;
+    return el ? {text: (el.textContent || '').trim(), disabled: !!el.disabled,
+                 title: el.title || ''} : null;
   };
   // (asked before the click: the act disables its button while it runs)
   window.__fcClickAct = (name) => {
@@ -81,7 +84,9 @@ const HELPERS = () => {
   };
   window.__fcBranch = () => {
     const el = document.querySelector('.fc-log-branchsel');
-    return el ? {value: el.value, options: [...el.options].map((o) => o.value)} : null;
+    return el ? {value: el.value, options: [...el.options].map((o) => o.value),
+                 offered: [...el.options].filter((o) => !o.disabled).map((o) => o.value)}
+              : null;
   };
   window.__fcSwitch = (name) => {
     const el = document.querySelector('.fc-log-branchsel');
@@ -160,19 +165,26 @@ async function answer(page, text) {
     out.noDelete = await page.evaluate(() => !window.__fcAct('delete-branch'));
     await phase('listed');
 
-    // One row taken back
-    out.picked = await page.evaluate(() => window.__fcClickRow('wider'));
+    // A row from before the serving point: read, and not acted on
+    await page.evaluate(() => window.__fcClickRow('wider'));
+    await sleep(300);
+    out.beforeUndo = await page.evaluate(() => window.__fcActSays('undo'));
+    out.beforeBranch = await page.evaluate(() => window.__fcActSays('branch-here'));
+
+    // One row of its own taken back
+    out.picked = await page.evaluate(() => window.__fcClickRow('mine wider'));
     await sleep(300);
     out.undoSays = await page.evaluate(() => window.__fcActSays('undo'));
     out.undoAsked = await page.evaluate(() => window.__fcClickAct('undo'));
     out.undoSaid = await said(page, 20000);
     out.undoListed = await waitFor(
-      page, () => window.__fcRows().length && window.__fcRows()[0].what === 'Undo wider', 15000);
+      page, () => window.__fcRows().length && window.__fcRows()[0].what === 'Undo mine wider',
+      15000);
     await phase('undone');
 
     // Two at once: the second with the key held
-    await page.evaluate(() => window.__fcClickRow('deeper'));
-    await page.evaluate(() => window.__fcClickRow('taller', {ctrlKey: true}));
+    await page.evaluate(() => window.__fcClickRow('mine deeper'));
+    await page.evaluate(() => window.__fcClickRow('mine taller', {ctrlKey: true}));
     await sleep(300);
     out.twoPicked = await page.evaluate(
       () => window.__fcRows().filter((r) => r.sel).map((r) => r.what));
@@ -184,7 +196,7 @@ async function answer(page, text) {
     await phase('undone2');
 
     // One the host refuses: taken back already
-    await page.evaluate(() => window.__fcClickRow('wider'));
+    await page.evaluate(() => window.__fcClickRow('mine wider'));
     await sleep(300);
     out.refusedAsked = await page.evaluate(() => window.__fcClickAct('undo'));
     await waitFor(page, () => (window.__fcStatus() || {}).bad === true, 20000);
@@ -236,6 +248,10 @@ async function answer(page, text) {
     await page.evaluate(() => window.__fcClickRow('on try'));
     await sleep(300);
     out.awaySays = await page.evaluate(() => window.__fcActSays('undo'));
+    out.deletes = await page.evaluate(() => {
+      const el = window.__fcAct('delete-branch');
+      return el ? [...el.options].map((o) => o.value).filter((v) => v) : null;
+    });
     await shot(page, 'acts');
     // The host changes the document at this phase
     await phase('switched');

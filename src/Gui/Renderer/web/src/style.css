@@ -897,6 +897,9 @@ html.fc-split-forbidden * {
 .fc-log-num { text-align: right; color: #a8b4c4; }
 .fc-log-record { color: #8a8f98; }
 .fc-log-away { font-style: italic; color: #9aa0aa; }
+/* from before the serving point of a document opened from a branch (sec
+   32.23): read, and not acted on */
+.fc-log-before { color: #7d828b; }
 .fc-log-op { display: flex; align-items: center; padding: 3px 8px; }
 .fc-log-optext { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fc-log-more,

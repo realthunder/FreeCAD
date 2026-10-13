@@ -29,8 +29,9 @@ import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilte
          layoutRefs, panelButtonOp, refId, selectionWrite,
          BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_OK } from './protocol.ts';
 import type { Frame } from './protocol.ts';
-import { actRefusal, branchNameProblem, logAuthor, logOpText, logRefusal, logWhen,
-         mergeNewest, pickRows, rowUndoable, undoLabel, versionText } from '../logmodel.ts';
+import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefusal, logWhen,
+         mayMove, mergeNewest, moveWhy, pickRows, rowBranchWhy, rowUndoable, rowUndoWhy,
+         undoLabel, versionText, versionWhy } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -711,7 +712,7 @@ function checkLog(): void {
   const row = (seq: number, extra: Record<string, unknown> = {}): any => ({
     seq, parent: seq - 1, kind: 'user', origin: 'gui', name: `row ${seq}`, time: 0,
     author: 'host', authorKind: 'local', branch: 1, branchName: 'main', ops: 1,
-    here: true, ...extra });
+    here: true, mine: true, within: true, ...extra });
   const seqs = (rows: Array<{ seq: number }>): string => rows.map((r) => r.seq).join(',');
 
   // the newest page again, with older ones loaded under it
@@ -760,12 +761,54 @@ function checkLog(): void {
         logRefusal({ code: 'LogError', message: 'boom' }) === 'boom');
 
   // acting on what is listed (sec 32.22)
+  const host = { host: true, own: false };
+  const shared = { host: false, own: false };
+  const own = { host: false, own: true };
   check(t, 'a row made by hand, here, that changed something can be taken back',
-        rowUndoable(row(5)));
-  check(t, 'a record cannot', !rowUndoable(row(5, { ops: 0 })));
-  check(t, 'a recompute cannot', !rowUndoable(row(5, { kind: 'recompute' })));
-  check(t, "another branch's row cannot", !rowUndoable(row(5, { here: false })));
-  check(t, 'an undo can be, as any step', rowUndoable(row(5, { kind: 'undo' })));
+        rowUndoable(row(5), host));
+  check(t, 'a record cannot', !rowUndoable(row(5, { ops: 0 }), host));
+  check(t, 'a recompute cannot', !rowUndoable(row(5, { kind: 'recompute' }), host));
+  check(t, "another branch's row cannot", !rowUndoable(row(5, { here: false }), host));
+  check(t, 'an undo can be, as any step', rowUndoable(row(5, { kind: 'undo' }), host));
+
+  // whose it is to do (sec 32.23)
+  const theirs = row(5, { mine: false, author: 'ann' });
+  check(t, "the host takes back anyone's row", rowUndoable(theirs, host));
+  check(t, 'a client its own', rowUndoable(row(5), shared) && rowUndoable(row(5), own));
+  check(t, "not another's, and is told whose it is",
+        !rowUndoable(theirs, shared) && rowUndoWhy(theirs, shared).includes('ann'),
+        rowUndoWhy(theirs, shared));
+  const before = row(3, { within: false });
+  check(t, 'nor its own from before the serving point',
+        !rowUndoable(before, own) && rowUndoWhy(before, own).includes('before'),
+        rowUndoWhy(before, own));
+  check(t, 'a row that is no step says nothing of who', rowUndoWhy(row(5, { ops: 0 }), shared) === '');
+  check(t, 'the host may move the document, and a client one of its own',
+        mayMove(host) && mayMove(own) && !mayMove(shared));
+  check(t, "in a shared document moving it is the host's",
+        moveWhy(shared).includes('shared') && moveWhy(host) === '' && moveWhy(own) === '');
+  check(t, 'in its own, not from before the serving point',
+        moveWhy(own, false).includes('before') && moveWhy(host, false) === '');
+  check(t, 'a branch is made from the serving point itself',
+        rowBranchWhy(before, own, 3) === '' && rowBranchWhy(before, own, 4) !== ''
+        && rowBranchWhy(row(5), own, 3) === '' && rowBranchWhy(row(5), shared) !== '');
+  const br = (name: string, extra: Record<string, unknown> = {}): any => ({
+    id: 1, name, head: 1, fromVersion: 0, fromSeq: 0, time: 0, closed: false, current: false,
+    within: true, ...extra });
+  const all = [br('main', { within: false }), br('served', { root: true }),
+               br('try'), br('now', { current: true })];
+  const names = (list: Array<{ name: string }>): string => list.map((b) => b.name).join(',');
+  check(t, 'the host deletes any branch but the one the document is on',
+        names(deletable(all, host)) === 'main,served,try', names(deletable(all, host)));
+  check(t, 'a client those made since the serving point, but the one served',
+        names(deletable(all, own)) === 'try', names(deletable(all, own)));
+  check(t, 'and none in a shared document', deletable(all, shared).length === 0);
+  const ver = (extra: Record<string, unknown> = {}): any => ({
+    num: 2, named: true, name: 'kept', branch: 1, branchName: 'main', seq: 5, time: 0,
+    here: true, head: false, within: true, ...extra });
+  check(t, 'a version is restored by the host, and by a client since the serving point',
+        versionWhy(ver(), host) === '' && versionWhy(ver(), own) === ''
+        && versionWhy(ver({ within: false }), own) !== '' && versionWhy(ver(), shared) !== '');
 
   const listed = [9, 8, 7, 6, 5];
   const pick = (picked: number[], anchor: number | null, seq: number, how = {}): string => {
@@ -800,8 +843,12 @@ function checkLog(): void {
   check(t, "a refused act says the host's reason",
         actRefusal({ code: 'Refused', message: 'row 7 changed Box.Height since' })
         === 'row 7 changed Box.Height since');
-  check(t, "what is the host's to do says so",
-        actRefusal({ code: 'Forbidden', message: 'x' }).includes('host'));
+  check(t, "what is the host's to do says so, in the host's words where it gave them",
+        actRefusal({ code: 'Forbidden' }).includes('host')
+        && actRefusal({ code: 'Forbidden', message: 'before the serving point' })
+           === 'before the serving point');
+  check(t, "a row that is another's says so",
+        actRefusal({ code: 'NotYours', message: "row 5 is ann's" }) === "row 5 is ann's");
   check(t, 'an edit in the way says to leave it',
         actRefusal({ code: 'Editing' }).includes('leave it'));
   check(t, 'a viewer is told why of an act too',

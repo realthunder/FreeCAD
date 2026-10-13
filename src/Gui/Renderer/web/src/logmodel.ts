@@ -3,7 +3,7 @@
 // functions, so that the gate checks them in node with no DOM
 // (widgets/gate.ts).
 
-import type { LogOp, LogRow } from './control';
+import type { LogBranch, LogOp, LogReach, LogRow, LogVersion } from './control';
 
 /// What a refusal says, in the card's words.
 export function logRefusal(e: { code?: string; message?: string } | undefined): string {
@@ -58,10 +58,57 @@ export function logOpText(op: LogOp): string {
 const UNDO_KINDS = ['user', 'implicit', 'undo', 'redo', 'pick'];
 
 /// Whether a row can be taken back from where the document is: it changed
-/// something, by hand, and is of this branch's history. The host decides;
-/// this is what the card offers.
-export function rowUndoable(row: LogRow): boolean {
-  return row.here && row.ops > 0 && UNDO_KINDS.includes(row.kind);
+/// something, by hand, and is of this branch's history -- and, for all but
+/// the host, it is the asker's own and not from before the serving point
+/// (sec 32.23). The host decides; this is what the card offers.
+export function rowUndoable(row: LogRow, reach: LogReach): boolean {
+  if (!row.here || row.ops === 0 || !UNDO_KINDS.includes(row.kind)) return false;
+  return reach.host || (row.mine && row.within);
+}
+
+/// Why a row is not offered to be taken back, where that is who asks.
+export function rowUndoWhy(row: LogRow, reach: LogReach): string {
+  if (reach.host || !row.here || row.ops === 0 || !UNDO_KINDS.includes(row.kind)) return '';
+  if (!row.within) return BEFORE;
+  return row.mine ? '' : `${row.author} made this row: it is theirs to take back, or the host's`;
+}
+
+const BEFORE = 'from before this document was served: the host\'s';
+const SHARED = 'in a shared document this is the host\'s to do';
+
+/// Whether the one who asks may move the document in its log at all --
+/// switch, restore, make or rename a branch: the host anywhere, the others
+/// in a document that was opened for them from a branch.
+export function mayMove(reach: LogReach): boolean {
+  return reach.host || reach.own;
+}
+
+/// Why something that moves the document is not offered; empty when it is.
+/// `within` is whether what it is done to -- a row, a version, a branch --
+/// is from the serving point on.
+export function moveWhy(reach: LogReach, within = true): string {
+  if (reach.host) return '';
+  if (!reach.own) return SHARED;
+  return within ? '' : BEFORE;
+}
+
+/// A row a branch can be made from: any for the host; for the others one
+/// made since the serving point, or the serving point itself.
+export function rowBranchWhy(row: LogRow, reach: LogReach, floor?: number): string {
+  return moveWhy(reach, row.within || row.seq === floor);
+}
+
+/// The branches offered to be deleted: not the one the document is on; for
+/// all but the host, in a document of their own, those made since the
+/// serving point but the one the document was opened on.
+export function deletable(branches: LogBranch[], reach: LogReach): LogBranch[] {
+  return branches.filter((b) => !b.current
+    && (reach.host || (reach.own && b.within && !b.root)));
+}
+
+/// Whether a version's acts are the asker's: see moveWhy.
+export function versionWhy(v: LogVersion, reach: LogReach): string {
+  return moveWhy(reach, v.within);
 }
 
 /// The rows chosen after a click on one: alone, or with the others where
@@ -109,7 +156,8 @@ export function versionText(v: { num: number; name: string }): string {
 export function actRefusal(e: { code?: string; message?: string } | undefined): string {
   switch (e?.code) {
     case 'ViewOnly': return 'Changing the history needs the right to edit.';
-    case 'Forbidden': return 'Only the host may do that.';
+    case 'Forbidden': return e?.message || 'Only the host may do that.';
+    case 'NotYours': return e?.message || 'That row is not yours to take back.';
     case 'Editing': return 'An edit is open: leave it first.';
     case 'Offline':
     case 'Timeout': return 'The viewer did not answer.';
