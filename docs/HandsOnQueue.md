@@ -60,7 +60,14 @@ staged binaries -- both passed the night before on `5d63c7152d`, the
 same code but for the generator; on the staged copy after, 06:53 to
 07:05: the preferences in six sessions and three loads of the re-saved
 `scanner.FCStd`, all ended properly, and five GUI tests, 12, 13, 58,
-18 and 44 PASS, no FAIL; no crash log in any of the 14 homes).
+18 and 44 PASS, no FAIL; no crash log in any of the 14 homes),
+2026-10-13 09:36 (`abca255e23`, whose code is `47ed30316a`, on the
+reporter's word "after freecad build, stage first, then proceed with
+test": the merges of origin/SolidBody and origin/Transaction with
+OcctFix inside, and OCCT brought to `a81d25f148`; LOCAL, not pushed;
+NO suite had run on that code when it was staged and, on the
+reporter's word, NO check by the build session on the staged copy --
+the reporter tests it by hand).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -89,6 +96,32 @@ report views, the reporter's own files -- is kept beside the dev tree under
 read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
+
+**2026-10-13 09:38: STAGED 09:36:59 at `abca255e23` (code = `47ed30316a`
+over the merges of SolidBody and Transaction with OcctFix inside), on OCCT
+`a81d25f148`. NOT pushed. No suite had run on this code at the stage; the
+reporter tests the copy by hand.** From the build session (its message of
+09:38, written here 09:37).
+- The stage: `tools\install-user.ps1` ended 09:36:59, "INSTALL-USER: OK";
+  `FreeCADGui.dll` built 09:29:57; occt `a81d25f148`, coin `d2da5cc93`,
+  PDBs in. READ by the note-taker, nothing run:
+  `.conda/user-app/bin/FreeCADGui.dll` is dated 2026-10-13 09:29:57.
+- The builds before it: "BUILD-OCCT: OK 23 steps"; "BUILD-FCAD: OK 387
+  steps, ended 09:35:28".
+- "No check of mine on that copy, by the reporter's word; no suite has
+  run on its code yet."
+- Running on the dev build since 09:37: the full ctest, then the full
+  Python suite, four loads, the five omni search GUI tests. Results to
+  follow.
+- LOCAL, all of it: origin/LinkVibe is still `4b52e58423`; "the OCCT
+  repo is at its own origin's head, nothing to push there. No push
+  asked."
+- WHAT IS NEW in the copy under test against the one of 06:52: the
+  merge of origin/SolidBody (`714003dc33`, 11 commits), the merge of
+  origin/Transaction (`5a5b5ff906`, 103 commits, OcctFix's 78 inside),
+  the shortened text of `Document/MergeConflictSide` (`47ed30316a`),
+  and 37 commits of the OCCT fork, all in its fillet code. Nothing of
+  the hands-on entries is changed between the two stages.
 
 **2026-10-13 09:22: the reporter takes the testing of the staged copy
 THEMSELVES -- the build session runs NO check on the copy that will be
