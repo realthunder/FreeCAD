@@ -37,6 +37,8 @@ namespace Py {
     bool TopoShape::accepts (PyObject *pyob) const;
 }
 
+class Standard_Transient;
+
 namespace Part {
     PartExport Py::Object shape2pyshape(const TopoShape &shape);
     PartExport Py::Object shape2pyshape(const TopoDS_Shape &shape);
@@ -45,6 +47,11 @@ namespace Part {
     PartExport int initOCCTExtension();
     /// A function of the OCCT fork's TKFillet by name, null without it
     PartExport void *lookUpTKFillet(const char *name);
+    /// A function of the OCCT fork's TKBRep by name, null without it
+    PartExport void *lookUpTKBRep(const char *name);
+    /// Whether a BRep curve or point representation is a cache of a frozen
+    /// shape (the OCCT fork's BRep_Builder_IsCache); false without the fork
+    PartExport bool isOCCTCacheRepresentation(const Standard_Transient *rep);
 }
 
 #endif //PART_PYCXX_H
