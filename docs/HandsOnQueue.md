@@ -1703,7 +1703,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
-| 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed | OPEN; a reading of the source by the note-taker, nothing run, the causes NOT found; four points under the entry, NOT ANSWERED |
+| 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
 | 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right | OPEN; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- whether this is that, is the first of four points, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -12647,7 +12647,7 @@ The note-taker's reading:
   be "owned by a view" in the rule's sense unless the edit is per view
   (`View/PerViewEdit`). Not looked into.
 
-## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- OPEN, four points not answered
+## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- OPEN, the four points answered 2026-10-13 14:50: zoomed out only; the object the edit hides in its view; the ghost goes when the body is hidden
 
 **2026-10-13 14:36, the reporter:** "new defect, when in per view edit, cavity
 effect still shows for per view hidden object. also for normal visible
@@ -12695,6 +12695,41 @@ Pointers, READ by the note-taker, nothing run; the causes are NOT found:
   `src/Gui/Renderer/BGFXViewEffects.cpp`, `BGFXFrame.cpp`,
   `BGFXScene.cpp`; the feed from Coin in
   `src/Gui/Inventor/SoFCRenderer.cpp`.
+
+**2026-10-13 14:50, the reporter answers the four points:** "entry 104, a,
+show through only when zoomed out, so I guess it is a depth precision
+problem. b, by edit only in edit view. the object in other view is still
+there. c, scanner, editing Pad033 (I don't think that matters) with its
+body visible. Note if hide the body, the cavity ghost is gone, but the
+editing preview is still visible (which is expected). same with split
+view or not. d, not sure"
+
+The note-taker's reading:
+- a. Defect (2), the show-through: only when zoomed OUT. The reporter's
+  own guess at the cause: the precision of the depth.
+- b. Defect (1): the object is hidden BY THE EDIT, and in the edit's
+  view only; in the other views it is still shown, as it should be.
+  The ghost is in the edit's view.
+- c. On `scanner.FCStd`, while `Pad033` is edited (which feature it is,
+  the reporter does not think matters), with its BODY VISIBLE. A
+  finding of the reporter's that narrows it: when the body is hidden
+  the cavity ghost is GONE, while the edit's preview is still shown --
+  which is as expected. So the ghost comes from the body's own drawing
+  that the edit puts away in its view (the feature's solid behind the
+  preview, by the note-taker's reading), not from the preview.
+- The same in a split view and in one view.
+- d. Since when: not known.
+Nothing of this entry is left unanswered.
+
+The note-taker's note on the two guesses of 14:36, from the answers:
+- For (1): fits -- what the edit hides in its view is no longer drawn
+  in colour there, but still reaches what the cavity pass reads;
+  hiding the whole body takes it out of both.
+- For (2): "zoomed out" fits depth precision as the reporter says --
+  two surfaces close together fall onto the same depth value when the
+  model is small on the screen -- or equally the cavity pass comparing
+  neighbours a pixel apart that are then far apart on the model
+  (`CavityRadius` is in pixels). Not told apart by reading.
 
 ## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- OPEN, four points not answered
 
