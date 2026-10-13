@@ -1704,6 +1704,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed | OPEN; a reading of the source by the note-taker, nothing run, the causes NOT found; four points under the entry, NOT ANSWERED |
+| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right | OPEN; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- whether this is that, is the first of four points, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12695,6 +12696,59 @@ Pointers, READ by the note-taker, nothing run; the causes are NOT found:
   `BGFXScene.cpp`; the feed from Coin in
   `src/Gui/Inventor/SoFCRenderer.cpp`.
 
+## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- OPEN, four points not answered
+
+**2026-10-13 14:45, the reporter:** "new defect, after loading scanner document
+and recompute for migration, Sketch043 silently broken, no error is shown.
+before migration it is okay"
+
+The note-taker's reading, not the reporter's words:
+- `scanner.FCStd` is opened and the recompute the element version
+  change asks for is done. Before it `Sketch043` is right; after it
+  the sketch is wrong -- and nothing says so: no error mark, no line in
+  the report view.
+- TWO things may be meant, and both are recorded: that the sketch
+  BREAKS; and that it breaks WITHOUT A WORD.
+- Which copy is not said; by the hour, the stage of 13:56.
+
+What the file and this queue say of that sketch, READ by the
+note-taker, nothing run, the file not changed:
+- In the original (`..\dl\handson\2026-10-06\scanner.FCStd`)
+  `Sketch043` is attached to `Pad018`, `Face3`, and has three outside
+  edges: `Pad029` `Edge28`, `Pad029` `Edge32`, and `Binder017` `Edge1`.
+  It is the profile of `Pad033`.
+- ENTRY 17 (2026-10-06) is about this very sketch: "`Sketch043`,
+  `Sketch055`: 'Missing external geometry reference'". Its fix
+  (`3c8cd63032`) found the references into `Binder017` again -- "Pad033
+  then loses its profile because Sketch043 really changes". The
+  reporter DECIDED on 2026-10-07 14:34: "the binder moving with the
+  group is as designed (the file's sketch is stale)"; `Binder017` is a
+  binder of `Binder008`, which takes its context at the first recompute
+  and comes out 53 mm from where the file has it. This queue wrote
+  then: "`Sketch043` changing, `Pad033` losing its region -- is the
+  model's, to be redone in the file, not a defect."
+- Since then every recompute of the file noted here ended with the
+  known error "Failed to recompute scanner#Pad033: Sub shape not found:
+  scanner#Sketch043.?InternalFace2" (entries 28 and 53).
+- NEW in the stage of 13:56 and near it: entry 92's change to how a
+  sketch answers for the names of its sub-shapes (`518c2026d0`) -- so
+  that a wire by number is found. Whether it also changes what
+  `Pad033` is told about `Sketch043`, and so whether an error that
+  used to be shown is silent now, is NOT looked into.
+
+NOT said, lettered for an answer:
+a. Is this the SAME thing as entry 17's -- the sketch following
+   `Binder017` to where the binder now comes out -- or something else
+   that is new?
+b. BROKEN HOW, as seen: an outside edge moved or gone, the sketch's own
+   lines out of shape, constraints no longer solved, the sketch on
+   another plane?
+c. WHAT is wanted: that the sketch not break at this recompute; or that
+   a break like this be SAID -- an error mark on the sketch, a line in
+   the report view -- which is what "silently" asks for?
+d. Does `Pad033` still end in an error after the recompute on this
+   stage, as it did, or is it silent too now?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -12704,5 +12758,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 104 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 105 are of 2026-10-13, 82 found by
 it)
