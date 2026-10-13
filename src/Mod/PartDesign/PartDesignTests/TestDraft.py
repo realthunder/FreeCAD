@@ -19,9 +19,11 @@
 #*                                                                         *
 #***************************************************************************
 
+import math
 import unittest
 
 import FreeCAD
+import Part
 
 App = FreeCAD
 
@@ -146,6 +148,10 @@ class TestDraft(unittest.TestCase):
         draft = body.newObject("PartDesign::Draft", "Draft")
         draft.Base = (plate, ["Face%d" % (top + 1)])
         draft.Angle = 11
+        # the classic draft refuses to tip the face down through the plate;
+        # the cell draft (Method Auto falls back to it) cuts the plate there
+        # instead, a wedge of 0.5 * (1 / tan(11 deg)) * 1 * 12 = 30.87
+        draft.Method = "Classic"
         self.Doc.recompute()
         if not draft.isValid():
             # about the edge the guess took the face has to tip up, not down
@@ -231,6 +237,451 @@ class TestDraft(unittest.TestCase):
             self.assertEqual(restored._NeutralSense, sense)
         finally:
             FreeCAD.closeDocument(doc.Name)
+
+    def makeDraftOn(self, shape, face, neutral, method, angle=5, stop=True, reversed=False,
+                    propagate=True):
+        """A Draft of the faces picked by <face> about the face picked by
+        <neutral>, on a Part::Feature holding <shape> as the body's base."""
+        base = self.Doc.addObject("Part::Feature", "Base")
+        base.Shape = shape
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        body.BaseFeature = base
+        self.Doc.recompute()
+        faces = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if face(f)]
+        neutrals = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if neutral(f)]
+        self.assertEqual(len(neutrals), 1)
+        draft = body.newObject("PartDesign::Draft", "Draft")
+        draft.Base = (base, faces)
+        draft.NeutralPlane = (base, neutrals)
+        draft.Angle = angle
+        draft.Method = method
+        draft.StopAtBody = stop
+        draft.Reversed = reversed
+        draft.TangentPropagation = propagate
+        self.Doc.recompute()
+        return draft
+
+    @staticmethod
+    def planeAt(axis, value, xmin=None, xmax=None):
+        def pick(f):
+            if f.Surface.__class__.__name__ != "Plane":
+                return False
+            b = f.BoundBox
+            if abs(getattr(b, axis + "Min") - value) > 1e-9:
+                return False
+            if abs(getattr(b, axis + "Max") - value) > 1e-9:
+                return False
+            return xmin is None or (b.XMin > xmin - 1e-9 and b.XMax < xmax + 1e-9)
+        return pick
+
+    def testDraftSplitWallPiece(self):
+        # Two 10x10x5 boxes side by side, not refined: their front wall y=0
+        # is two coplanar pieces. One piece drafted about the floor: the
+        # classic draft cannot keep the other piece, the new one drafts the
+        # pieces as one face. The rest of the body is not refined: floor,
+        # top and back stay in two pieces each.
+        V = App.Vector
+        shape = Part.makeBox(10, 10, 5).fuse(Part.makeBox(10, 10, 5, V(10, 0, 0)))
+        volume = 1000 - 20 * 5 * 5 * math.tan(math.radians(5)) / 2
+        for method in ("Auto", "New"):
+            draft = self.makeDraftOn(shape, self.planeAt("Y", 0, 10, 20),
+                                     self.planeAt("Z", 0, 0, 10), method)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 9, method)
+
+    def testDraftSplitFloorCorner(self):
+        # A prism whose front wall y=0 (x in [10,20]) meets a slanted wall
+        # at (10,0), floor and top split along x=10 from that corner. The
+        # wall drafted about the end x=20: its corner slides along the
+        # slanted wall, past the split, which the classic draft refuses.
+        V = App.Vector
+        prism = Part.Face(Part.makePolygon([V(0, -5, 0), V(10, 0, 0), V(10, 10, 0),
+                                            V(0, 10, 0), V(0, -5, 0)])).extrude(V(0, 0, 5))
+        shape = prism.fuse(Part.makeBox(10, 10, 5, V(10, 0, 0)))
+        # The drafted wall y = -(20 - x) tan(5 deg) meets the slanted wall
+        # y = (x - 10) / 2; the solid is that outline extruded 5.
+        t = math.tan(math.radians(5))
+        x = (5 - 20 * t) / (0.5 - t)
+        pts = [(0, -5), (x, (x - 10) / 2), (20, 0), (20, 10), (0, 10)]
+        area = abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1]
+                       for i in range(len(pts)))) / 2
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("X", 20), "Auto")
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, 5 * area, 6)
+        # the splits of floor and top are kept
+        self.assertEqual(len(draft.Shape.Faces), 10)
+
+    def testDraftWallBreaksThrough(self):
+        # A 20 cube, a 4x6 slot 2 off its front wall y=0, 18 deep. The slot's
+        # front wall drafted about its floor at 15 deg swings 18 tan(15 deg)
+        # toward the front, through the 2 thick wall at 2 / tan(15 deg) above
+        # the floor. The classic draft refuses; Auto falls back to the new
+        # draft, which cuts the front wall open.
+        V = App.Vector
+        shape = Part.makeBox(20, 20, 20).cut(
+            Part.makeBox(4, 6, 18, V(8, 2, 2))).removeSplitter()
+        h = 2 / math.tan(math.radians(15))
+        volume = 8000 - 4 * 6 * 18 - 4 * (h * 2 / 2 + 2 * (18 - h))
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 2), self.planeAt("Z", 2), "Auto",
+                                 angle=15)
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        # the drafted face and the front wall it breaks through are named
+        # after the base's faces, the same over a recompute
+        names = dict(draft.Shape.ElementMap)
+        front = [i for i, f in enumerate(shape.Faces, 1) if self.planeAt("Y", 0)(f)][0]
+        cut = [n for n, e in names.items()
+               if n.startswith("Face%d;" % front) and e.startswith("Face")]
+        self.assertEqual(len(cut), 1)
+        self.assertLess(draft.Shape.getElement(names[cut[0]]).Area, 400 - 1)
+        draft.touch()
+        self.Doc.recompute()
+        self.assertEqual(dict(draft.Shape.ElementMap), names)
+
+    def testDraftStopAtBody(self):
+        # A 20x10x10 block, a notch [0,10]x[0,5]x[5,10] off its front top.
+        # The ledge z=5 drafted about the notch's back wall at 60 deg rises
+        # 5 tan(60 deg) = 8.66 at its front, past the block's top at 10. By
+        # default it stops at the top's plane, which closes over the notch's
+        # front; without the stop a fin stands over the top.
+        V = App.Vector
+        shape = Part.makeBox(20, 10, 10).cut(Part.makeBox(10, 5, 5, V(0, 0, 5)))
+        shape = shape.removeSplitter()
+        t = math.tan(math.radians(60))
+        for stop, volume in ((False, 1750 + 125 * t),
+                             (True, 1750 + 125 * t - 10 * (5 * t - 5) ** 2 / (2 * t))):
+            draft = self.makeDraftOn(shape, self.planeAt("Z", 5), self.planeAt("Y", 5), "New",
+                                     angle=60, stop=stop)
+            self.assertNotIn("Invalid", draft.State, stop)
+            self.assertTrue(draft.Shape.isValid(), stop)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, stop)
+
+    def testDraftFaceVanishes(self):
+        # A wedge truncated by a 0.2 wide face at x=10, its walls meeting
+        # 0.2 past it. Drafted outward about a plane 50 below, the face's
+        # new plane lies past where the walls meet: the face would vanish,
+        # which the new draft refuses rather than hand back a body without it.
+        V = App.Vector
+        shape = Part.Face(Part.makePolygon([V(0, -5, 0), V(10, -0.1, 0), V(10, 0.1, 0),
+                                            V(0, 5, 0), V(0, -5, 0)])).extrude(V(0, 0, 10))
+        base = self.Doc.addObject("Part::Feature", "Base")
+        base.Shape = shape
+        plane = self.Doc.addObject("Part::Feature", "Plane")
+        plane.Shape = Part.makePlane(200, 200, V(-100, -100, -50))
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        body.BaseFeature = base
+        self.Doc.recompute()
+        face = [i for i, f in enumerate(shape.Faces, 1) if self.planeAt("X", 10)(f)][0]
+        draft = body.newObject("PartDesign::Draft", "Draft")
+        draft.Base = (base, ["Face%d" % face])
+        draft.NeutralPlane = (plane, ["Face1"])
+        draft.Angle = 5
+        draft.Method = "New"
+        draft.Reversed = True
+        self.Doc.recompute()
+        self.assertIn("Invalid", draft.State)
+        self.assertIn("FaceVanishes", draft.getStatusString())
+
+    def testDraftAutoCrossesRib(self):
+        # A 20x10x2 plate with two ribs 2x6x10, 3 apart. The first rib's
+        # inner face drafted outward at 20 deg about the plate's top leans
+        # 10 tan(20 deg) = 3.64 over the gap, into the second rib. The
+        # classic draft's solid is valid, but that face crosses the second
+        # rib's, and its volume counts the overlap twice. Auto checks the
+        # classic result and takes the new draft, which fuses the ribs.
+        V = App.Vector
+        shape = Part.makeBox(20, 10, 2).fuse([Part.makeBox(2, 6, 10, V(0, 2, 2)),
+                                              Part.makeBox(2, 6, 10, V(5, 2, 2))])
+        shape = shape.removeSplitter()
+        t = math.tan(math.radians(20))
+        classic = 640 + 300 * t
+        overlap = 6 * (50 * t - 30 + 4.5 / t)
+        for method, volume in (("Classic", classic), ("Auto", classic - overlap)):
+            draft = self.makeDraftOn(shape, self.planeAt("X", 2), self.planeAt("Z", 2), method,
+                                     angle=20, reversed=True)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            if method == "Classic":
+                self.assertRaises(ValueError, draft.Shape.check, True)
+            else:
+                draft.Shape.check(True)
+
+    def testDraftAutoStopAtBody(self):
+        # A 20x10x10 block stepped down to 5 over its front half. The ledge
+        # z=5 drafted about the step's wall at 60 deg rises 5 tan(60 deg) =
+        # 8.66 at its front, past the top at 10. The classic draft makes the
+        # fin; with the stop on, Auto finds the body grown past its top and
+        # takes the new draft, which stops at the top's plane.
+        V = App.Vector
+        shape = Part.makeBox(20, 10, 10).cut(Part.makeBox(20, 5, 5, V(0, 0, 5)))
+        shape = shape.removeSplitter()
+        t = math.tan(math.radians(60))
+        fin = 1500 + 250 * t
+        for method, stop, volume in (("Classic", True, fin),
+                                     ("Auto", False, fin),
+                                     ("Auto", True, fin - 20 * (5 * t - 5) ** 2 / (2 * t))):
+            draft = self.makeDraftOn(shape, self.planeAt("Z", 5), self.planeAt("Y", 5), method,
+                                     angle=60, stop=stop)
+            self.assertNotIn("Invalid", draft.State, (method, stop))
+            self.assertTrue(draft.Shape.isValid(), (method, stop))
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, (method, stop))
+
+    def testDraftNewTangentChain(self):
+        # A 20x10x10 block with its four vertical edges filleted 2. Drafting
+        # one wall about the floor drafts the walls and fillets tangent to it
+        # all round: the walls turn, the fillets become cones. At height z the
+        # section is a rounded rectangle, its walls in by z tan(5 deg). The
+        # new draft builds the classic draft's solid, from a wall or from a
+        # fillet.
+        shape = Part.makeBox(20, 10, 10)
+        shape = shape.makeFillet(2, [e for e in shape.Edges
+                                     if abs(e.Vertexes[0].Z - e.Vertexes[1].Z) > 1])
+        t = math.tan(math.radians(5))
+        volume = (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                  - (4 - math.pi) * (40 - 2 * t * 100 + t * t * 1000 / 3))
+        cylinder = [f for f in shape.Faces if f.Surface.__class__.__name__ == "Cylinder"][0]
+        for method, face in (("Classic", self.planeAt("Y", 0)), ("New", self.planeAt("Y", 0)),
+                             ("New", lambda f: f.isSame(cylinder))):
+            draft = self.makeDraftOn(shape, face, self.planeAt("Z", 0), method)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 10, method)
+            if method == "New":
+                cones = [f for f in draft.Shape.Faces
+                         if f.Surface.__class__.__name__ == "Cone"]
+                self.assertEqual(len(cones), 4)
+        # Inward at 15 deg the cones reach their apex at za = 2 / tan(15 deg)
+        # = 7.46, under the top: each fillet shrinks to a point there, and
+        # above it the walls on either side meet in a sharp edge.
+        t = math.tan(math.radians(15))
+        za = 2 / t
+        volume = (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                  - (4 - math.pi) * (4 * za - 2 * t * za ** 2 + t * t * za ** 3 / 3))
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), "New",
+                                 angle=15)
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        self.assertEqual(len(draft.Shape.Faces), 10)
+        ridges = [e for e in draft.Shape.Edges
+                  if e.Curve.__class__.__name__ == "Line"
+                  and min(v.Z for v in e.Vertexes) > za - 1e-6
+                  and max(v.Z for v in e.Vertexes) - min(v.Z for v in e.Vertexes) > 1]
+        self.assertEqual(len(ridges), 4)
+        # At 30 deg the short walls narrow to nothing at zt = 5 / tan(30 deg)
+        # = 8.66, under the top too, and the long walls meet between them in
+        # a ridge 10 long: a hipped roof, the top gone.
+        t = math.tan(math.radians(30))
+        za = 2 / t
+        zt = 5 / t
+        volume = (200 * zt - 30 * t * zt ** 2 + 4 * t * t * zt ** 3 / 3
+                  - (4 - math.pi) * (4 * za - 2 * t * za ** 2 + t * t * za ** 3 / 3))
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), "New",
+                                 angle=30)
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        self.assertEqual(len(draft.Shape.Faces), 9)
+        self.assertAlmostEqual(draft.Shape.BoundBox.ZMax, zt, 6)
+        top = [e for e in draft.Shape.Edges
+               if e.Curve.__class__.__name__ == "Line"
+               and min(v.Z for v in e.Vertexes) > zt - 1e-6]
+        self.assertEqual(len(top), 1)
+        self.assertAlmostEqual(top[0].Length, 10, 6)
+
+    def testDraftTangentPropagationOff(self):
+        # The block of testDraftNewTangentChain. With tangent propagation
+        # off, only the faces picked are drafted, as if drafted before the
+        # fillets: a fillet beside them is taken off and made again at its
+        # radius on the edge where the drafted wall meets the wall beyond
+        # (docs/NewDraft.md section 17). The classic draft, which always
+        # drafts the chain, refuses.
+        shape = Part.makeBox(20, 10, 10)
+        shape = shape.makeFillet(2, [e for e in shape.Edges
+                                     if abs(e.Vertexes[0].Z - e.Vertexes[1].Z) > 1])
+        a = math.radians(5)
+        t, c, s = math.tan(a), math.cos(a), math.sin(a)
+        corner = 4 * (1 - math.pi / 4)
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), "Classic",
+                                 propagate=False)
+        self.assertIn("Invalid", draft.State)
+        self.assertIn("classic draft always drafts", draft.getStatusString())
+        # The wall y=0 alone: it stays square to the side walls, and the two
+        # fillets beside it run along its slope, 10 / cos(a) long.
+        volume = 2000 - 1000 * t - 2 * corner * 10 - 2 * corner * 10 / c
+        for method in ("Auto", "New"):
+            draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), method,
+                                     propagate=False)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 10, method)
+            draft.Shape.check(True)
+        # The walls y=0 and x=0, not the fillet between them: that fillet is
+        # made again between the two drafted walls, which meet at pi -
+        # acos(sin(a)^2), along a line sqrt(1 + sin(a)^2) / cos(a) long per
+        # unit of height.
+        phi = math.pi - math.acos(s * s)
+        between = 4 * (1 / math.tan(phi / 2) - (math.pi - phi) / 2)
+        volume = (2000 - 1500 * t + 1000 * t * t / 3 - corner * 10 - 2 * corner * 10 / c
+                  - between * 10 * math.sqrt(1 + s * s) / c)
+        walls = lambda f: self.planeAt("Y", 0)(f) or self.planeAt("X", 0)(f)
+        draft = self.makeDraftOn(shape, walls, self.planeAt("Z", 0), "Auto", propagate=False)
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        self.assertEqual(len(draft.Shape.Faces), 10)
+        # every wall and fillet picked: the chain itself, drafted as with
+        # propagation on
+        volume = (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                  - (4 - math.pi) * (40 - 2 * t * 100 + t * t * 1000 / 3))
+        allWalls = lambda f: abs(f.BoundBox.ZLength - 10) < 1e-9
+        for method in ("Auto", "New"):
+            draft = self.makeDraftOn(shape, allWalls, self.planeAt("Z", 0), method,
+                                     propagate=False)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 10, method)
+        # without fillets the option changes nothing
+        box = Part.makeBox(20, 10, 10)
+        for method in ("Classic", "Auto", "New"):
+            draft = self.makeDraftOn(box, self.planeAt("Y", 0), self.planeAt("Z", 0), method,
+                                     propagate=False)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertAlmostEqual(draft.Shape.Volume, 2000 - 1000 * t, 6, method)
+
+    def testDraftFilletAcrossPull(self):
+        # A 20x10x10 block with the top edge of its end wall x=20 filleted 2
+        # by a Part::Fillet. The fillet's axis runs along y, square to the
+        # pull direction: no draft turns it into a cone, and the classic
+        # draft refuses. With tangent propagation on, the new draft takes it
+        # off, drafts the wall and makes it again at its radius where the
+        # wall now meets the top (docs/NewDraft.md section 19). In xz the
+        # profile is the trapezoid less the fillet's corner at phi, the
+        # wall's angle with the top.
+        box = self.Doc.addObject("Part::Box", "Box")
+        box.Length, box.Width, box.Height = 20, 10, 10
+        self.Doc.recompute()
+        edge = [i for i, e in enumerate(box.Shape.Edges, 1)
+                if abs(e.BoundBox.XMin - 20) < 1e-9 and abs(e.BoundBox.XMax - 20) < 1e-9
+                and abs(e.BoundBox.ZMin - 10) < 1e-9]
+        self.assertEqual(len(edge), 1)
+        fillet = self.Doc.addObject("Part::Fillet", "Fillet")
+        fillet.Base = box
+        fillet.Edges = [(edge[0], 2.0, 2.0)]
+        self.Doc.recompute()
+        shape = fillet.Shape
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        body.BaseFeature = fillet
+        self.Doc.recompute()
+        wall = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if self.planeAt("X", 20)(f)]
+        floor = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if self.planeAt("Z", 0)(f)]
+        for method, angle in (("Classic", 5), ("Auto", 5), ("Auto", -15), ("New", 15)):
+            draft = body.newObject("PartDesign::Draft", "Draft")
+            draft.Base = (body.BaseFeature, wall)
+            draft.NeutralPlane = (body.BaseFeature, floor)
+            draft.Angle = angle
+            draft.Method = method
+            self.Doc.recompute()
+            if method == "Classic":
+                self.assertIn("Invalid", draft.State)
+            else:
+                phi = math.pi / 2 + math.radians(angle)
+                volume = 10 * (200 - 50 * math.tan(math.radians(angle))
+                               - 4 * (1 / math.tan(phi / 2) - (math.pi - phi) / 2))
+                self.assertNotIn("Invalid", draft.State, method)
+                self.assertTrue(draft.Shape.isValid(), method)
+                self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+                self.assertEqual(len(draft.Shape.Faces), 7, method)
+                draft.Shape.check(True)
+                # the fillet made again keeps the old fillet's name
+                cylinders = ["Face%d" % i for i, f in enumerate(draft.Shape.Faces, 1)
+                             if f.Surface.__class__.__name__ == "Cylinder"]
+                self.assertEqual(len(cylinders), 1, method)
+                self.assertIn(";:M;DFT", draft.Shape.getElementMappedName(cylinders[0]))
+            body.removeObject(draft)
+            self.Doc.removeObject(draft.Name)
+
+    @staticmethod
+    def roundedRect(x0, y0, w, d, r, z):
+        """A w x d rectangle with corners rounded r, at height z."""
+        V = App.Vector
+        c = [(x0 + w - r, y0 + r), (x0 + w - r, y0 + d - r), (x0 + r, y0 + d - r),
+             (x0 + r, y0 + r)]
+        edges = []
+        for i, (cx, cy) in enumerate(c):
+            a = (i - 1) * math.pi / 2
+            arc = Part.ArcOfCircle(Part.Circle(V(cx, cy, z), V(0, 0, 1), r), a, a + math.pi / 2)
+            edges.append(arc.toShape())
+            nx, ny = c[(i + 1) % 4]
+            b = a + math.pi / 2
+            p = V(cx + r * math.cos(b), cy + r * math.sin(b), z)
+            q = V(nx + r * math.cos(b), ny + r * math.sin(b), z)
+            edges.append(Part.LineSegment(p, q).toShape())
+        return Part.Wire(Part.__sortEdges__(edges))
+
+    def testDraftAutoTangentChainBreaksThrough(self):
+        # A 40x30x20 block with a 20x10 pocket 16 deep, its corners rounded
+        # 2, 2 behind the front wall. The pocket's front wall drafted outward
+        # about the floor drafts the pocket's walls and corners all round;
+        # at 10 deg they move 16 tan(10 deg) = 2.82 at the top, through the
+        # front wall. The classic draft refuses; Auto falls back to the new
+        # draft, whose solid is the block less the drafted pocket, a ruled
+        # loft between the floor's outline and the top's.
+        V = App.Vector
+        block = Part.makeBox(40, 30, 20)
+        pocket = Part.Face(self.roundedRect(10, 2, 20, 10, 2, 4)).extrude(V(0, 0, 16))
+        shape = block.cut(pocket).removeSplitter()
+        g = 16 * math.tan(math.radians(10))
+        floor = self.roundedRect(10, 2, 20, 10, 2, 4)
+        top = self.roundedRect(10 - g, 2 - g, 20 + 2 * g, 10 + 2 * g, 2 + g, 20)
+        drafted = Part.makeLoft([floor, top], True, True)
+        volume = block.cut(drafted).Volume
+        for method in ("Classic", "Auto"):
+            draft = self.makeDraftOn(shape, self.planeAt("Y", 2), self.planeAt("Z", 4), method,
+                                     angle=10)
+            if method == "Classic":
+                self.assertIn("Invalid", draft.State)
+                continue
+            self.assertNotIn("Invalid", draft.State)
+            self.assertTrue(draft.Shape.isValid())
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+            draft.Shape.check(True)
+
+    def testDraftNewTangentChainSharpCorner(self):
+        # A 20x10x10 block with three vertical edges filleted 2, the one at
+        # the origin left sharp: the chain from any wall runs round to that
+        # corner from both sides and closes there at a sharp edge, where the
+        # two new planes meet. At height z the section is the rectangle in
+        # by z tan(a) with three corners rounded r - z tan(a); inward at 15
+        # deg the fillets reach their apex at 7.46 and the walls meet past
+        # it, which the classic draft refuses.
+        shape = Part.makeBox(20, 10, 10)
+        shape = shape.makeFillet(2, [e for e in shape.Edges
+                                     if abs(e.Vertexes[0].Z - e.Vertexes[1].Z) > 1
+                                     and abs(e.Vertexes[0].X) + abs(e.Vertexes[0].Y) > 1e-9])
+
+        def volume(a):
+            t = math.tan(math.radians(a))
+            za = min(10, 2 / t)
+            return (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                    - 3 * (1 - math.pi / 4) * (4 * za - 2 * t * za ** 2 + t * t * za ** 3 / 3))
+
+        for angle, face in ((5, self.planeAt("Y", 10)), (5, self.planeAt("Y", 0)),
+                            (15, self.planeAt("X", 0))):
+            draft = self.makeDraftOn(shape, face, self.planeAt("Z", 0), "New", angle=angle)
+            self.assertNotIn("Invalid", draft.State, angle)
+            self.assertTrue(draft.Shape.isValid(), angle)
+            self.assertAlmostEqual(draft.Shape.Volume, volume(angle), 6, angle)
+            self.assertEqual(len(draft.Shape.Faces), 9, angle)
+            draft.Shape.check(True)
 
     def tearDown(self):
         #closing doc

@@ -42,8 +42,71 @@
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/encodeFilename.h>
 #include <Mod/Part/App/ProgressIndicator.h>
+#include <Mod/Part/App/PartPyCXX.h>
 
 using namespace Import;
+
+#if OCC_VERSION_HEX >= 0x080000
+namespace
+{
+/// The OCCT fork's STEP reader functions for a progressive import, as the C
+/// functions the fork exports for them, looked up by name at run time
+/// (Part::lookUpOCCT): called by their C++ names they would keep this module
+/// from loading where the OCCT libraries are upstream's, which have none of
+/// them. Without them a file is not streamable and is read in one go.
+struct ForkReader
+{
+    using TransferRootRange = bool (*)(STEPCAFControl_Reader&,
+                                       int,
+                                       int,
+                                       const Handle(TDocStd_Document)&,
+                                       const Message_ProgressRange&);
+    using RootAssemblyTree = int (*)(STEPCAFControl_Reader&,
+                                     int,
+                                     const Handle(TDocStd_Document)&,
+                                     NCollection_Sequence<STEPCAFControl_Reader::AssemblyNode>&);
+    using ComponentShape = void (*)(const STEPCAFControl_Reader&,
+                                    const Handle(Standard_Transient)&,
+                                    TopoDS_Shape&);
+    using TransferComponents =
+        bool (*)(STEPCAFControl_Reader&,
+                 const Handle(NCollection_HSequence<Handle(Standard_Transient)>)&,
+                 const Handle(TDocStd_Document)&,
+                 const Message_ProgressRange&);
+
+    TransferRootRange transferRootRange = nullptr;
+    RootAssemblyTree rootAssemblyTree = nullptr;
+    ComponentShape componentShape = nullptr;
+    TransferComponents transferComponents = nullptr;
+
+    ForkReader()
+    {
+        auto find = [](const char* name) {
+            return Part::lookUpOCCT("TKDESTEP", name);
+        };
+        transferRootRange =
+            reinterpret_cast<TransferRootRange>(find("STEPCAFControl_Reader_TransferRootRange"));
+        rootAssemblyTree =
+            reinterpret_cast<RootAssemblyTree>(find("STEPCAFControl_Reader_RootAssemblyTree"));
+        componentShape =
+            reinterpret_cast<ComponentShape>(find("STEPCAFControl_Reader_ComponentShape"));
+        transferComponents =
+            reinterpret_cast<TransferComponents>(find("STEPCAFControl_Reader_TransferComponents"));
+    }
+
+    bool found() const
+    {
+        return transferRootRange && rootAssemblyTree && componentShape && transferComponents;
+    }
+
+    static const ForkReader& get()
+    {
+        static const ForkReader fork;
+        return fork;
+    }
+};
+}  // namespace
+#endif
 
 struct ReaderStep::Stream
 {
@@ -82,6 +145,11 @@ int ReaderStep::openStream()
     // one-shot read().
     return 0;
 #else
+    if (!ForkReader::get().found()) {
+        // Upstream's OCCT, or a fork from before these functions: not
+        // streamable, the caller reads the file in one go.
+        return 0;
+    }
     std::string utf8Name = file.filePath();
     std::string name8bit = Part::encodeFilename(utf8Name);
     stream = std::make_unique<Stream>();
@@ -114,7 +182,7 @@ int ReaderStep::openAssemblyTree(Handle(TDocStd_Document) hDoc, int root)  // NO
     auto& s = *stream;
     nodes.clear();
     s.components.clear();
-    if (s.reader.RootAssemblyTree(root, hDoc, s.tree) == 0) {
+    if (ForkReader::get().rootAssemblyTree(s.reader, root, hDoc, s.tree) == 0) {
         return 0;
     }
     nodes.reserve(s.tree.Size());
@@ -178,7 +246,10 @@ void ReaderStep::transferComponentRange(Handle(TDocStd_Document) hDoc,  // NOLIN
     if (batch->IsEmpty()) {
         return;
     }
-    s.reader.TransferComponents(batch, hDoc, s.scope->Next(double(batch->Size())));
+    ForkReader::get().transferComponents(s.reader,
+                                         batch,
+                                         hDoc,
+                                         s.scope->Next(double(batch->Size())));
     if (s.progress->UserBreak()) {
         THROWM(Base::AbortException, "STEP import aborted by user")
     }
@@ -186,7 +257,8 @@ void ReaderStep::transferComponentRange(Handle(TDocStd_Document) hDoc,  // NOLIN
     // the tree - and so which container - a new free shape belongs to.
     results.clear();
     for (std::size_t i = 0; i < batchNodes.size(); ++i) {
-        TopoDS_Shape shape = s.reader.ComponentShape(batch->Value(int(i) + 1));
+        TopoDS_Shape shape;
+        ForkReader::get().componentShape(s.reader, batch->Value(int(i) + 1), shape);
         if (!shape.IsNull()) {
             results.emplace_back(shape, batchNodes[i]);
         }
@@ -206,7 +278,11 @@ void ReaderStep::transferRootRange(Handle(TDocStd_Document) hDoc, int first, int
         THROWM(Base::RuntimeError, "ReaderStep: no open stream")
     }
     auto& s = *stream;
-    s.reader.TransferRootRange(first, last, hDoc, s.scope->Next(double(last - first + 1)));
+    ForkReader::get().transferRootRange(s.reader,
+                                        first,
+                                        last,
+                                        hDoc,
+                                        s.scope->Next(double(last - first + 1)));
     if (s.progress->UserBreak()) {
         THROWM(Base::AbortException, "STEP import aborted by user")
     }

@@ -428,6 +428,127 @@ PartExport int initOCCTExtension()
     return extVersion;
 }
 
+/// A function of one of the OCCT fork's toolkits ("TKBRep", "TKDESTEP", ...),
+/// looked up by name at run time like SetFuncShowTopoShape, so that FreeCAD
+/// still loads where the OCCT libraries are upstream's, or a fork's from
+/// before the function; null there. What FreeCAD needs of the fork it reaches
+/// this way, through a C function of the fork: a function called by its C++
+/// name is a symbol upstream's library does not have, and the loader then
+/// refuses the whole module.
+PartExport void *lookUpOCCT(const char *toolkit, const char *name)
+{
+#ifdef FC_OS_WIN32
+    const std::string dll = std::string(toolkit) + ".dll";
+    HMODULE hModule = GetModuleHandleA(dll.c_str());
+    if (!hModule)
+        hModule = LoadLibraryA(dll.c_str());
+    return hModule ? (void *)GetProcAddress(hModule, name) : nullptr;
+#else
+    void *f = dlsym(RTLD_DEFAULT, name);
+    if (!f) {
+#ifdef FC_OS_MACOSX
+        const std::string lib = std::string("lib") + toolkit + ".dylib";
+#else
+        const std::string lib = std::string("lib") + toolkit + ".so";
+#endif
+        void *hModule = dlopen(lib.c_str(), RTLD_LAZY);
+        if (hModule)
+            f = dlsym(hModule, name);
+    }
+    return f;
+#endif
+}
+
+/// A function of the OCCT fork's TKFillet by name, null without it.
+PartExport void *lookUpTKFillet(const char *name)
+{
+    return lookUpOCCT("TKFillet", name);
+}
+
+/// A function of the OCCT fork's TKBRep by name, null without it.
+PartExport void *lookUpTKBRep(const char *name)
+{
+    return lookUpOCCT("TKBRep", name);
+}
+
+typedef void (*FuncSetCurve2dSetMerging)(GeomTools_Curve2dSet &, bool);
+
+/// Says whether the set merges a 2D curve into an entry that would be written
+/// the same (the OCCT fork's GeomTools_Curve2dSet_SetMerging). False without
+/// the fork's function: upstream's set merges nothing, and there is nothing
+/// to set.
+PartExport bool setOCCTCurve2dSetMerging(GeomTools_Curve2dSet &set, bool merging)
+{
+    static const auto func = (FuncSetCurve2dSetMerging)lookUpOCCT(
+        "TKGeomBase", "GeomTools_Curve2dSet_SetMerging");
+    if (!func)
+        return false;
+    func(set, merging);
+    return true;
+}
+
+typedef void (*FuncSetOmitPCurvesOnPlane)(BinTools_ShapeSet &, bool);
+
+/// Says whether the binary shape set leaves out the pcurves a plane can
+/// rebuild (the OCCT fork's BinTools_ShapeSet_SetOmitPCurvesOnPlane). False
+/// without the fork's function: upstream's set writes them all.
+PartExport bool setOCCTOmitPCurvesOnPlane(BinTools_ShapeSet &set, bool omit)
+{
+    static const auto func = (FuncSetOmitPCurvesOnPlane)lookUpOCCT(
+        "TKBRep", "BinTools_ShapeSet_SetOmitPCurvesOnPlane");
+    if (!func)
+        return false;
+    func(set, omit);
+    return true;
+}
+
+typedef bool (*FuncIsCacheRepresentation)(const Standard_Transient *);
+
+/// Whether a BRep curve or point representation is a cache: one a frozen
+/// (Immutable) edge or vertex of the OCCT fork was given after it was frozen,
+/// such as a pcurve for a face built on the edge elsewhere. The fork's
+/// BRep_Builder_IsCache, looked up at run time; false without it -- upstream
+/// OCCT freezes nothing and has no caches.
+PartExport bool isOCCTCacheRepresentation(const Standard_Transient *rep)
+{
+    static const auto func = (FuncIsCacheRepresentation)lookUpTKBRep("BRep_Builder_IsCache");
+    return func && rep && func(rep);
+}
+
+typedef double (*FuncSetFilletSetting)(double);
+
+/// Hands PartParams FilletPlateG0FallbackRatio to the OCCT fork's fillet: a
+/// corner plate that misses its boundary by more than this fraction of the
+/// smallest radius at the corner while held tangent to the stripes is built
+/// again on positions alone (ChFi3d_Builder::SetPlateG0FallbackRatio). Looked
+/// up at run time like SetFuncShowTopoShape, so a build against upstream OCCT,
+/// or a fork from before the ratio, still loads; returns false there.
+PartExport bool setOCCTPlateG0FallbackRatio(double ratio)
+{
+    static const auto func =
+        (FuncSetFilletSetting)lookUpTKFillet("ChFi3d_SetPlateG0FallbackRatio");
+    if (!func)
+        return false;
+    // 0 or less turns the fallback off: every tangent plate is kept (the
+    // fork's distance setting, which takes over then, defaults to off)
+    func(ratio > 0.0 ? ratio : 0.0);
+    return true;
+}
+
+/// Hands PartParams FilletCornerSetbackFallback to the OCCT fork's fillet:
+/// where a fillet fails at a corner, the corner is set back, up to this many
+/// times the radius, and built again (ChFi3d_Builder::SetCornerSetbackFallback,
+/// docs/CornerBlending.md section 9). False without the fork's function.
+PartExport bool setOCCTCornerSetbackFallback(double multiple)
+{
+    static const auto func =
+        (FuncSetFilletSetting)lookUpTKFillet("ChFi3d_SetCornerSetbackFallback");
+    if (!func)
+        return false;
+    func(multiple > 0.0 ? multiple : 0.0);
+    return true;
+}
+
 class Module : public Py::ExtensionModule<Module>
 {
     BRepFeatModule brepFeat;

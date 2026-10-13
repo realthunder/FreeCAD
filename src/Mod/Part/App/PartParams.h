@@ -376,6 +376,39 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter FilletPlateG0FallbackRatio
+    ///
+    /// How far a fillet's corner patch may miss its boundary while kept tangent
+    /// to the fillets, as a fraction of the smallest radius at the corner. A
+    /// patch missing by more is built again on positions alone and kept if it
+    /// fits better. 0 keeps every tangent patch. Needs the OCCT fork.
+    static const double & getFilletPlateG0FallbackRatio();
+    static const double & defaultFilletPlateG0FallbackRatio();
+    static void removeFilletPlateG0FallbackRatio();
+    static void setFilletPlateG0FallbackRatio(const double &v);
+    static const char *docFilletPlateG0FallbackRatio();
+    static void onFilletPlateG0FallbackRatioChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FilletCornerSetbackFallback
+    ///
+    /// How far a fillet's corner that cannot be built may be set back, as a
+    /// multiple of the largest fillet radius there. The fillets are cut back and
+    /// the opening closed by one patch, at growing setbacks up to this multiple.
+    /// Only fillets that fail without it change. 0 turns it off. Needs the OCCT
+    /// fork.
+    static const double & getFilletCornerSetbackFallback();
+    static const double & defaultFilletCornerSetbackFallback();
+    static void removeFilletCornerSetbackFallback();
+    static void setFilletCornerSetbackFallback(const double &v);
+    static const char *docFilletCornerSetbackFallback();
+    static void onFilletCornerSetbackFallbackChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter WarnUnnamedInput
     ///
     /// Report shape operations whose inputs carry no element names, so the

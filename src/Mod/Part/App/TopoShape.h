@@ -2098,6 +2098,37 @@ public:
         return TopoShape(0,Hasher).makESlices(*this,dir,distances,op);
     }
 
+    /** Sets back the fillets at a vertex: each one stops a distance from the
+     * vertex, measured along its edge, and the opening they leave is closed by
+     * one patch tangent to them (a setback corner, docs/CornerBlending.md).
+     * Only with the OCCT fork; another OCCT throws.
+     */
+    struct FilletCorner {
+        /// A vertex of the source shape where filleted edges end
+        TopoDS_Shape vertex;
+        /** The setback of every fillet ending at the vertex; 0 sets them back
+         * only as far as they meet, less than 0 sets none here
+         */
+        double setback = -1.0;
+        /** The setbacks of single fillets, by an edge of each, over 'setback'.
+         * An edge that is not filleted is set back as far as the fillets
+         * beside it, and cannot be given a setback of its own.
+         */
+        std::vector<std::pair<TopoDS_Shape, double>> edges;
+        /** The depths of faces at the vertex: the patch's boundary on such a
+         * face bows into it, away from the vertex, the depth at its middle,
+         * measured from the straight line between its ends. A corner takes
+         * them only when set back.
+         */
+        std::vector<std::pair<TopoDS_Shape, double>> faces;
+        /** Skip, with a warning, what cannot be placed -- the vertex ends no
+         * fillet, an edge is not filleted or its fillet does not end at the
+         * vertex -- instead of throwing
+         */
+        bool optional = false;
+    };
+    typedef std::vector<FilletCorner> FilletCorners;
+
     /* Make fillet shape
      *
      * @param source: the source shape
@@ -2106,6 +2137,7 @@ public:
      * @param radius2: the radius of the ending of the fillet
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return The original content of this TopoShape is discarded and replaced
      *         with the new shape. The function returns the TopoShape itself as
@@ -2113,7 +2145,8 @@ public:
      *         for the same shape in the same line of code.
      */
     TopoShape &makEFillet(const TopoShape &source, const std::vector<TopoShape> &edges, 
-            double radius1, double radius2, const char *op=nullptr);
+            double radius1, double radius2, const char *op=nullptr,
+            const FilletCorners &corners = FilletCorners());
     /* Make fillet shape
      *
      * @param edges: the edges of the source shape where to make fillets
@@ -2121,12 +2154,14 @@ public:
      * @param radius2: the radius of the ending of the fillet
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return Return the new shape. The TopoShape itself is not modified.
      */
     TopoShape makEFillet(const std::vector<TopoShape> &edges, 
-            double radius1, double radius2, const char *op=nullptr) const {
-        return TopoShape(0,Hasher).makEFillet(*this,edges,radius1,radius2,op);
+            double radius1, double radius2, const char *op=nullptr,
+            const FilletCorners &corners = FilletCorners()) const {
+        return TopoShape(0,Hasher).makEFillet(*this,edges,radius1,radius2,op,corners);
     }
 
     /// Describes a segment of an edge for fillet operation
@@ -2166,6 +2201,7 @@ public:
      *                       closeset parameter.
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return The original content of this TopoShape is discarded and replaced
      *         with the new shape. The function returns the TopoShape itself as
@@ -2176,7 +2212,8 @@ public:
                           const std::vector<TopoShape> &edges, 
                           const std::vector<FilletSegments> &segments,
                           double defaultRadius=0.0,
-                          const char *op=nullptr);
+                          const char *op=nullptr,
+                          const FilletCorners &corners = FilletCorners());
 
     /* Make fillet shape with variable radius per edge
      *
@@ -2190,14 +2227,16 @@ public:
      *                       closeset parameter.
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return Return the new shape. The TopoShape itself is not modified.
      */
     TopoShape makEFillet(const std::vector<TopoShape> &edges, 
                          const std::vector<FilletSegments> &segments,
                          double defaultRadius=0.0,
-                         const char *op=nullptr) const {
-        return TopoShape(0,Hasher).makEFillet(*this,edges,segments,defaultRadius,op);
+                         const char *op=nullptr,
+                         const FilletCorners &corners = FilletCorners()) const {
+        return TopoShape(0,Hasher).makEFillet(*this,edges,segments,defaultRadius,op,corners);
     }
 
     /* Make chamfer shape
@@ -2208,6 +2247,7 @@ public:
      * @param size2: the size of the other side of the chamfer
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      * @param flipDirection: whether to reverse two sides of the chamfer
      * @param asAngle: treat size2 as an angle of the chamfer
      *
@@ -2299,15 +2339,25 @@ public:
      * @param retry: whether to keep going by skipping faces that failed to create draft
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param cell: use the cell draft (Part::CellDraft, a draft that can change
+     *              topology) instead of BRepOffsetAPI_DraftAngle. It drafts all
+     *              faces or fails; retry has no effect.
+     * @param stopAtBody: cell draft only: a drafted face does not grow the
+     *                    body past a plane that bounds the whole body
+     * @param tangentPropagation: cell draft only: a drafted face takes the
+     *                            faces tangent to it along; off, a face
+     *                            tangent to the drafted ones that is not
+     *                            among \a faces is refused
      *
      * @return The original content of this TopoShape is discarded and replaced
      *         with the new shape. The function returns the TopoShape itself as
      *         a self reference so that multiple operations can be carried out
      *         for the same shape in the same line of code.
      */
-    TopoShape &makEDraft(const TopoShape &source, const std::vector<TopoShape> &faces, 
+    TopoShape &makEDraft(const TopoShape &source, const std::vector<TopoShape> &faces,
            const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-           bool retry=true, const char *op=nullptr);
+           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true,
+           bool tangentPropagation=true);
     /* Make draft shape
      *
      * @param source: the source shape
@@ -2318,13 +2368,18 @@ public:
      * @param retry: whether to keep going by skipping faces that failed to create draft
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param cell: use the cell draft, see above
+     * @param stopAtBody: cell draft only, see above
+     * @param tangentPropagation: cell draft only, see above
      *
      * @return Return the new shape. The TopoShape itself is not modified.
      */
-    TopoShape makEDraft(const std::vector<TopoShape> &faces, 
+    TopoShape makEDraft(const std::vector<TopoShape> &faces,
            const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-           bool retry=true, const char *op=nullptr) const {
-        return TopoShape(0,Hasher).makEDraft(*this,faces,pullDirection,angle,neutralPlane,retry,op);
+           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true,
+           bool tangentPropagation=true) const {
+        return TopoShape(0,Hasher).makEDraft(*this,faces,pullDirection,angle,neutralPlane,
+                                             retry,op,cell,stopAtBody,tangentPropagation);
     }
 
     /* Remove faces and heal the gap they leave, e.g. take a hole, a fillet

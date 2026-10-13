@@ -883,6 +883,15 @@ void QuarterWidget::paintEvent(QPaintEvent* event)
         PRIVATE(this)->soeventmanager->setViewportRegion(vp);
     }
 
+    // Before any GL call: with no context -- the offscreen platform cannot
+    // make one -- Linux's GL dispatch ignores a call, while macOS's libGL
+    // dereferences the null context and crashes (glMatrixMode below did)
+    QtGLWidget* w = static_cast<QtGLWidget*>(this->viewport());
+    if (!w->isValid()) {
+        qWarning() << "No valid GL context found!";
+        return;
+    }
+
     if(!initialized) {
         this->getSoRenderManager()->reinitialize();
         initialized = true;
@@ -891,12 +900,6 @@ void QuarterWidget::paintEvent(QPaintEvent* event)
     getSoRenderManager()->activate();
 
     glMatrixMode(GL_PROJECTION);
-
-    QtGLWidget* w = static_cast<QtGLWidget*>(this->viewport());
-    if (!w->isValid()) {
-        qWarning() << "No valid GL context found!";
-        return;
-    }
     //assert(w->isValid() && "No valid GL context found!");
     // We might have to process the delay queue here since we don't know
     // if paintGL() is called from Qt, and we might have some sensors

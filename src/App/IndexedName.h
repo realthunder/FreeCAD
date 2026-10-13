@@ -97,7 +97,11 @@ public:
                 const std::vector<const char*> & allowedTypeNames,
                 bool allowOthers=true) : type(""), index(0)
     {
-        set(name, -1, allowedTypeNames, allowOthers);
+        // A null name is a null IndexedName, as with the constructor above:
+        // set() would take its length with strlen().
+        if (name) {
+            set(name, -1, allowedTypeNames, allowOthers);
+        }
     }
 
     /// Construct from a QByteArray, but explicitly making a copy of the name on its first

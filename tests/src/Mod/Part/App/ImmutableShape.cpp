@@ -1005,7 +1005,7 @@ TEST(ImmutableShapeTest, aFrozenVertexTakesAParameterOnANewCurve)
     const TopoDS_Vertex onExtended = TopoDS::Vertex(end.Oriented(TopAbs_INTERNAL));
     EXPECT_NO_THROW(builder.UpdateVertex(onExtended, 0., extended, tol));
     ASSERT_FALSE(pointOn(end, line).IsNull());
-    EXPECT_TRUE(pointOn(end, line)->IsCache());
+    EXPECT_TRUE(Part::isOCCTCacheRepresentation(pointOn(end, line).get()));
     // Being a cache it may be rewritten; not with a tolerance to grow to.
     EXPECT_NO_THROW(builder.UpdateVertex(onExtended, 1e-3, extended, tol));
     EXPECT_THROW(builder.UpdateVertex(onExtended, 0., extended, tol * 10), TopoDS_LockedShape);
@@ -1013,7 +1013,7 @@ TEST(ImmutableShapeTest, aFrozenVertexTakesAParameterOnANewCurve)
     Standard_Real first, last;
     Handle(Geom_Curve) own = BRep_Tool::Curve(edge, first, last);
     ASSERT_FALSE(pointOn(inner, own).IsNull());
-    EXPECT_FALSE(pointOn(inner, own)->IsCache());
+    EXPECT_FALSE(Part::isOCCTCacheRepresentation(pointOn(inner, own).get()));
     const TopoDS_Vertex innerOn = TopoDS::Vertex(inner.Oriented(TopAbs_INTERNAL));
     EXPECT_NO_THROW(builder.UpdateVertex(innerOn, 5., edge, 0.));
     EXPECT_THROW(builder.UpdateVertex(innerOn, 6., edge, 0.), TopoDS_LockedShape);

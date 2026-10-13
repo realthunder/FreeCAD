@@ -704,6 +704,24 @@ class MeshSubElement(unittest.TestCase):
         self.assertEqual(segment.CountPoints, 7)
         self.assertEqual(segment.CountFacets, 5)
 
+    def testShapeOfMeshFeature(self):
+        # Part.getShape() -- and with it getattr(obj, "Shape") on any object,
+        # which falls back to it -- asks a mesh feature for its sub-object with
+        # no subname, which reached Data::IndexedName as a null name: strlen()
+        # of NULL, and FreeCAD died.
+        import Part
+
+        doc = FreeCAD.newDocument("MeshShape")
+        try:
+            obj = doc.addObject("Mesh::Feature", "Mesh")
+            obj.Mesh = self.mesh
+            shape = Part.getShape(obj)
+            self.assertIsInstance(shape, Part.Shape)
+            self.assertTrue(shape.isNull())
+            self.assertIsNone(getattr(obj, "Shape", None))
+        finally:
+            FreeCAD.closeDocument(doc.Name)
+
     def tearDown(self):
         pass
 

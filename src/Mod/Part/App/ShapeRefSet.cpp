@@ -55,6 +55,7 @@
 #include <Base/Console.h>
 
 #include "ShapeRefSet.h"
+#include "PartPyCXX.h"
 
 FC_LOG_LEVEL_INIT("ShapeRefSet", true, true);
 
@@ -429,7 +430,7 @@ ShapeRefSet::ShapeRefSet()
     // And what it sets: merging equal 2D curves is on in the kernel by
     // default, and every path that wants it goes through
     // TopoShape::applyStorageOptions, which is where the document says so.
-    ChangeCurves2d().SetMerging(false);
+    setOCCTCurve2dSetMerging(ChangeCurves2d(), false);
 }
 
 ShapeRefSet::ShapeRefSet(const BRep_Builder& builder)
@@ -441,7 +442,7 @@ ShapeRefSet::ShapeRefSet(const BRep_Builder& builder)
     // read must still be its own entry -- merging it would shift every
     // position after it. OCCT's own reader adds to the map directly and so
     // never had to say this; this one adds through Add(), which does merge.
-    ChangeCurves2d().SetMerging(false);
+    setOCCTCurve2dSetMerging(ChangeCurves2d(), false);
 }
 
 ShapeRefSet::~ShapeRefSet() = default;
