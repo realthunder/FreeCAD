@@ -1504,7 +1504,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | OPEN; the four points answered about 11:34, nothing left unanswered |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | OPEN, answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | OPEN; the three points answered 11:38, nothing left unanswered |
-| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
+| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | OPEN; the three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | OPEN; the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; two points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -11638,7 +11638,7 @@ The note-taker's reading:
   Whichever object the omni search resolved to gives the name.
 Nothing of this entry is left unanswered.
 
-## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- OPEN, three points not answered
+## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- OPEN, answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too
 
 **2026-10-13 11:17, the reporter:** "new request, add a border to the close icon
 for overlay pannel, so it does not look like a icon not found defect"
@@ -11676,6 +11676,23 @@ Pointers, READ by the note-taker, nothing run:
 - Near it: entry 73 (the title buttons made dark/light aware), entry 87
   (the overlay's outline effect lays a dark copy under what is
   painted -- a thin frame would get it too).
+
+**2026-10-13 11:40, the reporter answers the three points:** "entry 96. a,
+square line only. b, yes. c yes, also the same icon is used in the menu.
+that too"
+
+The note-taker's reading:
+- a. A SQUARE frame, a LINE only -- no filled ground under the X.
+- b. "yes" to a point that held two choices (the close button alone, or
+  every title button framed the same). The note-taker takes it for the
+  choice put as the guess: the CLOSE button alone. To be said by the
+  reporter if all the title buttons were meant.
+- c. Yes: the same X is framed on a task panel shown in its view and on
+  a panel docked in the main window too. And MORE than was asked: "the
+  same icon is used in the menu. that too" -- wherever a menu shows
+  that close icon, it is framed as well. WHICH menu is not said; the
+  note-taker's reading: every place the icon is shown, so the frame
+  belongs in the picture itself and not in one button's style.
 
 ## 97. A crash: File > Revert on the loaded scanner document -- OPEN, the stack read from the debugger's log; two points not answered
 
