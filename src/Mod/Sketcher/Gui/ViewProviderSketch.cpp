@@ -818,7 +818,7 @@ ViewProviderSketch::ViewProviderSketch()
                       "Object Style",
                       (App::PropertyType)(App::Prop_None),
                       "If true, this sketch will be colored based on user preferences. Turn it "
-                      "off to set color explicitly.");
+                      "off to set color explicitly: setting a color of the sketch turns it off.");
     ADD_PROPERTY_TYPE(VisualLayerList,
                       (VisualLayer()),
                       "Layers",
@@ -8991,6 +8991,14 @@ void ViewProviderSketch::updateData(const App::Property *prop)
 
     auto sketch = getSketchObject();
 
+    // A colour set by hand under the object's name -- what the property
+    // editor shows of a sketch's colours under Data, and what a script
+    // writes -- turns the automatic colours off as one set here does
+    // (onChanged()). Told before the object has taken it; what is drawn
+    // follows when it has.
+    if (AutoColor.getValue() && sketch->isWritingLook(prop))
+        AutoColor.setValue(false);
+
     if (prop == &sketch->ExternalGeo) {
         // the tree item carries a warning while an external reference is broken
         bool missing = hasMissingExternalGeometry();
@@ -9298,6 +9306,18 @@ void ViewProviderSketch::onChanged(const App::Property *prop)
 {
     // call father
     inherited::onChanged(prop);
+    // A colour set by hand is to be seen: the automatic colours are turned
+    // off, and what is drawn is the sketch's own from then on. Not for a
+    // colour read from a file or put back by an undo, and not for the
+    // object's look arriving under this name (mirrorAppearance()).
+    if (AutoColor.getValue() && getObject() && !isRestoring() && !mirroringAppearance
+            && (prop == &LineColor || prop == &PointColor || prop == &ShapeColor
+                || prop == &Transparency || prop == &ShapeAppearance
+                || prop == &LineMaterial || prop == &PointMaterial)) {
+        App::Document *doc = getObject()->getDocument();
+        if (doc && !doc->testStatus(App::Document::Restoring) && !doc->isPerformingTransaction())
+            AutoColor.setValue(false);
+    }
     const bool automatic = AutoColor.getValue();
     // Under AutoColor the faces are the settings' (applyAutomaticColors())
     if (pInternalView && !automatic) {

@@ -86,6 +86,7 @@ void setProperty(P &prop, const V &v) {
 }
 
 void ViewProviderSubShapeBinder::onChanged(const App::Property *prop) {
+    bool picked = false;
     if(prop == &UseBinderStyle
             && !isRestoring()
             && (!getDocument() || !getDocument()->isPerformingTransaction()))
@@ -151,7 +152,20 @@ void ViewProviderSubShapeBinder::onChanged(const App::Property *prop) {
              || (getObject() && getObject()->getDocument()
                  && getObject()->getDocument()->isPerformingTransaction())) {
     }
-    else if (prop == &ShapeColor) {
+    else {
+        picked = true;
+    }
+
+    ViewProviderPart::onChanged(prop);
+
+    // The colour first and the mapping ended after it. The other way round
+    // the colour was lost: a flag changed makes the object's looks again,
+    // the names take what the object has then -- the colour it had -- and
+    // that was what the base class went on to give the object as the
+    // colour picked. The mapping ended and the binder stayed as it was.
+    if (!picked)
+        return;
+    if (prop == &ShapeColor) {
         setProperty(MapFaceColor, false);
     }
     else if (prop == &LineColor) {
@@ -163,8 +177,6 @@ void ViewProviderSubShapeBinder::onChanged(const App::Property *prop) {
     else if (prop == &Transparency) {
         setProperty(MapTransparency, false);
     }
-
-    ViewProviderPart::onChanged(prop);
 }
 
 static const std::vector<std::string> getLinkSubValues(const App::PropertyXLink &link)

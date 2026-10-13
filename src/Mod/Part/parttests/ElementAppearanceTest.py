@@ -288,6 +288,53 @@ class ElementAppearanceNamesTest(unittest.TestCase):
         self.assertEqual(box.Transparency, 30)
         self.assertEqual(rgb(box.LineColor), BLUE[:3])
 
+    def testAColourWrittenToABinderEndsItsMapping(self):
+        """A colour picked for a binder is the binder's and ends the mapping of
+        that colour from its sources -- by the object's name as by the view
+        provider's (docs/TransactionLog.md sec 33.16)."""
+        flags = ("MapFaceColor", "MapLineColor", "MapPointColor", "MapTransparency")
+        self.box.ShapeColor = RED[:3]
+        binder = self.doc.addObject("Part::SubShapeBinder", "Bound")
+        binder.Support = [(self.box, ("",))]
+        for flag in flags:
+            setattr(binder, flag, True)
+        self.doc.recompute()
+        self.assertEqual(colors(binder), [RED[:3]])
+
+        self.doc.openTransaction("green")
+        binder.ShapeColor = GREEN[:3]
+        self.doc.commitTransaction()
+        self.assertEqual([getattr(binder, f) for f in flags], [False, True, True, True])
+        self.assertEqual(rgb(binder.ShapeColor), GREEN[:3])
+        self.assertEqual(colors(binder), [GREEN[:3]])
+        # Each colour ends its own mapping and no other
+        binder.LineColor = BLUE[:3]
+        self.assertEqual([getattr(binder, f) for f in flags], [False, False, True, True])
+        self.assertEqual(rgb(binder.LineColor), BLUE[:3])
+        binder.PointColor = BLUE[:3]
+        binder.Transparency = 30
+        self.assertEqual([getattr(binder, f) for f in flags], [False] * 4)
+        self.assertEqual(binder.Transparency, 30)
+
+        # Taken back, the colour and the mapping are as they were
+        self.doc.undo()
+        self.doc.undo()
+        self.doc.undo()
+        self.doc.undo()
+        self.assertEqual([getattr(binder, f) for f in flags], [True] * 4)
+        self.assertEqual(colors(binder), [RED[:3]])
+        # and the mapping set again is no colour picked
+        self.doc.redo()
+        self.assertFalse(binder.MapFaceColor)
+        binder.MapFaceColor = True
+        self.assertTrue(binder.MapFaceColor)
+        self.assertEqual(colors(binder), [RED[:3]])
+
+        # What is no binder keeps its flags whatever colour it is given
+        self.box.MapFaceColor = True
+        self.box.ShapeColor = BLUE[:3]
+        self.assertTrue(self.box.MapFaceColor)
+
     def testAnUndoTakesAWriteToANameBack(self):
         box, ea = self.box, self.box.ElementAppearance
         was = rgb(box.ShapeColor)
