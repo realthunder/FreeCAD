@@ -1704,7 +1704,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
-| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right | OPEN; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- whether this is that, is the first of four points, NOT ANSWERED |
+| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | OPEN, the four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request) | OPEN; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; a proposal asked of the build session; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -12732,7 +12732,7 @@ The note-taker's note on the two guesses of 14:36, from the answers:
   neighbours a pixel apart that are then far apart on the model
   (`CavityRadius` is in pixels). Not told apart by reading.
 
-## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- OPEN, four points not answered
+## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- OPEN, answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation
 
 **2026-10-13 14:45, the reporter:** "new defect, after loading scanner document
 and recompute for migration, Sketch043 silently broken, no error is shown.
@@ -12784,6 +12784,44 @@ c. WHAT is wanted: that the sketch not break at this recompute; or that
    the report view -- which is what "silently" asks for?
 d. Does `Pad033` still end in an error after the recompute on this
    stage, as it did, or is it silent too now?
+
+**2026-10-13 14:56, the reporter answers the four points:** "entry 105, a,
+yes, it has an external geometry from binder017. b, shape is changed, just
+compare it. c, find out the cause, see if this is bug from old fork, is
+there any mitigation. d, yes, and the error is because of it"
+
+The note-taker's reading:
+- a. Yes: it is about the sketch's outside edge taken from `Binder017`
+  -- entry 17's ground.
+- b. What is broken is the sketch's SHAPE: it is another shape after
+  the migration recompute than before. "just compare it" -- the two
+  are to be compared by whoever looks, the reporter does not describe
+  the difference.
+- c. What is ASKED, three things, an investigation and not yet a fix:
+  1. find out the CAUSE of the change;
+  2. see whether it is a BUG OF THE OLD FORK -- of the program that
+     wrote the file -- rather than of today's;
+  3. whether there is a MITIGATION.
+- d. Yes: `Pad033` still ends in its error after the recompute, and
+  that error is BECAUSE the sketch changed. So "silently" is about the
+  sketch itself showing no error; the error appears one step later, on
+  the pad.
+
+What this does to entry 17's decision, the note-taker's note:
+- On 2026-10-07 14:34 the reporter decided that the binder moving with
+  its group is as designed and "the file's sketch is stale"; this queue
+  wrote the consequence down as "the model's, to be redone in the
+  file, not a defect". The reporter now asks to look again: for the
+  cause, for whose bug it is, for a way round. That reopens the
+  QUESTION, not the decision -- the decision stands until the reporter
+  says otherwise.
+- What entry 17's log has, to start from (its account is in
+  `docs/HandsOnLog.md`, 2026-10-07): `Binder017` is a binder of
+  `Binder008`; `Binder008` is a `Relative` binder that has NO context
+  recorded in the file and takes `LinkGroup001` at its first recompute,
+  coming out 53 mm from where the file has it. Whether the old fork
+  should have recorded that context when it wrote the file is, by the
+  note-taker's reading, exactly the reporter's point 2.
 
 ## 106. The property group "Appearance" of an object renamed "Object Appearance"; and an ordering of the property groups to be proposed (a change request) -- OPEN, three points not answered
 
