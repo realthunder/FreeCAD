@@ -1630,7 +1630,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43); a LIMIT (13:51): a FURTHER step typed small ("/ Crate.placement.") brings up no list and stays as typed. The three points answered 11:38, nothing left unanswered |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. FIXED ON A BUILD (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
-| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
+| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter 14:15, answered by the note-taker); three points under the entry, NOT ANSWERED; one more on the tree's text outline |
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | OPEN, the four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
 | 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 
@@ -11290,6 +11290,12 @@ WITHDRAWN, a third form building.** From the build session's message of 2026-10-
   configuration on the build of 12:24: "the old whole-row bar is gone
   and the rows beside it are untouched; my own bar not shown yet".
 
+**2026-10-13 14:13, a pointer from entry 98:** the reporter's note there --
+"like tree item background, turn of text outline when having text
+background" -- reads as if the text of a backed tree item were to have NO
+outline. As built (the block of 11:33 above) the text and the icons keep
+it. Put to the reporter as entry 98's point d; NOT answered.
+
 ## 88. A dock overlay in transparent mode: the scroll bar's background transparent, its handle at the overlay's alpha (a change request) -- STAGED 2026-10-13 13:56 from uncommitted code, not committed; the four points answered 2026-10-13 10:51: the overlay's opacity setting, all scroll bars, the theme's colours, borders and ends clear
 
 **2026-10-13 10:45, the reporter:** "new request, when dock overlay in transparent
@@ -12172,7 +12178,7 @@ document with a page in a group, its view open, reverted twice; "on the
 staged copy it crashes at the first revert"); the scanner file reverted
 with and without the migration recompute: no crash, no crash log.
 
-## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, three points not answered
+## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, not started; the text's outline off where it has a background (added 2026-10-13 14:13); three points not answered
 
 **2026-10-13 12:11, the reporter:** "new request, when in overlay transparent
 mode, add text background (same color for their widget background) for
@@ -12218,6 +12224,37 @@ Pointers, the note-taker's, nothing run and the source not followed:
   fall under the same rule), entry 88 (the scroll bars of these same
   panels), entry 30 (the Python console's background in the theme
   packs).
+
+**2026-10-13 14:15, the reporter asks:** "is python console/report view
+text background request in staged copy" -- answered by the note-taker: NO;
+the entry is not started and waits for its three points; the stage of
+13:56 carries entries 84, 85 and 87 to 97.
+
+**2026-10-13 14:13, the reporter adds:** "note that like tree item background,
+turn of text outline when having text background"
+
+The note-taker's reading:
+- "turn of" is taken for "turn OFF": where the text of the Python
+  console or of the report view stands on its new background, the
+  overlay's OUTLINE of that text (the dark copy laid under whatever an
+  overlay paints, entry 87) is not drawn. The background does the
+  outline's work.
+- "like tree item background": the same is meant to hold for the tree
+  view -- an item that has its background needs no outline round its
+  text.
+
+A point this raises on ENTRY 87, NOT answered:
+- As the build session wrote entry 87's fix (its message of 11:33) the
+  outline effect leaves out what is no more opaque than the item
+  background -- "text and icons keep their outline, a see-through fill
+  gets none". So in the stage of 13:56 the TEXT of a backed tree item
+  still HAS its outline. The reporter's sentence reads as if it had
+  none, or should have none.
+- d. For the reporter: in the tree view, should the text and the icon
+  of an item that has a background be drawn WITHOUT the outline too --
+  so that this note is a change to entry 87 as built -- or is the tree
+  right as it looks on the stage of 13:56 and the note is about the
+  console and the report view only?
 
 ## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- OPEN, the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums
 
