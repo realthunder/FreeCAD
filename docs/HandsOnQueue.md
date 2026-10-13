@@ -1628,7 +1628,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43). The four points answered about 11:34, nothing left unanswered |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43): Tab completes and the focus stays in the box; Return hands it to the value's editor, as before. Answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43); a LIMIT (13:51): a FURTHER step typed small ("/ Crate.placement.") brings up no list and stays as typed. The three points answered 11:38, nothing left unanswered |
-| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
+| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. FIXED ON A BUILD (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | OPEN, the four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
@@ -11951,7 +11951,7 @@ step) is built for the steps where a list is shown, which is also the
 condition the reporter set in answer a; a later step typed small that
 brings up no list is not corrected.
 
-## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- STAGED 2026-10-13 13:56 from uncommitted code, not committed; answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too
+## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- on the stage of 13:56 fine on the title bar, INVISIBLE in the menu View > Dock window overlays under Dark (the reporter 14:09); STAGED 2026-10-13 13:56 from uncommitted code, not committed; answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too
 
 **2026-10-13 11:17, the reporter:** "new request, add a border to the close icon
 for overlay pannel, so it does not look like a icon not found defect"
@@ -12013,6 +12013,40 @@ itself, the cross smaller inside it -- so the title bar, a task panel in
 its view and the menu commands that use the picture all get it." The
 reporter's "b, yes" is thereby built as the close icon alone, as the
 note-taker took it.
+
+**2026-10-13 14:09, the reporter on the stage of 13:56:** "entry 96, the
+close icon looks fine on overlay title bar. but when viewing in menu,
+Views -> Dock window overlays, in dark theme, hence invisible. light theme
+looks fine"
+
+The note-taker's reading:
+- CONFIRMED by hand: the framed close icon on an overlay's title bar.
+- A DEFECT that is left: in the menu View > Dock window overlays the
+  same icon stands before some of the commands. Under the DARK theme it
+  is drawn dark on the menu's dark ground and cannot be seen. Under
+  Light it is fine.
+
+NOT said, not put as blocking:
+- Whether the X in that menu was invisible under Dark BEFORE this stage
+  too, the frame only making it noticed -- or is new with the frame.
+- Whether the other icons of that menu (the ones that are not the
+  close icon) can be seen under Dark.
+
+Pointers, READ by the note-taker, nothing run:
+- `src/Gui/CommandView.cpp`: four commands of that menu
+  (`Std_DockOverlayToggleLeft`, `...Right` and the two after them, near
+  lines 5256 to 5331) have `sPixmap = "qss:overlay/close.svg"` -- the
+  picture as it is in the file.
+- The file is drawn in black (at half opacity, by the comment in
+  `overlay/Dark-Outline.qss`: "the files are black at half opacity, so
+  white"). On the TITLE BAR the button tints it through
+  `Gui--OverlayToolButton` `qproperty-iconColor` (white under the
+  Outline sheets since entry 73, `2d945c8268`) -- which is why it is
+  fine there. A MENU takes the picture untinted: black on the Dark
+  theme's menu.
+- So what is missing is a tint for the theme where the picture is used
+  as a command's icon -- the same kind of thing entry 73 did for the
+  title buttons and the docked panels' buttons.
 
 ## 97. A crash: File > Revert on the loaded scanner document -- REPRODUCED 2026-10-13 11:50 on the staged copy, every revert with a TechDraw page's view open; the fix STAGED 2026-10-13 13:56 from uncommitted code, not committed
 
