@@ -886,14 +886,11 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "on in a debug build."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "MergeConflictSide", "MergeConflictSide", App::ParamInfo::Int, 0)
         .setTitle("Merge Conflict Side")
-        .setDoc("The side a conflict starts on when a merge, or rows applied, are\n"
-"previewed (docs/TransactionLog.md sec 32.17): 0 ours (the default),\n"
-"1 theirs, 2 none -- it is asked. With a side, it is what the merge\n"
-"dialog shows each conflict picked as, and so what the result is\n"
-"shown with and what is merged unless another side is picked there.\n"
-"Asked, a conflict starts with no side, and nothing is merged and no\n"
-"result shown until each has one. A merge asked for by a script with\n"
-"no side for a conflict is refused whatever this says."),
+        .setDoc("The side a conflict starts on in the preview of a merge or of rows\n"
+"applied (docs/TransactionLog.md sec 32.17): 0 ours (the default),\n"
+"1 theirs, 2 none -- it is asked, and nothing is merged and no result\n"
+"shown until each conflict has a side. A merge asked for by a script\n"
+"with no side for a conflict is refused whatever this says."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID")
         .setDoc("Write the ids in a document's string table as differences from the\n"
@@ -2499,14 +2496,11 @@ void DocumentParams::removeTransactionLogVerify() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docMergeConflictSide() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"The side a conflict starts on when a merge, or rows applied, are\n"
-"previewed (docs/TransactionLog.md sec 32.17): 0 ours (the default),\n"
-"1 theirs, 2 none -- it is asked. With a side, it is what the merge\n"
-"dialog shows each conflict picked as, and so what the result is\n"
-"shown with and what is merged unless another side is picked there.\n"
-"Asked, a conflict starts with no side, and nothing is merged and no\n"
-"result shown until each has one. A merge asked for by a script with\n"
-"no side for a conflict is refused whatever this says.");
+"The side a conflict starts on in the preview of a merge or of rows\n"
+"applied (docs/TransactionLog.md sec 32.17): 0 ours (the default),\n"
+"1 theirs, 2 none -- it is asked, and nothing is merged and no result\n"
+"shown until each conflict has a side. A merge asked for by a script\n"
+"with no side for a conflict is refused whatever this says.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
