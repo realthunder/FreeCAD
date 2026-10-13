@@ -105,6 +105,23 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 15:08: a build of the next round started 15:06 -- entries 103
+(cause found), 91 redone, 102, 96 in the menu, 99's dashes and default,
+106. Nothing committed, pushed or staged since 14:50. Entry 106 is built
+ANOTHER WAY than the reporter's word of 15:06, which crossed it.** From
+the build session (its message of 15:08, written here 15:07).
+- In the source and building, all uncommitted: 103, 91, 102, 96 (the
+  menu), 99 (a) and (b), 106 -- each under its entry.
+- Entry 105 MEASURED; the cause, old fork or not, and a mitigation are
+  being investigated on the staged copy while the build runs.
+- NOT started: 83, 98, 100, 101, 104, and 99's picking.
+- THE PUSH QUESTION -- five intermediate commits do not compile; the
+  history put right, or pushed as it is -- "is still to be put to the
+  user by me". NOT ANSWERED.
+- For the reporter to say, entry 106: the rank in the group's name
+  ("#<rank>", said 15:06) or the table that is in the build; and the
+  group's real name is "Appearances".
+
 **2026-10-13 14:50: the morning's fixes are COMMITTED, entry by entry --
 all LOCAL, origin/LinkVibe still `724e03c074`. FIVE of the commits DO NOT
 COMPILE by themselves (a file mis-assembled while staging); the tip is
@@ -1690,22 +1707,22 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | COMMITTED `9b2a76c2dd`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, measured on a first build (11:33): nothing of the tree's scroll bar more opaque than 150, the handle at 150, the rest clear, Dark and Light. The four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | COMMITTED `d3e1604e2e`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, its test PASS on a first build (11:33): the button did not use the common helper and opened its menu in a mode in which Qt draws a small mark on the icon; it is a menu button like the others now, 44 wide where it was 32. The three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | COMMITTED `d3e1604e2e`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, its test PASS on a first build (11:33): the common helper was called BEFORE the action was added and took the tool bar's last button, the one of the action before -- in a run of menu buttons each was set up by the next and the last by none (`Std_SelUp`; Edit's Redo too); all twelve callers set up their own button now. The points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
-| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | THE REPORTER ON THE STAGE OF 13:56 (14:20): a REGRESSION -- the button is now TOO SMALL in width. NOT FINISHED. HOW WIDE, answered 14:28: the width fitted by the ICON's aspect ratio, from the ROW's height. STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43): the note-taker's candidate was it -- the theme's least width of 80 for every push button; this one, an icon with no caption, is told it has none, in `LinkSubWidget`, so in every panel that uses the row. The three points not needed for it. Before, a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
+| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | REDONE IN THE SOURCE, in a build since 15:06, NOT committed (15:08): as high as the row (the caption button's height), the width from the glyph's proportions. THE REPORTER ON THE STAGE OF 13:56 (14:20): a REGRESSION -- the button is now TOO SMALL in width. NOT FINISHED. HOW WIDE, answered 14:28: the width fitted by the ICON's aspect ratio, from the ROW's height. STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43): the note-taker's candidate was it -- the theme's least width of 80 for every push button; this one, an icon with no caption, is told it has none, in `LinkSubWidget`, so in every panel that uses the row. The three points not needed for it. Before, a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
 | 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | The fix COMMITTED `518c2026d0`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. THE CAUSE SHOWN (12:43) -- OLD code, not this morning's merges nor the OCCT sync: a sketch asked for the name of its wire drops the kind "Wire" and keeps the number (`SketchObject::checkSubName`, lines of 2018 to 2024; the released build has them too). A fix in the source; with a first form of it, after the migration recompute the three read `Wire2`, `Wire1`, `Wire2`; NOT committed. LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | COMMITTED `7f3ef57348`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43). The four points answered about 11:34, nothing left unanswered |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | COMMITTED `7f3ef57348`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43): Tab completes and the focus stays in the box; Return hands it to the value's editor, as before. Answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | COMMITTED `7f3ef57348`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43); a LIMIT (13:51): a FURTHER step typed small ("/ Crate.placement.") brings up no list and stays as typed. The three points answered 11:38, nothing left unanswered |
-| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. COMMITTED `cbb01f5de3`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
+| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE MENU'S ICON IN THE SOURCE, in a build since 15:06, NOT committed (15:08): the four `Std_DockOverlayToggle<Side>` commands get the glyph tinted white under a dark theme. THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. COMMITTED `cbb01f5de3`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | COMMITTED `3549b0a19f`, local, NOT pushed (14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED ON A BUILD (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); three points under the entry, NOT ANSWERED; one more on the tree's text outline |
-| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | OPEN, the four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
+| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | The dashes (0xFFF0) and the scale's default (200) IN THE SOURCE, in a build since 15:06, NOT committed (15:08); the PICKING NOT started. The reporter's configuration as copied 14:52 stores `DatumScale` 300 -- set by the reporter since. The four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
 | 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
-| 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
-| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
+| 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | IN THE SOURCE, in a build since 15:06, NOT committed (15:08); the reporter's configuration stores no value, so they get it. Nothing to ask; one note of the note-taker's on configurations that have the value written |
+| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | THE CAUSE FOUND and reproduced with a copy of the reporter's configuration, a fix IN THE SOURCE, in a build since 15:06, NOT committed (15:08): the Tasks dock's title bar is made at start-up before the task view is in its dock, so it is a plain dock's bar for good and the button does not exist; the bar is now replaced by a task one when the task view is found in a dock. The three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
-| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | OPEN, the four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
-| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown | OPEN, the three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
+| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
+| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown | BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays is the reporter's to say. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11707,6 +11724,12 @@ The note-taker's reading:
   lines.
 Nothing of this is left unanswered.
 
+**2026-10-13 15:08, the build session: REDONE, in the build, NOT
+committed.** From the build session's message of 2026-10-13 15:08, written here 15:07. "The clear button as high as the row = the caption
+button's height, its glyph cut to what is drawn and scaled to that height,
+the width from the glyph's proportions; measured before with the user's
+config: caption 92x20, the first form 26x22 with a 16 px icon."
+
 ## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- the cause SHOWN 2026-10-13 12:43, old code in the sketch, the fix COMMITTED `518c2026d0`, local, not pushed; staged 2026-10-13 13:56 from the code then uncommitted; looked at 2026-10-13 11:33: the old-style name "2" is in the file and names nothing, the shapes unchanged, the cause not found; OPEN, answered 2026-10-13 11:19: in the property view and the edit panel both, Pad039 and Pad040 the same
 
 **2026-10-13 11:10, the reporter:** "new defect, when open scanner file and after
@@ -12167,6 +12190,11 @@ Pointers, READ by the note-taker, nothing run:
   as a command's icon -- the same kind of thing entry 73 did for the
   title buttons and the docked panels' buttons.
 
+**2026-10-13 15:08, the build session: the MENU's icon in the source, in
+the build, NOT committed.** From the build session's message of 2026-10-13 15:08, written here 15:07. "The four Std_DockOverlayToggle<Side>
+commands get the glyph tinted white under a dark theme, as a title button
+paints it."
+
 ## 97. A crash: File > Revert on the loaded scanner document -- REPRODUCED 2026-10-13 11:50 on the staged copy, every revert with a TechDraw page's view open; the fix COMMITTED `3549b0a19f`, local, not pushed; staged 2026-10-13 13:56 from the code then uncommitted
 
 **2026-10-13 11:20, the reporter:** "new crash, check cdb and possibly dump, the
@@ -12369,7 +12397,7 @@ A point this raises on ENTRY 87, NOT answered:
   right as it looks on the stage of 13:56 and the note is about the
   console and the report view only?
 
-## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- OPEN, the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums
+## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- the dashes and the default in a build 2026-10-13 15:08, the picking not started; the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums
 
 **2026-10-13 12:19, the reporter:** "new defect, the App::origin plane and axis
 when blocked, shows a dash line/border, but the dash is too sparse, barely
@@ -12473,6 +12501,15 @@ who still have the old default over (as entry 72's did for its two
 values; how that was done is in its commit). Not asked of the reporter;
 for the build session to decide or to ask.
 
+**2026-10-13 15:08, the build session: (a) and (b) in the source, in the
+build, NOT committed; (c), the picking, NOT started.** From the build session's message of 2026-10-13 15:08, written here 15:07.
+- (a) the dashes 0xFFF0; (b) the default of `DatumScale` 200.
+- "The user's config as copied 14:52 stores DatumScale 300, not 100, so
+  they set it themselves since." So the note-taker's caution of 13:23
+  (the configuration has 100 written) is overtaken: the reporter has
+  set the scale by hand, and the new default changes nothing for them
+  either way.
+
 ## 100. The Dark theme's borders a bit more subtle: a darker grey (a change request) -- OPEN, three points not answered
 
 **2026-10-13 13:40, the reporter:** "new request, make the dark theme border a
@@ -12554,7 +12591,7 @@ c. WHERE the two groups stand in the menu: each where its entries are
 A smaller point, not put as blocking: the same commands in a context
 menu or on a tool bar stay as they are; only the View menu is named.
 
-## 102. The default of DockOverlayAlpha changed to 180 (a change request) -- OPEN, nothing to ask
+## 102. The default of DockOverlayAlpha changed to 180 (a change request) -- in the source 2026-10-13 15:08, in a build, not committed
 
 **2026-10-13 14:31, the reporter:** "new request, change default DockOverlayAlpha
 to 180"
@@ -12581,7 +12618,11 @@ Notes, the note-taker's, READ, nothing run:
   opaque than the item backgrounds": that limit moves with the
   setting.
 
-## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- OPEN, answered 2026-10-13 14:38: never seen since entry 73's rule, the panel in an overlay
+**2026-10-13 15:08, the build session: in the source, in the build, NOT
+committed.** From the build session's message of 2026-10-13 15:08, written here 15:07. "DockOverlayAlpha default 180; the user's config
+stores no value, so they get it."
+
+## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- the cause FOUND 2026-10-13 15:08 (the title bar made before the task view is in its dock), a fix in a build; answered 2026-10-13 14:38: never seen since entry 73's rule, the panel in an overlay
 
 **2026-10-13 14:32, the reporter:** "new default, the switch panel to view button
 on task panel no longer visible, even in editing. I tested edit pad"
@@ -12647,6 +12688,19 @@ The note-taker's reading:
   reporter's configuration, and in a PartDesign edit the panel may not
   be "owned by a view" in the rule's sense unless the edit is per view
   (`View/PerViewEdit`). Not looked into.
+
+**2026-10-13 15:08, the build session: THE CAUSE FOUND, reproduced with a
+copy of the reporter's configuration; a fix in the source, in the build,
+NOT committed.** From the build session's message of 2026-10-13 15:08, written here 15:07.
+- The cause: "the Tasks dock's title bar is made at start-up before the
+  task view is in its dock, so it is a plain dock's bar for good and
+  the button does not exist".
+- The fix: "the bar is replaced by a task one when the task view is
+  found in a dock".
+The note-taker's note: so it is not entry 73's rule hiding the button,
+as the note-taker concluded at 14:38 -- the button was never made. That
+conclusion is withdrawn. Why the reporter saw the button before entry
+73 and not after is not in the message.
 
 ## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- OPEN, the four points answered 2026-10-13 14:50: zoomed out only; the object the edit hides in its view; the ghost goes when the body is hidden
 
@@ -12823,6 +12877,26 @@ What this does to entry 17's decision, the note-taker's note:
   should have recorded that context when it wrote the file is, by the
   note-taker's reading, exactly the reporter's point 2.
 
+**2026-10-13 15:08, the build session MEASURED it; the investigation the
+reporter asked for is running.** From the build session's message of 2026-10-13 15:08, written here 15:07. Measured 14:45 on the build of
+14:10, FreeCADCmd, `scanner.FCStd` -- written before the reporter's
+answers of 14:56 reached it:
+- After opening `Sketch043` has 4 wires, its bounding box from x
+  -12.961; after `recompute(None, True)` 5 wires, from x -12.943; its
+  solver clean (1 degree of freedom, no conflict), its state
+  Up-to-date.
+- `Pad033` goes Touched and Invalid with "Sub shape not found:
+  scanner#Sketch043.?InternalFace2" and KEEPS ITS OLD SHAPE.
+- `Binder017`'s bounding box moves in x from -7.272..7.7 to
+  -10.508..4.464.
+- `Fillet011` is also in error ("Invalid edge link: ?Edge93").
+- "The cause, old-fork bug or not, and a mitigation: being investigated
+  now on the staged copy while the build runs."
+The note-taker's note: the binder moves about 3.2 mm in x by these
+numbers, where entry 17's log of 2026-10-07 spoke of `Binder008` coming
+out 53 mm from where the file has it -- two different objects and
+perhaps two different measures; not reconciled here.
+
 ## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59
 
 **2026-10-13 14:52, the reporter:** "new request, name 'Appearance' property group
@@ -12929,6 +13003,27 @@ NOT said, left to the build session, not put as blocking:
   saved to the file) keeps the ending out of files for static
   properties; a property added by a script has its group saved, ending
   and all.
+
+**2026-10-13 15:08, the build session: BUILT -- but ANOTHER WAY than the
+reporter's word of 15:06, which crossed it.** From the build session's message of 2026-10-13 15:08, written here 15:07.
+- As built: `App::PropertyContainer::getGroupRank` / `setGroupRank` by
+  group name; `App.getPropertyGroupRank` / `setPropertyGroupRank` for
+  scripts; the property view sorts by rank, then name.
+- Its choices on the note-taker's two smaller points, "marked as mine":
+  ONE TABLE of names and ranks ("by name, so any class or script
+  declaring in that group follows"); and the name ranked 1 is
+  "APPEARANCES" -- "that is what the object's group is called in the
+  source (`App/Link.cpp`, `App/Part.cpp`, `Gui/AppearanceNames.cpp`);
+  'Appearance' singular (TechDraw, `ShaderObject.Scope`) is left at 0.
+  If the user means those too it is one line."
+- THE CROSSING: at 15:06 the reporter said the rank is to be encoded in
+  the group's NAME as an ending "#<rank>", stripped before it is shown
+  (the block above). That is not a table and not these calls. The
+  note-taker sent the reporter's word to the build session at 15:09.
+  Which form stays is the reporter's to say.
+- The group's real name: the reporter and the note-taker wrote
+  "Appearance"; the object's group is "Appearances". By the reporter's
+  form it would be declared "Appearances#1".
 
 ## Inbox
 
