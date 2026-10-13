@@ -25,6 +25,11 @@
 
 #include <FCGlobal.h>
 
+namespace App
+{
+class Document;
+}
+
 namespace Gui
 {
 
@@ -64,12 +69,28 @@ namespace Gui
  *   log.branch        a new branch from here, a row or a version
  *   log.switch        the document made the head of another branch
  *   log.renameBranch
- *   log.deleteBranch  the host's alone: nothing takes it back
+ *   log.deleteBranch  nothing takes it back
  *
  * A switch, and a branch from anywhere but where the document is, wait for
  * an edit that is open to be left (`Editing`).
+ *
+ * Whose the document's place in its log is (sec 32.23). A document served
+ * as it is, is shared: below the host a connection takes back its own rows
+ * (sec 30.10: a step is its author's) and takes versions; a restore, a
+ * switch, a branch made, renamed or deleted and a version's name are the
+ * host's, `Forbidden` to the others. A document opened from a branch to be
+ * served (serveLogBranch) is its clients' from the serving point on: those
+ * acts are theirs of the branch it was opened on and of what was branched
+ * from it since, and not of anything before.
  */
 GuiExport void installSceneLogOps();
+
+/** Say that `doc` was opened from a branch to be served: the branch it is
+ * on now is the one its clients' reach starts at, where that branch forks
+ * being the serving point. Until the document is closed. False when the
+ * document keeps no log.
+ */
+GuiExport bool serveLogBranch(App::Document* doc);
 
 }  // namespace Gui
 

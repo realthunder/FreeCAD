@@ -36,6 +36,7 @@
 
 #include <fastsignals/signal.h>
 
+#include <App/Actor.h>
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
@@ -92,6 +93,24 @@ std::map<std::string, std::unique_ptr<Watch>>& watches()
 {
     static std::map<std::string, std::unique_ptr<Watch>> all;
     return all;
+}
+
+/// The documents opened from a branch to be served (Gui::serveLogBranch),
+/// each with the branch it was opened on
+std::map<std::string, int64_t>& servedBranches()
+{
+    static std::map<std::string, int64_t> all;
+    return all;
+}
+
+/// What is kept by a document's name goes with the document
+void forgetWhenDeleted()
+{
+    static fastsignals::scoped_connection deleted
+        = App::GetApplication().signalDeleteDocument.connect([](const App::Document& gone) {
+              watches().erase(gone.getName());
+              servedBranches().erase(gone.getName());
+          });
 }
 
 /** Tell those who asked that the log moved on: the name of the document and
@@ -159,10 +178,7 @@ void watchFor(App::Document* doc, uint64_t client)
                 queueTell(name);
             }));
         //NOLINTEND
-        static fastsignals::scoped_connection deleted
-            = App::GetApplication().signalDeleteDocument.connect([](const App::Document& gone) {
-                  watches().erase(gone.getName());
-              });
+        forgetWhenDeleted();
     }
     watch->clients.insert(client);
 }
@@ -203,8 +219,92 @@ struct Authors
     std::map<int64_t, std::string> branches;
 };
 
+/** Whose a served document's place in its log is (sec 32.23).
+ *
+ * A document served as it is, is shared: every client and the desktop are
+ * in it, and where it is in its log -- its branch, a version restored --
+ * is the host's to move. A client there takes back its own rows and takes
+ * versions. A document opened from a branch to be served
+ * (Gui.serveBranch) is its clients' from the serving point on: the branch
+ * it was opened on, and whatever was branched from that since. Before the
+ * serving point it is the host's, as a shared one is.
+ */
+struct Reach
+{
+    /// The host's connection, or the desktop: nothing is held from it
+    bool host = true;
+    /// The document was opened from a branch to be served
+    bool own = false;
+    int64_t root = 0;            ///< the branch it was opened on
+    int64_t floor = 0;           ///< the row that branch forks at: the serving point
+    int64_t floorVersion = 0;    ///< and the version
+    std::set<int64_t> branches;  ///< that branch and those made from it since
+
+    bool branch(int64_t id) const
+    {
+        return branches.count(id) > 0;
+    }
+    /// A row made since the serving point
+    bool row(const App::LogTransaction& t) const
+    {
+        return branch(t.branch);
+    }
+    /// A version at the serving point, or taken since
+    bool version(const App::LogVersion& v) const
+    {
+        return (floorVersion > 0 && v.num == floorVersion) || (branch(v.branch) && v.seq >= floor);
+    }
+};
+
+Reach reachOf(App::Document* doc, App::TransactionStore& store)
+{
+    Reach reach;
+    reach.host = sceneControlAccess() >= Render::ClientAccess::Host;
+    auto served = servedBranches().find(doc->getName());
+    App::LogBranch root;
+    if (served == servedBranches().end() || !store.getBranch(served->second, root))
+        return reach;
+    reach.own = true;
+    reach.root = root.id;
+    reach.floor = root.fromSeq;
+    reach.floorVersion = root.fromVersion;
+    reach.branches.insert(root.id);
+    // A branch is made from another (LogBranch::target): those made from
+    // the one served, and from those
+    const auto all = store.branches();
+    for (bool grew = true; grew;) {
+        grew = false;
+        for (const App::LogBranch& b : all) {
+            if (!reach.branches.count(b.id) && reach.branches.count(b.target)) {
+                reach.branches.insert(b.id);
+                grew = true;
+            }
+        }
+    }
+    return reach;
+}
+
+/// What is not this connection's to do, said
+QJsonObject notReached(const QJsonValue& id, const Reach& reach)
+{
+    return sceneControlError(
+        id, "Forbidden",
+        reach.own ? QStringLiteral("that is before where this document was served from")
+                  : QStringLiteral("in a shared document that is the host's to do"));
+}
+
+/// A row of the one who asks (sec 30.10 item 1, as App has it): one user
+/// whichever login, by kind and name; no actor is the desktop's user
+bool ownRow(const App::LogUser& author)
+{
+    const auto actor = App::ActorScope::current();
+    if (!actor || actor->kind == App::Actor::Local)
+        return author.kind == App::Actor::kindName(App::Actor::Local);
+    return author.kind == App::Actor::kindName(actor->kind) && author.name == actor->name;
+}
+
 QJsonObject rowJson(const App::LogTransaction& t, Authors& authors, App::TransactionStore& store,
-                    const std::set<int64_t>& history)
+                    const std::set<int64_t>& history, const Reach& reach)
 {
     QJsonObject row;
     row[QLatin1String("seq")] = double(t.seq);
@@ -226,6 +326,9 @@ QJsonObject rowJson(const App::LogTransaction& t, Authors& authors, App::Transac
     row[QLatin1String("ops")] = int(store.ops(t.seq).size());
     // Of the history the document is at the head of, or of another branch
     row[QLatin1String("here")] = history.count(t.seq) > 0;
+    // The asker's own, and made since the serving point where there is one
+    row[QLatin1String("mine")] = ownRow(author);
+    row[QLatin1String("within")] = !reach.own || reach.row(t);
     return row;
 }
 
@@ -289,11 +392,16 @@ QJsonObject rowsOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
                 history.insert(t.seq);
         }
         Authors authors(store);
+        const Reach reach = reachOf(doc, store);
         QJsonArray list;
         // Newest first, as the desktop's panel lists them
         for (auto t = rows.rbegin(); t != rows.rend(); ++t)
-            list.append(rowJson(*t, authors, store, history));
+            list.append(rowJson(*t, authors, store, history, reach));
         reply[QLatin1String("rows")] = list;
+        reply[QLatin1String("host")] = reach.host;
+        reply[QLatin1String("own")] = reach.own;
+        if (reach.own)
+            reply[QLatin1String("floor")] = double(reach.floor);
         reply[QLatin1String("more")] = more;
         reply[QLatin1String("last")] = double(last);
         reply[QLatin1String("head")] = double(log->head());
@@ -514,6 +622,8 @@ QJsonObject undoRowsOp(const QJsonObject& req, const std::string& boundDoc, uint
     try {
         App::TransactionStore& store = log->store();
         const std::set<int64_t> history = historyOf(log);
+        const Reach reach = reachOf(doc, store);
+        Authors authors(store);
         for (int64_t row : rows) {
             const auto read = store.transactions(row, 1);
             if (read.empty() || read.front().seq != row)
@@ -528,6 +638,21 @@ QJsonObject undoRowsOp(const QJsonObject& req, const std::string& boundDoc, uint
                 return sceneControlError(
                     id, "NothingToUndo",
                     QStringLiteral("row %1 changed nothing that is taken back").arg(row));
+            if (!reach.host) {
+                if (reach.own && !reach.row(read.front()))
+                    return notReached(id, reach);
+                // A step is its author's (sec 30.10): the undo of a row
+                // from the panel is the same act as the undo of the last
+                const App::LogUser& author
+                    = authors.users[authors.sessions[read.front().session].user];
+                if (!ownRow(author))
+                    return sceneControlError(
+                        id, "NotYours",
+                        QStringLiteral("row %1 is %2's: a row is taken back by who made it, "
+                                       "or by the host")
+                            .arg(row)
+                            .arg(QString::fromStdString(author.name)));
+            }
         }
         if (!doc->undoLogged(rows)) {
             const std::string why = doc->undoRefusal();
@@ -558,6 +683,7 @@ QJsonObject versionsOp(const QJsonObject& req, const std::string& boundDoc, uint
         for (const auto& b : store.branches())
             branches[b.id] = b.name;
         const std::set<int64_t> history = historyOf(log);
+        const Reach reach = reachOf(doc, store);
         // The newest row of the history that changed the document: a
         // version at it, or after it with only records between (a save, a
         // snapshot, a switch), is the document as it stands
@@ -581,10 +707,14 @@ QJsonObject versionsOp(const QJsonObject& req, const std::string& boundDoc, uint
             const bool here = v.seq > 0 ? history.count(v.seq) > 0 : v.branch == log->branch();
             item[QLatin1String("here")] = here;
             item[QLatin1String("head")] = here && v.seq >= changed;
+            // At the serving point or since, where there is one
+            item[QLatin1String("within")] = !reach.own || reach.version(v);
             list.append(item);
         }
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("versions")] = list;
+        reply[QLatin1String("host")] = reach.host;
+        reply[QLatin1String("own")] = reach.own;
         watchFor(doc, client);
         return reply;
     }
@@ -603,6 +733,7 @@ QJsonObject branchesOp(const QJsonObject& req, const std::string& boundDoc, uint
     if (!log)
         return refusal;
     try {
+        const Reach reach = reachOf(doc, log->store());
         QJsonArray list;
         for (const App::LogBranch& b : log->store().branches()) {
             QJsonObject item;
@@ -615,13 +746,19 @@ QJsonObject branchesOp(const QJsonObject& req, const std::string& boundDoc, uint
             // A closed branch is not switched to (sec 26.6)
             item[QLatin1String("closed")] = b.closed != 0;
             item[QLatin1String("current")] = b.id == log->branch();
+            // The one served or made from it since, where the document
+            // was opened from a branch; and the one served itself
+            item[QLatin1String("within")] = !reach.own || reach.branch(b.id);
+            if (reach.own && b.id == reach.root)
+                item[QLatin1String("root")] = true;
             list.append(item);
         }
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("branches")] = list;
-        // Deleting one is the host's (below): said, so that a page does
-        // not offer what would be refused
-        reply[QLatin1String("mayDelete")] = sceneControlAccess() >= Render::ClientAccess::Host;
+        // Whose the document's place in its log is (Reach): said, so that
+        // a page does not offer what would be refused
+        reply[QLatin1String("host")] = reach.host;
+        reply[QLatin1String("own")] = reach.own;
         watchFor(doc, client);
         return reply;
     }
@@ -675,6 +812,11 @@ QJsonObject nameVersionOp(const QJsonObject& req, const std::string& boundDoc, u
         App::LogVersion version;
         if (num <= 0 || !log->store().getVersion(num, version))
             return sceneControlError(id, "UnknownVersion", QString::number(num));
+        // A version's name is what keeps it, and whose it is nothing
+        // says: the host's, but in a document of the clients' own
+        const Reach reach = reachOf(doc, log->store());
+        if (!reach.host && !(reach.own && reach.version(version)))
+            return notReached(id, reach);
         if (!log->store().nameVersion(num, name))
             return sceneControlError(id, "Refused", QStringLiteral("not named"));
         QJsonObject reply = placeReply(id, doc, log);
@@ -703,6 +845,10 @@ QJsonObject restoreOp(const QJsonObject& req, const std::string& boundDoc, uint6
         App::LogVersion version;
         if (num <= 0 || !log->store().getVersion(num, version))
             return sceneControlError(id, "UnknownVersion", QString::number(num));
+        // It takes back what everyone did since the version
+        const Reach reach = reachOf(doc, log->store());
+        if (!reach.host && !(reach.own && reach.version(version)))
+            return notReached(id, reach);
         if (!doc->restoreVersion(num))
             return sceneControlError(id, "Refused", QStringLiteral("not restored"));
         objectsMoved(doc);
@@ -733,14 +879,44 @@ QJsonObject newBranchOp(const QJsonObject& req, const std::string& boundDoc, uin
     const int64_t version = req.value(QLatin1String("version")).toInteger(0);
     const int64_t row = req.value(QLatin1String("row")).toInteger(0);
     try {
+        App::TransactionStore& store = log->store();
+        // The document goes to the new branch, and everyone in it
+        const Reach reach = reachOf(doc, store);
+        if (!reach.host) {
+            bool reached = reach.own;
+            if (reached && version > 0) {
+                App::LogVersion from;
+                reached = !store.getVersion(version, from) || reach.version(from);
+            }
+            else if (reached && row > 0) {
+                const auto read = store.transactions(row, 1);
+                reached = read.empty() || read.front().seq != row || row == reach.floor
+                    || reach.row(read.front());
+            }
+            else if (reached) {
+                reached = reach.branch(log->branch());
+            }
+            if (!reached)
+                return notReached(id, reach);
+        }
         // From anywhere but where the document is, the document is
         // checked out
         if ((version > 0 || (row > 0 && row != log->head())) && editOpen(doc))
             return sceneControlError(id, "Editing",
                                      QStringLiteral("an edit is open: leave it first"));
+        const int64_t left = log->branch();
         const int64_t made = doc->createBranch(name, version, row);
         if (made <= 0)
             return sceneControlError(id, "Refused", QStringLiteral("no branch made"));
+        // One made at the serving point is made from the row of the
+        // branch the document was served from, which is not the clients':
+        // it is said to be made from where the document was, so that it
+        // is one of theirs
+        App::LogBranch branch;
+        if (reach.own && store.getBranch(made, branch) && !reach.branch(branch.target)) {
+            branch.target = reach.branch(left) ? left : reach.root;
+            store.updateBranch(branch);
+        }
         objectsMoved(doc);
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("made")] = double(made);
@@ -765,6 +941,10 @@ QJsonObject switchOp(const QJsonObject& req, const std::string& boundDoc, uint64
         App::LogBranch branch;
         if (name.empty() || !log->store().findBranch(name, branch))
             return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        // The whole document is checked out, under everyone in it
+        const Reach reach = reachOf(doc, log->store());
+        if (!reach.host && !(reach.own && reach.branch(branch.id)))
+            return notReached(id, reach);
         if (branch.id != log->branch() && editOpen(doc))
             return sceneControlError(id, "Editing",
                                      QStringLiteral("an edit is open: leave it first"));
@@ -795,6 +975,9 @@ QJsonObject renameBranchOp(const QJsonObject& req, const std::string& boundDoc, 
         App::LogBranch branch;
         if (name.empty() || !log->store().findBranch(name, branch))
             return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        const Reach reach = reachOf(doc, log->store());
+        if (!reach.host && !(reach.own && reach.branch(branch.id)))
+            return notReached(id, reach);
         if (!doc->renameBranch(name, to))
             return sceneControlError(id, "Refused", QStringLiteral("not renamed"));
         return placeReply(id, doc, log);
@@ -805,15 +988,13 @@ QJsonObject renameBranchOp(const QJsonObject& req, const std::string& boundDoc, 
 }
 
 /** `log.deleteBranch`: a branch and the rows only it holds, gone. Nothing
- * takes that back, so it is the host's to do: a connection that may edit
- * is answered Forbidden.
+ * takes that back. The host's -- and, in a document opened from a branch
+ * to be served, its clients' of the branches made there since, but the one
+ * it was opened on.
  */
 QJsonObject deleteBranchOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
-    if (sceneControlAccess() < Render::ClientAccess::Host)
-        return sceneControlError(id, "Forbidden",
-                                 QStringLiteral("deleting a branch is the host's to do"));
     App::Document* doc = nullptr;
     QJsonObject refusal;
     App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
@@ -824,6 +1005,15 @@ QJsonObject deleteBranchOp(const QJsonObject& req, const std::string& boundDoc, 
         App::LogBranch branch;
         if (name.empty() || !log->store().findBranch(name, branch))
             return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        const Reach reach = reachOf(doc, log->store());
+        // The one the document was opened on is what the clients' reach
+        // is counted from
+        if (!reach.host && reach.own && branch.id == reach.root)
+            return sceneControlError(
+                id, "Forbidden",
+                QStringLiteral("this document was served from that branch: the host deletes it"));
+        if (!reach.host && !(reach.own && reach.branch(branch.id)))
+            return notReached(id, reach);
         const size_t rows = doc->deleteBranch(name);
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("rows")] = double(rows);
@@ -835,6 +1025,17 @@ QJsonObject deleteBranchOp(const QJsonObject& req, const std::string& boundDoc, 
 }
 
 }  // namespace
+
+bool Gui::serveLogBranch(App::Document* doc)
+{
+    App::TransactionLog* log = doc ? doc->getTransactionLog() : nullptr;
+    App::LogBranch branch;
+    if (!log || !log->store().getBranch(log->branch(), branch))
+        return false;
+    forgetWhenDeleted();
+    servedBranches()[doc->getName()] = branch.id;
+    return true;
+}
 
 void Gui::installSceneLogOps()
 {

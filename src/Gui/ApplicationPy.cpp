@@ -55,6 +55,7 @@
 #include "DlgPreferencesImp.h"
 #include "Document.h"
 #include "SceneServeSource.h"
+#include "SceneLog.h"
 #include "Renderer/SceneServer.h"
 #include "SceneRequests.h"
 #include "Renderer/CyclesRenderer.h"
@@ -306,6 +307,19 @@ PyMethodDef Application::Methods[] = {
    "display at all. A non-zero port starts the scene stream server\n"
    "there. Returns False when the configured render engine cannot\n"
    "publish without a graphics device."},
+  {"serveBranch",             (PyCFunction) Application::sServeBranch, METH_VARARGS,
+   "serveBranch(doc, name='', port=0) -> Document\n"
+   "\n"
+   "Serve a branch of a document to clients of its own\n"
+   "(docs/TransactionLog.md sec 32.23): a branch is made where the\n"
+   "document is -- `name`, or `<branch>~<n>` -- and opened in a second\n"
+   "document of the file, with no window, which is served as\n"
+   "serveDocument() serves one and returned. The first document stays\n"
+   "where it is. Where the branch forks is the serving point: from it\n"
+   "on the clients of the new document restore, switch, and make,\n"
+   "rename and delete branches there; nothing before it. Its work\n"
+   "comes back by a merge of the branch. Raises when the name is\n"
+   "taken, the document keeps no log, or it cannot be served."},
   {"serveRequests",           (PyCFunction) Application::sServeRequests, METH_VARARGS,
    "serveRequests(doc='') -> list\n"
    "\n"
@@ -1243,6 +1257,36 @@ PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
     // device is created, so this works with no 3D view and no display.
     bool ok = Gui::SceneServeSource::serve(guiDoc, port) != nullptr;
     return Py::new_reference_to(Py::Boolean(ok));
+}
+
+PyObject* Application::sServeBranch(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *pyDoc = nullptr;
+    const char *name = "";
+    int port = 0;
+    if (!PyArg_ParseTuple(args, "O!|si", &App::DocumentPy::Type, &pyDoc, &name, &port))
+        return nullptr;
+    App::Document *appDoc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+
+    PY_TRY {
+        // A branch made where the document is, opened in a document of its
+        // own with no window: where it forks is the serving point
+        App::Document *branch = appDoc->openNewBranch(name, false);
+        if (!branch) {
+            PyErr_SetString(PyExc_RuntimeError, "the document keeps no transaction log");
+            return nullptr;
+        }
+        Gui::Document *guiDoc = Application::Instance->getDocument(branch);
+        if (!guiDoc || !Gui::SceneServeSource::serve(guiDoc, port)
+                || !Gui::serveLogBranch(branch)) {
+            // The branch is made and stays in the log; its document goes
+            App::GetApplication().closeDocument(branch->getName());
+            PyErr_SetString(PyExc_RuntimeError, "the branch could not be served");
+            return nullptr;
+        }
+        return branch->getPyObject();
+    }
+    PY_CATCH
 }
 
 PyObject* Application::sCyclesDevices(PyObject * /*self*/, PyObject *args)
