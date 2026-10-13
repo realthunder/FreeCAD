@@ -1473,7 +1473,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | IN WORK 2026-10-13 10:17: a fix in the source, NOT built, NOT tested; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
 | 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading |
-| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section | OPEN; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found; four points under the entry, NOT ANSWERED |
+| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found; two smaller points left, not blocking |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10716,7 +10716,7 @@ Nothing of this entry is left unanswered by the reporter. What a run
 would have to tell, the note-taker's: on which commit the pass-through
 last worked.
 
-## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- OPEN, four points not answered
+## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
 
 **2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
 has a darker border, which is unwanted. in addition, mouse hovering draw
@@ -10783,6 +10783,39 @@ Pointers, READ by the note-taker, nothing run; the causes are NOT found:
   `GeneralBorderColor` in `Stylesheets/parameters/Dark.yaml`,
   `d25fa8539c`) -- whether entry 77's lighter border colour is what now
   shows around an item is NOT looked into.
+
+**2026-10-13 10:36, the reporter answers the four points:** "a yes, move
+below or beside tree item color selection. should actually disable tree
+item color selection if enabled. b, yes only dark theme, light them behave
+all correct. c the trail is unwanted. the hover highlight is ok to have,
+but do not draw it for the whole row. draw it like item background and
+selection highlight. d, trailing effect already there yesterday"
+
+The note-taker's reading:
+- a. MOVE "Item background follows the theme" into the section "Tree
+  view" of the UI preference page, below or beside "Item background
+  color". And more than was asked: while it is ON, the colour selection
+  is DISABLED (greyed), since the colour is not used then.
+- b. The darker border is under the DARK theme only; under Light all of
+  it is right.
+- c. The trail is NOT wanted. The highlight under the pointer may stay,
+  but not across the whole row: as wide as the item's background and
+  its selection highlight are drawn -- the item's icon and text, by the
+  note-taker's reading of how those two are cut today.
+- d. The trail was there already "yesterday", 2026-10-12. So it is not
+  of the themes applied again this morning, nor of this morning's
+  merges. WHICH copy of yesterday is not said (the stages of 14:04 and
+  17:52, and before them the one of 2026-10-10).
+
+Two smaller points left, NOT put as blocking:
+- The opacity ("Overlay background opacity"): the answer names the one
+  setting; whether the opacity moves with it is not said. The
+  note-taker's guess: it stays under "Overlay", it acts on the task
+  panel too.
+- The border: "only dark theme" answers the theme; whether a docked
+  tree view shows it too, and the property view's rows, is not said.
+  Since when the border is there is not said either -- d speaks of the
+  trail.
 
 ## Inbox
 
