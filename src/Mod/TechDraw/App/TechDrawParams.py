@@ -452,8 +452,14 @@ Params = [
               "each selection."),
     ParamHex('Background', 0x707070FF, subpath='Colors', proxy=ParamColor(transparency=False),
         title = "Page view background",
-        doc = "Colour of the area around the sheet in a page view. Read when a\n"
-              "page view is opened."),
+        doc = "Colour of the area around the sheet in a page view, where it does\n"
+              "not follow the 3D view (BackgroundAs3DView). Applies at once."),
+    ParamBool('BackgroundAs3DView', True, subpath='Colors',
+        title = "Page view background as the 3D view's",
+        doc = "Draw the area around the sheet in a page view as the background\n"
+              "of the 3D view is drawn: its colour or its gradient, following the\n"
+              "theme. Off, it has the page view's own background colour. Applies\n"
+              "at once."),
     ParamHex('CutSurfaceColor', 0xD3D3D3FF, subpath='Colors', proxy=ParamColor(transparency=False),
         title = "Cut surface colour",
         doc = "Colour of the cut surface of new sections that show it as a solid\n"

@@ -127,6 +127,7 @@ public:
     unsigned long PreSelectColor;
     unsigned long SelectColor;
     unsigned long Background;
+    bool BackgroundAs3DView;
     unsigned long CutSurfaceColor;
     unsigned long FaceColor;
     unsigned long GeomHatch;
@@ -379,6 +380,8 @@ public:
         funcs["SelectColor"] = &TechDrawParamsP::updateSelectColor;
         Background = this->subHandles[5]->GetUnsigned("Background", 0x707070FF);
         funcs["Background"] = &TechDrawParamsP::updateBackground;
+        BackgroundAs3DView = this->subHandles[5]->GetBool("BackgroundAs3DView", true);
+        funcs["BackgroundAs3DView"] = &TechDrawParamsP::updateBackgroundAs3DView;
         CutSurfaceColor = this->subHandles[5]->GetUnsigned("CutSurfaceColor", 0xD3D3D3FF);
         funcs["CutSurfaceColor"] = &TechDrawParamsP::updateCutSurfaceColor;
         FaceColor = this->subHandles[5]->GetUnsigned("FaceColor", 0xFFFFFFFF);
@@ -832,6 +835,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateBackground(TechDrawParamsP *self) {
         self->Background = self->subHandles[5]->GetUnsigned("Background", 0x707070FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBackgroundAs3DView(TechDrawParamsP *self) {
+        self->BackgroundAs3DView = self->subHandles[5]->GetBool("BackgroundAs3DView", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCutSurfaceColor(TechDrawParamsP *self) {
@@ -1411,10 +1418,16 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTransparency(false),
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "Background", "Background", App::ParamInfo::Hex, 0x707070FF)
         .setTitle("Page view background")
-        .setDoc("Colour of the area around the sheet in a page view. Read when a\n"
-"page view is opened.")
+        .setDoc("Colour of the area around the sheet in a page view, where it does\n"
+"not follow the 3D view (BackgroundAs3DView). Applies at once.")
         .setProxy("Color")
         .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "BackgroundAs3DView", "BackgroundAs3DView", App::ParamInfo::Bool, true)
+        .setTitle("Page view background as the 3D view's")
+        .setDoc("Draw the area around the sheet in a page view as the background\n"
+"of the 3D view is drawn: its colour or its gradient, following the\n"
+"theme. Off, it has the page view's own background colour. Applies\n"
+"at once."),
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "CutSurfaceColor", "CutSurfaceColor", App::ParamInfo::Hex, 0xD3D3D3FF)
         .setTitle("Cut surface colour")
         .setDoc("Colour of the cut surface of new sections that show it as a solid\n"
@@ -4132,8 +4145,8 @@ void TechDrawParams::removeSelectColor() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *TechDrawParams::docBackground() {
     return QT_TRANSLATE_NOOP("TechDrawParams",
-"Colour of the area around the sheet in a page view. Read when a\n"
-"page view is opened.");
+"Colour of the area around the sheet in a page view, where it does\n"
+"not follow the 3D view (BackgroundAs3DView). Applies at once.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4156,6 +4169,37 @@ void TechDrawParams::setBackground(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void TechDrawParams::removeBackground() {
     instance()->subHandles[5]->RemoveUnsigned("Background");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docBackgroundAs3DView() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Draw the area around the sheet in a page view as the background\n"
+"of the 3D view is drawn: its colour or its gradient, following the\n"
+"theme. Off, it has the page view's own background colour. Applies\n"
+"at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getBackgroundAs3DView() {
+    return instance()->BackgroundAs3DView;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultBackgroundAs3DView() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setBackgroundAs3DView(const bool &v) {
+    instance()->subHandles[5]->SetBool("BackgroundAs3DView",v);
+    instance()->BackgroundAs3DView = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeBackgroundAs3DView() {
+    instance()->subHandles[5]->RemoveBool("BackgroundAs3DView");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

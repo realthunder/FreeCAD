@@ -145,6 +145,8 @@ public:
     ParameterGrp::handle hGrp;
     /// TechDraw's own General group, for the page renderer switch
     ParameterGrp::handle hGrpGeneral;
+    /// TechDraw's Colors group, for the page view's ground
+    ParameterGrp::handle hGrpColors;
     QGVPage* page;
     explicit Private(QGVPage* page) : page(page)
     {
@@ -154,6 +156,8 @@ public:
         hGrp->Attach(this);
         hGrpGeneral = Preferences::getPreferenceGroup("General");
         hGrpGeneral->Attach(this);
+        hGrpColors = Preferences::getPreferenceGroup("Colors");
+        hGrpColors->Attach(this);
     }
     void init()
     {
@@ -183,6 +187,21 @@ public:
             // are fed again at the next paint
             for (const auto& v : page->m_vgViews)
                 page->m_vgDirty.insert(v.first);
+            page->resetCachedContent();
+            page->viewport()->update();
+        }
+        else if (strcmp(Reason, "Background") == 0
+                 || strcmp(Reason, "BackgroundAs3DView") == 0
+                 || strcmp(Reason, "Gradient") == 0
+                 || strcmp(Reason, "RadialGradient") == 0
+                 || strcmp(Reason, "BackgroundColor") == 0
+                 || strcmp(Reason, "BackgroundColor2") == 0
+                 || strcmp(Reason, "BackgroundColor3") == 0
+                 || strcmp(Reason, "BackgroundColor4") == 0
+                 || strcmp(Reason, "UseBackgroundColorMid") == 0) {
+            // The view's ground, its own or the 3D view's
+            // (QGVPage::drawBackground): painted into the cached background
+            *page->bkgBrush = QBrush(page->getBackgroundColor());
             page->resetCachedContent();
             page->viewport()->update();
         }
@@ -368,6 +387,59 @@ void QGVPage::cancelBalloonPlacing()
     resetCursor();
 }
 
+namespace {
+
+/** The ground of a page view, around the sheet.
+ *
+ * As the 3D view's background is -- its one colour, or its gradient from top
+ * to bottom or from the middle outwards, as View/Gradient and
+ * View/RadialGradient have it and with the colours a theme gives them --
+ * unless Colors/BackgroundAs3DView is off; then \a own, the page view's own
+ * colour (docs/HandsOnQueue.md entry 112). Painted by Qt whichever way the
+ * page itself is drawn: the render engine lays the page over this.
+ */
+QBrush pageViewGround(const QRect& area, const QBrush& own)
+{
+    if (!Preferences::getPreferenceGroup("Colors")->GetBool(
+            "BackgroundAs3DView", TechDraw::TechDrawParams::defaultBackgroundAs3DView())) {
+        return own;
+    }
+    auto hView = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/View");
+    auto colour = [&hView](const char* name, unsigned long preset) {
+        App::Color c;
+        c.setPackedValue(static_cast<uint32_t>(hView->GetUnsigned(name, preset)));
+        return c.asValue<QColor>();
+    };
+    const QColor from = colour("BackgroundColor2", Gui::ViewParams::defaultBackgroundColor2());
+    const QColor to = colour("BackgroundColor3", Gui::ViewParams::defaultBackgroundColor3());
+    const QColor mid = colour("BackgroundColor4", Gui::ViewParams::defaultBackgroundColor4());
+    const bool useMid = hView->GetBool("UseBackgroundColorMid",
+                                       Gui::ViewParams::defaultUseBackgroundColorMid());
+    if (hView->GetBool("Gradient", Gui::ViewParams::defaultGradient())) {
+        QLinearGradient gradient(area.topLeft(), area.bottomLeft());
+        gradient.setColorAt(0.0, from);
+        if (useMid) {
+            gradient.setColorAt(0.5, mid);
+        }
+        gradient.setColorAt(1.0, to);
+        return QBrush(gradient);
+    }
+    if (hView->GetBool("RadialGradient", Gui::ViewParams::defaultRadialGradient())) {
+        QRadialGradient gradient(QPointF(area.center()),
+                                 std::hypot(area.width(), area.height()) / 2.0);
+        gradient.setColorAt(0.0, from);
+        if (useMid) {
+            gradient.setColorAt(0.5, mid);
+        }
+        gradient.setColorAt(1.0, to);
+        return QBrush(gradient);
+    }
+    return QBrush(colour("BackgroundColor", Gui::ViewParams::defaultBackgroundColor()));
+}
+
+}  // namespace
+
 void QGVPage::drawBackground(QPainter* painter, const QRectF&)
 {
     // Settled anew by every paint: whether the backend's layer is the
@@ -400,7 +472,7 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
     painter->setRenderHint(QPainter::Antialiasing, false);
     painter->setPen(QPen(Qt::black, 0));
 
-    painter->setBrush(*bkgBrush);
+    painter->setBrush(pageViewGround(viewport()->rect(), *bkgBrush));
     painter->drawRect(
         viewport()->rect().adjusted(-2, -2, 2, 2));//just bigger than viewport to prevent artifacts
 

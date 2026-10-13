@@ -1194,13 +1194,28 @@ public:
     //@{
     /// Accessor for parameter Background
     ///
-    /// Colour of the area around the sheet in a page view. Read when a
-    /// page view is opened.
+    /// Colour of the area around the sheet in a page view, where it does
+    /// not follow the 3D view (BackgroundAs3DView). Applies at once.
     static const unsigned long & getBackground();
     static const unsigned long & defaultBackground();
     static void removeBackground();
     static void setBackground(const unsigned long &v);
     static const char *docBackground();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BackgroundAs3DView
+    ///
+    /// Draw the area around the sheet in a page view as the background
+    /// of the 3D view is drawn: its colour or its gradient, following the
+    /// theme. Off, it has the page view's own background colour. Applies
+    /// at once.
+    static const bool & getBackgroundAs3DView();
+    static const bool & defaultBackgroundAs3DView();
+    static void removeBackgroundAs3DView();
+    static void setBackgroundAs3DView(const bool &v);
+    static const char *docBackgroundAs3DView();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
