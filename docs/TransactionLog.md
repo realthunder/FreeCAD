@@ -18560,7 +18560,7 @@ the length cyan and the ball cyan.
 - *The file's string table grows by what the result's recompute
   named*: the result's document shares it (27.60), and what nothing
   holds goes at the next compaction (27.47). Not measured.
-- The browser: the stream, next.
+- The browser: the stream, 32.18.
 
 **Tests.** `parttests.ShapeDiffTest.MergedResultTest` (+6): the result
 is what the merge then makes, by volume and by every element name, with
@@ -18585,6 +18585,75 @@ both; driven 271 of 273, the two the golden raster pictures that wait
 for their references (33.14).
 
 **Next (32.4):** the stream.
+
+### 32.18 Step 6, last part: the stream, measured (2026-10-13)
+
+What 32.2 left as "a step of its own" and Q7 as "later": the two states
+in a browser. Measured before anything was planned, on a document
+served to the browser's viewer (`Gui.serveDocument`, the WASM viewer in
+headless Chrome, `~/.cache/lv-merge/stream`): a box with a hole, made
+taller and its hole moved, the row's before against its after asked of
+the view provider on the host.
+
+**It is there already.** The overlay hangs under the object's root
+(32.9), the root is in the scene a served document publishes, and its
+faces are Part's own nodes: the render cache takes the annotation as it
+takes PartDesign's preview, and a client draws it -- by the faces and
+by the material, the slider's place, differences only -- as the host's
+own view does under the backend, with a window on the host or with
+none. Nothing was written for it.
+
+![the faces, in the browser](images/transaction-log/13-stream-faces.png)
+![the material, in the browser](images/transaction-log/13-stream-material.png)
+
+**What it costs.** One push to every client for the overlay shown, and
+one for each place of the slider: 2.5 to 3.1 kB each on the socket
+here; what a client fetches beside the push was not measured. The call
+on the host is 6 ms for the faces of this box and 19 ms for its
+material.
+
+**Two faults, fixed.**
+
+- *The browser's viewer did not build.* The backend's warm-up hands
+  its caller the GL context back (`bf4fb49bb5`, 2026-10-06) through
+  Qt's context classes, outside the guard that keeps Qt out of the
+  viewer's build (`FC_RENDERER_STANDALONE`). The viewer on this box
+  was a week old, spoke scene format 76 to a host at 87 and drew
+  nothing; the browser tests skip where they have no viewer or no
+  browser, so nothing said so. Guarded.
+- *The overlay taken away stayed on the client.* A served document is
+  published when the document says something changed, and it says so
+  by its properties. Showing the overlay changes some -- its own
+  views' -- and taking it away changes none: a client connected at
+  the time was sent nothing and drew the two states over the object
+  until something else changed: measured, no push in the three
+  seconds after it and one with the next change of another object.
+  The view asks the serving source for a publish when what it draws is
+  set and when it goes (`ShapeDiffView::sceneChanged`), which also
+  covers what it switches with no property -- the unchanged faces left
+  out -- not measured before the change.
+
+**What is not there**, and is the step proper:
+
+- *Whose it is.* The overlay is in the one scene every client shares:
+  what the host looks at in its merge dialog is drawn for everybody
+  connected, unasked, and each move of the host's slider is a publish
+  to all. PartDesign's preview was taken out of the shared scene for
+  that (docs/ThinClient.md sec 8.12, 2026-10-05) and made the edit
+  session's.
+- *A client cannot ask.* The browser has no panel of the log, no merge
+  dialog and no op for a diff: it sees one only when the host shows
+  it. What a merge would make (32.17) is in a document of its own,
+  which is not served: what theirs made is not in the client's picture.
+- *The numbers.* What became of each face (`getValueDiff()`) stays on
+  the host.
+
+**Test.** `tests/gui/serve-shape-diff.py` (10): a document served with
+no window and one client counting its scene pushes -- none while
+nothing changes; one for the overlay shown, for each place of the
+slider, for differences only, for the material, and for the overlay
+taken away, which before the change was none; no row of the log and no
+undo step by any of it.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
