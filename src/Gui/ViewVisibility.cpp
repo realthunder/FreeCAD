@@ -430,6 +430,12 @@ std::set<const App::DocumentObject *> PendingObjects;
 bool PendingUnresolved = false;
 bool PendingAll = false;
 
+/// How many entries, over every table, show an object that is seen through
+/// others. While there is none, what a group remembers as hidden by hand
+/// moves no key, and a group writes that map every time one of its
+/// children is shown or hidden: a pass for each would be a pass for nothing.
+int ShowsSeenThrough = 0;
+
 /// Count or release \a key's object as shown by one view.
 void countShown(const std::pair<std::string, std::string> &key, bool enable)
 {
@@ -610,7 +616,11 @@ void ViewVisibility::connectSignals()
         });
         app.signalChangedObject.connect(
                 [](const App::DocumentObject &obj, const App::Property &prop) {
-                    if (!prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId()))
+                    // A link, or what a group remembers as hidden by hand:
+                    // no link, and what a view's show of the group leaves
+                    // out (SeenThrough)
+                    if (!prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId())
+                            && (!ShowsSeenThrough || !SeenThrough::dependsOn(prop)))
                         return;
                     // An unresolved entry is tried again here too when it
                     // got through this object: its dependencies are the
@@ -695,6 +705,15 @@ bool ViewVisibility::commit()
     std::vector<SoFCVisibilityElement::Entry> now;
     std::set<std::pair<std::string, std::string>> nowShown;
     now.reserve(transientRes.size() + persistedRes.size());
+    int showing = 0;
+    for (const auto *results : {&transientRes, &persistedRes}) {
+        for (const auto &res : *results) {
+            if (res.ok && res.seenThrough && res.entry.visibility)
+                ++showing;
+        }
+    }
+    ShowsSeenThrough += showing - showsSeenThrough;
+    showsSeenThrough = showing;
     for (const auto *results : {&transientRes, &persistedRes}) {
         for (const auto &res : *results) {
             if (!res.ok || !res.own)
@@ -777,6 +796,8 @@ bool ViewVisibility::commit()
 
 void ViewVisibility::clear()
 {
+    ShowsSeenThrough -= showsSeenThrough;
+    showsSeenThrough = 0;
     for (const auto &key : shown)
         countShown(key, false);
     shown.clear();

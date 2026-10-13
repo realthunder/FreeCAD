@@ -21,7 +21,8 @@ Claims:
   - a box that joins the group while the view hides the group is hidden
     with it, and is back when it leaves;
   - a view's own SHOW of a group the document hides shows its children,
-    except one the group remembers as hidden by hand;
+    except one the group remembers as hidden by hand, and one hidden by
+    hand while that show stands goes with it;
   - a solid body hidden by a view hides the solid whichever feature shows
     it, the tip moved included, and leaves the other solid; shown by a view
     where the document hides the solid, its own shape is drawn;
@@ -222,6 +223,14 @@ def groups():
     settle(0.6)
     expect("the hidden group shown by the view", v1, without("Box1"))
     expect("the hidden group shown by the view, the other view", v2,
+           without("Box0", "Box1", "Box2"))
+    # and a child hidden by hand while that show stands: what the group
+    # remembers is no link, and the entry is resolved again all the same
+    grp.setElementVisible("Box0", False)
+    settle(0.6)
+    expect("a child hidden by hand under the group the view shows", v1,
+           without("Box0", "Box1"))
+    expect("a child hidden by hand, the other view", v2,
            without("Box0", "Box1", "Box2"))
     v1.ObjectVisibilities = {}
     settle()

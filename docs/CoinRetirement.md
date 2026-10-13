@@ -3748,9 +3748,26 @@ Three rules came with it:
   keeps its own binding. A plain group is not on it; nothing was changed
   for a shader bound to a group.
 
-**Not done.** `HiddenChildren` is a map and no link: a child hidden by hand
-while a view's show of its hidden group stands is not taken out until the
-structure changes. An element-scoped shader binding is the solid body's own
+**What a group remembers is no link.** `HiddenChildren` is a map, so a child
+hidden by hand while a view's show of its hidden group stood
+(`group.setElementVisible(child, False)`) stayed drawn there until the
+structure changed. `SeenThrough::dependsOn()` names the property, and the
+signal that marks an entry for the pass on a link's change marks it on
+that one too (5.26) -- **while some view shows a seen-through object, and
+not otherwise.** A plain group writes that map every time one of its
+children is shown or hidden, which with a table of entries and no such show
+among them would be a pass for nothing each time. The tables count their
+show entries of such objects into one total, and the map's change is not
+looked at while that is zero.
+
+*Measured on the way, not caused by this:*
+`tests/gui/reopen-visual-builds.py` asks for one pass after a reopen and
+gets two in about half its runs on the Windows box (5 of 8 on the code
+before this, 4 of 10 on it), the finish of the restore and the rebuild of
+the Parts' children falling into two turns of the event loop. Nothing in
+that document has a `HiddenChildren` map.
+
+**Not done.** An element-scoped shader binding is the solid body's own
 shape's alone (an element of the solid is not one of an earlier feature).
 
 **Test.** `tests/gui/per-view-seen-through.py`, 57 checks by pick and by

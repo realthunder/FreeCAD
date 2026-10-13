@@ -46,6 +46,7 @@
 #include <App/Document.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/GroupExtension.h>
+#include <App/PropertyStandard.h>
 
 #include "SoMouseWheelEvent.h"
 #include "ViewProvider.h"
@@ -1091,6 +1092,14 @@ std::vector<App::DocumentObject*> SeenThrough::of(const App::DocumentObject *obj
         res.push_back(child);
     }
     return res;
+}
+
+bool SeenThrough::dependsOn(const App::Property &prop)
+{
+    if (!prop.isDerivedFrom(App::PropertyMap::getClassTypeId()))
+        return false;
+    const char *name = prop.getName();
+    return name && strcmp(name, "HiddenChildren") == 0;
 }
 
 bool ViewProvider::getDetailPath(const char *subname, SoFullPath *pPath, bool append, SoDetail *&det) const {

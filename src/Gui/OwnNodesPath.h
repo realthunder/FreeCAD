@@ -30,6 +30,7 @@
 
 namespace App {
 class DocumentObject;
+class Property;
 }
 
 namespace Gui {
@@ -100,6 +101,15 @@ public:
 
     /// The objects \a obj is seen through, none for most
     static std::vector<App::DocumentObject*> of(const App::DocumentObject *obj, For what);
+
+    /** Whether a change of \a prop changes what its object is seen through
+     *
+     * Beside the links, which whoever resolves by the structure watches
+     * anyway: what a plain group remembers as hidden by hand
+     * (HiddenChildren) is a map and no link, and is what a show of the
+     * group leaves out.
+     */
+    static bool dependsOn(const App::Property &prop);
 };
 
 } // namespace Gui

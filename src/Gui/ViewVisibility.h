@@ -224,6 +224,9 @@ private:
     std::set<uint32_t> overridden;
     std::set<std::pair<std::string, std::string>> shown;
     std::function<void()> onChanged;
+    /// How many of this table's entries show an object that is seen
+    /// through others, as counted into the total of all tables.
+    int showsSeenThrough = 0;
 
     Render::VisibilitySet draws;
     const SoFCRenderCacheManager *drawFeed = nullptr;
