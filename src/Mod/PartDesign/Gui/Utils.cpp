@@ -895,34 +895,54 @@ public:
                         }
                     } else if (editObj && !editShownInSession)
                         editObj->Visibility.setValue(true);
-                    if (PartGui::PartParams::getEditOnTop())
+                    if (wantEditOnTop())
                         showEditOnTop(true);
-                    else {
-                        App::DocumentObject *parent = *objs.begin();
-                        bool hidden = !parent->Visibility.getValue();
-                        if (!hidden) {
-                            for (auto it2 = objs.begin(); it2 != it+1; ++ it2) {
-                                auto obj = *it2;
-                                int vis = parent->isElementVisible(obj->getNameInDocument());
-                                if (vis == 0 || (vis<0 && !obj->Visibility.getValue())) {
-                                    hidden = true;
-                                    break;
-                                }
-                                parent = obj;
-                            }
-                        }
-                        if (hidden)
-                            showEditOnTop(true);
-                    }
                 }
                 break;
             }
         }
     }
 
+    /// Whether anything on the path of the edit down to its body is hidden:
+    /// the top object, or an element of one container after another. The
+    /// whole path, not the body alone.
+    bool editPathHidden() const
+    {
+        auto objs = editBodyT.getSubObjectList();
+        if (objs.empty())
+            return false;
+        App::DocumentObject *parent = objs.front();
+        if (!parent->Visibility.getValue())
+            return true;
+        for (auto obj : objs) {
+            int vis = parent->isElementVisible(obj->getNameInDocument());
+            if (vis == 0 || (vis<0 && !obj->Visibility.getValue()))
+                return true;
+            parent = obj;
+        }
+        return false;
+    }
+
+    /// Whether the view of the edit shows something on top
+    /// (docs/HandsOnQueue.md entry 108, as ruled): "When visible follow the
+    /// control in edit panel. If preview is on, show on top, else show
+    /// normal. If hidden, then always shown on top" -- the control being the
+    /// panel's "Show preview". With the path hidden there is nothing else to
+    /// see the edit by; with it shown the base is drawn on top with its
+    /// preview, see-through, and without a preview the feature is drawn in
+    /// its place like any other. (There was a "Show on top" check box for
+    /// the first case, and Part/EditOnTop behind it: gone from the panel,
+    /// the setting no longer read.)
+    bool wantEditOnTop() const
+    {
+        return editPreview || editPathHidden();
+    }
+
     void slotVisibilityChanged(const std::deque<App::DocumentObject*> &siblings)
     {
-        if (!PartGui::PartParams::getEditOnTop())
+        // which sibling is on top follows the one that is shown: only where
+        // something is on top at all
+        if (editOnTopT.getObjectName().empty())
             return;
         auto feat = editObjT.getObject();
         if (!feat)
@@ -1654,17 +1674,12 @@ QGridLayout *Monitor::addCheckBox(Gui::ViewProviderDocumentObject *vp, QWidget *
     QObject::connect(checkbox, SIGNAL(toggled(bool)), &proxy, SLOT(onPreviewTransparency(bool)));
     grid->addWidget(checkbox, 0, 1);
 
-    checkbox = new QCheckBox(widget);
-    checkbox->setText(QObject::tr("Show on top"));
-    checkbox->setToolTip(QObject::tr("Show the editing feature always on top"));
-    checkbox->setChecked(PartGui::PartParams::getEditOnTop());
-    QObject::connect(checkbox, SIGNAL(toggled(bool)), &proxy, SLOT(onShowOnTop(bool)));
-    grid->addWidget(checkbox, 1, 0);
-
+    // (no "Show on top" beside them any more: what is on top goes by the
+    // preview and by whether the path of the edit is shown, wantEditOnTop())
     if (vp) {
         checkbox = hookPropertyBool(vp->getObject(), "Refine", widget, "Refine shape");
         if (checkbox) {
-            grid->addWidget(checkbox, 1, 1);
+            grid->addWidget(checkbox, 1, 0);
         }
     }
 
@@ -1696,10 +1711,11 @@ void MonitorProxy::onPreview(bool checked)
             if (!_MonitorInstance->editShownInSession)
                 vp->show();
         }
-        // The session's preview swaps no Visibility, so nothing tells
-        // the on-top display that what this view shows has changed.
-        if (!_MonitorInstance->editOnTopT.getObjectName().empty())
-            _MonitorInstance->showEditOnTop(true);
+        // On top with the preview, and without it only where the path of
+        // the edit is hidden. (The session's preview swaps no Visibility, so
+        // nothing else tells the on-top display that what this view shows
+        // has changed.)
+        _MonitorInstance->showEditOnTop(_MonitorInstance->wantEditOnTop());
     }
 }
 
@@ -1713,15 +1729,6 @@ void MonitorProxy::onPreviewTransparency(bool checked)
         if (vp)
             vp->checkAddSubColor();
     }
-}
-
-void MonitorProxy::onShowOnTop(bool checked)
-{
-    PartGui::PartParams::setEditOnTop(checked);
-    if (!_MonitorInstance)
-        return;
-
-    _MonitorInstance->showEditOnTop(checked);
 }
 
 void MonitorProxy::onEditTimer()
