@@ -98,6 +98,29 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 12:43: entry 97 FIXED on a build; entry 92's cause SHOWN -- old
+code in the sketch, NOT this morning's merges; entries 91, 93, 94, 95, 96
+WRITTEN and in a build; entry 86 still not reproduced. Nothing committed
+since 11:33, nothing pushed, the staged copy still the one of 09:36.**
+From the build session (its message of 12:43, written here 12:43).
+- 97: `revert-document.py` 12 of 12, three runs; the scanner file
+  reverted with and without the recompute, no crash.
+- 92: the wire of a sketch is named by its bare number by code of 2018
+  to 2024; a fix in the source.
+- 87, the hover: two of the build session's readings withdrawn by it; a
+  third form building.
+- 91, 93, 94, 95, 96: written, with tests, in the build.
+- Running since 12:41: ONE build with all of it, the checks of 92, the
+  new tests, the tests near them, then both suites -- "so that the
+  suites run once, on the final code".
+- NOT STARTED: entry 83 (waits for which handle), 98 and 99 (wait for
+  the reporter's points).
+- A question of the reporter's that did NOT come through the
+  note-taker: "the reporter's question on TechDraw pages without an
+  eye (answered by me 11:52: yes, with one rule for older files; waits
+  for their word to queue it)" -- the build session's words. No entry
+  yet; it becomes one when the reporter says the word.
+
 **2026-10-13 11:50: entry 97, the crash at Revert, is REPRODUCED on the
 staged copy and its cause shown: EVERY revert of a document with a
 TechDraw page's view open. A fix is in the source, building. All LOCAL.**
@@ -1506,18 +1529,18 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | FIXED `a3acdd0947`, local, NOT pushed, NOT staged (11:33): its test `tree-tooltip-only-over-its-item.py` 14 of 14, twice, offscreen. As written 10:17; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; FIXED `1f01bf3f30`, local, NOT pushed, NOT staged (11:33), `overlay-see-through.py` 62 of 62 and with a copy of the reporter's configuration the ground is the applied theme's at once: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
-| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script |
-| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. FIXED IN THE SOURCE, NOT committed (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced |
+| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. FIXED IN THE SOURCE, NOT committed (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). 12:43: two readings of the build session's on the hover WITHDRAWN by it; a third form is building. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | FIXED IN THE SOURCE, measured on a first build, NOT committed (11:33): nothing of the tree's scroll bar more opaque than 150, the handle at 150, the rest clear, Dark and Light. The four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | FIXED IN THE SOURCE, its test PASS on a first build, NOT committed (11:33): the button did not use the common helper and opened its menu in a mode in which Qt draws a small mark on the icon; it is a menu button like the others now, 44 wide where it was 32. The three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | FIXED IN THE SOURCE, its test PASS on a first build, NOT committed (11:33): the common helper was called BEFORE the action was added and took the tool bar's last button, the one of the action before -- in a run of menu buttons each was set up by the next and the last by none (`Std_SelUp`; Edit's Redo too); all twelve callers set up their own button now. The points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
-| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
-| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
-| 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | OPEN; the four points answered about 11:34, nothing left unanswered |
-| 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | OPEN, answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
-| 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | OPEN; the three points answered 11:38, nothing left unanswered |
-| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | OPEN; the three points answered 11:40; one reading to confirm (b), and which menu is not said |
-| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN; a fix in the source, NOT built: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
+| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | WRITTEN, in a build, with a test, NOT committed (12:43): the note-taker's candidate was it -- the theme's least width of 80 for every push button; this one, an icon with no caption, is told it has none, in `LinkSubWidget`, so in every panel that uses the row. The three points not needed for it. Before, a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
+| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | THE CAUSE SHOWN (12:43) -- OLD code, not this morning's merges nor the OCCT sync: a sketch asked for the name of its wire drops the kind "Wire" and keeps the number (`SketchObject::checkSubName`, lines of 2018 to 2024; the released build has them too). A fix in the source; with a first form of it, after the migration recompute the three read `Wire2`, `Wire1`, `Wire2`; NOT committed. LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
+| 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | WRITTEN, in a build, with a test, NOT committed (12:43). The four points answered about 11:34, nothing left unanswered |
+| 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | WRITTEN, in a build, with a test, NOT committed (12:43): Tab completes and the focus stays in the box; Return hands it to the value's editor, as before. Answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
+| 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | WRITTEN, in a build, with a test, NOT committed (12:43). The three points answered 11:38, nothing left unanswered |
+| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | WRITTEN, in a build, NOT committed (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
+| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | FIXED ON A BUILD, NOT committed (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size | OPEN; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; four points under the entry, NOT ANSWERED |
 
@@ -10879,6 +10902,12 @@ was asked for.
   pointer, the overlay's state, what the alpha check reads) -- or shall
   it give the reporter the script to run.
 
+**2026-10-13 12:43, the build session: one more piece, still NOT
+reproduced.** From the build session's message of 2026-10-13 12:43, written here 12:43. "With the pointer on the CLEAR part of a row (right
+of the item's text) the overlay hands the move to the 3D view and the tree
+does not hear of it -- pass-through as designed", PASS again on the build
+of 12:24 with a copy of the reporter's configuration.
+
 ## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, fixed in the source 11:33 (border, setting), the hover building, not committed; OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
 
 **2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
@@ -11049,6 +11078,21 @@ committed.** From the build session's message of 2026-10-13 11:33, written here 
 - (3) THE SETTING: "Item background follows the theme" moved into the
   section "Tree view", the row after "Item background color"; while it
   is on the colour and its label are greyed out.
+
+**2026-10-13 12:43, the build session on the hover: two of its readings
+WITHDRAWN, a third form building.** From the build session's message of 2026-10-13 12:43, written here 12:43.
+- WITHDRAWN (a), "no style sheet rule takes the bar away": "that run had
+  the overlay's eye off, where a panel turns SOLID while the pointer is
+  in it -- what I measured as a bar over three rows was the tree's
+  solid ground, not a hover bar."
+- WITHDRAWN (b), keeping the hover events from the view: "not enough:
+  Qt notes the row under the pointer on a plain mouse move too."
+- Measured with the eye ON (the reporter's left overlay): the real bar
+  is (61,72,90) at 255 from the row's left end to its right.
+- The third form, in the build: the row is taken back from the view
+  after each move, and the tree draws its own bar. With the reporter's
+  configuration on the build of 12:24: "the old whole-row bar is gone
+  and the rows beside it are untouched; my own bar not shown yet".
 
 ## 88. A dock overlay in transparent mode: the scroll bar's background transparent, its handle at the overlay's alpha (a change request) -- fixed in the source 2026-10-13 11:33, measured, not committed; the four points answered 2026-10-13 10:51: the overlay's opacity setting, all scroll bars, the theme's colours, borders and ends clear
 
@@ -11290,7 +11334,7 @@ its test PASS on a first build; NOT committed.** From the build session's messag
   with a menu is a menu button with the name, none without a menu has
   it; `Std_SelUp` and `Std_DisplayStyle` 44 wide like `Std_SelBack`.
 
-## 91. PartDesign edit panels: the button that clears the link references is stretched -- OPEN, three points not answered
+## 91. PartDesign edit panels: the button that clears the link references is stretched -- written 2026-10-13 12:43, in a build, not committed
 
 **2026-10-13 11:05, the reporter:** "new defect, part design pocket edit panel,
 but button to 'temporary clear link references for new selection' got
@@ -11341,7 +11385,14 @@ Pointers, READ by the note-taker, nothing run:
 - Other icon-only push buttons in task panels would be wide the same
   way if the candidate is right -- not looked for.
 
-## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- looked at 2026-10-13 11:33: the old-style name "2" is in the file and names nothing, the shapes unchanged, the cause not found; OPEN, answered 2026-10-13 11:19: in the property view and the edit panel both, Pad039 and Pad040 the same
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "The theme's sheet gives every push button
+a least width of 80; this one, an icon and no caption, is told it has none
+-- in `LinkSubWidget`, so every panel that uses the row." The note-taker's
+candidate of 11:05 was it; the three points put to the reporter are not
+needed for the fix.
+
+## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- the cause SHOWN 2026-10-13 12:43, old code in the sketch, a fix in the source; looked at 2026-10-13 11:33: the old-style name "2" is in the file and names nothing, the shapes unchanged, the cause not found; OPEN, answered 2026-10-13 11:19: in the property view and the edit panel both, Pad039 and Pad040 the same
 
 **2026-10-13 11:10, the reporter:** "new defect, when open scanner file and after
 migration recompute. Pocket023.Profile changed to Sketch047.2, i.e. it's
@@ -11462,7 +11513,37 @@ The note-taker's notes:
 - What is wrong, by this: a bare "2" shown where `Wire2` is meant; the
   features build as before.
 
-## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- OPEN, the four points answered 2026-10-13 about 11:34: "/ ", the path from the top by internal names, a dot; the last selection in view first
+**2026-10-13 12:43, the build session: THE CAUSE SHOWN -- old code, NOT
+this morning's merges or the OCCT sync; a fix in the source, NOT
+committed.** From the build session's message of 2026-10-13 12:43, written here 12:43.
+- Asked directly (`DocumentObject.resolveSubElement`), a sketch names
+  its wire by the wire's mapped name as ('', '2') on the staged copy --
+  "where it should say (';...Wire2', 'Wire2')".
+- Why: `SketchObject::checkSubName` builds an indexed name from a list
+  of kinds it knows (Edge, Vertex, its own); "Wire" is not among them,
+  "the kind is dropped and the NUMBER kept". The lines are of 2018 to
+  2024 by `git blame`; "the user's released build has them too, and
+  the file had '2' on 2026-10-06".
+- So: "'changed at the recompute' is not what happened as far as I can
+  show: the three profiles read '2', '1', '2' right after opening,
+  before any recompute, on every build I have."
+- The fix, in the source: the sketch lets its shape answer for the
+  kinds it does not name itself. With a first form of it on the build
+  of 12:24, `scanner.FCStd` after the migration recompute reads
+  `Pocket023.Profile` (Sketch047, ['Wire2']), `Pad039` ['Wire1'],
+  `Pad040` ['Wire2'] -- "before the fix they stayed '2', '1', '2'".
+  Right after opening, before the recompute, they still read as the
+  file has them.
+- That first form answered ('', '') to the direct question; a second
+  form is in the build running now.
+- New unit test `PartDesignTests/TestSketchWireProfile.py`: on the
+  staged copy "'2' != 'Wire2'".
+The note-taker's note: with the fix a file that has "2" is put right by
+a recompute, not at opening -- by the build session's run; whether that
+is enough for the reporter (the display right after opening still reads
+"2") is not asked yet.
+
+## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- written 2026-10-13 12:43, in a build, not committed; the four points answered 2026-10-13 about 11:34: "/ ", the path from the top by internal names, a dot; the last selection in view first
 
 **2026-10-13 11:12, the reporter:** "new request, when Ctrl+F and tree view has
 any selection (use the nearest selected item from mouse), launch omni
@@ -11533,7 +11614,12 @@ selected so that typing replaces it. With a dot at its end, meant to be
 typed on from, the note-taker's guess is now: NOT selected, the caret
 after the dot.
 
-## 94. The omni search: Tab to complete a property takes the focus from the edit box -- OPEN, made precise 2026-10-13 11:35: after a property is resolved, the box still there; the widget built for the property suspected
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "Ctrl+F in the tree with a selection: '/ '
++ path from the top by internal names + '.', the order of four as the
+reporter gave it."
+
+## 94. The omni search: Tab to complete a property takes the focus from the edit box -- written 2026-10-13 12:43, in a build, not committed; made precise 2026-10-13 11:35: after a property is resolved, the box still there; the widget built for the property suspected
 
 **2026-10-13 11:14, the reporter:** "new defect, when use Tab to complete in omni
 search resolving a property, the edit box lost its focus and cannot type
@@ -11599,7 +11685,11 @@ the focus on another widget, the reporter's names which. NOT looked
 into: where the omni search makes the editor of a resolved property and
 whether it gives the focus back.
 
-## 95. The omni search: a name typed in small letters is not corrected to the object found when a dot resolves it -- OPEN, the three points answered 2026-10-13 11:38: at the dot, whenever the property list is shown, every step
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "Tab completes and the focus stays in the
+box; Return hands it to the value's editor, as before."
+
+## 95. The omni search: a name typed in small letters is not corrected to the object found when a dot resolves it -- written 2026-10-13 12:43, in a build, not committed; the three points answered 2026-10-13 11:38: at the dot, whenever the property list is shown, every step
 
 **2026-10-13 11:15, the reporter:** "new defect, omni search, when type object
 name in small case and find one match with captial start letter, press
@@ -11652,7 +11742,11 @@ The note-taker's reading:
   Whichever object the omni search resolved to gives the name.
 Nothing of this entry is left unanswered.
 
-## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- OPEN, answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "At a dot, with the list shown, the typed
+names take the case of what they resolved to, at each step."
+
+## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- written 2026-10-13 12:43, in a build, not committed; answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too
 
 **2026-10-13 11:17, the reporter:** "new request, add a border to the close icon
 for overlay pannel, so it does not look like a icon not found defect"
@@ -11708,7 +11802,14 @@ The note-taker's reading:
   note-taker's reading: every place the icon is shown, so the frame
   belongs in the picture itself and not in one button's style.
 
-## 97. A crash: File > Revert on the loaded scanner document -- REPRODUCED 2026-10-13 11:50 on the staged copy, every revert with a TechDraw page's view open; a fix in the source, not built
+**2026-10-13 12:43, the build session: WRITTEN, in the build; NOT
+committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "A square frame, a line, in `overlay/close.svg`
+itself, the cross smaller inside it -- so the title bar, a task panel in
+its view and the menu commands that use the picture all get it." The
+reporter's "b, yes" is thereby built as the close icon alone, as the
+note-taker took it.
+
+## 97. A crash: File > Revert on the loaded scanner document -- REPRODUCED 2026-10-13 11:50 on the staged copy, every revert with a TechDraw page's view open; fixed on a build 12:43, not committed
 
 **2026-10-13 11:20, the reporter:** "new crash, check cdb and possibly dump, the
 crash happen when I click menu File -> Revert to rever the loaded scanner
@@ -11825,6 +11926,12 @@ The note-taker's note for the reporter: until a stage with the fix,
 File > Revert on a document whose TechDraw page is open ends the
 program -- every time, on this stage and by the history on the stages
 of 2026-10-12 17:52 and 2026-10-13 06:52 as well (those not run).
+
+**2026-10-13 12:43, the build session: FIXED on a build, NOT committed
+yet.** From the build session's message of 2026-10-13 12:43, written here 12:43. `tests/gui/revert-document.py` 12 of 12, three runs (the
+document with a page in a group, its view open, reverted twice; "on the
+staged copy it crashes at the first revert"); the scanner file reverted
+with and without the migration recompute: no crash, no crash log.
 
 ## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, three points not answered
 
