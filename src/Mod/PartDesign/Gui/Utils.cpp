@@ -1822,6 +1822,16 @@ bool populateGeometryReferences(QTreeWidget *treeWidget, App::PropertyLinkSub &p
             auto item = new QTreeWidgetItem(treeWidget);
             item->setText(0, QString::fromStdString(refs.back())), 
             setGeometryItemText(item, refs.back());
+            // A reference that is missing keeps its mapped name with its
+            // item here too. It was given only where the list is filled for
+            // the first time, below, and a list filled anew -- which a
+            // feature in error has at once -- had plain items: the pointer
+            // on one could look nothing up, and lit nothing
+            // (docs/HandsOnQueue.md entry 109).
+            if(!sub.first.empty() && boost::starts_with(refs.back(),Data::missingPrefix())) {
+                setGeometryItemReference(item, Data::newElementName(sub.first.c_str()));
+                item->setForeground(0, Qt::red);
+            }
             continue;
         }
         const auto &ref = sub.first;

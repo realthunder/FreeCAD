@@ -672,25 +672,64 @@ bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &s
         return true;
     }
     PartDesign::DressUp* pcDressUp = static_cast<PartDesign::DressUp*>(DressUpView->getObject());
-    auto shape = pcDressUp->DressUpShape.getShape();
     Data::IndexedName indexed;
     std::string tmp;
-    bool found = false;
-    for (int i=1, c=shape.countSubShapes(TopAbs_FACE); i<=c; ++i) {
-        indexed = Data::IndexedName::fromConst("Face", i);
-        auto name = shape.getMappedName(indexed);
-        shape.traceElement(name,
-            [&] (const Data::MappedName &n, int, long, long) {
-                tmp.clear();
-                n.appendToBuffer(tmp);
-                if (tmp == ref) {
-                    found = true;
-                    return true;
-                }
+    App::StringHasherRef docHasher;
+    if (auto doc = pcDressUp->getDocument())
+        docHasher = doc->getStringHasher();
+    // Whether a face named \a name was made on the referenced element: its
+    // name traced back, step by step, to the reference's.
+    //
+    // Not by TopoShape::traceElement(), which expands each hashed name by
+    // the shape's own hasher alone. The preview shape of a dress-up in edit
+    // has a hasher of its own, and one step back its names are the
+    // document's: the trace stopped there for every reference, and the
+    // pointer on a missing one lit nothing (docs/HandsOnQueue.md entry 109,
+    // "broken" since the old fork). A name the shape's hasher does not know
+    // is the document's, and so is every name behind it.
+    auto traces = [&](const Part::TopoShape &shape, Data::MappedName name) {
+        App::StringHasherRef hasher = shape.Hasher;
+        for (int step = 0; step < 50; ++step) {
+            tmp.clear();
+            name.appendToBuffer(tmp);
+            if (tmp == ref)
+                return true;
+            long tag = 0;
+            int len = 0;
+            if (name.findTagInElementName(&tag, &len, nullptr, nullptr, true) < 0
+                    || len <= 0 || len > static_cast<int>(name.size()))
                 return false;
-            });
-        if (found)
-            break;
+            Data::MappedName head(name, 0, len);
+            Data::MappedName origin = head.dehashElementName(hasher);
+            if (origin == head && docHasher && hasher != docHasher) {
+                hasher = docHasher;
+                origin = head.dehashElementName(hasher);
+            }
+            if (origin == head)
+                return false;
+            name = origin;
+        }
+        return false;
+    };
+    // The face of a shape that was made on the referenced element
+    auto lookup = [&](const Part::TopoShape &shape) {
+        for (int i=1, c=shape.countSubShapes(TopAbs_FACE); i<=c; ++i) {
+            indexed = Data::IndexedName::fromConst("Face", i);
+            if (traces(shape, shape.getMappedName(indexed)))
+                return true;
+        }
+        return false;
+    };
+    auto shape = pcDressUp->DressUpShape.getShape();
+    bool found = !shape.isNull() && lookup(shape);
+    // A feature in error may have no dress-up shape at all. The shape it
+    // keeps from before -- what is shown of it meanwhile -- names its faces
+    // by the edges they were made on, the missing ones too: the fillet's
+    // own face is lit there.
+    bool kept = false;
+    if (!found) {
+        kept = true;
+        found = lookup(pcDressUp->Shape.getShape());
     }
     if (!found)
         return false;
@@ -701,7 +740,8 @@ bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &s
     if (!editDoc)
         return false;
     editDoc->getInEdit(&editVp,&subname);
-    subname += PartDesign::FeatureAddSub::addsubElementPrefix();
+    if (!kept)
+        subname += PartDesign::FeatureAddSub::addsubElementPrefix();
     indexed.appendToStringBuffer(subname);
     return true;
 }
