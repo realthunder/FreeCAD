@@ -25,8 +25,11 @@ GeneralBackgroundHoverColor: "@PrimaryColorLighten4"
 # Lighter than the grounds it is drawn on, not darker: @PrimaryColorDarken5 is
 # black here, and a black edge round a field or a button that is all but black
 # itself, in a dialog one step lighter, shows nothing -- fields, buttons, combo
-# boxes and tabs had no edge at all. The same grey as the check boxes' edge.
-GeneralBorderColor: "@PrimaryColorLighten5"
+# boxes and tabs had no edge at all. It was the check boxes' grey,
+# @PrimaryColorLighten5, about #646464; a step more subtle since, by the
+# reporter's choice (docs/HandsOnQueue.md entry 100). The check boxes and the
+# radio buttons keep the lighter one: an empty box has to be made out.
+GeneralBorderColor: "#4B4B4B"
 GeneralBorderHoverColor: "@PrimaryColorLighten6"
 GeneralDisabledBackgroundColor: "@PrimaryColorDarken3"
 GeneralGridLinesColor: "@PrimaryColorLighten3"
