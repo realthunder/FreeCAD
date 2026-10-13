@@ -1822,7 +1822,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
 | 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry |
 | 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
-| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; three points under the entry, NOT ANSWERED |
+| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -13755,7 +13755,7 @@ Two smaller points, NOT put as blocking:
 - A missing reference for which the preview has NO face either (the
   preview could not be made for it): nothing to highlight, as today.
 
-## 110. The margin before the tool bar in the customized title bar is sometimes bigger, and then gone (a regression) -- OPEN, the live session looked into; three points not answered
+## 110. The room for the customized title bar at the top is sometimes bigger and sometimes gone -- the first tool bar row then stands under the title bar (a regression, of entry 6 by the note-taker's reading) -- OPEN, CAUGHT in the live session 2026-10-13 16:23
 
 **2026-10-13 16:11, the reporter:** "regression, sometimes the margin before the
 toolbar docked in customized title bar gets bigger. check my current live
@@ -13813,6 +13813,71 @@ b. WHEN it changes: after a change of workbench, of theme, of the
    reporter's?
 c. HOW BIG is right: the logo with a few pixels around it, the tool
    bar following at once?
+
+**2026-10-13 16:22, the reporter:** "entry 110. check live state now,
+currently my eye ball check finds no margin, AND the first normal toolbar
+row is stacked underneath what the customized title bar's place. the
+toolbar current docked in the customized title bar is stacked on top"
+
+**2026-10-13 16:23, the reporter:** "BTW, I didn't do anything except switch to
+other application and switch back to check. and mouse hover to reveal the
+menu bar. not clicking anything"
+
+**2026-10-13 16:23, the reporter:** "this is actually a regression that I
+mentioned in previous entry"
+
+THE NOTE-TAKER'S FIRST READING WAS OF THE WRONG MARGIN and is withdrawn:
+the "margin" is not the room around the logo at the left (the points a,
+b, c above and the candidate about the logo's width fall with it) but
+the room AT THE TOP that the main window keeps free for the title bar.
+"No margin" is the tool bars sliding up under the title bar.
+
+CAUGHT in the LIVE session, the reporter's word again ("check live state
+now") -- process 111300, the staged copy of 13:56, one read-only script
+of the note-taker's, 16:23:29 (kept in
+`..\dl\handson\2026-10-13\entry110\titlebar_look4.py`; an earlier
+one of 16:22:45 stopped on a widget that had been made anew since the
+looks of 16:13 -- a sign the title bar's widgets were rebuilt in
+between; nothing of the application was changed by either):
+
+| | 16:13:11 | 16:23:29 |
+|---|---|---|
+| the title bar (a child of the main window) | y 0, 35 high | y 0, 35 high |
+| the tool bar "Workbench" inside it | y 0 | y 0 |
+| the first row of tool bars (File, Edit, View, Structure) | y 35 | y 0 |
+| the second row (Part Design ..., Measure) | y 72 | y 37 |
+| the views' area | y 109, 900 high | y 74, 935 high |
+
+- At 16:23 the main window's contents margins read (0, 0, 0, 0): no
+  room is kept at the top. (They were not read at 16:13.)
+- So the FIRST ROW OF TOOL BARS lies in the same 35 pixels as the title
+  bar, the title bar drawn over it -- what the reporter sees: "the
+  first normal toolbar row is stacked underneath", the title bar's own
+  tool bar "stacked on top".
+- The window is 1920 by 1040 in both readings: maximized.
+- BETWEEN the two readings the reporter did, by the word of 16:23, only
+  this: switched to another application and back; and hovered to
+  reveal the menu bar. No click.
+- The state "bigger" -- more room at the top than the title bar needs
+  -- is still NOT caught.
+
+"A regression that I mentioned in previous entry": the note-taker takes
+it for ENTRY 6 of 2026-10-06, "when maximized, sometimes, with the
+customized toolbar, it leaves no margin at top. sometimes it is fine"
+(STAGED then; its "sometimes" was found to be the title bar switched
+while the window is maximized). To be confirmed by the reporter -- the
+one point NOT ANSWERED; entry 5 of the same day (the menu not unfolding
+on hover with the workbench bar docked in the title bar) is its
+neighbour and "FIXED if it is entry 6's cause".
+
+Candidates, the note-taker's, from the two readings, NOT shown:
+- The room at the top is taken away when the menu bar is REVEALED by a
+  hover (or hidden again after it), or when the window is activated
+  again after another application was in front -- the two things the
+  reporter did.
+- The title bar's widgets were rebuilt between 16:13 and 16:22 (the
+  first script of 16:22 met a deleted widget): a rebuild that does not
+  set the top room again would give exactly this.
 
 ## Inbox
 
