@@ -1589,6 +1589,8 @@ bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
     // context for a host that warms up from inside its paint: a
     // TechDraw page did, and the QPainter it was drawing with then
     // dereferenced it (docs/TechDrawPortAndSection.md sec 36).
+    // Qt's contexts are the desktop's: the browser's viewer has none.
+#ifndef FC_RENDERER_STANDALONE
     struct RestoreContext {
         QOpenGLContext *context = QOpenGLContext::currentContext();
         QSurface *surface = context ? context->surface() : nullptr;
@@ -1599,6 +1601,7 @@ bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
                 context->makeCurrent(surface);
         }
     } restoreContext;
+#endif
     QElapsedTimer clock;
     clock.start();
     // Everything one-time lives in prepare(): the GL context bgfx draws
