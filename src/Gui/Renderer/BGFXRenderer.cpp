@@ -2006,6 +2006,108 @@ BGFXRendererLibP::userSampler(const std::string &name)
 
 #ifndef FC_RENDERER_STANDALONE
 
+namespace {
+
+/// The names of a '$input' or '$output' line, in its order; none where
+/// \a line is neither.
+std::vector<std::string> varyingNames(const std::string &line)
+{
+    std::vector<std::string> names;
+    size_t pos = line.find_first_not_of(" \t");
+    if (pos == std::string::npos || line[pos] != '$')
+        return names;
+    pos = line.find_first_of(" \t", pos);
+    while (pos != std::string::npos) {
+        pos = line.find_first_not_of(" \t,\r", pos);
+        if (pos == std::string::npos)
+            break;
+        const size_t end = line.find_first_of(" \t,\r", pos);
+        names.push_back(line.substr(pos, end == std::string::npos ? end : end - pos));
+        pos = end;
+    }
+    return names;
+}
+
+/// Where the line of \a source that starts with \a keyword begins and
+/// ends, the first one; false when there is none.
+bool findDirective(const std::string &source, const char *keyword,
+                   size_t &begin, size_t &end)
+{
+    const size_t len = std::strlen(keyword);
+    for (begin = 0; begin < source.size(); begin = end + 1) {
+        end = source.find('\n', begin);
+        if (end == std::string::npos)
+            end = source.size();
+        const size_t at = source.find_first_not_of(" \t", begin);
+        if (at != std::string::npos && at < end
+                && source.compare(at, len, keyword) == 0
+                && (at + len >= end || source[at + len] == ' '
+                    || source[at + len] == '\t'))
+            return true;
+    }
+    return false;
+}
+
+/// The varyings the stock vertex stage \a stockVs hands on, in its order:
+/// the '$output' line of its source, which travels with the include tree
+/// (assets/shaders/src). None when the source is not there.
+const std::vector<std::string> &stockVaryings(const std::string &srcDir,
+                                              const char *stockVs)
+{
+    static std::map<std::string, std::vector<std::string>> known;
+    const std::string path = srcDir + "/" + stockVs + ".sc";
+    auto it = known.find(path);
+    if (it != known.end())
+        return it->second;
+    std::vector<std::string> names;
+    QFile file(QString::fromStdString(path));
+    if (file.open(QIODevice::ReadOnly)) {
+        const std::string text = file.readAll().toStdString();
+        size_t begin = 0, end = 0;
+        if (findDirective(text, "$output", begin, end))
+            names = varyingNames(text.substr(begin, end - begin));
+    }
+    return known.emplace(path, std::move(names)).first->second;
+}
+
+/// \a source with its '$input' line naming every varying of \a outputs,
+/// in their order.
+///
+/// A fragment stage written for a stock vertex stage names the varyings
+/// it reads: '$input v_normal, v_color0, v_vpos'. Direct3D pairs the two
+/// stages by position, not by name, so a list with a gap in it -- v_vpos
+/// third, where the vertex stage has it fifth -- does not link, and the
+/// program was refused ("user shader: program link failed") where OpenGL
+/// took it. The whole list in the vertex stage's order is the one list
+/// every backend takes, and a varying nobody reads costs nothing. A source
+/// with no such line reads none and is refused the same way: it is given
+/// the line, ahead of its first. Left as it is where it names something
+/// the vertex stage does not hand on, which is an error of its own.
+std::string completeInputs(const std::string &source,
+                           const std::vector<std::string> &outputs)
+{
+    if (outputs.empty())
+        return source;
+    std::string line = "$input";
+    for (size_t i = 0; i < outputs.size(); ++i)
+        line += (i ? ", " : " ") + outputs[i];
+    size_t begin = 0, end = 0;
+    if (!findDirective(source, "$input", begin, end))
+        return line + "\n" + source;
+    const auto inputs = varyingNames(source.substr(begin, end - begin));
+    if (inputs == outputs)
+        return source;
+    for (const auto &name : inputs) {
+        if (std::find(outputs.begin(), outputs.end(), name) == outputs.end())
+            return source;
+    }
+    // One line for one line: an error of the compile names the line the
+    // author wrote
+    return source.substr(0, begin) + line + source.substr(end);
+}
+
+} // namespace
+
 int
 BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
                                       bool fragment, QString &binPath,
@@ -2410,11 +2512,21 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     }
     const std::string &vsSource =
         (simulate || !generated.empty()) ? kNoVertexStage : shader.vertexSource;
-    const std::string &fsSource =
+    const std::string &givenSource =
         simulate ? shader.simulateSource
                  : (generated.empty() ? shader.fragmentSource : generated);
-    if (fsSource.empty())
+    if (givenSource.empty())
         return BGFX_INVALID_HANDLE;
+    // Paired with a stock vertex stage, the fragment stage is given every
+    // varying that stage hands on (completeInputs())
+    std::string completed;
+    if (vsSource.empty() && generated.empty()) {
+        std::string srcDir = shaderPath() + "shaders/src";
+        if (!QFile::exists(QString::fromStdString(srcDir + "/varying.def.sc")))
+            srcDir = resource() + "shaders/src";
+        completed = completeInputs(givenSource, stockVaryings(srcDir, stockVs));
+    }
+    const std::string &fsSource = completed.empty() ? givenSource : completed;
     QByteArray keyed(fsSource.c_str(), int(fsSource.size()));
     keyed.append('\1');
     keyed.append(vsSource.c_str(), int(vsSource.size()));

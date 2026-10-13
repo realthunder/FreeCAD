@@ -215,6 +215,11 @@ endfunction()
 function(fc_bgfx_copy_shader_src outvar)
     cmake_parse_arguments(ARG "" "SHADERDIR;BGFXINC;OUTDIR" "" ${ARGN})
     file(GLOB _incs CONFIGURE_DEPENDS ${ARG_SHADERDIR}/*.sh)
+    # The stock vertex stages too: the runtime reads the '$output' line of
+    # the one a user fragment stage is paired with, to hand that stage the
+    # same varyings in the same order (BGFXRenderer.cpp, completeInputs()).
+    file(GLOB _stages CONFIGURE_DEPENDS ${ARG_SHADERDIR}/vs_fc_*.sc)
+    list(APPEND _incs ${_stages})
     list(APPEND _incs ${ARG_SHADERDIR}/varying.def.sc
                       ${ARG_BGFXINC}/bgfx_shader.sh
                       ${ARG_BGFXINC}/bgfx_compute.sh)

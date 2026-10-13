@@ -425,6 +425,14 @@ fc_add_gui_test(GuiPerViewSeenThrough_tests_run
                 per-view-seen-through.py
                 --timeout 240)
 
+# A user fragment stage names the varyings it reads and no more: Direct3D
+# pairs the stages by position, so the renderer hands the compile the stock
+# vertex stage's whole list (BGFXRenderer.cpp, completeInputs()). On OpenGL
+# this passed before as well; it is a Direct3D regression test.
+fc_add_gui_test(GuiUserShaderInputs_tests_run
+                user-shader-inputs.py
+                --timeout 240)
+
 # Released per-view-shown objects (hidden objects no view shows any more,
 # kept in the capture for a quick show again) are evicted first when
 # memory stands over PerViewShownEvictWatermark, never one a view still

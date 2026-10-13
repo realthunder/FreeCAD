@@ -1828,7 +1828,21 @@ Implementation notes from the second slice (`material` stage):
   substitutes for the mesh program in the scene beauty passes (opaque /
   sorted-transparent / ground reflection) with the stock `vs_fc_mesh`
   vertex stage when the program carries none (fragment contract: `$input
-  v_normal, v_color0, v_vpos`). The depth prepass, shadow casters,
+  v_normal, v_color0, v_vpos`). **The program names what it reads, and the
+  compile is given the rest (2026-10-13):** Direct3D pairs the two stages
+  by position, not by name, so that list -- `v_vpos` third where the vertex
+  stage has it fifth -- did not link there ("user shader: program link
+  failed", the stock program standing in), nor did a program naming one
+  varying or none; OpenGL took them all. `completeInputs()`
+  (`BGFXRenderer.cpp`) rewrites the `$input` line into the `$output` list
+  of the stock vertex stage the program is paired with, read from that
+  stage's source, which now travels with the include tree
+  (`assets/shaders/src/vs_fc_*.sc`). One line for one line, so a compile
+  error still names the author's line; a program with no `$input` line is
+  given one ahead of its first. A list naming a varying the vertex stage
+  does not hand on is left alone and fails as it did. Programs shipped to
+  the viewer tier are compiled as written: those targets are OpenGL. The
+  depth prepass, shadow casters,
   picking, highlight/on-top and WBOIT draws keep the stock programs (the
   user contract is one color output), section-clip discard is not applied
   to user programs, and a draw with a user shader is excluded from the
