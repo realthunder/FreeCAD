@@ -428,25 +428,52 @@ PartExport int initOCCTExtension()
     return extVersion;
 }
 
-/// A function of the OCCT fork's TKFillet, looked up at run time like
+/// A function of one of the OCCT fork's toolkits, looked up at run time like
 /// SetFuncShowTopoShape, so that a build against upstream OCCT, or a fork from
 /// before the function, still loads; null there.
-PartExport void *lookUpTKFillet(const char *name)
+static void *lookUpOCCT(const char *dll, const char *so, const char *name)
 {
 #ifdef FC_OS_WIN32
-    HMODULE hModule = GetModuleHandleA("TKFillet.dll");
+    (void)so;
+    HMODULE hModule = GetModuleHandleA(dll);
     if (!hModule)
-        hModule = LoadLibraryA("TKFillet.dll");
+        hModule = LoadLibraryA(dll);
     return hModule ? (void *)GetProcAddress(hModule, name) : nullptr;
 #else
+    (void)dll;
     void *f = dlsym(RTLD_DEFAULT, name);
     if (!f) {
-        void *hModule = dlopen("libTKFillet.so", RTLD_LAZY);
+        void *hModule = dlopen(so, RTLD_LAZY);
         if (hModule)
             f = dlsym(hModule, name);
     }
     return f;
 #endif
+}
+
+/// A function of the OCCT fork's TKFillet by name, null without it.
+PartExport void *lookUpTKFillet(const char *name)
+{
+    return lookUpOCCT("TKFillet.dll", "libTKFillet.so", name);
+}
+
+/// A function of the OCCT fork's TKBRep by name, null without it.
+PartExport void *lookUpTKBRep(const char *name)
+{
+    return lookUpOCCT("TKBRep.dll", "libTKBRep.so", name);
+}
+
+typedef bool (*FuncIsCacheRepresentation)(const Standard_Transient *);
+
+/// Whether a BRep curve or point representation is a cache: one a frozen
+/// (Immutable) edge or vertex of the OCCT fork was given after it was frozen,
+/// such as a pcurve for a face built on the edge elsewhere. The fork's
+/// BRep_Builder_IsCache, looked up at run time; false without it -- upstream
+/// OCCT freezes nothing and has no caches.
+PartExport bool isOCCTCacheRepresentation(const Standard_Transient *rep)
+{
+    static const auto func = (FuncIsCacheRepresentation)lookUpTKBRep("BRep_Builder_IsCache");
+    return func && rep && func(rep);
 }
 
 typedef double (*FuncSetFilletSetting)(double);

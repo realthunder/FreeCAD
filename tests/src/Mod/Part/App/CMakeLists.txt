@@ -19,6 +19,7 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/ImmutableShape.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/ShapeDiff.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/ElementAppearance.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/OcctCacheQuery.cpp
             # ${CMAKE_CURRENT_SOURCE_DIR}/FeatureFillet.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/PartTestHelpers.cpp
 )
