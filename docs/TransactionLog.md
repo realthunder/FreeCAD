@@ -18942,6 +18942,102 @@ rows it keeps are checked in node (`web/src/widgets/gate.ts`, 17). The
 browser test is registered and skips where it has no viewer or no
 browser, as the gates run it; run by hand with both, it passes.
 
+### 32.22 The log's panel in a browser, second stage: act on it (2026-10-13)
+
+**Asked (user, 2026-10-13)**: "continue stage 2". The first stage reads
+(32.21); this one does what the desktop's panel does with a row, a
+version and a branch, from the page's own card.
+
+**The ops** (`Gui/SceneLog.cpp`), each one the call the desktop's panel
+makes, run as the connection that asked (30.3 S.b) -- the row it writes
+is that user's:
+
+| op | asks | does | refuses |
+| --- | --- | --- | --- |
+| `log.undo` | `rows` | the rows taken back as one step though none is the last (24.4, 33.13): all of them or none | `Refused` with the host's reason -- which row is in the way and what changed since; `NotHere` for a row of another branch's history; `NothingToUndo` for a record or a recompute; `UnknownRow` |
+| `log.versions` | | the versions as numbered: `num`, `named`, `name`, `branch` and `branchName`, `seq`, `time`, `here`, and `head` -- the document as it stands, which a version is while only records follow it | |
+| `log.snapshot` | `name`, or none | a version of the document as it stands (16.3), named where a name is given; answers `version` | `Refused` where the document cannot be snapshotted |
+| `log.nameVersion` | `version`, `name` | names it; with no name it is unnamed again | `UnknownVersion` |
+| `log.restore` | `version` | the document made what the version was, one step that undo takes back (24.5) | `UnknownVersion`; `Refused` with the reason |
+| `log.branches` | | the branches: `id`, `name`, `head`, `fromVersion`, `fromSeq`, `time`, `closed`, `current` -- and `mayDelete` | |
+| `log.branch` | `name`, and `version` or `row` or neither | a new branch from there, or from where the document is, switched to (17, 26); answers `made` | `Refused` -- a name taken, a row there is none of; `Editing` |
+| `log.switch` | `name` | the document made the head of that branch, in place | `UnknownBranch`; `Refused` -- a closed one; `Editing` |
+| `log.renameBranch` | `name`, `to` | | `UnknownBranch`; `Refused` -- a name taken |
+| `log.deleteBranch` | `name` | the branch and the rows only it holds, gone; answers `rows` | `Forbidden` to all but the host; `UnknownBranch`; `Refused` -- the one the document is on |
+
+Every act answers with where the document is in its log after it --
+`last`, `head`, `branch`, `branchName` -- so that the one who asked need
+not wait for the cue. The cue follows by itself (32.21); a snapshot and
+a name write no row a signal tells of, so those two say it themselves.
+All ten are ops that write: a connection that may only look is answered
+`ViewOnly` by the dispatch.
+
+**Three things decided here, each open to be ruled otherwise.**
+
+- *Deleting a branch is the host's.* Every other act is a row, or leaves
+  every row where it was: an undo, a restore and a switch are each taken
+  back. A branch deleted takes with it the rows only it held, and nothing
+  brings them back -- the desktop's panel asks "This cannot be undone"
+  first. A connection that may edit is answered `Forbidden`, and
+  `log.branches` says `mayDelete` so that a page does not offer it. The
+  same would hold of a trim and a squash, which are not in this stage.
+- *An edit open holds the document where it is.* A switch, and a branch
+  from anywhere but where the document is, check the whole document out;
+  the one in the edit may be another client, who did not ask. Both are
+  answered `Editing` until the edit is left. The desktop's panel has no
+  such guard -- there the one who switches is the one who edits. A
+  restore and an undo are steps like any and are not held.
+- *A row of another branch is not taken back from here.* The desktop's
+  menu offers it and lets the document refuse; the op says `NotHere`
+  before asking, and the card does not offer it.
+
+**The page** (`web/src/logpanel.tsx`; what it says and decides in
+`logmodel.ts`). The branch is a list in the card's head: choosing
+another switches, and the list shows what the host answered, not what
+was chosen. Under it a bar: the two lists the card has, "Rows" and
+"Versions", and the acts that need no row -- "Branch...", "Rename...",
+"Snapshot...", and "Delete..." for the host. A click chooses a row; with
+Ctrl or the command key it is added to those chosen, with Shift all
+between are, and "Several" makes a plain click add, for a screen with no
+keys. With rows chosen: "Undo row N" or "Undo N rows", offered where
+every one of them is this history's, made by hand and changed something;
+and "Branch from here..." of one row. A version chosen has "Restore",
+"Name..." or "Rename...", "Unname", "Branch from here...".
+
+An act that needs a name, or a yes to what nothing takes back, asks in
+the card itself, one question at a time -- a line, the text, the act's
+own word and "Cancel"; a name that will not do is said on the button
+before it is sent. What the host answered is one line in the card: what
+was done, or in red why not, in the host's words. The lists are asked
+again after every act, done or refused: a refusal is often that the card
+showed what is no longer so.
+
+![the card's acts: a row of another branch after switching back](images/transaction-log/15-log-browser-acts.png)
+
+![the versions of the log in the card](images/transaction-log/15-log-browser-versions.png)
+
+**Left.** "Apply row here" of another branch's row, and "Roll back the
+merge", which are the merge's (the third stage, and the open question of
+32.20). Trim, squash, "Open version", "Branch to document": the first
+two take rows away for good, the others open a document the page is not
+joined to. Kept values and requests are the fourth stage.
+
+**Tests.** `tests/gui/serve-log-acts.py` (37), served with no window: a
+client that may edit, one that may only look, and the host -- each act,
+each refusal, who may. `tests/gui/serve-log-acts-browser.py` (20,
+driver `scripts/logacts-drive.js`): Chrome takes back one row and two,
+is refused one, snapshots, branches, switches back, restores, renames,
+with the host read after each. `web/src/widgets/gate.ts`: 23 checks of
+the card's model. Registered as `GuiServeLogActs` and
+`GuiServeLogActsBrowser`.
+
+*Seen once, not chased.* In the gate run of this change
+`scripts/transaction-log-import-check.py` died of a segmentation fault
+before it wrote a result: PySide releasing a wrapper at a deferred
+delete (`Shiboken::BindingManager::releaseWrapper`), from the event
+loop. It serves nothing and asks none of these ops; alone, on the same
+build, it passed 12 runs of 12 with its 49 checks.
+
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
 `origin/Transaction` at `09c96678f1` was merged into `LinkVibe` on the

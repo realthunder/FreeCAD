@@ -525,7 +525,32 @@ the object goes into an edit, the panel with the slider comes up, and
 
 ![A step's change, shown from the History panel](images/transaction-log/14-log-browser-shown.png)
 
-This panel only reads. Undoing a step, versions, branches and merging are
+The panel also does most of what the desktop's does with a step, a version
+and a branch. Whatever you ask is done by the computer that shares the
+document, and the panel says in one line what it did, or in red why it did
+not.
+
+![Steps, branches and versions from the History panel](images/transaction-log/15-log-browser-acts.png)
+
+- **Undo a step that is not the last.** Click the step, then **Undo row**.
+  To undo several as one, hold Ctrl (or the command key) while clicking, or
+  Shift for all between two; on a phone tick **Several** first. A step is
+  refused when something later changed what it touched, and the panel says
+  what and by which step (section 5).
+- **Branches.** The list beside the title is the branch the document is on;
+  choosing another switches to it. **Branch...** makes one from where the
+  document is, **Branch from here...** from the step or the version you
+  clicked, and **Rename...** renames the one you are on. Switching waits
+  until nobody has an edit open. Deleting a branch cannot be undone, so
+  only the person sharing the document is offered it.
+- **Versions**, the second list. **Snapshot...** takes one of the document
+  as it is; give it a name to keep it. Click a version to **Restore** the
+  document to it -- one step, which undo takes back -- or to name, rename
+  or unname it.
+
+![The versions, from the History panel](images/transaction-log/15-log-browser-versions.png)
+
+Merging, applying a step of another branch, trimming and squashing are
 done in the desktop's panel for now.
 
 ## 13. I want to...
@@ -553,6 +578,7 @@ done in the desktop's panel for now.
 | see what is kept, and let it go | the **Kept** tab |
 | make the file's history shorter | Versions: **Trim...** or **Squash...** |
 | read the history from a browser | the page's menu, **History** (section 12) |
+| undo a step, switch branch or restore a version from a browser | **History**: click the step or the version, then the button under the list (section 12) |
 | see what one step did to a shape, from a browser | **History**: click the step, then **Show** on its shape |
 
 ## 14. The same from Python
@@ -601,3 +627,10 @@ GUIDE_OUT=$PWD/../../docs/images/transaction-log \
 A fresh home and cache each time: the run ends abruptly, and the next one in
 the same cache would be offered the document to recover, over the pictures.
 `shots.txt` beside the pictures lists what was taken, and any error.
+
+The pictures of section 12 are a browser's, and that script does not take
+them. They are written by the two browser tests into their output directory
+-- `log.png` and `shown.png` by `tests/gui/serve-log-browser.py`, `acts.png`
+and `versions.png` by `tests/gui/serve-log-acts-browser.py` -- and copied
+from there as `14-log-browser*.png` and `15-log-browser-*.png`. Both tests
+say in their first lines how they are run.
