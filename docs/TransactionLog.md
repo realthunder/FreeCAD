@@ -18737,12 +18737,14 @@ colours:
   served document. Putting those into a session is the same step for
   several objects at once -- one of them in edit and the others the
   session's nodes -- and it puts the document in an edit while the
-  merge's preview is open. Not built; to be ruled.
+  merge's preview is open. Not built; to be ruled. (Said again, plainer,
+  in 32.20.)
 - *A view-only client cannot ask*: the `edit` op is an editor's.
+  (Ruled to stay so, 32.20.)
 - *The page's panel says OK and Cancel*, as it does of every task; the
-  desktop's has Close. Either leaves.
+  desktop's has Close. Either leaves. (It says Close since 32.20.)
 - *In the session's overlay the state drawn full is flat*: the overlay
-  pass does not light it as the scene's pass did.
+  pass does not light it as the scene's pass did. (Lit since 32.20.)
 - The numbers reach a client as the panel's words, not as data of
   their own.
 
@@ -18766,6 +18768,179 @@ page read on the host, the leaving. The browser test is registered and
 skips where it has no viewer or no browser, as the gates run it; it and
 the six browser tests that passed before (32.18) were run by hand with
 both, and pass.
+
+### 32.20 The editing task, finished: Close, the light, and who may ask (2026-10-13)
+
+**Ruled (user, 2026-10-13)** on what 32.19 left: seeing the log needs
+the right to edit; the panel shows Close; the flat drawing is fixed. The
+first item, where the log's own panel and the merge dialog draw, was
+asked back and is still open -- it is said again below, plainer.
+
+- *Who may ask.* A client that may only look cannot ask for an object's
+  last change: `edit` is an op of those who may edit, and stays so. The
+  same rule is the whole log's (32.21).
+- *Close.* The page drew an OK and a Cancel under every task panel,
+  whatever buttons the task had. The panel mirror sends the box's own
+  buttons already, each with its standard flag
+  (`QDialogButtonBox::StandardButton`), so the page draws those
+  (`widgets/panel.tsx`, `panelButtonOp()` in `widgets/protocol.ts`): OK
+  asks the panel's root to accept and Cancel and Close to reject -- the
+  path it had -- and any other standard button is clicked by its flag.
+  A client that may not edit can still press the two that leave. A box
+  that came with no buttons keeps the OK and Cancel. This is every
+  task's panel, not this one's alone: a task with OK and Cancel shows
+  what it showed.
+- *The light.* The bgfx backend shades every overlay flat
+  (`BGFXViewSubmit.cpp`): overlays were the navigation cube and the
+  axis cross, chrome with a camera of its own, whose faces must not
+  darken by angle. The editing graph and the dimensions are overlays
+  too, but drawn with the scene's camera, and what they hold is the
+  scene's -- the two states of this edit, a feature's preview, a
+  dragger -- which Coin lights. The view now says which kind the
+  overlay being submitted is (`overlayInScene`, set from the feed's
+  anchor), and only the chrome is flat. This is the backend's, so the
+  desktop's views draw the same.
+
+![in the browser: lit, and left by Close](images/transaction-log/13-stream-edit.png)
+
+**Still open: where the log's panel and the merge dialog draw.** Said
+again, since the wording of 32.19 was not clear. There are three
+places that show a shape's two states, and they share one piece of
+code, `ShapeDiffView`:
+
+1. the edit of 32.19 ("Show last change");
+2. the bar at the foot of the desktop's log panel, which shows what
+   the row, the version or the merge chosen in the list changed, of
+   the objects chosen (32.9, 32.10, 32.13);
+3. the merge dialog's preview (32.15, 32.17).
+
+A view of an object is a Coin node, the object's *root*, which every 3D
+view of the document traverses, and which a served document publishes
+to every client as the shared scene. Places 2 and 3 add the two states
+as a child of that node, one per object shown. So while the host looks
+at a row in the log panel, or has the merge's preview open, **every
+view of the document and every connected browser sees the coloured
+states over the model**, wanted or not; nobody else can turn them off,
+and a client cannot tell them from the model. Place 1 does not: its
+states hang in the edit session's own root, which only the views in
+the session draw.
+
+The ruling "consider shape diff as an editing task, overlay in the
+editing root" was built for place 1. Applied to 2 and 3 it means that
+choosing a row in the log panel, or opening the merge's preview, puts
+the document in an edit: the model tree shows it, nothing else can be
+edited until it is left, and a second edit ends the first. For the
+merge dialog that fits -- it is a task already. For the log panel it
+changes how it feels: today a row is clicked through, one after the
+other, with nothing to leave. Two ways out, either of them small:
+
+- (a) *the bar only on asking*: the log panel's bar shows nothing by
+  itself; a "Show" on a row enters the edit of 32.19 for it (the
+  browser's panel does exactly this, 32.21), and the merge dialog is an
+  edit while it is open;
+- (b) *as it is on the desktop, hidden from clients*: places 2 and 3
+  keep drawing under the object's root, and the serving source leaves
+  those nodes out of what it publishes, so that a client sees them only
+  in an edit it is in.
+
+### 32.21 The log's panel in a browser, first stage: read it (2026-10-13)
+
+**Asked (user, 2026-10-13)**: "start on panel in browser", after the
+estimate of the same day -- a panel of the page's own over new ops, in
+four stages; this is the first, reading. **Ruled with it**: seeing the
+log needs the right to edit.
+
+**Why not the desktop's panel mirrored.** That dock is one widget of
+the host's window. Mirrored, every client and the desktop would share
+one selection and one tab; most of what it does is in context menus,
+which the mirror does not send; its graph column is painted. So the
+page has a card of its own and asks the host for what it lists.
+
+**The ops** (`Gui/SceneLog.cpp`), all three registered as ops that
+write, though they read -- which is what has the dispatch refuse a
+connection that may only look, `ViewOnly`, before a handler runs:
+
+| op | asks | answers |
+| --- | --- | --- |
+| `log.rows` | `before`, or `after`, and `limit` (100, at most 500) | `rows` newest first -- `seq`, `parent`, `kind`, `origin`, `name`, `time`, `author` and `authorKind`, `branch` and `branchName`, `inverts`, `merged`, `ops` (how many: 0 is a record), `here` (of the history the document is at the head of) -- and `more`, `last`, `head`, `branch`, `branchName` |
+| `log.ops` | `row` | the row's `name` and `script`, and `ops`: `idx`, `op`, `kind`, `prop`, `type`, the refs `before` and `after`, `derived`, `followed`, and of an object `cid`, `obj`, `label`, `here` (it is in the document now) and `shows` (its view can show the two states); at most 2000, `count` says how many there are |
+| `log.value` | `ref`, and `max` (64 KiB, at most 1 MiB) | the value's `text` as the log holds it, cut at `max` on a character -- `bytes` and `truncated` say so -- and the `attachments` by name and size |
+
+A page of rows is read back from the newest: rows go as well as come
+(a trim, a squash), so the numbers have gaps, and a page is read until
+it is full. With `after` the answer is all that came since; where that
+is more than a page, the newest of it and `reset`. An object that is
+gone is known by the name the log made it with.
+
+**The cue.** Asking for the rows of a document is what subscribes a
+connection: when the document commits, undoes, redoes, recomputes or
+changes its branches, those who asked are told `log.changed` with the
+document's name and nothing of the log, 150 ms after the first of a
+burst. It goes to the connections that may still edit; one that has
+gone, or may only look by then, is forgotten.
+
+**A row's change, shown.** The edit of 32.19 shows the last change of
+an object. The `edit` op now takes a `row` with the mode
+(`ViewProvider::ValueDiff`): the change that row made of the object's
+shape, its value before the first time the row set it and after the
+last (`ViewProviderDocumentObject::valueChangeAt()`), in the same panel
+and the same session overlay. The row is said to the view provider
+(`setValueChangeRow()`) and spent by the edit that starts next, entered
+or refused; a row that did not change the object is a refusal.
+
+**The page** (`web/src/logpanel.tsx`, what it says and keeps in
+`logmodel.ts`): "History" in the launcher, not offered to a client that
+may only look, and `?history` on load. A card with three lists, one
+under the other: the rows -- number, name, who, when; the rows that
+changed nothing left out until "Records" is ticked; a row of another
+branch in italics with the branch's name -- the ops of the row chosen,
+and the value of the op chosen, after or before. An op whose change
+can be shown has a "Show", which asks for the edit above: the host's
+panel of it comes up in the page by itself (32.19) and Close leaves
+(32.20). On the host's cue the newest page is asked for again and put
+on top of what was loaded of older rows; on another branch, or after
+rows went, the list starts over.
+
+![the log's card in a browser: rows, the ops of one, a value](images/transaction-log/14-log-browser.png)
+
+![a row's change shown from the card](images/transaction-log/14-log-browser-shown.png)
+
+**Left, the stages that follow.** Acting on rows (undo one or several,
+versions, branches); the merge in the browser, which waits for the
+open question of 32.20; kept values and requests. Of this stage: the
+graph of branches is not drawn -- a row says its branch in words; a
+value is shown as the log's text, a shape's as the start of it.
+
+*Seen, not chased.* Where the row shown is not the last, the two states
+are smaller or elsewhere than the object as it is now, which the
+session hides. In the browser one line of the hidden object then stays,
+one pixel wide and faint (about a fifth black): the edge nearest the
+camera, in the second picture above the short line under the box. It is
+not the object's own edge draw -- given a red line colour the object's
+edges are red before the edit and the line left is still grey -- and
+not the pointer's highlight. The same hiding serves PartDesign's
+preview (docs/ThinClient.md sec 8.12), so it is likely there too.
+
+**Tests.** `tests/gui/serve-log.py` (25), served with no window, a
+client that may edit and one that came by a link that may only look:
+the rows as the host has them, newest first, with name, kind, count of
+ops and author; a page of two at a time to the end, none twice and none
+missed; the ops of a row -- the property with its two refs, the shape
+with `shows`, an object gone since by its name, an unknown row; a value
+whole, the one before, the start of a long one, an unknown ref; the cue
+on a commit of the host's and the rows `after`; the viewer refused all
+three and told nothing; the `edit` op with a row that did not change
+the object refused, with none the last change, with a row that row's,
+left; none of it wrote a row. `serve-log-browser.py` (13, by
+`scripts/logpanel-drive.js`), a real browser: the card up on load with
+the rows that changed something; a row committed meanwhile coming in by
+itself; the records when asked for; the ops of a row and which have a
+Show; a value after and before; Show entering the edit of that row on
+the host, the host's panel in the page saying the row, Close and no OK,
+the two states drawn; Close ending it. The page's own words and which
+rows it keeps are checked in node (`web/src/widgets/gate.ts`, 17). The
+browser test is registered and skips where it has no viewer or no
+browser, as the gates run it; run by hand with both, it passes.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 

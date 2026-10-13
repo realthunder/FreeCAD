@@ -24,9 +24,10 @@ again after the panel changes.
 9. [Branches](#9-branches)
 10. [Merging](#10-merging)
 11. [Requests: changes someone sends you](#11-requests-changes-someone-sends-you)
-12. [I want to...](#12-i-want-to)
-13. [The same from Python](#13-the-same-from-python)
-14. [Taking the pictures again](#14-taking-the-pictures-again)
+12. [The history in a browser](#12-the-history-in-a-browser)
+13. [I want to...](#13-i-want-to)
+14. [The same from Python](#14-the-same-from-python)
+15. [Taking the pictures again](#15-taking-the-pictures-again)
 
 ## 1. What the log is
 
@@ -280,7 +281,8 @@ faces or by the material, the slider from **Before** to **After**,
 This one is not drawn in the document's own scene. In a document that is
 shared, the people connected see it only if they are in the edit with you;
 and someone looking at the document in a browser has the same entry in
-their own right-click menu, with the panel and its slider on their page:
+their own right-click menu, with the panel and its slider on their page.
+The panel there has the same **Close**:
 
 ![The last change, asked for from a browser](images/transaction-log/13-stream-edit.png)
 
@@ -495,7 +497,38 @@ above the tabs. It is hidden while there are none.
 The Conflicts column says how many conflicts a merge would have, before you
 open it.
 
-## 12. I want to...
+## 12. The history in a browser
+
+Someone connected to a shared document in a browser has a panel of their
+own for its history: **History** in the page's menu (the three lines at the
+bottom left). It is offered to people who may edit; someone who may only
+look does not have it, and cannot read the history any other way.
+
+![The history in a browser: steps, the operations of one, a value](images/transaction-log/14-log-browser.png)
+
+It reads from top to bottom:
+
+- **The steps**, newest first: number, name, who made it, when. Steps
+  that changed nothing -- a recompute's record, someone connecting -- are
+  left out until **Records** is ticked. A step of another branch is in
+  italics, with the branch's name. **Load older** fetches the next hundred.
+  The list keeps itself up to date while the document is worked on.
+- **The operations** of the step you click: which object, which property.
+  An object that has since been removed is in italics.
+- **The value** of the operation you click, **After** or **Before**. A long
+  value, such as a shape, shows its start and says how long it is.
+
+An operation that changed a shape has a **Show** button. It does what
+"Show last change" does (section 6), for that step instead of the last one:
+the object goes into an edit, the panel with the slider comes up, and
+**Close** ends it.
+
+![A step's change, shown from the History panel](images/transaction-log/14-log-browser-shown.png)
+
+This panel only reads. Undoing a step, versions, branches and merging are
+done in the desktop's panel for now.
+
+## 13. I want to...
 
 | I want to... | Where |
 |---|---|
@@ -519,8 +552,10 @@ open it.
 | keep an old shape in the file | right-click its operation, **Keep this value in the file** |
 | see what is kept, and let it go | the **Kept** tab |
 | make the file's history shorter | Versions: **Trim...** or **Squash...** |
+| read the history from a browser | the page's menu, **History** (section 12) |
+| see what one step did to a shape, from a browser | **History**: click the step, then **Show** on its shape |
 
-## 13. The same from Python
+## 14. The same from Python
 
 Everything the panel does is a method of the document.
 
@@ -547,7 +582,7 @@ Everything the panel does is a method of the document.
 Each has its arguments and what it returns in its docstring:
 `help(doc.previewTransactionMerge)`.
 
-## 14. Taking the pictures again
+## 15. Taking the pictures again
 
 The pictures are taken by a script that builds a small document, edits,
 branches and merges it, and drives the panel through this guide. Run it
