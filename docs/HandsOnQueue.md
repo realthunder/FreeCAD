@@ -1483,6 +1483,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; four points under the entry, NOT ANSWERED |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found | OPEN; three points under the entry, NOT ANSWERED |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
+| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | OPEN; the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. Log and dump kept; two points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11463,6 +11464,74 @@ Pointers, READ by the note-taker, nothing run:
   (the overlay's outline effect lays a dark copy under what is
   painted -- a thin frame would get it too).
 
+## 97. A crash: File > Revert on the loaded scanner document -- OPEN, the stack read from the debugger's log; two points not answered
+
+**2026-10-13 11:20, the reporter:** "new crash, check cdb and possibly dump, the
+crash happen when I click menu File -> Revert to rever the loaded scanner
+document"
+
+READ by the note-taker in the debugger's log, nothing run, the debugger
+and the dump not touched:
+- The session: the reporter's copy under cdb (`tools\fcad-user-cdb.cmd`),
+  the stage of 09:36 (`abca255e23`; `.conda\user-app\INSTALLED.txt`),
+  up for 1 h 36 min at the crash.
+- The log `D:\works\sw\tools\dbg\cdb_fcad_user.log`: "Access violation
+  - code c0000005 (first chance)" at 11:18:43, "Attempt to read from
+  address 0000024988d6a010", in
+  `FreeCADApp!` `anonymous namespace'::describe+0xa5`
+  (`src\App\TransactionLog.cpp` @ 151). A dump was written,
+  `D:\works\sw\tools\dbg\dumps\fcad_user_av_e0b0_2026-10-13_11-18-52-623_0344.dmp`
+  (6.7 MB), then the second chance. The program's own short log,
+  `%APPDATA%\FreeCAD\crash-2026_10_13-11_19_00_588.log`, has the same
+  address: "native exception 0xc0000005 at ... (FreeCADApp.dll+0x71a515),
+  reading 0x24988d6a010".
+- The stack, from the crash outwards:
+  1. `anonymous namespace'::describe` (`TransactionLog.cpp` @ 151)
+  2. `App::TransactionLog::onCommit` (`TransactionLog.cpp` @ 3143)
+  3. `App::Document::_commitTransaction` (`Document.cpp` @ 1913)
+  4. `App::Application::commitImplicitTransactions`
+     (`AutoTransaction.cpp` @ 176) -- called as a QUEUED call
+     (`QMetaCallEvent::placeMetaCall`)
+  5. ... Qt's sending of posted events ...
+  6. `pumpEvents` <- `Gui::SequencerBar::setValue` <-
+     `Base::SequencerLauncher::next` -- the progress bar
+  7. `App::Document::readObjects` <- `App::Document::Restore` <-
+     `App::Document::restore` <- `App::DocumentPy::restore`
+  8. Python <- `Gui::Command::_doCommand` <-
+     `StdCmdRevert::activated` (`CommandDoc.cpp` @ 966)
+- Kept, outside the repository: the whole debugger log and the short
+  crash log copied to `..\dl\handson\2026-10-13\entry97` (the log is
+  written over at the next start under the debugger); the dump stays
+  where the debugger wrote it.
+
+The note-taker's reading of the stack, from the source, NOT shown by a
+run:
+- Revert reads the document in again (`Document::restore`), which first
+  removes every object it has. While it reads the objects, each step of
+  the progress bar lets posted events run.
+- One of them is a queued `commitImplicitTransactions`: an implicit
+  transaction was still open on the document. Its commit goes through
+  the transaction log, which walks the transaction's objects and asks
+  each for its type (`describe`: `c.container->getTypeId()`, line 151)
+  -- and one of those objects is of the document as it was BEFORE the
+  revert, deleted by now. The read of freed memory is the crash.
+- So the two things that meet: a transaction left open (or queued to be
+  committed) when Revert starts, and events let in during the restore.
+- Not new this morning by the history: the implicit transactions
+  (`44a585781b`, 2026-09-22) and the transaction log are in the stages
+  of 2026-10-12 17:52 and 2026-10-13 06:52 too. Whether the same crash
+  could happen there is NOT known.
+- The same family as entry 79 (a repaint let in by the restore's
+  progress bar took scene roots away under a walk) and entry 47's
+  crash on a close inside the load: something let in by the progress
+  bar's pump meets a document half restored.
+
+NOT said, lettered for an answer:
+a. What had been done to the document before Revert: the migration
+   recompute (entry 92), an edit panel opened or closed (a Pocket's,
+   entries 91 and 92), a value changed in the property view?
+b. Once, or does it crash at every Revert of that document?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11472,5 +11541,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 96 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 97 are of 2026-10-13, 82 found by
 it)
