@@ -121,6 +121,17 @@ The note-taker's note: the shortened text is the OTHER branch's setting
 stays on origin/Transaction and comes back as a conflict or a failure
 at a next merge unless it is shortened there too. Not said by the build
 session; told to it by the note-taker.
+[WRONG, WITHDRAWN by the note-taker 2026-10-13 08:51, written 08:48, on the
+build session's correction: after `5a5b5ff906` the merge base with that
+branch is its tip `5d8f2e488c` (READ by the note-taker: `git merge-base
+HEAD origin/Transaction` says so). At a next merge LinkVibe has changed
+those lines and Transaction has not, so the short text is kept with no
+conflict; it would return only if the same description were edited on
+Transaction again. And when Transaction next merges LinkVibe, as it
+did on 2026-10-12 (`13f17a2e81`), it takes the short text. What holds
+of the note: until then the Transaction branch built by itself has the
+long text and fails those two tests. NOTHING for the reporter to
+decide here, in the build session's reading and now the note-taker's.]
 
 **2026-10-13 08:18: the build of the Transaction merge PASSED; both suites
 started on it, no result yet. All LOCAL: not pushed, NOT in the staged
