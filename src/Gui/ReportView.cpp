@@ -802,12 +802,15 @@ void ReportOutput::paintEvent(QPaintEvent* ev)
     // gives its items there, as wide as the text (docs/HandsOnQueue.md entry
     // 98; TextEdit::paintEvent() is the same for the Python console)
     if (testAttribute(Qt::WA_NoSystemBackground)) {
-        const QBrush ground = OverlayManager::overlayItemBackground();
+        QTextBlock block = cursorForPosition(QPoint(1, ev->rect().top())).block();
+        // by the text the view shows, not by the strip being painted: one
+        // ground for the whole of it
+        const QBrush ground = OverlayManager::overlayTextGround(
+                cursorForPosition(QPoint(1, 1)).block());
         if (ground.style() != Qt::NoBrush) {
             QPainter backing(viewport());
             const QPointF offset(-horizontalScrollBar()->value(), -verticalScrollBar()->value());
             auto layout = document()->documentLayout();
-            QTextBlock block = cursorForPosition(QPoint(1, ev->rect().top())).block();
             for (; block.isValid(); block = block.next()) {
                 const QRectF box = layout->blockBoundingRect(block).translated(offset);
                 if (box.top() > ev->rect().bottom())

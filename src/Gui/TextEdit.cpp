@@ -87,7 +87,7 @@ TextEdit::~TextEdit() = default;
 void TextEdit::paintEvent(QPaintEvent* e)
 {
     if (testAttribute(Qt::WA_NoSystemBackground)) {
-        const QBrush ground = OverlayManager::overlayItemBackground();
+        const QBrush ground = OverlayManager::overlayTextGround(firstVisibleBlock());
         if (ground.style() != Qt::NoBrush) {
             QPainter painter(viewport());
             const QPointF offset = contentOffset();

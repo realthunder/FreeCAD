@@ -166,6 +166,18 @@ public:
      */
     static void paintTextGround(QPainter &painter, const QTextBlock &block,
                                 const QPointF &pos, const QBrush &ground);
+    /** The ground for paintTextGround(): the items' (overlayItemBackground()),
+     * unless the text would not read on it. A theme may keep a text of the
+     * other kind in its text views than in its items -- Classic: black, for
+     * the white page a docked console has, while its overlay sheet gives the
+     * tree a light text on the dark of the 3D view -- and black on that dark
+     * was the "scrambled" text of docs/HandsOnQueue.md entry 111. How light
+     * the text is, is read from the \a count blocks from \a first on, in
+     * the colours their highlighter gives them; too near the ground, the
+     * ground is a light one for a dark text and a dark one for a light, at
+     * the same opacity.
+     */
+    static QBrush overlayTextGround(const QTextBlock &first, int count = 40);
     /** The brush an item of an overlaid tree is backed with while the pointer
      * is on it (docs/HandsOnQueue.md entry 87): the theme's colour for that at
      * the opacity of the item backgrounds, as wide as those. No brush under

@@ -11,9 +11,13 @@ and where there is a background the outline is dropped, for a tree item too.
 
 Claims, every dock overlaid and each overlay's transparent mode on, some
 lines written to the console and to the report view:
-  - the console's panel paints a ground at the overlay's opacity, in the
-    colour of the tree's item ground, over a good part of the rows its text
-    is on -- and nothing at all on a stretch below its last line;
+  - the console's panel paints a ground at the overlay's opacity over a good
+    part of the rows its text is on -- and nothing at all on a stretch below
+    its last line. The ground is the tree's item ground, or, where the text
+    would not read on that, a light one for a dark text and a dark one for a
+    light (docs/HandsOnQueue.md entry 111: the Classic theme keeps a black
+    text in the console and gives the tree a dark ground);
+  - the text stands out from the ground it got;
   - the same for the report view;
   - around the text on that ground there is no outline: no pixel of the
     panel that is darker than the ground and more opaque than it, beyond a
@@ -134,6 +138,27 @@ def look(name, edit):
                  want is not None):
         return
     w, h = image.width(), image.height()
+    # the ground the panel took: the items', or the light or the dark one of
+    # OverlayManager::overlayTextGround() -- whichever most of its pixels at
+    # the overlay's opacity have
+    counts = {}
+    solid = {}
+    for y in range(0, h):
+        for x in range(0, w):
+            v = image.pixel(x, y)
+            a = (v >> 24) & 255
+            rgb = ((v >> 16) & 255, (v >> 8) & 255, v & 255)
+            if abs(a - alpha) <= 3:
+                for name_, c in (("the items'", want), ("light", (232, 232, 232)),
+                                 ("dark", (40, 40, 40))):
+                    if max(abs(rgb[i] - c[i]) for i in range(3)) <= 6:
+                        counts[name_] = counts.get(name_, 0) + 1
+            elif a >= 250:
+                solid[rgb] = solid.get(rgb, 0) + 1
+    which = max(counts, key=counts.get) if counts else "the items'"
+    items = want
+    want = {"the items'": want, "light": (232, 232, 232), "dark": (40, 40, 40)}[which]
+    note("INFO %s: the ground is %s, %s (the items' is %s)" % (name, which, want, items))
     ground = clear = rim = 0
     rows_with_ground = set()
     last = -1
@@ -155,10 +180,15 @@ def look(name, edit):
     note("INFO %s: %dx%d, ground pixels %d on %d rows (the last at y %d), clear %d, rim %d; "
          "the ground wanted %s at %d" % (name, w, h, ground, len(rows_with_ground), last, clear,
                                          rim, want, alpha))
-    if not check("%s: its text has a ground at the overlay's opacity, in the item ground's colour"
-                 % name, ground > 400 and len(rows_with_ground) >= 20,
-                 "%d pixels on %d rows" % (ground, len(rows_with_ground))):
+    if not check("%s: its text has a ground at the overlay's opacity" % name,
+                 ground > 400 and len(rows_with_ground) >= 20,
+                 "%d pixels on %d rows, %s" % (ground, len(rows_with_ground), which)):
         return
+    if solid:
+        text = max(solid, key=solid.get)
+        gap = abs(QtGui.qGray(*text) - QtGui.qGray(*want))
+        check("%s: the text stands out from its ground" % name, gap >= 60,
+              "most of the text is %s, the ground %s: %d apart in lightness" % (text, want, gap))
     below = [(image.pixel(x, y) >> 24) & 255
              for y in range(min(last + 12, h - 1), min(last + 40, h)) for x in range(0, w, 3)]
     if below:
