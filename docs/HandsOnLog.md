@@ -6467,3 +6467,289 @@ failed there and passed on the screen), shows an eye-off overlay solid
 where the screen shows it clear, and has no render engine; a claim is
 judged on the platform that can show it. A `git checkout --` of a header
 to take an edit back gives the header a new time and costs a full build.
+
+## 2026-10-13, the evening: entries 108, 111, 99 (c) again, 109 -- PUSHED twice, 19:24 and 20:13; not staged
+
+**Pushed.** 19:24 on the reporter's "push and continue": origin
+`LinkVibe` = `b7480369e7`, the afternoon's twelve commits. 20:13 on their
+"after finish current issue. push then continue": origin = `5c0b30ce1b`,
+entry 108. The staged copy is still the one of 16:55.
+
+**Entry 108, a feature in edit with its body hidden shows no base -- FIXED
+`5c0b30ce1b`.** A view's own "shown" marked the display-mode switch of the
+occurrence's leaf alone (`ViewVisibility::countShown` ->
+`SoFCSwitch::setPerViewShown`); the scene capture, shared by every view,
+stops at a switch that is off, so nothing inside a body hidden in the
+document was captured, whatever a view's table said. The containers a
+shown occurrence is reached through count as shown for the capture now
+(`Resolution::steps`); what else they hold is captured tagged and stays
+hidden in every view with no entry for it.
+
+What is then drawn with the body hidden is the base feature ON TOP,
+see-through, its far edges with it -- not the solid base the edit shows
+with the body shown. That is not the fix's doing: `PartDesignGui`'s
+`Monitor` (the old fork's rule, `Utils.cpp` about line 900) puts the base
+in the view's on-top group whenever a container on the path is hidden,
+`Mod/Part/EditOnTop` or not, and the on-top display draws with
+`TransparencyOnTop`. Found the long way round: the see-through box was
+first taken for a fault of the fix, then shown to be the pad by its
+colour, then to stay see-through after the body was shown again, which
+is the on-top group's doing and no capture's. My reading of the
+reporter's "show on top is supposed to be shown regardless of normal
+visibility" is that this display is what is asked; "just make it the
+same regardless of body visible or not" I read as "the base feature in
+both cases". If the same PICTURE was meant, the rule in `Monitor` is
+what to change -- a point for the reporter.
+
+`tests/gui/edit-shows-base-with-body-hidden.py`, real screen, pictures
+by the renderer: 5 of 5 on build r8. Its model is left as the commands
+leave a body -- the tip shown, the pad and the sketches hidden: the
+first version left the pad shown in the document, which no hand-made
+model has. Its third claim is not "the same picture" but "wherever the
+edit with the body shown drew, the edit with the body hidden draws
+too", read against the view's ground row by row, because a task panel
+changes the view's size and a picture in an edit does not lie on one out
+of it (0.95 of it; the rest is see-through grey within eight levels of
+the ground). Not scored against a build without the fix: none was kept.
+Twelve per-view neighbours on r8, none failing: `edit-hide` 25,
+`edit-per-view` 25, `pd-edit-shown-per-view` 13, `pd-preview-per-view`
+38, `per-view-visibility` 45, `per-view-clip-cache` 15,
+`element-color-hide` 624, `tempovis-per-view` 16,
+`per-view-shown-eviction` 5, `per-view-resolve-selective` 19,
+`selection-per-view` 26, `sketch-edit-hide` 25.
+
+**A side finding, not fixed, on the staged copy of 16:55 as well:** with
+a body hidden, one of its features selected (`Body`, `Pad.`) is shown on
+top but CUT OFF by the view's clip planes -- only the corner nearest the
+camera is drawn (`g-e108g-staged\b-selected-Pad_.png`). The pass that
+sets the clip planes walks the scene by what is visible, and what is
+only on top is not in its box.
+
+**Entry 111, the overlaid console's text "scrambled" after a change of
+theme -- it is contrast; REPRODUCED on the staged copy.** The screen was
+locked, so nothing was read off it: what the overlay paints, with its
+own opacity, was laid over a plain light ground and a plain dark one
+(`e111.py`; `g-e111d-staged`, `g-r8-e111d-dev`). Under Dark, on the
+staged copy, the console's light text with its dark outline over a
+light ground is the reporter's screenshot to the letter: the letters
+are there, as light as the ground, and only the outline's dark pieces
+are seen. The light ground was the TechDraw page's view before entry
+112. Light is fine because its text is dark and its outline light.
+Under Classic the text is BLACK -- the editor colours of a white docked
+console -- while Classic names the overlay sheet `Dark-Outline.qss` for
+its dark 3D view: dark on dark with a dark outline, everywhere. On the
+dev build entry 98's ground behind the text and entry 112's page ground
+make Dark readable. For Classic the ground is the items', the dark of
+the 3D view, and black on it still reads badly:
+`OverlayManager::overlayTextGround()` takes how light the text is from
+the colours its highlighter gives the lines shown, and where that is
+within a third of the scale of the ground it gives a light ground to a
+dark text and a dark one to a light, at the same opacity (in build r9).
+
+**Entry 99 (c), why the pick-through never worked.** The trace put into
+build r8 (`FC_PICK_TRACE`, taken out again) on the real screen: the
+on-top pass returned nothing, so the pass I had added behind it never
+ran; the scene pass ran with pick-all in the front-face mode, where
+`SoFCRayPickAction::afterPick` returns at once and the nearest hit of
+the whole list is taken -- the rule I had written inside `afterPick` was
+never reached, though the annotation's `rayPick` was, 97 times. Put
+right in r9 as a pass of its own (`Private::pickThroughFace`): whenever
+a single pick has ended on a face, from whichever pass, the nodes drawn
+through the scene are asked by themselves and the nearest edge or
+vertex among them takes the pick. `SoFCSelectionAction.*` are back to
+what is committed; the annotation keeps its `pickThrough` field for the
+capture's path table and loses its `rayPick`.
+
+**Entry 109, the hover on a missing reference.** On r8 it set no
+preselection at all (before: the missing edge's name on the base, which
+lights nothing). The kept shape does hold the faces: `Face28` traces to
+the edge that was `Edge93`, `Face26` to `Edge89` (headless, `e109j.py`;
+my probe of the afternoon compared with the leading `;` and found none).
+But in the edit the feature has a dress-up shape of the references that
+are left, so "use the kept shape when there is none" never applied; it
+is "when the dress-up shape has no face for the reference" in r9.
+
+**Binder008 on the committed rule (entry 105)**: run on r8 as part of
+entry 109's probe, `scanner.FCStd` recomputed -- one "No context, please
+double click the binder in the desired context to refresh" in the log
+(`SubShapeBinder.cpp(322)`; the line names no object, that it is
+Binder008's is by inference) and `Fillet011` "Invalid edge link:
+?Edge93" as before.
+
+**Build r9 (20:16 to 20:38): what it showed.** The Python suite, whole:
+"Ran 3752 tests in 923.037s, OK (skipped=52, expected failures=6)"
+(`pytest33.log`) -- the first whole run with the corrected
+`ElementAppearanceTest`. ctest's first run ran nothing: the discovery of
+the tests timed out on two test programs right after the build
+(`ctest33.log`, "Process terminated due to timeout"); run again behind
+the suite (`ctest34.log`).
+
+- **99 (c) still picked the box's face.** The cause, the third and the
+  real one: the paths the render cache manager keeps for a pick of its
+  own start at the scene root the capture is applied to, and the camera
+  is traversed BEFORE that root. A ray pick applied to such a path has
+  no view to cast its ray in and hits nothing. That holds for the late
+  pick as well, which is older than this entry: under the renderer a
+  datum plane could not be picked by its face at all -- shown on r9 with
+  the box hidden, the pointer inside the XY plane and off its lines:
+  nothing (`e99plane.py`). `applyPick()` puts each path behind the view's
+  own path down to the root's parent, for both
+  (`Private::pathAboveRoot()`); the datum test asks for the plane too.
+  In build r10.
+- **109, the cause.** In the edit the preview shape (`DressUpShape`) is
+  made of the kept shape's four fillet faces, the two of the missing
+  edges among them, under a hasher of its own (`#2b4;:Hb66,F` stands for
+  `#1feb4;:G;FLT;:Hb65:7,F`, and that for the edge
+  `#1fc00;:G11#1fd48;CUT;:H-b65:f,E`, which is the missing reference).
+  `TopoShape::traceElement()` expands each hashed name by the shape's
+  own hasher alone and stopped after the first step: the second name is
+  the document's. So the look-up by a missing reference -- the old
+  fork's own code for this very hover -- has found nothing since the
+  preview got its own hasher. `getItemElement` traces by itself now: a
+  name the shape's hasher does not know is the document's, and so is
+  every name behind it. In build r10. (The document's hasher has all
+  four ids at every stage, read from Python; `Shape.getElementHistory`
+  from Python stops at the same place in a GUI session and does not
+  headless, which is what sent me to the kept shape first.)
+- **111 for Classic** works as built: under Classic the console's text
+  stands on a light ground (232 at the overlay's opacity), under Light
+  on the items' own. Under DARK it turned dark (40) as well, which I had
+  not meant: the items' ground there is (125, 125, 125) and the
+  console's comments are (106, 153, 85), the same lightness to a few
+  levels -- by the rule "too near to read" the Dark theme's own item
+  ground fails for this text. Kept, and to be told: it departs from the
+  reporter's "same background used by the tree item" in their own theme,
+  for the sake of text that reads.
+- One run of entry 109's probe out of three on r9 took ANOTHER course
+  through the migration recompute of `scanner.FCStd`: 295 objects in 25
+  s instead of 394 in 55 to 61, `Thickness` "Invalid face reference",
+  `Helix003` and `Pocket037` failing, no "auto change element reference"
+  at all (67 in the others), `Fillet011` "Invalid edge link: Edge88".
+  The next run was the usual one again. Not looked into; a recompute of
+  that file is not always the same recompute.
+- `box-selection-gate`, `selection-per-view` and
+  `sketch-face-on-solid-pick` do not run offscreen (no GL context: the
+  first crashes in `RubberbandSelection::terminate`, the others need a
+  picture by the renderer); on the real screen 6, 26 and 91, none
+  failing. The other pick and overlay tests on r9: `pick-edge-in-face`
+  24, `per-view-visibility-pick-cull` 4, `reopen-claimed-child-pick` 9,
+  `view-selection-point` 4, `selection-on-top-hidden-edges` 18,
+  `overlay-item-outline-and-hover` 34, `overlay-pass-through` 14,
+  `overlay-task-title-button` 7, `overlay-preset-follows-the-theme` 45,
+  `theme-switch-contrast` 39, `edit-shows-base-with-body-hidden` 5,
+  `cavity-not-for-view-hidden` 5, `pd-preview-per-view` 38.
+
+**Builds r10 to r14 (21:22 to 23:08): entry 109 works, entry 99 (c) at
+last.** ctest on r9 and on r10: "100% tests passed out of 957"
+(`ctest34.log`, `ctest35.log`).
+
+- **109 works on r10, COMMITTED `26f0a30de0`.** `scanner.FCStd`,
+  `Fillet011` in edit after the migration recompute, the pointer on each
+  item of the panel (offscreen, `e109p.py`): the two missing references
+  preselect "Fillet011.;AddSub;Face4" and "Fillet011.;AddSub;Face3",
+  the preview's faces of those edges; the two that are found as before.
+  That the face is drawn lit was not pictured. No test in the tree: the
+  evidence needs the reporter's file and addons.
+- **111 for Classic COMMITTED `905d023394`**, and overtaken the same
+  evening: see the rulings below.
+- **108 on the reporter's file**, their configuration, `Draft` of
+  `Body008` in edit: with the body hidden the picture is the one with it
+  shown (0.0000 of the pixels differ), preview and base there. Why the
+  small model's two pictures differ and these do not is not known.
+- **104's second defect, not reproduced**, and the probe says nothing
+  either way: a grooved block under a cover, seven zooms, both cameras,
+  three gaps (`e104z.py`) -- switching `Cavity` changed no pixel of its
+  pictures, so the effect was not drawn in them at all.
+- **99 (c): r10 and r11 still picked the box's face.** r10 put the paths
+  behind the view's path, one apply a path: a ray pick forgets its hits
+  at the start of each traversal, so only the last path's were left. r11
+  made it one list; still nothing. Then the trace again (r13), and the
+  fact that three readings of the source had not given: AT THE PICK THE
+  TABLE OF PATHS IS EMPTY ("doThroughPick: table 0", "doLatePick: table
+  0" in 27 picks of 39). Each kept path had a `SoPathSensor` that took
+  it out of the table at any change of the scene before it -- the
+  highlight of a preselection is one -- and only a new capture of that
+  very node put it back, which a capture that finds its caches whole
+  never makes. r14 keeps the paths, as real paths that follow the scene,
+  and asks at the pick whether each still leads to its node
+  (`livePickPaths()`); behind the view's path, in one traversal.
+  COMMITTED `1109842583` with the dashes of (a). On r14, the real
+  screen, the pointer not moved: `datum-picked-through-a-face.py` 3 of 3
+  -- the X axis through the box at 12, 20, 28 and 36 pixels from the
+  origin, the box's face beside the lines, a plane of the origin with
+  the box hidden; ten pick neighbours, none failing (`pick-edge-in-face`
+  24, `sketch-face-on-solid-pick` 91, `selection-per-view` 26,
+  `selection-on-top-hidden-edges` 18, `per-view-visibility-pick-cull` 4,
+  `reopen-claimed-child-pick` 9, `view-selection-point` 4,
+  `box-selection-gate` 6, `sketch-datum-label-pick` 12,
+  `sketch-constraint-external-pick` 20). The same three faults held for
+  the late pick, which is older than the entry: under the renderer a
+  datum plane could not be picked by its face; it can now. The datum
+  test is a test of the screen: offscreen there is no render engine, so
+  no capture and no path.
+
+**What entry 99 (c) cost, so that it is not paid again.** Four builds
+went on readings of the source, each of them true and none of them the
+cause that mattered; the one build with a trace named it in a line. A
+pick that "finds nothing" is asked first what it was applied to and how
+many of those there were, before why.
+
+**The reporter's rulings of 23:04** (relayed): "Entry 113. I see what is
+wrong, previous commit fotbids link to itself. It should be allowed for
+hidden scope link. Binder at root means the context is link to itself.
+Entry 111, gate by auto tree background color setting. Follow tree item
+background color if enabled, else use its own widget background."
+
+- **113**: `PropertyXLink::setValue` lets a link of hidden scope name
+  its owner -- no back link is kept for one, so it is no cycle; any other
+  self link is refused as before. `SubShapeBinder::update` takes a
+  context that is the binder itself as the root of the document and
+  does not climb to a container (it climbed to the first path, which is
+  entry 105's move again); `slotRecomputedObject` does not answer the
+  binder's own recompute. My choices: `PropertyXLink` only -- the type
+  of the binder's `Context` and the refusal met; `PropertyLink` and the
+  link lists keep the refusal of 2026-08-18 and its nullifying at
+  restore. Entry 105's rule is unchanged: a binder with no context and no
+  unmoved path still errors and asks for the double click, which now
+  works where the binder is listed by itself. "Previous commit": none
+  found -- the refusal is in `origin/LinkDaily` as well. Three unit
+  tests in `TestShapeBinder.py`.
+- **111**: the rule of `905d023394` (a ground by how light the text is)
+  goes. `overlayTextGround()`: with `View/DockOverlayThemeItemColor` on,
+  the tree items' ground; off, the view's own background at the
+  overlay's opacity -- the console's `Editor/Background` where one is
+  set, otherwise the base colour of the application's palette (the
+  view's own palette has been made transparent by the overlay's sheet).
+  The test asks both.
+
+**Build r15 (23:18 to 23:39): both rulings work and are COMMITTED,
+local** -- `56504486e6` (113), `023552c8fd` (111 as ruled).
+
+- 113: `PartDesignTests.TestShapeBinder` "Ran 17 tests in 4.973s, OK"
+  (`pytest-binder3.log`). On `scanner.FCStd` after its migration
+  recompute (`e113b.py`, offscreen): Binder008, held in LinkGroup001 and
+  in the "No context" error, selected by itself and double clicked --
+  `doubleClicked` true, no "self linking"; then valid, its context
+  itself, its placement as it was, the centre of its shape 0.000000 mm
+  from where it was as opened, and the same after one more recompute;
+  Sketch043, Pad033 and Binder017 valid, Fillet011 in its own error as
+  before ("Invalid edge link: ?Edge93", entry 109's).
+- 111: `overlay-text-ground.py` offscreen 20 pass -- the setting on,
+  both panels on the items' ground (51, 51, 101); off, both on white,
+  the palette's base and the console's own there. The four that fail
+  are the stretch below the last line, as before. The neighbours:
+  `overlay-item-outline-and-hover` 34, `overlay-preset-follows-the-theme`
+  45, `overlay-pass-through` 14.
+
+Both suites on r15, the committed code, started 23:43 (`ctest36.log`,
+`pytest36.log`).
+
+**Where the evening leaves things.** Origin `LinkVibe` = `5c0b30ce1b`
+(20:13). LOCAL on top of it, not pushed: `905d023394` (111, first form),
+`26f0a30de0` (109), `1109842583` (99 a and c, the late pick), `56504486e6`
+(113), `023552c8fd` (111 as ruled), and the note-taker's queue commits
+between them. The staged copy is the one of 16:55. Open with the
+reporter: entry 108's see-through base with the body hidden (wanted so,
+or the same picture as with it shown); whether the clipped on-top
+display of a hidden body's feature and the odd migration run become
+entries. Not found: entry 104's creases showing through.
