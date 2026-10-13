@@ -50,3 +50,69 @@ export function logOpText(op: LogOp): string {
     default: return `${what}: ${op.prop}`;
   }
 }
+
+// Acting on what is listed (docs/TransactionLog.md sec 32.22): rows taken
+// back, versions, branches.
+
+/// The kinds of row that have something to take back, as the host has them.
+const UNDO_KINDS = ['user', 'implicit', 'undo', 'redo', 'pick'];
+
+/// Whether a row can be taken back from where the document is: it changed
+/// something, by hand, and is of this branch's history. The host decides;
+/// this is what the card offers.
+export function rowUndoable(row: LogRow): boolean {
+  return row.here && row.ops > 0 && UNDO_KINDS.includes(row.kind);
+}
+
+/// The rows chosen after a click on one: alone, or with the others where
+/// `toggle` is held (and it goes if it was one of them), or all of those
+/// listed between it and the one chosen last where `range` is.
+export function pickRows(
+  listed: number[], picked: number[], anchor: number | null, seq: number,
+  how: { toggle?: boolean; range?: boolean } = {},
+): { picked: number[]; anchor: number | null } {
+  if (how.range && anchor !== null && listed.includes(anchor) && listed.includes(seq)) {
+    const a = listed.indexOf(anchor);
+    const b = listed.indexOf(seq);
+    const between = listed.slice(Math.min(a, b), Math.max(a, b) + 1);
+    const kept = how.toggle ? picked.filter((p) => !between.includes(p)) : [];
+    return { picked: [...kept, ...between], anchor };
+  }
+  if (how.toggle) {
+    return picked.includes(seq)
+      ? { picked: picked.filter((p) => p !== seq), anchor }
+      : { picked: [...picked, seq], anchor: seq };
+  }
+  return { picked: [seq], anchor: seq };
+}
+
+/// What the button that takes rows back says.
+export function undoLabel(count: number, seq?: number): string {
+  return count === 1 ? `Undo row ${seq ?? ''}`.trim() : `Undo ${count} rows`;
+}
+
+/// Why a name is not one a new branch can have; empty when it is.
+export function branchNameProblem(name: string, taken: string[]): string {
+  const said = name.trim();
+  if (!said) return 'a branch needs a name';
+  if (taken.includes(said)) return `there is a branch ${said} already`;
+  return '';
+}
+
+/// A version in a word: its name, or its number where it has none.
+export function versionText(v: { num: number; name: string }): string {
+  return v.name ? v.name : `Version ${v.num}`;
+}
+
+/// What a refused act says, in the card's words: the host's reason where it
+/// gave one -- which row is in the way, which name is taken.
+export function actRefusal(e: { code?: string; message?: string } | undefined): string {
+  switch (e?.code) {
+    case 'ViewOnly': return 'Changing the history needs the right to edit.';
+    case 'Forbidden': return 'Only the host may do that.';
+    case 'Editing': return 'An edit is open: leave it first.';
+    case 'Offline':
+    case 'Timeout': return 'The viewer did not answer.';
+    default: return e?.message || e?.code || 'not done';
+  }
+}

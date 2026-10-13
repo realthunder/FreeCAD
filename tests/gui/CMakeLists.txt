@@ -193,6 +193,8 @@ fc_add_gui_test(GuiServeLogBrowser_tests_run serve-log-browser.py
 # a viewer and the host; and the same from the page in a real browser.
 fc_add_gui_test(GuiServeLogActs_tests_run serve-log-acts.py
                 --timeout 300)
+fc_add_gui_test(GuiServeLogActsBrowser_tests_run serve-log-acts-browser.py
+                --timeout 600)
 
 # The preference PerViewEdit: an edit runs in the one view it is started
 # in. The other 3D windows of the document do not join -- they keep the

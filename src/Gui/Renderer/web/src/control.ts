@@ -584,6 +584,90 @@ export function logValue(ref: string, doc?: string): Promise<LogValueReply> {
   return sendOp('log.value', withDoc(doc, { ref }));
 }
 
+/// Where the document is in its log: what every act on it answers with.
+export interface LogPlace {
+  doc: string;
+  last: number;
+  head: number;
+  branch: number;
+  branchName: string;
+}
+
+export interface LogVersion {
+  num: number;
+  named: boolean;            // a named one is never evicted
+  name: string;
+  branch: number;
+  branchName: string;
+  seq: number;               // the row it was taken at; 0: at none
+  time: number;
+  here: boolean;             // of the history the document is at the head of
+  head: boolean;             // the document as it stands
+}
+
+export interface LogBranch {
+  id: number;
+  name: string;
+  head: number;
+  fromVersion: number;
+  fromSeq: number;
+  time: number;
+  closed: boolean;           // not switched to
+  current: boolean;          // the one the document is on
+}
+
+/// Rows taken back as one step though none is the last: all of them or
+/// none, and a refusal (`Refused`) says which is in the way.
+export function logUndoRows(rows: number[], doc?: string): Promise<LogPlace> {
+  return sendOp('log.undo', withDoc(doc, { rows }));
+}
+
+export function logVersions(doc?: string): Promise<LogPlace & { versions: LogVersion[] }> {
+  return sendOp('log.versions', withDoc(doc, {}));
+}
+
+/// `mayDelete`: deleting a branch is the host's to do.
+export function logBranches(
+  doc?: string,
+): Promise<LogPlace & { branches: LogBranch[]; mayDelete: boolean }> {
+  return sendOp('log.branches', withDoc(doc, {}));
+}
+
+/// A version of the document as it stands, named where a name is given.
+export function logSnapshot(name?: string, doc?: string): Promise<LogPlace & { version: number }> {
+  return sendOp('log.snapshot', withDoc(doc, name ? { name } : {}));
+}
+
+/// Name a version; with no name, make it unnamed again.
+export function logNameVersion(version: number, name: string, doc?: string): Promise<LogPlace> {
+  return sendOp('log.nameVersion', withDoc(doc, { version, name }));
+}
+
+/// The document made what a version was, as one step that undo takes back.
+export function logRestore(version: number, doc?: string): Promise<LogPlace> {
+  return sendOp('log.restore', withDoc(doc, { version }));
+}
+
+/// A new branch, switched to: from a version, or a row, or where the
+/// document is.
+export function logNewBranch(
+  name: string, from: { version?: number; row?: number } = {}, doc?: string,
+): Promise<LogPlace & { made: number }> {
+  return sendOp('log.branch', withDoc(doc, { name, ...from }));
+}
+
+export function logSwitchBranch(name: string, doc?: string): Promise<LogPlace> {
+  return sendOp('log.switch', withDoc(doc, { name }));
+}
+
+export function logRenameBranch(name: string, to: string, doc?: string): Promise<LogPlace> {
+  return sendOp('log.renameBranch', withDoc(doc, { name, to }));
+}
+
+export function logDeleteBranch(name: string, doc?: string): Promise<LogPlace & { rows: number }> {
+  return sendOp('log.deleteBranch', withDoc(doc, { name }));
+}
+
 /// The host's "this document's log has other rows now": the document's
 /// name and nothing of the log.
 export function onLogChanged(fn: (msg: { doc: string }) => void): () => void {

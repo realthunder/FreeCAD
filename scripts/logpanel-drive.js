@@ -139,8 +139,9 @@ async function waitFor(page, fn, ms, ...args) {
     out.listedInTime = await waitFor(
       page, () => document.querySelectorAll('.fc-log-rows tbody tr').length > 0, 30000);
     out.rows = await page.evaluate(() => window.__fcLogRows());
+    await waitFor(page, () => !!document.querySelector('.fc-log-branchsel'), 15000);
     out.branch = await page.evaluate(
-      () => (document.querySelector('.fc-log-branch') || {}).innerText || null);
+      () => (document.querySelector('.fc-log-branchsel') || {}).value || null);
     out.error = await page.evaluate(
       () => (document.querySelector('.fc-log-error') || {}).innerText || null);
     // The host commits a row at this phase

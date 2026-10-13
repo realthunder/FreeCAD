@@ -911,6 +911,41 @@ html.fc-split-forbidden * {
   cursor: pointer;
 }
 .fc-log-more { display: block; margin: 6px auto; }
+/* What is done with what is listed (sec 32.22): the bar of tabs and of the
+   branch's acts, the acts on the rows or the version chosen, the question
+   an act asks first, and what the last one said. */
+.fc-log-acts,
+.fc-log-rowacts,
+.fc-log-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.fc-log-rowacts { border-top: 1px solid rgba(255, 255, 255, 0.1); border-bottom: none; }
+.fc-log-ask { background: rgba(88, 132, 255, 0.12); }
+.fc-log-asklabel { flex: 1 1 100%; }
+.fc-log-act,
+.fc-log-branchsel,
+.fc-log-askinput {
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.fc-log-act { cursor: pointer; }
+.fc-log-act:disabled { opacity: 0.5; cursor: default; }
+.fc-log-act.fc-log-sel { background: rgba(88, 132, 255, 0.28); }
+.fc-log-branchsel { max-width: 180px; cursor: pointer; }
+.fc-log-branchsel option,
+select.fc-log-act option { color: #e8e8ea; background: rgb(34, 36, 41); }
+.fc-log-askinput { flex: 1 1 120px; min-width: 0; cursor: text; }
+.fc-log-status { padding: 4px 8px; color: #b8e0c0; cursor: pointer; }
+.fc-log-status.fc-log-error { color: #ffb0b0; }
 .fc-log-show { margin-left: 6px; }
 .fc-log-show:disabled { opacity: 0.5; cursor: default; }
 .fc-log-side.fc-log-sel { background: rgba(88, 132, 255, 0.28); }
@@ -939,6 +974,9 @@ html.fc-split-forbidden * {
   .fc-log-close,
   .fc-log-more,
   .fc-log-show,
+  .fc-log-act,
+  .fc-log-branchsel,
+  .fc-log-askinput,
   .fc-log-side { min-height: 44px; min-width: 44px; }
   .fc-log-rows td,
   .fc-log-op { padding-top: 8px; padding-bottom: 8px; }

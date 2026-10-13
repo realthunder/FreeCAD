@@ -29,7 +29,8 @@ import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilte
          layoutRefs, panelButtonOp, refId, selectionWrite,
          BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_OK } from './protocol.ts';
 import type { Frame } from './protocol.ts';
-import { logAuthor, logOpText, logRefusal, logWhen, mergeNewest } from '../logmodel.ts';
+import { actRefusal, branchNameProblem, logAuthor, logOpText, logRefusal, logWhen,
+         mergeNewest, pickRows, rowUndoable, undoLabel, versionText } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -757,6 +758,54 @@ function checkLog(): void {
   check(t, 'a document with no log says so', logRefusal({ code: 'NoLog' }).includes('no history'));
   check(t, 'anything else says what the host said',
         logRefusal({ code: 'LogError', message: 'boom' }) === 'boom');
+
+  // acting on what is listed (sec 32.22)
+  check(t, 'a row made by hand, here, that changed something can be taken back',
+        rowUndoable(row(5)));
+  check(t, 'a record cannot', !rowUndoable(row(5, { ops: 0 })));
+  check(t, 'a recompute cannot', !rowUndoable(row(5, { kind: 'recompute' })));
+  check(t, "another branch's row cannot", !rowUndoable(row(5, { here: false })));
+  check(t, 'an undo can be, as any step', rowUndoable(row(5, { kind: 'undo' })));
+
+  const listed = [9, 8, 7, 6, 5];
+  const pick = (picked: number[], anchor: number | null, seq: number, how = {}): string => {
+    const r = pickRows(listed, picked, anchor, seq, how);
+    return `${r.picked.join(',')}@${r.anchor}`;
+  };
+  check(t, 'a click chooses the row alone', pick([9, 8], 9, 6) === '6@6', pick([9, 8], 9, 6));
+  check(t, 'with the others where it is held', pick([9], 9, 6, { toggle: true }) === '9,6@6',
+        pick([9], 9, 6, { toggle: true }));
+  check(t, 'and it goes if it was one of them',
+        pick([9, 6], 6, 9, { toggle: true }) === '6@6', pick([9, 6], 6, 9, { toggle: true }));
+  check(t, 'those between, as listed, with shift',
+        pick([8], 8, 5, { range: true }) === '8,7,6,5@8', pick([8], 8, 5, { range: true }));
+  check(t, 'upward the same', pick([6], 6, 9, { range: true }) === '9,8,7,6@6',
+        pick([6], 6, 9, { range: true }));
+  check(t, 'with nothing chosen before, shift is a click',
+        pick([], null, 7, { range: true }) === '7@7', pick([], null, 7, { range: true }));
+  check(t, 'a range added to what was chosen',
+        pick([9, 6], 6, 5, { range: true, toggle: true }) === '9,6,5@6',
+        pick([9, 6], 6, 5, { range: true, toggle: true }));
+
+  check(t, 'one row to undo is named by its number', undoLabel(1, 12) === 'Undo row 12');
+  check(t, 'several by how many', undoLabel(3, 12) === 'Undo 3 rows');
+
+  check(t, 'a branch needs a name', branchNameProblem('  ', ['main']) !== '');
+  check(t, 'not one that is taken', branchNameProblem(' main ', ['main']).includes('main'));
+  check(t, 'a new one is fine', branchNameProblem('try', ['main']) === '');
+
+  check(t, 'a version is its name', versionText({ num: 4, name: 'first cut' }) === 'first cut');
+  check(t, 'or its number', versionText({ num: 4, name: '' }) === 'Version 4');
+
+  check(t, "a refused act says the host's reason",
+        actRefusal({ code: 'Refused', message: 'row 7 changed Box.Height since' })
+        === 'row 7 changed Box.Height since');
+  check(t, "what is the host's to do says so",
+        actRefusal({ code: 'Forbidden', message: 'x' }).includes('host'));
+  check(t, 'an edit in the way says to leave it',
+        actRefusal({ code: 'Editing' }).includes('leave it'));
+  check(t, 'a viewer is told why of an act too',
+        actRefusal({ code: 'ViewOnly' }).includes('right to edit'));
 }
 
 checkLog();
