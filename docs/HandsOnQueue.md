@@ -1478,6 +1478,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | OPEN; the three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | OPEN; the points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
 | 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
+| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost | OPEN; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it, and `Pad039` and `Pad040` have references of the same form; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11215,6 +11216,71 @@ Pointers, READ by the note-taker, nothing run:
 - Other icon-only push buttons in task panels would be wide the same
   way if the candidate is right -- not looked for.
 
+## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- OPEN, four points not answered
+
+**2026-10-13 11:10, the reporter:** "new defect, when open scanner file and after
+migration recompute. Pocket023.Profile changed to Sketch047.2, i.e. it's
+indexed face or wire reference is lost for some reason"
+
+The note-taker's reading, not the reporter's words:
+- `scanner.FCStd` is opened; the program asks for the recompute a
+  change of the element version calls for (the "migration recompute");
+  after it the profile reference of `Pocket023` reads `Sketch047.2`.
+- "lost": where the reference named an indexed element of the sketch --
+  a face or a wire with its number, `Wire2` by the file -- it now names
+  only "2".
+- Which copy is not said; the copy under test is the stage of 09:36
+  (`abca255e23`): this morning's merges and the OCCT fork brought up
+  to `a81d25f148`.
+
+READ by the note-taker in two copies of the file, nothing run, the
+files not changed (`Document.xml` read out of the archive in memory):
+- The ORIGINAL, `..\dl\handson\2026-10-06\scanner.FCStd` (dated
+  2026-10-06 09:17), stores it so:
+  `<Property name="Profile" type="App::PropertyLinkSub">`
+  `<LinkSub value="Sketch047" count="1">`
+  `<Sub value="2" shadowed="Wire2"/>`.
+  So the name kept in the file is "2", and `Wire2` -- the indexed name
+  -- stands beside it as its second form. `Sketch047.2` is therefore
+  what the file SAYS; what is missing after the recompute is the
+  indexed form that used to be found for it.
+- The copy a build of 2026-10-12 saved
+  (`..\dl\handson\2026-10-12\s1\ctl\scanner-resaved.FCStd`) stores
+  the same: `<Sub value="2" shadowed="Wire2"/>`.
+- THREE features of the file have a profile of this form, of 97
+  `Profile` properties in the original: `Pad039` -> `Sketch046`,
+  "1" / `Wire1`; `Pad040` -> `Sketch046`, "2" / `Wire2`; `Pocket023` ->
+  `Sketch047`, "2" / `Wire2`. All three name a WIRE of a sketch by a
+  bare number.
+
+NOT said, lettered for an answer:
+a. WHERE it is read: the Pocket's edit panel (the profile's table), the
+   property view, or Python?
+b. What it read BEFORE the recompute, or on an earlier copy:
+   `Sketch047.Wire2`? And is the Pocket itself wrong afterwards -- an
+   error mark, another shape -- or only what the reference reads?
+c. `Pad039` and `Pad040` (on `Sketch046`): do they show the same after
+   the recompute?
+d. On which copies: the stage of 09:36 only, or the one of 06:52 or of
+   2026-10-12 too? (The stage of 09:36 is the first with the OCCT fork
+   at `a81d25f148` and the merges of SolidBody and Transaction.)
+
+Pointers, the note-taker's, nothing run; the cause is NOT found:
+- The reference is an `App::PropertyLinkSub` with a kept name and its
+  "shadowed" indexed name; after a recompute the indexed name is looked
+  up again from the kept one on the sketch's new shape. A wire of a
+  sketch is not an element the shape's map names the way faces, edges
+  and vertexes are, which may be why its kept name is a bare number --
+  and why a lookup that works for a face fails for it. A guess.
+- The file was last written by a program that calls itself
+  "2025.1020RUnknown" (`ProgramVersion` in the original).
+- Near it: entry 53 and entry 28 (the same file, the recompute question
+  at opening); this morning's merge of origin/Transaction with OcctFix
+  inside (`5a5b5ff906`) and the OCCT sync -- whether either changed how
+  such a reference is looked up is NOT looked into.
+- Both suites are green on the staged code; no test of theirs is known
+  to the note-taker to cover a pocket on a sketch's wire by number.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11224,5 +11290,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 91 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 92 are of 2026-10-13, 82 found by
 it)
