@@ -90,6 +90,34 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 09:24: the reporter CHANGED THE ORDER -- stage right after the
+FreeCAD build, tests after. A RESTAGE is set up, NOT done yet; the copy it
+brings will have had NO suite run on its code when it is staged.** From
+the build session (its message of 09:24, written here 09:21).
+- The reporter, typed to the build session 09:20 -- the note-taker did
+  not hear it: "after freecad build, stage first, then proceed with
+  test".
+- The build session's reading: "this is the word for a restage of the
+  head with the three merges, `47ed30316a` and the new OCCT, before the
+  suites have run on it."
+- Set up: when the FreeCAD build ends with "BUILD-FCAD: OK", the stage
+  (`tools\install-user.ps1`); then ON THE STAGED COPY the preferences
+  four times, the re-saved scanner file twice and the original once,
+  and six GUI tests (techdraw-page-before-its-view-providers,
+  recovery-dialog-check-all, overlay-see-through,
+  omni-search-from-tree-and-property-view, overlay-title-buttons-theme,
+  task-panel-in-view); then on the dev build the full ctest, the full
+  Python suite, four loads, the five omni search GUI tests.
+- What has run on what, in its words: "the suites of 08:17 to 08:43 were
+  on `5a5b5ff906` with the old OCCT (Python OK, ctest 2 failures now
+  fixed in source)". Nothing has run on the new OCCT.
+- If the reporter's copy is OPEN at the moment of the stage the script
+  refuses ("BUSY"); the build session says so, the tests go on, and the
+  stage is redone on the reporter's word.
+- "No push: not asked."
+- Until the stage is reported done the copy under test is the one of
+  06:52:40 (`5a2f7e58c2`), on the old OCCT, without the merges.
+
 **2026-10-13 09:19: the loads and the 30 GUI tests on the merged build ALL
 PASSED. A new word of the reporter's: "also sync occt" -- the OCCT fork is
 brought up, the build on it under way. All LOCAL: not pushed, NOT in the
