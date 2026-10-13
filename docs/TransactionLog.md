@@ -18655,6 +18655,23 @@ slider, for differences only, for the material, and for the overlay
 taken away, which before the change was none; no row of the log and no
 undo step by any of it.
 
+**The browser tests run by hand**, with a viewer of this tree for the
+first time since the merge (`~/.cache/lv-merge/stream/browser-tests.sh`,
+nine of `tests/gui/*-browser.py`; they are in no gate):
+
+- `serve-edit`, `serve-onview`, `serve-toolbar`, `split-view`: pass.
+- `serve-datum`, `serve-datum-measure`: every op refused as view-only.
+  Only someone known may write to a served document (30.6), the browser
+  tests of the time were given an invitation, and these two came from
+  another branch after it. Given one; they pass (21, 10).
+- **Not chased.** `camera-uplink`: the clicks arrive (4 picks) and the
+  selection it reads is empty -- it reads the room's, and a connection
+  starts on the route that selects for itself alone
+  (docs/ThinClient.md sec 8.11a), so the test may be the one that is
+  behind. `serve-client-visibility` and `serve-peer-selection`, the two
+  that drive two pages: the second page draws nothing and is told
+  nothing; whether that is the pages or the host is not known.
+
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
 `origin/Transaction` at `09c96678f1` was merged into `LinkVibe` on the
