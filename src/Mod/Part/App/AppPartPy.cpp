@@ -515,6 +515,89 @@ PartExport bool isOCCTCacheRepresentation(const Standard_Transient *rep)
     return func && rep && func(rep);
 }
 
+typedef void (*FuncSetStableBytes)(BinTools_ShapeSet &, bool);
+
+/// Says whether the binary shape set writes the same bytes for the same
+/// shape whatever was written before (the OCCT fork's
+/// BinTools_ShapeSet_SetStableBytes). False without the fork's function:
+/// upstream's set has no such option.
+PartExport bool setOCCTStableBytes(BinTools_ShapeSet &set, bool stable)
+{
+    static const auto func = (FuncSetStableBytes)lookUpTKBRep("BinTools_ShapeSet_SetStableBytes");
+    if (!func)
+        return false;
+    func(set, stable);
+    return true;
+}
+
+typedef void (*FuncAddOwnSurfaces)(BRepTools_ShapeSet &, const TopoDS_Shape &);
+
+/// Names the surfaces of a shape to a text shape set before its geometry is
+/// added, for a stable write (the OCCT fork's
+/// BRepTools_ShapeSet_AddOwnSurfaces). False without the fork's function:
+/// upstream's set writes every representation and has nothing to name.
+PartExport bool addOCCTOwnSurfaces(BRepTools_ShapeSet &set, const TopoDS_Shape &shape)
+{
+    static const auto func = (FuncAddOwnSurfaces)lookUpTKBRep("BRepTools_ShapeSet_AddOwnSurfaces");
+    if (!func)
+        return false;
+    func(set, shape);
+    return true;
+}
+
+typedef void (*FuncThawedFrom)(const TopoDS_TShape *, Handle(TopoDS_TShape) &);
+
+/// The TShape a thawed copy was made of: an algorithm of the OCCT fork copied
+/// a frozen (Immutable) sub-shape where it would have changed it in place
+/// (the fork's TopoDS_TShape_ThawedFrom). Null for any other TShape, and
+/// without the fork's function -- upstream OCCT freezes nothing and thaws
+/// nothing.
+PartExport Handle(TopoDS_TShape) thawedFromOCCT(const TopoDS_TShape *copy)
+{
+    static const auto func = (FuncThawedFrom)lookUpTKBRep("TopoDS_TShape_ThawedFrom");
+    Handle(TopoDS_TShape) original;
+    if (func && copy)
+        func(copy, original);
+    return original;
+}
+
+typedef unsigned int (*FuncRaisedLockedShapes)();
+
+/// How many TopoDS_LockedShape the OCCT fork has raised on this thread: an
+/// algorithm that was refused a change of a frozen shape (the fork's
+/// TopoDS_LockedShape_Raised). 0 without the fork's function: upstream's
+/// exception counts nothing, and nothing there is frozen to be refused.
+PartExport unsigned int raisedOCCTLockedShapes()
+{
+    static const auto func = (FuncRaisedLockedShapes)lookUpTKBRep("TopoDS_LockedShape_Raised");
+    return func ? func() : 0;
+}
+
+typedef void *(*FuncAcquireRepresentationLock)(const TopoDS_TShape *);
+typedef void (*FuncReleaseRepresentationLock)(void *);
+
+/// Locks a frozen TShape's representations against the edits a frozen shape
+/// still takes -- a mesher's polygons, a pcurve for a new face -- while a
+/// writer walks them (the OCCT fork's BRep_RepresentationLock_Acquire). Null
+/// where nothing was locked, and without the fork's functions: upstream OCCT
+/// freezes nothing, so there is nothing to guard.
+PartExport void *acquireOCCTRepresentationLock(const TopoDS_TShape *tshape)
+{
+    static const auto func =
+        (FuncAcquireRepresentationLock)lookUpTKBRep("BRep_RepresentationLock_Acquire");
+    return func && tshape ? func(tshape) : nullptr;
+}
+
+/// Lets go of what acquireOCCTRepresentationLock returned, on the thread that
+/// acquired it; null is nothing.
+PartExport void releaseOCCTRepresentationLock(void *lock)
+{
+    static const auto func =
+        (FuncReleaseRepresentationLock)lookUpTKBRep("BRep_RepresentationLock_Release");
+    if (func && lock)
+        func(lock);
+}
+
 typedef double (*FuncSetFilletSetting)(double);
 
 /// Hands PartParams FilletPlateG0FallbackRatio to the OCCT fork's fillet: a

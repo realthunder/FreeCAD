@@ -1363,9 +1363,9 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
                 continue;
             TopoDS_Shape original = element;
             int i = 0;
-            for (auto from = TopoDS_TShape::ThawedFrom(element.TShape().get());
+            for (auto from = thawedFromOCCT(element.TShape().get());
                     !from.IsNull() && !i;
-                    from = TopoDS_TShape::ThawedFrom(from.get()))
+                    from = thawedFromOCCT(from.get()))
             {
                 original.TShape(from);
                 i = otherMap.find(other._Shape, original);
@@ -2584,8 +2584,8 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
     // a base of our own, gave a prism up to the wrong place. It is passed
     // on, and the feature recomputes on copies (Part::Feature::recompute(),
     // docs/TransactionLog.md sec 27.82, 33.6).
-    auto refusedFrozen = [refused = TopoDS_LockedShape::Raised()]() {
-        return !ThawInputs::active() && TopoDS_LockedShape::Raised() != refused;
+    auto refusedFrozen = [refused = raisedOCCTLockedShapes()]() {
+        return !ThawInputs::active() && raisedOCCTLockedShapes() != refused;
     };
     std::vector<TopoShape> results;
     for (;;) {

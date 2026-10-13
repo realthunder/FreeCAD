@@ -544,7 +544,7 @@ void ShapeRefSet::build(const TopoDS_Shape& root)
 {
     // The walk below calls AddGeometry itself, so the surfaces a stable
     // write keeps representations on are named here, and again after Clear().
-    AddOwnSurfaces(root);
+    addOCCTOwnSurfaces(*this, root);
     add(root, nullptr, TopLoc_Location());
     // After the walk, because the walk is what fills the tables -- and before
     // anything asks for plan(), because what this settles is half of it.
@@ -563,7 +563,7 @@ void ShapeRefSet::build(const TopoDS_Shape& root)
     const int level = _belowFace;
     Clear();
     _belowFace = 0;
-    AddOwnSurfaces(root);
+    addOCCTOwnSurfaces(*this, root);
     add(root, nullptr, TopLoc_Location());
     // Back on for the passes below and for publish(): what the fallback drops
     // is the borrowing, not the sharing of geometry by object.

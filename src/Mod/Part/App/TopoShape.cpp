@@ -923,7 +923,7 @@ void TopoShape::applyStorageOptions(BinTools_ShapeSet& set, bool forStorage)
     // The binary 2D curve set has no merging to gate, so only the pcurve drop
     // applies to this format.
     setOCCTOmitPCurvesOnPlane(set, forStorage && App::DocumentParams::getDedupShapePCurves());
-    set.SetStableBytes(forStorage && App::DocumentParams::getStableShapeBytes());
+    setOCCTStableBytes(set, forStorage && App::DocumentParams::getStableShapeBytes());
 }
 
 void TopoShape::exportBrep(std::ostream& out, bool forStorage) const
