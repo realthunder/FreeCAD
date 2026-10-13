@@ -243,7 +243,10 @@ static int baseShapeOrdinal(const char *name)
 Feature::Feature()
 {
     ADD_PROPERTY(Shape, (TopoDS_Shape()));
-    static const char *appearances = "Appearances";
+    // "#1": the group's rank. A property view shows the groups by rank, then
+    // by name, and without the rank this one stood first, above "Base"
+    // (Gui/PropertyGroupName.h)
+    static const char *appearances = "Appearances#1";
     auto mat = Materials::MaterialManager::defaultMaterial();
     ADD_PROPERTY_TYPE(ShapeMaterial, (*mat), appearances, App::Prop_None,
             "The physical material assigned to this shape");

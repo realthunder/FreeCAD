@@ -91,7 +91,16 @@ private:
 
     std::unordered_map<App::Property*, QPointer<PropertyItem> > itemMap;
 
-    std::map<QString, GroupInfo> groupItems;
+    /// A group's place among the groups: by its rank, then by the name it is
+    /// shown by (Gui::propertyGroupDisplayName())
+    using GroupKey = std::pair<int, QString>;
+    using GroupMap = std::map<GroupKey, GroupInfo>;
+    GroupMap groupItems;
+    /// The rank each group stands at, by the name it is shown by
+    std::map<QString, int> groupRanks;
+
+    GroupMap::const_iterator findGroup(const QString &name) const;
+    GroupMap::iterator raiseGroup(GroupMap::iterator it, int rank);
 
     int _revision = 0; // for handling recursive buildUp()
 };

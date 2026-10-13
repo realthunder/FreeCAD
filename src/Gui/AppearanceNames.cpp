@@ -28,6 +28,7 @@
 #include <App/Property.h>
 
 #include "AppearanceNames.h"
+#include "PropertyGroupName.h"
 #include "ViewProviderDocumentObject.h"
 
 namespace Gui
@@ -50,7 +51,7 @@ App::Property *appearanceProperty(const ViewProvider *view, const char *name)
         // The object's own, and not what a link answers for what it shows
         App::Property *prop = obj->getPropertyByName(name);
         const char *group = prop && prop->getContainer() == obj ? prop->getGroup() : nullptr;
-        if (group && std::strcmp(group, "Appearances") == 0) {
+        if (group && Gui::propertyGroupDisplayName(group) == "Appearances") {
             return prop;
         }
     }

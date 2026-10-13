@@ -1108,6 +1108,7 @@ SET(Viewprovider_SRCS
     ViewProviderOriginGroupExtension.h
     ViewProviderAnnotation.h
     AppearanceNames.h
+    PropertyGroupName.h
     LinkLooks.h
     ViewProviderDocumentObject.h
     ViewProviderDocumentObjectGroup.h

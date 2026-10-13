@@ -73,8 +73,8 @@ class ElementAppearanceMadeTest(unittest.TestCase):
                 tuple(round(v, 3) for v in ea.Face.DiffuseColor[:3]),
                 tuple(round(v, 3) for v in App.Material().DiffuseColor[:3]),
             )
-            self.assertEqual(obj.getGroupOfProperty("ElementAppearance"), "Appearances")
-            self.assertEqual(obj.getGroupOfProperty("MapFaceColor"), "Appearances")
+            self.assertEqual(obj.getGroupOfProperty("ElementAppearance"), "Appearances#1")
+            self.assertEqual(obj.getGroupOfProperty("MapFaceColor"), "Appearances#1")
 
     def testAnObjectAddedWithItsProxyIsGivenALookToo(self):
         # Document.addObject(attach=True), which Assembly3 and Draft's link
@@ -199,8 +199,8 @@ class ElementAppearanceNamesTest(unittest.TestCase):
     def testTheNamesSayWhatTheObjectHas(self):
         box, ea = self.box, self.box.ElementAppearance
         for name in ("ShapeAppearance", "ShapeColor", "Transparency", "LineColor", "PointColor"):
-            self.assertEqual(box.getGroupOfProperty(name), "Appearances")
-        self.assertEqual(box.getGroupOfProperty("ShapeMaterial"), "Appearances")
+            self.assertEqual(box.getGroupOfProperty(name), "Appearances#1")
+        self.assertEqual(box.getGroupOfProperty("ShapeMaterial"), "Appearances#1")
         self.assertEqual(rgb(box.ShapeColor), rgb(ea.Face.DiffuseColor))
         self.assertEqual(rgb(box.LineColor), rgb(ea.Edge.DiffuseColor))
         self.assertEqual(rgb(box.PointColor), rgb(ea.Vertex.DiffuseColor))
@@ -349,7 +349,7 @@ class ElementAppearanceLinkTest(unittest.TestCase):
         self.assertEqual(ea.keys(), [])
         self.assertIsNone(link.ColoredElements)
         for name in ("ElementAppearance", "OverrideMaterial", "ShapeAppearance"):
-            self.assertEqual(link.getGroupOfProperty(name), "Appearances")
+            self.assertEqual(link.getGroupOfProperty(name), "Appearances#1")
 
     def testTheOverrideIsTheLinksOwnLook(self):
         link, ea = self.link, self.link.ElementAppearance

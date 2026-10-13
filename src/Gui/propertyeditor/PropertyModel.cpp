@@ -26,6 +26,8 @@
 # include <boost/algorithm/string/predicate.hpp>
 #endif
 
+#include <Gui/PropertyGroupName.h>
+
 #include "PropertyItem.h"
 #include "PropertyModel.h"
 #include "PropertyView.h"
@@ -210,7 +212,7 @@ QModelIndex PropertyModel::propertyIndexFromPath(const QStringList& path) const
         return index;
     };
 
-    auto it = groupItems.find(path.front());
+    auto it = findGroup(path.front());
     if (it != groupItems.end()) {
         QModelIndex index = findItem(path, it->second.groupItem);
         if (index.isValid())
@@ -262,14 +264,67 @@ static PropertyItem *createPropertyItem(App::Property *prop)
     return item;
 }
 
+PropertyModel::GroupMap::const_iterator PropertyModel::findGroup(const QString &name) const
+{
+    auto it = groupRanks.find(name);
+    if (it == groupRanks.end())
+        return groupItems.end();
+    return groupItems.find(GroupKey(it->second, name));
+}
+
+/** Move a group to a larger rank.
+ *
+ * One shown name declared with several ranks is one group, at the largest of
+ * them: a group listed at a smaller rank goes down among the groups when a
+ * property declares a larger one (docs/HandsOnQueue.md entry 106).
+ */
+PropertyModel::GroupMap::iterator PropertyModel::raiseGroup(GroupMap::iterator it, int rank)
+{
+    const QString name = it->first.second;
+    const int oldRow = it->second.groupItem->_row;
+    // The rows are the map's order. The group itself stands before its new
+    // key, so it is counted among those before it and taken off again.
+    const int newRow = static_cast<int>(std::distance(
+                groupItems.begin(), groupItems.lower_bound(GroupKey(rank, name)))) - 1;
+    const bool moved = newRow != oldRow;
+    if (moved)
+        beginMoveRows(QModelIndex(), oldRow, oldRow, QModelIndex(), newRow + 1);
+    auto node = groupItems.extract(it);
+    node.key().first = rank;
+    it = groupItems.insert(std::move(node)).position;
+    groupRanks[name] = rank;
+    if (moved) {
+        rootItem->moveChild(oldRow, newRow);
+        int row = 0;
+        for (auto &v : groupItems)
+            v.second.groupItem->_row = row++;
+        endMoveRows();
+    }
+    return it;
+}
+
 PropertyModel::GroupInfo &PropertyModel::getGroupInfo(App::Property *prop)
 {
     const char* group = prop->getGroup();
     bool isEmpty = (!group || group[0] == '\0');
-    QString groupName = QString::fromUtf8(
-            isEmpty ? QT_TRANSLATE_NOOP("App::Property", "Base") : group);
+    // The rank is an ending of the name as declared, and is not shown
+    int rank = 0;
+    QString groupName = isEmpty
+        ? QString::fromUtf8(QT_TRANSLATE_NOOP("App::Property", "Base"))
+        : QString::fromStdString(Gui::propertyGroupDisplayName(group, &rank));
 
-    auto res = groupItems.insert(std::make_pair(groupName, GroupInfo()));
+    auto standing = groupRanks.find(groupName);
+    if (standing != groupRanks.end()) {
+        auto found = groupItems.find(GroupKey(standing->second, groupName));
+        if (found != groupItems.end()) {
+            if (rank > found->first.first)
+                found = raiseGroup(found, rank);
+            return found->second;
+        }
+    }
+
+    groupRanks[groupName] = rank;
+    auto res = groupItems.insert(std::make_pair(GroupKey(rank, groupName), GroupInfo()));
     if (res.second) {
         auto &groupInfo = res.first->second;
         groupInfo.groupItem = static_cast<PropertySeparatorItem*>(PropertySeparatorItem::create());

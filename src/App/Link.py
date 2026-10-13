@@ -199,14 +199,14 @@ Properties = [
     PropertyByPointer('ElementAppearance', PropElementAppearance,
         "The looks the link gives what it shows: its own, and those of the\n"
         "elements and of the array elements it names",
-        prop_flags='(App::PropertyType)(App::Prop_Hidden|App::Prop_Output)', group='Appearances'),
+        prop_flags='(App::PropertyType)(App::Prop_Hidden|App::Prop_Output)', group='Appearances#1'),
 
     Property('OverrideMaterial', PropBool, "Give what the link shows a look of the link's own",
-        prop_flags=LookNameFlags, group='Appearances'),
+        prop_flags=LookNameFlags, group='Appearances#1'),
 
     PropertyByPointer('ShapeAppearance', PropAppearanceList,
         "The look the link gives what it shows, where it gives one",
-        prop_flags=LookNameFlags, group='Appearances'),
+        prop_flags=LookNameFlags, group='Appearances#1'),
 ]
 
 PropMap = { prop.name : prop for prop in Properties }
