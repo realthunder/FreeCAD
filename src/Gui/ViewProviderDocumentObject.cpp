@@ -712,6 +712,58 @@ bool ViewProviderDocumentObject::lastValueChange(const char *prop, std::string &
     return true;
 }
 
+bool ViewProviderDocumentObject::valueChangeAt(long long row, const char *prop,
+                                               std::string &before, std::string &after,
+                                               std::string *what) const
+{
+    App::DocumentObject *obj = getObject();
+    App::Document *doc = obj ? obj->getDocument() : nullptr;
+    App::TransactionLog *log = doc ? doc->getTransactionLog() : nullptr;
+    if (!log || !prop || !prop[0] || row <= 0)
+        return false;
+    bool found = false;
+    try {
+        App::TransactionStore &store = log->store();
+        // What the row made of it (docs/TransactionLog.md sec 32.10): the
+        // value before the first time it set it, and after the last
+        for (const App::LogOp &op : store.ops(row)) {
+            if (op.ckind != "obj" || op.cid != obj->getID() || op.op != "set"
+                    || op.prop != prop || op.vafter.empty())
+                continue;
+            if (!found)
+                before = op.vbefore.empty() ? std::string("-") : op.vbefore;
+            after = op.vafter;
+            found = true;
+        }
+        if (found && what) {
+            const auto rows = store.transactions(row, 1);
+            const std::string name = !rows.empty() && rows.front().seq == row
+                ? rows.front().name : std::string();
+            *what = name.empty() ? "row " + std::to_string(row)
+                                 : name + " (row " + std::to_string(row) + ")";
+        }
+    }
+    catch (const Base::Exception &) {
+        return false;
+    }
+    return found;
+}
+
+bool ViewProviderDocumentObject::valueChangeToShow(const char *prop, std::string &before,
+                                                   std::string &after, std::string *what)
+{
+    const long long row = _valueChangeRow;
+    _valueChangeRow = 0;
+    if (row > 0)
+        return valueChangeAt(row, prop, before, after, what);
+    return lastValueChange(prop, before, after, what);
+}
+
+bool ViewProviderDocumentObject::showsValueDiffOf(const char *) const
+{
+    return false;
+}
+
 void ViewProviderDocumentObject::update(const App::Property* prop)
 {
     // DocumentObject.ViewObject has been changed to a real property instead of

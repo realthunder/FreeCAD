@@ -419,6 +419,7 @@ public:
                        const std::string &mode = std::string()) override;
     void hideValueDiff() override;
     std::map<std::string, double> getValueDiff() const override;
+    bool showsValueDiffOf(const char *prop) const override;
     //@}
 
     void setHighlightFaceEdges(bool enable);

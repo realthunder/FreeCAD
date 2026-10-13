@@ -2812,6 +2812,11 @@ void ViewProviderPartExt::hideValueDiff()
     diffB.clear();
 }
 
+bool ViewProviderPartExt::showsValueDiffOf(const char *prop) const
+{
+    return prop && !hasGivenShape && std::string(getShapePropertyName()) == prop;
+}
+
 std::map<std::string, double> ViewProviderPartExt::getValueDiff() const
 {
     if (!diffView)
@@ -4826,15 +4831,19 @@ bool ViewProviderPartExt::setEdit(int ModNum)
         return true;
     }
     else if (ModNum == ViewProvider::ValueDiff) {
-        // The last change of the shape the log has: nothing to show
-        // without one. The panel and the overlay are setEditViewer()'s.
-        if (hasGivenShape || Gui::Control().activeDialog())
-            return false;
+        // The last change of the shape the log has, or that of the row
+        // said (setValueChangeRow): nothing to show without one. The panel
+        // and the overlay are setEditViewer()'s.
         diffEditProp = getShapePropertyName();
-        if (!lastValueChange(diffEditProp.c_str(), diffEditA, diffEditB, &diffEditWhat)) {
+        std::string before, after, what;
+        const bool found = valueChangeToShow(diffEditProp.c_str(), before, after, &what);
+        if (hasGivenShape || Gui::Control().activeDialog() || !found) {
             diffEditProp.clear();
             return false;
         }
+        diffEditA = before;
+        diffEditB = after;
+        diffEditWhat = what;
         return true;
     }
     else {
