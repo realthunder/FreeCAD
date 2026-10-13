@@ -19,6 +19,8 @@
 #*                                                                         *
 #***************************************************************************
 
+import os
+import tempfile
 import unittest
 
 import FreeCAD
@@ -355,6 +357,68 @@ class TestSubShapeBinder(unittest.TestCase):
         self.Doc.recompute()
         self.assertTrue(binder.isValid(), binder.getStatusString())
         self.assertGreater(binder.Shape.BoundBox.Center.distanceToPoint(center), 50)
+
+    def testItselfAsContextIsTheRoot(self):
+        """A binder may have itself for its context: it is then placed as it
+        stands at the root of its document, whatever holds it. That is what
+        a double click on it gives where it is listed by itself, and what
+        takes the binder of an older file out of its "No context" error
+        without moving it. The link was refused as "self linking"."""
+        box, binder = self._looseBinder()
+        center = binder.Shape.BoundBox.Center
+        moved = FreeCAD.Placement(Base.Vector(3, -4, 53), FreeCAD.Rotation(Base.Vector(0, 1, 0), 3.5))
+        part = self._into(binder, moved)
+        self.assertFalse(binder.isValid())
+        self.assertIn("No context, please double click the binder", binder.getStatusString())
+
+        binder.Context = (binder, "")
+        binder.touch()
+        self.Doc.recompute()
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertEqual(binder.Context[0].Name, binder.Name)
+        self.assertLess(binder.Shape.BoundBox.Center.distanceToPoint(center), 1e-6)
+        # the container is none of its dependencies for that, nor is itself
+        self.assertNotIn(binder.Name, [o.Name for o in binder.OutList])
+        # and it stays so: a recompute does not climb to the container
+        binder.touch()
+        self.Doc.recompute()
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertEqual(binder.Context[0].Name, binder.Name)
+        self.assertLess(binder.Shape.BoundBox.Center.distanceToPoint(center), 1e-6)
+
+    def testItselfAsContextIsSavedAndRead(self):
+        """The self context is in the file and comes back from it."""
+        box, binder = self._looseBinder()
+        center = binder.Shape.BoundBox.Center
+        moved = FreeCAD.Placement(Base.Vector(0, 0, 53), FreeCAD.Rotation())
+        self._into(binder, moved)
+        binder.Context = (binder, "")
+        binder.touch()
+        self.Doc.recompute()
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        name = binder.Name
+        path = os.path.join(tempfile.gettempdir(), "ShapeBinderSelfContext.FCStd")
+        self.Doc.saveAs(path)
+        docname = self.Doc.Name
+        FreeCAD.closeDocument(docname)
+        self.Doc = FreeCAD.openDocument(path)
+        again = self.Doc.getObject(name)
+        self.assertIsNotNone(again.Context)
+        self.assertEqual(again.Context[0].Name, name)
+        again.touch()
+        self.Doc.recompute()
+        self.assertTrue(again.isValid(), again.getStatusString())
+        self.assertLess(again.Shape.BoundBox.Center.distanceToPoint(center), 1e-6)
+        # tearDown closes the document by the name setUp gave it
+        FreeCAD.closeDocument(self.Doc.Name)
+        os.remove(path)
+        self.Doc = FreeCAD.newDocument("PartDesignTestSubShapeBinder")
+
+    def testAVisibleLinkToItselfIsStillRefused(self):
+        """Only a link of hidden scope may name its owner."""
+        link = self.Doc.addObject("App::Link", "SelfLink")
+        with self.assertRaises(Exception):
+            link.LinkedObject = link
 
     def testNoContextTakesTheShortestUnmovedPath(self):
         """Of several paths to the binder the shortest that does not move

@@ -285,7 +285,15 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
     if(!Relative.getValue()) 
         parent = 0;
     else {
-        if(parent && parent->getSubObject(parentSub.c_str())==this) {
+        if(parent == this) {
+            // Its own context: the binder as it stands at the root of its
+            // document, whatever it is held in besides. That is what a
+            // double click on it gives where it is listed by itself and not
+            // under one of its containers (docs/HandsOnQueue.md entry 113);
+            // nothing above it is asked, and the paths to it are not tried.
+            parentSub.clear();
+        }
+        else if(parent && parent->getSubObject(parentSub.c_str())==this) {
             auto parents = parent->getParents();
             if(parents.size()) {
                 parent = parents.begin()->first;
@@ -1114,7 +1122,9 @@ App::DocumentObject *SubShapeBinder::getElementOwner(const Data::MappedName & na
 }
 
 void SubShapeBinder::slotRecomputedObject(const App::DocumentObject& Obj) {
-    if(Context.getValue() == &Obj
+    // (not for itself, where it is its own context: it has just been
+    // recomputed, and an update here would answer its own recompute)
+    if(Context.getValue() == &Obj && &Obj != this
         && !this->testStatus(App::ObjectStatus::Recompute2))
     {
         try {
