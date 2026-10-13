@@ -1478,7 +1478,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | OPEN; the three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | OPEN; the points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
 | 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
-| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost | OPEN; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it, and `Pad039` and `Pad040` have references of the same form; four points under the entry, NOT ANSWERED |
+| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it, and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78) | OPEN; four points under the entry, NOT ANSWERED |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; four points under the entry, NOT ANSWERED |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found | OPEN; three points under the entry, NOT ANSWERED |
@@ -11220,7 +11220,7 @@ Pointers, READ by the note-taker, nothing run:
 - Other icon-only push buttons in task panels would be wide the same
   way if the candidate is right -- not looked for.
 
-## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- OPEN, four points not answered
+## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- OPEN, answered 2026-10-13 11:19: in the property view and the edit panel both, Pad039 and Pad040 the same
 
 **2026-10-13 11:10, the reporter:** "new defect, when open scanner file and after
 migration recompute. Pocket023.Profile changed to Sketch047.2, i.e. it's
@@ -11284,6 +11284,25 @@ Pointers, the note-taker's, nothing run; the cause is NOT found:
   such a reference is looked up is NOT looked into.
 - Both suites are green on the staged code; no test of theirs is known
   to the note-taker to cover a pocket on a sketch's wire by number.
+
+**2026-10-13 11:19, the reporter answers the four points:** "entry 92. a,
+both property view and edit panel shows this. b, didn't notice. c, yes. d,
+not sure"
+
+The note-taker's reading:
+- a. The property view and the Pocket's edit panel both read
+  `Sketch047.2`.
+- b. Not noticed: what the reference read before the recompute, and
+  whether the Pocket itself is wrong afterwards, the reporter cannot
+  say.
+- c. Yes: `Pad039` and `Pad040` (on `Sketch046`) show the same. So it
+  is all three features of the file whose profile is a sketch's wire
+  by number -- the kind of reference, not this Pocket.
+- d. Not sure on which copies. So whether this morning's merges or the
+  OCCT sync brought it is NOT known from the reporter.
+Left for a run, the note-taker's: what the three references read on a
+build of before this morning's merges (the stage of 06:52's code) and
+whether the three features still build the same shape.
 
 ## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- OPEN, four points not answered
 
