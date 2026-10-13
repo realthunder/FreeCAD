@@ -1518,6 +1518,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | OPEN; the three points answered 11:38, nothing left unanswered |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | OPEN; the three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN; a fix in the source, NOT built: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
+| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11824,6 +11825,53 @@ File > Revert on a document whose TechDraw page is open ends the
 program -- every time, on this stage and by the history on the stages
 of 2026-10-12 17:52 and 2026-10-13 06:52 as well (those not run).
 
+## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, three points not answered
+
+**2026-10-13 12:11, the reporter:** "new request, when in overlay transparent
+mode, add text background (same color for their widget background) for
+python console and report view with same overlay background alpha."
+
+The note-taker's reading, not the reporter's words:
+- While an overlaid panel is see-through, the text of the Python
+  console and of the report view stands directly on the 3D view and is
+  hard to read. Wanted: a backing behind the TEXT, as entry 69 gave the
+  tree view's items one.
+- The colour: "same color for their widget background" -- the
+  background colour each of the two widgets has when it is not
+  see-through (the console's own, the report view's own, as the theme
+  or the settings give them).
+- The opacity: "same overlay background alpha" --
+  `View/DockOverlayAlpha`, "Overlay background opacity", 150.
+
+NOT said, lettered for an answer:
+a. HOW FAR the backing reaches: behind each line as wide as its text
+   only (as the tree's item backing is cut to the item); the whole
+   width of every line that has text; or the whole text area? The
+   note-taker's guess: as wide as the text, the empty part clear.
+b. THE COLOUR, to be sure: the widget's own background (so a console
+   with a dark ground gets dark backing whatever the 3D view's colour
+   is) -- NOT the 3D view's background colour that the tree's items
+   follow by entry 69? And is the tree's setting "Item background
+   follows the theme" to have no say here?
+c. ONLY these two, or every overlaid panel that shows running text (the
+   selection view, the transaction log, the text of a task panel)? The
+   guess: these two, as said.
+A smaller point, not put as blocking: the pass-through of entry 86
+passes only where the picture is fully clear, so the backed text would
+take clicks and the clear rest would pass them -- as in the tree view.
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- The two widgets are text editors (`Gui::PythonConsole`,
+  `Gui::DockWnd::ReportOutput`), not item views: there is no item to
+  back, so the backing would be painted per line of text or set as the
+  text's own background format.
+- Near it: entry 69 (the opacity setting and the item backing), entry
+  87 (the overlay's outline effect, now leaving out what is no more
+  opaque than the backing -- a text backing at the same opacity would
+  fall under the same rule), entry 88 (the scroll bars of these same
+  panels), entry 30 (the Python console's background in the theme
+  packs).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11833,5 +11881,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 97 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 98 are of 2026-10-13, 82 found by
 it)
