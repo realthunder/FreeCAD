@@ -114,6 +114,12 @@ public:
     /// What is drawn over \a owner's object changed, with no property of
     /// the document's changing: the clients of a served document are sent it
     static void sceneChanged(const ViewProviderPartExt& owner);
+    /// The states hang in an edit session's root, which its clients are
+    /// shown; otherwise under the object's own, for the host's views alone
+    bool inSession() const
+    {
+        return _session != nullptr;
+    }
 
     /** What is shown. `material` is 1 where it is the material and 0 where
      * the faces; `material.none` is 1 where the material was asked for and

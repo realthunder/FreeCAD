@@ -15,6 +15,9 @@ So this serves a document with a box and a hole made taller, serves the
 built viewer over HTTP, and lets Chrome do it through
 scripts/shapediff-drive.js. Asserted:
 
+  - what the host shows of its own accord -- the two states as its log
+    panel and its merge dialog draw them, under the object's own root --
+    is on the host and not in the page (sec 32.24);
   - the page's ask enters the edit: the document says so, and it is the
     mode of the last change;
   - nothing of the colour a changed face is drawn in is on the canvas
@@ -241,6 +244,10 @@ def build():
         box.Height = 16
         doc.recompute()
         doc.commitTransaction()
+        row = [r for r in doc.getTransactionLog() if r["name"] == "taller"][0]
+        op = [o for o in doc.getTransactionOps(row["seq"])
+              if o["prop"] == "Shape" and o["cid"] == cut.ID][0]
+        state["refs"] = (op["before"], op["after"])
 
         port = free_port()
         if not check("the document is served headless",
@@ -261,6 +268,16 @@ def build():
         finish()
 
 
+def at_phase(name):
+    """What the host does when the page has got so far."""
+    view = state["doc"].getObject(OBJ).ViewObject
+    if name == "hostshows":
+        a, b = state["refs"]
+        state["host_shown"] = view.showValueDiff("Shape", a, b)
+    elif name == "hosthid":
+        view.hideValueDiff()
+
+
 def poll():
     run = state["run"]
     marked = run.phases()
@@ -269,6 +286,7 @@ def poll():
         state["seen_phases"] += 1
         try:
             state["samples"][name] = sample()
+            at_phase(name)
         except Exception:
             note("FAIL sample %s:\n%s" % (name, traceback.format_exc()))
     if run.is_alive():
@@ -295,6 +313,16 @@ def verify():
         settled, entered = s.get("settled", {}), s.get("entered", {})
         dragged, slid, left = s.get("dragged", {}), s.get("slid", {}), s.get("left", {})
 
+        # (read when the page says so, which is before the host takes it away)
+        shown = s.get("hosthid", {})
+        check("what the host shows of its own accord is on the host and not in the page",
+              state.get("host_shown") is True and shown.get("in_object", 0) >= 1
+              and shown.get("in_session") == 0 and shown.get("edit") is False
+              and shown.get("found", {}).get("changed", 0) >= 1
+              and out.get("hostShows", 1 << 30) < 500 and out.get("hostHid", 1 << 30) < 500
+              and settled.get("in_object") == 0,
+              (state.get("host_shown"), shown.get("in_object"), shown.get("found"),
+               out.get("hostShows"), out.get("hostHid")))
         check("the page's ask enters the edit, and the document says so",
               out.get("asked") is True and out.get("entered") is True
               and entered.get("edit") is True, (out.get("asked"), out.get("entered"), entered))

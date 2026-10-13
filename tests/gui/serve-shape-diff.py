@@ -1,29 +1,38 @@
-"""A shape diff shown on a served document reaches its clients, and leaves them.
+"""What the host looks at of a shape's two states stays the host's: the
+clients of a served document are sent none of it.
 
-docs/TransactionLog.md sec 32.18. Two states of an object's shape are drawn
-over the object as an annotation under its view provider's root
-(PartGui::ShapeDiffView), which is in the scene a served document
-publishes: a client draws what the host is shown. The serving source
-publishes when it hears of a change, and it hears by the document's
-properties. Showing the overlay changes some -- its own views' -- so that
-was published. Taking it away changes none: a client connected at the time
-was sent nothing and went on drawing the two states over the object until
-something else in the document changed. The view asks for a publish now
-when what it draws is set and when it goes.
+docs/TransactionLog.md sec 32.24 (ruled 2026-10-13), which takes back what
+sec 32.18 measured. The desktop's log panel and its merge dialog draw two
+states of an object's shape over the object, as an annotation under its
+view provider's root (PartGui::ShapeDiffView) -- the root every view of
+the document draws and a served document publishes. So a client drew what
+the host was looking at, unasked, and was sent a push for every move of
+the host's slider. The annotation is marked the host's own to see now
+(SoFCPathAnnotation::hostOnly): the views draw it, the snapshot a served
+document publishes leaves it out, and it asks for no publish.
+
+That a client DRAWS none of it is a browser's to say, and
+tests/gui/serve-shape-diff-browser.py says it. This is what is still sent,
+which a socket can count. A look set on the overlay's own views is
+announced through the object they are views of, which the document reports
+as the object changed, so a publish still goes out for it -- carrying the
+object as it was. What changes no look of theirs sends nothing.
 
 A document served with no window, one client on the socket that says hello
 and counts the scene pushes it is sent. Asserted, each over a second and a
 half:
 
   - nothing is pushed while nothing changes;
-  - the overlay shown is pushed, and each place of the slider after it;
-  - "differences only" is pushed;
-  - the two states by their material is pushed;
-  - the overlay taken away is pushed -- and nothing after it;
-  - none of it wrote a row of the log or an undo step.
+  - the overlay is shown on the host -- the view provider says what it
+    found -- and no more than one push goes out for it, as for a place of
+    the slider and for the two states by their material;
+  - "differences only" and the overlay taken away, which were pushed
+    because the view asked, push nothing;
+  - a change of the document is pushed still;
+  - none of it but that change wrote a row of the log or an undo step.
 
-Scored against the tree before the change: the overlay taken away pushes
-nothing.
+The same two states shown as an edit (sec 32.19) are the edit session's
+and do reach the clients in it: tests/gui/serve-shape-diff-edit.py.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout), or by hand as `FreeCAD <this script>` with GT_OUT set and this
@@ -130,19 +139,31 @@ def build():
         state["client"] = client
         client.start()
 
-        # (what, the call, whether a push is expected)
+        def taller():
+            doc.openTransaction("taller still")
+            box.Height = 20
+            doc.recompute()
+            doc.commitTransaction()
+            state["changed"] = (len(doc.getTransactionLog()), doc.UndoCount, doc.RedoCount)
+            return True
+
+        def found():
+            return {k: v for k, v in dict(view.getValueDiff()).items() if "." not in k}
+
+        # (what, the call, the pushes there may be: None is one or more)
         steps = [
-            ("nothing changes", lambda: None, False),
-            ("the overlay shown", lambda: view.showValueDiff("Shape", a, b), True),
-            ("the slider half way", lambda: view.showValueDiff("Shape", a, b, position=0.5), True),
+            ("nothing changes", lambda: None, 0),
+            ("the overlay shown", lambda: view.showValueDiff("Shape", a, b) and found(), 1),
+            ("the slider half way", lambda: view.showValueDiff("Shape", a, b, position=0.5), 1),
             ("the slider at the earlier state",
-             lambda: view.showValueDiff("Shape", a, b, position=0.0), True),
+             lambda: view.showValueDiff("Shape", a, b, position=0.0), 1),
             ("differences only",
-             lambda: view.showValueDiff("Shape", a, b, position=0.0, differencesOnly=True), True),
+             lambda: view.showValueDiff("Shape", a, b, position=0.0, differencesOnly=True), 0),
             ("the two by their material",
-             lambda: view.showValueDiff("Shape", a, b, mode="material"), True),
-            ("the overlay taken away", lambda: view.hideValueDiff(), True),
-            ("nothing changes after it", lambda: None, False),
+             lambda: view.showValueDiff("Shape", a, b, mode="material"), 1),
+            ("the overlay taken away", lambda: view.hideValueDiff(), 0),
+            ("nothing changes after it", lambda: None, 0),
+            ("a change of the document", taller, None),
         ]
 
         def run(i):
@@ -153,8 +174,11 @@ def build():
             if i >= len(steps):
                 verify()
                 return
-            what, call, pushed = steps[i]
-            before = counts["pushes"]
+            what, call, most = steps[i]
+            before = (counts["pushes"], counts["bytes"])
+            if most is None:
+                state["written_before_change"] = (len(doc.getTransactionLog()), doc.UndoCount,
+                                                  doc.RedoCount)
             shown = None
             try:
                 shown = call()
@@ -162,12 +186,17 @@ def build():
                 check(what, False, traceback.format_exc())
 
             def read():
-                got = counts["pushes"] - before
-                if pushed:
+                got = counts["pushes"] - before[0]
+                size = counts["bytes"] - before[1]
+                said = "%d pushes, %d bytes, the call said %s" % (got, size, shown)
+                if most is None:
                     check("%s is pushed to the client" % what, got >= 1 and shown is not False,
-                          "%d pushes, the call said %s" % (got, shown))
+                          said)
+                elif most == 0:
+                    check("%s: nothing is pushed" % what, got == 0 and shown is not False, said)
                 else:
-                    check("%s: nothing is pushed" % what, got == 0, "%d pushes" % got)
+                    check("%s: on the host, and no more than one push goes out" % what,
+                          got <= most and bool(shown), said)
                 run(i + 1)
 
             QtCore.QTimer.singleShot(STEP_MS, read)
@@ -193,13 +222,12 @@ def build():
 
 def verify():
     doc = state["doc"]
-    now = (len(doc.getTransactionLog()), doc.UndoCount, doc.RedoCount)
-    rows = doc.getTransactionLog()[state["written"][0]:]
-    check("none of it wrote a row of the log or an undo step", now == state["written"],
-          "%s, were %s: %s" % (now, state["written"], [
-              (r.get("name"), r.get("kind"), [(o.get("object"), o.get("prop"))
-                                               for o in doc.getTransactionOps(r["seq"])])
-              for r in rows]))
+    before = state.get("written_before_change")
+    check("none of it but the change wrote a row of the log or an undo step",
+          before == state["written"]
+          and (len(doc.getTransactionLog()), doc.UndoCount, doc.RedoCount)
+          == state.get("changed"),
+          "%s, were %s; after the change %s" % (before, state["written"], state.get("changed")))
     finish()
 
 

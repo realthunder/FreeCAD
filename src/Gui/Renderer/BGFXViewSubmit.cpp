@@ -86,6 +86,12 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
             return false;
         captured = 0;
     }
+    // What is the host's own to see (Render::hostOnlyModeId): no mode copy
+    // either. A view draws it as it is; it is the snapshot that leaves it
+    // out (BGFXScene.cpp).
+    else if (captured && captured == Render::hostOnlyModeId()) {
+        captured = 0;
+    }
     return styleAdmitsAs(draw, captured);
 }
 

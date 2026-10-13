@@ -138,6 +138,16 @@ const panelText = () => {
       () => document.querySelectorAll('input.fc-panel-slider').length);
     await phase('settled');
 
+    // What the host looks at of its own accord, as its log panel and its
+    // merge dialog show it (sec 32.24): the host shows it at this phase
+    // and takes it away at the next. It is the host's, and not this page's.
+    await phase('hostshows');
+    await sleep(3000);
+    out.hostShows = await magenta(page, 'hostshows');
+    await phase('hosthid');
+    await sleep(1500);
+    out.hostHid = await magenta(page, 'hosthid');
+
     out.asked = await page.evaluate((o) => !!window.fcviewerEdit(o, 6, ''), obj);
     try {
       await page.waitForFunction((o) => window.fcviewerEditing === o, {timeout: 20000}, obj);

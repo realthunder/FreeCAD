@@ -112,6 +112,13 @@ uint16_t Render::perViewShownModeId()
     return id;
 }
 
+uint16_t Render::hostOnlyModeId()
+{
+    // Not a display mode name any object can register.
+    static const uint16_t id = internModeName("<host only>");
+    return id;
+}
+
 uint16_t Render::internModeName(const char *name)
 {
     if (!name || !name[0])

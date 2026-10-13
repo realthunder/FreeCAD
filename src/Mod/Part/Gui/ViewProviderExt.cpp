@@ -2804,8 +2804,10 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
 void ViewProviderPartExt::hideValueDiff()
 {
     if (diffView) {
+        const bool session = diffView->inSession();
         diffView.reset();
-        ShapeDiffView::sceneChanged(*this);
+        if (session)
+            ShapeDiffView::sceneChanged(*this);
     }
     diffProp.clear();
     diffA.clear();

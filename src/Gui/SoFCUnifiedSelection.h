@@ -301,6 +301,10 @@ class GuiExport SoFCPathAnnotation : public SoSeparator {
     SO_NODE_HEADER(Gui::SoFCPathAnnotation);
 public:
     SoSFInt32 priority;
+    /// What is under it is the host's own to see: drawn by the views of
+    /// the document, and left out of what a served document publishes
+    /// (Render::hostOnlyModeId; docs/TransactionLog.md sec 32.24)
+    SoSFBool hostOnly;
 
     static void initClass();
     static void finish();

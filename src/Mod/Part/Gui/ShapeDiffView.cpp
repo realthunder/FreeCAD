@@ -358,6 +358,11 @@ ShapeDiffView::ShapeDiffView(ViewProviderPartExt& owner, Gui::EditingRoot* sessi
     }
     // Beside what the object shows of itself, so that it is there whether
     // the object is shown or not, and moves with what the object is in.
+    // That is the scene every view of the document draws and a served
+    // document publishes; this is what the one at the desktop is looking
+    // at in its log panel or its merge dialog, so it is the host's own to
+    // see (ruled 2026-10-13, docs/TransactionLog.md sec 32.24).
+    _root->hostOnly = TRUE;
     _owner.getRoot()->addChild(_root);
 }
 
@@ -568,7 +573,9 @@ void ShapeDiffView::apply()
         _summary[std::string("shown.") + name(static_cast<Kind>(kind))] = shown ? 1 : 0;
         _summary[std::string("transparency.") + name(static_cast<Kind>(kind))] = transparency;
     }
-    sceneChanged(_owner);
+    // What the host alone sees is nothing to publish
+    if (_session)
+        sceneChanged(_owner);
 }
 
 void ShapeDiffView::sceneChanged(const ViewProviderPartExt& owner)
