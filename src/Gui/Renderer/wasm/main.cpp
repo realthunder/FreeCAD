@@ -566,12 +566,13 @@ EM_JS(void, fcviewer_socket_event, (int open), {
     window.dispatchEvent(new CustomEvent('fc:socket', { detail: !!open }));
 });
 
-EM_JS(void, fcviewer_edit_event, (int editing, const char *obj), {
+EM_JS(void, fcviewer_edit_event, (int editing, const char *obj, int mode), {
     var name = obj ? UTF8ToString(obj) : '';
     window.fcviewerEditing = editing ? name : null;
     window.dispatchEvent(new CustomEvent('fc:edit',
                                          { detail: { editing: !!editing,
-                                                     obj: name } }));
+                                                     obj: name,
+                                                     mode: mode } }));
 });
 
 // The on-view parameters an edit mode has open (docs/ThinClient.md sec
@@ -4693,6 +4694,12 @@ static void sendPick(float px, float py, uint8_t flags)
 /// every left click into a session that is not there.
 static bool s_editing = false;
 static std::string s_editObj;
+/// Which edit mode the server said the session is in (the `mode` of its
+/// push; -1 when it said none), and whether that mode takes the pointer:
+/// one that only shows something -- the last change of an object -- says
+/// it does not (`"pointer":false`), and the left button stays the camera's.
+static int s_editMode = -1;
+static bool s_editPointer = true;
 /// The pointer button this client is holding while editing, if any: what
 /// makes a drag a drag rather than a hover, and what says the release
 /// belongs to the edit mode and not to the camera.
@@ -4837,6 +4844,10 @@ static void setEditing(bool on, const char *obj)
         return;
     s_editing = on;
     s_editObj = on && obj ? obj : "";
+    if (!on) {
+        s_editMode = -1;
+        s_editPointer = true;
+    }
     // A session that ends with the pointer down leaves no release to
     // send, and a session that starts with it down never saw the press.
     s_editButtonDown = false;
@@ -4853,7 +4864,7 @@ static void setEditing(bool on, const char *obj)
     }
     std::printf("fcviewer: %s edit mode%s%s\n", on ? "entered" : "left",
                 s_editObj.empty() ? "" : " on ", s_editObj.c_str());
-    fcviewer_edit_event(on ? 1 : 0, s_editObj.c_str());
+    fcviewer_edit_event(on ? 1 : 0, s_editObj.c_str(), s_editMode);
     fcviewer_status(on ? "Editing \xe2\x80\x94 Escape to finish" : nullptr,
                     0.0, on ? -1.0 : 0.0);
 }
@@ -5410,7 +5421,7 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
     // it draws, drags and constrains, and none of that has a local
     // answer. The other two stay with the camera, which is this
     // client's own (docs/ThinClient.md sec 8.9 step 4).
-    if (s_editing && e->button == 0) {
+    if (s_editing && s_editPointer && e->button == 0) {
         float px, py;
         canvasPos(e, px, py);
         flushEditMove();
@@ -5512,7 +5523,7 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
     // while a camera drag is in flight: that pointer is orbiting, and
     // the edit mode has no business being told about it. Held for the
     // frame rather than sent per DOM event.
-    if (s_editing && !s_dragging) {
+    if (s_editing && s_editPointer && !s_dragging) {
         // Not while a context menu has the pointer: the edit mode would
         // preselect under it
         if (s_hoverHeld)
@@ -9825,6 +9836,13 @@ static void handleControlMessage(const char *json)
                 std::memcpy(obj, open + 1, size_t(close - open - 1));
                 obj[close - open - 1] = '\0';
             }
+        }
+        // Which mode, and whether it takes the pointer: said before the
+        // chrome is told of the session, which is told the mode with it
+        if (on) {
+            const char *m = std::strstr(json, "\"mode\":");
+            s_editMode = m ? int(std::strtol(m + 7, nullptr, 10)) : -1;
+            s_editPointer = std::strstr(json, "\"pointer\":false") == nullptr;
         }
         setEditing(on, obj);
         // Which tagged overlay is this viewer's now (8.12 item J). Only

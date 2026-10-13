@@ -1629,6 +1629,8 @@ html.fc-split-forbidden * {
 }
 
 .fc-panel-field:disabled { opacity: 0.5; }
+.fc-panel-slider { flex: 1 1 auto; min-width: 80px; }
+.fc-panel-slider:disabled { opacity: 0.5; }
 
 .fc-panel-btn {
   background: rgba(255, 255, 255, 0.08);

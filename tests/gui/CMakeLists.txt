@@ -167,6 +167,18 @@ fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
 fc_add_gui_test(GuiServeShapeDiff_tests_run serve-shape-diff.py
                 --timeout 240)
 
+# An object's last change is an editing task: the mode ViewProvider::
+# ValueDiff, the two states a node of the edit session and not of the
+# document's scene, the task's panel with the slider -- on the desktop,
+# for a served client by its `edit` op and the mirrored panel, and in a
+# real browser, which skips where there is no viewer or no browser.
+fc_add_gui_test(GuiShapeDiffEdit_tests_run shape-diff-edit.py
+                --timeout 240)
+fc_add_gui_test(GuiServeShapeDiffEdit_tests_run serve-shape-diff-edit.py
+                --timeout 240)
+fc_add_gui_test(GuiServeShapeDiffBrowser_tests_run serve-shape-diff-browser.py
+                --timeout 600)
+
 # The preference PerViewEdit: an edit runs in the one view it is started
 # in. The other 3D windows of the document do not join -- they keep the
 # document as it is, and answer "not in edit" -- and with it off every

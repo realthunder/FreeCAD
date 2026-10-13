@@ -507,6 +507,18 @@ export function TaskPanelCard(props: {
             <span>{str(w, 'text')}</span>
           </label>
         );
+      case 'QSliderModel': {
+        // A slider is its value between two ends, written as it is
+        // dragged: the host's widget takes it as its own handle moved.
+        const lo = () => num(w, 'minimum');
+        const hi = () => (num(w, 'maximum') > lo() ? num(w, 'maximum') : lo() + 99);
+        return (
+          <input type="range" class="fc-panel-slider" title={title()} disabled={disabled()}
+                 min={lo()} max={hi()} step={num(w, 'singleStep') || 1}
+                 value={num(w, 'value')}
+                 onInput={(e) => write(w.id, { value: Number(e.currentTarget.value) })} />
+        );
+      }
       case 'QComboBoxModel': {
         const items = (): unknown[] => {
           const value = st(w).items;

@@ -342,6 +342,25 @@ const toggleToolbars = () => {
 const [taskPanelOpen, setTaskPanelOpen] = createSignal(
   new URLSearchParams(location.search).has('panel'));
 
+// An edit that is worked from its panel and from nothing in the view --
+// the last change of an object, its slider and what was found
+// (docs/TransactionLog.md sec 32.19; Gui::ViewProvider::ValueDiff) --
+// brings the card up with it, and takes it away again if it did.
+const EDIT_VALUE_DIFF = 6;
+let panelOpenedForEdit = false;
+window.addEventListener('fc:edit', (e: Event) => {
+  const d = (e as CustomEvent).detail ?? {};
+  if (d.editing && d.mode === EDIT_VALUE_DIFF) {
+    if (!taskPanelOpen()) {
+      panelOpenedForEdit = true;
+      setTaskPanelOpen(true);
+    }
+  } else if (!d.editing && panelOpenedForEdit) {
+    panelOpenedForEdit = false;
+    setTaskPanelOpen(false);
+  }
+});
+
 const host = document.createElement('div');
 host.id = 'fc-ui';
 document.body.appendChild(host);
