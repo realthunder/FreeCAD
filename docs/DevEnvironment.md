@@ -3227,8 +3227,12 @@ interpreter about them once, with a `.pth` in the env's site-packages
 (`<env>\Lib\site-packages\fcad-dev-dlls.pth`, one line):
 
 ```python
-import os; [os.add_dll_directory(p) for p in (r"D:\...\occt\install\win-relwithdebinfo-801\win64\vc14\bini", r"D:\...\install\coin-win-relwithdebinfo\bin") if os.path.isdir(p)]
+import os; [os.add_dll_directory(p) for p in (os.environ.get("FCAD_DEV_OCCT_BIN") or r"D:\...\occt\install\win-relwithdebinfo-801\win64\vc14\bini", r"D:\...\install\coin-win-relwithdebinfo\bin") if os.path.isdir(p)]
 ```
+
+`FCAD_DEV_OCCT_BIN`, when set, names the OCCT directory in place of the fork's
+(2026-10-13): it is how a run is pointed at another OCCT's DLLs, see the next
+section. Unset, the line is what it always was.
 
 `.pth` lines beginning with `import` are executed at interpreter startup, so this
 covers `FreeCADCmd`, the GUI, and any plain `python` in the env. The `isdir` guard
@@ -3236,6 +3240,43 @@ matters: `os.add_dll_directory()` raises on a missing path, which would otherwis
 break interpreter startup entirely. Copying the dependency DLLs into `build\bin`
 alongside the executables works too and is closer to the shipped layout, at the cost
 of duplicating them after every OCCT or Coin rebuild.
+
+### Running on upstream's OCCT DLLs
+
+FreeCAD is built against the OCCT fork and is to load where the OCCT libraries
+are upstream's 8.0.1 -- a conda environment whose `occt` is conda-forge's. Two
+things keep that true, and both are checked on the Windows box with the
+scripts in `D:\works\sw\abi-upstream\tools` (the OCCT fork's
+`tests/fork/abi/README.md` has the rules and the checks for clang):
+
+- **No FreeCAD binary imports an OCCT symbol that only the fork exports.**
+  What FreeCAD needs of the fork it reaches through a C function looked up by
+  name at run time (`Part::lookUpOCCT` in `AppPartPy.cpp`, the wrappers
+  beside it in `PartPyCXX.h`), and does without where it is not found.
+  `win_forkonly.py <upstream bin> <build>` lists the imports that break this;
+  it is to print none for the modules. `Part_tests_run.exe` still has one,
+  `TopoDS_LockedShape::raisedCounter`, through an inline function of a fork
+  header that a test of the fork's refusals calls.
+- **A destructor declared in a fork header is such a symbol with MSVC.** OCCT
+  declares with `dllexport` in clients too, so a non-inline member a header
+  adds is imported by every client that uses it, and a class's destructor is
+  used by whatever makes an object of a derived class -- for
+  `TopoDS_TShape`, every module that makes a wire or a compound. On Linux and
+  macOS the same symbol comes with the vtable in upstream's library, so the
+  checks there do not see it.
+
+To run this build on upstream's DLLs: conda-forge's package, downloaded only
+(`conda create --download-only --no-deps -p <never made> -c conda-forge
+occt=8.0.1=novtk_*`, it lands in `miniforge3\pkgs`), and a copy of `run.cmd`
+whose `OCCT_BIN` is that package's `Library\bin` and which sets
+`FCAD_DEV_OCCT_BIN` to the same (`tools\run-upstream.cmd`, written by
+`mk_run_upstream.py`). `PATH` alone changes nothing, as above: the `.pth`
+names the fork's directory. Then `run-upstream.cmd
+build\...\bin\FreeCADCmd.exe <script>`; ask `GetModuleFileName` of
+`TKBRep.dll` which one was loaded before believing a result. Without the
+fork nothing is frozen (`ImmutableShapeValues` defaults off there), a STEP
+file is read in one go, and the fork's fixes to fillets, drafts and
+thickness are not there.
 
 ### No toolbars at startup — historical, fixed by the Start rewrite
 

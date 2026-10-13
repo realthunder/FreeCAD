@@ -38,27 +38,17 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_TShape.hxx>
 
-#if __has_include(<BRep_RepresentationLock.hxx>)
-# include <BRep_RepresentationLock.hxx>
-#endif
-
 #include "MeshTwin.h"
+#include "PartPyCXX.h"
 
 using namespace Part;
 
 namespace
 {
 
-#if __has_include(<BRep_RepresentationLock.hxx>)
-using RepresentationLock = BRep_RepresentationLock;
-#else
-/// An OCCT without the fork's lock has no frozen shapes to guard either.
-struct RepresentationLock
-{
-    explicit RepresentationLock(const TopoDS_TShape*)
-    {}
-};
-#endif
+/// The fork's lock, found at run time: an OCCT without it has no frozen
+/// shapes to guard either, and Part loads there all the same.
+using RepresentationLock = Part::OCCTRepresentationLock;
 
 // Named off the accessors, so the element types follow whatever this OCCT
 // spells them as.

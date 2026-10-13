@@ -387,9 +387,9 @@ App::DocumentObjectExecReturn *Feature::recompute()
     // retry of an extrusion -- and the shape that gave is not the one the
     // feature makes of inputs it may change: a pad up to a shape came out
     // four times its volume, and no error said so.
-    const unsigned int refused = TopoDS_LockedShape::Raised();
+    const unsigned int refused = raisedOCCTLockedShapes();
     App::DocumentObjectExecReturn* ret = once();
-    if (ThawInputs::active() || TopoDS_LockedShape::Raised() == refused)
+    if (ThawInputs::active() || raisedOCCTLockedShapes() == refused)
         return ret;
     FC_LOG(getFullName() << ": a frozen input was refused ("
                          << (ret == App::DocumentObject::StdReturn ? "worked around" : ret->Why.c_str())

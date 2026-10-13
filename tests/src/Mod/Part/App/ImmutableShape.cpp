@@ -58,7 +58,6 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_LockedShape.hxx>
 #include <TopoDS_FrozenShape.hxx>
-#include <BRep_RepresentationLock.hxx>
 #include <BRepTools.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
@@ -925,12 +924,12 @@ TEST(ImmutableShapeTest, aWireMergeCopiesAFrozenVertex)
         if (ancestors(i).Extent() == 2) {
             const TopoDS_Shape& vertex = ancestors.FindKey(i);
             EXPECT_TRUE(vertex.TShape()->Thawed());
-            EXPECT_EQ(TopoDS_TShape::ThawedFrom(vertex.TShape().get()), join.TShape());
+            EXPECT_EQ(Part::thawedFromOCCT(vertex.TShape().get()), join.TShape());
         }
     }
     int firstCopies = 0;
     for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next()) {
-        if (TopoDS_TShape::ThawedFrom(it.Current().TShape().get()) == first.TShape())
+        if (Part::thawedFromOCCT(it.Current().TShape().get()) == first.TShape())
             ++firstCopies;
     }
     EXPECT_EQ(firstCopies, 1);
@@ -1104,7 +1103,7 @@ TEST(ImmutableShapeTest, aFaceOnAFrozenWireThawsWhatMustGrow)
     // edges that grew, and the wide one itself.
     const TopoDS_Shape faceWire = TopExp_Explorer(face, TopAbs_WIRE).Current();
     EXPECT_TRUE(faceWire.TShape()->Thawed());
-    EXPECT_EQ(TopoDS_TShape::ThawedFrom(faceWire.TShape().get()), wire.TShape());
+    EXPECT_EQ(Part::thawedFromOCCT(faceWire.TShape().get()), wire.TShape());
     int thawed = 0;
     int same = 0;
     for (TopExp_Explorer it(faceWire, TopAbs_EDGE); it.More(); it.Next()) {
@@ -1112,7 +1111,7 @@ TEST(ImmutableShapeTest, aFaceOnAFrozenWireThawsWhatMustGrow)
         if (edge.TShape()->Thawed()) {
             ++thawed;
             EXPECT_DOUBLE_EQ(BRep_Tool::Tolerance(TopoDS::Edge(edge)), 2e-7);
-            const Handle(TopoDS_TShape) from = TopoDS_TShape::ThawedFrom(edge.TShape().get());
+            const Handle(TopoDS_TShape) from = Part::thawedFromOCCT(edge.TShape().get());
             bool inWire = false;
             for (TopExp_Explorer w(wire, TopAbs_EDGE); w.More(); w.Next())
                 inWire = inWire || w.Current().TShape() == from;
@@ -1317,7 +1316,7 @@ TEST(ImmutableShapeTest, aRemeshWaitsForAWriterOfAFrozenEdge)
     std::atomic<bool> released {false};
     std::promise<void> holding;
     std::thread writer([&]() {
-        BRep_RepresentationLock lock(edge.TShape().get());
+        Part::OCCTRepresentationLock lock(edge.TShape().get());
         holding.set_value();
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         released = true;
@@ -1338,7 +1337,7 @@ TEST(ImmutableShapeTest, aWriterWaitsForAnEditOfAFrozenEdge)
     const std::string expected = storedBytes(box);
     std::future<std::string> written;
     {
-        BRep_RepresentationLock lock(firstEdge(box).TShape().get());
+        Part::OCCTRepresentationLock lock(firstEdge(box).TShape().get());
         written = std::async(std::launch::async, [&box]() { return storedBytes(box); });
         EXPECT_EQ(written.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
     }
@@ -1348,7 +1347,7 @@ TEST(ImmutableShapeTest, aWriterWaitsForAnEditOfAFrozenEdge)
 TEST(ImmutableShapeTest, aShapeThatIsNotFrozenTakesNoLock)
 {
     TopoDS_Shape box = BRepPrimAPI_MakeBox(10, 20, 30).Shape();
-    BRep_RepresentationLock lock(firstEdge(box).TShape().get());
+    Part::OCCTRepresentationLock lock(firstEdge(box).TShape().get());
     auto meshed = std::async(std::launch::async, [&box]() { BRepMesh_IncrementalMesh(box, 0.5); });
     EXPECT_EQ(meshed.wait_for(std::chrono::seconds(10)), std::future_status::ready);
 }

@@ -40,6 +40,7 @@ namespace Py {
 class Standard_Transient;
 class GeomTools_Curve2dSet;
 class BinTools_ShapeSet;
+class BRepTools_ShapeSet;
 
 namespace Part {
     PartExport Py::Object shape2pyshape(const TopoShape &shape);
@@ -65,6 +66,45 @@ namespace Part {
     /// Whether the binary set leaves out pcurves on a plane (the fork's
     /// BinTools_ShapeSet_SetOmitPCurvesOnPlane); false without it
     PartExport bool setOCCTOmitPCurvesOnPlane(BinTools_ShapeSet &set, bool omit);
+    /// Whether the binary set writes stable bytes (the fork's
+    /// BinTools_ShapeSet_SetStableBytes); false, and nothing set, without it
+    PartExport bool setOCCTStableBytes(BinTools_ShapeSet &set, bool stable);
+    /// Names the surfaces a stable write of the text set keeps representations
+    /// on (the fork's BRepTools_ShapeSet_AddOwnSurfaces); false without it
+    PartExport bool addOCCTOwnSurfaces(BRepTools_ShapeSet &set, const TopoDS_Shape &shape);
+    /// The TShape a thawed copy stands for (the fork's
+    /// TopoDS_TShape_ThawedFrom); null without the fork, which alone thaws
+    PartExport Handle(TopoDS_TShape) thawedFromOCCT(const TopoDS_TShape *copy);
+    /// How many times an algorithm refused to change a frozen shape on this
+    /// thread (the fork's TopoDS_LockedShape_Raised); 0 without the fork
+    PartExport unsigned int raisedOCCTLockedShapes();
+    /// The fork's lock on a frozen TShape's representations
+    /// (BRep_RepresentationLock_Acquire): what releaseOCCTRepresentationLock
+    /// is to be given, null where nothing was locked or without the fork
+    PartExport void *acquireOCCTRepresentationLock(const TopoDS_TShape *tshape);
+    PartExport void releaseOCCTRepresentationLock(void *lock);
+
+    /// Holds the OCCT fork's lock on a frozen (Immutable) vertex's, edge's or
+    /// face's representations while in scope (BRep_RepresentationLock); for
+    /// any other TShape, and where the OCCT libraries are upstream's -- which
+    /// freeze nothing -- it does nothing. Through the lookups above: the
+    /// fork's own class is a symbol upstream's library does not have.
+    class OCCTRepresentationLock
+    {
+    public:
+        explicit OCCTRepresentationLock(const TopoDS_TShape *tshape)
+            : lock(acquireOCCTRepresentationLock(tshape))
+        {}
+        ~OCCTRepresentationLock()
+        {
+            releaseOCCTRepresentationLock(lock);
+        }
+        OCCTRepresentationLock(const OCCTRepresentationLock &) = delete;
+        OCCTRepresentationLock &operator=(const OCCTRepresentationLock &) = delete;
+
+    private:
+        void *lock;
+    };
 }
 
 #endif //PART_PYCXX_H
