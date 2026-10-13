@@ -4,6 +4,7 @@ target_sources(
     ${CMAKE_CURRENT_SOURCE_DIR}/TestExportMarks.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestImportErrors.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestReaderLook.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TestReaderStepStream.cpp
 )
 
 target_include_directories(Import_tests_run PUBLIC
