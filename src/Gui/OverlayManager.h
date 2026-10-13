@@ -155,6 +155,12 @@ public:
     static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1);
     /// View/DockOverlayAlpha, or \a alpha where a style sheet set one
     static int overlayAlpha(int alpha = -1);
+    /** The brush an item of an overlaid tree is backed with while the pointer
+     * is on it (docs/HandsOnQueue.md entry 87): the theme's colour for that at
+     * the opacity of the item backgrounds, as wide as those. No brush under
+     * a theme that has no such colour.
+     */
+    static QBrush overlayHoverBackground(int alpha = -1);
 
     /** The parts of \a widget that are laid over: by the overlaid docks,
      * as occupied() answers, and by whatever else registered itself with

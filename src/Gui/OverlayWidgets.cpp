@@ -2607,6 +2607,23 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     QTransform restoreTransform = painter->worldTransform();
     painter->setWorldTransform(QTransform());
 
+    // What is outlined: text, icons, whatever is painted to be read over the
+    // 3D view -- not the see-through backgrounds an overlaid panel keeps
+    // behind its items (docs/HandsOnQueue.md entries 69 and 87). Outlined
+    // with the rest, such a background had the outline's dark laid under the
+    // whole of it and a rim around it: (124,124,124) at 150 came to the
+    // screen as (98,98,98) at 232 in a frame of (50,50,50). So only what is
+    // more opaque than those backgrounds are makes the outline.
+    QImage ink = px.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    const int limit = std::min(OverlayManager::overlayAlpha() + 8, 250);
+    for (int y = 0; y < ink.height(); ++y) {
+        auto line = reinterpret_cast<QRgb*>(ink.scanLine(y));
+        for (int x = 0, width = ink.width(); x < width; ++x) {
+            if (qAlpha(line[x]) <= limit)
+                line[x] = 0;
+        }
+    }
+
     // Calculate size for the background image
     QImage tmp(px.size(), QImage::Format_ARGB32_Premultiplied);
     tmp.setDevicePixelRatio(px.devicePixelRatioF());
@@ -2615,7 +2632,7 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     QPainterPath clip;
     tmpPainter.setCompositionMode(QPainter::CompositionMode_Source);
     if(_size.width() == 0 && _size.height() == 0)
-        tmpPainter.drawPixmap(QPoint(0, 0), px);
+        tmpPainter.drawImage(QPoint(0, 0), ink);
     else {
         // exclude splitter handles
         auto splitter = qobject_cast<QSplitter*>(parent());
@@ -2646,7 +2663,7 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
         for (int x=-_size.width();x<=_size.width();++x) {
             for (int y=-_size.height();y<=_size.height();++y) {
                 if (x || y) {
-                    tmpPainter.drawPixmap(QPoint(x, y), px);
+                    tmpPainter.drawImage(QPoint(x, y), ink);
                     tmpPainter.setCompositionMode(QPainter::CompositionMode_SourceOver);
                 }
             }

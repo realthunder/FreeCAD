@@ -168,18 +168,10 @@ public:
      * panel has no second ground over that one.
      */
     static QString fromSettings() {
-        QColor panel = qApp ? qApp->palette().color(QPalette::Window) : QColor(140, 140, 140);
-        if (Application::Instance) {
-            if (auto manager = Application::Instance->styleParameterManager()) {
-                const Base::Color colour = manager->resolve(
-                    StyleParameters::ParameterDefinition<Base::Color> {
-                        "DialogBackgroundColor",
-                        Base::Color(float(panel.redF()), float(panel.greenF()),
-                                    float(panel.blueF()))});
-                panel = QColor::fromRgbF(colour.r, colour.g, colour.b);
-            }
-        }
-        return QStringLiteral(
+        const QPalette palette = qApp ? qApp->palette() : QPalette();
+        const QColor panel = themeColour("DialogBackgroundColor", palette.color(QPalette::Window));
+        const int alpha = OverlayManager::overlayAlpha();
+        QString rules = QStringLiteral(
                    "QSint--ActionGroup QFrame[class=\"content\"] {"
                    " background-color: rgba(%1,%2,%3,%4); }\n"
                    "QSint--ActionGroup QFrame[class=\"content\"] > QWidget {"
@@ -187,7 +179,62 @@ public:
             .arg(panel.red())
             .arg(panel.green())
             .arg(panel.blue())
-            .arg(OverlayManager::overlayAlpha());
+            .arg(alpha);
+
+        // A scroll bar of an overlaid panel (docs/HandsOnQueue.md entry 88):
+        // nothing of it but the handle, in the theme's own colours for it at
+        // View/DockOverlayAlpha, hovered and pressed too. The borders keep
+        // their widths -- they are where the two ends are -- and lose their
+        // colour.
+        const QColor top = themeColour("ButtonTopBackgroundColor", palette.color(QPalette::Button));
+        const QColor bottom = themeColour("ButtonBottomBackgroundColor", top);
+        const QColor hover = themeColour("GeneralBackgroundHoverColor",
+                                         palette.color(QPalette::Midlight));
+        auto rgba = [alpha](const QColor &c) {
+            return QStringLiteral("rgba(%1,%2,%3,%4)")
+                .arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha);
+        };
+        rules += QStringLiteral(
+                   "QScrollBar:horizontal, QScrollBar:vertical {"
+                   " background-color: transparent; border-color: transparent; }\n"
+                   "QScrollBar::add-page, QScrollBar::sub-page {"
+                   " background-color: transparent; }\n"
+                   "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,"
+                   " QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,"
+                   " QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover,"
+                   " QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {"
+                   " background-color: transparent; border-color: transparent; }\n"
+                   "QScrollBar::left-arrow, QScrollBar::right-arrow,"
+                   " QScrollBar::up-arrow, QScrollBar::down-arrow,"
+                   " QScrollBar::left-arrow:hover, QScrollBar::right-arrow:hover,"
+                   " QScrollBar::up-arrow:hover, QScrollBar::down-arrow:hover {"
+                   " border-image: none; image: none; background-color: transparent; }\n"
+                   "QScrollBar::handle:horizontal { border-color: transparent;"
+                   " background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+                   " stop:0 %1, stop:1 %2); }\n"
+                   "QScrollBar::handle:vertical { border-color: transparent;"
+                   " background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+                   " stop:0 %1, stop:1 %2); }\n"
+                   "QScrollBar::handle:horizontal:hover, QScrollBar::handle:vertical:hover,"
+                   " QScrollBar::handle:horizontal:pressed, QScrollBar::handle:vertical:pressed {"
+                   " border-color: transparent; background-color: %3; }\n")
+            .arg(rgba(top), rgba(bottom), rgba(hover));
+        return rules;
+    }
+
+    /// A colour of the theme in force, or \a fallback where the theme has none
+    static QColor themeColour(const char *name, const QColor &fallback) {
+        if (Application::Instance) {
+            if (auto manager = Application::Instance->styleParameterManager()) {
+                const Base::Color colour = manager->resolve(
+                    StyleParameters::ParameterDefinition<Base::Color> {
+                        name,
+                        Base::Color(float(fallback.redF()), float(fallback.greenF()),
+                                    float(fallback.blueF()))});
+                return QColor::fromRgbF(colour.r, colour.g, colour.b);
+            }
+        }
+        return fallback;
     }
 
     ParameterGrp::handle handle;
@@ -1874,7 +1921,7 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
         if (ev->type() == QEvent::ContextMenu
                 && static_cast<QContextMenuEvent*>(ev)->reason() != QContextMenuEvent::Mouse)
             return false;
-    }   // fall through
+        // fall through
     case QEvent::MouseButtonDblClick:
     case QEvent::MouseButtonRelease:
     case QEvent::MouseButtonPress:
@@ -2165,6 +2212,22 @@ int OverlayManager::overlayAlpha(int alpha)
     if (alpha < 0)
         alpha = int(OverlayParams::getDockOverlayAlpha());
     return std::clamp(alpha, 0, 255);
+}
+
+QBrush OverlayManager::overlayHoverBackground(int alpha)
+{
+    auto manager = Application::Instance ? Application::Instance->styleParameterManager()
+                                         : nullptr;
+    if (!manager)
+        return QBrush();
+    // A theme that has no colour for it draws no bar under the pointer
+    const auto value = manager->resolve(std::string("AccentHoverColor"));
+    if (!value || !std::holds_alternative<Base::Color>(*value))
+        return QBrush();
+    const Base::Color colour = std::get<Base::Color>(*value);
+    QColor hover = QColor::fromRgbF(colour.r, colour.g, colour.b);
+    hover.setAlpha(overlayAlpha(alpha));
+    return QBrush(hover);
 }
 
 QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha)
