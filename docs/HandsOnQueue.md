@@ -90,6 +90,52 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 09:19: the loads and the 30 GUI tests on the merged build ALL
+PASSED. A new word of the reporter's: "also sync occt" -- the OCCT fork is
+brought up, the build on it under way. All LOCAL: not pushed, NOT in the
+staged copy.** From the build session (its message of 09:19, written here
+09:17).
+- On the dev build of `5a5b5ff906` (before `47ed30316a`), 08:44 to 09:14
+  (`dl\handson\2026-10-12\s1\g-n-*-dev`): "no FAIL, no ABORT, no crash
+  log in any home, every script wrote DONE".
+  - Loads: `scanner-resaved.FCStd` four times, `scanner.FCStd` twice, all
+    EXIT 0; the preferences opened twice in one session, EXIT 0.
+  - GUI tests, the PASS counts: close-during-view-provider-drain 7,
+    display-style-menu 38, navicube-clear-of-panels 16,
+    omni-search-first-bring-up 8,
+    omni-search-from-tree-and-property-view 18,
+    omni-search-highlighted-row 20, omni-search-recent-items 18,
+    omni-search-slash-word 10, overlay-preset-follows-the-theme 45,
+    overlay-see-through 58, overlay-title-buttons-theme 44,
+    recovery-dialog-check-all 13, selection-on-top-hidden-edges 18,
+    sketch-auto-color 33, task-panel-clear-of-docks 21,
+    task-panel-combo 66, task-panel-in-view 89, task-panel-overlay 43,
+    task-panel-owner 34, task-panel-place 59, task-panel-side 61,
+    techdraw-dimension-click-no-recompute 12,
+    techdraw-never-shown-page-exports 10,
+    techdraw-page-backend-hatch 39,
+    techdraw-page-backend-single-draw 17,
+    techdraw-page-backend-switch 11,
+    techdraw-page-before-its-view-providers 12,
+    techdraw-page-items-when-needed 10,
+    techdraw-section-line-click 10, theme-switch-contrast 39.
+- NEW from the reporter, typed to the build session 09:13 -- the
+  note-taker did not hear it: "also sync occt".
+- Done of it: the OCCT fork fast-forwarded `5755a62295` -> `a81d25f148`
+  (origin/LinkVibe-801, 37 commits, "all in TKFillet/ChFi3d plus the
+  tests/fork submodule, now `c8ceb53c1e`"). "Nothing of mine in that
+  repo."
+- The rerun planned at 08:48 (a build and the ctest with `47ed30316a`
+  alone) was STOPPED before its build wrote a line. In its place,
+  started 09:16: build OCCT, build FreeCAD on it (the head with
+  `47ed30316a`), the full ctest, the full Python suite, four loads, the
+  five omni search GUI tests. So the ctest rerun AND a second Python
+  suite both come on the new OCCT -- the "not rerun" of 08:48 no longer
+  holds. Outcomes to follow.
+- The note-taker's note: the staged copy of 06:52 was built on OCCT
+  `5755a62295`; a copy with the new OCCT is one more thing a next stage
+  would bring. No stage is asked.
+
 **2026-10-13 08:48: both suites on the merged head `5a5b5ff906` -- the
 Python suite OK; ctest 2 failures of 957, ONE cause, a setting's text the
 Transaction branch brought, over the length limit; fixed in the source
