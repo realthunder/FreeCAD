@@ -839,6 +839,42 @@ TEST(ImmutableShapeTest, onlyACachePCurveIsReplaced)
     EXPECT_THROW(tv->UpdateTolerance(BRep_Tool::Tolerance(vertex) * 10), TopoDS_LockedShape);
 }
 
+// A refusal is counted (Part::raisedOCCTLockedShapes), which is how a feature
+// tells that an algorithm it called was refused a frozen input and made an
+// error message of it. The TShapes' tolerance setters are inline: the one
+// that refuses below is this binary's own copy, not the library's. It is
+// counted all the same, and this binary imports nothing of the OCCT fork for
+// it: the count is asked of the fork's library through its common allocator
+// (NCollection_ForkState), so that a module calling such a setter still loads
+// where the OCCT libraries are upstream's.
+TEST(ImmutableShapeTest, aRefusalRaisedByAnInlineSetterIsCounted)
+{
+    if (!Part::lookUpTKBRep("TopoDS_LockedShape_Raised")) {
+        GTEST_SKIP() << "no TopoDS_LockedShape_Raised: not the OCCT fork, or one from before it";
+    }
+    const TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(10, 0, 0)).Edge();
+    setImmutable(edge);
+    const TopoDS_Vertex vertex = TopoDS::Vertex(TopExp_Explorer(edge, TopAbs_VERTEX).Current());
+    Handle(BRep_TVertex) tv = Handle(BRep_TVertex)::DownCast(vertex.TShape());
+    const double tol = BRep_Tool::Tolerance(vertex);
+
+    const unsigned int before = Part::raisedOCCTLockedShapes();
+    // one this binary raises, in the inline setter
+    EXPECT_THROW(tv->UpdateTolerance(tol * 10), TopoDS_LockedShape);
+    EXPECT_EQ(Part::raisedOCCTLockedShapes(), before + 1);
+    // one the library raises
+    BRep_Builder builder;
+    EXPECT_THROW(builder.UpdateVertex(vertex, tol * 10), TopoDS_LockedShape);
+    EXPECT_EQ(Part::raisedOCCTLockedShapes(), before + 2);
+    // a write that changes nothing raises none
+    EXPECT_NO_THROW(tv->UpdateTolerance(tol / 2));
+    EXPECT_EQ(Part::raisedOCCTLockedShapes(), before + 2);
+    // and the count is the thread's own
+    unsigned int elsewhere = 1;
+    std::thread([&elsewhere]() { elsewhere = Part::raisedOCCTLockedShapes(); }).join();
+    EXPECT_EQ(elsewhere, 0U);
+}
+
 // A frozen edge takes a pcurve cache for each new face on it; a face that is
 // gone leaves its cache to the next one added (docs/TransactionLog.md sec
 // 27.81-27.82). Extruded over and over, a sketch's frozen edge carried a
