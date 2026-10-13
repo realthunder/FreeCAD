@@ -1634,6 +1634,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | OPEN, the four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
 | 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
+| 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12482,6 +12483,33 @@ c. WHERE the two groups stand in the menu: each where its entries are
 A smaller point, not put as blocking: the same commands in a context
 menu or on a tool bar stay as they are; only the View menu is named.
 
+## 102. The default of DockOverlayAlpha changed to 180 (a change request) -- OPEN, nothing to ask
+
+**2026-10-13 14:31, the reporter:** "new request, change default DockOverlayAlpha
+to 180"
+
+The note-taker's reading, not the reporter's words:
+- `View/DockOverlayAlpha`, shown as "Overlay background opacity", has
+  the default 150 since entry 69 (`bbe8525de7`). Its default becomes
+  180: the item backgrounds of an overlaid tree view and property view,
+  a task panel's ground, and what follows that setting since -- the
+  scroll bar's handle (entry 88), the hover bar (entry 87), the text
+  backing of entry 98 -- are that much less see-through.
+- Nothing is left to ask.
+
+Notes, the note-taker's, READ, nothing run:
+- The setting is defined in `src/Gui/OverlayParams.py` (`ParamInt`
+  `DockOverlayAlpha`); the generated `OverlayParams.cpp`/`.h` and the
+  preference page follow from it. Tests that claim an alpha of 150
+  (`tests/gui/overlay-see-through.py` and the newer ones of entries 87
+  and 88) read 150 as a number in places.
+- The reporter's configuration as last written (14:01) does NOT have
+  this key, so the reporter's own copy follows the default and will
+  show 180. A configuration that has 150 written keeps 150.
+- The overlay's outline effect of entry 87 leaves out what is "no more
+  opaque than the item backgrounds": that limit moves with the
+  setting.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -12491,5 +12519,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 101 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 102 are of 2026-10-13, 82 found by
 it)
