@@ -3747,6 +3747,14 @@ Three rules came with it:
   `Instance` binds each of them as an occurrence, and one bound by name
   keeps its own binding. A plain group is not on it; nothing was changed
   for a shader bound to a group.
+- **One face of such an object is a face of at most one of the others**
+  (`SeenThrough::For::Element`). A solid body has the shape of its tip, so
+  `Solid.Face10` is `Face10` of the tip and of no earlier feature: a
+  binding of Scope `Element` goes to the tip alone, with the same element,
+  and is rebuilt when the tip moves (`Tip` is a link). It was the solid
+  body's own shape's alone, which draws nothing while a feature shows the
+  solid. A face of the tip bound by name keeps its own binding, as above,
+  and competes for that face only.
 
 **What a group remembers is no link.** `HiddenChildren` is a map, so a child
 hidden by hand while a view's show of its hidden group stood
@@ -3767,18 +3775,16 @@ before this, 4 of 10 on it), the finish of the restore and the rebuild of
 the Parts' children falling into two turns of the event loop. Nothing in
 that document has a `HiddenChildren` map.
 
-**Not done.** An element-scoped shader binding is the solid body's own
-shape's alone (an element of the solid is not one of an earlier feature).
-
-**Test.** `tests/gui/per-view-seen-through.py`, 66 checks by pick and by
+**Test.** `tests/gui/per-view-seen-through.py`, 73 checks by pick and by
 the backend's frame, two views: a group in a Part, a group in the group, a
 top-level group by path and by bare name, a child shown by name, a box
 joining and leaving a hidden group, the show with a child hidden by hand
 before it and with one hidden by hand while it stands, a solid body through
-its tip and through an earlier feature, its show, and the shader in both
-scopes. Before-state: every "is hidden" claim of a group, and of a solid
-body seen through a feature, fails; the child hidden while the show stands
-failed until `dependsOn()`.
+its tip and through an earlier feature, its show, the shader in both
+whole-object scopes, and the shader on one face. Before-state: every "is
+hidden" claim of a group, and of a solid body seen through a feature,
+fails; the child hidden while the show stands failed until `dependsOn()`,
+and the two "a face of the solid body" claims until `For::Element`.
 
 **Found with it.** A shader bound with Scope `Instance` drew nothing, on a
 plain top-level box too: not this work's and not the Windows box's, but

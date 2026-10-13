@@ -261,7 +261,8 @@ public:
  * shows it, and a shader bound to the solid body dresses it likewise. Shown
  * by a view, the solid body shows its own shape, which is the solid: of the
  * features only one is to be seen at a time, and which is not a view's to
- * say.
+ * say. One face of it is a face of its tip, whose shape it has, and of no
+ * earlier feature.
  */
 std::vector<App::DocumentObject*> seenThroughFeatures(const App::DocumentObject *obj,
                                                       Gui::SeenThrough::For what)
@@ -271,6 +272,11 @@ std::vector<App::DocumentObject*> seenThroughFeatures(const App::DocumentObject 
         return {};
     if (what == Gui::SeenThrough::For::Show)
         return {const_cast<App::DocumentObject*>(obj)};
+    if (what == Gui::SeenThrough::For::Element) {
+        if (auto tip = owner->Tip.getValue())
+            return {tip};
+        return {};
+    }
     return owner->Group.getValues();
 }
 

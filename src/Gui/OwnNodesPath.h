@@ -91,6 +91,10 @@ public:
         Show,
         /// Dressed as it is: a shader bound to it
         Look,
+        /// Having its elements, name for name: where a shader bound to one
+        /// face of it goes. The tip of a solid body, whose shape the solid
+        /// body has; what a group holds has no element of the group
+        Element,
     };
 
     using Members = std::vector<App::DocumentObject*> (*)(const App::DocumentObject *, For);

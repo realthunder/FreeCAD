@@ -29,10 +29,14 @@ Claims:
   - a shader bound to the solid body dresses the solid through the feature
     that shows it, Scope 'Object' and Scope 'Instance'. Each is skipped
     where a user shader of that scope does not come up on a plain box
-    either.
+    either;
+  - a shader bound to ONE FACE of the solid body (Scope 'Element') dresses
+    that face of the tip, whose shape the solid body has, and no other
+    face, at the tip it has and at an earlier one.
 
 Scored against the tree before it: every 'is hidden' claim of a group and
-of a solid body seen through a feature FAILs, and so does the shader's.
+of a solid body seen through a feature FAILs, and so does the shader's. The
+face's FAILed until the tip was given the solid body's element bindings.
 """
 import os
 import time
@@ -114,6 +118,16 @@ def seen(view, points, gap):
 def red(view, pt):
     c = at(view, frame(view), pt)
     return c[0] > 200 and c[1] < 90 and c[2] < 90
+
+
+def face_at(obj, pt):
+    """The name of the face of the object's shape the point lies on"""
+    import Part
+    vertex = Part.Vertex(pt)
+    for i, face in enumerate(obj.Shape.Faces):
+        if face.distToShape(vertex)[0] < 1e-6:
+            return "Face%d" % (i + 1)
+    return None
 
 
 def two_views(gdoc):
@@ -323,9 +337,9 @@ def solids():
     shader.Programs = [prog]
     shader.Demo = "None"
 
-    def bind(target, scope):
+    def bind(target, scope, face=None):
         link = doc.addObject("App::Link", "Target")
-        link.LinkedObject = target
+        link.LinkedObject = (target, face) if face else target
         look = doc.addObject("App::ShaderBinding", "Look")
         look.Scope = scope
         look.ElementList = [shader, link]
@@ -371,6 +385,44 @@ def solids():
               comes_up(points["first"]))
         unbind(look, link)
         check("%s: the binding removed, the feature is as it was" % scope,
+              not red(v1, points["first"]))
+        solid.Tip = b
+        b.Visibility = True
+        doc.recompute()
+        settle(0.6)
+
+    # Scope Element binds one face of an occurrence. A face of the solid
+    # body is a face of its tip, name for name, and of no earlier feature
+    look, link = bind(plain, "Element", face_at(plain, on_plain))
+    works = comes_up(on_plain)
+    unbind(look, link)
+    if not works:
+        note("SKIP the shader claims of Scope Element: a user shader does not come up"
+             " on a face of a plain box here")
+    else:
+        # the front of the second box, the front of the first beside it,
+        # and the top, which the view from the front does not show
+        top = FreeCAD.Vector(13, 5, 10)
+        look, link = bind(solid, "Element", face_at(solid, points["second"]))
+        check("Element: a face of the solid body, on its tip", comes_up(points["second"]))
+        check("Element: the face beside it is not dressed", not red(v1, points["first"]))
+        check("Element: the other solid is not dressed", not red(v1, points["other"]))
+        unbind(look, link)
+        check("Element: the binding removed, the face is as it was",
+              not red(v1, points["second"]))
+        look, link = bind(solid, "Element", face_at(solid, top))
+        settle(3.0)
+        check("Element: another face of the solid body bound leaves this one",
+              not red(v1, points["second"]))
+        unbind(look, link)
+        solid.Tip = a
+        a.Visibility = True
+        doc.recompute()
+        settle(0.6)
+        look, link = bind(solid, "Element", face_at(solid, points["first"]))
+        check("Element: a face of the solid body, on an earlier tip", comes_up(points["first"]))
+        unbind(look, link)
+        check("Element: the binding removed, the earlier tip is as it was",
               not red(v1, points["first"]))
         solid.Tip = b
         b.Visibility = True

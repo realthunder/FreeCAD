@@ -1077,7 +1077,8 @@ std::vector<App::DocumentObject*> SeenThrough::of(const App::DocumentObject *obj
     }
     // A plain group shows and hides what it holds, and draws nothing itself.
     // What a geo feature group holds is under its own nodes.
-    if (what == For::Look || !App::GeoFeatureGroupExtension::isNonGeoGroup(obj))
+    if (what == For::Look || what == For::Element
+            || !App::GeoFeatureGroupExtension::isNonGeoGroup(obj))
         return res;
     auto group = obj->getExtensionByType<App::GroupExtension>(true);
     if (!group)

@@ -29,6 +29,7 @@
 # include <map>
 # include <set>
 # include <sstream>
+# include <tuple>
 # include <cstring>
 # include <QAction>
 # include <QMenu>
@@ -1448,7 +1449,8 @@ struct OccurrenceScan {
     std::map<const ChainBinding*,
              std::vector<std::pair<App::DocumentObject*, std::string>>> matches;
     // What a matched occurrence is seen through beside its own nodes
-    // (SeenThrough): the features of a PartDesign solid body
+    // (SeenThrough): the features of a PartDesign solid body, and its tip
+    // alone where the binding is of one element
     std::map<const ChainBinding*,
              std::vector<std::pair<App::DocumentObject*, std::string>>> seenThrough;
     std::vector<App::DocumentObject*> seq;
@@ -1525,51 +1527,52 @@ struct OccurrenceScan {
     }
 
     // The occurrences \a obj at \a base . \a subname is seen through, for
-    // the whole-occurrence bindings among \a found: named as it is, one
-    // step up, and objects of their own where it is one. An element of
-    // the object is not an element of what it is seen through.
+    // each binding among \a found: named as it is, one step up, and
+    // objects of their own where it is one. A whole-occurrence binding
+    // goes to all of them. An element of the object is an element of the
+    // one that has its elements only (SeenThrough::For::Element), and of
+    // none where there is no such.
     void addSeenThrough(const std::vector<const ChainBinding*> &found,
                         App::DocumentObject *base, App::DocumentObject *obj,
                         const std::string &subname)
     {
-        const ChainBinding *whole = nullptr;
-        for (auto m : found) {
-            if (m->element.empty())
-                whole = m;
-        }
-        if (!whole)
-            return;
-        auto members = SeenThrough::of(canonObject(obj), SeenThrough::For::Look);
-        if (members.empty())
-            return;
         std::string parent;
         if (subname.size() > 1) {
             auto pos = subname.rfind('.', subname.size() - 2);
             if (pos != std::string::npos)
                 parent = subname.substr(0, pos + 1);
         }
-        auto &list = seenThrough[whole];
-        for (auto member : members) {
-            if (subname.empty())
-                list.emplace_back(member, std::string());
-            else
-                list.emplace_back(base, parent + member->getNameInDocument() + ".");
+        auto owner = canonObject(obj);
+        for (auto m : found) {
+            auto members = SeenThrough::of(owner, m->element.empty()
+                                                      ? SeenThrough::For::Look
+                                                      : SeenThrough::For::Element);
+            if (members.empty())
+                continue;
+            auto &list = seenThrough[m];
+            for (auto member : members) {
+                if (subname.empty())
+                    list.emplace_back(member, std::string());
+                else
+                    list.emplace_back(base, parent + member->getNameInDocument() + ".");
+            }
         }
     }
 
     // After the scan: an occurrence bound by name keeps that binding, the
-    // others take the one of the object seen through them.
+    // others take the one of the object seen through them. An element
+    // binding competes for its element only, as in matchesAt().
     void mergeSeenThrough()
     {
-        std::set<std::pair<App::DocumentObject*, std::string>> named;
+        std::set<std::tuple<App::DocumentObject*, std::string, std::string>> named;
         for (auto &m : matches) {
-            if (m.first->element.empty())
-                named.insert(m.second.begin(), m.second.end());
+            for (auto &t : m.second)
+                named.emplace(t.first, t.second, m.first->element);
         }
         for (auto &m : seenThrough) {
             auto &list = matches[m.first];
             for (auto &t : m.second) {
-                if (named.insert(t).second)
+                if (named.emplace(t.first, t.second, m.first->element).second)
                     list.push_back(std::move(t));
             }
         }
