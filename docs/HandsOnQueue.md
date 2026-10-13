@@ -1782,7 +1782,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52); designed 15:36; "does not move" judged FIRST by the placements the binder keeps of its last update and by the geometry search only where it keeps none -- the build session's choice, NOT the reporter's word, to be told to them. AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. ANSWERED 15:28: OFF HOLD, to be built; "not moved" judged against the shape in the file by a GEOMETRY SEARCH; if no path leaves it unmoved the binder is in ERROR, "No context, please double click the binder in the desired context to refresh"; of equal paths the first that `getParents()` returns. Nothing left unanswered. It had been ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | IN THE SOURCE in the reporter's form, in the build of 15:45 after a compile error of the build session's put right (15:52): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
-| 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility | OPEN; three points under the entry, NOT ANSWERED |
+| 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only" | OPEN; the three points answered 16:03; one reading of c under the entry |
 | 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -13496,7 +13496,7 @@ worth knowing: error texts shown since Python 3.12 came in -- in the
 report view, in a feature's status -- have been such records, and will
 read as plain messages again.
 
-## 108. Editing a feature of an invisible body: the step before it is not shown on top, as the old fork shows it -- OPEN, three points not answered
+## 108. Editing a feature of an invisible body: the step before it is not shown on top, as the old fork shows it -- OPEN, answered 2026-10-13 16:03: not shown at all when the body is hidden; right when it is visible
 
 **2026-10-13 15:58, the reporter:** "new defect, when double click to edit a
 feature with invisible body, the feature (previous history step of the
@@ -13535,6 +13535,25 @@ Pointers, the note-taker's, nothing run and the source not followed:
 - The PartDesign edit was reworked to be per view in the first days of
   October (the handoffs of 2026-10-05 and 2026-10-06): a place where
   the fork's behaviour may have changed.
+
+**2026-10-13 16:03, the reporter answers the three points:** "entry 108. a,
+not shown at all. b, yes. c, edit view only"
+
+The note-taker's reading:
+- a. With the body hidden the previous step is NOT SHOWN AT ALL during
+  the edit -- it stays hidden with the body.
+- b. Yes: with the body VISIBLE it is shown on top, as in the old fork.
+  So the defect is the hidden body's case alone.
+- c. "edit view only": the note-taker takes it for WHERE the previous
+  step belongs -- it is to be shown on top in the view of the edit, not
+  in the other views (the edit being per view). The second half of the
+  point, whether the edit's own preview shows as expected, is not
+  answered in so many words; entry 104's answer of 14:50 has it shown
+  with the body hidden.
+So what is wanted, by the answers: when a feature is opened for editing
+and its body is hidden, the solid of the step before it is shown, on
+top, in the edit's view -- as it is when the body is visible -- and the
+body stays hidden otherwise.
 
 ## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02
 
