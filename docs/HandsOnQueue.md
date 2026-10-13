@@ -1476,7 +1476,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. A fix PLANNED, not written. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | OPEN; the four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | OPEN; the three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
-| 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons' | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; three points under the entry, NOT ANSWERED -- one of them: is entry 89's triangle the same mark |
+| 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | OPEN; the points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11104,7 +11104,7 @@ What is wanted is not said in so many words either. The note-taker's
 reading of "others are normal": the mark as the other menu buttons have
 it -- beside the icon, at its normal size.
 
-## 90. The toolbar button of Std_SelUp: its expansion indicator lies over the icon, unlike the others' -- OPEN, three points not answered
+## 90. The toolbar button of Std_SelUp: its expansion indicator lies over the icon, unlike the others' -- OPEN, answered 2026-10-13 11:02: wanted as the other menu buttons, the mark beside the icon
 
 **2026-10-13 10:56, the reporter:** "new defect, Std_SelUp toolbar icon expansion
 indicator overlaps with the icon, unlike others"
@@ -11147,6 +11147,21 @@ Pointers, READ by the note-taker, nothing run; the cause is NOT found:
 - `Std_DisplayStyle` (entry 89) sets `QToolButton::InstantPopup` by its
   own code (`src/Gui/DisplayOptions.cpp`) -- a third mode, which also
   draws the mark inside the button.
+
+**2026-10-13 11:02, the reporter answers points b and c:** "b, yes. c,
+yes, it seems every other with expansion indicator look right, except this
+one"
+
+The note-taker's reading:
+- b. Yes: wanted is what the other menu buttons have -- the mark beside
+  the icon, in its own strip, at its normal size.
+- c. Yes: every other button with an expansion indicator looks right;
+  this one alone does not. ("This one" is `Std_SelUp`; the button of
+  entry 89, `Std_DisplayStyle`, was said separately, with a mark "a lot
+  smaller than normal".)
+- Point a -- is entry 89's triangle the same kind of mark -- is taken as
+  answered by entry 89's answer of 10:59 ("looks like so").
+Nothing of this entry is left unanswered.
 
 ## Inbox
 
