@@ -37,6 +37,9 @@ with. Under Dark and under Light:
     sheet would set them, win over the settings;
   - a task panel, in an overlaid Tasks tab and in its view: its ground is
     the colour it has when docked, at View/DockOverlayAlpha.
+And then, the docks overlaid, Dark applied and Light after it:
+  - the task panel's ground is the colour of the theme just applied, at
+    that opacity, not of the theme being left (entry 85).
 """
 import os
 import traceback
@@ -52,6 +55,7 @@ TREE = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/TreeView")
 Control = FreeCADGui.Control
 DOC = "SeeThrough"
 STEPS = []
+DOCKED = {}  # theme -> the ground of a docked task panel under it
 ALPHA = 150
 NEAR = 4    # of 255, how far a painted colour may be from the one asked for
 
@@ -268,6 +272,7 @@ def one_theme(theme):
     Control.showDialog(Panel())
     settle(800)
     docked = panel_ground("%s-panel-docked" % theme)
+    DOCKED[theme] = docked
     Control.closeDialog()
     settle(500)
     check("%s: a docked task panel has a ground to compare with" % theme,
@@ -440,6 +445,37 @@ def themes():
         one_theme(theme)
 
 
+def switched():
+    """A theme applied WITH the docks overlaid (docs/HandsOnQueue.md entry
+    85): the overlay's sheet was made when the keys it is chosen by were
+    written, before the theme's own colours were in force, and a task
+    panel's ground stayed in the colour of the theme being left -- Dark's
+    under Light, Light's under Dark, until the next start."""
+    FreeCADGui.runCommand("Std_DockOverlayAll")
+    settle(2500)
+    for theme in ("Dark", "Light"):
+        if not FreeCADGui.applyTheme(theme):
+            check("%s, with the docks overlaid: the theme is applied" % theme, False)
+            continue
+        settle(6000)
+        focus_view()
+        Control.showDialog(Panel())
+        settle(1500)
+        focus_view()
+        found = panel_ground("%s-panel-theme-switched" % theme)
+        docked = DOCKED.get(theme)
+        if check("%s applied with the docks overlaid: a task panel is shown in an overlay" % theme,
+                 found is not None and docked is not None):
+            check("%s applied with the docks overlaid: the panel's ground is THIS theme's at %d"
+                  % (theme, ALPHA), near(found[0], docked[0][:3] + (ALPHA,)),
+                  "%s over %.0f%%, docked under this theme %s"
+                  % (found[0], 100 * found[1], docked[0]))
+        Control.closeDialog()
+        settle(500)
+    FreeCADGui.runCommand("Std_DockOverlayAll")
+    settle(2500)
+
+
 def finish():
     VIEW.SetBool("TaskPanelInView", False)
     VIEW.RemInt("DockOverlayAlpha")
@@ -474,4 +510,5 @@ def advance():
 
 STEPS.append((2500, start))
 STEPS.append((500, themes))
+STEPS.append((500, switched))
 advance()

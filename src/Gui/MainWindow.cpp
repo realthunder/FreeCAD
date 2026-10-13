@@ -3478,6 +3478,12 @@ void MainWindow::changeEvent(QEvent *e)
         BitmapFactory().onStyleChange();
         Application::Instance->commandManager().refreshIcons();
         OverlayManager::instance()->refreshIcons();
+        // The overlay's sheet carries a colour of the theme, a task panel's
+        // ground. The keys that sheet is chosen by are written, and the sheet
+        // made, before the theme's own colours are in force: a theme applied
+        // with docks overlaid left the ground in the colour of the theme
+        // being left (docs/HandsOnQueue.md entry 85). They are in force now.
+        OverlayManager::instance()->refresh(nullptr, true);
         TipLabel::refreshIcons();
     }
     else if (e->type() == QEvent::ActivationChange) {
