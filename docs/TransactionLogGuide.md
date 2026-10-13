@@ -266,6 +266,24 @@ its history.
 If the status says "No shape of what is chosen changed", the row changed
 other objects than the ones you chose.
 
+### The last change of one object, without the panel
+
+Right-click an object in the 3D view and choose **Show last change**. The
+entry is there when the log holds a change of the object's shape; an object
+made and never changed since shows its making, all of it new.
+
+The object goes into an edit, as it does for "Set colors...", and the task
+panel says which step it was and has the same controls as the bar: by the
+faces or by the material, the slider from **Before** to **After**,
+**Differences only**, and what was found in words. **Close** ends it.
+
+This one is not drawn in the document's own scene. In a document that is
+shared, the people connected see it only if they are in the edit with you;
+and someone looking at the document in a browser has the same entry in
+their own right-click menu, with the panel and its slider on their page:
+
+![The last change, asked for from a browser](images/transaction-log/13-stream-edit.png)
+
 ## 7. Versions: the document at a moment
 
 A **version** is the whole document as it was at one row. Every save takes
@@ -484,6 +502,7 @@ open it.
 | see what a step changed | Transactions: select the row, read its operations |
 | see the old and new value of a property | select the operation; the value pane |
 | see how an object's shape changed in a step | select the row, then its `Shape` operation |
+| see the last thing that changed an object, quickly | right-click the object in the 3D view, **Show last change** |
 | see how much material a step added or removed | the same, with **Material** in the bar's second list; the status says the volumes |
 | see which faces a step changed | the same, with **Faces** |
 | follow one object through the history | add it to "Objects:", then step through the rows |

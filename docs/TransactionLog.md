@@ -18672,6 +18672,101 @@ nine of `tests/gui/*-browser.py`; they are in no gate):
   that drive two pages: the second page draws nothing and is told
   nothing; whether that is the pages or the host is not known.
 
+### 32.19 The last change of an object, as an editing task (2026-10-13)
+
+**Ruled (user, 2026-10-13)**, on the two questions 32.18 left: whose
+the overlay is -- "consider shape diff as an editing task, overlay in
+the editing root" -- and how a browser asks -- an op and one small
+entry, "show the last change of this object", with the slider and the
+counts: agreed.
+
+**An edit mode.** `Gui::ViewProvider::ValueDiff` (6), beside
+`Transform` and `Color`: the last change of the object's value, shown
+as its two states. Part's view provider takes it as it takes the
+colours:
+
+- *Which change.* The newest op of the log that set the shape on the
+  branch the document is on (`TransactionStore::lastOpOn`, through
+  `ViewProviderDocumentObject::lastValueChange()`): its value before
+  and after. An object made with its shape and never changed since has
+  its making: nothing before, all of it new. No log, or no such op: the
+  edit is refused, and the entry is not offered.
+- *Where it is drawn.* `ShapeDiffView` given the document's
+  `EditingRoot` hangs its node there as a session node
+  (`addSessionNode`, as PartDesign's preview does, docs/ThinClient.md
+  sec 8.12) in the frame of whatever the object is in. So it is drawn
+  by the views in the session and by no other; for a served document it
+  is published in the session's tagged overlay and not in the scene
+  every client shares; and who is in the session is the edit's own
+  rule (every view of the document, or the one that started it,
+  `PerViewEdit`). The object as it is, which its two states stand in
+  for, is hidden in the session's views where a view can
+  (`hideEditedObject`).
+- *Its panel* (`PartGui::TaskShapeDiff`): which row, by the faces or by
+  the material, the slider from before to after, "Differences only",
+  and what was found in words. It asks the view provider
+  (`showValueDiff()`), which hangs what it shows in the session while
+  this edit runs and under the object's root otherwise. Plain widgets
+  only, so that the panel mirror sends a client the same one.
+- *The entry*: "Show last change" in the object's context menu, an
+  action that carries the mode as "Set colors..." does. A browser's
+  right-click menu is the host's (docs/ThinClient.md sec 8.11b), so the
+  entry is there too, and runs through the `edit` op.
+
+**What the browser needed.**
+
+- *A slider.* The panel mirror had the model (`Fw::QSlider`) and the
+  page no view of it: `widgets/panel.tsx` draws one, written back as it
+  is dragged.
+- *The panel by itself.* A page opens its task panel from the launcher.
+  The `edit` push now says the mode, and for this one the page opens
+  the card and takes it away again when the edit ends, if it opened it.
+- *The pointer.* In an edit a viewer sends its left button to the tool
+  and keeps the other two for the camera. Nothing in this edit is the
+  tool's to be clicked, so its push says `"pointer":false` and the left
+  button stays the camera's: a touch screen has no other.
+
+![in the browser: the panel, the slider at "before"](images/transaction-log/13-stream-edit.png)
+
+**Left.**
+
+- *The log's panel and the merge dialog still draw in the document's
+  scene.* What they show of rows, versions and merges is asked of
+  `showValueDiff()` outside any edit and hangs under each object's
+  root, as 32.9 built it: every view has it, and every client of a
+  served document. Putting those into a session is the same step for
+  several objects at once -- one of them in edit and the others the
+  session's nodes -- and it puts the document in an edit while the
+  merge's preview is open. Not built; to be ruled.
+- *A view-only client cannot ask*: the `edit` op is an editor's.
+- *The page's panel says OK and Cancel*, as it does of every task; the
+  desktop's has Close. Either leaves.
+- *In the session's overlay the state drawn full is flat*: the overlay
+  pass does not light it as the scene's pass did.
+- The numbers reach a client as the panel's words, not as data of
+  their own.
+
+**Tests.** `tests/gui/shape-diff-edit.py` (20), a document with a
+window: outside the edit the two states under the object's root, in it
+under the session's editing root and gone from the object's; the panel,
+its row and counts; the slider, differences only, the material and its
+volume; the mirrored panel's slider and a client's write to it; left by
+the document and by the panel's Close; an object never changed; no row
+and no undo step. `serve-shape-diff-edit.py` (13), served with no
+window, two socket clients: the object's menu as the host sends it to
+a client has the entry, an edit's; run from there it is taken, the
+client with a view told the session and the other nothing, the two
+states a node of the session, the slider mirrored and written,
+published, `resetEdit`. `serve-shape-diff-browser.py` (12, by
+`scripts/shapediff-drive.js`), a real browser: the page's ask, the
+colour of a changed face counted on the canvas before, in and after the
+edit (0, 315 430, 0), the panel up by itself with its slider and its
+words, a left drag sending the edit nothing, the slider moved in the
+page read on the host, the leaving. The browser test is registered and
+skips where it has no viewer or no browser, as the gates run it; it and
+the six browser tests that passed before (32.18) were run by hand with
+both, and pass.
+
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
 `origin/Transaction` at `09c96678f1` was merged into `LinkVibe` on the
