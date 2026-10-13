@@ -56,6 +56,7 @@
 #include "MainWindow.h"
 #include "TaskView/TaskPanelHost.h"
 #include "OpenViewParams.h"
+#include "OverlayManager.h"
 #include "OverlayWidgets.h"
 #include "View3DInventor.h"
 #include "ViewPlacement.h"
@@ -692,6 +693,10 @@ ViewAreaCell::ViewAreaCell(ViewArea *area)
     _zoneBottomLeft = new ViewAreaZone(this, ViewAreaZone::BottomLeft);
     _menuButton = new ViewAreaMenuButton(this);
     _highlight = new ViewAreaHighlight(this);
+    // The menu button and the corner handles keep clear of what is laid
+    // over the cell (placeChrome)
+    connect(OverlayManager::instance(), &OverlayManager::coverChanged,
+            this, &ViewAreaCell::placeChrome);
 }
 
 ViewAreaCell::~ViewAreaCell()
@@ -843,10 +848,67 @@ void ViewAreaCell::placeChrome()
             }
         }
     }
-    _zoneTopRight->setGeometry(width() - z - right, 0, z, z);
-    _zoneBottomLeft->setGeometry(0, height() - z - bottom, z, z);
-    _menuButton->setGeometry(0, 0, ViewAreaMenuButton::Size,
-                             ViewAreaMenuButton::Size);
+    QRect topRight(width() - z - right, 0, z, z);
+    QRect bottomLeft(0, height() - z - bottom, z, z);
+    QRect menu(0, 0, ViewAreaMenuButton::Size, ViewAreaMenuButton::Size);
+
+    // What is laid over the cell -- an overlaid dock, a task panel shown
+    // over its view -- hides what is in the corner under it and takes its
+    // clicks. The menu button and the two handles each slide to just past
+    // what covers them, along an edge they are on, as the navigation cube
+    // does, and come back when it goes (docs/HandsOnQueue.md entry 83).
+    // Each is looked at by itself. None moves unless the part of the cell
+    // that is clear is at least two of it wide and high: less is not worth
+    // going to, and with that much two of them never meet. One that would
+    // end over another stays where it was.
+    const QRegion covered = OverlayManager::instance()->covered(this);
+    if (!covered.isEmpty()) {
+        const QRect clear = (QRegion(rect()) - covered).boundingRect();
+        QVector<QRect> placed;
+        auto slide = [&](const QRect &home, bool atRight, bool atBottom) {
+            const int size = home.width();
+            QRect at = home;
+            if (clear.width() >= 2 * size && clear.height() >= 2 * size) {
+                for (int turn = 0; turn < 4; ++turn) {
+                    QRect hit;
+                    for (const QRect &r : covered) {
+                        if (r.intersects(at)) {
+                            hit = r;
+                            break;
+                        }
+                    }
+                    if (hit.isNull())
+                        break;
+                    const int toX = atRight ? hit.left() - size : hit.right() + 1;
+                    const int toY = atBottom ? hit.top() - size : hit.bottom() + 1;
+                    const bool okX = toX >= 0 && toX <= width() - size;
+                    const bool okY = toY >= 0 && toY <= height() - size;
+                    if (okX && (!okY || qAbs(toX - at.x()) <= qAbs(toY - at.y())))
+                        at.moveLeft(toX);
+                    else if (okY)
+                        at.moveTop(toY);
+                    else
+                        break;
+                }
+                if (covered.intersects(at))
+                    at = home;
+            }
+            for (const QRect &other : placed) {
+                if (other.intersects(at)) {
+                    at = home;
+                    break;
+                }
+            }
+            placed.push_back(at);
+            return at;
+        };
+        menu = slide(menu, false, false);
+        topRight = slide(topRight, true, false);
+        bottomLeft = slide(bottomLeft, false, true);
+    }
+    _zoneTopRight->setGeometry(topRight);
+    _zoneBottomLeft->setGeometry(bottomLeft);
+    _menuButton->setGeometry(menu);
 }
 
 bool ViewAreaCell::eventFilter(QObject *watched, QEvent *ev)
