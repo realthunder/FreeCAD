@@ -1474,6 +1474,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
 | 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered |
 | 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. A fix PLANNED, not written. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
+| 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request) | OPEN; a reading of the source by the note-taker, nothing run; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10955,6 +10956,70 @@ The note-taker's notes:
   under the Outline sheets (232 measured under Dark): a defect of entry
   69's result, to be mended with this entry's fix.
 
+## 88. A dock overlay in transparent mode: the scroll bar's background transparent, its handle at the overlay's alpha (a change request) -- OPEN, four points not answered
+
+**2026-10-13 10:45, the reporter:** "new request, when dock overlay in transparent
+mode, style the scroll bar to have transparent background and the make the
+scroll handle respect the command background alpha value"
+
+The note-taker's reading, not the reporter's words:
+- While an overlaid panel is in its transparent mode, a scroll bar in it
+  has NO ground of its own -- the 3D view shows through its track -- and
+  its handle is drawn see-through at an alpha taken from a setting.
+- "the command background alpha value": taken for "the COMMON background
+  alpha value", that is `View/DockOverlayAlpha`, "Overlay background
+  opacity", 150 -- the one entry 69 made for the item backing and the
+  task panel's ground. A guess; point a.
+
+NOT said, lettered for an answer:
+a. THE ALPHA: is it "Overlay background opacity"
+   (`View/DockOverlayAlpha`, 150) that the handle follows? The guess:
+   yes.
+b. WHICH scroll bars: every one inside an overlaid panel -- the tree
+   view's, the property view's, a task panel's, the report view's and
+   the Python console's when those are overlaid -- upright and level
+   both? The guess: all of them.
+c. THE HANDLE'S COLOUR: the theme's own handle colour at that alpha; and
+   under the pointer or pressed -- the theme's hover colour at the same
+   alpha, or solid then so it can be seen to be held? The guess: the
+   theme's colours, the same alpha in every state.
+d. WHAT ELSE of a scroll bar: the theme draws a border along the track
+   and a 14-pixel end at each side of it (the place of the arrows).
+   Clear too, with the track? The guess: yes, only the handle is left
+   to see.
+A smaller point, not put as blocking: "in transparent mode" is taken to
+mean whenever the panel is shown see-through -- as the item backing of
+entry 69 is -- not only while the eye is pressed with the pointer in the
+panel.
+
+Pointers, READ by the note-taker, nothing run:
+- The theme's sheet, `src/Gui/Stylesheets/FreeCAD.qss` near lines 676
+  to 724: `QScrollBar:horizontal` / `:vertical` with
+  `background-color: @ScrollbarBackgroundColor` and borders of
+  `@GeneralBorderColor` (14 px at the two ends); the handle a gradient
+  from `@ButtonTopBackgroundColor`, `@GeneralBackgroundHoverColor`
+  under the pointer.
+- The overlay sheets `overlay/Dark-Outline.qss` and
+  `overlay/Light-Outline.qss` state NOTHING for `QScrollBar`: an
+  overlaid panel's scroll bars are the theme's, solid.
+- A rule made from the settings exists since entry 69:
+  `OverlayStyleSheet::fromSettings` in `src/Gui/OverlayManager.cpp`
+  writes the task panel's ground at `View/DockOverlayAlpha` and puts it
+  in front of the overlay sheet -- the same place could carry the
+  scroll bar's rules. Its colour has to be asked for AFTER the theme's
+  parameters are in force (entry 85).
+- Settings that already touch these scroll bars: `TreeView/HideScrollBar`
+  ("Hide tree view scroll bar in dock overlay", 1 in the reporter's
+  configuration) and `View/DockOverlayHidePropertyViewScrollBar` (0
+  there) -- so in the reporter's own session the tree view's bar is
+  hidden and the property view's is shown.
+- Near it: entry 69 (the opacity), entry 87 (the outline effect lays a
+  dark copy under whatever an overlay paints -- a see-through handle
+  would get it too unless the planned fix leaves it out), entry 86 (the
+  pass-through passes only where the picture is fully clear: a clear
+  track would then pass clicks to the 3D view, which may or may not be
+  wanted -- not said).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -10964,5 +11029,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 87 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 88 are of 2026-10-13, 82 found by
 it)
