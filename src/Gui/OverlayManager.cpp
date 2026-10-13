@@ -1865,9 +1865,14 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
         if (!OverlayParams::getDockOverlayWheelPassThrough())
             return false;
         // fall through
-    case QEvent::ContextMenu: {
-        auto cev = static_cast<QContextMenuEvent*>(ev);
-        if (cev->reason() != QContextMenuEvent::Mouse)
+    case QEvent::ContextMenu:
+        // Asked of a context menu event alone. A wheel event falls through to
+        // here, and read as a context menu event its "reason" is whatever a
+        // wheel event holds at that place: where that is not 0 the wheel was
+        // never passed on to the view under a see-through panel
+        // (docs/HandsOnQueue.md entry 86).
+        if (ev->type() == QEvent::ContextMenu
+                && static_cast<QContextMenuEvent*>(ev)->reason() != QContextMenuEvent::Mouse)
             return false;
     }   // fall through
     case QEvent::MouseButtonDblClick:
