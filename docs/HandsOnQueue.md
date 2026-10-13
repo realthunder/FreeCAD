@@ -1434,6 +1434,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | DONE `53a231cc72`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `recovery-dialog-check-all.py` 13 PASS, 0 FAIL] (23:17): its own test `recovery-dialog-check-all.py` 13 claims, no FAIL; "Start Recovery" cannot be pressed with nothing ticked. As built: the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
+| 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10234,6 +10235,62 @@ ended by itself.** From the build session's message of 2026-10-13 07:32, written
 - For the reporter to confirm by hand: Edit > Preferences on the staged
   copy.
 
+## 83. A view cell's menu and handle should slide out from under an overlay panel, as the navigation cube does (a change request) -- OPEN, five points not answered
+
+**2026-10-13 09:52, the reporter:** "new request, view cell menu and handle
+should be aware of overlay panel position and slide out to make accessible
+just like navicube"
+
+The note-taker's reading, not the reporter's words:
+- "view cell menu": the small menu button in the top-left corner of each
+  cell of a split view, which opens the cell's menu (cell management and
+  what the cell shows).
+- "just like navicube": entry 76 as it was built -- the cube slides
+  along the edge of the view it is on, to just past an overlaid dock or
+  a task panel shown over the view, and comes back when the panel goes.
+- So: when an overlaid panel lies over the place of a cell's menu button
+  or of its handle, the button and the handle move to where they can be
+  reached, and back afterwards.
+- Which copy this was seen on is not said; the copy under test at this
+  hour is the stage of 09:36 (`abca255e23`).
+
+NOT said, lettered for an answer:
+a. WHICH "handle". The source has three things one could call so: (1)
+   the two corner zones of a cell, drawn as grips, that are dragged to
+   split or join cells; (2) the border between two cells, which is
+   dragged to resize; (3) the menu button itself, which the source calls
+   a grip. The note-taker's guess: (1), the corner grips, with the menu
+   button -- a border between cells has nowhere to slide to.
+b. Out of the way of WHAT: the same as the cube -- every overlaid dock,
+   and a task panel shown over the view? The guess: yes, the same.
+c. WHERE to: along the edge it is on to just past the panel, staying in
+   its own corner's half, as the cube does? The guess: yes.
+d. The SETTING: governed by the cube's one ("Navigation cube moves clear
+   of panels", `View/DockOverlayMoveNaviCube`, on by default), or a
+   setting of its own? Not said.
+e. WHICH cells: the cube exists in a 3D view only; the menu button is on
+   every cell, a TechDraw page or a spreadsheet too. Every cell? The
+   guess: yes.
+A smaller point, not put as blocking: the cube and a cell's button or
+grip may be pushed to the same place by the same panel (a narrow cell);
+which gives way is not said.
+
+Pointers, READ in the source by the note-taker, nothing run:
+- `src/Gui/ViewArea.cpp`: `ViewAreaMenuButton` ("A small grip in the
+  cell's top-left corner opening the cell management + content menu.
+  Subtle until hovered", 16 px); `ViewAreaZone`, the corner action
+  zones; `ViewAreaSplitterHandle`, the border between cells
+  (`HandleWidth = 3` in `ViewArea.h`). `ViewAreaSplitter::showCellMenu`
+  opens the menu. The design is `docs/SplitViews.md` sec 5.4/5.5.
+- The cube's way, entry 76: `NaviCubeImplementation::placeClear` in
+  `src/Gui/NaviCube.cpp` asks `OverlayManager::instance()->covered(widget)`
+  for the region laid over the view and slides the cube past it; off
+  when `OverlayParams::getDockOverlayMoveNaviCube()` is off.
+  `OverlayManager::covered` (`src/Gui/OverlayManager.h`) is the one
+  question both could ask.
+- Near it: entry 68 (a task panel in the view kept beside an overlaid
+  tree view) and entry 76.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -10243,4 +10300,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entry 82 is of 2026-10-13, found by it)
+and 81 found by it; entries 82 and 83 are of 2026-10-13, 82 found by
+it)
