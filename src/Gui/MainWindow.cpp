@@ -2057,6 +2057,16 @@ public:
         setObjectName(QStringLiteral("titleBarLogo"));
         setFlat(true);
         setCursor(Qt::PointingHandCursor);
+        // Every sheet gives QPushButton a least width, for the sake of
+        // dialog buttons, and the style writes it over this button's own
+        // size each time it polishes it: 80 px and the sheet's margins where
+        // 50 were asked for. The logo and the bars are painted at the
+        // button's left, so nothing of the button seemed to move -- the tool
+        // bar docked after it did, further and closer by which of the two
+        // had the last word (docs/HandsOnQueue.md entry 110). This button's
+        // own rule takes that width off it, and the size is its hint.
+        setStyleSheet(QStringLiteral("#titleBarLogo { min-width: 0px; }"));
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         pinSize();
 
         // Long enough that crossing the button on the way somewhere else does
@@ -2132,18 +2142,37 @@ protected:
         update();
     }
 
-    void changeEvent(QEvent *e) override
+    bool event(QEvent *e) override
     {
-        QPushButton::changeEvent(e);
-        if (e->type() == QEvent::StyleChange) {
+        const bool res = QPushButton::event(e);
+        switch (e->type()) {
+        case QEvent::Polish:
+        case QEvent::StyleChange:
+        case QEvent::ParentChange:
+        case QEvent::Show:
             // Every sheet here gives QPushButton a min-width, for the sake of
             // dialog buttons, and applying one has QStyleSheetStyle write that
             // over the size this button fixed for itself in the constructor.
             // 80px where 50 was asked for: the logo and the bars end up adrift
             // at one end of a button twice the width of what it draws. The
-            // size is asked for again here, after the sheet has had its say.
+            // size is asked for again here, after the sheet has had its say
+            // -- at a first polish too, which comes with no style change.
             pinSize();
+            break;
+        default:
+            break;
         }
+        return res;
+    }
+
+    QSize sizeHint() const override
+    {
+        return {3 * margin + logoSize + barsWidth, 35};  // NOLINT(*-magic-numbers)
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return sizeHint();
     }
 
 private:

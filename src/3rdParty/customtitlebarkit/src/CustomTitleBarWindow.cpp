@@ -103,7 +103,7 @@ struct CustomTitleBarWindow::Impl {
             return;
         }
         QWidget *current = window->QMainWindow::menuWidget();
-        if (!menuSpacer || current == menuSpacer) {
+        if (menuSpacer && current == menuSpacer) {
             return;
         }
         if (auto *bar = qobject_cast<QMenuBar *>(current)) {
@@ -132,8 +132,18 @@ struct CustomTitleBarWindow::Impl {
                 }
             }
         }
+        // A NEW spacer. QMainWindow::setMenuBar() does not merely put the
+        // old one aside: it hides it, takes it out of the window and
+        // schedules it for deletion. Put back, as it was here, that one
+        // reserved nothing -- it stayed hidden -- and was gone a moment
+        // later, the slot empty: the first row of tool bars under the title
+        // bar after all, for good (docs/HandsOnQueue.md entry 110, entry 6
+        // seen again). It may be gone already when this runs, which is why
+        // an empty slot is put right too and not taken for "nothing to do".
+        //
         // Qt deletes the widget this replaces, which is the point: the
         // imposter reserves no height and shows nothing.
+        menuSpacer = new QWidget(window);
         window->setMenuWidget(menuSpacer);
         layoutOverlay(window);
     }
