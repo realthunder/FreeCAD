@@ -1915,8 +1915,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | COMMITTED `3549b0a19f`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED ON A BUILD (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); ANSWERED 17:04: the backing behind the TEXT only; in the SAME BACKGROUND THE TREE'S ITEMS USE (not the widget's own, as the note-taker had read it); these two panels only; and the text's outline dropped wherever there is a background -- in the TREE too, a change to entry 87 as built. Nothing left unanswered |
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | The dashes (0xFFF0) and the scale's default (200) STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE PICKING DOES NOT WORK on that build (17:25): the test fails, the face is still picked -- the cause found, changed for the next build (in the source 15:08); the PICKING in the source, in the build of 15:45 (15:52); its test shows the defect on the staged copy -- at four points of the X axis inside a box the pick is the box's face. The reporter's configuration as copied 14:52 stores `DatumScale` 300 -- set by the reporter since. The four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
-| 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. THE REPORTER ASKS (17:22) what the border's colour is now -- answered by the note-taker from the theme file, by calculation: about #646464 (a grey of 100) on panels of about #2C2C2C (44); the note-taker's guess of step 4 would be about #323232 (50), too near the panels to be seen. How much darker is still the reporter's to say |
-| 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. ANSWERED in part 17:22: a NEW GROUP COMMAND, "say Std_SplitView", holding everything of the split view and its cells, placed AFTER the menu item "Standard views"; the second group (from `Std_ViewTitleBar` to the end) not spoken of in the answer |
+| 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. THE REPORTER ASKS (17:22) what the border's colour is now -- answered by the note-taker from the theme file, by calculation: about #646464 (a grey of 100) on panels of about #2C2C2C (44); the note-taker's guess of step 4 would be about #323232 (50), too near the panels to be seen. How much darker is still the reporter's to say. DECIDED 17:32: the border is #4B4B4B. Which borders and the check boxes: not said, taken as the general border colour, the check boxes as they are |
+| 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. ANSWERED in part 17:22: a NEW GROUP COMMAND, "say Std_SplitView", holding everything of the split view and its cells, placed AFTER the menu item "Standard views"; the second group (from `Std_ViewTitleBar` to the end) not spoken of in the answer. ANSWERED 17:32: `Std_ViewCreate` stays where it is; the title bar items go into a NEW GROUP COMMAND of the build session's naming, at the END of the View menu. Nothing left unanswered |
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:08); the reporter's configuration stores no value, so they get it. Nothing to ask; one note of the note-taker's on configurations that have the value written |
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | THE CAUSE FOUND and reproduced with a copy of the reporter's configuration, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE BUTTON IS STILL NOT THERE on that build (17:25): the cause of 15:08 was WRONG for an overlaid Tasks panel -- an overlay's title bar never carried the button; added for the next build (in the source 15:08): the Tasks dock's title bar is made at start-up before the task view is in its dock, so it is a plain dock's bar for good and the button does not exist; the bar is now replaced by a task one when the task view is found in a dock. The three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | (1) THE GHOST: the cause FOUND by reading, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:52) -- what a view hides of its own accord stayed in the depth and normal prepass the cavity pass reads; it is left out now. (2) THE SHOW-THROUGH: NOT found, needs pictures on the real screen. The four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
@@ -12940,7 +12940,7 @@ From the build session's message of 2026-10-13 17:25, written here 17:25.
 So on the stage of 16:55 the dashes (a) and the scale's default (b) are
 in; picking an axis or a border through a face is not.
 
-## 100. The Dark theme's borders a bit more subtle: a darker grey (a change request) -- OPEN, three points not answered
+## 100. The Dark theme's borders a bit more subtle: a darker grey (a change request) -- OPEN, three points not answered; DECIDED 2026-10-13 17:32: #4B4B4B
 
 **2026-10-13 13:40, the reporter:** "new request, make the dark theme border a
 bit more subtle, i.e. darker gray"
@@ -13003,7 +13003,22 @@ nothing run and nothing measured on a screen:
 NOT ANSWERED still: how much darker (a value); which borders, and the
 check boxes; Dark only.
 
-## 101. The View menu: the view cell operations grouped, and the items from Std_ViewTitleBar to the end grouped (a change request) -- OPEN, three points not answered; the first group answered 2026-10-13 17:22: a group command Std_SplitView after "Standard views"
+**2026-10-13 17:32, the reporter decides the colour:** "entry 100, use
+#4B4B4B."
+
+The note-taker's reading:
+- The Dark theme's border becomes #4B4B4B -- a grey of 75, where it is
+  about #646464 (100) now and the panels are #2C2C2C (44). In the
+  theme's own terms that is "lighten(@PrimaryColor,200)" of #191919,
+  or the value written out.
+- NOT said, taken so and not put as blocking: WHICH borders -- the
+  general border colour (`GeneralBorderColor` in
+  `Stylesheets/parameters/Dark.yaml`, which the buttons' borders
+  follow); the check boxes and radio buttons (`CheckBoxBorderColor`,
+  the same grey of 100 since entry 77) are left as they are, so that an
+  empty box can still be made out; the Dark theme only.
+
+## 101. The View menu: the view cell operations grouped, and the items from Std_ViewTitleBar to the end grouped (a change request) -- OPEN, three points not answered; the first group answered 2026-10-13 17:22: a group command Std_SplitView after "Standard views"; the second group answered 17:32: a group command at the end of the menu, Std_ViewCreate left in place
 
 **2026-10-13 14:18, the reporter:** "new request, group view cell operations in
 View menu. also group item Std_ViewTitleBar until the end in View menu."
@@ -13061,6 +13076,30 @@ NOT said: whether `Std_ViewCreate` (a new view) goes into the group or
 stays where it is; and the SECOND group of the request (from
 `Std_ViewTitleBar` to the end): a submenu of its own, a group command
 like this one, and its name. Not put as blocking for the first.
+
+**2026-10-13 17:32, the reporter answers the two things left:** "entry
+101, leave the create view at its original place, group view title bar in
+an new group command with you namce choice, place it at the end of view
+menu."
+
+The note-taker's reading:
+- `Std_ViewCreate` STAYS at its original place in the View menu; it
+  does not go into `Std_SplitView`.
+- The SECOND group -- the title bar's items, from `Std_ViewTitleBar` to
+  the end (`Std_ViewTitleBar`, `Std_ViewFoldTitleBarMenu`,
+  `Std_ViewTitleBarToolBars`, `Std_ShowMenuBar`, `Std_ViewStatusBar`,
+  by the menu as read at 14:18) -- becomes a NEW GROUP COMMAND too. Its
+  name is left to the build session ("with you namce choice").
+- Its place: at the END of the View menu.
+The whole of the entry as it now stands: (1) a group command
+`Std_SplitView` with the split view's and the cells' commands, after
+"Standard views"; (2) a group command of the build session's naming
+with the title bar's items, at the end of the menu; `Std_ViewCreate`
+where it is. Nothing is left unanswered.
+A smaller point, the note-taker's, not blocking: whether the menu bar's
+and the status bar's switches (`Std_ShowMenuBar`, `Std_ViewStatusBar`)
+count among "view title bar" -- the reporter's first sentence of 14:18
+said "Std_ViewTitleBar until the end", which takes them in.
 
 ## 102. The default of DockOverlayAlpha changed to 180 (a change request) -- in the source 2026-10-13 15:08, in a build, not committed; STAGED 2026-10-13 16:55 from uncommitted code, not tested
 
