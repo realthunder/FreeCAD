@@ -505,6 +505,9 @@ bool ShapeDiffView::build()
         // object's own shape has the object's looks, and every one set below
         // would be written to the object -- a change of the document.
         auto view = std::make_unique<ViewProviderPart>();
+        // Before anything of it is set: where the states are the host's
+        // own to see, a look of theirs is no change of the object's view
+        view->setStatus(Gui::HostOnlyView, !_session);
         view->setGivenShape(Part::TopoShape(shapes[kind]));
         view->forceUpdate();
         view->MapFaceColor.setValue(false);

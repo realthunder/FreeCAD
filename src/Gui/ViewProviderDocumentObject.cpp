@@ -410,7 +410,11 @@ void ViewProviderDocumentObject::onChanged(const App::Property* prop)
     }
 
     ViewProvider::onChanged(prop);
-    if (pcObject)
+    // Said through the object, for whoever watches the document: that its
+    // view changed. A view that only the host's own views draw is no view
+    // of the object's to anyone else -- a served document published for
+    // every look set on one, with nothing of it to send.
+    if (pcObject && !testStatus(Gui::ViewStatus::HostOnlyView))
         pcObject->ViewObject.touch();
 }
 

@@ -9,14 +9,16 @@ the document draws and a served document publishes. So a client drew what
 the host was looking at, unasked, and was sent a push for every move of
 the host's slider. The annotation is marked the host's own to see now
 (SoFCPathAnnotation::hostOnly): the views draw it, the snapshot a served
-document publishes leaves it out, and it asks for no publish.
+document publishes leaves it out, and nothing is published for it. Two
+things asked for a publish: the overlay itself, which no longer does, and
+every look set on its own views -- a view's change is said through the
+object it is a view of (its ViewObject property), which the document
+reports as the object changed. A view that only the host's views draw
+does not say so (Gui::HostOnlyView).
 
 That a client DRAWS none of it is a browser's to say, and
-tests/gui/serve-shape-diff-browser.py says it. This is what is still sent,
-which a socket can count. A look set on the overlay's own views is
-announced through the object they are views of, which the document reports
-as the object changed, so a publish still goes out for it -- carrying the
-object as it was. What changes no look of theirs sends nothing.
+tests/gui/serve-shape-diff-browser.py says it. This is what is sent,
+which a socket can count: nothing.
 
 A document served with no window, one client on the socket that says hello
 and counts the scene pushes it is sent. Asserted, each over a second and a
@@ -24,12 +26,14 @@ half:
 
   - nothing is pushed while nothing changes;
   - the overlay is shown on the host -- the view provider says what it
-    found -- and no more than one push goes out for it, as for a place of
-    the slider and for the two states by their material;
-  - "differences only" and the overlay taken away, which were pushed
-    because the view asked, push nothing;
+    found -- and nothing is pushed; nor for a place of the slider, for
+    "differences only", for the two states by their material, nor when it
+    is taken away;
   - a change of the document is pushed still;
   - none of it but that change wrote a row of the log or an undo step.
+
+Scored against the tree before the last of it: one push for the overlay
+shown, for each place of the slider and for the material.
 
 The same two states shown as an edit (sec 32.19) are the edit session's
 and do reach the clients in it: tests/gui/serve-shape-diff-edit.py.
@@ -153,14 +157,14 @@ def build():
         # (what, the call, the pushes there may be: None is one or more)
         steps = [
             ("nothing changes", lambda: None, 0),
-            ("the overlay shown", lambda: view.showValueDiff("Shape", a, b) and found(), 1),
-            ("the slider half way", lambda: view.showValueDiff("Shape", a, b, position=0.5), 1),
+            ("the overlay shown", lambda: view.showValueDiff("Shape", a, b) and found(), 0),
+            ("the slider half way", lambda: view.showValueDiff("Shape", a, b, position=0.5), 0),
             ("the slider at the earlier state",
-             lambda: view.showValueDiff("Shape", a, b, position=0.0), 1),
+             lambda: view.showValueDiff("Shape", a, b, position=0.0), 0),
             ("differences only",
              lambda: view.showValueDiff("Shape", a, b, position=0.0, differencesOnly=True), 0),
             ("the two by their material",
-             lambda: view.showValueDiff("Shape", a, b, mode="material"), 1),
+             lambda: view.showValueDiff("Shape", a, b, mode="material"), 0),
             ("the overlay taken away", lambda: view.hideValueDiff(), 0),
             ("nothing changes after it", lambda: None, 0),
             ("a change of the document", taller, None),
@@ -192,11 +196,8 @@ def build():
                 if most is None:
                     check("%s is pushed to the client" % what, got >= 1 and shown is not False,
                           said)
-                elif most == 0:
-                    check("%s: nothing is pushed" % what, got == 0 and shown is not False, said)
                 else:
-                    check("%s: on the host, and no more than one push goes out" % what,
-                          got <= most and bool(shown), said)
+                    check("%s: nothing is pushed" % what, got == 0 and shown is not False, said)
                 run(i + 1)
 
             QtCore.QTimer.singleShot(STEP_MS, read)

@@ -19168,19 +19168,24 @@ with differences only and by the material, the page draws the object
 and none of the overlay's colours (0 pixels, where 32.18 counted more
 than 20000).
 
-**What is still sent.** The overlay no longer asks for a publish, so
-"differences only" and taking it away send nothing. Showing it, a place
-of the slider and the material still send one push each -- 1.1 kB here,
-1.8 kB the first, where they were 2.5 to 3.1 kB -- carrying the object
-as it was. The cause is not this overlay's: a look set on a view that
-is a second view of an object is announced through the object's own
-property, which the document reports as the object changed, and a
-served document publishes for that. PartDesign's preview is such a
-view too. Not chased: it is the appearance pass-through's, and what it
-costs here is a push with nothing new in it.
+**What was still sent, and is not.** With the overlay no longer asking
+for a publish, "differences only" and taking it away sent nothing, and
+showing it, a place of the slider and the material still sent one push
+each -- 1.1 kB here, 1.8 kB the first -- with the object as it was in
+it. Chased the next day (user: "chase the residue push"). A view's
+change is said through the object it is a view of:
+`ViewProviderDocumentObject::onChanged` touches the object's
+`ViewObject` property, the document reports the object changed, and a
+served document publishes for that -- 99 times for the nine steps of
+the test, each look the overlay sets on its five views. A view that
+only the host's views draw is no view of the object's to anyone else:
+it has the status `Gui::HostOnlyView`, set before anything of it is,
+and does not say so. Nothing is pushed for any step now. PartDesign's
+preview is a second view of its object too and still says so; it is
+the edit session's, whose clients are sent it.
 
-**Tests.** `tests/gui/serve-shape-diff.py` (11), restated: what is sent
-for each step, as above. `tests/gui/serve-shape-diff-browser.py` (13,
+**Tests.** `tests/gui/serve-shape-diff.py` (11), restated: nothing is
+sent for any step of it. `tests/gui/serve-shape-diff-browser.py` (13,
 one more): the host shows the overlay the desktop's way before the
 page asks for its own edit; it is on the host, under the object, and
 not in the page.
