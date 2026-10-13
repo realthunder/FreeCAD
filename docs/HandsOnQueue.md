@@ -67,7 +67,8 @@ test": the merges of origin/SolidBody and origin/Transaction with
 OcctFix inside, and OCCT brought to `a81d25f148`; LOCAL, not pushed;
 NO suite had run on that code when it was staged and, on the
 reporter's word, NO check by the build session on the staged copy --
-the reporter tests it by hand).
+the reporter tests it by hand; since, on the dev build of that code:
+ctest 957 of 957 and the Python suite 3743 tests OK).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -96,6 +97,24 @@ report views, the reporter's own files -- is kept beside the dev tree under
 read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
+
+**2026-10-13 10:17: BOTH SUITES GREEN on the code staged at 09:36. Entry
+85 REPRODUCED, its cause shown, a fix in the source; entry 84's fix in the
+source. Neither built yet. All LOCAL.** From the build session (its
+message of 10:17, written here 10:17).
+- On the dev build of `47ed30316a` + OCCT `a81d25f148`: ctest "100%
+  tests passed out of 957"; Python "Ran 3743 tests in 1288.480s", "OK
+  (skipped=52, expected failures=6)" -- "slower than 810 s because my
+  probes ran beside it". Four loads and the five omni search tests are
+  finishing.
+- 85: the task panel's ground carries the colour of the theme being
+  LEFT after a theme is applied in a running session; under the entry.
+- 84: the tooltip's cause read, a fix and a new test written; under the
+  entry.
+- Started 10:15: both new tests on the build BEFORE the fixes (expected
+  to fail), the build, both tests and eight near them, the probe with
+  the reporter's configuration again, the full ctest.
+- "No stage, no push without the reporter's word."
 
 **2026-10-13 10:06: on the build of the stage of 09:36 the ctest is 957 of
 957; the Python suite running. Entry 69 on the reporter's configuration is
@@ -1451,8 +1470,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
-| 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found by reading; three points under the entry, NOT ANSWERED |
-| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | OPEN; point a answered 10:12; where, since when, and whether a restart puts it right NOT ANSWERED; a guess at the cause by the note-taker, read, nothing run |
+| 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | IN WORK 2026-10-13 10:17: a fix in the source, NOT built, NOT tested; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
+| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10431,7 +10450,7 @@ Pointers, READ in the source by the note-taker, nothing run:
 - Near it: entry 68 (a task panel in the view kept beside an overlaid
   tree view) and entry 76.
 
-## 84. A tree view item's tooltip is shown when its delay is up even if the pointer has left the item -- OPEN, the cause not found by reading, three points not answered
+## 84. A tree view item's tooltip is shown when its delay is up even if the pointer has left the item -- IN WORK 2026-10-13 10:17, a fix in the source, not built; the cause read by the build session
 
 **2026-10-13 09:56, the reporter:** "new defect, tree view item tooltip has a
 delay, which is acceptable, but when the time is up, only show the tooltip
@@ -10473,7 +10492,35 @@ is NOT found by reading:
   places (`Tree.cpp` near lines 1828 and 4776); which paths do not is
   not followed.
 
-## 85. The task panel's guest widgets are backed in the wrong colour under the Dark and the Light theme, as if the two were swapped (first said as "background seems to be reverted") -- OPEN, made precise 2026-10-13 10:12; three points not answered
+**2026-10-13 10:17, the build session: IN WORK -- the cause read, a fix in
+the source, NOT built, NOT tested.** From the build session's message of 2026-10-13 10:17, written here 10:17.
+- The cause, "read in `src/Gui/Tree.cpp`, to be shown by the test before
+  the build": the 300 ms timer is started by a move over an item; when
+  it is up `onToolTipTimer` asks `itemAt()` at `QCursor::pos()`, "which
+  still names an item for a point BESIDE the view where a column is
+  wider than the view (the usual case in a narrow overlay) and under any
+  widget lying over the tree"; `TreeWidget::leaveEvent` stopped nothing;
+  and `ToolTip::showText` stops the hide timer a Leave had started, "so
+  the tip stays".
+- The fix: the item the delay was started for is remembered; when the
+  delay is up the tip is shown only if the pointer is inside the tree's
+  viewport, no other widget is under it, and the item there is that same
+  item; leaving the tree stops the delay. "A drag keeps its own tips as
+  they were."
+- One change beside it, "to keep a feature the rule would have ended":
+  a document's row starts a delay of its own for its file-name tip (it
+  had one only when the delay had been started on an object's row).
+- The note-taker's points: a and c "not needed for the fix"; b -- the
+  pointer on another item -- "the delay again for that item, as it
+  was".
+- New test `tests/gui/tree-tooltip-only-over-its-item.py`: it "runs ONLY
+  with QT_QPA_PLATFORM=offscreen (it moves the pointer; on a real screen
+  that is the reporter's)".
+The note-taker's note: point b is decided by the build session as it
+was before, which is also the note-taker's guess; the reporter has not
+said it. Nothing of this entry waits for the reporter.
+
+## 85. The task panel's guest widgets are backed in the wrong colour under the Dark and the Light theme, as if the two were swapped (first said as "background seems to be reverted") -- REPRODUCED 2026-10-13 10:17, the colour of the theme being left; a fix in the source, not built
 
 **2026-10-13 10:07, the reporter:** "new defect, the task panel background seems
 to be reverted for dark and light theme"
@@ -10567,6 +10614,44 @@ A guess at the cause, the note-taker's, READ in the source, nothing run:
 - `DialogBackgroundColor` is "@PrimaryColorLighten3" in both
   `Stylesheets/parameters/Dark.yaml` and `Light.yaml`; the two differ
   through `PrimaryColor`.
+
+**2026-10-13 10:17, the build session: REPRODUCED, the cause shown by a
+run; a fix in the source, NOT built, NOT tested.** From the build session's message of 2026-10-13 10:17, written here 10:17.
+- The run, 10:11 to 10:13, with a COPY of the reporter's configuration:
+  themes applied through the Themes menu of `Std_CmdPresets` with the
+  docks overlaid as that configuration has them, a task panel shown in
+  OverlayRight each time. The ground of its content frame (r,g,b,a):
+  - as configured (Dark, `Dark_overlay.qss`): (68,68,68,255) -- solid,
+    that sheet's own #444444;
+  - Dark applied: (44,44,44,150); the same after the overlay sheet is
+    made anew;
+  - then Light applied: (44,44,44,150) -- DARK's colour; after the sheet
+    is made anew: (250,250,250,150);
+  - then Dark applied: (250,250,250,150) -- LIGHT's colour; made anew:
+    (44,44,44,150).
+- "So: the colour of the theme being LEFT, at the right alpha, until the
+  sheet is made again (or the next start)." The cause as the note-taker
+  guessed it: `OverlayStyleSheet::OnChange` makes the sheet when
+  `StyleSheet` / `OverlayActiveStyleSheet` / `ColorScheme` are written;
+  `Application::setStyleSheet` reloads the theme's parameters later.
+- Why entry 69's test did not see it:
+  `tests/gui/overlay-see-through.py` "applies each theme with the docks
+  docked and overlays them afterwards".
+- The note-taker's open points, answered "from the run, not from the
+  reporter": (b) shown for the overlaid Tasks tab; a panel in its view
+  takes the same rule, not measured. (c) it is in `bbe8525de7`, first
+  staged 2026-10-13 06:52 -- so in both stages of that day. (d) right
+  after a restart, "by the code (the sheet is made once the theme is in
+  force) -- not run".
+- The fix, in the source, NOT built: `MainWindow`'s handling of
+  `QEvent::StyleChange`, "which arrives when the application's sheet has
+  been set with the theme's parameters in force", has the overlay's
+  sheet made again (`OverlayManager::refresh(nullptr, true)`). The test
+  gains a step: docks overlaid, Dark applied, then Light -- the panel's
+  ground is the applied theme's.
+The note-taker's note for the reporter: until a stage with the fix, a
+restart of the program after a change of theme should give the right
+colour -- by the build session's reading of the code, not run.
 
 ## Inbox
 
