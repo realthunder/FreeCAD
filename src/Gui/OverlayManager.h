@@ -30,6 +30,9 @@
 
 class QAction;
 class QDockWidget;
+class QPainter;
+class QPointF;
+class QTextBlock;
 class QString;
 class QPoint;
 class QWidget;
@@ -155,6 +158,14 @@ public:
     static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1);
     /// View/DockOverlayAlpha, or \a alpha where a style sheet set one
     static int overlayAlpha(int alpha = -1);
+    /** Paint \a ground behind the text of one block of a text view, line by
+     * line and as wide as each line's text; \a pos is where the block's
+     * layout stands in what \a painter paints on. For a text view in a
+     * see-through overlay -- the Python console, the report view -- whose
+     * text has to read over the 3D view (docs/HandsOnQueue.md entry 98).
+     */
+    static void paintTextGround(QPainter &painter, const QTextBlock &block,
+                                const QPointF &pos, const QBrush &ground);
     /** The brush an item of an overlaid tree is backed with while the pointer
      * is on it (docs/HandsOnQueue.md entry 87): the theme's colour for that at
      * the opacity of the item backgrounds, as wide as those. No brush under

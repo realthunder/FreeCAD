@@ -46,6 +46,7 @@
 
 #include "ReportView.h"
 #include "GeneralParams.h"
+#include "OverlayManager.h"
 #include "Action.h"
 #include "Application.h"
 #include "BitmapFactory.h"
@@ -797,6 +798,26 @@ QTextBlock ReportOutput::foldedBlockAt(const QPoint& pos) const
 //! messages are shown, in the colour of the text, so that it follows a theme.
 void ReportOutput::paintEvent(QPaintEvent* ev)
 {
+    // In a see-through overlay each line's text gets the ground the tree view
+    // gives its items there, as wide as the text (docs/HandsOnQueue.md entry
+    // 98; TextEdit::paintEvent() is the same for the Python console)
+    if (testAttribute(Qt::WA_NoSystemBackground)) {
+        const QBrush ground = OverlayManager::overlayItemBackground();
+        if (ground.style() != Qt::NoBrush) {
+            QPainter backing(viewport());
+            const QPointF offset(-horizontalScrollBar()->value(), -verticalScrollBar()->value());
+            auto layout = document()->documentLayout();
+            QTextBlock block = cursorForPosition(QPoint(1, ev->rect().top())).block();
+            for (; block.isValid(); block = block.next()) {
+                const QRectF box = layout->blockBoundingRect(block).translated(offset);
+                if (box.top() > ev->rect().bottom())
+                    break;
+                if (block.isVisible())
+                    OverlayManager::paintTextGround(backing, block, box.topLeft(), ground);
+            }
+        }
+    }
+
     QTextEdit::paintEvent(ev);
 
     QPainter painter(viewport());

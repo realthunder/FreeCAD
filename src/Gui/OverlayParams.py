@@ -138,7 +138,7 @@ Params = [
              "colour of the 3D view's background as the theme has it -- the first\n"
              "colour of a gradient -- so that their text reads over the view.\n"
              "When off the tree view's own item background colour is used."),
-    ParamInt('DockOverlayAlpha', 150, on_change=True, title="Overlay background opacity",
+    ParamInt('DockOverlayAlpha', 180, on_change=True, title="Overlay background opacity",
          proxy=ParamSpinBox(0, 255, 5),
          doc="Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of\n"
              "the items of the tree view and of the property view, and of a task\n"

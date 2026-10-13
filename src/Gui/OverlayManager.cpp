@@ -44,6 +44,8 @@
 
 #include <QPainterPath>
 #include <QPropertyAnimation>
+#include <QTextBlock>
+#include <QTextLayout>
 
 #include <array>
 #include <unordered_map>
@@ -374,6 +376,10 @@ struct OverlayInfo {
     std::unordered_map<QDockWidget*, OverlayInfo*> &overlayMap;
     ParameterGrp::handle hGrp;
     fastsignals::scoped_connection conn;
+    /// "Show this task panel in its view", on this overlay's own title bar:
+    /// shown while the Tasks are in this overlay and have a panel to send
+    /// (OverlayManager::Private::syncTaskHostAction())
+    QAction actTaskHost;
 
     OverlayInfo(QWidget *parent,
                 const char *name,
@@ -641,6 +647,18 @@ public:
             for(auto action : o->tabWidget->actions()) {
                 QObject::connect(action, &QAction::triggered, host, &OverlayManager::onAction);
             }
+            // An overlaid dock has no title bar of its own: the overlay's is
+            // shared by the docks in it, and it did not carry the button that
+            // shows a task panel in its view -- with the Tasks overlaid there
+            // was no such button anywhere (docs/HandsOnQueue.md entry 103).
+            // Each overlay has one, shown while the Tasks are in it.
+            o->actTaskHost.setData(QStringLiteral("OBTN TaskHost"));
+            o->actTaskHost.setIcon(_actTaskHost.icon());
+            o->actTaskHost.setVisible(false);
+            QObject::connect(&o->actTaskHost, &QAction::triggered, host, []() {
+                if (auto taskView = Control().taskPanel())
+                    taskView->sendShownToView();
+            });
             o->tabWidget->setTitleBar(createTitleBar(o->tabWidget));
         }
 
@@ -654,6 +672,8 @@ public:
         _actOverlay.setIcon(BitmapFactory().pixmap("qss:overlay/overlay.svg"));
         _actClose.setIcon(BitmapFactory().pixmap("qss:overlay/close.svg"));
         _actTaskHost.setIcon(BitmapFactory().pixmap("qss:overlay/taskhost.svg"));
+        for (auto o : _overlayInfos)
+            o->actTaskHost.setIcon(_actTaskHost.icon());
         for (OverlayTabWidget *tabWidget : _Overlays) {
             tabWidget->refreshIcons();
             for (auto handle : tabWidget->findChildren<OverlaySplitterHandle*>())
@@ -737,6 +757,9 @@ public:
 
     void refresh(QWidget *widget=nullptr, bool refreshStyle=false)
     {
+        // The Tasks may have been put into an overlay or taken out of one
+        syncTaskHostAction();
+
         if(refreshStyle) {
             OverlayStyleSheet::instance()->update();
             updateStyle = true;
@@ -1150,12 +1173,41 @@ public:
         OverlayTitleBar *widget = new OverlayTitleBar(parent);
         widget->setObjectName(QStringLiteral("OverlayTitle"));
         QList<QAction*> actions;
-        if (auto tabWidget = qobject_cast<OverlayTabWidget*>(parent))
+        if (auto tabWidget = qobject_cast<OverlayTabWidget*>(parent)) {
             actions = tabWidget->actions();
+            for (auto o : _overlayInfos) {
+                if (o->tabWidget == tabWidget)
+                    actions.prepend(&o->actTaskHost);
+            }
+        }
         else
             actions = task ? _taskActions : _actions;
         widget->setTitleItem(OverlayTabWidget::prepareTitleWidget(widget, actions));
+        widget->setProperty("taskActions", task);
         return widget;
+    }
+
+    /** The title bar of the dock that holds the task view has the buttons of
+     * a Tasks panel, the one that shows a panel in its view among them.
+     *
+     * setupTitleBar() decides that by what the dock holds when its bar is
+     * made, and for docks put back into overlays at start-up that is before
+     * the task view is in its dock: the bar was a plain dock's for good, and
+     * the button never there (docs/HandsOnQueue.md entry 103).
+     */
+    void ensureTaskTitleBar(QWidget *taskView)
+    {
+        for (QWidget *w = taskView ? taskView->parentWidget() : nullptr; w; w = w->parentWidget()) {
+            auto dock = qobject_cast<QDockWidget*>(w);
+            if (!dock)
+                continue;
+            auto bar = qobject_cast<OverlayTitleBar*>(dock->titleBarWidget());
+            if (bar && !bar->property("taskActions").toBool()) {
+                dock->setTitleBarWidget(createTitleBar(dock, true));
+                bar->deleteLater();
+            }
+            break;
+        }
     }
 
     void syncTaskHostAction()
@@ -1170,9 +1222,17 @@ public:
         // not there yet and makes another -- without end. Nothing is shown
         // that early, so there is no panel to send.
         auto taskView = ready ? Control().taskPanel() : nullptr;
+        ensureTaskTitleBar(taskView);
         const bool can = taskView && taskView->canSendShownToView();
         if (_actTaskHost.isVisible() != can)
             _actTaskHost.setVisible(can);
+        // ... and on the title bar of the overlay the Tasks are in
+        for (auto o : _overlayInfos) {
+            const bool here = can && o->tabWidget->isAncestorOf(taskView);
+            o->actTaskHost.setToolTip(_actTaskHost.toolTip());
+            if (o->actTaskHost.isVisible() != here)
+                o->actTaskHost.setVisible(here);
+        }
     }
 
     void onAction(QAction *action) {
@@ -2053,7 +2113,13 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
 
         if (!activeTabWidget)
             activeTabWidget = findTabWidget(qApp->widgetAt(QCursor::pos()));
-        if(!activeTabWidget || !activeTabWidget->isTransparent())
+        // Passed on wherever the panel under the pointer has painted nothing,
+        // its transparent mode on or not: the reporter's rule is the
+        // background, "pass through on full transparent background". The mode
+        // used to be asked here as well, and a task panel, whose own ground
+        // is clear with the mode off too, passed nothing then
+        // (docs/HandsOnQueue.md entry 86).
+        if(!activeTabWidget)
             return false;
 
         ev->accept();
@@ -2228,6 +2294,20 @@ QBrush OverlayManager::overlayHoverBackground(int alpha)
     QColor hover = QColor::fromRgbF(colour.r, colour.g, colour.b);
     hover.setAlpha(overlayAlpha(alpha));
     return QBrush(hover);
+}
+
+void OverlayManager::paintTextGround(QPainter &painter, const QTextBlock &block,
+                                     const QPointF &pos, const QBrush &ground)
+{
+    const QTextLayout *layout = block.layout();
+    if (!layout || ground.style() == Qt::NoBrush)
+        return;
+    for (int i = 0, count = layout->lineCount(); i < count; ++i) {
+        const QRectF text = layout->lineAt(i).naturalTextRect().translated(pos);
+        // an empty line has no text to read and gets no ground
+        if (text.width() > 0)
+            painter.fillRect(text.adjusted(-2, 0, 2, 0), ground);
+    }
 }
 
 QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha)

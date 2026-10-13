@@ -25,7 +25,7 @@ with. Under Dark and under Light:
     the property view have their see-through look; the tree's ground below
     its last item is clear, and so is a property view that shows nothing;
   - an item of the tree is backed with the first colour of the 3D view's
-    background at View/DockOverlayAlpha, 150;
+    background at View/DockOverlayAlpha, 180;
   - a row of the property view is backed with that same colour, or with the
     alternate rows' colour, both at that opacity, turn about;
   - the focus in the tree, transparent mode off: the tree is solid; mode on:
@@ -56,7 +56,7 @@ Control = FreeCADGui.Control
 DOC = "SeeThrough"
 STEPS = []
 DOCKED = {}  # theme -> the ground of a docked task panel under it
-ALPHA = 150
+ALPHA = 180
 NEAR = 4    # of 255, how far a painted colour may be from the one asked for
 
 

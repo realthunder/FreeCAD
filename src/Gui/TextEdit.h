@@ -70,6 +70,8 @@ Q_SIGNALS:
 
 protected:
     void keyPressEvent(QKeyEvent *) override;
+    /// In a see-through overlay the text is backed, line by line
+    void paintEvent(QPaintEvent *) override;
 
 private:
     void createListBox();

@@ -103,7 +103,7 @@ public:
         funcs["DockOverlayMoveNaviCube"] = &OverlayParamsP::updateDockOverlayMoveNaviCube;
         DockOverlayThemeItemColor = this->handle->GetBool("DockOverlayThemeItemColor", true);
         funcs["DockOverlayThemeItemColor"] = &OverlayParamsP::updateDockOverlayThemeItemColor;
-        DockOverlayAlpha = this->handle->GetInt("DockOverlayAlpha", 150);
+        DockOverlayAlpha = this->handle->GetInt("DockOverlayAlpha", 180);
         funcs["DockOverlayAlpha"] = &OverlayParamsP::updateDockOverlayAlpha;
         DockOverlayHintTriggerSize = this->handle->GetInt("DockOverlayHintTriggerSize", 16);
         funcs["DockOverlayHintTriggerSize"] = &OverlayParamsP::updateDockOverlayHintTriggerSize;
@@ -221,7 +221,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:322)
     static void updateDockOverlayAlpha(OverlayParamsP *self) {
-        auto v = self->handle->GetInt("DockOverlayAlpha", 150);
+        auto v = self->handle->GetInt("DockOverlayAlpha", 180);
         if (self->DockOverlayAlpha != v) {
             self->DockOverlayAlpha = v;
             OverlayParams::onDockOverlayAlphaChanged();
@@ -378,7 +378,7 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
 "colour of a gradient -- so that their text reads over the view.\n"
 "When off the tree view's own item background colour is used.")
         .setOnChange(),
-    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAlpha", "DockOverlayAlpha", App::ParamInfo::Int, 150)
+    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAlpha", "DockOverlayAlpha", App::ParamInfo::Int, 180)
         .setTitle("Overlay background opacity")
         .setDoc("Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of\n"
 "the items of the tree view and of the property view, and of a task\n"
@@ -837,7 +837,7 @@ const long & OverlayParams::getDockOverlayAlpha() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & OverlayParams::defaultDockOverlayAlpha() {
-    const static long def = 150;
+    const static long def = 180;
     return def;
 }
 

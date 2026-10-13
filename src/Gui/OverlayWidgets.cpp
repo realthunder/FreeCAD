@@ -659,7 +659,11 @@ bool OverlayTabWidget::event(QEvent *ev)
 
 int OverlayTabWidget::testAlpha(const QPoint &_pos, int radiusScale)
 {
-    if (!count() || (!isOverlaid() && !isTransparent()) || !isVisible())
+    // Whatever state the panel is in -- its transparent mode on or off, the
+    // pointer in it or not -- what it has painted is what is asked for: the
+    // answer was "outside" for a panel with the mode off and the pointer in
+    // it, whatever it showed there (docs/HandsOnQueue.md entry 86).
+    if (!count() || !isVisible())
         return -1;
 
     if (tabBar()->isVisible() && tabBar()->tabAt(tabBar()->mapFromGlobal(_pos))>=0)
@@ -2614,7 +2618,8 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     // whole of it and a rim around it: (124,124,124) at 150 came to the
     // screen as (98,98,98) at 232 in a frame of (50,50,50). So only what is
     // more opaque than those backgrounds are makes the outline.
-    QImage ink = px.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    const QImage source = px.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QImage ink = source;
     const int limit = std::min(OverlayManager::overlayAlpha() + 8, 250);
     for (int y = 0; y < ink.height(); ++y) {
         auto line = reinterpret_cast<QRgb*>(ink.scanLine(y));
@@ -2686,6 +2691,31 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     tmpPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
     tmpPainter.fillRect(tmp.rect(), color());
     tmpPainter.end();
+
+    // No outline where what is drawn stands on a ground of its own: a tree
+    // item with its background, a line of the console with its, a button. The
+    // outline is there for what has to read straight over the 3D view; over a
+    // ground it only smeared the ground's edge and the text's
+    // (docs/HandsOnQueue.md entry 98, and so entry 87's "text and icons keep
+    // their outline" for an item that has a background). Taken out wherever
+    // the source is at least as opaque as such a ground, at the place the
+    // outline would be drawn.
+    {
+        const int ground = std::max(OverlayManager::overlayAlpha() - 3, 1);
+        const QPoint shift(qRound(_offset.x()), qRound(_offset.y()));
+        for (int y = 0; y < tmp.height(); ++y) {
+            const int sy = y + shift.y();
+            if (sy < 0 || sy >= source.height())
+                continue;
+            auto line = reinterpret_cast<QRgb*>(tmp.scanLine(y));
+            auto under = reinterpret_cast<const QRgb*>(source.constScanLine(sy));
+            for (int x = 0, width = tmp.width(); x < width; ++x) {
+                const int sx = x + shift.x();
+                if (sx >= 0 && sx < source.width() && qAlpha(under[sx]) >= ground)
+                    line[x] = 0;
+            }
+        }
+    }
 
     // draw the blurred shadow...
     painter->drawImage(QPointF(offset.x()+_offset.x(), offset.y()+_offset.y()), tmp);

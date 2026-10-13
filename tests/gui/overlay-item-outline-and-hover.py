@@ -49,7 +49,7 @@ RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 VIEW = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
 TREE = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/TreeView")
 DOC = "ItemLook"
-ALPHA = 150
+ALPHA = 180
 NEAR = 4
 STEPS = []
 
