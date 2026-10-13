@@ -1705,7 +1705,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
 | 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | OPEN, the four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
-| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last | OPEN, the three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; two smaller points left to the build session |
+| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown | OPEN, the three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12823,7 +12823,7 @@ What this does to entry 17's decision, the note-taker's note:
   should have recorded that context when it wrote the file is, by the
   note-taker's reading, exactly the reporter's point 2.
 
-## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59
+## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59
 
 **2026-10-13 14:52, the reporter:** "new request, name 'Appearance' property group
 name in object to 'Object Appearance' so that it does not show as the
@@ -12899,6 +12899,36 @@ Two smaller points, left to the build session, NOT put as blocking:
   provider's or a workbench's group with the same NAME (TechDraw has
   one) would come last with it if the rank goes by the name -- wanted
   or not is not said.
+
+**2026-10-13 15:06, the reporter says HOW the rank is given:** "let's encode
+the rank into group name with ending postfix #<rank>. strip the postfix
+before display it in qt"
+
+The note-taker's reading:
+- No new place for the rank: it is written INTO THE GROUP'S NAME, as
+  an ending "#" and the number -- "Appearance#1". A name with no such
+  ending has rank 0.
+- The property view (Qt) STRIPS that ending before it shows the name:
+  the reader sees "Appearance".
+- This settles the first smaller point of 14:59 (where a rank is
+  given: at the declaration, in the name) and with it that a script
+  can give one -- it names the group of a property it adds. The second
+  smaller point goes with it too: the rank belongs to whoever writes
+  the name, so TechDraw's own "Appearance" is not moved unless it is
+  written with the ending.
+
+NOT said, left to the build session, not put as blocking:
+- Two declarations of ONE shown name with different ranks
+  ("Appearance" and "Appearance#1" on the same object): one group or
+  two in the view? The note-taker's guess: two, since they sort apart.
+- Other readers of a group's name beside the property view -- the omni
+  search's property lists, the expression completer, a script's
+  `getGroupOfProperty` -- see the name WITH the ending unless they
+  strip it too. The reporter names Qt's display only.
+- The reporter's b of 14:59 (a static property's group name is not
+  saved to the file) keeps the ending out of files for static
+  properties; a property added by a script has its group saved, ending
+  and all.
 
 ## Inbox
 
