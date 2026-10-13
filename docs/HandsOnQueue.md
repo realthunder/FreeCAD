@@ -90,6 +90,23 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 09:22: the reporter takes the testing of the staged copy
+THEMSELVES -- the build session runs NO check on the copy that will be
+staged. The OCCT build passed; the FreeCAD build on it is running.** From
+the build session (its second message stamped 09:24, written here
+09:23; by it, the message recorded below as 09:24 "was stamped ahead; it
+was sent about 09:21").
+- The reporter, typed to the build session about 09:22 -- the note-taker
+  did not hear it: "no need to test staged copy. I'll do it hands on.
+  you proceed with test on your build directory".
+- So the plan of the block below is changed before it started: after
+  `tools\install-user.ps1` the build session goes straight to the suites
+  on the dev build. The preferences, the loads and the six GUI tests it
+  had planned ON THE STAGED COPY are dropped.
+- OCCT `a81d25f148` built and installed: "BUILD-OCCT: OK, 23 steps",
+  09:16 to about 09:22.
+- Not staged yet.
+
 **2026-10-13 09:24: the reporter CHANGED THE ORDER -- stage right after the
 FreeCAD build, tests after. A RESTAGE is set up, NOT done yet; the copy it
 brings will have had NO suite run on its code when it is staged.** From
