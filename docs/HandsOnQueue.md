@@ -1543,6 +1543,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | FIXED ON A BUILD, NOT committed (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | OPEN, the four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
+| 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12139,6 +12140,46 @@ who still have the old default over (as entry 72's did for its two
 values; how that was done is in its commit). Not asked of the reporter;
 for the build session to decide or to ask.
 
+## 100. The Dark theme's borders a bit more subtle: a darker grey (a change request) -- OPEN, three points not answered
+
+**2026-10-13 13:40, the reporter:** "new request, make the dark theme border a
+bit more subtle, i.e. darker gray"
+
+The note-taker's reading, not the reporter's words:
+- Entry 77 (2026-10-12, `d25fa8539c`) took the Dark theme's borders
+  from black, which could not be seen on the theme's dark grounds, to
+  the grey of the check boxes. That grey now stands out too much.
+- Wanted: the borders in a DARKER grey -- still to be seen, less
+  loud.
+
+NOT said, lettered for an answer:
+a. HOW MUCH darker: one of the theme's own steps down, or a value? The
+   theme's greys, lightened from its ground #191919 (a grey of 25):
+   step 3 is the panels' colour, step 4 the next, step 5 the borders
+   now. The note-taker's guess: step 4.
+b. WHICH borders: every border that follows the general border colour
+   -- fields, buttons, panels, the scroll bars' edges -- or some of
+   them only? And the check boxes and radio buttons, which entry 77
+   left at the same grey: do they stay lighter so that an empty box can
+   be made out, or go darker with the rest?
+c. Under Dark only (the Light theme is not named).
+
+Pointers, READ by the note-taker, nothing run:
+- `src/Gui/Stylesheets/parameters/Dark.yaml`: `GeneralBorderColor` is
+  "@PrimaryColorLighten5", and so is `CheckBoxBorderColor` (with
+  `RadioButtonBorderColor` after it); `ButtonBorderColor` and
+  `ButtonBorderHooverColor` follow `GeneralBorderColor`.
+  `PrimaryColor` is "#191919"; `PrimaryColorLighten3` is
+  "lighten(@PrimaryColor,80)" (the panels, `DialogBackgroundColor`),
+  `PrimaryColorLighten4` "lighten(@PrimaryColor,100)",
+  `PrimaryColorLighten5` "lighten(@PrimaryColor,300)".
+- The file's own comment on why the general border left black: "Lighter
+  than the grounds it is drawn on, not darker" -- so a darker grey has
+  to stay lighter than the panels' step 3 to be seen on them; step 4 is
+  the one step between.
+- Near it: entry 77; entry 88 (the scroll bars' borders in an overlay,
+  now clear); entry 96 (the frame of the close icon).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -12148,5 +12189,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 99 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 100 are of 2026-10-13, 82 found by
 it)
