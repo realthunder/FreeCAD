@@ -19138,8 +19138,8 @@ legacy renderer and the Linux title bar -- is in `docs/Testing.md`.
 
 - **A sketch's automatic colours were saved.** Ruled and built: 33.15.
 - **A colour set on the object ends no mapping.** The rule that a
-  colour picked ends a binder's mapping is the view provider's;
-  `obj.ShapeColor = ...` leaves the flags. Not looked into further.
+  colour picked ends a binder's mapping was the view provider's;
+  `obj.ShapeColor = ...` left the flags. Settled: 33.16.
 - **A binder of a file from before the looks were the object's.** A
   file made to look like one lost the binder's flag and colour at
   open; it was not a faithful old file, and no real one is on this
@@ -19202,8 +19202,9 @@ edges, and nothing is written then either.
   from the object while the option is on, and what the sketch showed
   kept as the object's when it is turned off.
 - **While on**, the colour properties are hidden from the property
-  editor, as before: a write to one changes the object and nothing on
-  the screen.
+  editor, as before. A write to one all the same -- a script, the
+  object's names under Data -- changed the object and nothing on the
+  screen; it turns the option off now (33.16).
 - `getDrawnColors()` on a Part view provider (Python too) says what the
   nodes hold, by kind, with a sketch's faces: the one way to ask what
   is on the screen, where the properties no longer say.
@@ -19226,3 +19227,84 @@ again once it is off; reopened, and the files from before AutoColor,
 as before. `sketch-auto-face-color.py` (16) the same for the faces;
 `sketch-color-map-automatic.py` reads the drawn colour for its
 premise.
+
+### 33.16 A colour picked: a binder's mapping, a sketch's automatic colours
+
+Two things a colour set by hand is to do, each of which it did by one
+of its two names only, or not at all (user, 2026-10-13: "fix binder
+color setting, also sketch manual color setting shall turn off auto
+color").
+
+**What a colour picked is.** A look's names are twice there: the view
+provider's (`ViewObject.ShapeColor`), and the object's own since the
+looks are the object's (`obj.ShapeColor`, docs/ShapeAppearanceDesign.md
+sec 14.6.1) -- what the property editor shows under Data, and what a
+script with no view writes. Either is written by somebody, and either
+is also given a value by the program: read from a file, put back by an
+undo, and each time the object's looks change the names take what the
+object has (`Feature::mirrorLooks()`, the view provider's
+`mirrorAppearance()`). Only the first is a colour picked.
+`Part::Feature::isLookWrite(prop)` says so of a change of the object's
+name while it is told; the view provider's test is the one the binder
+had (not restoring, not in a transaction replayed, not mirroring).
+
+**A binder.** A `SubShapeBinder` shows its sources' colours
+(`MapFaceColor` and the rest), and a colour picked for it ends the
+mapping of that colour, or it would not be seen.
+
+- *By the object's name it ended nothing* (33.14, not settled there).
+  `Part::SubShapeBinder::onChanged` ends it now: `ShapeColor` ends
+  `MapFaceColor`, `LineColor` `MapLineColor`, `PointColor`
+  `MapPointColor`, `Transparency` `MapTransparency`, each its own and
+  no other. In the transaction of the write: undone, the colour and
+  the mapping are both as they were.
+- *By the view provider's name the mapping ended and the colour was
+  lost.* The flag was switched off first and the colour handed to the
+  object after. A flag changed makes the object's looks again, the
+  names take what the object has then -- the colour it had -- and that
+  was what went to the object as the colour picked. The binder kept
+  mapping nothing and stayed the colour it was; the check of 33.14 read
+  the flags and not the colour. The colour is taken first now, on both
+  sides, and the mapping ended after it.
+
+Nothing but a binder does this: a box given a colour keeps its flags.
+
+**A sketch.** Under `AutoColor` a sketch is drawn in the theme's
+colours and its own are not looked at (33.15), so a colour set for it
+was nowhere seen: by the view provider's name only from a script, the
+properties being hidden while the option is on; by the object's name
+from the property editor too, where a sketch's `LineColor`,
+`PointColor`, `ShapeColor` and `Transparency` stand under Data like any
+object's. A colour picked turns `AutoColor` off now, by either name,
+and what is drawn is the sketch's own from then on: the colour set, and
+its own for the rest -- white edges and points where nobody set them.
+
+- The view provider's `LineColor`, `PointColor`, `ShapeColor`,
+  `Transparency`, `ShapeAppearance`, `LineMaterial` and
+  `PointMaterial`, in `ViewProviderSketch::onChanged`.
+- The object's names, in `ViewProviderSketch::updateData`, asked of
+  `Part::Feature::isWritingLook(prop)`. That is true only while the
+  change of the name is told: a view provider is also handed every
+  property of its object when it is first shown
+  (`ViewProviderDocumentObject::updateView()`), which is no change, and
+  the first cut took that for a write and turned the option off in
+  every new sketch.
+- Nothing is written to a colour by this (33.15 stands): `AutoColor`
+  alone changes, a property of the view, in the transaction of the
+  write -- one undo puts back the colour and the option.
+- Turned on again by hand, the theme's are drawn and the sketch keeps
+  the colour it was given.
+
+**Tests.** `parttests.ElementAppearanceTest` (+1, headless): a binder's
+four mappings ended one by one by the object's names, the colour the
+binder's, undone and redone, and a box keeping its flag.
+`tests/gui/binder-map-color-restore.py` (9, were 5): the mapping ended
+by the object's name after the eager open and by the view provider's
+after the progressive one, the binder the colour picked by both names
+and as the object draws its faces, the other mappings as they were.
+`sketch-auto-color.py` (45, were 33): a colour set under AutoColor by
+the view provider's name and by the object's turns it off and is
+drawn, the rest in the sketch's own; undone, the sketch is automatic
+again; a setting changed is nothing to it; turned on by hand it keeps
+its colour. `sketch-auto-face-color.py` (19, were 16) the same for the
+face colour and the transparency.
