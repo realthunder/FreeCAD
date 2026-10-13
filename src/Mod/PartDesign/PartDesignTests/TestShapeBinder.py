@@ -293,6 +293,121 @@ class TestSubShapeBinder(unittest.TestCase):
         self.assertEqual(len(subs), 1)
         self.assertFalse(subs[0].startswith("?"), subs[0])
 
+    def _looseBinder(self):
+        """A box, and a relative binder of it that has its shape and no
+        context: made and recomputed outside any container."""
+        box = self.Doc.addObject("Part::Box", "Box")
+        binder = self.Doc.addObject("PartDesign::SubShapeBinder", "Loose")
+        binder.Support = [(box, ("",))]
+        binder.Relative = True
+        self.Doc.recompute()
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertIsNone(binder.Context)
+        return box, binder
+
+    def _into(self, binder, placement=None):
+        """Put the binder into a new part, the part moved or not, and
+        recompute it."""
+        part = self.Doc.addObject("App::Part", "Holder")
+        if placement is not None:
+            part.Placement = placement
+        part.addObject(binder)
+        binder.touch()
+        self.Doc.recompute()
+        return part
+
+    def testNoContextTakesThePathThatDoesNotMoveIt(self):
+        """A binder that has a shape and no context, found inside a
+        container when it is next recomputed -- a binder an older file
+        brings -- takes the container as its context if that leaves its
+        shape where it is."""
+        box, binder = self._looseBinder()
+        center = binder.Shape.BoundBox.Center
+        part = self._into(binder)
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertIsNotNone(binder.Context)
+        self.assertEqual(binder.Context[0].Name, part.Name)
+        self.assertLess(binder.Shape.BoundBox.Center.distanceToPoint(center), 1e-6)
+
+    def testNoContextInAMovedContainerSaysSo(self):
+        """The same binder found inside a container that is somewhere
+        else: no path leaves its shape where it is, so it takes no context,
+        stays where it is, and is in error with what to do. It took the
+        first path and came back 53 mm away, everything made on it with it.
+        Given a context by hand -- what a double click on it does -- it is
+        relative to that, and valid."""
+        box, binder = self._looseBinder()
+        center = binder.Shape.BoundBox.Center
+        moved = FreeCAD.Placement(Base.Vector(3, -4, 53), FreeCAD.Rotation(Base.Vector(0, 1, 0), 3.5))
+        part = self._into(binder, moved)
+        self.assertFalse(binder.isValid())
+        self.assertIn("No context, please double click the binder", binder.getStatusString())
+        self.assertIsNone(binder.Context)
+        self.assertLess(binder.Shape.BoundBox.Center.distanceToPoint(center), 1e-6)
+        # and again: the question is asked at every recompute until answered
+        binder.touch()
+        self.Doc.recompute()
+        self.assertFalse(binder.isValid())
+        self.assertIsNone(binder.Context)
+
+        binder.Context = (part, binder.Name + ".")
+        binder.touch()
+        self.Doc.recompute()
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertGreater(binder.Shape.BoundBox.Center.distanceToPoint(center), 50)
+
+    def testNoContextTakesTheShortestUnmovedPath(self):
+        """Of several paths to the binder the shortest that does not move
+        it is taken; a shorter one that moves it is passed over."""
+        box, binder = self._looseBinder()
+        center = binder.Shape.BoundBox.Center
+        inner = self.Doc.addObject("App::Part", "Inner")
+        inner.addObject(binder)
+        outer = self.Doc.addObject("App::Part", "Outer")
+        outer.addObject(inner)
+        link = self.Doc.addObject("App::Link", "InnerLink")
+        link.LinkedObject = inner
+        link.Placement = FreeCAD.Placement(Base.Vector(0, 0, 53), FreeCAD.Rotation())
+        binder.touch()
+        self.Doc.recompute()
+        tops = sorted(parent.Name for parent, _ in binder.Parents)
+        self.assertEqual(tops, ["InnerLink", "Outer"])
+        # the link's path is the shorter, and it moves the shape
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertEqual(binder.Context[0].Name, "Outer")
+        self.assertLess(binder.Shape.BoundBox.Center.distanceToPoint(center), 1e-6)
+
+    def testNoContextAndNothingKeptTakesTheFirstPath(self):
+        """A binder that has a shape, no context and no placement kept of its
+        support has nothing to tell a path that moves it from one that does
+        not: it takes the first path, as a binder that has no shape yet."""
+        box, binder = self._looseBinder()
+        center = binder.Shape.BoundBox.Center
+        kept = [name for name in binder.PropertiesList if name.startswith("Cache_")]
+        self.assertTrue(kept)
+        for name in kept:
+            binder.removeProperty(name)
+        moved = FreeCAD.Placement(Base.Vector(0, 0, 53), FreeCAD.Rotation())
+        part = self._into(binder, moved)
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertIsNotNone(binder.Context)
+        self.assertEqual(binder.Context[0].Name, part.Name)
+        self.assertGreater(binder.Shape.BoundBox.Center.distanceToPoint(center), 50)
+
+    def testNoContextShortestOfTwoUnmoved(self):
+        """Two paths that both leave the shape where it is: the shorter."""
+        box, binder = self._looseBinder()
+        inner = self.Doc.addObject("App::Part", "Inner")
+        inner.addObject(binder)
+        outer = self.Doc.addObject("App::Part", "Outer")
+        outer.addObject(inner)
+        link = self.Doc.addObject("App::Link", "InnerLink")
+        link.LinkedObject = inner
+        binder.touch()
+        self.Doc.recompute()
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertEqual(binder.Context[0].Name, "InnerLink")
+
     def testOffsetBinder(self):
         # See PR 7445
         body = self.Doc.addObject('PartDesign::Body','Body')
