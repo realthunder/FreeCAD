@@ -98,6 +98,34 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 13:51: entry 86 RETESTED by the reporter and REPRODUCED so --
+the click passes, the WHEEL does not; the wheel's cause FOUND, a fix in
+the source. The round's tests so far pass. Nothing committed since 11:33,
+nothing pushed, the staged copy still the one of 09:36.** From the build
+session (its message of 13:51, written here 13:50).
+- 86: under the entry. ONE point waits for the reporter: the eye of the
+  panel that holds the Tasks.
+- The round so far, on the build of 13:07 ("all but the last form of
+  the hover bar and the wheel fix"):
+  - 97: `revert-document.py` 12 of 12 three times; the scanner file
+    reverted without a crash.
+  - 92: the direct question answers (';...Wire2', 'Wire2');
+    `TestSketchWireProfile` 3 of 3; scanner's three profiles `Wire2` /
+    `Wire1` / `Wire2` after the migration recompute.
+  - 89 and 90: `toolbar-menu-buttons.py` 11 of 11.
+  - 91: `partdesign-reference-clear-button.py` passes ("88 wide by 24
+    high on the staged copy").
+  - 93, 94, 95: `omni-search-object-typing.py` 16 of 16 (on the staged
+    copy the path, the case and the focus claims fail; "the focus goes
+    to the value's editor on Tab there").
+  - 96: `overlay-close-icon-frame.py` 4 of 4.
+  - 87's border and 88's scroll bars pass.
+  - ctest done; the Python suite running.
+- 95, a limit to tell the reporter: a further step typed small that
+  brings up no list stays as typed (under the entry).
+- Entries 83 (with the change of 13:33), 99 and 100: received; 83 and
+  99 read in the source, not started.
+
 **2026-10-13 12:43: entry 97 FIXED on a build; entry 92's cause SHOWN -- old
 code in the sketch, NOT this morning's merges; entries 91, 93, 94, 95, 96
 WRITTEN and in a build; entry 86 still not reproduced. Nothing committed
@@ -1529,7 +1557,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request). ANSWERED 13:29: the cell's MENU button and its TWO CORNER handles, each checked by itself; moved only if the cell has area not covered by an overlay panel -- fully covered, or less than 40 left in a dimension, it stays [CHANGED by the reporter 13:33: not 40 pixels but TWICE THE SIZE OF THE HANDLE; and when they slide the handles must not overlap one another]; clear of the same things as the cube, slid as the cube is; NO setting, always; every cell | OPEN; the five points answered 13:29; two smaller points left, not blocking |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | FIXED `a3acdd0947`, local, NOT pushed, NOT staged (11:33): its test `tree-tooltip-only-over-its-item.py` 14 of 14, twice, offscreen. As written 10:17; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; FIXED `1f01bf3f30`, local, NOT pushed, NOT staged (11:33), `overlay-see-through.py` 62 of 62 and with a copy of the reporter's configuration the ground is the applied theme's at once: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
-| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced. THE REPORTER RETESTED about 13:38 on the staged copy: the tree view, Python console and report view DO click through but NOT wheel through; the task panel, no click and no wheel. REPRODUCED so by the build session (13:51): THE WHEEL's cause FOUND -- a wheel event falls through into the handling of a context menu event and is read as one (lines of 2022); a fix in the source, NOT built. The Tasks panel's "no click" NOT reproduced with its eye on; the reporter's configuration has that panel's eye OFF. ONE point for the reporter: is the eye of the panel that holds the Tasks pressed, and is a task panel shown in it then |
 | 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. FIXED IN THE SOURCE, NOT committed (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). 12:43: two readings of the build session's on the hover WITHDRAWN by it; a third form is building. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | FIXED IN THE SOURCE, measured on a first build, NOT committed (11:33): nothing of the tree's scroll bar more opaque than 150, the handle at 150, the rest clear, Dark and Light. The four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | FIXED IN THE SOURCE, its test PASS on a first build, NOT committed (11:33): the button did not use the common helper and opened its menu in a mode in which Qt draws a small mark on the icon; it is a menu button like the others now, 44 wide where it was 32. The three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
@@ -1538,7 +1566,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | THE CAUSE SHOWN (12:43) -- OLD code, not this morning's merges nor the OCCT sync: a sketch asked for the name of its wire drops the kind "Wire" and keeps the number (`SketchObject::checkSubName`, lines of 2018 to 2024; the released build has them too). A fix in the source; with a first form of it, after the migration recompute the three read `Wire2`, `Wire1`, `Wire2`; NOT committed. LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | WRITTEN, in a build, with a test, NOT committed (12:43). The four points answered about 11:34, nothing left unanswered |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | WRITTEN, in a build, with a test, NOT committed (12:43): Tab completes and the focus stays in the box; Return hands it to the value's editor, as before. Answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
-| 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | WRITTEN, in a build, with a test, NOT committed (12:43). The three points answered 11:38, nothing left unanswered |
+| 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | WRITTEN, in a build, with a test, NOT committed (12:43); a LIMIT (13:51): a FURTHER step typed small ("/ Crate.placement.") brings up no list and stays as typed. The three points answered 11:38, nothing left unanswered |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | WRITTEN, in a build, NOT committed (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | FIXED ON A BUILD, NOT committed (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request) | OPEN; three points under the entry, NOT ANSWERED |
@@ -10803,7 +10831,7 @@ From the build session's message of 2026-10-13 11:33, written here 11:34. `overl
 configuration the panel's ground is the applied theme's right away, Dark,
 Light, Dark".
 
-## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered; RETESTED by the reporter 13:38 -- click passes, the wheel does not; the wheel's cause found 13:51, a fix in the source; the Tasks panel's eye to be said
 
 **2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
 pass through no longer works"
@@ -10963,6 +10991,57 @@ reproduced.** From the build session's message of 2026-10-13 12:43, written here
 of the item's text) the overlay hands the move to the 3D view and the tree
 does not hear of it -- pass-through as designed", PASS again on the build
 of 12:24 with a copy of the reporter's configuration.
+
+**2026-10-13 about 13:38, the reporter RETESTED; and 13:51, the build
+session REPRODUCED it so, the wheel's cause FOUND, a fix in the source.**
+From the build session's message of 2026-10-13 13:51, written here 13:50.
+- The reporter, typed to the build session about 13:38 -- the note-taker
+  did not hear it: "entry 86. retested with staged copy, tree
+  view/python console/report view can click through, but not wheel
+  through. task panel, no click or wheel through".
+- So the entry is narrower than its answers of 10:21 ("none pass
+  through"): the click DOES pass on three panels; the WHEEL does not;
+  the task panel passes neither.
+- Reproduced by a new test, `tests/gui/overlay-pass-through.py`
+  (offscreen), on the STAGED copy of 09:36 with a copy of the
+  reporter's configuration, Dark applied again: over the tree's clear
+  part a move preselects the plate under it and a click selects it,
+  PASS; the wheel there does not zoom, FAIL. Over the Tasks panel's
+  clear part, "ITS EYE TURNED ON by the test": move PASS, click PASS,
+  wheel FAIL.
+- THE WHEEL, the cause: in `OverlayManager::eventFilter`, "case
+  QEvent::Wheel:" falls through into "case QEvent::ContextMenu:",
+  "which casts the event to QContextMenuEvent and returns unless its
+  reason() is Mouse. For a wheel event that reads whatever a
+  QWheelEvent holds at that place." The lines are of 2022-11-24: "it
+  passed for as long as that happened to read 0, which it does not on
+  the Qt this copy runs on."
+- The fix, in the source, NOT built: the reason is asked of a context
+  menu event alone. It goes into the build after the suites that are
+  running.
+- THE TASKS PANEL, "no click": NOT reproduced with its eye on -- move
+  and click pass there on the staged copy. The reporter's configuration
+  as written 09:47 has `OverlayRight` `Transparent` 0, the eye OFF, and
+  with the eye off nothing is passed, "by design". "Since entry 69 such
+  a panel LOOKS see-through all the same while the pointer is away,
+  which may be why it is expected to pass."
+- ONE point for the reporter, from the build session: is the eye of the
+  panel that holds the Tasks PRESSED; and if it is, is a task panel
+  shown in it at that moment -- "its boxes have a ground since entry
+  69, alpha 150, and are not clear".
+- Two things of its own harness, withdrawn by it: a first run that had
+  enlarged the window beyond the offscreen platform's 800 by 800 screen
+  showed "nothing passes over the Tasks panel" for that reason alone.
+The note-taker's notes:
+- The reporter's answer of 10:42 ("eye is pressed") was given for "the
+  panel where the mouse does not pass" without naming it; with the
+  retest it is the Tasks panel that is in question, and the
+  configuration read at 09:47 had that panel's eye off. The file is
+  written when the program ends, so what the running session has is
+  the reporter's to say.
+- The wheel's cause being of 2022 answers "since when" for the wheel:
+  not a change of these days in the code, a change of what a newer Qt
+  holds at that place.
 
 ## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, fixed in the source 11:33 (border, setting), the hover building, not committed; OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
 
@@ -11801,6 +11880,15 @@ Nothing of this entry is left unanswered.
 **2026-10-13 12:43, the build session: WRITTEN, in the build, with a
 test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "At a dot, with the list shown, the typed
 names take the case of what they resolved to, at each step."
+
+**2026-10-13 13:51, a LIMIT of what is built, from the build session, "to
+tell the reporter":** From the build session's message of 2026-10-13 13:51, written here 13:50. "The names are corrected wherever the list
+comes up; the completer brings none up for a FURTHER step typed small
+('/ Crate.placement.'), so that stays as typed -- changing that is in the
+expression completer." So the reporter's answer b ("yes", every later
+step) is built for the steps where a list is shown, which is also the
+condition the reporter set in answer a; a later step typed small that
+brings up no list is not corrected.
 
 ## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- written 2026-10-13 12:43, in a build, not committed; answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too
 
