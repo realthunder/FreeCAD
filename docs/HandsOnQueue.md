@@ -1452,7 +1452,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found by reading; three points under the entry, NOT ANSWERED |
-| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; three points under the entry, NOT ANSWERED |
+| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | OPEN; point a answered 10:12; where, since when, and whether a restart puts it right NOT ANSWERED; a guess at the cause by the note-taker, read, nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10473,7 +10473,7 @@ is NOT found by reading:
   places (`Tree.cpp` near lines 1828 and 4776); which paths do not is
   not followed.
 
-## 85. The task panel's background seems to be reverted under the Dark and the Light theme -- OPEN, the cause not found by reading, three points not answered
+## 85. The task panel's guest widgets are backed in the wrong colour under the Dark and the Light theme, as if the two were swapped (first said as "background seems to be reverted") -- OPEN, made precise 2026-10-13 10:12; three points not answered
 
 **2026-10-13 10:07, the reporter:** "new defect, the task panel background seems
 to be reverted for dark and light theme"
@@ -10521,6 +10521,52 @@ Pointers, READ by the note-taker, nothing run; the cause is NOT found:
   the themes were applied again cannot be read from it.
 - Near it: entry 69 (the same ground), entry 30 (the overlay preset in
   the theme packs), entry 77 (the Dark borders).
+
+**2026-10-13 10:12, the reporter makes it precise:** "to be precise, the
+panel's base widget background is transparent as expected. what I mean the
+individual guest widget's background, which has the 150 alpha which is
+fine, but the color is wrong. by the look of it, just swap the color under
+dark and light feels right"
+
+The note-taker's reading, not the reporter's words:
+- NOT wrong: the ground of the panel itself -- clear, as expected; and
+  the opacity of what is in it -- alpha 150, fine.
+- WRONG: the COLOUR behind each single "guest widget" -- the note-taker
+  takes these for the boxes a task panel is made of, one to a task (the
+  content frame of each group). Under Dark it looks like the colour
+  meant for Light, under Light like the one meant for Dark: swapping
+  the two would look right.
+- So point a is answered: not "solid", not an earlier day's grey -- the
+  other theme's colour at the right opacity. "Reverted" of 10:07 is
+  withdrawn by this as a description.
+
+NOT ANSWERED still:
+b. WHERE: the Tasks tab in an overlay, a task panel shown in its view,
+   or both. ("The panel's base widget ... transparent" fits either.)
+c. SINCE WHEN: only since the themes were applied again at about 10:04,
+   or before.
+d. New, and it would settle the cause: after the program is ended and
+   started again under one theme, is the colour right?
+
+A guess at the cause, the note-taker's, READ in the source, nothing run:
+- The colour is not in a style sheet. `OverlayStyleSheet::fromSettings`
+  (`src/Gui/OverlayManager.cpp`) asks the style parameters for the
+  theme's `DialogBackgroundColor` at the moment the overlay's sheet is
+  put together, and writes it into the rule for
+  `QSint--ActionGroup QFrame[class="content"]`.
+- That sheet is put together again when one of three keys is written
+  (`StyleSheet`, `OverlayActiveStyleSheet`, `ColorScheme`,
+  `OverlayStyleSheet::OnChange`). If a theme pack writes those keys
+  BEFORE the style parameters of the new theme are in force, the colour
+  asked for is still the theme's that is being left: Dark then carries
+  Light's panel colour and Light Dark's -- the swap the reporter sees,
+  and only after a change of theme in a running session. A fresh start
+  would be right.
+- That would also be why the build session's test did not show it if it
+  starts each theme in a session of its own. NOT checked.
+- `DialogBackgroundColor` is "@PrimaryColorLighten3" in both
+  `Stylesheets/parameters/Dark.yaml` and `Light.yaml`; the two differ
+  through `PrimaryColor`.
 
 ## Inbox
 
