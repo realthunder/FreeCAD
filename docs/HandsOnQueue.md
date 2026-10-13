@@ -14492,6 +14492,15 @@ of 20:15 does not arise for the reporter as they run it; it stays put,
 marked as possibly answered by this. On the dev build; the staged copy
 of 16:55 does not have the fix.
 
+**2026-10-13 22:08, the build session on why the small model's two
+pictures differ and the reporter's file's do not: "not known".** From its
+message stamped 22:09, written here 22:08. "One guess, mine, not
+checked: Body008 sits inside Part011 under Part010, and the probe hides
+the body by its own Visibility while the occurrence is reached through
+those parents; and the feature there is a Draft, a dress-up, where the
+small model's was a pocket. Leave it as 'not said'." So the point a of
+20:15 stands as put; whether it arises for the reporter is not known.
+
 ## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02; half done 2026-10-13 19:17, not committed; does not work on the build r8 (20:15), being looked at; WORKS on the build r10, COMMITTED `26f0a30de0` 2026-10-13, local; not pictured
 
 **2026-10-13 16:00, the reporter:** "defect (from old fork), when a dress up
@@ -14610,6 +14619,30 @@ given here is another than those of 19:17 (no DressUpShape) and 20:17
 are still in the commit is not said. Shown by the NAME the hover
 preselects, offscreen; that the fillet's face lights up on a screen is
 the reporter's to see after a restage.
+
+**2026-10-13 22:08, the build session on what `26f0a30de0` holds -- three
+things; the middle "cause" of 20:17 was a WRONG reading.** From its
+message stamped 22:09, written here 22:08.
+- "(a) Utils.cpp -- a reference list filled anew keeps the mapped name
+  of a missing reference with its item (the afternoon's change; needed:
+  without it the look-up is never entered)."
+- "(b) TaskDressUpParameters.cpp -- the look-up traces a face's name
+  back by itself, by the shape's own hasher and then the document's;
+  that is the fix that works, it finds the face in the PREVIEW shape
+  (DressUpShape), which is what the user asked to be lit."
+- "(c) the same file -- where the preview shape has no face for the
+  reference (or is null) the shape the feature keeps is looked in with
+  the same trace; that is the first 'cause' turned into a second
+  resort, kept, never reached in the run on scanner.FCStd."
+- "The middle 'cause' (a dress-up shape of the references left) was a
+  wrong reading and nothing of it is left: the preview does hold the
+  faces of the missing edges."
+- No test in the tree: "the evidence is the probe s1\e109p.py on
+  scanner.FCStd, which cannot go into the tree (the user's file, their
+  addons)."
+The note-taker's note: so the block of 20:17 above, and the
+note-taker's own note under it, are put right by this -- in the edit
+the preview shape DOES hold the faces of the missing edges.
 
 ## 110. In the customized title bar (A) the space between the menu reveal button and the docked tool bar is sometimes bigger and sometimes gone, and (B) the first tool bar row came to stand under the title bar (B in the live session was set off by the note-taker's own script, 17:03; whether it is entry 6 again is NOT shown by today) -- OPEN, CAUGHT in the live session 2026-10-13 16:23; both parts COMMITTED `6d1dc1f9f1` 2026-10-13, pushed 19:24, not staged
 
