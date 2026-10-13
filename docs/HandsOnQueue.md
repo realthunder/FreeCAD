@@ -14004,6 +14004,17 @@ stands further off: the x of `MenuBarLeftArea`, of the tool bar in it,
 and of the tool bar's first button; and the tool bar's own layout
 margins.
 
+**2026-10-13 16:34, the reporter, a try announced:** "I'll do a restore and
+maximize toggle, see if it recovers"
+
+The note-taker's reading: with the first tool bar row under the title
+bar (B), the reporter takes the window out of maximized and puts it back,
+to see whether the room at the top comes back. The outcome is the
+reporter's to say; no look into the live session is made for it unless
+asked. (Entry 6's finding of 2026-10-06 had the title bar's switch on a
+MAXIMIZED window as the case that goes wrong, and the window right when
+maximized after the title bar is on.)
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
