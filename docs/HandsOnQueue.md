@@ -1721,7 +1721,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | IN THE SOURCE, in a build since 15:06, NOT committed (15:08); the reporter's configuration stores no value, so they get it. Nothing to ask; one note of the note-taker's on configurations that have the value written |
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | THE CAUSE FOUND and reproduced with a copy of the reporter's configuration, a fix IN THE SOURCE, in a build since 15:06, NOT committed (15:08): the Tasks dock's title bar is made at start-up before the task view is in its dock, so it is a plain dock's bar for good and the button does not exist; the bar is now replaced by a task one when the task view is found in a dock. The three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
-| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. Whether this takes the entry off hold is NOT said; four points NOT ANSWERED. ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
+| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. ANSWERED 15:28: OFF HOLD, to be built; "not moved" judged against the shape in the file by a GEOMETRY SEARCH; if no path leaves it unmoved the binder is in ERROR, "No context, please double click the binder in the desired context to refresh"; of equal paths the first that `getParents()` returns. Nothing left unanswered. It had been ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -12786,7 +12786,7 @@ The note-taker's note on the two guesses of 14:36, from the answers:
   neighbours a pixel apart that are then far apart on the model
   (`CavityRadius` is in pixels). Not told apart by reading.
 
-## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- an idea for the migration 2026-10-13 15:18 (a binder with no context takes the shortest path that does not move its shape), four points not answered; ON HOLD 2026-10-13 15:09 by the reporter, entry 17's ruling kept; answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation
+## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- an idea for the migration 2026-10-13 15:18 (a binder with no context takes the shortest path that does not move its shape), OFF HOLD and to be built (answered 15:28); it had been on hold 15:09 by the reporter, entry 17's ruling kept; answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation
 
 **2026-10-13 14:45, the reporter:** "new defect, after loading scanner document
 and recompute for migration, Sketch043 silently broken, no error is shown.
@@ -12983,6 +12983,42 @@ READ by the note-taker in the headers, nothing run, a short search:
   of the document that lists PATHS was not found in the header by the
   words "top level"; the reporter may mean one of these, or one the
   short search missed. For the build session to pick.
+
+**2026-10-13 15:28, the reporter answers the four points -- the entry is OFF
+HOLD:** "entry 105. a, yes, off hold. b, yes, use geometry search. c, mark
+binder error as 'No context, please double click the binder in the desired
+context to refresh'. d, the first one returned by getParents()"
+
+The note-taker's reading:
+- a. OFF HOLD: the rule is to be built. The hold of 15:09 is lifted by
+  the reporter, an hour's quarter after it was set.
+- b. "Not moved" is judged against the shape the binder has in the
+  file, and by a GEOMETRY SEARCH -- the shape resolved under a path is
+  looked for by its geometry in the shape kept, rather than by names or
+  by a bounding box. (Which search of the program is meant is the
+  build session's to pick; the note-taker takes it for the search by
+  geometry the element naming already uses to find a moved element.)
+- c. If NO path leaves the shape unmoved, no context is taken and the
+  binder is put in ERROR with this text: "No context, please double
+  click the binder in the desired context to refresh".
+- d. Of paths of the same length that both leave it unmoved: the FIRST
+  that `getParents()` returns. That also names the call of the
+  reporter's pointer of 15:18 -- `App::DocumentObject::getParents()`,
+  as the note-taker had found.
+Nothing of the idea is left unanswered.
+
+What follows for entry 17, the note-taker's note:
+- The ruling the reporter kept at 15:09 ("the binder moving with the
+  group is as designed") is about a binder that TAKES a context and
+  moves by it. This rule changes WHICH context a binder with none
+  takes: one that does not move it. So the ruling is not withdrawn; an
+  old file simply no longer meets it at the migration recompute, if a
+  path that keeps the shape exists.
+- The text of c tells the user to double-click the binder "in the
+  desired context": that the double click sets the context from where
+  it is done is assumed by the text; whether it does so today is not
+  looked into (the change request on hold with entry 17 was that the
+  binder command RECORD the context it knows).
 
 ## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59; the form decided 15:11, "Appearances#1"
 
