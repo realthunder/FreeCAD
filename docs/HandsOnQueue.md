@@ -10568,8 +10568,8 @@ The note-taker's reading:
   the three may come to lie on each other.
 - By the source the sizes are: the menu button 16 pixels
   (`ViewAreaMenuButton::Size`), the corner zones 14 pixels
-  (`docs/SplitViews.md`); read, nothing run. So the limit comes to
-  about 32 and 28 pixels.
+  (`ViewAreaZone::Size` in `src/Gui/ViewArea.h`); read, nothing run.
+  So the limit comes to about 32 and 28 pixels.
 NOT said: what is done when two of them WOULD overlap although each has
 its twice-the-size of room -- one stays, or both are placed side by
 side. The note-taker's guess: side by side along the edge, each in its
