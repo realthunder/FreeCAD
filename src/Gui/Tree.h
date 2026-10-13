@@ -151,6 +151,16 @@ public:
 
     static void updateStatus(bool delay=true);
 
+    /** What the trees hold of the documents' objects, for a test
+     *
+     * \a objects is how many objects the trees have an entry for,
+     * \a entries how many entries (one for each document item an object
+     * has rows in) and \a rowless how many of those have no row. An entry
+     * is made with the first row and goes with the last, so \a rowless is
+     * 0, and all three are once the documents are closed.
+     */
+    static void tableStats(int &objects, int &entries, int &rowless);
+
     // Check if obj can be considered as a top level object
     static void checkTopParent(App::DocumentObject *&obj, std::string &subname);
 

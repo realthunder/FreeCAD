@@ -71,6 +71,7 @@
 #include "PythonWrapper.h"
 #include "SoFCDB.h"
 #include "SplitView3DInventor.h"
+#include "Tree.h"
 #include "View3DInventor.h"
 #include "ViewParams.h"
 #include "ViewProvider.h"
@@ -108,6 +109,17 @@ PyObject* sViewVisibilityStats(PyObject * /*self*/, PyObject *args)
     if (reset == Py_True)
         st = Gui::ViewVisibility::Stats();
     return d;
+}
+
+// FreeCADGui.treeTableStats(): TreeWidget::tableStats() as a dict.
+PyObject* sTreeTableStats(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    int objects = 0, entries = 0, rowless = 0;
+    TreeWidget::tableStats(objects, entries, rowless);
+    return Py_BuildValue("{s:i,s:i,s:i}",
+        "objects", objects, "entries", entries, "rowless", rowless);
 }
 
 // FreeCADGui.visualBuildStats(): ViewProvider's visual build accumulators.
@@ -258,6 +270,13 @@ PyMethodDef Application::Methods[] = {
    "the last reset: deferred passes after structure changes, direct\n"
    "rebuilds, per-draw rescans; times in ns. reset=True zeroes the counters\n"
    "after reading them (docs/CoinRetirement.md 5.24)."},
+  {"treeTableStats", (PyCFunction) sTreeTableStats, METH_VARARGS,
+   "treeTableStats() -> dict\n"
+   "\n"
+   "What the tree views hold of the documents' objects: objects, how\n"
+   "many have an entry, entries, one for each document an object has\n"
+   "rows under, and rowless, how many of those have no row. rowless is 0,\n"
+   "and all three are once every document is closed."},
   {"visualBuildStats", (PyCFunction) sVisualBuildStats, METH_VARARGS,
    "visualBuildStats() -> dict\n"
    "\n"

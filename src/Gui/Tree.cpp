@@ -1637,6 +1637,21 @@ void TreeWidget::updateStatus(bool delay) {
         tree->_updateStatus(delay);
 }
 
+void TreeWidget::tableStats(int &objects, int &entries, int &rowless)
+{
+    objects = entries = rowless = 0;
+    for(auto tree : Instances) {
+        objects += static_cast<int>(tree->ObjectTable.size());
+        for(auto &v : tree->ObjectTable) {
+            for(auto &data : v.second) {
+                ++entries;
+                if(data->items.empty())
+                    ++rowless;
+            }
+        }
+    }
+}
+
 void TreeWidget::_updateStatus(bool delay) {
     if(!delay) {
         if(!ChangedObjects.empty() || !NewObjects.empty()) {
@@ -4590,7 +4605,9 @@ void TreeWidget::onUpdateStatus()
             }
         }
 
-        for(auto &data : iter->second) {
+        // A copy: a row going away takes its entry with it
+        const auto entries = iter->second;
+        for(auto &data : entries) {
             for(auto item : data->items)
                 data->docItem->populateItem(item,true);
         }
@@ -7627,8 +7644,24 @@ DocumentObjectItem::~DocumentObjectItem()
         myData->rootItem = nullptr;
 
     if(myOwner) {
-        if(myData->items.empty())
-            myOwner->ObjectMap.erase(object()->getObject());
+        if(myData->items.empty()) {
+            // The tree's table lists what the document items' maps hold and
+            // no more. Left there, the entry of an object with no row is
+            // found by nothing that takes entries out: not by the close of
+            // its document, which goes by the map, so it outlived the
+            // object, its view provider and its document item, and was
+            // found again by whichever object was made at that address.
+            auto obj = object()->getObject();
+            myOwner->ObjectMap.erase(obj);
+            if (auto tree = myOwner->getTree()) {
+                auto it = tree->ObjectTable.find(obj);
+                if (it != tree->ObjectTable.end()) {
+                    it->second.erase(myData);
+                    if (it->second.empty())
+                        tree->ObjectTable.erase(it);
+                }
+            }
+        }
         if(requiredAtRoot(true,true))
             myOwner->slotNewObject(*object());
         detachOwner();

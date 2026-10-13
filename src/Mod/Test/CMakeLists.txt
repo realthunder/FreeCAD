@@ -39,6 +39,7 @@ SET(Test_SRCS
     ViewProviderHooks.py
     ViewProviderChain.py
     PartGroupView.py
+    TreeEntries.py
     FeaturePythonChain.py
     SandboxProgram.py
     SandboxProgramFixtures.py
