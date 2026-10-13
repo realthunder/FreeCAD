@@ -1873,6 +1873,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry |
 | 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
 | 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (B) IN THE REPORTER'S LIVE SESSION TODAY WAS SET OFF BY THE NOTE-TAKER'S OWN SCRIPT (found 17:03): the first look of 16:13:11 called `menuBar()` on the main window, which makes a menu bar and pushes the kit's spacer out -- the tool bar rows slid under the title bar a moment later. The note-taker's "read-only, nothing changed" was WRONG. (A) is the reporter's own finding, before any look. BOTH REPRODUCED by the build session on the real screen, the causes shown, fixes written for the next build: (A) the menu reveal button's width flips between its own 50 and the sheet's 88; (B) ANY `menuBar()` call does it, the window's guard against it no longer works. (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry |
+| 111 | 2026-10-13 | the Python console or the report view overlaid on a TechDraw page drawn by the bgfx renderer: after a change of theme the text in the overlay is SCRAMBLED over the page -- in the same overlay the half that lies over a 3D view is right (a screenshot; said as "new defect and request") | OPEN; what the "request" is, is not said; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -14317,6 +14318,59 @@ under the title bar seen BEFORE 16:13 today, or on another day since
 entry 6 was staged (2026-10-06)? If not, entry 6 is not back; what is
 left of (B) is the `menuBar()` defect the build session has a fix for.
 
+## 111. An overlaid Python console or report view over a TechDraw page drawn by bgfx: the text is scrambled after a change of theme -- OPEN, four points not answered
+
+**2026-10-13 17:06, the reporter, with a screenshot:** "new defect and request.
+for python console and report view if overlaid on top of a techdraw page
+with bgfx renderer, after theme switching the text in the overlay (python
+console of report view) is  scrambled. see screenshot, and notice how half
+of python console overlaid on 3d view is normal, and the other half on
+techdraw is scrambled."
+
+The screenshot, as the note-taker reads it (kept outside the repository,
+`..\dl\handson\2026-10-13\entry111\console-text-scrambled-over-techdraw.png`):
+an overlaid Python console lying across two view cells. Its left part,
+over a darker ground (the 3D view), shows its first lines clean -- "Type
+'help', 'copyright' ...", the ">>>" prompts. From about a third of its
+width on, where the ground is lighter (the TechDraw page's cell), the
+same lines are broken: the letters cut into pieces and doubled, the
+greens of the comments and the white of the commands smeared, to the
+right end of the panel. Above it a corner of a TechDraw page with a
+dimension; below it a scroll bar.
+
+The note-taker's reading, not the reporter's words:
+- A DEFECT: an overlaid text panel -- the Python console, or the report
+  view -- that lies over a TechDraw page drawn by the bgfx renderer
+  shows its text scrambled after the theme has been changed. Over a 3D
+  view the same panel, in the same moment, is right; the break follows
+  the border between the two cells.
+- "and request": the sentence names no request. Point a.
+- Which copy: by the hour, the stage of 16:55.
+
+NOT said, lettered for an answer:
+a. THE REQUEST: what is asked beside the defect being mended?
+b. ONLY after a change of theme -- is the text over the page right
+   before it; and does it come right again by itself, after a resize,
+   a scroll, a move of the pointer into the panel?
+c. With the page drawn by Qt (not by the renderer) is it right? And the
+   tree view or the task panel overlaid over the same page -- scrambled
+   too, or only the two text panels?
+d. Is the eye of that overlay pressed, and is the panel see-through at
+   that moment?
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- What an overlaid panel shows is painted through the overlay's own
+  effect (entry 87: a blurred copy laid under what is painted) on a
+  see-through ground, over whatever the view below has drawn. A view
+  cell drawn by the bgfx renderer and one drawn by Qt hand the overlay
+  a different kind of ground; a change of theme makes the overlay's
+  style sheet anew and the panels repaint (entry 85) -- the two things
+  the reporter's sentence joins.
+- Near it: entry 98 (a background behind this very text, asked today
+  and not built yet), entry 87, entry 53 (a TechDraw page and its
+  repaint), the memory of earlier days that a TechDraw page drawn by
+  the backend is one picture and by Qt another.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -14326,5 +14380,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 110 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 111 are of 2026-10-13, 82 found by
 it)
