@@ -1472,7 +1472,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | IN WORK 2026-10-13 10:17: a fix in the source, NOT built, NOT tested; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
-| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; three points under the entry, NOT ANSWERED |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10654,7 +10654,7 @@ The note-taker's note for the reporter: until a stage with the fix, a
 restart of the program after a change of theme should give the right
 colour -- by the build session's reading of the code, not run.
 
-## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the cause not found by reading, three points not answered
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known
 
 **2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
 pass through no longer works"
@@ -10699,6 +10699,21 @@ Pointers, READ by the note-taker, nothing run; the cause is NOT found:
 - The build session's measurement of 10:03 (entry 69) has the left
   overlay "52% clear" under the Outline sheet when painted by itself:
   so clear pixels are there, by that picture.
+
+**2026-10-13 10:21, the reporter answers the three points:** "entry 86,
+a. any overlay panels, b none pass through, c just notice, not sure start
+from when"
+
+The note-taker's reading:
+- a. Every overlaid panel, not one of them and not one part.
+- b. Nothing passes: not the click, not a drag, not the wheel.
+- c. Just noticed; from when it is so the reporter cannot say. So it is
+  NOT known whether the copy of 06:52, or that of 2026-10-12 17:52, had
+  it, nor whether applying the themes again at about 10:04 has to do
+  with it.
+Nothing of this entry is left unanswered by the reporter. What a run
+would have to tell, the note-taker's: on which commit the pass-through
+last worked.
 
 ## Inbox
 
