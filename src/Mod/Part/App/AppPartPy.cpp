@@ -428,22 +428,30 @@ PartExport int initOCCTExtension()
     return extVersion;
 }
 
-/// A function of one of the OCCT fork's toolkits, looked up at run time like
-/// SetFuncShowTopoShape, so that a build against upstream OCCT, or a fork from
-/// before the function, still loads; null there.
-static void *lookUpOCCT(const char *dll, const char *so, const char *name)
+/// A function of one of the OCCT fork's toolkits ("TKBRep", "TKDESTEP", ...),
+/// looked up by name at run time like SetFuncShowTopoShape, so that FreeCAD
+/// still loads where the OCCT libraries are upstream's, or a fork's from
+/// before the function; null there. What FreeCAD needs of the fork it reaches
+/// this way, through a C function of the fork: a function called by its C++
+/// name is a symbol upstream's library does not have, and the loader then
+/// refuses the whole module.
+PartExport void *lookUpOCCT(const char *toolkit, const char *name)
 {
 #ifdef FC_OS_WIN32
-    (void)so;
-    HMODULE hModule = GetModuleHandleA(dll);
+    const std::string dll = std::string(toolkit) + ".dll";
+    HMODULE hModule = GetModuleHandleA(dll.c_str());
     if (!hModule)
-        hModule = LoadLibraryA(dll);
+        hModule = LoadLibraryA(dll.c_str());
     return hModule ? (void *)GetProcAddress(hModule, name) : nullptr;
 #else
-    (void)dll;
     void *f = dlsym(RTLD_DEFAULT, name);
     if (!f) {
-        void *hModule = dlopen(so, RTLD_LAZY);
+#ifdef FC_OS_MACOSX
+        const std::string lib = std::string("lib") + toolkit + ".dylib";
+#else
+        const std::string lib = std::string("lib") + toolkit + ".so";
+#endif
+        void *hModule = dlopen(lib.c_str(), RTLD_LAZY);
         if (hModule)
             f = dlsym(hModule, name);
     }
@@ -454,13 +462,44 @@ static void *lookUpOCCT(const char *dll, const char *so, const char *name)
 /// A function of the OCCT fork's TKFillet by name, null without it.
 PartExport void *lookUpTKFillet(const char *name)
 {
-    return lookUpOCCT("TKFillet.dll", "libTKFillet.so", name);
+    return lookUpOCCT("TKFillet", name);
 }
 
 /// A function of the OCCT fork's TKBRep by name, null without it.
 PartExport void *lookUpTKBRep(const char *name)
 {
-    return lookUpOCCT("TKBRep.dll", "libTKBRep.so", name);
+    return lookUpOCCT("TKBRep", name);
+}
+
+typedef void (*FuncSetCurve2dSetMerging)(GeomTools_Curve2dSet &, bool);
+
+/// Says whether the set merges a 2D curve into an entry that would be written
+/// the same (the OCCT fork's GeomTools_Curve2dSet_SetMerging). False without
+/// the fork's function: upstream's set merges nothing, and there is nothing
+/// to set.
+PartExport bool setOCCTCurve2dSetMerging(GeomTools_Curve2dSet &set, bool merging)
+{
+    static const auto func = (FuncSetCurve2dSetMerging)lookUpOCCT(
+        "TKGeomBase", "GeomTools_Curve2dSet_SetMerging");
+    if (!func)
+        return false;
+    func(set, merging);
+    return true;
+}
+
+typedef void (*FuncSetOmitPCurvesOnPlane)(BinTools_ShapeSet &, bool);
+
+/// Says whether the binary shape set leaves out the pcurves a plane can
+/// rebuild (the OCCT fork's BinTools_ShapeSet_SetOmitPCurvesOnPlane). False
+/// without the fork's function: upstream's set writes them all.
+PartExport bool setOCCTOmitPCurvesOnPlane(BinTools_ShapeSet &set, bool omit)
+{
+    static const auto func = (FuncSetOmitPCurvesOnPlane)lookUpOCCT(
+        "TKBRep", "BinTools_ShapeSet_SetOmitPCurvesOnPlane");
+    if (!func)
+        return false;
+    func(set, omit);
+    return true;
 }
 
 typedef bool (*FuncIsCacheRepresentation)(const Standard_Transient *);
