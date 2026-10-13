@@ -3254,9 +3254,13 @@ scripts in `D:\works\sw\abi-upstream\tools` (the OCCT fork's
   name at run time (`Part::lookUpOCCT` in `AppPartPy.cpp`, the wrappers
   beside it in `PartPyCXX.h`), and does without where it is not found.
   `win_forkonly.py <upstream bin> <build>` lists the imports that break this;
-  it is to print none for the modules. `Part_tests_run.exe` still has one,
-  `TopoDS_LockedShape::raisedCounter`, through an inline function of a fork
-  header that a test of the fork's refusals calls.
+  it is to print none, the test binaries included. The last one was
+  `TopoDS_LockedShape`'s counter, imported by whatever called an inline
+  tolerance setter of a TShape, which raises that exception in the caller's
+  own binary: an inline function of a fork header may call nothing the fork
+  exports by name. The fork counts through its common allocator instead
+  (`NCollection_ForkState`), which an inline function asks for through a
+  function upstream's library has as well.
 - **A destructor declared in a fork header is such a symbol with MSVC.** OCCT
   declares with `dllexport` in clients too, so a non-inline member a header
   adds is imported by every client that uses it, and a class's destructor is
