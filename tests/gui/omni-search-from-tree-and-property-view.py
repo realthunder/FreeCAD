@@ -220,6 +220,11 @@ def from_the_tree():
         if a.text().replace("&", "").startswith("Search"):
             action = a
     if check("the tree has its 'Search...' action", action is not None):
+        # nothing selected: the search above left the object it found selected,
+        # and with a selection the box opens on that object
+        # (docs/HandsOnQueue.md entry 93, tests/gui/omni-search-object-typing.py)
+        FreeCADGui.Selection.clearSelection()
+        settle(200)
         action.trigger()
         settle(300)
         check("which opens the omni search with '/ ' typed", box_text() == "/ ", box_text())

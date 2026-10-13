@@ -2349,10 +2349,58 @@ bool TreeWidget::_setupObjectMenu(DocumentObjectItem *item, QMenu &menu)
 // what that did -- it scrolls to the item its text names and marks it, in
 // the tree view it was opened from -- and more, so Ctrl+F and "Search..."
 // open that, with its objects' prefix typed (docs/HandsOnQueue.md entry 78).
+//
+// With something selected in this tree the box opens on an object: "/ ", its
+// path from the top by internal names, and a dot, so that the list has its
+// properties (docs/HandsOnQueue.md entry 93). Which object, of several: the
+// tree's last selection if its item is in view; else the last selection that
+// is; else the current item; else the last selection.
 void TreeWidget::onSearchObjects()
 {
-    OmniSearchBox::instance()->open(QString::fromLatin1(
-                OmniSearch::modePrefix(OmniSearch::Mode::Object)), this);
+    QString text = QString::fromLatin1(OmniSearch::modePrefix(OmniSearch::Mode::Object));
+
+    auto inView = [this](QTreeWidgetItem *item) {
+        const QRect rect = visualItemRect(item);
+        return rect.isValid() && viewport()->rect().intersects(rect);
+    };
+    // this tree's selected items, in the order they were selected
+    std::vector<DocumentObjectItem*> selected;
+    QList<QTreeWidgetItem*> left = selectedItems();
+    for (auto &sel : Selection().getSelectionT("*", ResolveMode::NoResolve)) {
+        auto obj = sel.getSubObject();
+        for (auto it = left.begin(); it != left.end(); ++it) {
+            if ((*it)->type() != ObjectType)
+                continue;
+            auto item = static_cast<DocumentObjectItem*>(*it);
+            if (item->object()->getObject() != obj)
+                continue;
+            selected.push_back(item);
+            left.erase(it);
+            break;
+        }
+    }
+    DocumentObjectItem *seed = nullptr;
+    if (!selected.empty()) {
+        if (inView(selected.back()))
+            seed = selected.back();
+        for (auto it = selected.rbegin(); !seed && it != selected.rend(); ++it) {
+            if (inView(*it))
+                seed = *it;
+        }
+        if (!seed && currentItem() && currentItem()->type() == ObjectType)
+            seed = static_cast<DocumentObjectItem*>(currentItem());
+        if (!seed)
+            seed = selected.back();
+    }
+    if (seed) {
+        const App::SubObjectT path = seed->getSubNameT();
+        auto active = App::GetApplication().getActiveDocument();
+        if (!active || path.getDocumentName() != active->getName())
+            text += QString::fromUtf8(path.getDocumentName().c_str()) + QLatin1Char('#');
+        text += QString::fromUtf8(path.getObjectName().c_str()) + QLatin1Char('.')
+              + QString::fromUtf8(path.getSubName().c_str());
+    }
+    OmniSearchBox::instance()->open(text, this);
 }
 
 void TreeWidget::onActivateDocument(QAction* active)
@@ -2375,6 +2423,38 @@ bool TreeWidget::event(QEvent *e)
 }
 
 bool TreeWidget::eventFilter(QObject *o, QEvent *ev) {
+    if (o == viewport()) {
+        // The row under the pointer of an OVERLAID tree: the style draws a bar
+        // over the whole row, opaque, where the panel is see-through and the
+        // item's own background ends with its text. The view is not told
+        // where the pointer is; the tree draws a bar as wide as the item's
+        // background (docs/HandsOnQueue.md entry 87).
+        if (testAttribute(Qt::WA_NoSystemBackground)) {
+            switch (ev->type()) {
+            case QEvent::HoverEnter:
+            case QEvent::HoverMove:
+                if (!pimpl->hoverTaken) {
+                    // whatever row the view had before the tree was overlaid
+                    pimpl->hoverTaken = true;
+                    QHoverEvent gone(QEvent::HoverLeave, QPointF(-1, -1), QPointF(-1, -1),
+                                     QPointF(-1, -1));
+                    QTreeWidget::viewportEvent(&gone);
+                }
+                return true;
+            case QEvent::HoverLeave:
+            case QEvent::Leave:
+                pimpl->setHoverIndex(QModelIndex());
+                break;
+            default:
+                break;
+            }
+        }
+        else if (pimpl->hoverTaken || pimpl->hoverIndex.isValid()) {
+            pimpl->hoverTaken = false;
+            pimpl->setHoverIndex(QModelIndex());
+        }
+    }
+
     if (!_DraggingActive)
         return QTreeWidget::eventFilter(o, ev);
 
@@ -2423,38 +2503,6 @@ bool TreeWidget::eventFilter(QObject *o, QEvent *ev) {
         }
         break;
     }
-    if (o == viewport()) {
-        // The row under the pointer of an OVERLAID tree: the style draws a bar
-        // over the whole row, opaque, where the panel is see-through and the
-        // item's own background ends with its text. The view is not told
-        // where the pointer is; the tree draws a bar as wide as the item's
-        // background (docs/HandsOnQueue.md entry 87).
-        if (testAttribute(Qt::WA_NoSystemBackground)) {
-            switch (ev->type()) {
-            case QEvent::HoverEnter:
-            case QEvent::HoverMove:
-                if (!pimpl->hoverTaken) {
-                    // whatever row the view had before the tree was overlaid
-                    pimpl->hoverTaken = true;
-                    QHoverEvent gone(QEvent::HoverLeave, QPointF(-1, -1), QPointF(-1, -1),
-                                     QPointF(-1, -1));
-                    QTreeWidget::viewportEvent(&gone);
-                }
-                return true;
-            case QEvent::HoverLeave:
-            case QEvent::Leave:
-                pimpl->setHoverIndex(QModelIndex());
-                break;
-            default:
-                break;
-            }
-        }
-        else if (pimpl->hoverTaken || pimpl->hoverIndex.isValid()) {
-            pimpl->hoverTaken = false;
-            pimpl->setHoverIndex(QModelIndex());
-        }
-    }
-
     case QEvent::MouseButtonPress:
         return true;
     case QEvent::MouseMove: {
@@ -2796,6 +2844,8 @@ void TreeWidget::mouseMoveEvent(QMouseEvent *event) {
     // document's row had its tip, the file's name, only when the delay had
     // been started on an object's row before; it starts one of its own now.
     pimpl->tooltipPending = oitem ? static_cast<QTreeWidgetItem*>(oitem) : docItem;
+    pimpl->setHoverIndex(pimpl->tooltipPending && testAttribute(Qt::WA_NoSystemBackground)
+                             ? indexFromItem(pimpl->tooltipPending) : QModelIndex());
     if (docItem)
         toolTipTimer->start(300);
     if (oitem) {
@@ -2824,6 +2874,15 @@ void TreeWidget::mouseMoveEvent(QMouseEvent *event) {
     // mouseMoveEvent() if the condition is met to avoid unwanted selection.
     if (event->buttons()!=Qt::LeftButton || !pimpl->skipMouseRelease) {
         QTreeWidget::mouseMoveEvent(event);
+        if (testAttribute(Qt::WA_NoSystemBackground)) {
+            // The view notes the row under the pointer on a move too, not
+            // only on the hover events eventFilter() keeps from it: taken
+            // back at once, an overlaid tree draws its own bar for that row.
+            QHoverEvent gone(QEvent::HoverLeave, QPointF(-1, -1), QPointF(-1, -1),
+                             QPointF(-1, -1));
+            QTreeWidget::viewportEvent(&gone);
+        }
+    }
 }
 
 void TreeWidget::onToolTipTimer()
@@ -2844,8 +2903,6 @@ void TreeWidget::onToolTipTimer()
             pimpl->tooltipItem = nullptr;
             ToolTip::hideText();
             return;
-    pimpl->setHoverIndex(pimpl->tooltipPending && testAttribute(Qt::WA_NoSystemBackground)
-                             ? indexFromItem(pimpl->tooltipPending) : QModelIndex());
         }
     }
     if (!item) {
@@ -2874,15 +2931,6 @@ void TreeWidget::onToolTipTimer()
         ss << Obj->getNameInDocument() << '.';
 
     if (!pimpl->restorePreselCursor) {
-        if (testAttribute(Qt::WA_NoSystemBackground)) {
-            // The view notes the row under the pointer on a move too, not
-            // only on the hover events eventFilter() keeps from it: taken
-            // back at once, an overlaid tree draws its own bar for that row.
-            QHoverEvent gone(QEvent::HoverLeave, QPointF(-1, -1), QPointF(-1, -1),
-                             QPointF(-1, -1));
-            QTreeWidget::viewportEvent(&gone);
-        }
-    }
         QString status = Selection().format(parent, ss.str().c_str(), 0.f, 0.f, 0.f, false);
 
         if ( (Obj->isTouched() || Obj->mustExecute() == 1) && !Obj->isError())
@@ -3000,6 +3048,18 @@ void TreeWidget::onToolTipTimer()
     pimpl->tooltipItem = item;
 }
 
+void TreeWidget::Private::setHoverIndex(const QModelIndex &index)
+{
+    if (hoverIndex == index)
+        return;
+    const QModelIndex before = hoverIndex;
+    hoverIndex = index;
+    for (const QModelIndex &row : {before, index}) {
+        if (row.isValid())
+            master->viewport()->update(master->visualRect(row));
+    }
+}
+
 bool TreeWidget::Private::pointerOverItems() const
 {
     const QPoint global = QCursor::pos();
@@ -3048,18 +3108,6 @@ DocumentObjectItem *TreeWidget::Private::itemHitTest(
         checkboxWidth = style->pixelMetric(QStyle::PM_IndicatorWidth)
             + style->pixelMetric(QStyle::PM_LayoutHorizontalSpacing);
     }
-void TreeWidget::Private::setHoverIndex(const QModelIndex &index)
-{
-    if (hoverIndex == index)
-        return;
-    const QModelIndex before = hoverIndex;
-    hoverIndex = index;
-    for (const QModelIndex &row : {before, index}) {
-        if (row.isValid())
-            master->viewport()->update(master->visualRect(row));
-    }
-}
-
 
     if (!rect.contains(pos)) {
         if (pos.x() < itemX)
@@ -4954,6 +5002,7 @@ void TreeWidget::leaveEvent(QEvent *) {
         toolTipTimer->stop();
         pimpl->tooltipPending = nullptr;
     }
+    pimpl->setHoverIndex(QModelIndex());
     if(!updateBlocked && TreeParams::getPreSelection()) {
         preselectTimer->stop();
         Selection().rmvPreselect();
@@ -5002,7 +5051,6 @@ void TreeWidget::onItemCollapsed(QTreeWidgetItem * item)
     // object item collapsed
     if (item && item->type() == TreeWidget::ObjectType) {
         static_cast<DocumentObjectItem*>(item)->setExpandedStatus(false);
-    pimpl->setHoverIndex(QModelIndex());
     }
 }
 

@@ -1636,6 +1636,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") | OPEN; three points under the entry, NOT ANSWERED |
+| 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed | OPEN; a reading of the source by the note-taker, nothing run, the causes NOT found; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12553,6 +12554,55 @@ Pointers, the note-taker's, nothing run and the source not followed:
   title buttons' pictures of entry 96, the menu buttons of 89 and 90
   in `Action.cpp`).
 
+## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- OPEN, four points not answered
+
+**2026-10-13 14:36, the reporter:** "new defect, when in per view edit, cavity
+effect still shows for per view hidden object. also for normal visible
+normal underneath object cavity sometimes show through when zoomed."
+
+The note-taker's reading, not the reporter's words -- two defects:
+1. During an edit that is per view, an object hidden in THAT view only
+   is no longer drawn there -- but the dark creases the cavity effect
+   draws for it are still seen, as a ghost of its edges.
+2. Without any hiding: where one object lies under (behind) another
+   that is shown, the cavity creases of the one underneath sometimes
+   show THROUGH the one in front. "when zoomed": at some zooms, not at
+   all.
+- "cavity effect": the renderer's cavity shading
+  (`RenderParams` `Cavity`, "Cavity shading", on by default) -- the
+  darkening of creases and ridges in screen space.
+
+NOT said, lettered for an answer:
+a. For (2): zoomed IN or OUT when it shows; and does it flicker while
+   the view moves or stay once it is there?
+b. For (1): hidden HOW -- by the edit itself (the other bodies an edit
+   puts away in its view), or by hand in that view? And is the ghost
+   seen only in the view of the edit, or in the other views too?
+c. ON WHAT: `scanner.FCStd` or another model; which draw style (Shaded,
+   with edges); and a split view with several cells, or one view?
+d. SINCE WHEN, if it can be said: the stage of 13:56 only, or earlier.
+
+Pointers, READ by the note-taker, nothing run; the causes are NOT found:
+- The effect is a pass over the whole picture:
+  `src/Gui/Renderer/bgfx/shaders/fs_fc_cavity.sc` -- "one fullscreen
+  multiply over the finished opaque scene" that reads the "prepass
+  NORMAL field" and darkens where the normals of neighbouring pixels
+  turn. It does not know objects; it knows what the prepass wrote.
+- So for (1) a guess: an object hidden per view is left out of the
+  COLOUR pass of that view but still written into the normal prepass
+  the cavity pass reads -- its creases are then darkened onto whatever
+  is seen there. Entry 48 was of the same neighbourhood (a per-view
+  hide; its "leak" turned out to be the test's).
+- For (2) a guess: the prepass's normals and the picture's depth
+  disagree at some zooms (the two at different sizes, or the nearer
+  surface not winning in the prepass), so the creases of what is
+  behind are read. `RenderParams` has `CavityRadius` ("in pixels ...
+  resolution-relative"), `CavityValley`, `CavityRidge`.
+- The cavity code on the application's side:
+  `src/Gui/Renderer/BGFXViewEffects.cpp`, `BGFXFrame.cpp`,
+  `BGFXScene.cpp`; the feed from Coin in
+  `src/Gui/Inventor/SoFCRenderer.cpp`.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -12562,5 +12612,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 103 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 104 are of 2026-10-13, 82 found by
 it)

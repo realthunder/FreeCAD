@@ -93,6 +93,9 @@ public:
     bool popupVisible() const;
     void hidePopups();
 
+    /// Whether the activation being told of came by Tab: the text is completed
+    /// and the typing goes on, in this box (docs/HandsOnQueue.md entry 94)
+    bool completingByTab() const { return byTab; }
     /// Rows of the current mode's filtered list, for a lone-match Enter
     int filteredRowCount() const;
     QModelIndex filteredRow(int row) const;
@@ -134,6 +137,7 @@ private:
     void runObjectQuery();
     void resolveObjectQuery();
     void completeObject(const QString &completion);
+    void correctTypedCase();
     void completeMember(const QString &name, bool advance);
     int objectSkip() const;
     void activateObject();
@@ -166,6 +170,7 @@ private:
 
     bool completing = false;
     bool justActivated = false;
+    bool byTab = false;
     /// What requestInput() was asked to type and the focus has not come for
     QString pendingInput;
     App::Property *resolvedProp = nullptr;
