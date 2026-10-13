@@ -313,6 +313,10 @@ class GuiExport SoFCPathAnnotation : public SoSeparator {
     SO_NODE_HEADER(Gui::SoFCPathAnnotation);
 public:
     SoSFInt32 priority;
+    /// The edges and vertices under this node are picked through what is
+    /// in front of them, as they are drawn: a pick that ends on a face asks
+    /// these nodes by themselves (SoFCRenderCacheManager::doThroughPick())
+    SoSFBool pickThrough;
 
     static void initClass();
     static void finish();

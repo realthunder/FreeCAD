@@ -362,6 +362,10 @@ public:
                             bool singlePick,
                             Filter &filter) const;
 
+    void pickThroughFace(std::vector<PickedInfo> &, Filter &filter) const;
+
+    SoPath *pathAboveRoot() const;
+
     void onPreselectTimer();
 
     SoFCUnifiedSelection * master;
@@ -822,6 +826,34 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
     }
 }
 
+SoPath *
+SoFCUnifiedSelection::Private::pathAboveRoot() const
+{
+    // The view's path down to this root's parent: where the camera is
+    // traversed before this root, as in getPickedInfoOnTop() below. For the
+    // picks along paths the render cache manager keeps, which start at this
+    // root (SoFCRenderCacheManager::doLatePick()). Null where there is no
+    // view to pick in; the path is the caller's until its next call.
+    static FC_COIN_THREAD_LOCAL SoTempPath *path;
+    if (!path) {
+        path = new SoTempPath(20);
+        path->ref();
+    }
+    path->truncate(0);
+    if (pcViewer) {
+        path->append(pcViewer->getRootPath());
+    }
+    else {
+        ViewerContext *view = pickView();
+        SoNode *pickRoot = view ? view->getPickRoot() : nullptr;
+        if (!pickRoot || !pickRoot->isOfType(SoGroup::getClassTypeId())
+                || static_cast<SoGroup*>(pickRoot)->findChild(master) < 0)
+            return nullptr;
+        path->append(pickRoot);
+    }
+    return path->getLength() ? path : nullptr;
+}
+
 void
 SoFCUnifiedSelection::Private::getPickedInfoOnTop(std::vector<PickedInfo> &ret,
                                                   bool singlePick,
@@ -998,7 +1030,7 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
             if (paths || (useRenderer() && !pcViewer)) {
                 this->rayPickAction.setLatePicking(true);
                 if (useRenderer()) {
-                    manager.doLatePick(&this->rayPickAction);
+                    manager.doLatePick(&this->rayPickAction, pathAboveRoot());
                 } else if (paths->getLength()) {
                     this->rayPickAction.apply(*paths, FALSE);
                 } else {
@@ -1056,7 +1088,51 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
     //
     if(this->rayPickAction.isPickAll())
         postProcessPickedList(ret, _singlePick);
+    if (_singlePick && singlePick && !pickBackFace)
+        pickThroughFace(ret, filter);
     return ret;
+}
+
+void
+SoFCUnifiedSelection::Private::pickThroughFace(std::vector<PickedInfo> &ret,
+                                               Filter &filter) const
+{
+    // A datum's dashed lines are drawn through whatever is in front of them
+    // and are picked through it: with an origin inside its body there was no
+    // line of it that could be pointed at (docs/HandsOnQueue.md entry 99).
+    // The passes above know nothing of that. The one over what is on top
+    // asks the preselected object first and ends on its face without asking
+    // the scene; the one over the scene keeps the nearest hit, the face
+    // again. So a pick that has ended on a face asks the nodes drawn that
+    // way by themselves: an edge or a vertex of theirs takes the pick from
+    // the face. From a face only -- between such a line and another edge or
+    // vertex the nearer has it, as between any two, and that the passes
+    // above have already settled.
+    if (ret.empty() || !ret.front().pp || !useRenderer()
+            || SoFCUnifiedSelection::getPriority(ret.front().pp) > 1)
+        return;
+
+    // What is held points into the action, which is asked again
+    for (auto &info : ret) {
+        if (!info.ppCopy)
+            info.copy();
+    }
+    this->rayPickAction.cleanup();
+    manager.doThroughPick(&this->rayPickAction, pathAboveRoot());
+    const SoPickedPointList &hits = this->rayPickAction.getPrioPickedPointList();
+    for (int i = 0, count = hits.getLength(); i < count; ++i) {
+        if (SoFCUnifiedSelection::getPriority(hits[i]) <= 1)
+            continue;
+        // the nearest edge or vertex: the list is in the order of the ray
+        SoPickedPointList nearest;
+        nearest.append(hits[i]->copy());
+        std::vector<PickedInfo> through;
+        getPickedInfo(through, nearest, true, true, filter);
+        if (!through.empty() && through.front().vpd)
+            ret = std::move(through);
+        break;
+    }
+    this->rayPickAction.cleanup();
 }
 
 void
@@ -4184,6 +4260,7 @@ SoFCPathAnnotation::SoFCPathAnnotation(ViewProvider *vp, const char *sub, View3D
 {
     SO_NODE_CONSTRUCTOR(SoFCPathAnnotation);
     SO_NODE_ADD_FIELD(priority, (0));
+    SO_NODE_ADD_FIELD(pickThrough, (FALSE));
 
     path = nullptr;
     det = false;

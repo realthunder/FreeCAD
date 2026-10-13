@@ -409,7 +409,9 @@ public:
                     bool alt);
 
   void initAction();
-  void doLatePick(SoRayPickAction *action) const;
+  void doLatePick(SoRayPickAction *action, SoPath *below) const;
+  void doThroughPick(SoRayPickAction *action, SoPath *below) const;
+  void applyPick(SoRayPickAction *action, const SoPathList &paths, SoPath *below) const;
 
   static SoCallbackAction::Response preSeparator(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postSeparator(void *, SoCallbackAction *action, const SoNode * node);
@@ -616,6 +618,12 @@ public:
                      PathHasher<PathPtr>,
                      PathHasher<PathPtr>> latepicktable;
   mutable SoPathList latepickpaths;
+  // The paths to the nodes whose edges and vertices are picked through what
+  // is in front of them (doThroughPick()), kept as the late-pick ones are
+  std::unordered_map<PathPtr,
+                     LatePickPathSensor,
+                     PathHasher<PathPtr>,
+                     PathHasher<PathPtr>> throughpicktable;
   // Entries whose sensor fired: erased by purgeDeadSensors(), outside the
   // sensor's own callback
   std::vector<PathPtr> deadpathcaches;
@@ -1021,6 +1029,7 @@ SoFCRenderCacheManager::clear()
   // no traversal will ever hand back.
   PRIVATE(this)->publishdelta.clear();
   PRIVATE(this)->latepicktable.clear();
+  PRIVATE(this)->throughpicktable.clear();
   PRIVATE(this)->latepickpaths.truncate(0);
   PRIVATE(this)->deadlatepicks.clear();
   PRIVATE(this)->deadpathcaches.clear();
@@ -2120,6 +2129,22 @@ SoFCRenderCacheManagerP::prePathAnnotation(void *userdata,
     self->stack.back()->increaseRenderingOrder(action->getState(), annotation->priority.getValue());
   else if (annotation->getPath() && ++self->annotation == 1)
     self->stack.back()->increaseRenderingOrder(action->getState());
+
+  // Its edges and vertices are picked through what is in front of them: the
+  // path is kept, so that a pick which has ended on a face can ask these by
+  // themselves (doThroughPick()). Kept as the late-pick paths are, see
+  // preLatePickGroup().
+  if (annotation->pickThrough.getValue()) {
+    const SoPath *path = action->getCurPath();
+    if (self->throughpicktable.find(const_cast<SoPath*>(path)) == self->throughpicktable.end()) {
+      PathPtr tmppath = new SoTempPath(path->getLength());
+      tmppath->append(path);
+      LatePickPathSensor &sensor = self->throughpicktable[tmppath];
+      sensor.tmpPath = tmppath;
+      sensor.master = self;
+      sensor.attachedPath = path->copy();
+    }
+  }
   return SoCallbackAction::CONTINUE;
 }
 
@@ -2147,29 +2172,102 @@ SoFCRenderCacheManagerP::preLatePickGroup(void *userdata,
   sensor.tmpPath = tmppath;
   sensor.master = self;
   sensor.attachedPath = path->copy();
-  sensor.attach(sensor.attachedPath);
+  // The sensor is NOT attached any more. Attached, it took the path out of
+  // the table at any change of the scene before it -- the highlight of a
+  // preselection is one -- and only a new capture of this very node put it
+  // back, which a capture that finds its caches whole never makes: at the
+  // pick the table was empty, and under the renderer nothing was ever
+  // picked late (a datum plane by its face; docs/HandsOnQueue.md entry 99).
+  // The path kept is a real one, which follows the scene as nodes are put
+  // in and taken out along it; whether it still leads to its node is
+  // asked at the pick (livePickPaths()).
   self->latepickpaths.truncate(0);
 
   return SoCallbackAction::CONTINUE;
 }
 
-void SoFCRenderCacheManager::doLatePick(SoRayPickAction *action) const
+// The paths of a table of pick paths that still lead to their node, as they
+// are now; the ones that do not -- a node of theirs is gone -- and the ones
+// kept twice are taken out of the table. The key is the path as it was
+// captured, the value's the same path kept alive: equal in length and in
+// their last node while nothing along the way has been taken out.
+template<class Table>
+static void
+livePickPaths(Table &table, SoPathList &paths)
 {
-  PRIVATE(this)->doLatePick(action);
+  for (auto it = table.begin(); it != table.end();) {
+    SoPath *live = it->second.attachedPath;
+    const SoPath *taken = it->first;
+    if (!live || !taken || !live->getLength()
+        || live->getLength() != taken->getLength()
+        || live->getTail() != taken->getTail()
+        || paths.findPath(*live) >= 0) {
+      it = table.erase(it);
+      continue;
+    }
+    paths.append(live);
+    ++it;
+  }
 }
 
-void SoFCRenderCacheManagerP::doLatePick(SoRayPickAction *action) const
+void SoFCRenderCacheManagerP::applyPick(SoRayPickAction *action,
+                                        const SoPathList &paths,
+                                        SoPath *below) const
+{
+  if (!paths.getLength())
+    return;
+  if (!below || !below->getLength()) {
+    action->apply(paths, FALSE);
+    return;
+  }
+  // The paths are the capture's and start at the node it is applied to, the
+  // scene root. A ray is cast by the camera, and the camera is traversed
+  // before that root: applied by itself such a path has no view, and the
+  // pick hits nothing (docs/HandsOnQueue.md entry 99). Each goes behind the
+  // view's own path down to the root's parent.
+  //
+  // All in one list and one traversal: a ray pick forgets what it has hit
+  // at the start of each traversal, and of paths applied one by one only
+  // the last one's hits would be left.
+  SoNode *tail = below->getTail();
+  if (!tail || !tail->isOfType(SoGroup::getClassTypeId()))
+    return;
+  SoPathList whole;
+  for (int i = 0, count = paths.getLength(); i < count; ++i) {
+    SoPath *path = paths[i];
+    if (static_cast<SoGroup*>(tail)->findChild(path->getHead()) < 0)
+      continue;
+    SoPath *full = below->copy();
+    full->append(path);
+    whole.append(full);
+  }
+  if (whole.getLength())
+    action->apply(whole, FALSE);
+}
+
+void SoFCRenderCacheManager::doLatePick(SoRayPickAction *action, SoPath *below) const
+{
+  PRIVATE(this)->doLatePick(action, below);
+}
+
+void SoFCRenderCacheManagerP::doLatePick(SoRayPickAction *action, SoPath *below) const
 {
   purgeDeadSensors();
-  if (latepicktable.empty())
-    return;
-  if (latepickpaths.getLength() == 0) {
-    for (auto &v : latepicktable)
-      latepickpaths.append(v.first);
-    if (obeysrules)
-      latepickpaths.sort();
-  }
-  action->apply(latepickpaths, obeysrules);
+  SoPathList paths;
+  livePickPaths(const_cast<SoFCRenderCacheManagerP*>(this)->latepicktable, paths);
+  applyPick(action, paths, below);
+}
+
+void SoFCRenderCacheManager::doThroughPick(SoRayPickAction *action, SoPath *below) const
+{
+  PRIVATE(this)->doThroughPick(action, below);
+}
+
+void SoFCRenderCacheManagerP::doThroughPick(SoRayPickAction *action, SoPath *below) const
+{
+  SoPathList paths;
+  livePickPaths(const_cast<SoFCRenderCacheManagerP*>(this)->throughpicktable, paths);
+  applyPick(action, paths, below);
 }
 
 SoCallbackAction::Response
