@@ -1633,6 +1633,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); three points under the entry, NOT ANSWERED; one more on the tree's text outline |
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | OPEN, the four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default |
 | 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
+| 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12400,6 +12401,47 @@ Pointers, READ by the note-taker, nothing run:
 - Near it: entry 77; entry 88 (the scroll bars' borders in an overlay,
   now clear); entry 96 (the frame of the close icon).
 
+## 101. The View menu: the view cell operations grouped, and the items from Std_ViewTitleBar to the end grouped (a change request) -- OPEN, three points not answered
+
+**2026-10-13 14:18, the reporter:** "new request, group view cell operations in
+View menu. also group item Std_ViewTitleBar until the end in View menu."
+
+The note-taker's reading, not the reporter's words:
+- The View menu is long. Two runs of its entries are to be put into
+  groups: (1) the operations on view cells; (2) everything from "title
+  bar" (`Std_ViewTitleBar`) to the last entry.
+- "group": taken for a SUBMENU with a name of its own -- not only a
+  separator line above and below. Point a.
+
+What the two runs are today, READ by the note-taker in
+`src/Gui/Workbench.cpp` (the View menu, near line 740), nothing run:
+- The menu BEGINS with: `Std_ViewCreate`, `Std_ViewSplitRight`,
+  `Std_ViewSplitDown`, `Std_ViewSplitClose`, `Std_ViewSplitMaximize`,
+  `Std_ViewCellShowObject`, then `Std_OrthographicCamera`,
+  `Std_PerspectiveCamera`, `Std_MainFullscreen`, and a separator. The
+  view cell operations by their names: the four `Std_ViewSplit...` and
+  `Std_ViewCellShowObject`; `Std_ViewCreate` (a new view) stands with
+  them.
+- The menu ENDS with, after a separator: `Std_ToggleTransparency`,
+  `Std_LinkSelectActions`, `Std_TreeViewActions`, then
+  `Std_ViewTitleBar`, `Std_ViewFoldTitleBarMenu`,
+  `Std_ViewTitleBarToolBars`, `Std_ShowMenuBar`, `Std_ViewStatusBar`.
+  So "Std_ViewTitleBar until the end" is five entries: the title bar,
+  folding the menu into it, tool bars in it, the menu bar, the status
+  bar.
+
+NOT said, lettered for an answer:
+a. A SUBMENU each, with a name -- and which names? The note-taker's
+   guesses: "View cells" (or "Split view") for the first, "Window" or
+   "Title bar and bars" for the second. Or separators only?
+b. THE FIRST GROUP's members: the four split commands and "show object
+   in cell" -- and `Std_ViewCreate` with them, or left at the top of
+   the menu by itself?
+c. WHERE the two groups stand in the menu: each where its entries are
+   today (the first at the very top, the second at the very end)?
+A smaller point, not put as blocking: the same commands in a context
+menu or on a tool bar stay as they are; only the View menu is named.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -12409,5 +12451,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 100 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 101 are of 2026-10-13, 82 found by
 it)
