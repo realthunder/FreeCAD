@@ -1502,7 +1502,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
 | 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | OPEN; the four points answered about 11:34, nothing left unanswered |
-| 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; four points under the entry, NOT ANSWERED |
+| 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | OPEN, answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found | OPEN; three points under the entry, NOT ANSWERED |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | OPEN; the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; two points under the entry, NOT ANSWERED |
@@ -11519,7 +11519,7 @@ selected so that typing replaces it. With a dot at its end, meant to be
 typed on from, the note-taker's guess is now: NOT selected, the caret
 after the dot.
 
-## 94. The omni search: Tab to complete a property takes the focus from the edit box -- OPEN, four points not answered
+## 94. The omni search: Tab to complete a property takes the focus from the edit box -- OPEN, made precise 2026-10-13 11:35: after a property is resolved, the box still there; the widget built for the property suspected
 
 **2026-10-13 11:14, the reporter:** "new defect, when use Tab to complete in omni
 search resolving a property, the edit box lost its focus and cannot type
@@ -11559,6 +11559,31 @@ Pointers, READ by the note-taker, nothing run; the cause is NOT found:
 - Near it: entry 78 (`b70dab6401`), which opens the omni search from
   the property view with the object's name and a dot typed -- the very
   place where properties are resolved; and entry 93.
+
+**2026-10-13 11:35, the reporter makes it precise:** "entry 94, after it
+completes and resolved a property. the search box is still there. I geust
+it is because of the widget built for the property causing the lost of
+focus. my last test is ctrl+f from tree view and proeprty view, same lost
+focus behavior. I don't think that's a factor"
+
+The note-taker's reading:
+- b. The step: the Tab completes the text and RESOLVES A PROPERTY --
+  the focus is lost after that, not at the object's name.
+- c. The search box is still there afterwards; only typing into it is
+  gone. Whether a click into it brings typing back is not said.
+- The reporter's own guess at the cause: once a property is resolved
+  the omni search builds a WIDGET for it (its editor), and that widget
+  takes the focus from the edit box.
+- d. Tried with the omni search opened by Ctrl+F from the tree view and
+  from the property view: the same both ways; how it is opened is "not
+  a factor" in the reporter's view.
+- a. An example of the text is not given; not needed any more by the
+  above.
+The note-taker's guess of 11:14 (a Tab that falls through to Qt's
+"focus to the next widget") is put behind the reporter's: both end with
+the focus on another widget, the reporter's names which. NOT looked
+into: where the omni search makes the editor of a resolved property and
+whether it gives the focus back.
 
 ## 95. The omni search: a name typed in small letters is not corrected to the object found when a dot resolves it -- OPEN, three points not answered
 
