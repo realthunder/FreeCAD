@@ -111,6 +111,16 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 17:03: A FAULT OF THE NOTE-TAKER'S. The first tool bar row
+under the title bar in the reporter's live session today (entry 110 B)
+was SET OFF BY THE NOTE-TAKER'S OWN SCRIPT of 16:13:11, which called
+`menuBar()` -- not a read. Entry 6's "seen again" is withdrawn. Both parts
+of entry 110 are reproduced by the build session, the causes shown, fixes
+written for the next build.** Under entry 110. For the reporter until the
+fix is staged: any script, addon or console line that calls `menuBar()`
+on the main window puts the tool bars under the title bar; a change to
+the Classic theme and back builds the title bar anew.
+
 **2026-10-13 16:57: STAGED 16:55:17 from UNCOMMITTED, untested code -- the
 whole round of the afternoon. Entry 86: the reporter made the rule exact,
 the build session's plan is DROPPED. Entry 110 (A): cause read.** From the
@@ -1758,7 +1768,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | STAGED |
 | 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | STAGED |
 | 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | STAGED if it is entry 6's cause; to confirm |
-| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED 2026-10-06; SEEN AGAIN 2026-10-13 on the stage of 13:56 -- entry 110 (B), the reporter: "yes, entry 6" |
+| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED 2026-10-06; "SEEN AGAIN" 2026-10-13 is WITHDRAWN by the note-taker: the state read at 16:23 was set off by the note-taker's own script (entry 110, 17:03); whether the reporter saw it at another time is asked |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix STAGED; the rest is entries 14 to 16 |
 | 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | STAGED |
@@ -1862,7 +1872,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
 | 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry |
 | 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
-| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry |
+| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (B) IN THE REPORTER'S LIVE SESSION TODAY WAS SET OFF BY THE NOTE-TAKER'S OWN SCRIPT (found 17:03): the first look of 16:13:11 called `menuBar()` on the main window, which makes a menu bar and pushes the kit's spacer out -- the tool bar rows slid under the title bar a moment later. The note-taker's "read-only, nothing changed" was WRONG. (A) is the reporter's own finding, before any look. BOTH REPRODUCED by the build session on the real screen, the causes shown, fixes written for the next build: (A) the menu reveal button's width flips between its own 50 and the sheet's 88; (B) ANY `menuBar()` call does it, the window's guard against it no longer works. (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2007,7 +2017,14 @@ re-docking the workbench bar does anything about it was not established, so
 this is closed only if the reporter no longer sees it after the stage that
 has entry 6's fix.
 
-## 6. Maximized with the custom title bar: sometimes no margin at the top -- STAGED 2026-10-06; SEEN AGAIN 2026-10-13, see entry 110
+## 6. Maximized with the custom title bar: sometimes no margin at the top -- STAGED 2026-10-06; "seen again 2026-10-13" withdrawn, see entry 110
+
+**2026-10-13 17:03: the block below is WITHDRAWN by the note-taker.** The state
+read in the reporter's live session at 16:23:29 was set off by the
+note-taker's own script of 16:13:11, which called `menuBar()` on the
+main window (entry 110, the block of 17:03). It does not show this entry
+back. Whether the reporter has seen the row under the title bar at
+another time is asked under entry 110.
 
 **2026-10-13: SEEN AGAIN on the copy staged 13:56 -- entry 110, thing (B).**
 The reporter, 16:23: "this is actually a regression that I mentioned in
@@ -13852,7 +13869,7 @@ Two smaller points, NOT put as blocking:
 - A missing reference for which the preview has NO face either (the
   preview could not be made for it): nothing to highlight, as today.
 
-## 110. In the customized title bar (A) the space between the menu reveal button and the docked tool bar is sometimes bigger and sometimes gone, and (B) the first tool bar row came to stand under the title bar (a regression of entry 6, confirmed by the reporter) -- OPEN, CAUGHT in the live session 2026-10-13 16:23
+## 110. In the customized title bar (A) the space between the menu reveal button and the docked tool bar is sometimes bigger and sometimes gone, and (B) the first tool bar row came to stand under the title bar (B in the live session was set off by the note-taker's own script, 17:03; whether it is entry 6 again is NOT shown by today) -- OPEN, CAUGHT in the live session 2026-10-13 16:23
 
 **2026-10-13 16:11, the reporter:** "regression, sometimes the margin before the
 toolbar docked in customized title bar gets bigger. check my current live
@@ -13873,7 +13890,9 @@ LOOKED INTO in the reporter's LIVE session, on the reporter's word
 111300, through its console, by THREE READ-ONLY scripts of the
 note-taker's (they read widgets' places and sizes and print them;
 nothing set, shown, hidden or moved; kept in the session's scratch
-folder). Readings at 16:13:11, 16:13:59 and 16:14:16, all three THE
+folder). [WRONG, found 2026-10-13 17:03: the first of them called `menuBar()`,
+which MAKES a menu bar in the window -- see the block of that time
+below.] Readings at 16:13:11, 16:13:59 and 16:14:16, all three THE
 SAME:
 - The main window is 1920 wide; the title bar is the top 35 pixels.
 - At its left end a widget 92 pixels wide holds ONE thing: a push
@@ -13935,7 +13954,9 @@ of the note-taker's, 16:23:29 (kept in
 `..\dl\handson\2026-10-13\entry110\titlebar_look4.py`; an earlier
 one of 16:22:45 stopped on a widget that had been made anew since the
 looks of 16:13 -- a sign the title bar's widgets were rebuilt in
-between; nothing of the application was changed by either):
+between; nothing of the application was changed by either) [WRONG
+for the look of 16:13:11, found 2026-10-13 17:03: it changed the window, and
+the rebuild seen here is its doing -- the block of that time below]:
 
 | | 16:13:11 | 16:23:29 |
 |---|---|---|
@@ -14171,6 +14192,93 @@ state the reporter called "completely gone" at 16:14 and "no margin"
 at 16:22 was not what those readings showed for (A); what they showed
 at 16:23 was (B). Not reconciled further; the stage of 16:55 does not
 have a change for this entry.
+
+**2026-10-13 17:03: (B) IN THE REPORTER'S LIVE SESSION WAS SET OFF BY THE
+NOTE-TAKER'S OWN SCRIPT. Both parts REPRODUCED by the build session, the
+causes shown, fixes written.** From the build session's message of 2026-10-13 17:03, written here 17:03.
+
+THE NOTE-TAKER'S FAULT, found on the build session's question ("did any
+of the scripts you ran in the user's live session at 16:13 to 16:14 call
+mainWindow.menuBar()"):
+- YES. The first script, `titlebar_look.py` (kept in
+  `..\dl\handson\2026-10-13\entry110`), has at its line 71
+  `mb = mw.menuBar() ...`. On a `QMainWindow` that call is not a
+  question: where the window has no menu bar it MAKES one and puts it
+  in the window's menu place. The script ran to its end once, at
+  16:13:11, and its last line printed what it had made: "menu bar
+  visible False x0 y0 w100 h30 parent QMainWindow" -- an empty menu bar
+  of Qt's default size.
+- It was started a second time at 16:22:45 and stopped at its line 50,
+  before line 71: no second call. The other three scripts make nothing
+  (no `menuBar()`, no `statusBar()`, no show, hide or event
+  processing).
+- So the note-taker's words above -- "read-only", "nothing set, shown,
+  hidden or moved", "nothing of the application was changed" -- were
+  WRONG for that script, and are marked where they stand. The same was
+  said to the reporter at 16:17 and 16:26, and is taken back.
+- THE TIMES, read again with this: the rows at y 35 / 72 and the views'
+  area at y 109 were read at 16:13:11 BEFORE line 71 ran, in the same
+  script; the reporter's "the marging is completely gone now" came at
+  16:14, a minute AFTER the call; the reading of 16:23:29 (rows at y 0
+  and 37, the views' area at y 74, contents margins 0) is the state the
+  call left behind. The "title bar's widgets made anew" between the
+  looks was that call's doing.
+- What stands and what falls:
+  - (A), the space before the docked tool bar, "sometimes bigger" --
+    the reporter's report of 16:11, BEFORE any look. Stands.
+  - (B), the first tool bar row under the title bar, in today's live
+    session: MADE by the note-taker's script. The reporter's time
+    trying to recover it (restore and maximize, the themes) was spent
+    on a state the note-taker had caused.
+  - "yes, entry 6" (16:30), "a precursor" (16:32) and "both recovered"
+    (16:39) were said of that state. Whether entry 6 is back BY ITSELF
+    is NOT shown by today; its "seen again" is withdrawn in its row and
+    heading.
+  - The defect behind (B) is real all the same, by the build session's
+    run below: ANY `menuBar()` call -- a script, an addon, a line in
+    the console -- does this to the window.
+
+THE BUILD SESSION'S REPRODUCTION, on the real screen with the new build
+and a copy of the reporter's configuration, the pointer not moved
+(16:59):
+- (A): "at the start the menu reveal button (`titleBarLogo`) is 50 wide
+  and the 'Workbench' tool bar begins at x 54; after the button is
+  polished again with no style-change event ... it is 88 wide (least
+  width 88, greatest 50) and the tool bar begins at x 92. So it is the
+  button's width flipping between its own 50 and the sheet's 80 + 4 +
+  4, by which had the last word; the logo is painted at the button's
+  left and does not move."
+- (B): "a plain `QMainWindow.menuBar()` from Python does it, every
+  time. Before: menu widget a QWidget 1920 x 35 (the kit's spacer),
+  rows at y 35 and 72, the MDI area at y 109. Right after
+  `mw.menuBar()`: the menu widget is an empty QMenuBar. One and a half
+  seconds later: the menu widget is a QWidget again but the rows are at
+  y 0 and 37 and the MDI area at y 74 -- your figures of 16:23 exactly.
+  Five seconds later: the menu widget is None."
+- The cause of (B): the window has a guard for exactly this
+  (`d64805c1a1`, 2026-08-29: "a menuBar() call must not shove the
+  toolbars under the title bar") that puts the spacer back when
+  something else takes the menu place. "But `QMainWindow::setMenuBar()`
+  does not merely put the old menu widget aside: it hides it, takes it
+  out of the window and schedules it for deletion. The guard put THAT
+  spacer back -- hidden, so it reserved nothing, and gone a moment
+  later." Its guess: since the Qt of the environment's September
+  upgrade; entry 6's fix of 2026-10-06 "was another path, the title bar
+  switched while maximized".
+- The fixes, "written as a script for the next build, not in the tree":
+  the guard makes a NEW spacer, and puts an empty slot right as well;
+  the button gives itself a rule of its own that takes the sheet's
+  least width off it, and pins its size at every polish, show and
+  re-parenting, not only at a style change.
+- The reporter's lead ("Qt saving its widget state while in some bad
+  state") is not followed: "the above needs no saved state". The
+  recovery fits: "Classic takes the custom title bar down and Light
+  builds it again with a new spacer."
+
+ONE point for the reporter, NOT ANSWERED: was the first tool bar row
+under the title bar seen BEFORE 16:13 today, or on another day since
+entry 6 was staged (2026-10-06)? If not, entry 6 is not back; what is
+left of (B) is the `menuBar()` defect the build session has a fix for.
 
 ## Inbox
 
