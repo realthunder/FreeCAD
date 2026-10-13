@@ -1705,7 +1705,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
 | 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | OPEN, the four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
-| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request) | OPEN; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; a proposal asked of the build session; three points under the entry, NOT ANSWERED |
+| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last | OPEN, the three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; two smaller points left to the build session |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -12823,7 +12823,7 @@ What this does to entry 17's decision, the note-taker's note:
   should have recorded that context when it wrote the file is, by the
   note-taker's reading, exactly the reporter's point 2.
 
-## 106. The property group "Appearance" of an object renamed "Object Appearance"; and an ordering of the property groups to be proposed (a change request) -- OPEN, three points not answered
+## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59
 
 **2026-10-13 14:52, the reporter:** "new request, name 'Appearance' property group
 name in object to 'Object Appearance' so that it does not show as the
@@ -12871,6 +12871,34 @@ b. Files and scripts: the group's name is kept with a property in some
    old name not kept anywhere?
 c. For an ordering, WHICH groups the reporter wants first and in what
    order -- so that a proposal can be tried against it?
+
+**2026-10-13 14:59, the reporter answers the three points:** "entry 106. a,
+no need to rename. b, static property group name is not saved to file. c,
+add a ranking number for property group, default 0. sort group by rank +
+name. set Appearance to 1 so it appear last."
+
+The note-taker's reading:
+- a. NO rename: the group stays "Appearance". The first sentence of
+  14:52 is withdrawn by this; the entry is the ordering now.
+- b. A fact from the reporter: the group name of a STATIC property is
+  not saved to the file -- so a rename would not have touched files.
+  (No longer needed for this entry.)
+- c. THE ORDERING, decided -- the second of the three ways the
+  note-taker had listed, made exact:
+  - a property group has a RANK, a number, 0 by default;
+  - the property view sorts the groups by rank first, then by name;
+  - "Appearance" gets rank 1, so that with everything else at 0 it
+    comes LAST.
+No proposal is needed from the build session any more.
+
+Two smaller points, left to the build session, NOT put as blocking:
+- WHERE a rank is given: beside the group's name where the properties
+  are declared, or in one table of group names and ranks; and whether
+  a script can give a rank to a group of properties it adds.
+- WHICH "Appearance": the object's group of that name. A view
+  provider's or a workbench's group with the same NAME (TechDraw has
+  one) would come last with it if the rank goes by the name -- wanted
+  or not is not said.
 
 ## Inbox
 
