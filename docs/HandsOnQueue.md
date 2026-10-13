@@ -11370,7 +11370,7 @@ Pointers, READ by the note-taker, nothing run; the cause is NOT found:
 
 ## 95. The omni search: a name typed in small letters is not corrected to the object found when a dot resolves it -- OPEN, three points not answered
 
-**2026-10-13 11:16, the reporter:** "new defect, omni search, when type object
+**2026-10-13 11:15, the reporter:** "new defect, omni search, when type object
 name in small case and find one match with captial start letter, press
 dot will resolve its property bot still leave the typed object name small
 case. should auto correct object name to the resolved object"
