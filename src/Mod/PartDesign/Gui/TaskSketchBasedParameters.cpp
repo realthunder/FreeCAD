@@ -356,6 +356,82 @@ void LinkSubWidgetDelegate::setModelData(QWidget *editor, QAbstractItemModel *mo
     });
 }
 
+namespace {
+
+/** The button at the end of a reference row: an icon and no caption.
+ *
+ * As high as the row, which is the height of the row's caption button; its
+ * glyph fills that height, and the button is as wide as the glyph's
+ * proportions make it there. The theme's sheet gives every push button a
+ * least width of 80, for the sake of captions, and this one stood stretched
+ * at the end of every reference row; told only not to, it came out smaller
+ * than its row (docs/HandsOnQueue.md entry 91).
+ */
+class RowIconButton : public QPushButton
+{
+public:
+    RowIconButton(QPushButton *rowButton, QWidget *parent)
+        : QPushButton(parent), rowButton(rowButton)
+    {
+        setStyleSheet(QStringLiteral(
+            "QPushButton { min-width: 0px; min-height: 0px; padding: 0px; }"));
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    }
+
+    /// The icon, cut to what is drawn of it: the room a file leaves around
+    /// its glyph is not the button's to keep
+    void setGlyph(const QPixmap &pixmap)
+    {
+        const QImage image = pixmap.toImage().convertToFormat(QImage::Format_ARGB32);
+        QRect drawn;
+        for (int y = 0; y < image.height(); ++y) {
+            auto line = reinterpret_cast<const QRgb*>(image.constScanLine(y));
+            for (int x = 0; x < image.width(); ++x) {
+                if (qAlpha(line[x]) > 16)
+                    drawn |= QRect(x, y, 1, 1);
+            }
+        }
+        glyph = drawn.isEmpty() ? pixmap.size() : drawn.size();
+        setIcon(QIcon(drawn.isEmpty() ? pixmap : pixmap.copy(drawn)));
+        updateGeometry();
+    }
+
+    QSize sizeHint() const override
+    {
+        const int height = rowButton->sizeHint().height();
+        return QSize(glyphSize(height).width() + 2 * Margin, height);
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return sizeHint();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *ev) override
+    {
+        QPushButton::resizeEvent(ev);
+        const QSize size = glyphSize(height());
+        if (iconSize() != size)
+            setIconSize(size);
+    }
+
+private:
+    QSize glyphSize(int height) const
+    {
+        const int h = qMax(4, height - 2 * Margin);
+        if (glyph.isEmpty())
+            return QSize(h, h);
+        return QSize(qMax(4, qRound(double(h) * glyph.width() / glyph.height())), h);
+    }
+
+    static constexpr int Margin = 3;
+    QPushButton *rowButton;
+    QSize glyph;
+};
+
+} // anonymous namespace
+
 LinkSubWidget::LinkSubWidget(TaskSketchBasedParameters *parent,
                              const QString &title,
                              App::PropertyLinkSub &prop,
@@ -401,7 +477,8 @@ void LinkSubWidget::init(const QString &title)
     table = new LinkSubTable(this);
     hlayout->addWidget(table);
 
-    clearButton = new QPushButton(this);
+    auto rowIconButton = new RowIconButton(button, this);
+    clearButton = rowIconButton;
     hlayout->addWidget(clearButton, 0, Qt::AlignTop);
 
     button->setText(title);
@@ -426,7 +503,7 @@ void LinkSubWidget::init(const QString &title)
     }
     table->horizontalScrollBar()->installEventFilter(this);
 
-    clearButton->setIcon(Gui::BitmapFactory().pixmap("edit-cleartext"));
+    rowIconButton->setGlyph(Gui::BitmapFactory().pixmap("edit-cleartext"));
     if (clearButton->toolTip().isEmpty())
         clearButton->setToolTip(tr("Temporary clear link references for new selection"));
     QObject::connect(clearButton, &QPushButton::clicked, [this]() {onClear();});
