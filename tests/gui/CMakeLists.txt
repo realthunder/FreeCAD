@@ -161,6 +161,12 @@ fc_add_gui_test(GuiPdPreviewPerView_tests_run pd-preview-per-view.py
 fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
                 --timeout 240)
 
+# A shape diff shown on a served document is in the scene its clients are
+# sent, and so is its being taken away -- which changes no property and
+# was not published: a client went on drawing it.
+fc_add_gui_test(GuiServeShapeDiff_tests_run serve-shape-diff.py
+                --timeout 240)
+
 # The preference PerViewEdit: an edit runs in the one view it is started
 # in. The other 3D windows of the document do not join -- they keep the
 # document as it is, and answer "not in edit" -- and with it off every

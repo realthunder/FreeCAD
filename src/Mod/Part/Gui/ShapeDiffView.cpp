@@ -45,6 +45,7 @@
 #include <App/GeoFeature.h>
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
+#include <Gui/SceneServeSource.h>
 #include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/WaitCursor.h>
 #include <Mod/Part/App/ShapeDiff.h>
@@ -552,4 +553,20 @@ void ShapeDiffView::apply()
         _summary[std::string("shown.") + name(static_cast<Kind>(kind))] = shown ? 1 : 0;
         _summary[std::string("transparency.") + name(static_cast<Kind>(kind))] = transparency;
     }
+    sceneChanged(_owner);
+}
+
+void ShapeDiffView::sceneChanged(const ViewProviderPartExt& owner)
+{
+    // A served document is published when something of it changes, and it
+    // hears of that by its properties (Gui::SceneServeSource). What is
+    // drawn here changes with none: a kind switched off, and the whole of
+    // it taken away -- which a client then went on showing until something
+    // else was changed.
+    App::DocumentObject* obj = owner.getObject();
+    App::Document* doc = obj ? obj->getDocument() : nullptr;
+    if (!doc)
+        return;
+    if (Gui::SceneServeSource* source = Gui::SceneServeSource::sourceFor(doc))
+        source->schedulePublish();
 }

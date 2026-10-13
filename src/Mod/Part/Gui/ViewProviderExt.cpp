@@ -2799,7 +2799,10 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
 
 void ViewProviderPartExt::hideValueDiff()
 {
-    diffView.reset();
+    if (diffView) {
+        diffView.reset();
+        ShapeDiffView::sceneChanged(*this);
+    }
     diffProp.clear();
     diffA.clear();
     diffB.clear();

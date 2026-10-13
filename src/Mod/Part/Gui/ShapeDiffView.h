@@ -98,6 +98,9 @@ public:
     void setOptions(float position, bool differencesOnly);
     /// The object moved: the two states stay where they are
     void updatePlacement();
+    /// What is drawn over \a owner's object changed, with no property of
+    /// the document's changing: the clients of a served document are sent it
+    static void sceneChanged(const ViewProviderPartExt& owner);
 
     /** What is shown. `material` is 1 where it is the material and 0 where
      * the faces; `material.none` is 1 where the material was asked for and
