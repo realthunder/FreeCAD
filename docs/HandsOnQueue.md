@@ -1635,7 +1635,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | OPEN; nothing to ask; one note of the note-taker's on configurations that have the value written |
-| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") | OPEN; three points under the entry, NOT ANSWERED |
+| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | OPEN; the three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed | OPEN; a reading of the source by the note-taker, nothing run, the causes NOT found; four points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -12512,7 +12512,7 @@ Notes, the note-taker's, READ, nothing run:
   opaque than the item backgrounds": that limit moves with the
   setting.
 
-## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- OPEN, three points not answered
+## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- OPEN, answered 2026-10-13 14:38: never seen since entry 73's rule, the panel in an overlay
 
 **2026-10-13 14:32, the reporter:** "new default, the switch panel to view button
 on task panel no longer visible, even in editing. I tested edit pad"
@@ -12553,6 +12553,31 @@ Pointers, the note-taker's, nothing run and the source not followed:
   the uncommitted work of entries 87 to 97 in the stage of 13:56 (the
   title buttons' pictures of entry 96, the menu buttons of 89 and 90
   in `Action.cpp`).
+
+**2026-10-13 14:38, the reporter answers the three points:** "entry 103, a,
+seems so, as I haven't seen the button in any case. b, overlay. c,
+definitely yesterday before I request the auto show/hide of that button,
+not sure about this morning"
+
+The note-taker's reading:
+- a. The button is not seen in ANY case -- whatever is edited, it does
+  not come. ("seems so" answers the first half of the point: gone
+  rather than there and unseen; the reporter has not tried a click on
+  its place, as far as said. The theme is not said.)
+- b. With the Tasks panel in an OVERLAY.
+- c. Seen for certain on 2026-10-12 BEFORE the request that it show and
+  hide by itself -- that request is entry 73, 15:44, staged 17:52 the
+  same day. Whether it was there this morning the reporter cannot say.
+- So by the answers the button may not have been shown ONCE since
+  entry 73's rule came in: the rule that hides it "when no page of the
+  task panel is owned by a view" would be hiding it always -- at least
+  for a Tasks panel in an overlay. The note-taker's conclusion from the
+  answers, NOT shown by a run; entry 73's test
+  (`overlay-title-buttons-theme.py`, 44 of 44) passes all the same.
+- A thing to hold beside it: `View/TaskPanelInView` is 0 in the
+  reporter's configuration, and in a PartDesign edit the panel may not
+  be "owned by a view" in the rule's sense unless the edit is per view
+  (`View/PerViewEdit`). Not looked into.
 
 ## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- OPEN, four points not answered
 
