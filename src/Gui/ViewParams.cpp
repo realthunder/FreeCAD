@@ -707,7 +707,7 @@ public:
         funcs["AxisZColor"] = &ViewParamsP::updateAxisZColor;
         DatumScreenSize = this->handle->GetBool("DatumScreenSize", true);
         funcs["DatumScreenSize"] = &ViewParamsP::updateDatumScreenSize;
-        DatumScale = this->handle->GetFloat("DatumScale", 100.0);
+        DatumScale = this->handle->GetFloat("DatumScale", 200.0);
         funcs["DatumScale"] = &ViewParamsP::updateDatumScale;
         DatumPlaneSize = this->handle->GetFloat("DatumPlaneSize", 62.0);
         funcs["DatumPlaneSize"] = &ViewParamsP::updateDatumPlaneSize;
@@ -1664,7 +1664,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDatumScale(ViewParamsP *self) {
-        self->DatumScale = self->handle->GetFloat("DatumScale", 100.0);
+        self->DatumScale = self->handle->GetFloat("DatumScale", 200.0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDatumPlaneSize(ViewParamsP *self) {
@@ -2789,7 +2789,7 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Draw origins, coordinate systems and datum elements at a constant size on\n"
 "screen, the way upstream FreeCAD does. When off, an origin is sized to the\n"
 "objects of its body or part."),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumScale", "DatumScale", App::ParamInfo::Float, 100.0)
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumScale", "DatumScale", App::ParamInfo::Float, 200.0)
         .setTitle("Datum scale")
         .setDoc("Size in percent of origins, coordinate systems and datum elements drawn\n"
 "at a constant size on screen.")
@@ -8567,7 +8567,7 @@ const double & ViewParams::getDatumScale() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const double & ViewParams::defaultDatumScale() {
-    const static double def = 100.0;
+    const static double def = 200.0;
     return def;
 }
 

@@ -797,7 +797,7 @@ Params = [
         "Draw origins, coordinate systems and datum elements at a constant size on\n"
         "screen, the way upstream FreeCAD does. When off, an origin is sized to the\n"
         "objects of its body or part."),
-    ParamFloat('DatumScale', 100.0, title='Datum scale',
+    ParamFloat('DatumScale', 200.0, title='Datum scale',
         doc="Size in percent of origins, coordinate systems and datum elements drawn\n"
             "at a constant size on screen.",
         proxy=ParamSpinBox(1.0, 1000.0, 10.0, 0)),
