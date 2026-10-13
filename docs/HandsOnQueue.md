@@ -1472,6 +1472,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | IN WORK 2026-10-13 10:17: a fix in the source, NOT built, NOT tested; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10653,6 +10654,52 @@ The note-taker's note for the reporter: until a stage with the fix, a
 restart of the program after a change of theme should give the right
 colour -- by the build session's reading of the code, not run.
 
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the cause not found by reading, three points not answered
+
+**2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
+pass through no longer works"
+
+The note-taker's reading, not the reporter's words:
+- Over the part of an overlaid panel where nothing is drawn, a click, a
+  drag or the wheel used to go to the 3D view under it; now the panel
+  takes it.
+- "no longer": it worked before -- on which copy last is not said. The
+  copy under test is the stage of 09:36 (`abca255e23`); the reporter
+  applied the themes again at about 10:04 (entry 69), which changed the
+  overlay's style sheet from `Dark_overlay.qss` to the Outline sheet.
+
+NOT said, lettered for an answer:
+a. WHICH panel and which part of it: the tree view below its last item,
+   the property view below its rows, the space beside an item's text,
+   a task panel's clear ground -- or every overlaid panel?
+b. WHAT does not pass: the click (nothing is picked in the 3D view), a
+   drag (the view does not turn), the wheel (no zoom), or all?
+c. SINCE WHEN: before the themes were applied again at about 10:04, or
+   only since; and was it still right on the stage of 06:52, or on the
+   one of 2026-10-12 17:52?
+
+Pointers, READ by the note-taker, nothing run; the cause is NOT found:
+- The pass-through is decided by a look at the panel's own picture:
+  `OverlayTabWidget::testAlpha` (`src/Gui/OverlayWidgets.cpp`) grabs the
+  panel's contents and reads the alpha under the pointer and around it
+  (`View/DockOverlayAlphaRadius`); the event passes only where EVERY
+  pixel there has alpha 0. `OverlayManager.cpp` near lines 1932 to 1971
+  asks it, under `View/DockOverlayAutoMouseThrough`.
+- In the reporter's configuration as last written (09:47):
+  `DockOverlayAutoMouseThrough` 1, `DockOverlayWheelPassThrough` 1,
+  `DockOverlayAlphaRadius` 2, `DockOverlayAutoView` 1.
+- What changed lately in what such a panel paints, each a candidate and
+  none shown: entry 69 (`bbe8525de7`, first staged 06:52) backs the
+  items of a tree view and the rows of a property view at alpha 150 and
+  has the overlay mode set again after a dock is added; the Outline
+  sheet states `qproperty-itemBackground: rgba(0, 0, 0, 0.01)` for the
+  property view -- an alpha that is not 0 -- and a ground for
+  `QTreeView`; entries 68 and 76 (`22ece75a08`, staged 2026-10-12
+  17:52) changed how overlays answer the pointer.
+- The build session's measurement of 10:03 (entry 69) has the left
+  overlay "52% clear" under the Outline sheet when painted by itself:
+  so clear pixels are there, by that picture.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -10662,5 +10709,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 85 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 86 are of 2026-10-13, 82 found by
 it)
