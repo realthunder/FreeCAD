@@ -1721,7 +1721,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | IN THE SOURCE, in a build since 15:06, NOT committed (15:08); the reporter's configuration stores no value, so they get it. Nothing to ask; one note of the note-taker's on configurations that have the value written |
 | 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | THE CAUSE FOUND and reproduced with a copy of the reporter's configuration, a fix IN THE SOURCE, in a build since 15:06, NOT committed (15:08): the Tasks dock's title bar is made at start-up before the task view is in its dock, so it is a plain dock's bar for good and the button does not exist; the bar is now replaced by a task one when the task view is found in a dock. The three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown |
 | 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | OPEN, the four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered |
-| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
+| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`) |
 | 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays is the reporter's to say. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -12786,7 +12786,7 @@ The note-taker's note on the two guesses of 14:36, from the answers:
   neighbours a pixel apart that are then far apart on the model
   (`CavityRadius` is in pixels). Not told apart by reading.
 
-## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- OPEN, answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation
+## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- ON HOLD 2026-10-13 15:09 by the reporter, entry 17's ruling kept; answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation
 
 **2026-10-13 14:45, the reporter:** "new defect, after loading scanner document
 and recompute for migration, Sketch043 silently broken, no error is shown.
@@ -12896,6 +12896,21 @@ The note-taker's note: the binder moves about 3.2 mm in x by these
 numbers, where entry 17's log of 2026-10-07 spoke of `Binder008` coming
 out 53 mm from where the file has it -- two different objects and
 perhaps two different measures; not reconciled here.
+
+**2026-10-13 15:09, the reporter puts it ON HOLD:** "entry 105. leave it for
+now. keep the previous ruling"
+
+The note-taker's reading:
+- "leave it for now": the investigation asked for at 14:56 (the cause,
+  whether a bug of the old fork, a mitigation) is NOT wanted now. The
+  entry is on hold, not closed.
+- "keep the previous ruling": the decision of 2026-10-07 14:34 under
+  entry 17 stands as it was -- the binder moving with its group is as
+  designed, the file's sketch is stale; `Sketch043` changing and
+  `Pad033` losing its region is the model's, not a defect.
+- What the build session measured at 15:08 stays in the entry for when
+  it is taken up again.
+Nothing waits for the reporter here.
 
 ## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59
 
