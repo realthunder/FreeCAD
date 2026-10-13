@@ -1481,6 +1481,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost | OPEN; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it, and `Pad039` and `Pad040` have references of the same form; four points under the entry, NOT ANSWERED |
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78) | OPEN; four points under the entry, NOT ANSWERED |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; four points under the entry, NOT ANSWERED |
+| 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found | OPEN; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11367,6 +11368,42 @@ Pointers, READ by the note-taker, nothing run; the cause is NOT found:
   the property view with the object's name and a dot typed -- the very
   place where properties are resolved; and entry 93.
 
+## 95. The omni search: a name typed in small letters is not corrected to the object found when a dot resolves it -- OPEN, three points not answered
+
+**2026-10-13 11:16, the reporter:** "new defect, omni search, when type object
+name in small case and find one match with captial start letter, press
+dot will resolve its property bot still leave the typed object name small
+case. should auto correct object name to the resolved object"
+
+The note-taker's reading, not the reporter's words:
+- Typed: an object's name all in small letters, say `pocket023`. The
+  list finds ONE object, whose name is written with a capital,
+  `Pocket023`. A dot is typed: the properties of that object are
+  listed -- so the name is resolved -- but the box still reads
+  `pocket023.`.
+- Wanted: at that moment the typed name is replaced by the name as the
+  object has it, `Pocket023.`.
+
+NOT said, lettered for an answer:
+a. WHEN: at the dot only; or as soon as the typed text has exactly one
+   match; and at Tab and Return as well? The note-taker's guess: at the
+   dot, and wherever else the name is taken as resolved.
+b. THE STEPS AFTER the object: a property or a sub-object typed in small
+   letters and resolved by the next dot (`pocket023.placement.` ->
+   `Pocket023.Placement.`) -- corrected the same way? The guess: yes,
+   every step.
+c. MORE THAN ONE object differing by capitals only (`Box` and `box`):
+   the text as typed wins and nothing is corrected? The guess: yes.
+
+Pointers, the note-taker's, nothing run and the source not followed for
+this one:
+- The omni search's box is `src/Gui/OmniSearchBox.cpp`; the resolving
+  of a typed path is in `src/Gui/OmniSearch.cpp`.
+- Near it: entry 78 (the object's name and a dot typed for the property
+  view's Ctrl+F), entry 93 (the name typed from the tree's selection)
+  and entry 94 (Tab while a property is resolved) -- all in the same
+  step of the same box, and likely to be worked on together.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -11376,5 +11413,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 94 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 95 are of 2026-10-13, 82 found by
 it)
