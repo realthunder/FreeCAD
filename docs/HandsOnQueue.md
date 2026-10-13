@@ -98,6 +98,28 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-13 11:33: where each entry of the morning stands. COMMITTED:
+entries 84 and 85. In the source, not committed: 87, 88, 89, 90. NOT
+reproduced: 86. Looked at: 92, 97. Not started: 91, 93 to 96. All LOCAL,
+nothing pushed; the staged copy is still the one of 09:36.** From the
+build session (its message of 11:33, written here 11:34).
+- COMMITTED, local: `a3acdd0947` (entry 84, the tree's tooltip; its test
+  14 of 14, twice) and `1f01bf3f30` (entry 85, the task panel's colour
+  after a change of theme; `overlay-see-through.py` 62 of 62). On that
+  build: seven GUI tests near them with no FAIL, ctest "100% tests
+  passed out of 957".
+- 86: NOT REPRODUCED -- offscreen, end to end, the mouse passes; a
+  question of the build session's waits for the reporter (under the
+  entry).
+- 87, 88, 89, 90: code written, a first build tested, a second
+  building.
+- 92: the reference reads the same before and after the recompute by
+  Python; the note-taker's reading of the file was the wrong way round.
+- 97: the stack read; a reproduction on the staged copy is running.
+- WAITING for the reporter, new: the build session's question on entry
+  86 (may it look into the running session, or hand over a script).
+  Still waiting, the points of entries 83, 91, 93, 94, 95, 96 and 97.
+
 **2026-10-13 10:17: BOTH SUITES GREEN on the code staged at 09:36. Entry
 85 REPRODUCED, its cause shown, a fix in the source; entry 84's fix in the
 source. Neither built yet. All LOCAL.** From the build session (its
@@ -1470,20 +1492,20 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
-| 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | IN WORK 2026-10-13 10:17: a fix in the source, NOT built, NOT tested; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
-| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; a fix in the source, NOT built, NOT tested: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
-| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered |
-| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. A fix PLANNED, not written. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
-| 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | OPEN; the four points answered 10:51; one side effect not said: a clear track passes clicks through |
-| 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | OPEN; the three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
-| 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | OPEN; the points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
+| 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | FIXED `a3acdd0947`, local, NOT pushed, NOT staged (11:33): its test `tree-tooltip-only-over-its-item.py` 14 of 14, twice, offscreen. As written 10:17; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
+| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; FIXED `1f01bf3f30`, local, NOT pushed, NOT staged (11:33), `overlay-see-through.py` 62 of 62 and with a copy of the reporter's configuration the ground is the applied theme's at once: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script |
+| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. FIXED IN THE SOURCE, NOT committed (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking |
+| 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | FIXED IN THE SOURCE, measured on a first build, NOT committed (11:33): nothing of the tree's scroll bar more opaque than 150, the handle at 150, the rest clear, Dark and Light. The four points answered 10:51; one side effect not said: a clear track passes clicks through |
+| 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | FIXED IN THE SOURCE, its test PASS on a first build, NOT committed (11:33): the button did not use the common helper and opened its menu in a mode in which Qt draws a small mark on the icon; it is a menu button like the others now, 44 wide where it was 32. The three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
+| 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | FIXED IN THE SOURCE, its test PASS on a first build, NOT committed (11:33): the common helper was called BEFORE the action was added and took the tool bar's last button, the one of the action before -- in a run of menu buttons each was set up by the next and the last by none (`Std_SelUp`; Edit's Redo too); all twelve callers set up their own button now. The points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
 | 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | OPEN; a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED |
-| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it, and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
+| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78) | OPEN; four points under the entry, NOT ANSWERED |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; four points under the entry, NOT ANSWERED |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found | OPEN; three points under the entry, NOT ANSWERED |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED |
-| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | OPEN; the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. Log and dump kept; two points under the entry, NOT ANSWERED |
+| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | OPEN; the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; two points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10462,7 +10484,7 @@ Pointers, READ in the source by the note-taker, nothing run:
 - Near it: entry 68 (a task panel in the view kept beside an overlaid
   tree view) and entry 76.
 
-## 84. A tree view item's tooltip is shown when its delay is up even if the pointer has left the item -- IN WORK 2026-10-13 10:17, a fix in the source, not built; the cause read by the build session
+## 84. A tree view item's tooltip is shown when its delay is up even if the pointer has left the item -- FIXED `a3acdd0947`, local, not pushed, NOT staged; the cause read by the build session
 
 **2026-10-13 09:56, the reporter:** "new defect, tree view item tooltip has a
 delay, which is acceptable, but when the time is up, only show the tooltip
@@ -10539,7 +10561,11 @@ name: Box'. The run's other failures were a command's tip that stays up
 on the offscreen platform and that the test counted; "since taken out of
 the count".
 
-## 85. The task panel's guest widgets are backed in the wrong colour under the Dark and the Light theme, as if the two were swapped (first said as "background seems to be reverted") -- REPRODUCED 2026-10-13 10:17, the colour of the theme being left; a fix in the source, not built
+**2026-10-13 11:33: FIXED `a3acdd0947`; local, NOT pushed, NOT staged.**
+From the build session's message of 2026-10-13 11:33, written here 11:34. Its test `tree-tooltip-only-over-its-item.py`: 14 of 14, twice,
+offscreen.
+
+## 85. The task panel's guest widgets are backed in the wrong colour under the Dark and the Light theme, as if the two were swapped (first said as "background seems to be reverted") -- REPRODUCED 2026-10-13 10:17, the colour of the theme being left; FIXED `1f01bf3f30`, local, not pushed, NOT staged
 
 **2026-10-13 10:07, the reporter:** "new defect, the task panel background seems
 to be reverted for dark and light theme"
@@ -10679,7 +10705,12 @@ of the same test, "Dark: the focus is in the tree again", failed in that
 run -- "another FreeCAD of mine was started on the screen during it and
 took the focus; not a regression until a clean run says so".
 
-## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42)
+**2026-10-13 11:33: FIXED `1f01bf3f30`; local, NOT pushed, NOT staged.**
+From the build session's message of 2026-10-13 11:33, written here 11:34. `overlay-see-through.py` 62 of 62; "with a copy of the reporter's
+configuration the panel's ground is the applied theme's right away, Dark,
+Light, Dark".
+
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered
 
 **2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
 pass through no longer works"
@@ -10816,7 +10847,25 @@ The note-taker's reading, and what the source says, READ, nothing run:
 Relayed to the build session as the reporter's hint; not an answer that
 was asked for.
 
-## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, a fix planned; OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
+**2026-10-13 11:33, the build session: NOT REPRODUCED.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- End to end on the offscreen platform ("the pointer is the platform's";
+  two plates under the whole view): with the eye ON a move over the
+  clear part of the tree's overlay preselects the plate under it and a
+  click selects it; the same beside a row's text.
+- PASS on the dev build AND on the staged copy of 09:36; with the
+  test's configuration, with a copy of the reporter's as it is, and
+  with Dark applied again through the menu. "The 3D view is seen to be
+  sent the moves and the press (an event filter on it)."
+- With the eye OFF nothing passes: "by design".
+- "So the cause is something of the live session on the real screen
+  that these runs have not got."
+- A QUESTION of the build session's, put to the reporter by it at
+  10:55, NOT ANSWERED: may it look into the reporter's RUNNING session
+  through its MCP console with ONE read-only script (what is under the
+  pointer, the overlay's state, what the alpha check reads) -- or shall
+  it give the reporter the script to run.
+
+## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, fixed in the source 11:33 (border, setting), the hover building, not committed; OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail
 
 **2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
 has a darker border, which is unwanted. in addition, mouse hovering draw
@@ -10965,7 +11014,29 @@ The note-taker's notes:
   under the Outline sheets (232 measured under Dark): a defect of entry
   69's result, to be mended with this entry's fix.
 
-## 88. A dock overlay in transparent mode: the scroll bar's background transparent, its handle at the overlay's alpha (a change request) -- OPEN, the four points answered 2026-10-13 10:51: the overlay's opacity setting, all scroll bars, the theme's colours, borders and ends clear
+**2026-10-13 11:33, the build session: the border and the setting FIXED IN
+THE SOURCE, a first build measured; the hover's second way building. NOT
+committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- (1) THE BORDER: "the outline effect takes only what is more opaque
+  than the item backgrounds for its outline". On the screen the item's
+  background is (124,124,124,150) under Dark and (196,196,196,150)
+  under Light, "its first and last pixel the same, no rim" (before:
+  (98,98,98,232) with a rim of (50,50,50)). Under Light it was off too,
+  (196,196,196,191) with a faint rim -- "not what the reporter saw as
+  wrong, but not 150".
+- (2) THE HOVER: the first try, a style sheet rule, "did NOTHING: the
+  bar over the whole row is drawn by the widget style, not by a sheet".
+  The second way, building: an overlaid tree keeps the view from
+  knowing the row under the pointer and draws the bar itself, as wide
+  as the item's background, in the theme's `AccentHoverColor` at
+  `View/DockOverlayAlpha`. "At that opacity the outline effect does not
+  outline it, so nothing of it reaches the rows beside it -- which is
+  what the trail was, in my reading."
+- (3) THE SETTING: "Item background follows the theme" moved into the
+  section "Tree view", the row after "Item background color"; while it
+  is on the colour and its label are greyed out.
+
+## 88. A dock overlay in transparent mode: the scroll bar's background transparent, its handle at the overlay's alpha (a change request) -- fixed in the source 2026-10-13 11:33, measured, not committed; the four points answered 2026-10-13 10:51: the overlay's opacity setting, all scroll bars, the theme's colours, borders and ends clear
 
 **2026-10-13 10:45, the reporter:** "new request, when dock overlay in transparent
 mode, style the scroll bar to have transparent background and the make the
@@ -11046,7 +11117,18 @@ rule of entry 86 (once that works again), so a click beside the handle
 would no longer page the panel. Wanted or not is not said; not put as
 blocking.
 
-## 89. The toolbar icon of Std_DisplayStyle seems to have a triangle laid over it -- OPEN, answered 2026-10-13 10:59: the menu's expansion arrow, much smaller than normal, on the icon; both themes
+**2026-10-13 11:33, the build session: FIXED IN THE SOURCE, measured on a
+first build; NOT committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- Measured: nothing of the tree's scroll bar more opaque than 150, the
+  handle at 150, the rest clear, under Dark and under Light.
+- How: rules made from the settings, in front of the overlay sheet --
+  track, borders, the two ends and the arrows clear; the handle in the
+  theme's `ButtonTop`/`BottomBackgroundColor` at `View/DockOverlayAlpha`;
+  hovered and pressed `GeneralBackgroundHoverColor` at the same.
+- "Your note stands: a clear track passes a click to the 3D view where
+  pass-through works."
+
+## 89. The toolbar icon of Std_DisplayStyle seems to have a triangle laid over it -- fixed in the source 2026-10-13 11:33, not committed; answered 2026-10-13 10:59: the menu's expansion arrow, much smaller than normal, on the icon; both themes
 
 **2026-10-13 10:54, the reporter:** "new defect, Std_DisplayStyle toolbar icon
 seem to have some triangle overlaid inside"
@@ -11111,7 +11193,17 @@ What is wanted is not said in so many words either. The note-taker's
 reading of "others are normal": the mark as the other menu buttons have
 it -- beside the icon, at its normal size.
 
-## 90. The toolbar button of Std_SelUp: its expansion indicator lies over the icon, unlike the others' -- OPEN, answered 2026-10-13 11:02: wanted as the other menu buttons, the mark beside the icon
+**2026-10-13 11:33, the build session: FIXED IN THE SOURCE, its test PASS
+on a first build; NOT committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- The cause here, a second one beside entry 90's: `Std_DisplayStyle`
+  "did not use the helper and opened its menu instantly, a mode in
+  which Qt draws a small mark on the icon".
+- Changed: "it is a menu button like the others now, and a click on the
+  button itself still opens the menu."
+- The new test `tests/gui/toolbar-menu-buttons.py` (entry 90):
+  `Std_DisplayStyle` is 44 wide like `Std_SelBack`; it was 32.
+
+## 90. The toolbar button of Std_SelUp: its expansion indicator lies over the icon, unlike the others' -- fixed in the source 2026-10-13 11:33, not committed; answered 2026-10-13 11:02: wanted as the other menu buttons, the mark beside the icon
 
 **2026-10-13 10:56, the reporter:** "new defect, Std_SelUp toolbar icon expansion
 indicator overlaps with the icon, unlike others"
@@ -11170,6 +11262,20 @@ The note-taker's reading:
   answered by entry 89's answer of 10:59 ("looks like so").
 Nothing of this entry is left unanswered.
 
+**2026-10-13 11:33, the build session: the CAUSE found, FIXED IN THE SOURCE,
+its test PASS on a first build; NOT committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- The cause -- what the note-taker saw in the order of the two calls and
+  put aside because other actions had it too: `Action.cpp`'s
+  `setupMenuToolButton` "was called BEFORE the action was added and took
+  the tool bar's last button -- the button of the action added before.
+  In a run of menu buttons each was named by the next, the last by none:
+  `Std_SelUp` (and Edit/Redo, which no one reported)."
+- Changed: "All twelve callers now name the button of their own action
+  after adding it."
+- New test `tests/gui/toolbar-menu-buttons.py`: every tool bar button
+  with a menu is a menu button with the name, none without a menu has
+  it; `Std_SelUp` and `Std_DisplayStyle` 44 wide like `Std_SelBack`.
+
 ## 91. PartDesign edit panels: the button that clears the link references is stretched -- OPEN, three points not answered
 
 **2026-10-13 11:05, the reporter:** "new defect, part design pocket edit panel,
@@ -11221,7 +11327,7 @@ Pointers, READ by the note-taker, nothing run:
 - Other icon-only push buttons in task panels would be wide the same
   way if the candidate is right -- not looked for.
 
-## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- OPEN, answered 2026-10-13 11:19: in the property view and the edit panel both, Pad039 and Pad040 the same
+## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- looked at 2026-10-13 11:33: the old-style name "2" is in the file and names nothing, the shapes unchanged, the cause not found; OPEN, answered 2026-10-13 11:19: in the property view and the edit panel both, Pad039 and Pad040 the same
 
 **2026-10-13 11:10, the reporter:** "new defect, when open scanner file and after
 migration recompute. Pocket023.Profile changed to Sketch047.2, i.e. it's
@@ -11249,6 +11355,10 @@ files not changed (`Document.xml` read out of the archive in memory):
   -- stands beside it as its second form. `Sketch047.2` is therefore
   what the file SAYS; what is missing after the recompute is the
   indexed form that used to be found for it.
+  [THE WRONG WAY ROUND -- corrected by the build session 2026-10-13 11:33, see
+  the block of that time below: `shadowed=` holds the link's value,
+  `Wire2`; `value=` holds the OLD-STYLE name kept beside it, "2".
+  What the note-taker told the reporter at 11:17 on this is withdrawn.]
 - The copy a build of 2026-10-12 saved
   (`..\dl\handson\2026-10-12\s1\ctl\scanner-resaved.FCStd`) stores
   the same: `<Sub value="2" shadowed="Wire2"/>`.
@@ -11304,6 +11414,39 @@ The note-taker's reading:
 Left for a run, the note-taker's: what the three references read on a
 build of before this morning's merges (the stage of 06:52's code) and
 whether the three features still build the same shape.
+
+**2026-10-13 11:33, the build session LOOKED: by Python the reference is
+NOT changed by the recompute; and the note-taker's reading of the file was
+the wrong way round.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- Run: FreeCADCmd of the staged copy on
+  `..\2026-10-06\scanner.FCStd`. `Pad039`, `Pad040` and `Pocket023` read
+  Profile ('Sketch046',['1']), ('Sketch046',['2']), ('Sketch047',['2'])
+  "right AFTER OPENING, before any recompute", and the same after
+  `doc.recompute(None, True)`; volume and face count of all three
+  unchanged by the recompute, the shapes valid.
+- THE FILE, corrected: "by `PropertyLinkSub::Save`, `value=` is the
+  OLD-STYLE name kept beside the link (shadow.second) and `shadowed=` is
+  the value itself -- so the link's value is 'Wire2' and the old-style
+  name stored with it is '2', which is no name of an element
+  (`Sketch047.getSubObject('2')` is null, 'Wire2' a wire of 4 edges).
+  The property view and the panel show the old-style name where there
+  is one."
+- What DOES change with the recompute: the sketch's element map has a
+  name for `Wire2` after opening ('#140;Wire#1e5f2;:H:b,W', map size 16)
+  and none after the recompute (size 15).
+- NOT found yet: where "2" was first written (the file had it on
+  2026-10-06), and why the recompute does not put the old-style name
+  right.
+- A regression of this morning or not: "NOT known, no older binaries
+  here to ask."
+The note-taker's notes:
+- The reporter's sentence said the profile "changed to Sketch047.2" at
+  the recompute; by this run Python reads ['2'] before it too. What the
+  property view SHOWED before the recompute is the reporter's answer b,
+  "didn't notice". So "changed" is not confirmed and not refuted for
+  what is shown.
+- What is wrong, by this: a bare "2" shown where `Wire2` is meant; the
+  features build as before.
 
 ## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- OPEN, four points not answered
 
@@ -11531,6 +11674,15 @@ a. What had been done to the document before Revert: the migration
    recompute (entry 92), an edit panel opened or closed (a Pocket's,
    entries 91 and 92), a value changed in the property view?
 b. Once, or does it crash at every Revert of that document?
+
+**2026-10-13 11:33, the build session: the stack read; a reproduction on
+the staged copy is running.** From the build session's message of 2026-10-13 11:33, written here 11:34. Its reading of the cause, "from
+`Document.cpp`, not shown yet": `Document::restore(XMLReader&)` calls
+`clearUndos()` and THEN signals the deletion and deletes the objects, and
+only after that sets Restoring; "a write made in between (by whoever
+hears the deletion) opens an implicit transaction that holds the objects
+about to be deleted; its queued commit runs from the progress bar's pump
+and `TransactionLog::onCommit` asks a dead object for its type."
 
 ## Inbox
 
