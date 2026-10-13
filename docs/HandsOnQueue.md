@@ -1822,7 +1822,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix IN THE SOURCE, in the build of 15:45, NOT run, NOT committed (15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry |
 | 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry |
 | 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry |
-| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry |
+| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -13954,6 +13954,28 @@ caught at 16:23 was started later (it is the stage of 13:56), and what
 it did before 16:13 is not known. In it the title bar's widgets were
 made anew between 16:13 and 16:22 while the reporter only switched
 applications and hovered the menu.
+
+**2026-10-13 16:32, the reporter, a thought on how the two hang together:**
+"I am thinking the margin thing is a precursor of what follows, i.e. the
+first row toolbar stack under thing"
+
+The note-taker's reading:
+- (A), the space between the menu reveal button and the docked tool
+  bar going wrong, comes FIRST; (B), the first tool bar row sliding
+  under the title bar, FOLLOWS it. One thing in two stages, by the
+  reporter's thought -- not two defects.
+- The order of the reports fits: "bigger" at 16:11, "completely gone"
+  at 16:14, the row under the title bar at 16:22, all in one session,
+  the reporter doing nothing but switching applications and hovering
+  the menu.
+- What the readings add to it, the note-taker's: at 16:13, with (A)
+  already reported, the tool bar rows still stood right (y 35) -- so
+  (A) was there BEFORE (B), as the reporter thinks; and between 16:13
+  and 16:22 the title bar's widgets were made anew. A title bar being
+  laid out again and again -- each time a little differently, until
+  the room at the top is lost -- would show as both.
+A thought of the reporter's, recorded as that; not shown, and nothing
+is asked by it.
 
 ## Inbox
 
