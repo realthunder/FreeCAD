@@ -1452,6 +1452,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
 | 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request) | OPEN; a reading of the source by the note-taker, nothing run; five points under the entry, NOT ANSWERED |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found by reading; three points under the entry, NOT ANSWERED |
+| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme | OPEN; a reading of the source by the note-taker, nothing run, the cause NOT found; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -10472,6 +10473,55 @@ is NOT found by reading:
   places (`Tree.cpp` near lines 1828 and 4776); which paths do not is
   not followed.
 
+## 85. The task panel's background seems to be reverted under the Dark and the Light theme -- OPEN, the cause not found by reading, three points not answered
+
+**2026-10-13 10:07, the reporter:** "new defect, the task panel background seems
+to be reverted for dark and light theme"
+
+The note-taker's reading, not the reporter's words:
+- Seen on the copy staged 09:36 (`abca255e23`), a few minutes after the
+  reporter applied the themes again through Tools > preset
+  configurations (entry 69, about 10:04) -- under Dark and under Light
+  both.
+- "reverted": the task panel's ground is not what entry 69 made it (the
+  theme's own panel colour at alpha 150, in an overlaid Tasks tab and in
+  a panel shown in its view) but as it was at some earlier time. WHICH
+  earlier look is not said.
+
+NOT said, lettered for an answer:
+a. Reverted TO WHAT: a solid ground where it was see-through; or a
+   colour of an earlier day -- and which, if it can be named (a grey,
+   the theme's panel colour, the sheet's own)?
+b. WHERE: the Tasks tab in an overlay; a task panel shown in its view;
+   the Tasks panel docked in the main window; or all of them?
+c. SINCE WHEN: only since the theme was applied again at about 10:04, or
+   already on this stage before that (when the overlay sheet named was
+   still `Dark_overlay.qss`), or already on the stage of 06:52?
+
+Pointers, READ by the note-taker, nothing run; the cause is NOT found:
+- Where the ground comes from since entry 69 (`bbe8525de7`):
+  `OverlayStyleSheet::fromSettings` in `src/Gui/OverlayManager.cpp`
+  writes `QSint--ActionGroup QFrame[class="content"]` with the theme's
+  `DialogBackgroundColor` at `View/DockOverlayAlpha` and puts it IN
+  FRONT of the overlay sheet; a sheet that states the same selector
+  wins. `Dark-Outline.qss` and `Light-Outline.qss` state it no more
+  (only in a comment); the five `*_overlay.qss` sheets and
+  `overlay/Dark.qss`, `overlay/Light.qss`, `overlay/SplitDark.qss` do.
+- The themes: `PreferencePacks/Dark/Dark.cfg` names `Dark-Outline.qss`
+  and `Light/Light.cfg` names `Light-Outline.qss` for the overlay sheet.
+  The main sheet `FreeCAD.qss` states the same selector with
+  `@DialogBackgroundColor`, solid -- for a panel that is not overlaid
+  that is the rule in force.
+- What the merges of this morning changed in the style sheets, the
+  overlay code and the task view (`4b52e58423..47ed30316a`): one rule
+  in `FreeCAD.qss`, for the Linux title bar's buttons. Nothing on the
+  task panel. So by the reading the merges are not it; not shown.
+- The reporter's `user.cfg` on disk is still the one of 09:47 (it is
+  written when the program ends), so what the running session has after
+  the themes were applied again cannot be read from it.
+- Near it: entry 69 (the same ground), entry 30 (the overlay preset in
+  the theme packs), entry 77 (the Dark borders).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -10481,5 +10531,5 @@ it is read before each entry is started and moved up into the table.
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
-and 81 found by it; entries 82 to 84 are of 2026-10-13, 82 found by
+and 81 found by it; entries 82 to 85 are of 2026-10-13, 82 found by
 it)
