@@ -6741,8 +6741,10 @@ local** -- `56504486e6` (113), `023552c8fd` (111 as ruled).
   `overlay-item-outline-and-hover` 34, `overlay-preset-follows-the-theme`
   45, `overlay-pass-through` 14.
 
-Both suites on r15, the committed code, started 23:43 (`ctest36.log`,
-`pytest36.log`).
+Both suites on r15, the committed code (23:43 to 00:11): ctest "100%
+tests passed out of 957" (`ctest36.log`); Python "Ran 3755 tests in
+859.336s, OK (skipped=52, expected failures=6)" (`pytest36.log`) -- three
+more than on r9, the binder's.
 
 **Where the evening leaves things.** Origin `LinkVibe` = `5c0b30ce1b`
 (20:13). LOCAL on top of it, not pushed: `905d023394` (111, first form),
