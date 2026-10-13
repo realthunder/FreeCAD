@@ -38,6 +38,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/PropertyElementAppearance.h>
 #include <App/PropertyLinks.h>
 #include <Base/Console.h>
 
@@ -621,6 +622,14 @@ void ViewVisibility::connectSignals()
                     // out (SeenThrough)
                     if (!prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId())
                             && (!ShowsSeenThrough || !SeenThrough::dependsOn(prop)))
+                        return;
+                    // The look of an object is a link by its class (it may
+                    // name a material) and moves nothing in the scene. It is
+                    // written for every container as a reopened document's
+                    // view providers come up, one after the other over some
+                    // turns of the event loop: each write falling behind the
+                    // pass was a second pass over every entry under it.
+                    if (prop.isDerivedFrom(App::PropertyElementAppearance::getClassTypeId()))
                         return;
                     // An unresolved entry is tried again here too when it
                     // got through this object: its dependencies are the

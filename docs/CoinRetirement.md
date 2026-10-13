@@ -3768,12 +3768,19 @@ among them would be a pass for nothing each time. The tables count their
 show entries of such objects into one total, and the map's change is not
 looked at while that is zero.
 
-*Measured on the way, not caused by this:*
-`tests/gui/reopen-visual-builds.py` asks for one pass after a reopen and
-gets two in about half its runs on the Windows box (5 of 8 on the code
-before this, 4 of 10 on it), the finish of the restore and the rebuild of
-the Parts' children falling into two turns of the event loop. Nothing in
-that document has a `HiddenChildren` map.
+**A look is a link by its class, and no structure** (2026-10-13).
+`tests/gui/reopen-visual-builds.py` asks for one pass after a reopen and got
+two in about half its runs on the Windows box (5 of 8, then 4 of 10).
+Traced: the pass is queued by the first container whose children are
+rebuilt (`sceneChanged(container)`) and runs some 100 ms later; in between
+the `ElementAppearance` of each Part and each Link is written as its view
+provider comes up, one every few ms. `PropertyElementAppearance` derives
+from a link property (an appearance may name a material), so each write
+marked its object, and the last of them falling behind the pass queued a
+second one over every entry under those containers. A look moves nothing in
+the scene: the signal passes that class by. Nothing in that document has a
+`HiddenChildren` map; an earlier note here blamed the turns of the event
+loop alone.
 
 **Test.** `tests/gui/per-view-seen-through.py`, 73 checks by pick and by
 the backend's frame, two views: a group in a Part, a group in the group, a
