@@ -2576,7 +2576,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 123 | 2026-10-14 | a change request: the SELECTION VIEW in overlay mode -- its list column backed with the SAME colour and alpha as the property editor's | OPEN; read by the note-taker: the property editor backs whole rows (alternating), the selection view since `04e05bbd38` only the text, with the tree's text ground; one point under the entry, not put as blocking |
 | 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started |
 | 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
-| 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED |
+| 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17798,6 +17798,16 @@ b. WHAT is not right at scale 1: dashes too short or too dense, uneven,
 c. Compared WITH what: the same at the "Legacy" render type (Coin), or
    what it should look like? And is the screen scaled (Windows display
    scale above 100%)?
+
+**2026-10-14 17:07, the reporter, on point b:** "not normal as in the dots
+are far too dense to distinguish"
+
+The note-taker's reading: at scale 1 the dashes (dots) of the pattern are
+so short and close together that they cannot be told apart -- the line
+reads as nearly solid. This fits the candidate above: each of the 16 bits
+covers ONE pixel of the view at scale 1, and on a screen scaled by 200%
+that is half a pixel the eye counts by. Not shown. Points a (which
+pattern) and c (compared with what; the screen's scaling) still open.
 
 ## Inbox
 
