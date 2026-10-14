@@ -477,6 +477,11 @@ MeshFillHole::MeshFillHole(MeshHoleFiller& hf, Gui::View3DInventor* parent)
 
 MeshFillHole::~MeshFillHole()
 {
+    // The view this is a child of may be closed with the command still
+    // running: finishEditing(), the only place that released the
+    // connection, has not run then, and the application's signal would call
+    // a deleted object at the next change of any object.
+    myConnection.disconnect();
     myBoundariesRoot->unref();
     myBoundariesGroup->unref();
     myBoundaryRoot->unref();

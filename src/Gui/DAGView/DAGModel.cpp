@@ -165,6 +165,16 @@ Model::~Model()
   if(connectResObject.connected())
     connectResObject.disconnect();
 
+  // ... and each vertex's connection to its view provider's icon signal:
+  // the providers outlive this model (it goes when its document is being
+  // deleted, before they do), and only the deletion of a single object
+  // released one.
+  if (theGraph)
+  {
+    BGL_FORALL_VERTICES(currentVertex, *theGraph, Graph)
+      (*theGraph)[currentVertex].connChangeIcon.disconnect();
+  }
+
   removeAllItems();
 }
 

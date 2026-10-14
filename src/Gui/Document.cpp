@@ -544,6 +544,7 @@ Document::~Document()
     d->connectChangePropertyEditor.disconnect();
     d->connectOnTopObject.disconnect();
     d->connectChangeDocument.disconnect();
+    d->connectPinsReleased.disconnect();
 
     // e.g. if document gets closed from within a Python command
     d->_isClosing = true;

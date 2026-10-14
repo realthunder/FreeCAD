@@ -60,6 +60,7 @@
 #include <Base/Tools.h>
 
 #include <Gui/ActionFunction.h>
+#include <App/DocumentObserver.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/CommandT.h>
@@ -134,6 +135,9 @@ ViewProviderAssembly::ViewProviderAssembly()
 ViewProviderAssembly::~ViewProviderAssembly()
 {
     m_preTransactionConn.disconnect();
+    // (the edit's three: unsetEdit() releases them, and may not have run)
+    connectSolverUpdate.disconnect();
+    connectActivatedVP.disconnect();
     QObject::disconnect(workbenchConnection);
 
     updateTaskPanel(false);
@@ -308,6 +312,13 @@ bool ViewProviderAssembly::setEdit(int mode)
         updateTaskPanel(true);
 
         auto* assembly = getObject<AssemblyObject>();
+        // An edit entered again without the last one having released its
+        // connections would leave those live with nothing holding them: the
+        // main window's kept calling a provider that was gone, at the next
+        // change of workbench after the assembly was deleted.
+        connectSolverUpdate.disconnect();
+        connectActivatedVP.disconnect();
+        QObject::disconnect(workbenchConnection);
         connectSolverUpdate = assembly->signalSolverUpdate.connect([this] {
             UpdateSolverInformation();
         });
@@ -344,6 +355,14 @@ void ViewProviderAssembly::unsetEdit(int mode)
         unsetDragger();
         detachSelection();
 
+        // The edit's connections go with the edit, before anything that
+        // leaves early: the two below were released only at the end, past
+        // the return for a document with no active view, and the main
+        // window's not here at all.
+        connectSolverUpdate.disconnect();
+        connectActivatedVP.disconnect();
+        QObject::disconnect(workbenchConnection);
+
         // Check if the view is still active before trying to deactivate the assembly.
         auto activeView = getDocument()->getActiveView();
         if (!activeView) {
@@ -362,9 +381,6 @@ void ViewProviderAssembly::unsetEdit(int mode)
         }
 
         updateTaskPanel(false);
-
-        connectSolverUpdate.disconnect();
-        connectActivatedVP.disconnect();
 
         return;
     }
@@ -658,7 +674,17 @@ bool ViewProviderAssembly::mouseButtonPressed(
                     // singleShot timer to make sure this happens after the release of the click.
                     // Else the release will trigger a removeSelection of what
                     // doubleClickedIn3dView adds to the selection.
-                    QTimer::singleShot(50, [this]() { doubleClickedIn3dView(); });
+                    // (by the object, looked up when the timer fires: the
+                    // provider may be gone by then, and it is no QObject to
+                    // give the timer as its context)
+                    App::DocumentObjectT self(getObject());
+                    QTimer::singleShot(50, Gui::getMainWindow(), [self]() {
+                        auto vp = dynamic_cast<ViewProviderAssembly*>(
+                            Gui::Application::Instance->getViewProvider(self.getObject()));
+                        if (vp) {
+                            vp->doubleClickedIn3dView();
+                        }
+                    });
                     return true;
                 }
             }
