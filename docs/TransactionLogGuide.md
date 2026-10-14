@@ -621,6 +621,20 @@ branch later asks everything again; the document does not change. It is
 the sharer's, or yours for a merge you made yourself on a branch you
 write.
 
+**Shapes kept in the file** (section 8). Click an operation that set a
+shape: **Keep** beside its value keeps that shape in the file, **Keep
+all of it** every shape that object has had and will have, and the
+operation then says *kept*. A version has **Keep selected here**: the
+objects you selected, as they were at that version. The fourth list,
+**Kept**, shows what is kept -- its name carries how many -- and a line of
+it shows its value, **Show row N** goes to its step, and **Let go** lets
+it go: the next save leaves it out of the file, for good. So keeping is
+anybody's, but letting go is the sharer's, or yours for a value kept at a
+step of a branch you write; stopping every shape of an object being kept
+is the sharer's.
+
+![A shape kept, in the Kept list](images/transaction-log/15-log-browser-kept.png)
+
 **For the sharer**, in the Transaction Log panel on the desktop:
 
 - **Serve branch...** makes a branch where the document is and serves it

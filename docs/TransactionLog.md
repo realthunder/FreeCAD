@@ -19469,7 +19469,7 @@ with the host's reason where it is not the asker's.
 **Left.** Untick a change to leave it out, which the desktop's dialog
 has: the op takes it (`picks` with `ours`), the card does not offer it.
 What a merge would make, drawn (32.17), is the desktop's. The fourth
-stage -- kept values -- is not started.
+stage -- kept values -- is not started. *(Built since: 32.27.)*
 
 **Tests.** `tests/gui/serve-log-acts.py` (94): A's apply previewed, the
 conflict listed by its key with the value on each side, applied with
@@ -19480,6 +19480,89 @@ host, and refused again. `tests/gui/serve-log-acts-browser.py` (35): a
 row of the branch the page's was made from, set on both sides, applied
 through **Pick each...** with theirs. `web/src/widgets/gate.ts` (253):
 six of the list's model.
+
+### 32.27 The log's panel in a browser, fourth stage: what is kept (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "continue as planned", after 32.26 named
+this as the last of the four stages of 32.21 -- the requests, the other
+half of that stage, were built with 32.25. What the desktop's panel does
+of 32.11 and 32.12, from the page: a value a recompute wrote kept in the
+file, every value of an object kept, the objects selected kept as they
+are at a version, the list of the kept, and each let go.
+
+**The ops** (`Gui/SceneLog.cpp`):
+
+| op | asks | for | answers |
+| --- | --- | --- | --- |
+| `log.kept` | | anyone listed the rows | `values`: each kept by itself -- `ref`, `cid`, `obj`, `label`, `here`, `prop`, `seq`, `row` (the row is still in the log), `release` and `why`; `objects`: each kept -- the same of the object, and `values` the log has of it (`ref`, `prop`, `seq`, `alone`); `count` |
+| `log.keep` | `obj` or `cid`, or `objects` by name; `prop`; `row` (0: where the document is); `keep` | keep: anyone listed the row; let go: see below | `row`, `values`: how many moved |
+| `log.keepObject` | `obj` or `cid`; `keep` | keep: an object of the document; stop: the host | `cid`, `changed` |
+| `log.release` | `ref` | see below | `ref` |
+
+`log.ops` says of an op whose value is kept `keptValue`, and of one whose
+object is kept `keptObject` -- the desktop's "yes, kept". Each is
+`Document::keepLogValue`, `keepLogValuesOf`, `releaseLogValue`; nothing
+of it is a row, so what is kept moving is told as `log.changed` to the
+editors of every document of the file, which share the store.
+
+**Who may** (chosen in the building, not ruled). Keeping takes nothing from anyone: it
+is anyone's who is listed the row. Letting a value go is not undone --
+the next save leaves it out of the file, and what a save leaves out is
+gone (13.3). So a value kept by itself is let go by the host, or by one
+who writes the branch of the row **it was kept at**, since the point
+(`Reach::row`); one whose row a trim or a squash took is the host's, as
+no branch is known of it. A value let go by naming another row is judged
+by the row it was kept at all the same: a value set before the point is
+the same value at a row after it, and would otherwise be let go by one
+who may not reach it. Stopping an object's being kept lets its values go
+on every branch, and is the host's -- the store says nothing of who kept
+it, so it cannot be its keeper's.
+
+What is listed follows what the rows are (32.25): a value by itself where
+its row is one the asker is listed, or -- the row gone -- where its object
+is in the document; an object where it is in the document, with the
+values of rows the asker is listed. An object the document no longer has
+is listed to the host alone, which is who may let it go.
+
+**The page.** A fourth list, **Kept**, its name carrying the count as the
+desktop's tab does: each value kept by itself (one value -- the object,
+the property, the row, "N, gone" where the row is), each object kept
+(every value, with how many) and its values under it. A line chosen
+reads its value's text; **Let go**, **Stop keeping all**, **Keep by
+itself** / **Not by itself** for a value under an object, **Show row N**.
+An op's value pane has **Keep** / **Let go** and **Keep all of it** /
+**Stop keeping all**, and the op says "kept" where it is. A version has
+**Keep selected here** and **Let go of selected**, of the objects
+selected in the page. What is not the asker's is greyed with the host's
+reason.
+
+![A value kept, in the Kept list](images/transaction-log/15-log-browser-kept.png)
+
+**Left.**
+
+- The desktop's Kept tab is asked again with the panel's own refresh;
+  a client keeping or letting go raises no signal of the document, so
+  the tab follows at the next commit, recompute or undo -- as for keeping
+  from Python (32.12).
+- A kept value is read as its text, as an op's is; drawing it over the
+  object against what it has now (32.12) is the desktop's.
+- The document is still not marked modified by keeping (32.11).
+
+**Tests.** `tests/gui/serve-log-kept.py` (33): nothing kept at first; A
+keeps the cut's shape at a row, its op says so, the host's document
+keeps it, A is told why it may not let it go and is refused both ways;
+A keeps every value of the box, a second time changes nothing, A may not
+stop it; the two objects kept as they are at the first row, the box's
+value there kept by itself too and not A's to let go from under the box;
+an object, a row and a ref there is none of; the host's keep is told to A; the host
+lets go by ref, stops the box, lets go of the two; A, given to write,
+lets go of what it kept; a value whose row a trim took is listed as gone
+and is the host's; B refused all four. `tests/gui/serve-log-acts-browser.py`
+(39): the box's shape kept from its op in the page, counted, listed,
+read and let go; its drive now waits for the versions it reads to be the
+host's answer, not the list of the last visit, a race the kept list's
+extra ask made show. `web/src/widgets/gate.ts` (261): eight of the list's
+model.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
