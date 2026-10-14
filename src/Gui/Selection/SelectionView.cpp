@@ -76,10 +76,8 @@ enum ColumnIndex {
 };
 
 namespace {
-/// Backs the text of an item with the ground the overlaid tree gives its
-/// items, while the view is in a see-through overlay: its text has to read
-/// over the 3D view (docs/HandsOnQueue.md entry 98, 2026-10-14, "item
-/// background color ... shall apply to ... selection view").
+/// Backs the rows with a ground while the view is overlaid: its text has to
+/// read over the 3D view (docs/HandsOnQueue.md entries 98 and 123).
 class OverlayGroundDelegate : public QStyledItemDelegate
 {
 public:
@@ -88,26 +86,24 @@ public:
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override
     {
+        // Whole rows, as the property editor paints its own overlaid
+        // (PropertyEditor::overlayRowBackground): every second row the
+        // items' ground, the others the palette's alternate colour, both at
+        // the overlays' opacity -- "for selection view in overlay mode, set
+        // the same background color and alpha for its list column as the
+        // property editor" (docs/HandsOnQueue.md entry 123)
         const QWidget *view = option.widget;
-        if (view && view->testAttribute(Qt::WA_NoSystemBackground)
-                && !option.state.testFlag(QStyle::State_Selected)) {
-            QStyleOptionViewItem opt(option);
-            initStyleOption(&opt, index);
-            if (!opt.text.isEmpty()) {
-                const QBrush ground = OverlayManager::overlayTextGround(QColor(), view);
-                if (ground.style() != Qt::NoBrush) {
-                    // as wide as the text and its icon, as the tree's
-                    const QStyle *style = view->style();
-                    QRect text = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, view);
-                    text.setWidth(std::min(text.width(),
-                                           opt.fontMetrics.horizontalAdvance(opt.text) + 4));
-                    const QRect icon =
-                        style->subElementRect(QStyle::SE_ItemViewItemDecoration, &opt, view);
-                    if (icon.isValid() && !opt.icon.isNull())
-                        text = text.united(icon);
-                    painter->fillRect(text.adjusted(-2, 0, 2, 0), ground);
-                }
+        if (view && view->testAttribute(Qt::WA_NoSystemBackground)) {
+            QBrush ground;
+            if (index.row() % 2 == 0)
+                ground = OverlayManager::overlayItemBackground(QBrush(), -1, view);
+            else {
+                QColor colour = view->palette().color(QPalette::AlternateBase);
+                colour.setAlpha(OverlayManager::overlayAlpha());
+                ground = QBrush(colour);
             }
+            if (ground.style() != Qt::NoBrush && ground.color().alpha() != 0)
+                painter->fillRect(option.rect, ground);
         }
         QStyledItemDelegate::paint(painter, option, index);
     }
