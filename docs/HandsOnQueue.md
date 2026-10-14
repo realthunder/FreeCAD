@@ -131,6 +131,24 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 11:25, the reporter, a QUESTION (no entry):** "question, why
+there are two arrows editing the fillet"
+ANSWERED by the note-taker from the source, nothing run, the reporter's
+screen not seen: by design, upstream's. The fillet's edit panel makes
+TWO radius handles (`radiusGizmo`, `radiusGizmo2`,
+`src/Mod/PartDesign/Gui/TaskFilletParameters.cpp` lines 221, 222), both
+driving the ONE "Radius" box. Both stand at the middle of the first edge
+of the fillet, one lying in EACH of the two faces that meet there,
+pointing into its face (`setGizmoPositions`, lines 305 to 313;
+`getDraggerPlacementFromEdgeAndFace` in `src/Mod/Part/App/GizmoHelper.cpp`
+line 151) -- so each shows where the rounding will meet that face, and
+dragging either one changes the radius (corrected where the faces are not
+square to each other, lines 315 to 321). Ported from upstream FreeCAD
+(6e896b1248) by `a56e0777da` on 2026-09-24 ("Fillet (radius on both faces
+of the first edge)"). Beside them the fork's corner handles (setback
+corners, 2026-10-07) are shown for the current corner only. It becomes an
+entry if the reporter wants it otherwise. Written here 11:26.
+
 **2026-10-14 11:08, the reporter, a NEW REQUEST under entry 98:** the tree's
 item colour (automatic ground off) for the tree, the console, the report
 view and the SELECTION VIEW; a PROPOSAL asked for a better automatic
