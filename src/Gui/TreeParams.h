@@ -445,8 +445,10 @@ public:
     //@{
     /// Accessor for parameter ItemBackground
     ///
-    /// Tree view item background. Only effective in overlay, and only
-    /// while 'Item background follows the theme' is off.
+    /// Background of the items of an overlaid tree view, and of the text of
+    /// an overlaid Python console, report view and selection view. Only
+    /// used while 'Item background follows the theme' is off; with no
+    /// colour set the text views keep their own background.
     static const unsigned long & getItemBackground();
     static const unsigned long & defaultItemBackground();
     static void removeItemBackground();

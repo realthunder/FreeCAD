@@ -37,6 +37,8 @@
 #endif
 
 #include <QHelpEvent>
+#include <QPainter>
+#include <QStyledItemDelegate>
 #include <QToolTip>
 
 #include <App/DocumentObserver.h>
@@ -52,6 +54,7 @@
 #include "MetaTypes.h"
 #include "MainWindow.h"
 #include "MainWindowParams.h"
+#include "OverlayManager.h"
 #include "PieMenu.h"
 #include "SelectionView.h"
 #include "Tree.h"
@@ -71,6 +74,45 @@ enum ColumnIndex {
     PathIndex,
     LastIndex,
 };
+
+namespace {
+/// Backs the text of an item with the ground the overlaid tree gives its
+/// items, while the view is in a see-through overlay: its text has to read
+/// over the 3D view (docs/HandsOnQueue.md entry 98, 2026-10-14, "item
+/// background color ... shall apply to ... selection view").
+class OverlayGroundDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        const QWidget *view = option.widget;
+        if (view && view->testAttribute(Qt::WA_NoSystemBackground)
+                && !option.state.testFlag(QStyle::State_Selected)) {
+            QStyleOptionViewItem opt(option);
+            initStyleOption(&opt, index);
+            if (!opt.text.isEmpty()) {
+                const QBrush ground = OverlayManager::overlayTextGround(QColor(), view);
+                if (ground.style() != Qt::NoBrush) {
+                    // as wide as the text and its icon, as the tree's
+                    const QStyle *style = view->style();
+                    QRect text = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, view);
+                    text.setWidth(std::min(text.width(),
+                                           opt.fontMetrics.horizontalAdvance(opt.text) + 4));
+                    const QRect icon =
+                        style->subElementRect(QStyle::SE_ItemViewItemDecoration, &opt, view);
+                    if (icon.isValid() && !opt.icon.isNull())
+                        text = text.united(icon);
+                    painter->fillRect(text.adjusted(-2, 0, 2, 0), ground);
+                }
+            }
+        }
+        QStyledItemDelegate::paint(painter, option, index);
+    }
+};
+} // namespace
 
 SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
   : DockWindow(pcDocument,parent)
@@ -111,6 +153,7 @@ SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
     selectionView->headerItem()->setText(ElementIndex, tr("Element"));
     selectionView->headerItem()->setText(PathIndex, tr("Path"));
     selectionView->header()->setStretchLastSection(false);
+    selectionView->setItemDelegate(new OverlayGroundDelegate(selectionView));
 
     selectionView->setContextMenuPolicy(Qt::CustomContextMenu);
     vLayout->addWidget( selectionView );
@@ -127,6 +170,7 @@ SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
     pickList->headerItem()->setText(ElementIndex, tr("Element"));
     pickList->headerItem()->setText(PathIndex, tr("Path"));
     pickList->header()->setStretchLastSection(false);
+    pickList->setItemDelegate(new OverlayGroundDelegate(pickList));
     pickList->setVisible(false);
     vLayout->addWidget(pickList);
 

@@ -156,8 +156,9 @@ public:
      *
      * Which colour of the 3D view's background, by its pattern and by the
      * side the overlay of \a where is on (docs/HandsOnQueue.md entry 98, asked
-     * 2026-10-14): a radial gradient, its last colour, the rim's -- an
-     * overlay lies along an edge; a linear one, its first colour for an
+     * 2026-10-14): a radial gradient, averaged over what the overlay covers
+     * of the 3D view under it (the rim's colour where no view is under it);
+     * a linear one, its first colour for an
      * overlay at the top, the left or the right and its last for one at the
      * bottom; one colour, that colour. A widget in no overlay, and none
      * given, counts as not at the bottom.
@@ -174,14 +175,15 @@ public:
      */
     static void paintTextGround(QPainter &painter, const QTextBlock &block,
                                 const QPointF &pos, const QBrush &ground);
-    /** The ground for paintTextGround(), by one setting
-     * (docs/HandsOnQueue.md entry 111, as ruled): with
-     * View/DockOverlayThemeItemColor on, "Item background follows the
-     * theme", the ground the tree gives its items (overlayItemBackground());
-     * with it off the text view's own background -- \a own where the view
-     * has a colour of its own (the Python console's, Editor/Background), or
-     * else the base colour of the application's palette, which is what the
-     * view stands on when it is docked -- at the overlay's opacity.
+    /** The ground for paintTextGround() and for the items of the selection
+     * view: the ground the tree gives its items (overlayItemBackground()),
+     * followed by the theme or the tree's item background colour as set
+     * (docs/HandsOnQueue.md entry 98, 2026-10-14). With neither -- the
+     * setting off and no colour set -- the text view's own background, as
+     * entry 111 ruled: \a own where the view has a colour of its own (the
+     * Python console's, Editor/Background), or else the base colour of the
+     * application's palette, which is what the view stands on when it is
+     * docked -- at the overlay's opacity.
      *
      * A theme may keep a text of another kind in its text views than in its
      * items: Classic has a black text in the console, for the white page a

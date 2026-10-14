@@ -134,10 +134,13 @@ Params = [
              "the panel is gone. When off a panel simply covers the cube."),
     ParamBool('DockOverlayThemeItemColor', True, on_change=True,
          title="Item background follows the theme",
-         doc="Back the items of an overlaid tree view and property view with the\n"
-             "colour of the 3D view's background as the theme has it -- the first\n"
-             "colour of a gradient -- so that their text reads over the view.\n"
-             "When off the tree view's own item background colour is used."),
+         doc="Back the items of an overlaid tree view, property view and selection\n"
+             "view, and the text of the Python console and the report view, with\n"
+             "the colour the 3D view's background has where the panel lies: one\n"
+             "colour as it is; a linear gradient's top colour, its bottom one for\n"
+             "a panel at the bottom; a radial one averaged over what the panel\n"
+             "covers. So that their text reads over the view. When off the\n"
+             "'Item background color' is used."),
     ParamInt('DockOverlayAlpha', 180, on_change=True, title="Overlay background opacity",
          proxy=ParamSpinBox(0, 255, 5),
          doc="Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of\n"

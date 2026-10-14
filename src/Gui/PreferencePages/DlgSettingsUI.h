@@ -97,9 +97,6 @@ private:
 
     // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupTreeview = nullptr;
-    QLabel *labelItemBackground = nullptr;
-    Gui::PrefColorButton *ItemBackground = nullptr;
-    Gui::PrefCheckBox *DockOverlayThemeItemColor = nullptr;
     QLabel *labelItemBackgroundPadding = nullptr;
     Gui::PrefSpinBox *ItemBackgroundPadding = nullptr;
     Gui::PrefCheckBox *ResizableColumn = nullptr;

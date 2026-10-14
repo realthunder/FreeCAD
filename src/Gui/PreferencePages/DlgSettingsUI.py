@@ -61,12 +61,11 @@ ParamGroup = (
         'MinimumCellSize',
     )]),
 
-    # 'Item background follows the theme' is an overlay's setting kept beside
-    # the colour it stands in for: while it is on the colour is not used, and
-    # DlgSettingsUI::init() greys the colour out (docs/HandsOnQueue.md entry 87)
-    ('Tree view', [_TreeParams['ItemBackground'],
-                   _OverlayParams['DockOverlayThemeItemColor']]
-                  + [_TreeParams[name] for name in (
+    # The item background colour and 'Item background follows the theme' are
+    # on Display > Colors, in its group 'Overlay' (docs/HandsOnQueue.md entry
+    # 98, 2026-10-14): they back the text of the console, the report view and
+    # the selection view as well as the tree's items.
+    ('Tree view', [_TreeParams[name] for name in (
         'ItemBackgroundPadding',
         'ResizableColumn',
         'CheckBoxesSelection',
