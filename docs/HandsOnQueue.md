@@ -15478,6 +15478,30 @@ suffers when an on-top object is far from it. NOT AN ENTRY of its own yet
 -- the reporter's question is recorded here, under the entry where it was
 found.
 
+**2026-10-14 16:14, the reporter asks:** "will this affect other view scene?"
+
+ANSWERED by the note-taker from the source, nothing run:
+- Each 3D view has its own camera, its own auto clipping and its own
+  on-top group (`View3DInventorSelection`, one per viewer,
+  `View3DInventorViewer.cpp` 1866), and the bounds hook is a node of that
+  view's own scene root calling that view's own code (`RendererBounds`,
+  `addRendererBoundsNode`, 5140 to 5155). So way 2 widens only the clip
+  range of a view that HAS the object on top -- every view of the
+  document where it is selected does, each for itself; a view that does
+  not draw it is not touched.
+- The one cost there is that view's depth precision: near and far are
+  stretched to take in the on-top object, so a far-away on-top object
+  makes the rest of that view's depth coarser. Way 3 (an own depth range
+  for the on-top pass) does not have it.
+- Way 1 is the one that could reach OTHER views: the clip pass's walk of
+  the scene builds bounding-box caches that every view shares (the
+  comment at `SoFCUnifiedSelection.cpp` 525 to 529: "what it builds below
+  is then every view's"), so letting hidden content into that walk could
+  put it into boxes other views use, for clipping and for pick culling.
+  Way 2 adds its bounds in the per-view hook, outside those caches.
+So the note-taker's recommendation stands: way 2, per view, no shared
+cache touched; way 3 if a view's depth precision suffers.
+
 ## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02; half done 2026-10-13 19:17, not committed; does not work on the build r8 (20:15), being looked at; WORKS on the build r10, COMMITTED `26f0a30de0` 2026-10-13, local; not pictured; STAGED 2026-10-14 08:10; CORRECTED 2026-10-14: nothing lights on the screen under a per-view edit; a fix written, not built; made precise 2026-10-14: the hover over the panel's edge list, not the 3D view; the face lit by its colour, read from the scene's materials; COMMITTED `92d235551a` 2026-10-14, local; not pictured; STAGED 2026-10-14 10:36
 
 **2026-10-13 16:00, the reporter:** "defect (from old fork), when a dress up
