@@ -74,16 +74,32 @@ namespace Gui
  * A switch, and a branch from anywhere but where the document is, wait for
  * an edit that is open to be left (`Editing`).
  *
- * Whose the document's place in its log is (sec 32.23). A document served
- * as it is, is shared: below the host a connection takes back its own rows
- * (sec 30.10: a step is its author's) and takes versions; a restore, a
- * switch, a branch made, renamed or deleted and a version's name are the
- * host's, `Forbidden` to the others. A document opened from a branch to be
- * served (serveLogBranch) is its clients' from the serving point on: those
- * acts are theirs of the branch it was opened on and of what was branched
- * from it since, and not of anything before.
+ * What the one who asks may (sec 32.25) is by branch, and of a branch read
+ * or write; the host may all of it. Read: the branch's history is listed,
+ * its rows are applied to the branch the document is on (`log.apply`), and
+ * it is asked to be merged into another that is read, or another into it
+ * (`log.request`). Write: a document on the branch is moved -- a restore, a
+ * switch, a branch made, renamed or deleted, a version's name -- from a
+ * point on, and the requests to merge into it are dealt with
+ * (`log.mergeRequest`, `log.closeRequest`). It is said in the log's store,
+ * by user and branch (App::Document::setBranchAccess). Where nothing is
+ * said the branch of the document a connection is in is read -- there it
+ * takes back its own rows (sec 30.10) and takes versions, as every client
+ * of a shared document -- and a document opened from a branch to be served
+ * (serveLogBranch) is written by whoever joins it, from where that branch
+ * forks. A branch a connection makes is said to be its own as it is made.
+ * What is not the asker's is `Forbidden`; a branch it does not read is not
+ * listed and is unknown to it, as its rows, its versions and the requests
+ * of it are.
  */
 GuiExport void installSceneLogOps();
+
+/** Whether the one who asks -- the connection an op is being done for --
+ * is listed row `row` of the document's log: a row of a branch it reads
+ * (sec 32.25). For what shows a row by its number and is no op of the log:
+ * the edit that shows a row's change (`edit` with `row`, sec 32.21).
+ */
+GuiExport bool logRowListed(App::Document* doc, int64_t row);
 
 /** Say that `doc` was opened from a branch to be served: the branch it is
  * on now is the one its clients' reach starts at, where that branch forks
@@ -91,6 +107,14 @@ GuiExport void installSceneLogOps();
  * document keeps no log.
  */
 GuiExport bool serveLogBranch(App::Document* doc);
+
+/** Serve a branch of `doc` in a document of its own (sec 32.23, 32.25): a
+ * branch is made where `doc` is -- `name`, or `<branch>~<n>` -- opened in a
+ * second document of the file with no window, served as a document is and
+ * said to be one opened to be served. Returns that document. Throws when
+ * the name is taken, `doc` keeps no log or the branch cannot be served.
+ */
+GuiExport App::Document* serveBranchOf(App::Document* doc, const std::string& name, int port = 0);
 
 }  // namespace Gui
 

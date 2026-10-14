@@ -1271,20 +1271,7 @@ PyObject* Application::sServeBranch(PyObject * /*self*/, PyObject *args)
     PY_TRY {
         // A branch made where the document is, opened in a document of its
         // own with no window: where it forks is the serving point
-        App::Document *branch = appDoc->openNewBranch(name, false);
-        if (!branch) {
-            PyErr_SetString(PyExc_RuntimeError, "the document keeps no transaction log");
-            return nullptr;
-        }
-        Gui::Document *guiDoc = Application::Instance->getDocument(branch);
-        if (!guiDoc || !Gui::SceneServeSource::serve(guiDoc, port)
-                || !Gui::serveLogBranch(branch)) {
-            // The branch is made and stays in the log; its document goes
-            App::GetApplication().closeDocument(branch->getName());
-            PyErr_SetString(PyExc_RuntimeError, "the branch could not be served");
-            return nullptr;
-        }
-        return branch->getPyObject();
+        return Gui::serveBranchOf(appDoc, name, port)->getPyObject();
     }
     PY_CATCH
 }

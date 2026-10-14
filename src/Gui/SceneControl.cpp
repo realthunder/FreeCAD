@@ -763,6 +763,10 @@ QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
     // the view provider, which the edit that starts next spends it on
     auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(vp);
     const qint64 row = req.value(QLatin1String("row")).toInteger(0);
+    // A row of a branch the one who asks does not read is none to it
+    // (sec 32.25), as it is to `log.ops`
+    if (row > 0 && mode == ViewProvider::ValueDiff && !logRowListed(doc, row))
+        return errorReply(id, "UnknownRow", QString::number(row));
     if (vpd && mode == ViewProvider::ValueDiff)
         vpd->setValueChangeRow(row);
     QJsonObject entered = enterClientEdit(id, gdoc, vp, mode, subname, client);
