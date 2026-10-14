@@ -196,7 +196,27 @@ public:
 
     void resizeEvent(QResizeEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
+
+    /// Write the value without the zeros its decimals would end it with:
+    /// "0.5", not "0.500000" (the omni search's editors, docs/HandsOnQueue.md
+    /// entry 125). Off by default.
+    void setTrimTrailingZeros(bool on);
+    bool trimTrailingZeros() const { return trimZeros; }
+
+protected:
+    QString textFromValue(double value) const override;
+
+private:
+    bool trimZeros = false;
 };
+
+/** \a text without the zeros that end the decimals of its first number, and
+ * without the decimal point when nothing is left after it: "12.50 mm" ->
+ * "12.5 mm", "12.00 mm" -> "12 mm", "0.500000" -> "0.5". Whatever follows the
+ * number -- a unit, an expression -- is kept. \a locale gives the decimal
+ * point.
+ */
+GuiExport QString trimTrailingZeros(const QString &text, const QLocale &locale);
 
 } // namespace Gui
 

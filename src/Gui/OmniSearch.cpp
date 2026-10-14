@@ -654,6 +654,8 @@ static QWidget *createParamEditorByType(const ParamInfo &info, QWidget *parent)
         auto w = new PrefDoubleSpinBox(parent);
         w->setRange(-1e9, 1e9);
         w->setDecimals(6);
+        // "0.5", not "0.500000" (docs/HandsOnQueue.md entry 125)
+        w->setTrimTrailingZeros(true);
         return w;
     }
     case ParamInfo::String:
@@ -747,6 +749,7 @@ QWidget *OmniSearch::createParamEditor(const ParamInfo &info, QWidget *parent)
             w->setRange(info.minimum, info.maximum);
             w->setSingleStep(info.step);
             w->setDecimals(info.decimals);
+            w->setTrimTrailingZeros(true);
             widget = w;
         }
         else {

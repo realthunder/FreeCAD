@@ -27,6 +27,7 @@
 # include <QDebug>
 # include <climits>
 # include <QKeyEvent>
+# include <QLineEdit>
 # include <QStyle>
 # include <QStyleOptionSpinBox>
 # include <QStylePainter>
@@ -502,6 +503,56 @@ void DoubleSpinBox::paintEvent(QPaintEvent*)
     QStyleOptionSpinBox opt;
     initStyleOption(&opt);
     drawControl(opt);
+}
+
+void DoubleSpinBox::setTrimTrailingZeros(bool on)
+{
+    if (trimZeros == on)
+        return;
+    trimZeros = on;
+    // The same value written anew, and nobody told: the line edit's change
+    // would be read back as typing and reported as a change of the value
+    const QSignalBlocker blockBox(this);
+    const QSignalBlocker blockEdit(lineEdit());
+    lineEdit()->setText(textFromValue(value()));
+}
+
+QString DoubleSpinBox::textFromValue(double value) const
+{
+    QString text = QDoubleSpinBox::textFromValue(value);
+    return trimZeros ? Gui::trimTrailingZeros(text, locale()) : text;
+}
+
+QString Gui::trimTrailingZeros(const QString &text, const QLocale &locale)
+{
+    const QString point = locale.decimalPoint();
+    // the first number: from its first digit over digits, group separators
+    // and one decimal point
+    int start = 0;
+    while (start < text.size() && !text.at(start).isDigit())
+        ++start;
+    int dot = -1;
+    int end = start;
+    for (; end < text.size(); ++end) {
+        if (text.at(end).isDigit())
+            continue;
+        if (dot < 0 && text.mid(end, point.size()) == point) {
+            dot = end;
+            end += point.size() - 1;
+            continue;
+        }
+        if (dot < 0 && text.mid(end, 1) == locale.groupSeparator())
+            continue;
+        break;
+    }
+    if (dot < 0)
+        return text;
+    int last = end;
+    while (last > dot + point.size() && text.at(last - 1) == QLatin1Char('0'))
+        --last;
+    if (last == dot + point.size())
+        last = dot;
+    return text.left(last) + text.mid(end);
 }
 
 #include "moc_SpinBox.cpp"

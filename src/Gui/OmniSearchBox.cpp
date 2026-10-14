@@ -55,6 +55,7 @@
 #include <App/DocumentObject.h>
 #include <App/ParamRegistry.h>
 #include <App/Property.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Tools.h>
@@ -71,6 +72,7 @@
 #include "MainWindow.h"
 #include "MDIView.h"
 #include "PrefWidgets.h"
+#include "QuantitySpinBox.h"
 #include "Selection/Selection.h"
 #include "Selection/SelectionView.h"
 #include "Tree.h"
@@ -474,12 +476,28 @@ private:
             editor = item->createEditor(host, this, SLOT(onValueChanged()));
             if (editor) {
                 item->setEditorData(editor, item->data(1, Qt::EditRole));
+                // A float written without the zeros its decimals would end
+                // it with, a unit kept: "12 mm" (docs/HandsOnQueue.md entry
+                // 125, "yes both, yes same rule"). The property view's own
+                // editors keep their decimals. After the editor has its
+                // value: the trim writes the text anew.
+                QList<QWidget*> boxes = editor->findChildren<QWidget*>();
+                boxes.prepend(editor);
+                for (QWidget *w : boxes) {
+                    if (auto box = qobject_cast<DoubleSpinBox*>(w))
+                        box->setTrimTrailingZeros(true);
+                    else if (auto box = qobject_cast<QuantitySpinBox*>(w))
+                        box->setTrimTrailingZeros(true);
+                }
                 if (item->isReadOnly())
                     item->disableEditor(editor);
             }
         }
         if (!editor) {
-            auto l = new QLabel(item->data(1, Qt::DisplayRole).toString(), host);
+            QString text = item->data(1, Qt::DisplayRole).toString();
+            if (prop->isDerivedFrom(App::PropertyFloat::getClassTypeId()))
+                text = trimTrailingZeros(text, QLocale());
+            auto l = new QLabel(text, host);
             l->setTextFormat(Qt::PlainText);
             editor = l;
         }
