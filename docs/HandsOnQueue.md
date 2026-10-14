@@ -17787,6 +17787,11 @@ AssetManager ERROR line is a logged message, not a failure). Log
 The note-taker's note: its message of 01:50 said 7 new TestFilletGroups
 cases, this one 6 more tests in all -- the count differs by one; not
 asked, the suite is OK either way.
+02:20, the build session: "my 01:50 count was wrong -- TestFilletGroups
+has SIX cases (own group each, join+mirror, reversed member, default
+leaves group, saved+restored, older file), TestFillet 15 -> 21, suite
+3757 -> 3763. Corrected in my log, commit after 97b62d0b75." So "7 new"
+in its step 3 message above reads SIX.
 
 ## 118. The scene light's manipulator does not work: no draggable arrow -- OPEN; it is Coin's directional light dragger by the source; the cause not found by reading; two points not answered; NOT REPRODUCED 2026-10-14 14:41, on the screen
 
