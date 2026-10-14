@@ -611,8 +611,9 @@ while it is open. The conflicts come first: each shows its value here
 (**ours**) and its value on the other branch (**theirs**) -- click the
 one that is to stay; the tip says what it was where the two branches
 parted. **All ours** and **All theirs** pick every one. The rest says
-what goes in of it. **Apply** or **Merge** waits until every conflict
-has a side; **Cancel** leaves everything as it was.
+what goes in of it, with a tick: untick one to leave it out, and what is
+here stays. **Apply** or **Merge** waits until every conflict has a side;
+**Cancel** leaves everything as it was.
 
 **A merge that was undone** can be taken out of the history altogether,
 as on the desktop (section 10): click the merge, or the undo of it, and
@@ -627,7 +628,9 @@ all of it** every shape that object has had and will have, and the
 operation then says *kept*. A version has **Keep selected here**: the
 objects you selected, as they were at that version. The fourth list,
 **Kept**, shows what is kept -- its name carries how many -- and a line of
-it shows its value, **Show row N** goes to its step, and **Let go** lets
+it shows its value, **Show** draws it over its object against what the
+object is now (as **Show** on an operation does), **Show row N** goes to
+its step, and **Let go** lets
 it go: the next save leaves it out of the file, for good. So keeping is
 anybody's, but letting go is the sharer's, or yours for a value kept at a
 step of a branch you write; stopping every shape of an object being kept

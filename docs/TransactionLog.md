@@ -19468,6 +19468,7 @@ with the host's reason where it is not the asker's.
 
 **Left.** Untick a change to leave it out, which the desktop's dialog
 has: the op takes it (`picks` with `ours`), the card does not offer it.
+*(Built since: 32.28.)*
 What a merge would make, drawn (32.17), is the desktop's. The fourth
 stage -- kept values -- is not started. *(Built since: 32.27.)*
 
@@ -19543,9 +19544,10 @@ reason.
 - The desktop's Kept tab is asked again with the panel's own refresh;
   a client keeping or letting go raises no signal of the document, so
   the tab follows at the next commit, recompute or undo -- as for keeping
-  from Python (32.12).
+  from Python (32.12). *(Built since: 32.28.)*
 - A kept value is read as its text, as an op's is; drawing it over the
-  object against what it has now (32.12) is the desktop's.
+  object against what it has now (32.12) is the desktop's. *(Built
+  since: 32.28.)*
 - The document is still not marked modified by keeping (32.11).
 
 **Tests.** `tests/gui/serve-log-kept.py` (33): nothing kept at first; A
@@ -19563,6 +19565,51 @@ read and let go; its drive now waits for the versions it reads to be the
 host's answer, not the list of the last visit, a race the kept list's
 extra ask made show. `web/src/widgets/gate.ts` (261): eight of the list's
 model.
+
+### 32.28 What the four stages left (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "chase the left issues once you done here",
+after 32.27 was reported with four things left.
+
+**What is kept says so.** Keeping raised no signal: no row says it, so
+the desktop's Kept tab followed a keep from Python or a client's panel
+only at its next refresh (32.12, 32.27). `App::Document::
+signalLogKeptChanged` is raised by `keepLogValue` and `releaseLogValue`
+where they moved something, and by `keepLogValuesOf` where the object's
+being kept changed. The desktop's panel asks its list again on it, and a
+served document's watch tells its editors and the file's other documents
+(`log.changed`) -- so a keep from Python reaches a page too.
+
+**A kept value shown.** The page's Kept list has **Show** on a value: the
+edit a row's change is shown as (ViewProvider::ValueDiff, 32.19), with the
+kept value as the state before and the object as it is now as the state
+after -- the desktop's "the kept value against now" (32.12). The `edit` op
+takes `kept`, a ref, in place of `row`; it is a value of that object
+among those the asker is listed (`Gui::logKeptListed`), or `UnknownValue`.
+`ViewProviderDocumentObject::setValueChangeRef()` is spent as
+`setValueChangeRow()` is; its panel says "the value kept at row N".
+
+**A change left out.** The list of what an apply or a merge would do
+(32.26) has a tick on each change of theirs that goes in -- a `take`, a
+`merge` -- as the desktop's dialog has: unticked, it reads "left out" and
+is sent as `ours` (`Document::pickRows` leaves out a change that asks
+nothing picked ours), with every change of its key -- a sketch's
+properties merged together share one (31.10). **All ours** and **All
+theirs** leave what is left out so.
+
+**Roll back merge... driven in a browser.** The page's user asks for the
+branch its own was made from to be merged into it, merges it, undoes it
+on its own socket -- an undo step is its author's (30.10) -- and rolls it
+back from the card: offered, asked, said, and the merge and its undoing
+leave the log while the box stays as it was.
+
+**Tests.** `tests/gui/serve-log-kept.py` (37, +4): the kept value shown
+over the cut, the panel saying which, against what a later row made; the
+edit left; a value not kept, or of another object, refused.
+`tests/gui/serve-log-acts-browser.py` (42, +3): the roll back.
+`scripts/transaction-log-shapediff-check.py` (133): a keep from Python is
+counted in the tab not shown, and let go with it shown, with no refresh
+asked. `web/src/widgets/gate.ts` (263, +2): what is left out.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
