@@ -67,6 +67,22 @@ public:
                  bool isBase = false);
     ~TaskAttacher() override;
 
+    /** @name What depends on the object being attached
+     *
+     * A pick of it is refused: the reference would make the document a
+     * cycle. A rule names what is none all the same, by the object the
+     * reference is for, the object picked and the element of it -- an object
+     * that turns a reference to itself into one to something else, as the
+     * solid body of PartDesign does.
+     */
+    //@{
+    using DependentRule = std::function<bool (const App::DocumentObject *,
+                                              const App::DocumentObject *, const char *)>;
+    static void addDependentRule(DependentRule rule);
+    static bool allowsDependent(const App::DocumentObject *attached,
+                                const App::DocumentObject *picked, const char *element);
+    //@}
+
     void editAfterClose(bool enable = true) {editOnClose = enable;}
     void onClose();
 

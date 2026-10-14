@@ -30,7 +30,9 @@
 #include <Base/PyObjectBase.h>
 #include <Gui/Application.h>
 #include <Gui/Language/Translator.h>
+#include <Mod/Part/Gui/TaskAttacher.h>
 
+#include "ReferenceSelection.h"
 #include "Workbench.h"
 #include "ViewProviderAuxGroup.h"
 #include "ViewProviderBase.h"
@@ -119,6 +121,10 @@ PyMOD_INIT_FUNC(PartDesignGui)
 
     PyObject* mod = PartDesignGui::initModule();
     Base::Console().Log("Loading GUI of PartDesign module... done\n");
+
+    // The attachment editor takes a pick on the solid body for what that
+    // solid is made of, as the panels of the features do
+    PartGui::TaskAttacher::addDependentRule(&PartDesignGui::isTurnedBySolidBody);
 
     // instantiating the commands
     CreatePartDesignCommands();

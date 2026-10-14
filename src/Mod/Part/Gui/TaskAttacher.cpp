@@ -60,13 +60,39 @@ using namespace Gui;
 using namespace Attacher;
 namespace sp = std::placeholders;
 
+namespace {
+std::vector<TaskAttacher::DependentRule> &dependentRules()
+{
+    static std::vector<TaskAttacher::DependentRule> rules;
+    return rules;
+}
+} // anonymous namespace
+
+void TaskAttacher::addDependentRule(DependentRule rule)
+{
+    if (rule)
+        dependentRules().push_back(std::move(rule));
+}
+
+bool TaskAttacher::allowsDependent(const App::DocumentObject *attached,
+                                   const App::DocumentObject *picked, const char *element)
+{
+    for (const auto &rule : dependentRules()) {
+        if (rule(attached, picked, element))
+            return true;
+    }
+    return false;
+}
+
 class Filter : public Gui::SelectionFilterGate
 {
     std::set<App::DocumentObject *> inList;
+    const App::DocumentObject *support = nullptr;
 
 public:
     Filter(const App::DocumentObject* support_)
         : Gui::SelectionFilterGate((Gui::SelectionFilter*)0)
+        , support(support_)
     {
         if(support_) {
             inList = support_->getInListEx(true);
@@ -75,8 +101,7 @@ public:
     }
     bool allow(App::Document* pDoc, App::DocumentObject* pObj, const char* sSubName) override {
         (void)pDoc;
-        (void)sSubName;
-        if(!inList.count(pObj)) {
+        if(!inList.count(pObj) || TaskAttacher::allowsDependent(support, pObj, sSubName)) {
             return true;
         }
         else {

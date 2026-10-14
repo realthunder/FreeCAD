@@ -81,7 +81,8 @@ void slotChangedObject(const App::DocumentObject &obj, const App::Property &prop
 bool elementBefore(App::DocumentObject *shown, const App::DocumentObject *before,
                    std::string &sub)
 {
-    if (sub.empty())
+    // The feature the names are of: name for name
+    if (sub.empty() || shown == before)
         return true;
     if (!shown || sub.find('.') != std::string::npos)
         return false;
@@ -359,12 +360,18 @@ void SolidBody::keepOutOfItself()
                             continue;
                         // The names of the elements are those of the feature
                         // this object has the shape of. A later one than the
-                        // feature before: each by what it comes from
-                        if (before != shown && turnElements(link, this, shown, before))
+                        // feature before: each by what it comes from. That
+                        // feature itself and linked beside this object, as
+                        // by a second face picked after the first was
+                        // turned: set in place, where a replacement would
+                        // swap the two
+                        const bool beside
+                            = std::find(links.begin(), links.end(), before) != links.end();
+                        if ((before != shown || beside)
+                                && turnElements(link, this, shown, before))
                             continue;
-                        // Not where the feature is linked beside this object:
-                        // the two would be swapped
-                        if (std::find(links.begin(), links.end(), before) != links.end())
+                        // No elements to go by
+                        if (beside)
                             continue;
                         std::unique_ptr<App::Property> copy(
                                 link->CopyOnLinkReplace(cur, this, before));
@@ -395,6 +402,43 @@ void SolidBody::keepOutOfItself()
         if (!wrong.empty())
             FC_ERR(message.str());
     }
+}
+
+App::DocumentObject *SolidBody::referenceFrom(const App::DocumentObject *user,
+                                              std::string &sub) const
+{
+    auto self = const_cast<SolidBody*>(this);
+    auto doc = getDocument();
+    auto tip = Tip.getValue();
+    if (!user || !doc || !isAttachedToDocument() || !tip || !hasFeature(tip))
+        return self;
+
+    // As keepOutOfItself() goes: a feature has what no earlier one has
+    std::set<App::DocumentObject*> visited;
+    visited.insert(self);
+    for (auto obj : Group.getValues()) {
+        if (auto feature = Base::freecad_dynamic_cast<PartDesign::Feature>(obj)) {
+            std::vector<App::DocumentObject*> stack(1, feature);
+            while (!stack.empty()) {
+                auto cur = stack.back();
+                stack.pop_back();
+                if (!cur || !cur->isAttachedToDocument() || !visited.insert(cur).second)
+                    continue;
+                if (cur == user) {
+                    auto before = feature->BaseFeature.getValue();
+                    if (!before || !hasFeature(before))
+                        return nullptr;
+                    auto shown = shapeOf.empty() ? nullptr : doc->getObject(shapeOf.c_str());
+                    return elementBefore(shown, before, sub) ? before : nullptr;
+                }
+                for (auto out : cur->getOutList())
+                    stack.push_back(out);
+            }
+        }
+        if (obj == tip)
+            break;
+    }
+    return self;
 }
 
 void SolidBody::onChanged(const App::Property* prop)

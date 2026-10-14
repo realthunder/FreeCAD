@@ -51,6 +51,7 @@
 #include <Mod/PartDesign/App/DatumLine.h>
 #include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/DatumPoint.h>
+#include <Mod/PartDesign/App/SolidBody.h>
 
 #include "ui_DlgReference.h"
 #include "ReferenceSelection.h"
@@ -277,15 +278,35 @@ bool ReferenceSelection::isCircle(App::DocumentObject* pObj, const char* sSubNam
 
 // ----------------------------------------------------------------------------
 
-bool NoDependentsSelection::allow(App::Document* /*pDoc*/, App::DocumentObject* pObj, const char* /*sSubName*/)
+bool PartDesignGui::isTurnedBySolidBody(const App::DocumentObject* user,
+                                        const App::DocumentObject* picked, const char* element)
+{
+    auto solid = Base::freecad_dynamic_cast<const PartDesign::SolidBody>(picked);
+    if (!solid || !user)
+        return false;
+    // The element alone, also of a mapped name; none for the whole object
+    if (!element)
+        element = "";
+    const char* dot = strrchr(element, '.');
+    std::string sub(dot ? dot + 1 : element);
+    auto turned = solid->referenceFrom(user, sub);
+    return turned && turned != solid;
+}
+
+bool NoDependentsSelection::allow(App::Document* /*pDoc*/, App::DocumentObject* pObj, const char* sSubName)
 {
     if(!inList.count(pObj)) {
         return true;
     }
-    else {
-        this->notAllowedReason = QT_TR_NOOP("Selecting this will cause circular dependency.");
+    if (pObj->isDerivedFrom<PartDesign::SolidBody>()) {
+        if (isTurnedBySolidBody(support, pObj, sSubName))
+            return true;
+        this->notAllowedReason = QT_TR_NOOP("This is made by the feature being edited, or by a"
+                                            " later feature of the solid.");
         return false;
     }
+    this->notAllowedReason = QT_TR_NOOP("Selecting this will cause circular dependency.");
+    return false;
 }
 
 bool CombineSelectionFilterGates::allow(App::Document* pDoc, App::DocumentObject* pObj, const char* sSubName)

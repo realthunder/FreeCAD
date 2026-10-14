@@ -127,6 +127,18 @@ public:
      */
     void keepOutOfItself();
 
+    /** What keepOutOfItself() makes of a reference to the element \a sub of
+     * this object that \a user holds
+     *
+     * This object, where \a user is nothing the solid is made of up to its
+     * tip: the reference stays. Else the feature before the one \a user is
+     * part of, with \a sub turned into the element of that feature. Null
+     * where the element comes from nothing that feature has, which is the
+     * reference that is left and said to be wrong. For whoever takes a pick
+     * for \a user, to refuse that last kind and no other.
+     */
+    App::DocumentObject *referenceFrom(const App::DocumentObject *user, std::string &sub) const;
+
 private:
     /// Whether somebody gave the faces, the lines or the points a look (it is
     /// not the material card's, nor the preference's)

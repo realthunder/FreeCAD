@@ -77,13 +77,26 @@ private:
     bool isWire(App::DocumentObject* pObj, const char* sSubName) const;
 };
 
+/** Whether a reference of \a user to \a element of \a picked, which depends
+ * on \a user, is no cycle all the same
+ *
+ * So it is where \a picked is the solid body of the solid \a user is part
+ * of: the solid body turns such a reference into one to the feature before
+ * (PartDesign::SolidBody::keepOutOfItself()), unless the element is one that
+ * feature has nothing of.
+ */
+bool isTurnedBySolidBody(const App::DocumentObject* user, const App::DocumentObject* picked,
+                         const char* element);
+
 class NoDependentsSelection : public Gui::SelectionFilterGate
 {
     std::set<App::DocumentObject *> inList;
+    const App::DocumentObject* support = nullptr;
 
 public:
     NoDependentsSelection(const App::DocumentObject* support_)
         : Gui::SelectionFilterGate(nullPointer())
+        , support(support_)
     {
         if(support_) {
             inList = support_->getInListEx(true);

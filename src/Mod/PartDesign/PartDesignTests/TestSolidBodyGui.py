@@ -523,6 +523,149 @@ class TestSolidBodyGui(unittest.TestCase):
         self.assertEqual(selected(), before)
         Gui.Selection.clearSelection()
 
+    # -- a pick on the solid body for what its own solid is made of ------------
+    #
+    # The solid body depends on every feature up to its tip, and a panel
+    # refuses a pick of what depends on the object it edits. Not this one: the
+    # solid body turns the reference into one to the feature before
+    # (SolidBody.keepOutOfItself), and seen through its own shape it is all
+    # there is to pick of the solid.
+
+    def faceAt(self, obj, x, y, z):
+        import Part
+
+        vertex = Part.Vertex(App.Vector(x, y, z))
+        for i, face in enumerate(obj.Shape.Faces):
+            if face.distToShape(vertex)[0] < 1e-6:
+                return "Face%d" % (i + 1)
+        self.fail("no face of %s at (%s, %s, %s)" % (obj.Name, x, y, z))
+
+    def top(self, obj):
+        """The highest face lying flat"""
+        best = None
+        for i, face in enumerate(obj.Shape.Faces):
+            box = face.BoundBox
+            if abs(box.ZMin - box.ZMax) < 1e-6 and (best is None or box.ZMax > best[0]):
+                best = (box.ZMax, "Face%d" % (i + 1))
+        return best[1]
+
+    def paddedSolid(self):
+        """Box, Box001 and a pad on a sketch of the first box, the tip of their
+        solid, which is seen through the solid body's own shape"""
+        import Part
+
+        a, b, c, d = self.twoSolids()
+        first, second = self.Body.SolidBodies
+        self.Body.Tip = b
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch.AttachmentSupport = [(a, self.faceAt(a, 2, 2, 10))]
+        sketch.MapMode = "FlatFace"
+        sketch.addGeometry(Part.Circle(App.Vector(2, 2, 0), App.Vector(0, 0, 1), 1.0), False)
+        pad = self.Body.newObjectAt("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Length = 5
+        self.Doc.recompute()
+        self.assertEqual(first.Tip, pad)
+        first.ViewObject.Visibility = True
+        self.pump()
+        return b, first, second, sketch, pad
+
+    def pump(self, count=20):
+        from PySide import QtWidgets
+
+        for _ in range(count):
+            QtWidgets.QApplication.processEvents()
+
+    def pick(self, sub):
+        """Whether a pick of it is taken"""
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, "Body", sub)
+        self.pump()
+        return bool(Gui.Selection.getSelectionEx("", 0))
+
+    def shown(self, name, kind):
+        widgets = [w for w in Gui.getMainWindow().findChildren(kind, name) if w.isVisible()]
+        self.assertEqual(len(widgets), 1, name)
+        return widgets[0]
+
+    def testAttachmentEditorTakesAPickOnTheSolidBody(self):
+        from PySide import QtWidgets
+
+        b, first, second, sketch, pad = self.paddedSolid()
+
+        def support():
+            return [(obj.Name, sub) for obj, subs in sketch.AttachmentSupport for sub in subs]
+
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(sketch)
+        Gui.runCommand("Part_EditAttachment")
+        self.pump(40)
+        try:
+            button = self.shown("buttonRef1", QtWidgets.QPushButton)
+            if not button.isChecked():
+                button.click()
+                self.pump()
+            # a face the pad left alone, and one it made its own version of:
+            # the face of the feature before that each comes from
+            self.assertTrue(self.pick("Solid." + self.faceAt(first, 0, 5, 5)))
+            self.assertEqual(support(), [(b.Name, self.faceAt(b, 0, 5, 5))])
+            self.assertTrue(self.pick("Solid." + self.faceAt(first, 12, 8, 10)))
+            self.assertEqual(support(), [(b.Name, self.faceAt(b, 12, 8, 10))])
+            # the pad's own top comes from nothing the sketch can be on, and
+            # the pad itself is a cycle as it ever was
+            self.assertFalse(self.pick("Solid." + self.top(first)))
+            self.assertFalse(self.pick("Pad." + self.faceAt(pad, 0, 5, 5)))
+            self.assertEqual(support(), [(b.Name, self.faceAt(b, 12, 8, 10))])
+            # the other solid is nothing the sketch is part of
+            self.assertTrue(self.pick("Solid001." + self.top(second)))
+            self.assertEqual(support(), [(second.Name, self.top(second))])
+        finally:
+            Gui.Selection.clearSelection()
+            Gui.Control.closeDialog()
+            self.pump()
+
+    def testPadPanelTakesAPickOnTheSolidBody(self):
+        from PySide import QtWidgets
+
+        b, first, second, sketch, pad = self.paddedSolid()
+
+        def upTo():
+            return [(obj.Name, sub) for obj, subs in pad.UpToShape for sub in subs]
+
+        def picked(sub):
+            """What the pad goes up to after a pick of it in its panel"""
+            pad.Type = "Length"
+            pad.UpToShape = []
+            self.Doc.recompute()
+            Gui.ActiveDocument.setEdit(pad.Name)
+            self.pump(40)
+            try:
+                # "Up to face", which asks for the face when there is none
+                combo = self.shown("changeMode", QtWidgets.QComboBox)
+                combo.setCurrentIndex(3)
+                self.pump()
+                self.assertEqual(pad.Type, "UpToFace")
+                taken = self.pick(sub)
+                return taken, upTo()
+            finally:
+                Gui.Selection.clearSelection()
+                Gui.Control.closeDialog()
+                self.pump()
+                Gui.ActiveDocument.resetEdit()
+                self.pump()
+
+        # named on the solid as the pad of that length leaves it
+        version = self.faceAt(first, 12, 8, 10)
+        own = self.top(first)
+        other = self.top(second)
+        # the pad's version of a face the feature before has whole
+        self.assertEqual(picked("Solid." + version), (True, [(b.Name, self.faceAt(b, 12, 8, 10))]))
+        # the pad's own top comes from nothing the pad can go up to
+        self.assertEqual(picked("Solid." + own), (False, []))
+        # the other solid is nothing the pad is part of
+        self.assertEqual(picked("Solid001." + other), (True, [(second.Name, other)]))
+
 
 class TestOpenedBodyGui(unittest.TestCase):
     """A file that was only opened is not a modified document.

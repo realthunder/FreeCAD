@@ -992,6 +992,34 @@ class TestSolidBody(unittest.TestCase):
         sketch.AttachmentSupport = [(a, self.flat(a))]
         self.assertRecomputes()
 
+    def pairs(self, sketch):
+        return [(obj.Name, sub) for obj, subs in sketch.AttachmentSupport for sub in subs]
+
+    def testSecondFaceBesideTheOneTurned(self):
+        a, b, c, d = self.twoSolids()
+        first, second = self.solidBodies()
+        self.Body.Tip = b
+        self.Doc.recompute()
+        top = self.flat(first)
+        side = self.faceAt(first, 0, 5, 5)
+        # one face of the feature before, as a first pick is once it is
+        # turned, and one of the solid body beside it
+        sketch = self.sketchOn(b, top)
+        sketch.AttachmentSupport = [(b, top), (first, side)]
+        pad = self.padOn(sketch)
+        self.assertEqual(first.Tip, pad)
+        self.assertEqual(self.pairs(sketch), [(b.Name, top), (b.Name, side)])
+        self.assertNotIn(first, sketch.OutList)
+
+    def testSecondFaceBesideTheOneTurnedOnALaterShape(self):
+        a, b, first, sketch, pad = self.paddedSolid()
+        side = self.faceAt(b, 0, 5, 5)
+        top = self.faceAt(first, 12, 8, 10)
+        sketch.AttachmentSupport = [(b, side), (first, top)]
+        before = self.faceAt(b, 12, 8, 10)
+        self.assertEqual(self.pairs(sketch), [(b.Name, side), (b.Name, before)])
+        self.assertNotIn(first, sketch.OutList)
+
     # -- what a build without SolidBody reads ----------------------------------------
 
     def testSiblingsAreGroupedUnderTheLastFeature(self):
