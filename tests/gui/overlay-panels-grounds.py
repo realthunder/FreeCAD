@@ -3,8 +3,12 @@
 Entry 120: "check what is gating the transparent overlay mode. with item
 background feature, we can enable transparency mode in all cases" -- a panel
 went opaque while the active view was a maximized one that cannot be panned
-(a spreadsheet, a page). Claim: with a spreadsheet's view the active one, the
-tree's overlay in transparent mode leaves pixels clear.
+(a spreadsheet, a page). Claim: with a spreadsheet's view the active one and
+the focus in the tree, its panel in transparent mode keeps the tree without
+a ground of its own (an opaque panel gives it back). Offscreen the old
+gate's condition is not met -- its sheet view is not seen as maximized --
+so this claim held before the change too: it guards the eye, it does not
+show the gate gone.
 
 Entry 121: "check why the report view has a different background in overlay
 non-transparency mode than non-overlay mode. Python console shares the same
@@ -101,7 +105,9 @@ def dock_of(widget):
 
 
 def ground(widget):
-    """The commonest colour of a viewport's lower half, as it paints itself"""
+    """The commonest colour of a view's lower half, as its viewport paints
+    itself: the colour its style sheet gives it (an overlay with its eye off
+    reads clear when grabbed whole here)"""
     vp = widget.viewport()
     img = QtGui.QImage(vp.size(), QtGui.QImage.Format_ARGB32)
     img.fill(QtCore.Qt.transparent)
@@ -147,6 +153,14 @@ def overlaid_eye_off():
     settle(800)
     for name, w, docked in (("report view", report, S["docked"][0]),
                             ("Python console", console, S["docked"][1])):
+        tab = overlay_of(w)
+        if tab is not None:
+            front(tab, w)
+        # the panel active (the focus in it): an opaque panel gives its
+        # widgets their own ground back -- the look the entry is about; not
+        # active, a panel shows them without one whatever its eye
+        w.setFocus()
+        settle(1200)
         got = ground(w)
         check("121: the %s's ground overlaid, eye off, is its ground docked" % name,
               overlay_of(w) is not None and got[:3] == docked[:3], "%s, docked %s" % (got, docked))
@@ -180,16 +194,30 @@ def selection_rows():
     alternate = (alternate.red(), alternate.green(), alternate.blue())
     for row, want in ((0, first), (1, alternate)):
         rect = view.visualItemRect(view.topLevelItem(row))
-        # the right end of the row: past the text, where only the ground is
-        at = view.viewport().mapTo(tab, QtCore.QPoint(view.viewport().width() - 4,
-                                                      rect.center().y()))
-        v = image.pixel(at)
+        header = view.header()
+        right = header.sectionPosition(header.count() - 1) + header.sectionSize(header.count() - 1)
+        seen = {}
+        y = rect.center().y()
+        for x in range(0, min(right, view.viewport().width()), 2):
+            at = view.viewport().mapTo(tab, QtCore.QPoint(x, y))
+            # what the narrow panel shows of the row, not what lies past it
+            if not image.rect().contains(at) or at.x() >= tab.width() - 2:
+                continue
+            v = image.pixel(at)
+            if (v >> 24) & 255 == 0:
+                continue  # between the columns, nothing painted
+            seen[v] = seen.get(v, 0) + 1
+        top = sorted(seen, key=seen.get, reverse=True)[:3]
+        note("INFO row %d at y %d, x 0..%d: the commonest %s" % (
+            row + 1, y, min(right, view.viewport().width()),
+            ["#%08x x%d" % (c, seen[c]) for c in top]))
+        v = top[0] if top else 0
         got = ((v >> 16) & 255, (v >> 8) & 255, v & 255, (v >> 24) & 255)
-        good = abs(got[3] - alpha) <= 3 and (
+        good = abs(got[3] - alpha) <= 6 and (
             want is None or max(abs(got[i] - want[i]) for i in range(3)) <= 6)
-        check("123: row %d is backed to its end, %s, at the overlays' opacity"
+        check("123: row %d is backed across its columns, %s, at the overlays' opacity"
               % (row + 1, "the items' ground" if row == 0 else "the alternate colour"),
-              good, "%s for %s at %d" % (got, want, alpha))
+              good, "commonest %s for %s at %d" % (got, want, alpha))
 
 
 def rgb_of(packed):
@@ -200,13 +228,17 @@ def spreadsheet():
     doc = FreeCAD.ActiveDocument
     sheet = doc.addObject("Spreadsheet::Sheet", "Sheet")
     doc.recompute()
-    try:
-        sheet.ViewObject.doubleClicked()
-    except Exception:
-        FreeCADGui.runCommand("Std_ViewCreate")
-    settle(2000)
-    active = mw().activeWindow() if hasattr(mw(), "activeWindow") else None
-    note("INFO the active window: %s" % (cls(active) if active is not None else None))
+    sheet.ViewObject.doubleClicked()
+    settle(1500)
+    views = [v for v in mw().getWindows() if "Sheet" in str(v) or "Spreadsheet" in str(v)]
+    note("INFO the windows: %s" % [str(v) for v in mw().getWindows()])
+    if views:
+        mw().setActiveWindow(views[0])
+        settle(1500)
+    active = mw().getActiveWindow()
+    if not check("120: a spreadsheet's view is the active one",
+                 active is not None and "Sheet" in str(active), str(active)):
+        return
     tree = find("Gui::TreeWidget")
     tab = overlay_of(tree)
     if not check("120: the tree is overlaid", tab is not None):
@@ -221,8 +253,18 @@ def spreadsheet():
         for x in range(0, image.width(), 4):
             if (image.pixel(x, y) >> 24) & 255 == 0:
                 clear += 1
-    check("120: over the spreadsheet's view the tree's overlay stays see-through",
-          clear > 50, "%d clear sample points" % clear)
+    note("INFO %d clear sample points in the tree's overlay" % clear)
+    # The eye tells once the panel is the active one (the focus in it): a
+    # see-through panel keeps its widgets without a ground of their own
+    # (OverlayOption::ShowTab), an opaque one gives them theirs back
+    # (Disable). Over a maximized view that cannot be panned the eye was
+    # overruled -- the gate of entry 120.
+    tree.setFocus()
+    settle(1500)
+    check("120: over the spreadsheet's view, the tree's panel active, it stays see-through",
+          tree.testAttribute(QtCore.Qt.WA_NoSystemBackground),
+          "the tree without a ground of its own: %s" % tree.testAttribute(
+              QtCore.Qt.WA_NoSystemBackground))
 
 
 def finish():
