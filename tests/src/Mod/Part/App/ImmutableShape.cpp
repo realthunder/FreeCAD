@@ -2,6 +2,8 @@
 
 #include "gtest/gtest.h"
 
+#include <typeinfo>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <Mod/Part/App/PrimitiveFeature.h>
@@ -25,6 +27,7 @@
 #include <TopExp.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRep_PointOnCurve.hxx>
 #include <BRep_PointRepresentation.hxx>
 #include <BRep_TEdge.hxx>
 #include <BRep_TVertex.hxx>
@@ -100,6 +103,18 @@ Handle(BRep_PointRepresentation) pointOn(const TopoDS_Vertex& vertex, const Hand
             return point;
     }
     return {};
+}
+
+/** Whether \a point is a cache the fork's BRep_Builder made rather than a
+ * value. Since OCCT a23e0824af that is told by its class, not by a member: a
+ * cache is of a class of BRep_Builder.cxx's own derived from the
+ * representation's, while its OCCT type stays the representation's -- so
+ * only the C++ type tells the two apart. Both callers ask about a parameter
+ * on a curve.
+ */
+bool isCache(const Handle(BRep_PointRepresentation)& point)
+{
+    return typeid(*point) != typeid(BRep_PointOnCurve);
 }
 
 } // namespace
@@ -1005,7 +1020,7 @@ TEST(ImmutableShapeTest, aFrozenVertexTakesAParameterOnANewCurve)
     const TopoDS_Vertex onExtended = TopoDS::Vertex(end.Oriented(TopAbs_INTERNAL));
     EXPECT_NO_THROW(builder.UpdateVertex(onExtended, 0., extended, tol));
     ASSERT_FALSE(pointOn(end, line).IsNull());
-    EXPECT_TRUE(pointOn(end, line)->IsCache());
+    EXPECT_TRUE(isCache(pointOn(end, line)));
     // Being a cache it may be rewritten; not with a tolerance to grow to.
     EXPECT_NO_THROW(builder.UpdateVertex(onExtended, 1e-3, extended, tol));
     EXPECT_THROW(builder.UpdateVertex(onExtended, 0., extended, tol * 10), TopoDS_LockedShape);
@@ -1013,7 +1028,7 @@ TEST(ImmutableShapeTest, aFrozenVertexTakesAParameterOnANewCurve)
     Standard_Real first, last;
     Handle(Geom_Curve) own = BRep_Tool::Curve(edge, first, last);
     ASSERT_FALSE(pointOn(inner, own).IsNull());
-    EXPECT_FALSE(pointOn(inner, own)->IsCache());
+    EXPECT_FALSE(isCache(pointOn(inner, own)));
     const TopoDS_Vertex innerOn = TopoDS::Vertex(inner.Oriented(TopAbs_INTERNAL));
     EXPECT_NO_THROW(builder.UpdateVertex(innerOn, 5., edge, 0.));
     EXPECT_THROW(builder.UpdateVertex(innerOn, 6., edge, 0.), TopoDS_LockedShape);
