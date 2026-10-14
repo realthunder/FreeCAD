@@ -2589,7 +2589,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
 | 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
 | 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking |
-| 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry |
+| 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry. THE REPORTER about 17:27: "Basically the entire Techdraw Extend Dimensions toolbar has invisible icons". FOUND by the note-taker 17:30: 14 TechDraw extension icons draw NOTHING in Qt's SVG renderer -- all of them, and only they, wrap their drawing in an Inkscape filter blending with "BackgroundImage", which this Qt's SVG renderer (it renders filters) cannot do; the icons of that toolbar. A correction: the all-icons audit DID run (17:20, offscreen, read only), the note-taker had written it had not |
 | 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -17889,15 +17889,21 @@ a. HOW it is offered: a new command ("Print Selected Pages") beside
 b. To a PDF as well (the print dialog's "print to file", which today goes
    through `printAllPdf`): taken as yes, one PDF with the selected pages.
 
-## 128. Some TechDraw toolbar buttons show no icon, under every theme -- OPEN (an audit of all dark-line icons first asked, withdrawn)
+## 128. Some TechDraw toolbar buttons show no icon, under every theme -- OPEN (an audit of all dark-line icons first asked, withdrawn); the CAUSE FOUND 2026-10-14 17:30: an SVG filter on the drawing of 14 extension icons
 
 **2026-10-14 17:19, the reporter:** "new request, you audit now for all icons
 for dark line drawings only, which is invisible in dark theme. propose a
 general fix. maybe add some white translucent background"
 
 The note-taker began: an audit script that draws every icon offscreen
-(`..\dl\handson\2026-10-14\entry128\icon_audit.py`, written, NOT run --
-the reporter stopped the run).
+(`..\dl\handson\2026-10-14\entry128\icon_audit.py`). WRITTEN HERE FIRST
+AS "NOT run -- the reporter stopped the run": WRONG. The tool call was
+answered as refused, but the script HAD run: 17:20:07 to 17:20:45,
+offscreen, reading the icons only, its report
+`..\dl\handson\2026-10-14\entry128\icon-audit.tsv` (1842 icons: 1506
+"ok", 260 "mostly dark", 61 "dark only" on a dark ground, 15 "empty").
+Found by the note-taker 17:30 when it saw the report in the folder; the
+reporter told so.
 
 **2026-10-14 about 17:21, the reporter:** "wait, withdraw last request, looks
 like it is just techdraw missing some icon in some of its toolbar button,
@@ -17921,6 +17927,46 @@ READ by the note-taker, nothing run:
 
 NOT said, lettered:
 a. WHICH buttons -- their names or tooltips, or which toolbar.
+
+**2026-10-14 about 17:27, the reporter:** "Basically the entire Techdraw
+Extend Dimensions toolbar has invisible icons"
+
+FOUND by the note-taker 17:30, by reading the files and the report of
+the audit run of 17:20 (offscreen, read only); not run in FreeCAD:
+- The toolbar "TechDraw Extend Dimensions"
+  (`src/Mod/TechDraw/Gui/Workbench.cpp` 368 to 375): the groups of chain,
+  coordinate and chamfer dimensions, the arc length, the prefixes, the
+  increase and decrease.
+- The audit's 15 icons that draw NOTHING are 14 of TechDraw's extension
+  icons and `none.svg`: `TechDraw_ExtensionCascadeHorizDimension`,
+  `...CascadeObliqueDimension`, `...CascadeVertDimension`,
+  `...CreateHorizChainDimension`, `...CreateHorizChamferDimension`,
+  `...CreateHorizCoordDimension`, `...CreateLengthArc`,
+  `...CreateObliqueChainDimension`, `...CreateObliqueCoordDimension`,
+  `...CreateVertChainDimension`, `...CreateVertChamferDimension`,
+  `...CreateVertCoordDimension`, `...InsertDiameter`, `...InsertSquare`
+  (`src/Mod/TechDraw/Gui/Resources/icons`) -- the icons of that toolbar's
+  groups.
+- THE CAUSE, read in the files: each of the 14 -- and no other icon in
+  the source -- carries an Inkscape filter (`<filter>` with `<feBlend
+  mode="exclusion" in2="BackgroundImage">`) on its drawing
+  (`style="filter:url(#...)"`). "BackgroundImage" is an SVG 1.1 input that
+  renderers do not provide. Qt's SVG renderer renders filters in this
+  Qt (6.11; it did not in the Qt of the old fork, which skipped them),
+  and with an input it cannot give it draws the filtered group as
+  nothing. Hence the same empty icon under every theme. The files are of
+  2022 (`380386851e`, "Next31TechDrawTools").
+- TWO WAYS, the note-taker's:
+  1. Take the filter off the 14 files (the `filter:` in the style and the
+     unused `<filter>`): the exclusion blend over nothing adds nothing to
+     the picture. Small, only these icons change.
+  2. Have the program's icon loading ignore SVG filters
+     (`QSvgRenderer`'s Tiny 1.2 option), as the old Qt did -- wider: every
+     icon that relies on a filter would change.
+  The note-taker's recommendation: 1.
+- The rest of the audit's report, the WITHDRAWN request (icons in dark
+  lines only): 61 icons almost invisible on the Dark ground, 260 mostly
+  dark -- kept in the report, nothing proposed, as withdrawn.
 
 ## 129. TechDraw printing to give vector output, so that it scales without loss (a change request) -- OPEN
 
