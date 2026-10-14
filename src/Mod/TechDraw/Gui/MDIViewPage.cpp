@@ -601,6 +601,9 @@ void MDIViewPage::printAllPages()
 {
     QPrinter printer(QPrinter::HighResolution);
     printer.setFullPage(true);
+    // the dialog opens on landscape, as most drawing sheets are; each page
+    // is still printed in its own template's orientation
+    printer.setPageOrientation(QPageLayout::Landscape);
 
     QPrintDialog dlg(&printer, Gui::getMainWindow());
     if (dlg.exec() == QDialog::Accepted) {
@@ -636,6 +639,8 @@ void MDIViewPage::printPages(const std::vector<App::DocumentObject*>& pages)
         return;
     QPrinter printer(QPrinter::HighResolution);
     printer.setFullPage(true);
+    // landscape, as in printAllPages()
+    printer.setPageOrientation(QPageLayout::Landscape);
 
     QPrintDialog dlg(&printer, Gui::getMainWindow());
     if (dlg.exec() != QDialog::Accepted)
