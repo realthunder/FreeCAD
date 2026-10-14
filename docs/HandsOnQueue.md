@@ -131,6 +131,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 11:42, the reporter, a NEW ENTRY 118:** the scene light's
+manipulator does not work, no draggable arrow is seen. By the source it
+is Coin's directional light dragger (entry 63) fed through an overlay
+capture; the cause not found by reading; two points put. Written here
+11:46.
+
 **2026-10-14 11:41, the reporter, three things in one message:** "116, yes
 fix finding 5. I've already told build session about 98 and theme colours.
 I'd like to rework dressup editing manipulator. make this an try. note
@@ -2374,6 +2380,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 115 | 2026-10-14 | the 3D view's background does not follow its settings: the preference is a RADIAL gradient, a LINEAR one is shown, and it does not respond to a change of the setting | OPEN; the reporter's configuration and the source read by the note-taker, nothing run: the configuration says radial (`Gradient` 0, `RadialGradient` 1); the cause NOT found by reading; one thing that can give linear -- every theme writes `Gradient` 1, which wins over radial; three points under the entry, NOT ANSWERED. MADE PRECISE by the reporter 09:50: a COLOUR change shows at once; a change of the PATTERN does not -- it shows only when the mouse moves over the 3D view, even with the preferences open. A CANDIDATE by reading, not shown: setting the pattern asks for no redraw (old code); points b and c answered by this, one new point under the entry (what a theme does to the pattern). POINT d ANSWERED 09:54: "change both theme to default to Simply color" -- the Dark and the Light theme are to give the ONE-COLOUR background ("Simple color"), no gradient. Not started; one smaller point under the entry (Light's single colour is the same dark grey as Dark's). REPRODUCED 09:57 by the build session on the staged copy: the settings arrive, the REDRAW is missing -- the note-taker's candidate right; fixed in the tree (`setGradient` touches the node), in a build, not committed. THE THEMES: after Dark or Light both keys are on, the view is LINEAR and the preference page opens with "Radial" selected -- page and view disagree; the themes' change waits on the reporter's answer of 09:54, which crossed this. THE THEMES (09:58): the build session applies the reporter's answer to `Dark.cfg` and `Light.cfg` after its running build; for LIGHT's single colour it takes #C3C3C3, the theme's present top colour, "unless the user names another; said to them". THE REPORTER to the build session about 10:00 and 10:01 (relayed 10:23): Light's simple colour to be "its old center gradient color" -- then "wait for the background color, simple color is which setting?"; answered by the build session; the themes' change is HELD until the reporter confirms, the theme files untouched. THE REDRAW: the first fix did not ask for one; put right in a build r21; on the staged copy NO change of pattern repaints the view, a gradient to one colour included. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: the redraw at a change of the pattern (`8cdd37309b`; its test 6 of 6 offscreen and on the screen, four of six failing on the copy of 08:10) is in the reporter's copy; the THEMES' change is NOT -- held for the reporter's confirmation |
 | 116 | 2026-10-14 | a task, said by the reporter to the build session after entry 114's crash: "spawn an agent to audit for missing signal auto disconnect" | AUDITED 10:23 by a read-only agent of the build session's; no second case of entry 114's kind (every other parameter observer detaches from every group it attached to); SEVEN findings of other kinds, two HIGH (an Assembly view provider's connection to the main window never released; Mesh's fill-hole command), none from today's work; fixes written for six, NOT applied; one (the selection singleton) "left for a word". WHAT IT COVERED (10:24): the observers and the signal and Qt connections under `src/Gui`, `src/Mod` and `src/App`; NOT the modules' App parts beyond its searches, `src/Base` beyond two files, anything in Python, `src/3rdParty`; SIX more places listed for a second look, not verified, not fixed. The six fixes are what the build session does next "unless they say otherwise" -- put to the reporter by it. FINDING 5 (the selection singleton's static connection): the reporter 11:41 "yes fix finding 5"
 | 117 | 2026-10-14 | a change request: REWORK the dress-up features' editing manipulator (the handles in the 3D view), with this fork's default radius and per-edge radius (one or two) in mind; and, in general, entering values WITHOUT the task panel, by the on-view editable datum label; a SURVEY of what other CAD programs do and a PROPOSED DESIGN asked first | OPEN, a survey and a proposal asked; relayed to the build session; three points under the entry, not put as blocking |
+| 118 | 2026-10-14 | the scene light's manipulator does not work: no draggable arrow is seen; the reporter thinks it does not use the manipulator the shadow light had (a directional light's) | OPEN; the source read by the note-taker, nothing run: it IS Coin's directional light dragger, as entry 63 asked (2026-10-09), drawn through an overlay capture of its own; the cause NOT found by reading; two points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -16906,6 +16913,55 @@ b. "In general": every feature's edit (a pad's length, a pocket's
 c. WHO surveys and proposes: relayed to the build session as its task;
    the note-taker writes only this queue.
 
+## 118. The scene light's manipulator does not work: no draggable arrow -- OPEN; it is Coin's directional light dragger by the source; the cause not found by reading; two points not answered
+
+**2026-10-14 11:42, the reporter:** "also new entry, the scene light
+maniuplator is not working. I don't think it uses the shadow light (which
+is actually directional light) manipulator, because I don't see the
+draggable arrow"
+
+The note-taker's reading, not the reporter's words:
+- The handle that turns the scene's light in the view (entry 63, the
+  headlight's direction, from the Display style menu) does not work:
+  the reporter sees NO draggable arrow.
+- The reporter's guess: it is not the manipulator the shadow light had
+  -- Coin's directional light dragger, with its arrow -- that entry 63
+  asked for.
+- On which copy is not said; taken as the copy staged 10:36 today.
+
+READ in the source, nothing run -- pointers, and the guess checked:
+- It IS Coin's directional light dragger:
+  `View3DInventorViewer::setLightManipulator`
+  (`src/Gui/View3DInventorViewer.cpp` line 6953) makes a
+  `SoFCDirectionalLightDragger` -- the subclass of Coin's
+  `SoDirectionalLightDragger` the shadow light's `SoFCDirectionalLight`
+  carries (`src/Gui/SoFCDirectionalLight.h` lines 42, 95) -- and gives
+  its arrow an orange of its own (lines 6966 to 6981). The comment over
+  it (line 6842) quotes entry 63: "why note use coin light manipulator
+  like what shadow light is using". So by the source the reporter's
+  guess does not hold; that the arrow is not SEEN is the defect.
+- It is hung under an annotation in the view's aux root (lines 6990 and
+  after), and -- because nothing Coin draws by itself reaches the screen
+  under the Direct3D back end, the Windows default -- it is fed to the
+  render engine as an OVERLAY CAPTURE of its own
+  (`OverlayLightManip`, lines 696, 718, 1483 to 1491). Its events go to
+  it first by an action of its own (`lightManipEvent`, line 6864).
+- The button that switches it on: the Display style menu's light
+  direction button (`src/Gui/DisplayOptions.cpp` lines 237 to 243); it
+  closes the menu when switched on.
+- Made 2026-10-09 and 2026-10-10 (`b20c825573`, `8fed56f3df`); entry 63
+  was staged 2026-10-10 09:44. Whether it ever showed its arrow on the
+  reporter's screen is not recorded here.
+- THE CAUSE IS NOT FOUND by reading.
+
+NOT said, lettered for an answer:
+a. HOW it was switched on, and what IS seen: the light direction button
+   of the Display style menu? After it, nothing at all in the view -- or
+   something (a handle, a ball) without its arrow? Does a drag in the
+   middle of the view turn the light?
+b. Has the arrow been seen on an earlier stage (since 2026-10-10), or
+   never?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -16916,5 +16972,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 117 are of 2026-10-14, 116 said to the build
+it; entries 114 to 118 are of 2026-10-14, 116 said to the build
 session)
