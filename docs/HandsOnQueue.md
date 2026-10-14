@@ -17016,7 +17016,10 @@ line) and six web searches; nothing run.
   edge only; no handle drives a per-edge value, on any dress-up. The
   editable datum label is already used outside the sketcher -- the
   patterns' clickable extent and spacing labels -- and both handles and
-  labels already reach the screen under the Direct3D render engine.
+  labels are fed to the Direct3D render engine BY THE SOURCE; NOT SEEN
+  RUN (the build session, 12:45: entry 118's arrow is fed the same way
+  and not seen -- "keep it a claim until someone looks"; the document
+  says so since `8054e44db8`, 12:41).
 - THE SURVEY (SolidWorks, Fusion 360, Inventor, Onshape, NX, Creo,
   CATIA, SketchUp/Shapr3D, upstream FreeCAD), with its sources: one handle
   per value with its number beside it; the number is the way in for
