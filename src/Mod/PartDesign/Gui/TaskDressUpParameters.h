@@ -59,6 +59,7 @@ public:
     virtual void apply() override {}
 
     bool getItemElement(QTreeWidgetItem *item, std::string &subname);
+    void lightPreviewFace(const std::string &subname);
 
 protected Q_SLOTS:
     void onButtonRefAdd(const bool checked);
