@@ -6998,3 +6998,57 @@ seeded config (a stored 0xaaaa reads 0xcccc, the combo's Dot is 0xcccc and
 shows as current), `techdraw-print-selected.py` 7/7,
 `techdraw-print-native-vector.py` 3/3. The landscape dialog is the
 reporter's to look at: a script cannot answer Windows' print dialog.
+
+## 2026-10-15, the night: entry 117 built, steps 1 to 3 of docs/OnViewValueEditing.md -- LOCAL, not pushed, not staged
+
+On "Push and restage. Then work on the partdesign on view editing" (2026-10-14
+~22:55): pushed `3e764d4566`, staged 22:59 clean from r32; then the agreed
+design built in its own order of work.
+
+**Step 1 `bb3e87f066`: the default radius in the view.** `Gui::OnViewValueSet`
+(new `src/Gui/OnViewValue.*`) binds values held by spin boxes to the view: a
+label for each, and an ACTIVE handle (a click on it, or Tab in the view) that
+takes typing -- a digit opens its label with the digit, Enter with the value
+selected, Escape deactivates; in the label Enter commits, Escape restores,
+Ctrl+Enter commits and accepts the edit. A value an expression drives shows
+the expression, in the sketcher's expression colour, and is not typed. A new
+text-only `SoDatumLabel::TEXT` draws the always-shown "Radius 2 mm" at the top
+middle of the view (Coin, the bgfx capture and the pick box). One arrow
+instead of two, in the face turned more toward the camera. A trap found by
+the test: the view leaves an edit on Escape's RELEASE
+(`ViewProvider::eventCallback`), so the release of a key taken on its press is
+taken too, and the key that closes a label is marked for its release.
+
+**Step 2 `9ca3501747`, `10efacc050`: an arrow on every edge.** An edge taking
+the default drives it (all its arrows light together); a customised edge has
+an arrow per point, each a value whose label shows beside the arrow while
+active. The ROOT of each arrow is a knob of its colour: a click on it, or
+Space while active, opens the edge's menu -- Default radius / One radius / Two
+radii / Remove; other layouts read "Varying (set in the panel)". A point
+inside an edge also gets a knob sliding along it. `GizmoContainer` takes and
+gives back gizmos after it is made; `LinearGizmo` got the root button, a
+colour of its own, a highlight, and lets go of its spin box when deleted. A
+crash found on the way: the default's value kept pointers to its rebuilt
+arrows.
+
+**Step 3 `0268517025`, `4677a9d715`: edge groups.** In
+`PropertyFilletSegments`: a group id per customised edge, every change
+mirrored to the group in the same change, reversed members turned end for
+end, ids saved as attributes (older files: a group each). In the view: a
+colour per group, a Group sub-menu, Reversed in group, the group lit
+together, a Group column in the panel. Four older bugs of the property fixed
+on the way, among them `getPathValue` returning nothing exactly when it found
+a value.
+
+**Tests.** `fillet-radius-typed-in-view` 18, `fillet-edge-handles-in-view` 15,
+`fillet-point-position-in-view` 6, `fillet-groups-in-view` 11 (offscreen and
+on the screen, pictures looked at); `TestFillet` 21 with 7 new
+`TestFilletGroups`. The neighbours: pattern labels 12, sketch label pick 12,
+label scale 9, `sketch-arc-labels` 11 on the screen (its log needed UTF-8,
+`9451ff9f31`; its pixel claims fail offscreen only).
+
+**My choices, not the reporter's:** two radii's ends drawn at 10% and 90% of
+the edge; nothing active after a mode change; a reversed member's points by
+length keep their length; at most 64 handles.
+
+Steps 4 (chamfer, draft, thickness) and 5 (panel optional) not started.
