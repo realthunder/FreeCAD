@@ -6,4 +6,10 @@
     <glob pattern="*.fcstd"/>
     <generic-icon name="application-x-extension-fcstd"/>
   </mime-type>
+  <mime-type type="application/x-extension-tstd">
+    <!-- schema 5, this fork's own format: the same archive, read by nothing else -->
+    <comment>Thundereal document files</comment>
+    <glob pattern="*.tstd"/>
+    <generic-icon name="application-x-extension-tstd"/>
+  </mime-type>
 </mime-info>
