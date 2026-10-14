@@ -1229,6 +1229,11 @@ void TransactionLogView::attach(App::Document* doc)
     // Rows can go as well as come (a trim, a deleted branch): rebuilt whole.
     _connections.emplace_back(_doc->signalBranchesChanged.connect(
         [this](const App::Document&) { reload(); }));
+    // What is kept, from Python or a served client's panel (sec 32.27):
+    // no row says so. After the act that kept it, which may be this panel's
+    _connections.emplace_back(_doc->signalLogKeptChanged.connect([this](const App::Document&) {
+        QTimer::singleShot(0, this, &TransactionLogView::keptChanged);
+    }));
     //NOLINTEND
     reload();
 }

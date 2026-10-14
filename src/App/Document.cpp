@@ -10680,6 +10680,8 @@ std::vector<std::string> Document::keepLogValue(long cid, const std::string& pro
         }
         out.push_back(ref);
     }
+    if (!out.empty())
+        signalLogKeptChanged(*this);
     return out;
 }
 
@@ -10707,13 +10709,22 @@ std::vector<Document::KeptValue> Document::keptLogValues()
 bool Document::releaseLogValue(const std::string& ref)
 {
     TransactionLog* log = getTransactionLog();
-    return log && log->store().releaseValue(ref);
+    if (!log || !log->store().releaseValue(ref))
+        return false;
+    signalLogKeptChanged(*this);
+    return true;
 }
 
 void Document::keepLogValuesOf(long cid, bool keep)
 {
-    if (TransactionLog* log = getTransactionLog())
-        log->store().keepObject(cid, keep);
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return;
+    const auto before = log->store().keptObjects();
+    const bool was = std::find(before.begin(), before.end(), cid) != before.end();
+    log->store().keepObject(cid, keep);
+    if (was != keep)
+        signalLogKeptChanged(*this);
 }
 
 std::vector<long> Document::keptLogObjects()

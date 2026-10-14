@@ -207,6 +207,10 @@ public:
     /// (docs/TransactionLog.md sec 26): a switch, a new branch, a trim or a
     /// deleted branch
     fastsignals::signal<void (const App::Document&)> signalBranchesChanged;
+    /// signal after what the log keeps in the file changed (docs/TransactionLog.md
+    /// sec 32.11, 32.27): a value kept or let go, an object kept or no longer.
+    /// No row says so, so nothing else does
+    fastsignals::signal<void (const App::Document&)> signalLogKeptChanged;
     /// signal on a frozen version document opened for a pin when the last
     /// link pinned to it lets go (docs/TransactionLog.md sec 27.21 Q5, 27.30):
     /// unpinned, deleted, re-pinned, or its document closed. What becomes of
