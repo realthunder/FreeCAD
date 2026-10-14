@@ -145,6 +145,17 @@ public:
      * that is started next, entered or refused.
      */
     void setValueChangeRow(long long row) { _valueChangeRow = row; }
+    /** The value the next ViewProvider::ValueDiff edit of this object shows
+     * against what the object has now, in place of a row's change: a value
+     * the log keeps in the file, by its ref (docs/TransactionLog.md sec
+     * 32.12, 32.27), with the row it was kept at. Spent as
+     * setValueChangeRow() is; it goes before a row.
+     */
+    void setValueChangeRef(const std::string &ref, long long row = 0)
+    {
+        _valueChangeRef = ref;
+        _valueChangeRefRow = row;
+    }
     /** The change a ViewProvider::ValueDiff edit that starts now is of:
      * the row setValueChangeRow() named, else the last. The row named is
      * spent by the asking.
@@ -424,6 +435,9 @@ private:
     bool _VisibilityRestored = false;
     /// setValueChangeRow()
     long long _valueChangeRow = 0;
+    /// setValueChangeRef()
+    std::string _valueChangeRef;
+    long long _valueChangeRefRow = 0;
 
     std::vector<App::DocumentObject*> claimedChildren;
     std::set<App::DocumentObject*> childSet;

@@ -214,6 +214,12 @@ void watchFor(App::Document* doc, uint64_t client)
                 queueTell(name);
                 tellTheFile(moved);
             }));
+        // What is kept in the file, however it was asked (sec 32.27)
+        watch->connections.emplace_back(doc->signalLogKeptChanged.connect(
+            [name](const App::Document& moved) {
+                queueTell(name);
+                tellTheFile(moved);
+            }));
         watch->connections.emplace_back(doc->signalRecomputed.connect(
             [name](const App::Document&, const std::vector<App::DocumentObject*>&) {
                 queueTell(name);
@@ -2152,6 +2158,46 @@ bool Gui::logRowListed(App::Document* doc, int64_t row)
     catch (const Base::Exception&) {
         return false;
     }
+}
+
+bool Gui::logKeptListed(App::Document* doc, App::DocumentObject* obj, const std::string& ref,
+                        int64_t* row)
+{
+    App::TransactionLog* log = doc ? doc->getTransactionLog() : nullptr;
+    if (!log || !obj || ref.empty())
+        return false;
+    try {
+        App::TransactionStore& store = log->store();
+        const Reach reach = reachOf(doc, log);
+        const long cid = obj->getID();
+        for (const App::LogKept& kept : store.keptValues()) {
+            if (kept.hash != ref || kept.cid != cid)
+                continue;
+            App::LogTransaction at;
+            const bool there = rowOf(store, kept.seq, at);
+            if (!keptListed(doc, reach, kept, there, at))
+                return false;
+            if (row)
+                *row = kept.seq;
+            return true;
+        }
+        const std::vector<long> objects = store.keptObjects();
+        if (std::find(objects.begin(), objects.end(), cid) == objects.end())
+            return false;
+        for (const auto& prop : store.derivedPropsOf(cid)) {
+            for (const auto& set : store.valuesOf(cid, prop)) {
+                App::LogTransaction at;
+                if (set.second != ref || !rowOf(store, set.first, at) || !reach.sees(at))
+                    continue;
+                if (row)
+                    *row = set.first;
+                return true;
+            }
+        }
+    }
+    catch (const Base::Exception&) {
+    }
+    return false;
 }
 
 bool Gui::serveLogBranch(App::Document* doc)

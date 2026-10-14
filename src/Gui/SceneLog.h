@@ -25,9 +25,13 @@
 
 #include <FCGlobal.h>
 
+#include <cstdint>
+#include <string>
+
 namespace App
 {
 class Document;
+class DocumentObject;
 }
 
 namespace Gui
@@ -113,6 +117,15 @@ GuiExport void installSceneLogOps();
  * the edit that shows a row's change (`edit` with `row`, sec 32.21).
  */
 GuiExport bool logRowListed(App::Document* doc, int64_t row);
+
+/** Whether the one who asks is listed `ref` among what the log of `doc`
+ * keeps in the file as a value of `obj` (sec 32.27, `log.kept`): kept by
+ * itself, or of an object kept, at a row it is listed. `row` is given the
+ * row it was kept at, or set at. For the edit that shows a kept value
+ * against what the object has now (`edit` with `kept`).
+ */
+GuiExport bool logKeptListed(App::Document* doc, App::DocumentObject* obj, const std::string& ref,
+                             int64_t* row = nullptr);
 
 /** Say that `doc` was opened from a branch to be served: the branch it is
  * on now is the one its clients' reach starts at, where that branch forks

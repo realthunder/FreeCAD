@@ -767,11 +767,23 @@ QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
     // (sec 32.25), as it is to `log.ops`
     if (row > 0 && mode == ViewProvider::ValueDiff && !logRowListed(doc, row))
         return errorReply(id, "UnknownRow", QString::number(row));
-    if (vpd && mode == ViewProvider::ValueDiff)
+    // Or a value the log keeps in the file, against what the object has now
+    // (sec 32.27): one of the kept the asker is listed, of this object
+    const std::string kept = req.value(QLatin1String("kept")).toString().toStdString();
+    int64_t keptRow = 0;
+    if (!kept.empty() && mode == ViewProvider::ValueDiff
+            && !logKeptListed(doc, vpd ? vpd->getObject() : nullptr, kept, &keptRow))
+        return errorReply(id, "UnknownValue", QString::fromStdString(kept));
+    if (vpd && mode == ViewProvider::ValueDiff) {
         vpd->setValueChangeRow(row);
+        if (!kept.empty())
+            vpd->setValueChangeRef(kept, keptRow);
+    }
     QJsonObject entered = enterClientEdit(id, gdoc, vp, mode, subname, client);
-    if (vpd)
+    if (vpd) {
         vpd->setValueChangeRow(0);
+        vpd->setValueChangeRef(std::string());
+    }
     if (!entered.value(QLatin1String("ok")).toBool())
         return entered;
 

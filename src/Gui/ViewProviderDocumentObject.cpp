@@ -758,6 +758,19 @@ bool ViewProviderDocumentObject::valueChangeToShow(const char *prop, std::string
 {
     const long long row = _valueChangeRow;
     _valueChangeRow = 0;
+    const std::string ref = std::move(_valueChangeRef);
+    _valueChangeRef.clear();
+    if (!ref.empty()) {
+        // A kept value against now: an empty after is the object's own
+        before = ref;
+        after.clear();
+        if (what)
+            *what = _valueChangeRefRow > 0
+                ? "the value kept at row " + std::to_string(_valueChangeRefRow)
+                : std::string("the value kept");
+        _valueChangeRefRow = 0;
+        return true;
+    }
     if (row > 0)
         return valueChangeAt(row, prop, before, after, what);
     return lastValueChange(prop, before, after, what);
