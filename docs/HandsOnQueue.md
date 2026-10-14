@@ -14770,6 +14770,28 @@ the same on yesterday's copy, its cause a guess of the build session's
 -- whether the origin's Z axis is drawn rightly in an edit since the
 scale's default went to 200 is not shown either way.
 
+**2026-10-14 08:16, the build session: the failing claim of
+`pd-origin-in-edit.py` EXPLAINED -- the test's own, corrected `9bfa88b726`,
+local, not pushed; the program is not touched.** From its message stamped
+08:20, written here 08:16.
+- "looked at in the test's own picture
+  (g-r16-pd-origin-in-edit-dev\02-ring-edit.png): the Z axis IS drawn
+  in the edit -- a blue line from above the ring down through it. An
+  origin's axis starts a little way off the origin point, and twice as
+  far since an origin is drawn at twice the size (6e7232e7c2, entry 99
+  b); the test counted blue only in the short strip between the origin
+  and the ring's underside, which that gap now covers: 4 pixels."
+- "The strip now runs to above the ring: 116 pixels of the axis with the
+  ring in edit, 0 with the box in edit (the attacher hides the axes),
+  the test 15 of 15 on build r16, real screen."
+- "It was my change of yesterday (the default scale) that broke the
+  test's claim, on every build since, the staged one of 16:55 included;
+  no behaviour of the program is touched by the correction."
+So the note-taker's point of 08:12 (whether the origin's Z axis is drawn
+rightly in an edit since the default went to 200) is answered: it is,
+by the build session's look at the picture; the picture not opened by
+the note-taker.
+
 ## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02; half done 2026-10-13 19:17, not committed; does not work on the build r8 (20:15), being looked at; WORKS on the build r10, COMMITTED `26f0a30de0` 2026-10-13, local; not pictured; STAGED 2026-10-14 08:10
 
 **2026-10-13 16:00, the reporter:** "defect (from old fork), when a dress up
