@@ -13,14 +13,17 @@ release -- the drag went on, its frames stayed on the screen, the cell was not
 closed or resized.
 
 A document's view split into two cells, every dock overlaid, the left one
-see-through. Claims, the platform's own pointer (offscreen):
+see-through. The mouse goes through the main window as the window system's
+would (to the widget under the pointer, or to the one its press grabbed).
+Claims, the platform's own pointer (offscreen):
   - a point inside the left overlay where it paints nothing is found;
-  - the border pressed, the pointer moved to that point and let go there:
-    the border gets the release;
+  - the border pressed and the pointer moved to that point: the drag shows
+    its frames; let go there, the frames are gone;
   - and the cells take the border's new place (the drag was carried out);
   - split again, the border dragged and its release never sent: the next
     mouse event that finds the button up ends the drag -- its frames gone,
-    the cells as they were (entry 119 by the queue's numbering; the user,
+    the cells as they were, also after a late release (entry 119 by the
+    queue's numbering; the user,
     about 11:50: "Will a split drag handle got notified it lost tracking?
     That's the place to hide the tracking frame so they do not stall. Same
     for other handle dragging").
@@ -66,15 +69,6 @@ def mw():
 
 def cls(w):
     return w.metaObject().className()
-
-
-class Releases(QtCore.QObject):
-    """Counts the mouse releases that reach the widget it is put on"""
-
-    def eventFilter(self, _watched, event):
-        if event.type() == QtCore.QEvent.MouseButtonRelease:
-            S["released"] += 1
-        return False
 
 
 def eye(tab, on):
@@ -170,6 +164,27 @@ def find_spot():
           None if spot is None else (spot.x(), spot.y()))
 
 
+def at(kind, g):
+    """A mouse event through the main window, as the window system sends one:
+    to the widget under the pointer, or to the one its press grabbed, with
+    the application's idea of the buttons kept (QTest's widget events go
+    straight to the widget named, past that)"""
+    win = mw().windowHandle()
+    local = mw().mapFromGlobal(g)
+    QtGui.QCursor.setPos(g)
+    if kind == "press":
+        QtTest.QTest.mousePress(win, Qt.LeftButton, Qt.NoModifier, local)
+    elif kind == "move":
+        QtTest.QTest.mouseMove(win, local)
+    else:
+        QtTest.QTest.mouseRelease(win, Qt.LeftButton, Qt.NoModifier, local)
+
+
+def frames_shown():
+    return [w for w in mw().findChildren(QtWidgets.QWidget)
+            if w.objectName() == "ViewAreaDragFrames" and w.isVisible()]
+
+
 def drag():
     handle = S.get("handle")
     spot = S.get("spot")
@@ -177,42 +192,26 @@ def drag():
         return
     splitter = handle.splitter()
     before = list(splitter.sizes())
-    S["filter"] = Releases()
-    handle.installEventFilter(S["filter"])
-    centre = QtCore.QPoint(handle.width() // 2, handle.height() // 2)
-    QtGui.QCursor.setPos(handle.mapToGlobal(centre))
+    start = handle.mapToGlobal(QtCore.QPoint(handle.width() // 2, handle.height() // 2))
+    at("move", start)
     settle(200)
-    QtTest.QTest.mousePress(handle, Qt.LeftButton, Qt.NoModifier, centre)
+    at("press", start)
     settle(200)
     # towards the spot in a few steps, as a hand does
-    start = handle.mapToGlobal(centre)
     for i in range(1, 6):
-        p = start + (spot - start) * i / 5
-        QtGui.QCursor.setPos(p)
-        QtTest.QTest.mouseMove(handle, handle.mapFromGlobal(p))
+        at("move", start + (spot - start) * i / 5)
         settle(80)
-    QtGui.QCursor.setPos(spot)
     settle(200)
-    S["released"] = 0
-    QtTest.QTest.mouseRelease(handle, Qt.LeftButton, Qt.NoModifier, handle.mapFromGlobal(spot))
+    check("dragged over the see-through panel: the drag shows its frames", bool(frames_shown()))
+    at("release", spot)
     settle(800)
-    check("let go over the see-through panel: the border gets the release", S["released"] >= 1,
-          S["released"])
+    check("let go there: the drag's frames are gone", not frames_shown(), len(frames_shown()))
     try:
         after = list(splitter.sizes())
     except RuntimeError:
         after = None
     check("the drag is carried out: the cells are not as they were", after != before,
           "%s -> %s" % (before, after))
-    try:
-        handle.removeEventFilter(S["filter"])
-    except RuntimeError:
-        pass
-
-
-def frames_shown():
-    return [w for w in mw().findChildren(QtWidgets.QWidget)
-            if w.objectName() == "ViewAreaDragFrames" and w.isVisible()]
 
 
 def lost():
@@ -234,24 +233,25 @@ def lost():
     handle = handles[0]
     splitter = handle.splitter()
     before = list(splitter.sizes())
-    centre = QtCore.QPoint(handle.width() // 2, handle.height() // 2)
-    start = handle.mapToGlobal(centre)
-    QtGui.QCursor.setPos(start)
-    QtTest.QTest.mousePress(handle, Qt.LeftButton, Qt.NoModifier, centre)
+    start = handle.mapToGlobal(QtCore.QPoint(handle.width() // 2, handle.height() // 2))
+    at("move", start)
+    settle(150)
+    at("press", start)
     settle(150)
     for dx in (10, 20, 30):
-        QtGui.QCursor.setPos(start + QtCore.QPoint(dx, 0))
-        QtTest.QTest.mouseMove(handle, centre + QtCore.QPoint(dx, 0))
+        at("move", start + QtCore.QPoint(dx, 0))
         settle(80)
     settle(200)
     if not check("the drag shows its frames", bool(frames_shown())):
+        at("release", start + QtCore.QPoint(30, 0))
         return
     # the button let go where nothing hears it: the next move finds it up
-    at = start + QtCore.QPoint(40, 0)
-    QtGui.QCursor.setPos(at)
-    move = QtGui.QMouseEvent(QtCore.QEvent.MouseMove, QtCore.QPointF(handle.mapFromGlobal(at)),
-                             QtCore.QPointF(at), Qt.NoButton, Qt.NoButton, Qt.NoModifier)
-    QtWidgets.QApplication.sendEvent(mw(), move)
+    point = start + QtCore.QPoint(40, 0)
+    QtGui.QCursor.setPos(point)
+    under = QtWidgets.QApplication.widgetAt(point) or mw()
+    move = QtGui.QMouseEvent(QtCore.QEvent.MouseMove, QtCore.QPointF(under.mapFromGlobal(point)),
+                             QtCore.QPointF(point), Qt.NoButton, Qt.NoButton, Qt.NoModifier)
+    QtWidgets.QApplication.sendEvent(under, move)
     settle(400)
     check("a move with the button up ends the drag: no frames left", not frames_shown(),
           len(frames_shown()))
@@ -261,9 +261,16 @@ def lost():
         after = None
     check("and the cells are as they were (given up, not carried out)", after == before,
           "%s -> %s" % (before, after))
-    # (QTest's own idea of the button, put right)
-    QtTest.QTest.mouseRelease(handle, Qt.LeftButton, Qt.NoModifier, handle.mapFromGlobal(at))
+    # (the application's idea of the button, put right; the drag is over and
+    # takes no notice)
+    at("release", point)
     settle(300)
+    try:
+        after = list(splitter.sizes())
+    except RuntimeError:
+        after = None
+    check("... and stay so after the late release", after == before,
+          "%s -> %s" % (before, after))
 
 
 def finish():
