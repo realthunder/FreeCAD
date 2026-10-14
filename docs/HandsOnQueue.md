@@ -2276,7 +2276,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003`. `56504486e6` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; the real double click under `Lens003` is the reporter's to try |
 | 114 | 2026-10-14 | A CRASH on the copy staged 08:10: switching the theme to Dark by Tools > Preset configurations > Themes > Dark theme ends the program (an access violation) | OPEN; the debugger's log, the short crash log and the DUMP read by the note-taker on the reporter's word: the theme writes `PreSelectColor` into TechDraw's `Colors` settings and one of that group's observers is an object already destroyed; a candidate by reading, NOT shown by a run: the page view's observer added for entry 112 (`2a317f254e`) is attached to that group and never detached; one point under the entry, NOT ANSWERED. THE CANDIDATE IS RIGHT (2026-10-14 09:10, the build session): REPRODUCED on the staged copy of 08:10 by a new test -- a page's view opened, its document closed, a theme applied: the session ends with the reporter's stack to the line. The fix, one line (`hGrpColors->Detach(this)`), is in a build; NOT committed. The point a no longer needed for the cause. THE FIX COMMITTED `778bde3979` (09:27), LOCAL, not pushed, not staged: the page's view takes itself off the `Colors` group; with its test. A push and a restage wait for the reporter's word. THE FIX TESTED (09:58, the build session, on the build r18 = the committed code): its test 6 of 6 offscreen, the session goes on through a TechDraw colour written and two themes applied after a page's view has gone; five neighbours pass; the two full suites NOT run on that build |
 | 115 | 2026-10-14 | the 3D view's background does not follow its settings: the preference is a RADIAL gradient, a LINEAR one is shown, and it does not respond to a change of the setting | OPEN; the reporter's configuration and the source read by the note-taker, nothing run: the configuration says radial (`Gradient` 0, `RadialGradient` 1); the cause NOT found by reading; one thing that can give linear -- every theme writes `Gradient` 1, which wins over radial; three points under the entry, NOT ANSWERED. MADE PRECISE by the reporter 09:50: a COLOUR change shows at once; a change of the PATTERN does not -- it shows only when the mouse moves over the 3D view, even with the preferences open. A CANDIDATE by reading, not shown: setting the pattern asks for no redraw (old code); points b and c answered by this, one new point under the entry (what a theme does to the pattern). POINT d ANSWERED 09:54: "change both theme to default to Simply color" -- the Dark and the Light theme are to give the ONE-COLOUR background ("Simple color"), no gradient. Not started; one smaller point under the entry (Light's single colour is the same dark grey as Dark's). REPRODUCED 09:57 by the build session on the staged copy: the settings arrive, the REDRAW is missing -- the note-taker's candidate right; fixed in the tree (`setGradient` touches the node), in a build, not committed. THE THEMES: after Dark or Light both keys are on, the view is LINEAR and the preference page opens with "Radial" selected -- page and view disagree; the themes' change waits on the reporter's answer of 09:54, which crossed this. THE THEMES (09:58): the build session applies the reporter's answer to `Dark.cfg` and `Light.cfg` after its running build; for LIGHT's single colour it takes #C3C3C3, the theme's present top colour, "unless the user names another; said to them". THE REPORTER to the build session about 10:00 and 10:01 (relayed 10:23): Light's simple colour to be "its old center gradient color" -- then "wait for the background color, simple color is which setting?"; answered by the build session; the themes' change is HELD until the reporter confirms, the theme files untouched. THE REDRAW: the first fix did not ask for one; put right in a build r21; on the staged copy NO change of pattern repaints the view, a gradient to one colour included |
-| 116 | 2026-10-14 | a task, said by the reporter to the build session after entry 114's crash: "spawn an agent to audit for missing signal auto disconnect" | AUDITED 10:23 by a read-only agent of the build session's; no second case of entry 114's kind (every other parameter observer detaches from every group it attached to); SEVEN findings of other kinds, two HIGH (an Assembly view provider's connection to the main window never released; Mesh's fill-hole command), none from today's work; fixes written for six, NOT applied; one (the selection singleton) "left for a word" |
+| 116 | 2026-10-14 | a task, said by the reporter to the build session after entry 114's crash: "spawn an agent to audit for missing signal auto disconnect" | AUDITED 10:23 by a read-only agent of the build session's; no second case of entry 114's kind (every other parameter observer detaches from every group it attached to); SEVEN findings of other kinds, two HIGH (an Assembly view provider's connection to the main window never released; Mesh's fill-hole command), none from today's work; fixes written for six, NOT applied; one (the selection singleton) "left for a word". WHAT IT COVERED (10:24): the observers and the signal and Qt connections under `src/Gui`, `src/Mod` and `src/App`; NOT the modules' App parts beyond its searches, `src/Base` beyond two files, anything in Python, `src/3rdParty`; SIX more places listed for a second look, not verified, not fixed. The six fixes are what the build session does next "unless they say otherwise" -- put to the reporter by it |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -16607,6 +16607,37 @@ The note-taker's notes:
   the build session waits for on finding 5.
 - The last note is a third kind, not a finding with a fix: an observer
   destroyed inside its own notice. Not an entry.
+
+**2026-10-14 10:24, the build session on what the audit COVERED, "as the
+agent stated it".** From its message stamped 10:27, written here 10:24.
+- "LOOKED AT: every `Attach(`/`Detach(` outside the generated
+  *Params.cpp under src/Gui, src/Mod and src/App (attach matched to
+  detach per handle, the destructor opened for most); the console
+  observers; every signal `.connect(` under src/Gui (219 lines), src/Mod
+  (about 130) and src/App (about 95), compared member by member with the
+  connection members and the `.disconnect()` calls; Qt `connect` with a
+  lambda capturing `this` and no context object under src/Gui (102 in 37
+  files) and src/Mod (about 45), the 14 with a global sender one by one;
+  the 19 single-shot timers with no context; the 15 stored Qt connection
+  handles."
+- "NOT COVERED, in its words: src/Mod/*/App beyond what the greps
+  listed; src/Base beyond Observer.h and ParameterPy; anything in
+  Python; src/3rdParty; installEventFilter as a class (Qt drops a
+  deleted filter by itself)."
+- "NOT VERIFIED by it, listed for a second look, none of them fixed by
+  me: ViewProviderSketch's six edit connections (released at the end of
+  unsetEdit only); the two Gizmo classes' spin box lambdas; Coin event
+  callbacks added more often than removed in seven files;
+  Gui::DocumentModel's twelve discarded connections (used by the Sandbox
+  module's tree only); WorkbenchGroup's three; two PartDesign helper
+  objects."
+- "The fixes I wrote are for findings 1, 2, 3, 4, 6 and 7; you are right
+  that the user has not said 'fix them' -- they asked for the audit. I
+  put it to them as what I do next unless they say otherwise; finding 5
+  waits."
+The note-taker's note: so the audit is a search by pattern with its
+worst findings read; six further places are NAMED and not judged. Whether
+they get the second look is not said by anyone.
 
 ## Inbox
 
