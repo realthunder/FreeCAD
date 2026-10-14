@@ -2644,9 +2644,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
 | 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking. IN THE TREE, not committed: its test 7 of 7 on the build r28c. DONE, COMMITTED `d9c3193856`, LOCAL, not pushed, not staged (7 of 7) |
 | 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry. THE REPORTER about 17:27: "Basically the entire Techdraw Extend Dimensions toolbar has invisible icons". FOUND by the note-taker 17:30: 14 TechDraw extension icons draw NOTHING in Qt's SVG renderer -- all of them, and only they, wrap their drawing in an Inkscape filter blending with "BackgroundImage", which this Qt's SVG renderer (it renders filters) cannot do; the icons of that toolbar. A correction: the all-icons audit DID run (17:20, offscreen, read only), the note-taker had written it had not. THE BUILD SESSION (17:35) confirms the cause by one file and takes way 1: a script that drops those filters and their uses from the 14 files and nothing else -- written, to be applied after its running build, then built and pictured. Not committed. 17:51: the 14 icons fixed in the tree (the filters removed), not built yet. FIXED, COMMITTED `ce40352c52`, LOCAL, not pushed, not staged: the 14 icons draw nothing on the stage of 15:22, all draw now |
-| 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry. PROBED 17:35 by the build session on the copy staged 15:22: a page exported to PDF (the path "print to file" and Print All to a file share) is VECTOR already -- 0 images, about 12448 path operators, 172 text runs. Left: the NATIVE printer path (to a printer, "Microsoft Print to PDF" among them), where Qt prints through GDI and turns antialiased or part-transparent drawing into images. TWO POINTS for the reporter: which printer or output, and which part looked like pixels. THE REPORTER to the build session about 18:20 (relayed): "used techdraw tool button print all pages, used pdf printer. Every page is rasterized" -- points c and d answered. The build session 18:29: "Export PDF" of three of scanner.FCStd's pages is VECTOR but for each page's own image view; the native "Microsoft Print to PDF" path (Windows GDI turns anything drawn with alpha into images -- the faces' fully transparent fill by default) is the suspect, a native print running |
+| 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry. PROBED 17:35 by the build session on the copy staged 15:22: a page exported to PDF (the path "print to file" and Print All to a file share) is VECTOR already -- 0 images, about 12448 path operators, 172 text runs. Left: the NATIVE printer path (to a printer, "Microsoft Print to PDF" among them), where Qt prints through GDI and turns antialiased or part-transparent drawing into images. TWO POINTS for the reporter: which printer or output, and which part looked like pixels. THE REPORTER to the build session about 18:20 (relayed): "used techdraw tool button print all pages, used pdf printer. Every page is rasterized" -- points c and d answered. The build session 18:29: "Export PDF" of three of scanner.FCStd's pages is VECTOR but for each page's own image view; the native "Microsoft Print to PDF" path (Windows GDI turns anything drawn with alpha into images -- the faces' fully transparent fill by default) is the suspect, a native print running. THE CAUSE FOUND 19:21 by the build session, on the system's PDF printer: "Print All" makes each page ONE JPEG of the whole sheet (about 140 dpi on A4) -- the reporter is right. Qt prints to a Windows printer through GDI and turns into a picture anything drawn with a pen or brush it counts as transparent; two such things draw nothing (the template's lettering stroked with an empty pen, page items stroked with a fully transparent pen). THE FIX written, not built: the print to a native printer goes through a filter that drops just those; a script call to print pages without the dialog, and a test |
 | 130 | 2026-10-14 | SURFACE FINISH: set to "Blast" on one object -- a warning in the report view ("dataChanged() called with an invalid index range"), the finish drawn, but the object then shows NO (PRE)SELECTION HIGHLIGHT; set back to "None" -- no warning, the highlight back, but the finish STILL DRAWN | OPEN; read by the note-taker, nothing run: the warning is an off-by-one in the property view's model, harmless by reading; the highlight and the finish that stays NOT found; one point under the entry. 17:51, the build session: the WARNING's off-by-one confirmed, fixed in the tree, not built; the missing highlight and the finish that stays NOT REPRODUCED by a script on the copy staged 15:22 (a Part box, its appearance's finish set to blasted and back from Python: the grain shows and goes, the highlight works). It hangs on HOW the reporter set it -- point a, made precise: which object, and the steps in the property view. the warning's fix in the tree, not committed. THE WARNING fixed, COMMITTED `de22312a07`, LOCAL, not pushed, not staged; the rest waits for the reporter's point a |
-| 131 | 2026-10-14 | A CRASH at the program's EXIT on the copy staged 15:22, found by the build session (after a test harness's time-out): `App::TransactionCopyCache` destroying a string list property in the static destruction -- a static cache outliving the owners of its properties | OPEN; found by the build session, not entered by it; its dump and log kept |
+| 131 | 2026-10-14 | A CRASH at the program's EXIT on the copy staged 15:22, found by the build session (after a test harness's time-out): `App::TransactionCopyCache` destroying a string list property in the static destruction -- a static cache outliving the owners of its properties | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE read and a FIX written by the build session (19:21), not built: the copy cache was a static map; at exit its destructor destroyed copies whose own destructor asked the same map, halfway destroyed, to drop them -- now a map that is never destroyed |
 | 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE found and FIXED by the build session (18:38), COMMITTED `d9c3193856`, LOCAL, not pushed, not staged: a TechDraw page view answered "Undo"/"Redo" from its document without checking it was there -- a page view with no document; guarded as the general view does. Reproduced a second time in its native print run. WHY the view had no document NOT found |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -18025,7 +18025,7 @@ the audit run of 17:20 (offscreen, read only); not run in FreeCAD:
   lines only): 61 icons almost invisible on the Dark ground, 260 mostly
   dark -- kept in the report, nothing proposed, as withdrawn.
 
-## 129. TechDraw printing to give vector output, so that it scales without loss (a change request) -- OPEN
+## 129. TechDraw printing to give vector output, so that it scales without loss (a change request) -- OPEN; the CAUSE FOUND 2026-10-14 19:21 (empty and transparent pens make Windows printing rasterize the sheet); a fix written, not built
 
 **2026-10-14 about 17:25, the reporter:** "new request, make Techdraw printing
 output vector so that it can scale losslessly"
@@ -18103,6 +18103,33 @@ vector; the path the reporter used, the system's PDF printer, is not
 yet shown. The office printer was not printed to, by the build
 session's word.
 
+**2026-10-14 19:21, the build session: THE CAUSE FOUND, a fix written --
+not built.** From the build session's message, which it stamps 19:55; written here 19:21.
+- "129 CAUSE FOUND (probes on r30, 'Microsoft Print to PDF', output a
+  file): scanner's Print All natively = each page ONE JPEG of the whole
+  sheet, about 1612x1128 px (roughly 140 dpi on A4) -- the user is right;
+  Export PDF stays vector."
+- "Qt prints to a Windows printer through GDI and rasterizes whatever is
+  drawn with a pen or brush it counts as transparent/'advanced' (and past
+  a few such areas, their bounding box -- the sheet). Two such things that
+  draw NOTHING: QtSvg gives a path with stroke='none' a solid-line pen
+  whose brush is EMPTY (all 38 filled letter paths of the template's
+  frame), and page items stroke with a fully transparent pen (8 on a page
+  with one view)."
+- "Shown with a Python prototype of a paint engine in front of the
+  printer that drops just those: the template 12 images -> 0, a page with
+  a view 1 -> 0, text kept as text."
+- "FIX WRITTEN (not built; r31 building): PagePrinter::renderPage draws
+  through a PrintSafeEngine when the painter is on a NATIVE printer; plus
+  TechDrawGui.printPages(pages, printerName, outputFile) -- Print All with
+  no dialog, for scripts and the test
+  tests/gui/techdraw-print-native-vector.py."
+- "Ruled out on the way: ClearFace, antialiasing, fill rule, scale
+  transforms, fill+stroke in one call."
+The note-taker's notes: the fix drops only drawing that shows nothing,
+so the printed picture should not change -- only stop being a picture.
+The new script call is the build session's own addition, for testing.
+
 ## 130. Surface finish: "Blast" set -- a warning, then no selection highlight on the object; "None" set -- the highlight back, the finish still drawn -- OPEN
 
 **2026-10-14 17:41, the reporter:** "new defect, something is off with surface
@@ -18178,7 +18205,7 @@ a. WHICH OBJECT -- a Part feature, a PartDesign body or feature, a link;
    in the property view (the appearance expanded, "Surface finish",
    "Blast" chosen?).
 
-## 131. A crash at the program's exit: the transaction copy cache destroyed after its owners (found by the build session) -- OPEN
+## 131. A crash at the program's exit: the transaction copy cache destroyed after its owners (found by the build session) -- OPEN; cause read, a fix written 2026-10-14 19:21, not built
 
 **2026-10-14 18:29, found by the build session** on the copy staged 15:22,
 while it probed entry 129 -- From the build session's message, which it stamps 18:45; written here 18:29. "(A) at process exit after the
@@ -18193,6 +18220,12 @@ the time statics are destroyed. Met after a time-out of the build
 session's test harness; whether the reporter's ordinary exit meets it is
 not known. "Neither entered" by the build session; entered here by the
 note-taker, as found crashes have been (entries 79, 82).
+
+**2026-10-14 19:21, the build session: the CAUSE by reading, a FIX
+written -- not built.** From the build session's message, which it stamps 19:55; written here 19:21. "131 CAUSE (by reading) and FIX (not
+built): the copy cache was a function static map; at exit its destructor
+destroyed copies whose ~Property() asked the map, mid-destruction, to drop
+their ids; now a map never destroyed (new, leaked at exit)."
 
 ## 132. A crash while TechDraw pages are exported to PDF: a command's active test reaching a freed document (found by the build session) -- OPEN; the crash guarded `d9c3193856` 2026-10-14, local; why the view had no document not found
 
