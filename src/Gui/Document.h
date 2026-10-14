@@ -226,6 +226,12 @@ public:
     //@{
     /// True while a progressive load's view providers are still being built
     bool isRestoringViewProviders() const;
+    /** Whether the file being (or last) restored records which object
+     * views (TechDraw pages, spreadsheets) were open: their layout records
+     * then reopen them. A file without (another program's, or written
+     * before the records) leaves it to the object, a page by its Visibility.
+     */
+    bool hasObjectViewRecords() const;
     /** Build and restore whatever the load deferred, now.
      *
      * A save, an export, or anything else that needs every view provider to
@@ -519,6 +525,9 @@ private:
     /// Rebuild the saved split view containers on restore, placing the
     /// (bare-created) 3D views and object views into cells
     void applyViewAreaLayouts(const std::list<MDIView*> &views);
+    /// With split views off: open the object views the saved layouts name,
+    /// each as a view of its own, and drop the layouts
+    void openRecordedObjectViews();
     /// The token the saved layouts name an object's view by (O:<object>);
     /// empty for a view no object of this document provides
     std::string objectViewToken(const MDIView *view) const;

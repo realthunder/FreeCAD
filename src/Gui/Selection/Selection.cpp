@@ -1945,7 +1945,9 @@ void SelectionSingleton::setVisible(VisibleState vis, const std::vector<App::Sub
 
         auto vp = Application::Instance->getViewProvider(obj);
 
-        if(vp) {
+        // What has no eye in the tree is not shown or hidden by a selection
+        // either: a TechDraw page would open or close its view
+        if(vp && vp->canToggleVisibility()) {
             bool visObject;
             if(visible>=0)
                 visObject = visible ? true : false;

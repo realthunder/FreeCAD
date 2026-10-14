@@ -85,6 +85,11 @@ ViewProviderPage::ViewProviderPage()
     initExtension(this);
 
     sPixmap = "TechDraw_TreePage";
+    // No eye in the tree: the page is not drawn in a 3D view, its view is
+    // opened and closed like a spreadsheet's, and whether it is open is
+    // kept by the document's record of its views (docs/HandsOnQueue.md
+    // entry 134)
+    setToggleVisibility(ToggleVisibilityMode::NoToggleVisibility);
     static const char* group = "Grid";
 
     ADD_PROPERTY_TYPE(ShowFrames, (true), group, App::Prop_None,
@@ -280,8 +285,32 @@ bool ViewProviderPage::doubleClicked(void)
 
 void ViewProviderPage::show(void)
 {
-    showMDIViewPage();
+    // The restored Visibility opens nothing: the views open at the save are
+    // what the document reopens (Gui::Document's layout records), and a
+    // file without them is answered in finishRestoring()
+    if (!isRestoring() && !m_finishingRestore) {
+        showMDIViewPage();
+    }
     ViewProviderDocumentObject::show();
+}
+
+void ViewProviderPage::finishRestoring()
+{
+    // The base takes Visibility from the App object when the record had
+    // none, after the restoring flag is down: that opens nothing either
+    m_finishingRestore = true;
+    try {
+        ViewProviderDocumentObject::finishRestoring();
+    }
+    catch (...) {
+        m_finishingRestore = false;
+        throw;
+    }
+    m_finishingRestore = false;
+    Gui::Document* doc = getDocument();
+    if (doc && !doc->hasObjectViewRecords() && Visibility.getValue()) {
+        showMDIViewPage();
+    }
 }
 
 void ViewProviderPage::hide(void)
@@ -471,7 +500,7 @@ std::vector<App::DocumentObject*> ViewProviderPage::claimChildren(void) const
     }
 }
 
-bool ViewProviderPage::isShow(void) const { return Visibility.getValue(); }
+bool ViewProviderPage::isShow(void) const { return true; }
 
 bool ViewProviderPage::getFrameState() { return ShowFrames.getValue(); }
 
@@ -560,6 +589,12 @@ TechDraw::DrawPage* ViewProviderPage::getDrawPage() const
 }
 
 Gui::MDIView* ViewProviderPage::getMDIView() const { return m_mdiView.data(); }
+
+Gui::MDIView* ViewProviderPage::getOrCreateMDIView()
+{
+    showMDIViewPage();
+    return m_mdiView.data();
+}
 
 void ViewProviderPage::setGrid()
 {
