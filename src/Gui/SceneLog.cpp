@@ -632,6 +632,12 @@ QJsonObject opsOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
         // An object that is gone is known by the name the log made it with
         std::map<long, std::string> names;
         bool namesRead = false;
+        // What is kept in the file (sec 32.11): an op of a kept value says so
+        std::set<std::string> keptValues;
+        for (const App::LogKept& kept : store.keptValues())
+            keptValues.insert(kept.hash);
+        const std::vector<long> objects = store.keptObjects();
+        const std::set<long> keptObjects(objects.begin(), objects.end());
         QJsonArray list;
         const auto ops = store.ops(row);
         for (const App::LogOp& op : ops) {
@@ -654,6 +660,10 @@ QJsonObject opsOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
                 item[QLatin1String("followed")] = true;
             if (op.ckind != "doc") {
                 item[QLatin1String("cid")] = double(op.cid);
+                if (!op.vafter.empty() && keptValues.count(op.vafter))
+                    item[QLatin1String("keptValue")] = true;
+                if (keptObjects.count(op.cid))
+                    item[QLatin1String("keptObject")] = true;
                 App::DocumentObject* obj = doc->getObjectByID(op.cid);
                 item[QLatin1String("here")] = obj != nullptr;
                 if (obj) {
@@ -1783,6 +1793,351 @@ QJsonObject rollBackOp(const QJsonObject& req, const std::string& boundDoc, uint
     }
 }
 
+// -- What is kept in the file (sec 32.11, 32.12; in a browser, sec 32.27) --
+
+/// A row of the log by its number: false where the log has it no more
+bool rowOf(App::TransactionStore& store, int64_t seq, App::LogTransaction& row)
+{
+    if (seq <= 0)
+        return false;
+    const auto read = store.transactions(seq, 1);
+    if (read.empty() || read.front().seq != seq)
+        return false;
+    row = read.front();
+    return true;
+}
+
+/// The object an op names: by `obj`, its name, or by `cid`, its id -- which
+/// is how a kept object the document no longer has is listed. 0 where neither
+long cidOf(const QJsonObject& req, App::Document* doc)
+{
+    const QString name = req.value(QLatin1String("obj")).toString();
+    if (!name.isEmpty()) {
+        App::DocumentObject* obj = doc->getObject(name.toUtf8().constData());
+        return obj ? obj->getID() : 0;
+    }
+    return long(req.value(QLatin1String("cid")).toInteger(0));
+}
+
+/// An object of the document by its id
+bool objectHere(App::Document* doc, long cid)
+{
+    App::DocumentObject* obj = doc->getObjectByID(cid);
+    return obj && obj->getNameInDocument();
+}
+
+void objectJson(QJsonObject& item, App::Document* doc, long cid)
+{
+    item[QLatin1String("cid")] = double(cid);
+    const bool here = objectHere(doc, cid);
+    item[QLatin1String("here")] = here;
+    if (here) {
+        App::DocumentObject* obj = doc->getObjectByID(cid);
+        item[QLatin1String("obj")] = QString::fromUtf8(obj->getNameInDocument());
+        item[QLatin1String("label")] = QString::fromUtf8(obj->Label.getValue());
+    }
+}
+
+/** Whether a value kept by itself is listed to the asker: its row is one it
+ * is listed; or, the row gone -- which says no branch -- its object is in
+ * the document, which the asker sees all the same.
+ */
+bool keptListed(App::Document* doc, const Reach& reach, const App::LogKept& kept, bool there,
+                const App::LogTransaction& row)
+{
+    if (reach.host)
+        return true;
+    return there ? reach.sees(row) : objectHere(doc, kept.cid);
+}
+
+/** Why letting go of a value kept by itself is not the asker's, or nothing.
+ * The next save leaves a value let go out of the file, and nothing brings
+ * it back: the host's, and of one who writes the branch of the row it was
+ * kept at, since the point. Keeping takes nothing, and is anyone's who is
+ * listed the row.
+ */
+QString letGoWhy(const Reach& reach, bool there, const App::LogTransaction& row)
+{
+    if (reach.host)
+        return QString();
+    if (!there)
+        return QStringLiteral("the row it was kept at is gone from the log: the host lets it go");
+    if (!reach.writes(row.branch))
+        return QString::fromLatin1(kNeedsWrite);
+    if (!reach.row(row))
+        return QString::fromLatin1(kBeforePoint);
+    return QString();
+}
+
+const char* const kObjectLetGo
+    = "every value of an object is kept on every branch: the host lets them go";
+
+/// What is kept moved: no row says so, and it is the file's, so every
+/// document of it is told
+void keptMoved(App::Document* doc)
+{
+    queueTell(doc->getName());
+    tellTheFile(*doc);
+}
+
+/** `log.kept`: what a save writes into the file though no kept version
+ * reaches it (sec 32.12) -- each value kept by itself, and each object every
+ * value of which is kept, with the values the log has of it. Of the rows
+ * the asker is listed; with each, whether it is the asker's to let go.
+ */
+QJsonObject keptOp(const QJsonObject& req, const std::string& boundDoc, uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    try {
+        App::TransactionStore& store = log->store();
+        const Reach reach = reachOf(doc, log);
+        std::map<std::string, App::LogKept> alone;
+        QJsonArray values;
+        for (const App::LogKept& kept : store.keptValues()) {
+            alone[kept.hash] = kept;
+            App::LogTransaction row;
+            const bool there = rowOf(store, kept.seq, row);
+            if (!keptListed(doc, reach, kept, there, row))
+                continue;
+            QJsonObject item;
+            item[QLatin1String("ref")] = QString::fromStdString(kept.hash);
+            objectJson(item, doc, kept.cid);
+            item[QLatin1String("prop")] = QString::fromStdString(kept.prop);
+            item[QLatin1String("seq")] = double(kept.seq);
+            // The row it was kept at is still in the log
+            item[QLatin1String("row")] = there;
+            const QString why = letGoWhy(reach, there, row);
+            item[QLatin1String("release")] = why.isEmpty();
+            if (!why.isEmpty())
+                item[QLatin1String("why")] = why;
+            values.append(item);
+        }
+        QJsonArray objects;
+        for (long cid : store.keptObjects()) {
+            // One the document no longer has is the host's to let go
+            if (!reach.host && !objectHere(doc, cid))
+                continue;
+            QJsonObject item;
+            objectJson(item, doc, cid);
+            QJsonArray under;
+            for (const auto& prop : store.derivedPropsOf(cid)) {
+                for (const auto& set : store.valuesOf(cid, prop)) {
+                    App::LogTransaction row;
+                    if (set.second.empty() || !store.hasEntity(set.second)
+                            || !rowOf(store, set.first, row) || !reach.sees(row))
+                        continue;
+                    QJsonObject value;
+                    value[QLatin1String("ref")] = QString::fromStdString(set.second);
+                    value[QLatin1String("prop")] = QString::fromStdString(prop);
+                    value[QLatin1String("seq")] = double(set.first);
+                    // Kept by itself too: it then stays when its row goes --
+                    // and is let go as one kept by itself is
+                    auto found = alone.find(set.second);
+                    value[QLatin1String("alone")] = found != alone.end();
+                    if (found != alone.end()) {
+                        App::LogTransaction at;
+                        const bool there = rowOf(store, found->second.seq, at);
+                        const QString why = letGoWhy(reach, there, at);
+                        value[QLatin1String("release")] = why.isEmpty();
+                        if (!why.isEmpty())
+                            value[QLatin1String("why")] = why;
+                    }
+                    under.append(value);
+                }
+            }
+            item[QLatin1String("values")] = under;
+            item[QLatin1String("release")] = reach.host;
+            if (!reach.host)
+                item[QLatin1String("why")] = QString::fromLatin1(kObjectLetGo);
+            objects.append(item);
+        }
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("values")] = values;
+        reply[QLatin1String("objects")] = objects;
+        reply[QLatin1String("count")] = double(values.size() + objects.size());
+        reachJson(reply, reach);
+        watchFor(doc, client);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "LogError", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.keep`: keep in the file the value an object's property has at a
+ * row -- `row`, or where the document is -- or with no `prop` every value
+ * of it a recompute wrote; of one object (`obj`, `cid`) or several
+ * (`objects`, by name: what is selected, at a version's row). With `keep`
+ * false, let them go: each by the row it was kept at (letGoWhy), all of
+ * them or none.
+ */
+QJsonObject keepOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const bool keep = req.value(QLatin1String("keep")).toBool(true);
+    const std::string prop = req.value(QLatin1String("prop")).toString().toStdString();
+    std::vector<long> cids;
+    if (req.contains(QLatin1String("objects"))) {
+        for (const QJsonValue& value : req.value(QLatin1String("objects")).toArray()) {
+            const QString name = value.toString();
+            App::DocumentObject* obj = doc->getObject(name.toUtf8().constData());
+            if (!obj)
+                return sceneControlError(id, "UnknownObject", name);
+            cids.push_back(obj->getID());
+        }
+    }
+    else if (long cid = cidOf(req, doc)) {
+        cids.push_back(cid);
+    }
+    else if (req.contains(QLatin1String("obj"))) {
+        return sceneControlError(id, "UnknownObject", req.value(QLatin1String("obj")).toString());
+    }
+    if (cids.empty())
+        return sceneControlError(id, "BadRequest", QStringLiteral("no object"));
+    try {
+        App::TransactionStore& store = log->store();
+        const Reach reach = reachOf(doc, log);
+        int64_t seq = req.value(QLatin1String("row")).toInteger(0);
+        if (seq <= 0)
+            seq = log->head();
+        // A row the asker is not listed is none to it
+        App::LogTransaction row;
+        if (!rowOf(store, seq, row) || !reach.sees(row))
+            return sceneControlError(id, "UnknownRow", QString::number(seq));
+        size_t count = 0;
+        if (keep) {
+            for (long cid : cids)
+                count += doc->keepLogValue(cid, prop, seq, true).size();
+        }
+        else {
+            // The values there that are kept, each judged by the row it was
+            // kept at: a value set before the point is the same value at a
+            // row after it
+            std::map<std::string, App::LogKept> kept;
+            for (const App::LogKept& k : store.keptValues())
+                kept[k.hash] = k;
+            std::set<std::string> refs;
+            for (long cid : cids) {
+                const std::vector<std::string> props = prop.empty()
+                    ? store.derivedPropsOf(cid) : std::vector<std::string> {prop};
+                for (const auto& name : props) {
+                    auto found = kept.find(doc->logValueAt(seq, cid, name));
+                    if (found == kept.end())
+                        continue;
+                    App::LogTransaction at;
+                    const bool there = rowOf(store, found->second.seq, at);
+                    const QString why = letGoWhy(reach, there, at);
+                    if (!why.isEmpty())
+                        return sceneControlError(id, "Forbidden", why);
+                    refs.insert(found->first);
+                }
+            }
+            for (const auto& ref : refs)
+                count += doc->releaseLogValue(ref) ? 1 : 0;
+        }
+        if (count)
+            keptMoved(doc);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("row")] = double(seq);
+        // 0 where the log holds no such value, or none was kept
+        reply[QLatin1String("values")] = double(count);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.keepObject`: keep every value of an object the log has and will
+ * have; with `keep` false stop. Keeping is anyone's who is in the document;
+ * stopping lets go of its values on every branch, and is the host's.
+ */
+QJsonObject keepObjectOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const bool keep = req.value(QLatin1String("keep")).toBool(true);
+    try {
+        const Reach reach = reachOf(doc, log);
+        const long cid = cidOf(req, doc);
+        // One the document no longer has is listed to the host alone
+        if (cid <= 0 || (!reach.host && !objectHere(doc, cid)))
+            return sceneControlError(id, "UnknownObject",
+                                     req.value(QLatin1String("obj")).toString());
+        if (!keep && !reach.host)
+            return notReached(id, kObjectLetGo);
+        const std::vector<long> before = log->store().keptObjects();
+        const bool was = std::find(before.begin(), before.end(), cid) != before.end();
+        doc->keepLogValuesOf(cid, keep);
+        if (was != keep)
+            keptMoved(doc);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("cid")] = double(cid);
+        // Whether it changed anything: false where it was so already
+        reply[QLatin1String("changed")] = was != keep;
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.release`: let go of a value kept by itself, by its ref -- what a
+ * value kept past its row is let go by, since no row names it (sec 32.12).
+ */
+QJsonObject releaseOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string ref = req.value(QLatin1String("ref")).toString().toStdString();
+    if (ref.empty())
+        return sceneControlError(id, "BadRequest", QStringLiteral("no ref"));
+    try {
+        App::TransactionStore& store = log->store();
+        const Reach reach = reachOf(doc, log);
+        for (const App::LogKept& kept : store.keptValues()) {
+            if (kept.hash != ref)
+                continue;
+            App::LogTransaction row;
+            const bool there = rowOf(store, kept.seq, row);
+            // One the asker is not listed is none to it
+            if (!keptListed(doc, reach, kept, there, row))
+                break;
+            const QString why = letGoWhy(reach, there, row);
+            if (!why.isEmpty())
+                return sceneControlError(id, "Forbidden", why);
+            if (!doc->releaseLogValue(ref))
+                return sceneControlError(id, "Refused", QStringLiteral("not let go"));
+            keptMoved(doc);
+            QJsonObject reply = placeReply(id, doc, log);
+            reply[QLatin1String("ref")] = QString::fromStdString(ref);
+            return reply;
+        }
+        return sceneControlError(id, "UnknownValue", QString::fromStdString(ref));
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
 }  // namespace
 
 bool Gui::logRowListed(App::Document* doc, int64_t row)
@@ -1857,4 +2212,9 @@ void Gui::installSceneLogOps()
     // and a merge undone rolled back
     registerSceneControlOp(QStringLiteral("log.preview"), true, previewOp);
     registerSceneControlOp(QStringLiteral("log.rollBack"), true, rollBackOp);
+    // What is kept in the file (sec 32.27)
+    registerSceneControlOp(QStringLiteral("log.kept"), true, keptOp);
+    registerSceneControlOp(QStringLiteral("log.keep"), true, keepOp);
+    registerSceneControlOp(QStringLiteral("log.keepObject"), true, keepObjectOp);
+    registerSceneControlOp(QStringLiteral("log.release"), true, releaseOp);
 }

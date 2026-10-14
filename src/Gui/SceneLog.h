@@ -91,6 +91,19 @@ namespace Gui
  * What is not the asker's is `Forbidden`; a branch it does not read is not
  * listed and is unknown to it, as its rows, its versions and the requests
  * of it are.
+ *
+ * What a save writes into the file though no kept version reaches it --
+ * the values a recompute wrote, kept (sec 32.11, 32.27):
+ *
+ *   log.kept        each value kept by itself, each object kept
+ *   log.keep        the value of an object at a row kept, or let go
+ *   log.keepObject  every value of an object kept, or no longer
+ *   log.release     a value kept by itself let go, by its ref
+ *
+ * Keeping takes nothing, and is anyone's who is listed the row. A value let
+ * go is left out of the file by the next save: the host's, and of one who
+ * writes the branch of the row it was kept at, since the point. Stopping an
+ * object's being kept lets its values go on every branch: the host's.
  */
 GuiExport void installSceneLogOps();
 
