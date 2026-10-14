@@ -37,6 +37,10 @@
 #include <App/DocumentObject.h>
 #include <App/ObjectIdentifier.h>
 
+#include <algorithm>
+#include <cmath>
+#include <set>
+
 #include <boost/algorithm/string/predicate.hpp>
 
 #include "PropertyDressUp.h"
@@ -56,7 +60,9 @@ PropertyFilletSegments::~PropertyFilletSegments()
 void PropertyFilletSegments::setValue(const std::string &id, double param, double radius, double length)
 {
     auto it = segmentsMap.find(id);
-    if (param >= 0.0 && param <= 1.0 && it == segmentsMap.end())
+    // Only an edge with points takes one more this way (it read the end
+    // iterator for a parameter out of [0, 1])
+    if (it == segmentsMap.end())
         return;
     if (length > 0.0) {
         for (auto &segment : it->second) {
@@ -64,6 +70,7 @@ void PropertyFilletSegments::setValue(const std::string &id, double param, doubl
                 aboutToSetValue();
                 segment.param = 0.0;
                 segment.radius = radius;
+                mirror(id);
                 hasSetValue();
                 return;
             }
@@ -74,6 +81,7 @@ void PropertyFilletSegments::setValue(const std::string &id, double param, doubl
                 aboutToSetValue();
                 segment.radius = radius;
                 segment.length = 0.0;
+                mirror(id);
                 hasSetValue();
                 return;
             }
@@ -81,6 +89,8 @@ void PropertyFilletSegments::setValue(const std::string &id, double param, doubl
     }
     aboutToSetValue();
     it->second.emplace_back(param, radius);
+    fixGroups();
+    mirror(id);
     hasSetValue();
 }
 
@@ -88,6 +98,8 @@ void PropertyFilletSegments::setValue(const std::string &id, Segments &&segments
 {
     aboutToSetValue();
     segmentsMap[id] = std::move(segments);
+    fixGroups();
+    mirror(id);
     hasSetValue();
 }
 
@@ -96,23 +108,18 @@ void PropertyFilletSegments::removeValue(const std::string &id, double param, do
     auto it = segmentsMap.find(id);
     if (it == segmentsMap.end())
         return;
-    AtomicPropertyChange signaller(*this, false);
-    if (length > 0.0) {
-        for (auto iter=it->second.begin(); iter!=it->second.end(); ++iter) {
-            if (iter->length == length) {
-                signaller.aboutToChange();
-                it->second.erase(iter);
-            }
-        }
-    } else {
-        for (auto iter=it->second.begin(); iter!=it->second.end(); ++iter) {
-            if (iter->param == param) {
-                signaller.aboutToChange();
-                it->second.erase(iter);
-            }
-        }
-    }
-    signaller.tryInvoke();
+    // It erased inside its own loop, going on with the erased iterator
+    auto matches = [param, length](const Segment &segment) {
+        return length > 0.0 ? segment.length == length : segment.param == param;
+    };
+    if (std::none_of(it->second.begin(), it->second.end(), matches))
+        return;
+    aboutToSetValue();
+    it->second.erase(std::remove_if(it->second.begin(), it->second.end(), matches),
+                     it->second.end());
+    fixGroups();
+    mirror(id);
+    hasSetValue();
 }
 
 void PropertyFilletSegments::removeValue(const std::string &id, int index)
@@ -122,6 +129,8 @@ void PropertyFilletSegments::removeValue(const std::string &id, int index)
         return;
     aboutToSetValue();
     it->second.erase(it->second.begin() + index);
+    fixGroups();
+    mirror(id);
     hasSetValue();
 }
 
@@ -132,6 +141,8 @@ void PropertyFilletSegments::removeValue(const std::string &id)
         return;
     aboutToSetValue();
     segmentsMap.erase(it);
+    // back to the default radius: out of its group
+    groupMap.erase(id);
     hasSetValue();
 }
 
@@ -139,6 +150,7 @@ void PropertyFilletSegments::setValue(std::map<std::string, Segments> &&values)
 {
     aboutToSetValue();
     segmentsMap = std::move(values);
+    fixGroups();
     hasSetValue();
 }
 
@@ -146,6 +158,129 @@ void PropertyFilletSegments::setValue(const std::map<std::string, Segments> &val
 {
     aboutToSetValue();
     segmentsMap = values;
+    fixGroups();
+    hasSetValue();
+}
+
+PropertyFilletSegments::Segments
+PropertyFilletSegments::reversedSegments(const Segments &segments)
+{
+    Segments result(segments.rbegin(), segments.rend());
+    for (auto &segment : result) {
+        // a point by its length keeps it: the edge's length is not known here
+        if (segment.length <= 0.0)
+            segment.param = 1.0 - segment.param;
+    }
+    return result;
+}
+
+void PropertyFilletSegments::fixGroups()
+{
+    for (auto it = groupMap.begin(); it != groupMap.end();) {
+        auto iter = segmentsMap.find(it->first);
+        if (iter == segmentsMap.end() || iter->second.empty() || it->second.group <= 0)
+            it = groupMap.erase(it);
+        else
+            ++it;
+    }
+    for (const auto &v : segmentsMap) {
+        if (!v.second.empty() && !groupMap.count(v.first))
+            groupMap[v.first].group = newGroup();
+    }
+}
+
+void PropertyFilletSegments::mirror(const std::string &source)
+{
+    auto it = groupMap.find(source);
+    auto iter = segmentsMap.find(source);
+    if (it == groupMap.end() || iter == segmentsMap.end())
+        return;
+    const Segments segments = iter->second;
+    for (const auto &member : groupMap) {
+        if (member.first == source || member.second.group != it->second.group)
+            continue;
+        segmentsMap[member.first] = member.second.reversed != it->second.reversed
+            ? reversedSegments(segments) : segments;
+    }
+}
+
+int PropertyFilletSegments::getGroup(const std::string &sub) const
+{
+    auto it = groupMap.find(sub);
+    return it == groupMap.end() ? 0 : it->second.group;
+}
+
+bool PropertyFilletSegments::isReversed(const std::string &sub) const
+{
+    auto it = groupMap.find(sub);
+    return it != groupMap.end() && it->second.reversed;
+}
+
+std::vector<std::string> PropertyFilletSegments::getGroupMembers(int group) const
+{
+    std::vector<std::string> members;
+    for (const auto &v : groupMap) {
+        if (v.second.group == group)
+            members.push_back(v.first);
+    }
+    return members;
+}
+
+std::vector<int> PropertyFilletSegments::getGroups() const
+{
+    std::set<int> groups;
+    for (const auto &v : groupMap)
+        groups.insert(v.second.group);
+    return {groups.begin(), groups.end()};
+}
+
+int PropertyFilletSegments::newGroup() const
+{
+    std::set<int> used;
+    for (const auto &v : groupMap)
+        used.insert(v.second.group);
+    int group = 1;
+    while (used.count(group))
+        ++group;
+    return group;
+}
+
+void PropertyFilletSegments::setGroup(const std::string &sub, int group)
+{
+    auto it = groupMap.find(sub);
+    if (it == groupMap.end() || it->second.group == group)
+        return;
+    // A member of the group to take the points from
+    std::string from;
+    for (const auto &v : groupMap) {
+        if (v.first != sub && v.second.group == group) {
+            from = v.first;
+            break;
+        }
+    }
+    aboutToSetValue();
+    if (from.empty()) {
+        // no such group yet: one of its own, by that id if it is free
+        it->second.group = group > 0 ? group : newGroup();
+    }
+    else {
+        it->second.group = group;
+        const auto &fromGroup = groupMap[from];
+        segmentsMap[sub] = fromGroup.reversed != it->second.reversed
+            ? reversedSegments(segmentsMap[from]) : segmentsMap[from];
+    }
+    hasSetValue();
+}
+
+void PropertyFilletSegments::setReversed(const std::string &sub, bool reversed)
+{
+    auto it = groupMap.find(sub);
+    if (it == groupMap.end() || it->second.reversed == reversed)
+        return;
+    aboutToSetValue();
+    it->second.reversed = reversed;
+    // the same fillet as the group's, from the other end
+    segmentsMap[sub] = reversedSegments(segmentsMap[sub]);
     hasSetValue();
 }
 
@@ -170,6 +305,8 @@ void PropertyFilletSegments::connectLinkProperty(App::PropertyLinkSub &links)
     connChanged = links.signalChanged.connect(
         [this](const App::Property &prop) {
             std::map<std::string, Segments> value;
+            // the groups follow their edges' new names as the points do
+            std::map<std::string, EdgeGroup> groups;
             auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
             std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
             for (const auto &sub : static_cast<const App::PropertyLinkSub&>(prop).getSubValues(false)) {
@@ -204,9 +341,18 @@ void PropertyFilletSegments::connectLinkProperty(App::PropertyLinkSub &links)
                     }
                 }
                 value[sub] = iter->second;
+                auto group = groupMap.find(key);
+                if (group != groupMap.end())
+                    groups[sub] = group->second;
             }
-            if (value != segmentsMap)
-                setValue(std::move(value));
+            if (value != segmentsMap) {
+                // points and groups in one change, for the undo's copy
+                aboutToSetValue();
+                segmentsMap = std::move(value);
+                groupMap = std::move(groups);
+                fixGroups();
+                hasSetValue();
+            }
             if (obj) {
                 obj->ExpressionEngine.renameExpressions(renames);
                 for (auto doc : App::GetApplication().getDocuments())
@@ -239,15 +385,23 @@ PyObject *PropertyFilletSegments::getPyObject(void)
 
 void PropertyFilletSegments::setPyObject(PyObject *pyobj)
 {
-    const char *msg = "Expect the input to be type of Sequence(Tuple(element:String, Sequence(param:Float, radius:Float, length:Float)))";
+    const char *msg = "Expect the input to be type of Sequence(Tuple(element:String, Sequence(param:Float, radius:Float, length:Float)[, group:Int[, reversed:Bool]]))";
     try {
         std::map<std::string, Segments> value;
+        // the groups given; an edge given none keeps the one it has
+        std::map<std::string, EdgeGroup> groups = groupMap;
         Py::Sequence seq(pyobj);
         for (int i=0; i<seq.size(); ++i) {
             Py::Sequence item(seq[i].ptr());
-            if (item.size() != 2)
+            if (item.size() < 2 || item.size() > 4)
                 THROWM(Base::TypeError, msg)
-            auto &segments = value[Py::String(item[0].ptr())];
+            const std::string edge = Py::String(item[0].ptr());
+            if (item.size() > 2) {
+                auto &group = groups[edge];
+                group.group = int(Py::Long(item[2].ptr()));
+                group.reversed = item.size() > 3 && Py::Object(item[3].ptr()).isTrue();
+            }
+            auto &segments = value[edge];
             Py::Sequence pySegments(Py::Sequence(item[1].ptr()));
             for (int j=0; j<pySegments.size(); ++j) {
                 Py::Sequence pySegment(pySegments[j].ptr());
@@ -258,8 +412,13 @@ void PropertyFilletSegments::setPyObject(PyObject *pyobj)
                                       pySegment.size()==2?0.0:Py::Float(pySegment[2].ptr()));
             }
         }
-        if (value != segmentsMap)
-            setValue(std::move(value));
+        if (value != segmentsMap || groups != groupMap) {
+            aboutToSetValue();
+            segmentsMap = std::move(value);
+            groupMap = std::move(groups);
+            fixGroups();
+            hasSetValue();
+        }
     } catch (Py::Exception &) {
         THROWM(Base::TypeError, msg)
     }
@@ -282,7 +441,15 @@ void PropertyFilletSegments::Save(Base::Writer &writer) const {
         if (v.second.empty())
             continue;
         writer.Stream() << writer.ind() << "<Segments id=\"" <<  encodeAttribute(v.first)
-                        << "\" count=\"" << v.second.size() << "\">\n";
+                        << "\" count=\"" << v.second.size() << "\"";
+        // its group; a build without groups reads past it
+        auto group = groupMap.find(v.first);
+        if (group != groupMap.end()) {
+            writer.Stream() << " group=\"" << group->second.group << "\"";
+            if (group->second.reversed)
+                writer.Stream() << " rev=\"1\"";
+        }
+        writer.Stream() << ">\n";
         writer.incInd();
         for (const auto &segment : v.second)
             writer.Stream() << writer.ind() << "<Segment param=\"" << segment.param
@@ -300,10 +467,17 @@ void PropertyFilletSegments::Restore(Base::XMLReader &reader)
     reader.readElement("EdgeSegments");
     unsigned count = reader.getAttributeAsUnsigned("count", "0");
     std::map<std::string, Segments> value;
+    std::map<std::string, EdgeGroup> groups;
     for (unsigned i=0; i<count; ++i) {
         reader.readElement("Segments");
         std::string id = reader.getAttribute("id");
         if (!id.empty()) {
+            // A file without groups gives each edge one of its own, below
+            if (reader.hasAttribute("group")) {
+                auto &group = groups[id];
+                group.group = int(reader.getAttributeAsInteger("group", "0"));
+                group.reversed = reader.getAttributeAsInteger("rev", "0") != 0;
+            }
             auto &segments = value[id];
             unsigned scount = reader.getAttributeAsUnsigned("count","0");
             for (unsigned j=0; j<scount; ++j) {
@@ -316,6 +490,7 @@ void PropertyFilletSegments::Restore(Base::XMLReader &reader)
         reader.readEndElement("Segments");
     }
     reader.readEndElement("EdgeSegments");
+    groupMap = std::move(groups);
     setValue(std::move(value));
 }
 
@@ -355,6 +530,18 @@ bool PropertyFilletSegments::setPyPathValue(const App::ObjectIdentifier & path, 
             return true;
         }
         const App::ObjectIdentifier::Component & c2 = path.getPropertyComponent(2);
+        // Segments.Edge12.Group, Segments.Edge12.Reversed
+        if (c2.isSimple() && path.numSubComponents() == 3) {
+            // an expression gives a number, maybe a quantity: as Radius takes it
+            const double number = double(Py::Float(value));
+            if (c2.getName() == "Group")
+                setGroup(c1.getName(), int(std::lround(number)));
+            else if (c2.getName() == "Reversed")
+                setReversed(c1.getName(), number != 0.0);
+            else
+                FC_THROWM(Base::ValueError,"invalid path " << path.toString());
+            return true;
+        }
         if (!c2.isArray())
             FC_THROWM(Base::ValueError,"invalid path " << path.toString());
         aboutToSetValue();
@@ -380,10 +567,14 @@ bool PropertyFilletSegments::setPyPathValue(const App::ObjectIdentifier & path, 
             } else if (seq.size() == 3) {
                 segments[index].param = Py::Float(seq[0]);
                 segments[index].radius = Py::Float(seq[1]);
-                segments[index].length = Py::Float(seq[1]);
+                // the third is the length (it took the radius again)
+                segments[index].length = Py::Float(seq[2]);
             } else
                 FC_THROWM(Base::TypeError,"invalid value");
         }
+        // an expression writes here: the edge's group follows it
+        fixGroups();
+        mirror(c1.getName());
         hasSetValue();
     } catch (Py::Exception &) {
         FC_THROWM(Base::TypeError,"invalid value");
@@ -420,6 +611,15 @@ bool PropertyFilletSegments::getPyPathValue(const App::ObjectIdentifier &path, P
     }
 
     const App::ObjectIdentifier::Component & c2 = components[1];
+    if (c2.isSimple() && components.size() == 2) {
+        if (c2.getName() == "Group")
+            res = Py::Long(getGroup(c1.getName()));
+        else if (c2.getName() == "Reversed")
+            res = Py::Boolean(isReversed(c1.getName()));
+        else
+            return false;
+        return true;
+    }
     if (!c2.isArray())
         return false;
     std::size_t index = c2.getIndex(segments->size());
@@ -455,7 +655,8 @@ App::any PropertyFilletSegments::getPathValue(const App::ObjectIdentifier &path)
 {
     Base::PyGILStateLocker lock;
     Py::Object pyObj;
-    if (getPyPathValue(path, pyObj))
+    // empty when there is no such value (it was when there was one)
+    if (!getPyPathValue(path, pyObj))
         return App::any();
     return App::pyObjectToAny(pyObj);
 }
@@ -464,20 +665,26 @@ App::Property *PropertyFilletSegments::Copy() const
 {
     PropertyFilletSegments *p= new PropertyFilletSegments();
     p->segmentsMap = segmentsMap;
+    p->groupMap = groupMap;
     return p;
 }
 
 void PropertyFilletSegments::Paste(const Property &from)
 {
-    setValue(dynamic_cast<const PropertyFilletSegments&>(from).segmentsMap);
+    const auto &other = dynamic_cast<const PropertyFilletSegments&>(from);
+    aboutToSetValue();
+    segmentsMap = other.segmentsMap;
+    groupMap = other.groupMap;
+    fixGroups();
+    hasSetValue();
 }
 
 unsigned int PropertyFilletSegments::getMemSize() const
 {
     unsigned int size = 0;
     for (const auto &v : segmentsMap)
-        size += v.second.size() & sizeof(Segment);
-    return size;
+        size += v.second.size() * sizeof(Segment);
+    return size + groupMap.size() * sizeof(EdgeGroup);
 }
 
 bool PropertyFilletSegments::isSame(const Property &other) const
@@ -486,7 +693,8 @@ bool PropertyFilletSegments::isSame(const Property &other) const
         return true;
     if (!other.isDerivedFrom(getClassTypeId()))
         return false;
-    return segmentsMap == static_cast<const PropertyFilletSegments&>(other).segmentsMap;
+    const auto &that = static_cast<const PropertyFilletSegments&>(other);
+    return segmentsMap == that.segmentsMap && groupMap == that.groupMap;
 }
 
 // -------------------------------------------------------------------------
@@ -1376,7 +1584,8 @@ App::any PropertyChamferEdges::getPathValue(const App::ObjectIdentifier &path) c
 {
     Base::PyGILStateLocker lock;
     Py::Object pyObj;
-    if (getPyPathValue(path, pyObj))
+    // empty when there is no such value (it was when there was one)
+    if (!getPyPathValue(path, pyObj))
         return App::any();
     return App::pyObjectToAny(pyObj);
 }

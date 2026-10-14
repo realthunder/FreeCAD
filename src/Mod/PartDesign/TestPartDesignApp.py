@@ -58,7 +58,12 @@ from PartDesignTests.TestMultiTransform import TestMultiTransform
 from PartDesignTests.TestBoolean import TestBoolean
 
 # dressup features
-from PartDesignTests.TestFillet import TestFillet, TestFilletCorners, TestDressUpNamesFollow
+from PartDesignTests.TestFillet import (
+    TestFillet,
+    TestFilletCorners,
+    TestDressUpNamesFollow,
+    TestFilletGroups,
+)
 from PartDesignTests.TestChamfer import TestChamfer
 from PartDesignTests.TestDraft import TestDraft
 from PartDesignTests.TestThickness import TestThickness
