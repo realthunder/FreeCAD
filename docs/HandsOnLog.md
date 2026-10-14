@@ -6927,3 +6927,74 @@ Staged 11:55 = code `04e05bbd38`. LOCAL since the stage, not staged:
 400), `1ac972b406` (the corner coordinate system's box), `49ab88378a` (the
 dress-ups' renames). Entry 117's design (`docs/OnViewValueEditing.md`, the
 note-taker's) is agreed by the reporter and not asked to be built.
+
+## 2026-10-14, the evening: entries 120 to 133 -- PUSHED 15:00 (`d3d1968480`) and 18:32 (`2e22aeba96`), STAGED 15:22; the rest LOCAL
+
+**Pushed and staged on the reporter's words.** "push and restage" (14:58):
+pushed `d3d1968480`, staged 15:22 from build r26, clean. "Push now" (18:30):
+pushed `2e22aeba96` = entries 120 to 123 and the queue; not staged.
+
+**Entries 120 to 123 `ca392899e3`, `7d9b32b296`.** Overlays may be
+see-through over any view (the item background takes care of legibility),
+the console and the report view take the theme's ground in a solid overlay,
+the auto-hide hint has a colour that shows under Dark, and the overlaid
+selection view's list is backed as the property editor's.
+
+**Entry 124 `e6bea25bcd`, on-top items clipped by the view's planes.** The
+reporter chose "way 2": `View3DInventorSelection::extendByOnTop` adds the
+on-top groups (and, under the render manager, the view's selection while
+ShowSelectionOnTop) to the box `View3DInventorViewer::onGetBoundingBox` sizes
+the clip planes from -- per view. `on-top-inside-the-clip-planes.py`: the
+copy staged 15:22 had planes 3.5..13.8 with the far box at 2003.7..2013.7;
+r29 2.7..2016.7.
+
+**Entry 125 `7402a52754`, no trailing zeros in the omni search.**
+`setTrimTrailingZeros` on DoubleSpinBox/QuantitySpinBox and
+`Gui::trimTrailingZeros`, used after the editor's value with its signals
+blocked (the first form, r28c, wrote the editor's 0 into a Box's Length --
+never pushed or staged). `omni-search-float-text.py` 7/7 on r29.
+
+**Entry 127 `d9c3193856`, print the selected pages.** TechDraw_PrintSelected
+("Print Selected Pages"), in the menus and the page view's context menu
+while pages are selected; PagePrinter::printAll/printAllPdf take the pages.
+`techdraw-print-selected.py` 7/7. Entry 132 (a crash I found) in the same
+commit: MDIViewPage::onHasMsg's Undo/Redo with a view whose document is
+null -- guarded; why that view had none NOT found.
+
+**Entry 128 `ce40352c52`, the Extend Dimensions icons.** 14 icons drew
+nothing behind a BackgroundImage feBlend filter Qt's SVG renderer does not
+do; filter removed. The staged copy paints 0 pixels of them, r29 all.
+
+**Entry 130, only its warning `de22312a07`.** PropertyModel::updateChildren
+signalled dataChanged one row past the last child. The highlight and the
+finish staying were NOT reproduced by a script setting Blast and None; the
+reporter tests it tomorrow ("leave 130 for now").
+
+**Entry 129 `e0378550ba`, native printing stays vector.** Print All to
+"Microsoft Print to PDF" gave every page as one picture while Export PDF was
+vector. Found by probes: QtSvg gives a stroke="none" path a SolidLine pen
+with an empty brush (38 letter paths of the template frame), and page items
+stroke with alpha-0 pens; Windows' GDI engine (QAlphaPaintEngine) turns
+each such draw into an image and, past a few, the whole sheet. Ruled out:
+ClearFace, anti-aliasing, fill rule, the scale transform, fill and stroke in
+one call. `PrintSafeEngine`/`PrintSafeDevice` in PagePrinter.cpp, used only
+when the painter is on a native QPrinter, drop pens whose brush is NoBrush
+or alpha 0 and brushes of alpha 0. `TechDrawGui.printPages(pages,
+printerName='', outputFile='')` prints without the dialog, for the test.
+`techdraw-print-native-vector.py` 3/3 on r31c; scanner's ten pages printed
+so (sent to the reporter): only the ActiveView pictures stay images.
+
+**Entry 131 `84757008ee`, a crash at exit.** The transaction copy cache's
+map was allocated and never destroyed. Python suite on r31c: 3757 OK.
+
+**Entry 126, the Dot pattern; entry 133, landscape.** The reporter chose
+way (1): the Dot choice is 0xcccc (two on, two off), and ViewParams::migrate()
+turns a stored View/SelectionLinePattern 0xaaaa into it at start. Then
+"about the techdraw print function, can you set default landscape": Print
+All Pages and Print Selected Pages set the printer to landscape before their
+dialog (each page is still laid out in its own template's orientation;
+single-page Print already took it). On r32: `line-pattern-dot.py` 7/7 with a
+seeded config (a stored 0xaaaa reads 0xcccc, the combo's Dot is 0xcccc and
+shows as current), `techdraw-print-selected.py` 7/7,
+`techdraw-print-native-vector.py` 3/3. The landscape dialog is the
+reporter's to look at: a script cannot answer Windows' print dialog.
