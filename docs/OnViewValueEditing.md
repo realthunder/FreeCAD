@@ -218,29 +218,20 @@ answers.
   An edge with MORE than two points (possible in the file and in the
   panel) shows its points' arrows and a menu whose mode reads "Varying
   (set in the panel)", not one of the three.
-  The look tells the modes apart -- see VISUAL HINTS below.
-- VISUAL HINTS: DEFAULT and CUSTOMISED edges told apart (asked by the
-  reporter 13:47; the note-taker's proposal, three layers that work
-  together, each readable without the others):
-  1. THE ROOT BUTTON'S SHAPE says the mode: DEFAULT -- a HOLLOW ring;
-     ONE RADIUS -- a FILLED disc; TWO RADII -- a filled disc at EACH end
-     of the edge (one per arrow); VARYING (more than two points, set in
-     the panel) -- a filled disc with a small tick ring. Shape, not colour
-     alone, so it reads for colour-blind users and in a monochrome
-     picture.
-  2. COLOUR says default or group: default handles (ring and arrow) in
-     the theme's NEUTRAL handle colour, drawn thinner and at reduced
-     opacity -- they are many and all mean one value, the one at the top
-     middle; customised handles SOLID, in their GROUP's colour, taken from
-     a short palette by group id (id 1 the first colour, and so on), so
-     that the members of one group match at a glance; the group id
-     itself small inside the filled disc. The active handle and its group
-     are drawn highlighted over this (3.3, section 6).
-  3. THE EDGE (optional, a setting): a customised edge drawn with a thin
-     band in its group's colour along it while editing, so a group can be
-     seen without hunting for its handles.
-  A default edge's arrow, dragged, drives the default radius -- its
-  neutral look says that it is the shared value.
+  The handle's colour tells default from customised -- see VISUAL HINT
+  below.
+- VISUAL HINT: DEFAULT and CUSTOMISED edges told apart by the HANDLE'S
+  COLOUR -- DECIDED by the reporter (2026-10-14 13:50: "visual hint,
+  different handle color will do"). Default handles in one colour,
+  customised handles in another; the ROOT BUTTON IS THE SAME COLOUR AS
+  ITS HANDLE (the reporter, 13:51: "root button same color as handle");
+  the active handle
+  and its group highlighted over that (3.3, section 6). The note-taker's
+  first proposal (the button's shape for the mode, a colour per group, a
+  band along the edge) is NOT taken. NOT said: whether each GROUP has a
+  colour of its own or all customised handles share one -- taken as ONE
+  customised colour; the group shows itself by the highlight when a
+  handle is active.
 - OTHER FEATURES put their own operations in the same menu, on the same
   button (3.4 for the dress-ups). For instance -- the note-taker's
   examples, to be settled feature by feature: Pad/Pocket length --
@@ -357,7 +348,8 @@ modify without entering edit. f, show me how would you implement it."
 LEFT for the reporter: the other features' menu entries (3.3, the
 note-taker's examples), feature by feature; and the note-taker's smaller
 proposals in section 6 (an expression conflict inside a group, the
-"reversed in its group" flag, Tab unchanged).
+"reversed in its group" flag, Tab unchanged); and whether each group gets
+a colour of its own (taken: one colour for all customised handles).
 
 ## 6. Edge groups: DECIDED by the reporter (2026-10-14 13:46)
 
@@ -390,9 +382,7 @@ shared expressions) are REPLACED by this one.
   The note-taker's forms, for the build to settle: one radius --
   "2   R 3 mm"; two radii -- "3   R 3 mm -> 5 mm"; varying -- "4   R 2
   to 6 mm, 4 points"; and, where it helps, the member count at the end --
-  "2   R 3 mm  (3 edges)". The edge's own group is checked. The label's
-  id is the same number shown inside the group's root buttons (3.3, the
-  visual hints), and its colour swatch beside it.
+  "2   R 3 mm  (3 edges)". The edge's own group is checked.
 - A CHANGE to any value of an edge -- its radius, its two radii, a
   point's position (param or length), whatever the edge holds -- is
   MIRRORED to every edge with the same group id, the same change.
