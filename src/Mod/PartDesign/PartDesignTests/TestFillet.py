@@ -398,3 +398,68 @@ class TestFilletCorners(unittest.TestCase):
         # the cut, through the pad's 10 before, now takes 2 x 2 x 5 less;
         # the corner is the same
         self.assertAlmostEqual(fillet.Shape.Volume, volume + 20, delta=1e-4)
+
+
+class TestDressUpNamesFollow(unittest.TestCase):
+    """An edge's own values of a fillet (Segments) and of a chamfer
+    (ChamferInfo), and expressions bound to them, follow the edge when the
+    base renames it. The expressions went the wrong way: the rename was
+    asked from the new name to the old, and a fillet's per-point paths were
+    renamed into themselves, every second one skipped."""
+
+    Corner = FreeCAD.Vector(10, 10, 10)
+
+    def setUp(self):
+        # A pad with a cut ahead of the dress-up, as testNamesFollowTopology
+        # above: lowering the cut renumbers the edges at the corner
+        self.Doc = FreeCAD.newDocument("PartDesignTestDressUpNames")
+        body = self.Doc.addObject('PartDesign::Body', 'Body')
+        sketch = body.newObject('Sketcher::SketchObject', 'Sketch')
+        pts = [FreeCAD.Vector(x, y, 0) for x, y in ((0, 0), (10, 0), (10, 10), (0, 10))]
+        for i in range(4):
+            sketch.addGeometry(Part.LineSegment(pts[i], pts[(i + 1) % 4]))
+        pad = body.newObject('PartDesign::Pad', 'Pad')
+        pad.Profile = sketch
+        pad.Length = 10
+        self.Cut = body.newObject('PartDesign::SubtractiveBox', 'Cut')
+        self.Cut.Length = self.Cut.Width = 2
+        self.Cut.Height = 20
+        self.Body = body
+        self.Doc.recompute()
+        self.Edge = _nameAt(self.Cut.Shape, 'Edge', self.Corner)[0]
+        self.Point = self.Cut.Shape.getElement(self.Edge).CenterOfMass
+
+    def tearDown(self):
+        FreeCAD.closeDocument(self.Doc.Name)
+
+    def lowerTheCut(self):
+        self.Cut.Height = 5
+        self.Doc.recompute()
+        edge = [n for n in _nameAt(self.Cut.Shape, 'Edge', self.Corner)
+                if self.Cut.Shape.getElement(n).CenterOfMass.isEqual(self.Point, 1e-7)][0]
+        self.assertNotEqual(edge, self.Edge)
+        return edge
+
+    def testFilletSegments(self):
+        fillet = self.Body.newObject('PartDesign::Fillet', 'Fillet')
+        fillet.Base = (self.Cut, [self.Edge])
+        fillet.Radius = 0.5
+        fillet.Segments = [(self.Edge, [(0.0, 0.5), (0.5, 0.8), (1.0, 0.5)])]
+        # one on every point: the second was skipped
+        for i in range(3):
+            fillet.setExpression('.Segments.%s[%d].Radius' % (self.Edge, i), '0.%d mm' % (5 + i))
+        self.Doc.recompute()
+        edge = self.lowerTheCut()
+        self.assertEqual(sorted(p for p, _ in fillet.ExpressionEngine),
+                         sorted('.Segments.%s[%d].Radius' % (edge, i) for i in range(3)))
+
+    def testChamferInfo(self):
+        chamfer = self.Body.newObject('PartDesign::Chamfer', 'Chamfer')
+        chamfer.Base = (self.Cut, [self.Edge])
+        chamfer.Size = 0.5
+        chamfer.ChamferInfo = [(self.Edge, 0.7)]
+        chamfer.setExpression('.ChamferInfo.%s.Size' % self.Edge, '0.6 mm')
+        self.Doc.recompute()
+        edge = self.lowerTheCut()
+        self.assertEqual([p for p, _ in chamfer.ExpressionEngine],
+                         ['.ChamferInfo.%s.Size' % edge])
