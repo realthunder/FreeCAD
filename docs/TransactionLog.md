@@ -19388,7 +19388,8 @@ case of the tests:
 - the version a branch forks from was its writer's to unname.
 
 **Left.** Each conflict picked by itself in the browser, which is the
-merge's own panel (the third stage of 32.21). The requests of 30.20 --
+merge's own panel (the third stage of 32.21) -- built since, 32.26. The
+requests of 30.20 --
 a file sent, a branch an import made -- are another list of the same
 panel and are not asked through these ops. Access is said by user;
 there is no group, and no access of "everyone who edits" to a branch
@@ -19415,6 +19416,70 @@ in the request list, and the two things of the log the ops lean on -- a
 point is a version of its branch, a refused apply leaves an undone merge
 to be redone, which fails with the op's question of the preview taken
 out).
+
+### 32.26 The log's panel in a browser, third stage: the merge's own (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "continue", after 32.25 was built with
+this stage named as what was left of it -- the third of the four stages
+of 32.21: what a merge would do, a side picked for each conflict, and a
+merge undone rolled back. Until now an apply or a merge from the page
+that met conflicts asked one side for all of them.
+
+**The ops** (`Gui/SceneLog.cpp`):
+
+| op | asks | for | answers |
+| --- | --- | --- | --- |
+| `log.preview` | `rows`, or `request` | as `log.apply`, or as `log.mergeRequest` short of writing: rows of a branch the asker reads; a request it is listed, its source read, in a document on its target | `what` (`rows`, `merge`), `source`, `base`, `forward`, `fastForward`, `conflicts`, `count`, and `changes` (at most 2000): `key`, `kind`, `op`, `ckind`, `object`, `label`, `prop`, `derived`, `note`, and the values at the `base`, `ours` and `theirs` as text |
+| `log.apply`, `log.mergeRequest` | and `picks`: a side by key | as before | as before |
+| `log.rollBack` | `dry` | the host; one who writes the branch the document is on, of a merge of its own since the point | `merge`, `source`, `rows`; with `dry`, `may` and `why` and nothing done |
+
+A change is what the desktop's merge dialog lists (`MergeChange`, sec
+28.2 item 10), and its key is what `picks` names (`Box.Height`,
+`view:Box.ShapeColor`). With `picks` an act counts as conflicts with no
+side only those not picked, and a key with `ours` of a change that asks
+nothing leaves it out, as on the desktop (`Document::pickRows`). A value
+is text as the desktop has it, the start of what the log holds, and a
+property saved as one element with its value -- a number, a length, a
+word -- is that value: `60`, not `<Float value="60.000000000000000"/>`.
+A derived value, a shape, is its ref: reading it would read geometry.
+
+**Roll back** is `Document::rollBackMerge` (31.21): the merge undone at
+the head, and its undoing, leave the log for good; the document does not
+change. It takes rows out, as deleting a branch does, so it is the
+host's, and of a client the roll back of a merge it made itself, on a
+branch it writes, since the point. Whether there is one is asked with
+`dry` when a merge or an undo is chosen, as the desktop asks when its
+menu opens: `Document::undoneMerge()` commits an edit left open and
+waits for the rows being written, which no list asked of every client
+on every change should do.
+
+**The page.** Where an apply or a merge meets conflicts the card's
+question has a third answer, **Pick each...**: the list of what it
+would do in place of the card's lists, the conflicts first and marked,
+each with its two values as buttons -- ours, theirs, the base in the
+tip -- and the rest with what goes in of them; **All ours**, **All
+theirs**; **Apply** or **Merge**, waiting while a conflict has no side,
+and **Cancel**. A request also has **Look first...**, the same list
+before anything is asked. A merge or an undo chosen in the rows has
+**Roll back merge...** where there is one undone at the head, greyed
+with the host's reason where it is not the asker's.
+
+![A side picked for each conflict, in the card](images/transaction-log/15-log-browser-picker.png)
+
+**Left.** Untick a change to leave it out, which the desktop's dialog
+has: the op takes it (`picks` with `ours`), the card does not offer it.
+What a merge would make, drawn (32.17), is the desktop's. The fourth
+stage -- kept values -- is not started.
+
+**Tests.** `tests/gui/serve-log-acts.py` (94): A's apply previewed, the
+conflict listed by its key with the value on each side, applied with
+`ours` picked; a request's merge previewed by the host, and refused C in
+a document not on its target; the host's own merge undone through its
+connection, refused another who reads the branch, rolled back by the
+host, and refused again. `tests/gui/serve-log-acts-browser.py` (35): a
+row of the branch the page's was made from, set on both sides, applied
+through **Pick each...** with theirs. `web/src/widgets/gate.ts` (253):
+six of the list's model.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 

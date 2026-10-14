@@ -585,8 +585,9 @@ italics, with its name. Two things can be done with it:
   that step set is written to the branch you are on, as one step of your
   own, which undo takes back. Several at once as for undo. Where a step
   sets something that was also set here since the two branches parted,
-  the panel asks one question for all of them: **Take theirs**, or
-  **Keep ours**.
+  the panel asks one question for all of them: **Take theirs**, **Keep
+  ours**, or **Pick each...**, which lists what it would do with a side
+  to pick for each conflict (below).
 - **Ask for a merge.** The third list, **Requests**, has a line at its
   top: *Merge* a branch *into* another, a note if you like, **Ask**. Both
   must be branches you read. This is how the work you did in a branch
@@ -600,7 +601,25 @@ and the number of open ones is in the list's name. Click one to act on
 it: **Withdraw** takes back one of your own; **Merge** and **Reject** are
 for whoever writes the branch it is to go into -- and a merge is done in a
 document that is on that branch, so the button says so when yours is not.
-A merge that meets conflicts asks the same one question.
+A merge that meets conflicts asks the same one question. **Look first...**
+opens the list before anything is merged.
+
+![A side picked for each conflict](images/transaction-log/15-log-browser-picker.png)
+
+**The list of what it would do** takes the place of the panel's lists
+while it is open. The conflicts come first: each shows its value here
+(**ours**) and its value on the other branch (**theirs**) -- click the
+one that is to stay; the tip says what it was where the two branches
+parted. **All ours** and **All theirs** pick every one. The rest says
+what goes in of it. **Apply** or **Merge** waits until every conflict
+has a side; **Cancel** leaves everything as it was.
+
+**A merge that was undone** can be taken out of the history altogether,
+as on the desktop (section 10): click the merge, or the undo of it, and
+**Roll back merge...**. Its steps leave the history, and a merge of that
+branch later asks everything again; the document does not change. It is
+the sharer's, or yours for a merge you made yourself on a branch you
+write.
 
 **For the sharer**, in the Transaction Log panel on the desktop:
 
