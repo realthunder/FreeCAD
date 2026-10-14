@@ -91,8 +91,7 @@ public:
     /// Accessor for parameter DockOverlayAutoView
     ///
     /// Hide overlay dock panels automatically while the active view is not
-    /// a 3D view. Transparent panels also turn opaque over a maximized
-    /// view that cannot be panned.
+    /// a 3D view.
     static const bool & getDockOverlayAutoView();
     static const bool & defaultDockOverlayAutoView();
     static void removeDockOverlayAutoView();
@@ -222,10 +221,11 @@ public:
     //@{
     /// Accessor for parameter DockOverlayThemeItemColor
     ///
-    /// Back the items of an overlaid tree view and property view with the
-    /// colour of the 3D view's background as the theme has it -- the first
-    /// colour of a gradient -- so that their text reads over the view.
-    /// When off the tree view's own item background colour is used.
+    /// Back the text of overlaid panels (tree, property view, selection
+    /// view, Python console, report view) with the 3D view's background
+    /// colour where the panel lies: a linear gradient's top colour (bottom
+    /// for a panel at the bottom), a radial one averaged over the panel.
+    /// When off the 'Item background color' is used.
     static const bool & getDockOverlayThemeItemColor();
     static const bool & defaultDockOverlayThemeItemColor();
     static void removeDockOverlayThemeItemColor();

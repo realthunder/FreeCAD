@@ -320,9 +320,11 @@ void OverlayProxyWidget::paintEvent(QPaintEvent *)
     if(!drawLine)
         return;
     QPainter painter(this);
-    painter.setOpacity(_hintColor.color().alphaF());
+    // in a colour that stands out from the view where it is drawn
+    const QColor hint = OverlayManager::overlayHintColour(_hintColor.color(), owner);
+    painter.setOpacity(hint.alphaF());
     painter.setPen(Qt::transparent);
-    painter.setBrush(_hintColor);
+    painter.setBrush(hint);
 
     QRect rect = this->getRect();
     painter.drawRect(rect);
@@ -1295,17 +1297,13 @@ void OverlayTabWidget::setTransparent(bool enable)
 
 bool OverlayTabWidget::isTransparent() const
 {
-    if (!actTransparent.isChecked())
-        return false;
-    if(OverlayParams::getDockOverlayAutoView()) {
-        auto view = getMainWindow()->activeWindow();
-        if (!view) return false;
-        if(!view->onHasMsg("CanPan")
-                && view->parentWidget()
-                && view->parentWidget()->isMaximized())
-            return false;
-    }
-    return true;
+    // The eye alone. A panel was made opaque as well while the active view
+    // was a maximized one that cannot be panned -- a spreadsheet, a page --
+    // whose own content the panel's text would have been lost over; the
+    // items' and the text views' own grounds read on any view now
+    // (docs/HandsOnQueue.md entries 98 and 120: "with item background
+    // feature, we can enable transparency mode in all cases").
+    return actTransparent.isChecked();
 }
 
 bool OverlayTabWidget::isOverlaid(QueryOption option) const
@@ -2692,14 +2690,21 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     tmpPainter.fillRect(tmp.rect(), color());
     tmpPainter.end();
 
-    // No outline where what is drawn stands on a ground of its own: a tree
-    // item with its background, a line of the console with its, a button. The
-    // outline is there for what has to read straight over the 3D view; over a
-    // ground it only smeared the ground's edge and the text's
-    // (docs/HandsOnQueue.md entry 98, and so entry 87's "text and icons keep
-    // their outline" for an item that has a background). Taken out wherever
-    // the source is at least as opaque as such a ground, at the place the
-    // outline would be drawn.
+    // Where what is drawn stands on a ground of its own -- a tree item with
+    // its background, a line of the console with its, a button -- the outline
+    // is not laid under the ground: there it darkened the whole of the ground
+    // and edged its rim (docs/HandsOnQueue.md entries 87 and 98). It is laid
+    // OVER the ground and under the letters, so that it edges the letters
+    // alone -- a text's colour is not always one that reads on the ground it
+    // is given (entry 98, asked 2026-10-14; it comes and goes with the
+    // outline itself, there is no setting of its own). Letters are told from
+    // their ground by opacity: a ground is at the overlay's, ink above it.
+    // Each part of the outline goes where it is drawn: `tmp` keeps what lies
+    // over the 3D view, `over` takes what lies over a ground, and what would
+    // lie on ink is dropped.
+    QImage over(tmp.size(), QImage::Format_ARGB32_Premultiplied);
+    over.setDevicePixelRatio(px.devicePixelRatioF());
+    over.fill(0);
     {
         const int ground = std::max(OverlayManager::overlayAlpha() - 3, 1);
         const QPoint shift(qRound(_offset.x()), qRound(_offset.y()));
@@ -2708,11 +2713,18 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
             if (sy < 0 || sy >= source.height())
                 continue;
             auto line = reinterpret_cast<QRgb*>(tmp.scanLine(y));
+            auto above = reinterpret_cast<QRgb*>(over.scanLine(y));
             auto under = reinterpret_cast<const QRgb*>(source.constScanLine(sy));
             for (int x = 0, width = tmp.width(); x < width; ++x) {
                 const int sx = x + shift.x();
-                if (sx >= 0 && sx < source.width() && qAlpha(under[sx]) >= ground)
-                    line[x] = 0;
+                if (sx < 0 || sx >= source.width())
+                    continue;
+                const int alpha = qAlpha(under[sx]);
+                if (alpha < ground)
+                    continue;
+                if (alpha <= limit)
+                    above[x] = line[x];
+                line[x] = 0;
             }
         }
     }
@@ -2722,6 +2734,9 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
 
     // draw the actual pixmap...
     painter->drawPixmap(offset, px, QRectF());
+
+    // ... and the part of the shadow that lies on a ground, over the ground
+    painter->drawImage(QPointF(offset.x()+_offset.x(), offset.y()+_offset.y()), over);
 
 #if 0
     QWidget *focus = qApp->focusWidget();

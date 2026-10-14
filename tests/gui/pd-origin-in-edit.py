@@ -120,10 +120,13 @@ def blues(view, img):
 
 
 def zblues(view, img):
-    """Pixels of the Z axis' blue between the body's origin and the ring.
-    The X axis' strip will not do for the box: the attacher draws its own
-    red arrows there."""
-    x0, y0 = at(view, img, V(-1.5, 0, 5))
+    """Pixels of the Z axis' blue along the axis, from below the body's
+    origin to above the ring. The X axis' strip will not do for the box: the
+    attacher draws its own red arrows there. (To above the ring, not to its
+    underside: an axis starts a little way off the origin, twice as far
+    since an origin is drawn at twice the size -- docs/HandsOnQueue.md entry
+    99 -- and the short strip below the ring held 4 pixels of it.)"""
+    x0, y0 = at(view, img, V(-1.5, 0, 26))
     x1, y1 = at(view, img, V(1.5, 0, -2))
     count = 0
     for y in range(max(0, min(y0, y1)), min(img.height(), max(y0, y1) + 1)):

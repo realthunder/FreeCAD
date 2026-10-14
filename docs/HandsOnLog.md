@@ -6746,7 +6746,77 @@ tests passed out of 957" (`ctest36.log`); Python "Ran 3755 tests in
 859.336s, OK (skipped=52, expected failures=6)" (`pytest36.log`) -- three
 more than on r9, the binder's.
 
-**Where the evening leaves things.** Origin `LinkVibe` = `5c0b30ce1b`
+**2026-10-14, the morning: entry 108 ruled, PUSHED 07:56 (`7d5698c950`),
+STAGED 08:10:46 from the clean tree.** The reporter: "Entry 108. When
+visible follow the control in edit panel. If preview is on, show on top,
+else show normal. If hidden, then always shiwn on top"; asked which
+control, the "Show on top" check box (what the code did) or "Show
+preview": "Show preview"; then "Visible checking not only apply to the
+body itself, but to the full editing path", and "After done push and
+restage."
+
+`Monitor::wantEditOnTop()` (`PartDesign/Gui/Utils.cpp`): on top when the
+preview is on, or when anything on the path of the edit down to its body
+is hidden. The panel's "Show on top" check box is gone and
+`Part/EditOnTop` no longer read -- my consequence, under that rule it
+decided nothing. `tests/gui/edit-on-top-by-preview-and-path.py` replaces
+the test of the evening before: 9 of 9 on build r16 -- preview on, all
+shown / the body hidden / the part hidden: one picture; preview off: the
+feature in its place, and with the body hidden something on top all the
+same. Nine edit neighbours pass; `pd-origin-in-edit` fails one claim
+("ring: drawn, the Z axis at the body", 4 pixels for more than 5), the
+same 4 on the copy staged 2026-10-13 16:55 -- not this change's, not
+looked into. The suites were not run again on r16, which differs from
+r15 by that one source and its header.
+
+The staged copy was running; closed on the reporter's word ("Close it
+for me, no need to save"). The installer: fcad `7d5698c950`, not dirty;
+occt `a81d25f148`; coin `d2da5cc93`. Not tested by me on the staged copy.
+
+**Entry 114, 09:00: the staged copy of 08:10 crashes at a change of theme
+-- my commit of entry 112.** `2a317f254e` attached `QGVPage`'s observer to
+TechDraw's `Colors` group and did not detach it: once a page's view had
+been destroyed the group called a dead observer at the next write of one
+of its keys, and a theme writes them (the note-taker read the dump: an
+access violation in `Base::Subject<const char*>::Notify`, "PreSelectColor",
+`Mod/TechDraw/Colors`). REPRODUCED on the staged copy, offscreen, by
+`tests/gui/techdraw-colour-after-page-view-closed.py` -- the session ends
+at the theme, EXIT -1073741819, its `crash.log` the reporter's stack.
+FIXED `778bde3979`, the one `Detach`; on build r18 the test 6 of 6, and
+`techdraw-page-ground-as-3d-view` 6, `theme-owns-techdraw-preselect` 7,
+`theme-switch-contrast` 39, `overlay-preset-follows-the-theme` 45,
+`revert-document` 12. No other observer of a widget's lifetime was added
+in these weeks (the rest of the `Attach` calls are the generated parameter
+classes, which live as long as the program). LOCAL; a push and a restage
+asked of the reporter 09:11.
+
+Entry 112's missing part, the check box on TechDraw's colour page:
+`463a36a58b`, `techdraw-page-ground-preference.py` 6 of 6 offscreen.
+
+**Two reports of mine corrected the same morning, by probes on r16.**
+
+- Entry 109 lights NOTHING under a per-view edit, the reporter's setting:
+  the hover names the preview's face, and the view with that preselection
+  and without it differ in 0 pixels (an edge of the base: 82). The preview
+  is a node of the edit session there, not under the feature's switch --
+  the highlight's path leads nowhere. A fix is written (the panel colours
+  the preview's face), not built.
+- Entry 104: cavity shading is not drawn in any picture my test sessions
+  take -- the setting on and off, default and strong values, the default
+  configuration and a copy of the reporter's: 0 pixels, 0 levels. So
+  `cavity-not-for-view-hidden.py` could never see the effect and its "5 of
+  5" says nothing for the ghost's fix `038b8b1b1a`, which is UNVERIFIED by
+  me. Why the pass does not run there: not found; the build that carried a
+  trace for it (r17) hung in its configure step, `ninja -t wincodepage`
+  not returning for 27 minutes, and was killed. For the second defect a
+  cleaner probe -- a cover that hides a grooved block entirely, both
+  against the cover alone (`e104x.py`): Shaded, 0 pixels at every zoom;
+  "Flat Lines", 4 to 118 pixels from 16 times zoomed out: the hidden
+  block's edge lines come through the cover.
+- `pd-origin-in-edit`'s failing claim was the test's strip, too short
+  since an origin is drawn at twice the size: `9bfa88b726`, 15 of 15.
+
+**Where the evening left things** (before that push). Origin `LinkVibe` = `5c0b30ce1b`
 (20:13). LOCAL on top of it, not pushed: `905d023394` (111, first form),
 `26f0a30de0` (109), `1109842583` (99 a and c, the late pick), `56504486e6`
 (113), `023552c8fd` (111 as ruled), and the note-taker's queue commits
@@ -6755,3 +6825,105 @@ reporter: entry 108's see-through base with the body hidden (wanted so,
 or the same picture as with it shown); whether the clipped on-top
 display of a hidden body's feature and the odd migration run become
 entries. Not found: entry 104's creases showing through.
+
+## 2026-10-14, late morning and afternoon: entries 109, 115, 98, 116, 119; a fix of the dress-ups' renames -- STAGED 10:36 and 11:55; nothing pushed since `7d5698c950`
+
+**Staged twice on the reporter's word, not pushed.** 10:36 on "after build
+r21, restage" (a dirty tree, = `bd5f1c358d`: 114's crash fix, 112's check
+box, 109, 115's redraw, 98's ground and outline). 11:55 on "after entry 98
+built, restage", from build r23: installer head `260a43578f` (the
+note-taker's), code `04e05bbd38`, "dirty" from GUI test scripts only; occt
+`a81d25f148`, coin `d2da5cc93`. The first try at 11:53 stopped in the
+installer's own "is the copy running" check -- a null process path, most
+likely a test's FreeCAD exiting while the list was read -- before copying
+anything; the rerun went through. Not tested by me on the staged copy, as
+the reporter asked.
+
+**Entry 116, the audit: the six fixes `fbeac04f4c`, finding 5 `adf1a2f6a5`.**
+Assembly's edit connections (released before an edit re-enters, before
+unsetEdit()'s early return, in the destructor; the double-click timer by
+the object), Mesh's fill-hole connection, Gui::Document's
+connectPinsReleased, the DAG view's icon connections, Part's attacher
+timer with a context. Finding 5 on "116, yes fix finding 5" (by the
+note-taker): the selection's decimals connection was a function static
+holding the first instance; one per instance now. On r22: ctest 957/957,
+Python 3755 OK; `pd-gui-defects`' one failure ("an LCS on a vertex leaves
+the vertex to pick") is the same on the copy staged at 10:36 -- not the
+audit's.
+
+**Entry 115's themes `3f12b16dfa`** ("accept the theme colours"): Light
+and Dark on a simple colour, Light's the old radial centre #C3C3C3.
+
+**Entry 98 as asked 11:08 `04e05bbd38`** (and "agree with your average
+color proposal"). The radial ground is the gradient averaged over what
+the overlay covers of the 3D view it covers most of (8 by 8 points, the
+geometry of SoFCBackgroundGradient: centre colour 2, middle 4 on an oval
+0.3 sqrt2 by sqrt1/2, rim 3 on a circle of sqrt2), kept while the places
+and colours stay; its code went in with `f83174eb42`, which took the whole
+file. With "Item background follows the theme" off, the tree's item
+colour backs the console, the report view and the selection view too (a
+delegate for the selection view and its pick list); with no colour set
+the text views keep their own ground -- MY rule for a case the request
+did not cover. The two settings are on Display > Colors, group
+"Overlay"; a group "Display Style" there duplicates the display styles
+page's colours (hidden line face/line/background with their override
+boxes, the shadow's light and ground). Measured on r23 offscreen: radial
+ground (133,133,164), the computed average (the rim is (171,171,193));
+the selection view follows linear, radial and one colour; the item colour
+backs both text views. The tooltip first ran to 428 characters and failed
+OmniSearch's 400 (`f0113275f2`, 309 now).
+
+**Entry 119 (my "117" in `f83174eb42`'s message, given its number by the
+note-taker), a view cell's border released over a see-through panel.**
+The overlay passed on a release whose press it had not passed on; the
+border never saw it. `f83174eb42`: a release goes where its press went.
+Then the reporter's "Will a split drag handle got notified it lost
+tracking? ... Same for other handle dragging": it was not -- Qt sends no
+event when a press's implicit grab ends, and the drags listened for
+UngrabMouse, which only an explicit grab sends. `721b639bca`: the view
+cells' border, their corner zone and the in-view task panel's title drag
+end at the left button's release for whichever widget, taken from their
+own application filter (asked before every one installed earlier), and
+give up at a mouse event that finds the button up. The overlay's own
+drags did so already. `tests/gui/overlay-release-goes-with-its-press.py`
+drives the mouse through the main window's QWindow (QTest's widget
+events leave the application's idea of the buttons alone, and the drags'
+new check ended the test's own drag): 11 of 11 on r25; on the copy staged
+11:55 the release part passes and the "release never comes" part fails,
+as it lacks `721b639bca`; on the copy staged at 10:36 the release itself
+failed (frames left, the cells unchanged).
+
+**Two older defects found by the tests of r23.** Display > 3D View still
+checked "Show coordinate system in the corner" by default in its .ui, while
+the setting defaults to off since `22ece75a08` (entry 75): a fresh
+profile's first OK wrote it on (`1ac972b406`). The render-cache claim of
+`preferences-ok-reapplies-nothing` fails offscreen and passes on the
+screen, as on 2026-10-10. Three screen tests I had run offscreen by
+mistake pass on the screen on r25: `overlay-see-through` 62,
+`task-panel-in-view` 89, `task-panel-overlay` 43.
+
+**A fix on my own judgement, not an entry: the dress-ups' renames
+`49ab88378a`.** The note-taker, reading for entry 117's design, saw the
+per-point renames of `PropertyFilletSegments` built from one path, every
+second point skipped. Wider: in it and in `PropertyChamferEdges` the whole
+rename map ran new -> old (`referenceUpdates[new] = old`, `sub` the new
+name, `key` the old) where renameExpressions() takes old -> new, so an
+expression on a per-edge segment or chamfer size stayed on the old edge
+name. `TestDressUpNamesFollow` (a pad with a cut lowered): on r25, before
+the fix, both tests fail -- `.ChamferInfo.Edge12.Size` left for `Edge19`.
+Seen and not touched: `PropertyFilletSegments::getPyObject` returns no
+edge names while its setter wants them; `PropertyChamferEdges::setPyObject`
+refuses four items or more but reads the fourth and fifth.
+On r26, the fix built: `TestDressUpNamesFollow` OK (2 tests), and the whole
+Python suite "Ran 3757 tests ... OK (skipped=81, expected failures=6)" --
+29 more skipped than on r24, all "no sandbox guest in this build": that
+chain did not set `FCX_PYODIDE` (the earlier ones set it for ctest and the
+Python run inherited it), not the code.
+
+**Where the afternoon left things.** Origin `LinkVibe` = `7d5698c950`.
+Staged 11:55 = code `04e05bbd38`. LOCAL since the stage, not staged:
+`721b639bca` (119, drags end themselves), `adf1a2f6a5` (116 finding 5),
+`ac2040cc94` and `e050b0467d` (tests), `f0113275f2` (98's tooltip under
+400), `1ac972b406` (the corner coordinate system's box), `49ab88378a` (the
+dress-ups' renames). Entry 117's design (`docs/OnViewValueEditing.md`, the
+note-taker's) is agreed by the reporter and not asked to be built.

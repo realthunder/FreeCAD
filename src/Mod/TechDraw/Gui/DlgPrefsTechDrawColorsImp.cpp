@@ -95,6 +95,7 @@ void DlgPrefsTechDrawColorsImp::saveSettings()
     ui->pcb_Grid->onSave();
     ui->pcbPageColor->onSave();
     ui->pcbLightOnDark->onSave();
+    ui->pcbBackgroundAs3DView->onSave();
     ui->pcbMonochrome->onSave();
     ui->pcbLightTextColor->onSave();
     ui->pcbUnderline->onSave();
@@ -123,6 +124,7 @@ void DlgPrefsTechDrawColorsImp::loadSettings()
     ui->pcb_Grid->onRestore();
     ui->pcbPageColor->onRestore();
     ui->pcbLightOnDark->onRestore();
+    ui->pcbBackgroundAs3DView->onRestore();
     ui->pcbMonochrome->onRestore();
     ui->pcbLightTextColor->onRestore();
     ui->pcbUnderline->onRestore();

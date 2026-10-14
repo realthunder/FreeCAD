@@ -47,8 +47,8 @@ DlgSettingsUI.define()
 #include <Gui/ViewParams.h>
 #include <Gui/OpenViewParams.h>
 #include <Gui/TreeParams.h>
-#include <Gui/OverlayParams.h>
 #include <Gui/ExprParams.h>
+#include <Gui/OverlayParams.h>
 // Auto generated code (Tools/params_utils.py:652)
 #include "Gui/PreferencePages/DlgSettingsUI.h"
 using namespace Gui::Dialog;
@@ -252,31 +252,6 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     auto layoutTreeview = new QVBoxLayout();
     layoutHorizTreeview->addLayout(layoutTreeview);
     layoutHorizTreeview->addStretch();
-
-    // Auto generated code (Tools/params_utils.py:486)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:492)
-    layoutTreeview->addLayout(layoutRow);
-    labelItemBackground = new QLabel(this);
-    layoutRow->addWidget(labelItemBackground);
-    ItemBackground = new Gui::PrefColorButton(this);
-    layoutRow->addWidget(ItemBackground);
-    ItemBackground->setPackedColor(Gui::TreeParams::defaultItemBackground());
-    ItemBackground->setEntryName("ItemBackground");
-    ItemBackground->setParamGrpPath("TreeView");
-    ItemBackground->setAllowTransparency(true);
-
-    // Auto generated code (Tools/params_utils.py:486)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:492)
-    layoutTreeview->addLayout(layoutRow);
-    DockOverlayThemeItemColor = new Gui::PrefCheckBox(this);
-    layoutRow->addWidget(DockOverlayThemeItemColor);
-    DockOverlayThemeItemColor->setChecked(Gui::OverlayParams::defaultDockOverlayThemeItemColor());
-    DockOverlayThemeItemColor->setEntryName("DockOverlayThemeItemColor");
-    DockOverlayThemeItemColor->setParamGrpPath("View");
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -1041,8 +1016,6 @@ void DlgSettingsUI::saveSettings()
     UtilityTarget->onSave();
     SplitDirection->onSave();
     MinimumCellSize->onSave();
-    ItemBackground->onSave();
-    DockOverlayThemeItemColor->onSave();
     ItemBackgroundPadding->onSave();
     ResizableColumn->onSave();
     CheckBoxesSelection->onSave();
@@ -1106,8 +1079,6 @@ void DlgSettingsUI::loadSettings()
     UtilityTarget->onRestore();
     SplitDirection->onRestore();
     MinimumCellSize->onRestore();
-    ItemBackground->onRestore();
-    DockOverlayThemeItemColor->onRestore();
     ItemBackgroundPadding->onRestore();
     ResizableColumn->onRestore();
     CheckBoxesSelection->onRestore();
@@ -1208,11 +1179,6 @@ void DlgSettingsUI::retranslateUi()
     labelMinimumCellSize->setText(QObject::tr("Minimum view cell size"));
     labelMinimumCellSize->setToolTip(MinimumCellSize->toolTip());
     groupTreeview->setTitle(QObject::tr("Tree view"));
-    ItemBackground->setToolTip(QApplication::translate("TreeParams", Gui::TreeParams::docItemBackground()));
-    labelItemBackground->setText(QObject::tr("Item background color"));
-    labelItemBackground->setToolTip(ItemBackground->toolTip());
-    DockOverlayThemeItemColor->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayThemeItemColor()));
-    DockOverlayThemeItemColor->setText(QObject::tr("Item background follows the theme"));
     ItemBackgroundPadding->setToolTip(QApplication::translate("TreeParams", Gui::TreeParams::docItemBackgroundPadding()));
     labelItemBackgroundPadding->setText(QObject::tr("Item background padding"));
     labelItemBackgroundPadding->setToolTip(ItemBackgroundPadding->toolTip());
@@ -1408,16 +1374,6 @@ void DlgSettingsUI::init()
         TaskPanelInView->onSave();
         TaskView::TaskPlacement::applyToAll();
     });
-
-    // The tree view's own item background colour is used only while "Item
-    // background follows the theme" is off: with that on, the colour cannot
-    // be picked (docs/HandsOnQueue.md entry 87).
-    auto ownColourEnabled = [this](bool followsTheme) {
-        labelItemBackground->setEnabled(!followsTheme);
-        ItemBackground->setEnabled(!followsTheme);
-    };
-    QObject::connect(DockOverlayThemeItemColor, &QCheckBox::toggled, this, ownColourEnabled);
-    ownColourEnabled(DockOverlayThemeItemColor->isChecked());
 
     timer = new QTimer(this);
     timer->setSingleShot(true);

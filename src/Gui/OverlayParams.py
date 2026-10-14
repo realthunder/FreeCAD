@@ -104,8 +104,7 @@ Params = [
               "leave room for the cube in that corner."),
     ParamBool('DockOverlayAutoView', True, on_change=True, title="Auto hide in non 3D view",
         doc = "Hide overlay dock panels automatically while the active view is not\n"
-              "a 3D view. Transparent panels also turn opaque over a maximized\n"
-              "view that cannot be panned."),
+              "a 3D view."),
     ParamInt('DockOverlayDelay', 200, "Overlay dock (re),layout delay.", title="Layout delay (ms)", proxy=ParamSpinBox(0, 5000, 100)),
     ParamInt('DockOverlayRevealDelay', 2000,
         doc = "Milliseconds an overlay dock panel stays fully shown after one of\n"
@@ -134,10 +133,11 @@ Params = [
              "the panel is gone. When off a panel simply covers the cube."),
     ParamBool('DockOverlayThemeItemColor', True, on_change=True,
          title="Item background follows the theme",
-         doc="Back the items of an overlaid tree view and property view with the\n"
-             "colour of the 3D view's background as the theme has it -- the first\n"
-             "colour of a gradient -- so that their text reads over the view.\n"
-             "When off the tree view's own item background colour is used."),
+         doc="Back the text of overlaid panels (tree, property view, selection\n"
+             "view, Python console, report view) with the 3D view's background\n"
+             "colour where the panel lies: a linear gradient's top colour (bottom\n"
+             "for a panel at the bottom), a radial one averaged over the panel.\n"
+             "When off the 'Item background color' is used."),
     ParamInt('DockOverlayAlpha', 180, on_change=True, title="Overlay background opacity",
          proxy=ParamSpinBox(0, 255, 5),
          doc="Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of\n"

@@ -31,6 +31,7 @@
 #include <vector>
 #include <QApplication>
 #include <QBoxLayout>
+#include <QCursor>
 #include <QKeyEvent>
 #include <QActionGroup>
 #include <QLabel>
@@ -366,7 +367,36 @@ protected:
         dragging = false;
         pressAt = ev->globalPosition().toPoint();
         startAt = host->pos();
+        // Its end is watched for in the application's events: see
+        // eventFilter()
+        qApp->installEventFilter(this);
         ev->accept();
+    }
+    /** The end of the drag, wherever the release goes (docs/HandsOnQueue.md
+     * entry 119): Qt tells this title nothing when the grab its press gave
+     * it ends, and a filter of the application's may take the release on
+     * the way -- the panel was left where the pointer let go, at no side.
+     * A mouse event that finds the button up ends it where the pointer is.
+     */
+    bool eventFilter(QObject* watched, QEvent* ev) override
+    {
+        if (!pressed) {
+            return Gui::OverlayTitleBar::eventFilter(watched, ev);
+        }
+        if (ev->type() == QEvent::MouseButtonRelease
+            && static_cast<QMouseEvent*>(ev)->button() == Qt::LeftButton) {
+            const bool mine = (watched == this);
+            finish(static_cast<QMouseEvent*>(ev)->globalPosition().toPoint());
+            if (mine) {
+                ev->accept();
+            }
+            return mine;
+        }
+        if ((ev->type() == QEvent::MouseMove || ev->type() == QEvent::MouseButtonPress)
+            && !(static_cast<QMouseEvent*>(ev)->buttons() & Qt::LeftButton)) {
+            finish(QCursor::pos());
+        }
+        return Gui::OverlayTitleBar::eventFilter(watched, ev);
     }
     void mouseMoveEvent(QMouseEvent* ev) override
     {
@@ -383,13 +413,17 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent* ev) override
     {
+        finish(ev->globalPosition().toPoint());
+        ev->accept();
+    }
+    void finish(const QPoint& at)
+    {
         const bool dragged = pressed && dragging;
         pressed = dragging = false;
+        qApp->removeEventFilter(this);
         if (dragged) {
-            const QPoint at = ev->globalPosition().toPoint();
             host->dragEnded(at, at - pressAt);
         }
-        ev->accept();
     }
 
 private:

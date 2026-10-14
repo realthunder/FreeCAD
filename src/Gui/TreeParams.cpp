@@ -532,8 +532,10 @@ static const App::ParamRegistry::Registrar _TreeParamsRegistrar({
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "ItemBackground", "ItemBackground", App::ParamInfo::Hex, 0x00000000)
         .setTitle("Item background color")
-        .setDoc("Tree view item background. Only effective in overlay, and only\n"
-"while 'Item background follows the theme' is off.")
+        .setDoc("Background of the items of an overlaid tree view, and of the text of\n"
+"an overlaid Python console, report view and selection view. Only\n"
+"used while 'Item background follows the theme' is off; with no\n"
+"colour set the text views keep their own background.")
         .setOnChange()
         .setProxy("Color")
         .setTransparency(true),
@@ -1371,8 +1373,10 @@ void TreeParams::removeItemSpacing() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docItemBackground() {
     return QT_TRANSLATE_NOOP("TreeParams",
-"Tree view item background. Only effective in overlay, and only\n"
-"while 'Item background follows the theme' is off.");
+"Background of the items of an overlaid tree view, and of the text of\n"
+"an overlaid Python console, report view and selection view. Only\n"
+"used while 'Item background follows the theme' is off; with no\n"
+"colour set the text views keep their own background.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

@@ -234,8 +234,11 @@ public:
             "User parameter:BaseApp/Preferences/View");
         hGrp->Detach(this);
         hGrpGeneral->Detach(this);
-        // Left attached, the next change of a colour, such as the one an
-        // export to PDF makes, called a page view that is gone
+        // ... and the third it was attached to. Left attached, the group
+        // called an observer that was gone at the next write of a TechDraw
+        // colour after a page view had been closed -- a theme writes them:
+        // an access violation in Subject::Notify
+        // (docs/HandsOnQueue.md entry 114).
         hGrpColors->Detach(this);
     }
 };

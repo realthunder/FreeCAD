@@ -37,6 +37,8 @@
 #endif
 
 #include <QHelpEvent>
+#include <QPainter>
+#include <QStyledItemDelegate>
 #include <QToolTip>
 
 #include <App/DocumentObserver.h>
@@ -52,6 +54,7 @@
 #include "MetaTypes.h"
 #include "MainWindow.h"
 #include "MainWindowParams.h"
+#include "OverlayManager.h"
 #include "PieMenu.h"
 #include "SelectionView.h"
 #include "Tree.h"
@@ -71,6 +74,41 @@ enum ColumnIndex {
     PathIndex,
     LastIndex,
 };
+
+namespace {
+/// Backs the rows with a ground while the view is overlaid: its text has to
+/// read over the 3D view (docs/HandsOnQueue.md entries 98 and 123).
+class OverlayGroundDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        // Whole rows, as the property editor paints its own overlaid
+        // (PropertyEditor::overlayRowBackground): every second row the
+        // items' ground, the others the palette's alternate colour, both at
+        // the overlays' opacity -- "for selection view in overlay mode, set
+        // the same background color and alpha for its list column as the
+        // property editor" (docs/HandsOnQueue.md entry 123)
+        const QWidget *view = option.widget;
+        if (view && view->testAttribute(Qt::WA_NoSystemBackground)) {
+            QBrush ground;
+            if (index.row() % 2 == 0)
+                ground = OverlayManager::overlayItemBackground(QBrush(), -1, view);
+            else {
+                QColor colour = view->palette().color(QPalette::AlternateBase);
+                colour.setAlpha(OverlayManager::overlayAlpha());
+                ground = QBrush(colour);
+            }
+            if (ground.style() != Qt::NoBrush && ground.color().alpha() != 0)
+                painter->fillRect(option.rect, ground);
+        }
+        QStyledItemDelegate::paint(painter, option, index);
+    }
+};
+} // namespace
 
 SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
   : DockWindow(pcDocument,parent)
@@ -111,6 +149,7 @@ SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
     selectionView->headerItem()->setText(ElementIndex, tr("Element"));
     selectionView->headerItem()->setText(PathIndex, tr("Path"));
     selectionView->header()->setStretchLastSection(false);
+    selectionView->setItemDelegate(new OverlayGroundDelegate(selectionView));
 
     selectionView->setContextMenuPolicy(Qt::CustomContextMenu);
     vLayout->addWidget( selectionView );
@@ -127,6 +166,7 @@ SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
     pickList->headerItem()->setText(ElementIndex, tr("Element"));
     pickList->headerItem()->setText(PathIndex, tr("Path"));
     pickList->header()->setStretchLastSection(false);
+    pickList->setItemDelegate(new OverlayGroundDelegate(pickList));
     pickList->setVisible(false);
     vLayout->addWidget(pickList);
 

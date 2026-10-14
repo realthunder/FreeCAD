@@ -753,18 +753,43 @@ void TaskDressUpParameters::onTimer() {
     auto item = treeWidget->itemAt(treeWidget->viewport()->mapFromGlobal(QCursor::pos()));
     if(!item) {
         Gui::Selection().rmvPreselect();
+        lightPreviewFace(std::string());
         return;
     }
     std::string subname;
     auto obj = getInEdit(subname);
-    if(obj && getItemElement(item, subname))
+    if(obj && getItemElement(item, subname)) {
         Gui::Selection().setPreselect(obj->getDocument()->getName(),
                                       obj->getNameInDocument(),
                                       subname.c_str(),0,0,0,
                                       Gui::SelectionChanges::MsgSource::TreeView,
                                       true);
-    else
+        lightPreviewFace(subname);
+    }
+    else {
         Gui::Selection().rmvPreselect();
+        lightPreviewFace(std::string());
+    }
+}
+
+void TaskDressUpParameters::lightPreviewFace(const std::string &subname)
+{
+    // A face of the preview, named behind the add/sub prefix: lit by its
+    // colour as well, because the preselection of it lights nothing under a
+    // per-view edit (ViewProviderAddSub::highlightPreviewFace()). Anything
+    // else, and no name at all, puts the preview back in its own colour.
+    auto view = getDressUpView();
+    if (!view)
+        return;
+    int face = 0;
+    const std::string &prefix = PartDesign::FeatureAddSub::addsubElementPrefix();
+    auto pos = subname.rfind(prefix);
+    if (pos != std::string::npos) {
+        const char *element = subname.c_str() + pos + prefix.size();
+        if (boost::starts_with(element, "Face"))
+            face = std::atoi(element + 4);
+    }
+    view->highlightPreviewFace(face);
 }
 
 std::vector<std::string> TaskDressUpParameters::getReferences() const
@@ -829,6 +854,7 @@ bool TaskDressUpParameters::handleEvent(QEvent *e)
         enteredObject = nullptr;
         timer->stop();
         Gui::Selection().rmvPreselect();
+        lightPreviewFace(std::string());
     }
     return false;
 }

@@ -193,7 +193,7 @@ TaskAttacher::TaskAttacher(Gui::ViewProviderDocumentObject *ViewProvider, QWidge
         partner = new TaskAttacher(ViewProvider, parent, QString(), tr("Base Attachment"), visFunc, true);
         partner->partner = this;
         if (!pcAttach->getProperties(true).attachment)
-            QTimer::singleShot(0, [this](){partner->showHide();});
+            QTimer::singleShot(0, this, [this](){partner->showHide();});
     }
 
     editObjT = Gui::Selection().getExtendedContext(ViewProvider->getObject());

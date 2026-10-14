@@ -178,19 +178,23 @@ void PropertyFilletSegments::connectLinkProperty(App::PropertyLinkSub &links)
                 auto iter = segmentsMap.find(key);
                 if (iter == segmentsMap.end())
                     continue;
-                if (obj) {
+                // From the name the values were kept under (key) to the
+                // edge's name now (sub): renameExpressions() takes the map
+                // old to new. It was the other way round, and each point's
+                // paths were renamed into themselves, every second point
+                // skipped (an extra ++i).
+                if (obj && key != sub) {
                     App::ObjectIdentifier path(*this);
-                    path << App::ObjectIdentifier::SimpleComponent(sub);
+                    path << App::ObjectIdentifier::SimpleComponent(key);
                     App::ObjectIdentifier pathNew(*this);
-                    pathNew << App::ObjectIdentifier::SimpleComponent(key);
+                    pathNew << App::ObjectIdentifier::SimpleComponent(sub);
                     renames.emplace(path, pathNew);
                     for (int i=0; i<(int)iter->second.size(); ++i) {
                         App::ObjectIdentifier p1(path);
                         p1 << App::ObjectIdentifier::ArrayComponent(i);
-                        App::ObjectIdentifier p2(path);
+                        App::ObjectIdentifier p2(pathNew);
                         p2 << App::ObjectIdentifier::ArrayComponent(i);
                         renames.emplace(p1, p2);
-                        ++i;
                         renames.emplace(App::ObjectIdentifier(p1) << App::ObjectIdentifier::SimpleComponent("Radius"),
                                         App::ObjectIdentifier(p2) << App::ObjectIdentifier::SimpleComponent("Radius"));
                         renames.emplace(App::ObjectIdentifier(p1) << App::ObjectIdentifier::SimpleComponent("Param"),
@@ -1135,11 +1139,12 @@ void PropertyChamferEdges::connectLinkProperty(App::PropertyLinkSub &links)
                 auto iter = chamferEdgeMap.find(key);
                 if (iter == chamferEdgeMap.end())
                     continue;
-                if (obj) {
+                // old (key) to new (sub), as the fillet's segments above
+                if (obj && key != sub) {
                     App::ObjectIdentifier path(*this);
-                    path << App::ObjectIdentifier::SimpleComponent(sub);
+                    path << App::ObjectIdentifier::SimpleComponent(key);
                     App::ObjectIdentifier pathNew(*this);
-                    pathNew << App::ObjectIdentifier::SimpleComponent(key);
+                    pathNew << App::ObjectIdentifier::SimpleComponent(sub);
                     renames.emplace(path, pathNew);
                     renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent("Size"),
                                     App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent("Size"));

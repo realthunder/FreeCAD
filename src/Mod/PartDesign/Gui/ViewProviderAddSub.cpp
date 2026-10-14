@@ -60,6 +60,7 @@
 #include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewerContext.h>
 #include <Gui/ViewVisibility.h>
+#include <Gui/ViewParams.h>
 #include <Base/Console.h>
 
 #include "ViewProviderAddSub.h"
@@ -179,6 +180,37 @@ void ViewProviderAddSub::applyPreviewColor(const App::Color &color)
     } else
         previewGroup->priority = -2;
     setAddSubColor(color, t);
+}
+
+void ViewProviderAddSub::highlightPreviewFace(int face)
+{
+    auto view = getAddSubView();
+    if (!view || face == previewLitFace)
+        return;
+    previewLitFace = face;
+    if (face <= 0) {
+        view->unsetHighlightedFaces();
+        return;
+    }
+    auto feat = getObject();
+    // (the shape the preview's view draws, which a dress-up names itself)
+    auto prop = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
+            feat ? feat->getPropertyByName(view->getShapePropertyName()) : nullptr);
+    const int count = prop ? static_cast<int>(prop->getShape().countSubShapes(TopAbs_FACE)) : 0;
+    if (face > count) {
+        previewLitFace = 0;
+        view->unsetHighlightedFaces();
+        return;
+    }
+    // every face as the preview has it, see-through or not, but the one
+    App::Color own = view->ShapeColor.getValue();
+    own.setTransparency(view->Transparency.getValue() / 100.0f);
+    std::vector<App::Color> colors(count, own);
+    App::Color lit;
+    lit.setPackedValue(static_cast<uint32_t>(Gui::ViewParams::getHighlightColor()));
+    lit.setTransparency(0.0f);
+    colors[face - 1] = lit;
+    view->setHighlightedFaces(colors);
 }
 
 void ViewProviderAddSub::setAddSubColor(const App::Color & color, float t)
@@ -349,6 +381,8 @@ bool ViewProviderAddSub::isPreviewMode() const
 }
 
 void ViewProviderAddSub::setPreviewDisplayMode(bool on, const App::SubObjectT &occurrence) {
+    // (a preview switched on or off is in its own colours: no face of it is lit)
+    previewLitFace = 0;
     SoFCSwitch *fcSwitch =  nullptr;
     if (pcModeSwitch->isOfType(SoFCSwitch::getClassTypeId()))
         fcSwitch = static_cast<SoFCSwitch*>(pcModeSwitch);

@@ -87,6 +87,18 @@ public:
     const App::SubObjectT &previewBaseOccurrence() const { return previewBase; }
     virtual void checkAddSubColor();
 
+    /** Light one face of the preview shape, by its number from 1, in the
+     * colour of a preselection; 0 puts the preview back in its own colour.
+     *
+     * For a hover that names a face of the preview -- a dress-up's panel on a
+     * reference that is no longer found (docs/HandsOnQueue.md entry 109). A
+     * preselection of that face lights nothing where the preview is the edit
+     * session's own node (isPreviewInSession()): the path a highlight goes
+     * by starts at this feature's switch, and the preview is not under it
+     * there. A colour needs no path.
+     */
+    void highlightPreviewFace(int face);
+
 protected:
     virtual void setAddSubColor(const App::Color &color, float t);
     /// Colours the preview \a color, translucent or not as the user chose
@@ -102,6 +114,8 @@ protected:
 
 protected:
     Gui::CoinPtr<Gui::SoFCPathAnnotation>   previewGroup;
+    /// The face highlightPreviewFace() has lit, 0 for none
+    int previewLitFace = 0;
     Gui::CoinPtr<SoTransform>   previewTransform;
 
 private:

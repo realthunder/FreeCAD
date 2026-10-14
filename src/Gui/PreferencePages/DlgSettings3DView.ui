@@ -35,7 +35,7 @@ lower right corner within opened files</string>
            <string>Show coordinate system in the corner</string>
           </property>
           <property name="checked">
-           <bool>true</bool>
+           <bool>false</bool>
           </property>
           <property name="prefEntry" stdset="0">
            <cstring>CornerCoordSystem</cstring>

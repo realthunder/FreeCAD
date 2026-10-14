@@ -150,14 +150,34 @@ public:
      * \a own and \a alpha are what a style sheet set on the view (its
      * overlayItemBackground and overlayAlpha properties): no brush and -1
      * where it set nothing, and then the settings answer -- the 3D view's
-     * background colour as the theme has it, the first colour of a
-     * gradient, at View/DockOverlayAlpha; or, with
-     * View/DockOverlayThemeItemColor off, the tree view's own item
-     * background colour as it is stored.
+     * background colour where the panel lies over it, at
+     * View/DockOverlayAlpha; or, with View/DockOverlayThemeItemColor off,
+     * the tree view's own item background colour as it is stored.
+     *
+     * Which colour of the 3D view's background, by its pattern and by the
+     * side the overlay of \a where is on (docs/HandsOnQueue.md entry 98, asked
+     * 2026-10-14): a radial gradient, averaged over what the overlay covers
+     * of the 3D view under it (the rim's colour where no view is under it);
+     * a linear one, its first colour for an
+     * overlay at the top, the left or the right and its last for one at the
+     * bottom; one colour, that colour. A widget in no overlay, and none
+     * given, counts as not at the bottom.
      */
-    static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1);
+    static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1,
+                                        const QWidget *where = nullptr);
     /// View/DockOverlayAlpha, or \a alpha where a style sheet set one
     static int overlayAlpha(int alpha = -1);
+    /** The colour of the 3D view's background where the overlay of \a where
+     * lies over it, by the background's pattern and the overlay's side, as
+     * overlayItemBackground() takes it with the setting on; opaque.
+     */
+    static QColor overlayViewGround(const QWidget *where = nullptr);
+    /** The colour of an overlay's auto-hide hint (docs/HandsOnQueue.md entry
+     * 122): \a sheet, the style sheet's hintColor, where it stands out from
+     * overlayViewGround(); else a light grey over a dark view and a dark one
+     * over a light view, at the sheet's opacity.
+     */
+    static QColor overlayHintColour(const QColor &sheet, const QWidget *where = nullptr);
     /** Paint \a ground behind the text of one block of a text view, line by
      * line and as wide as each line's text; \a pos is where the block's
      * layout stands in what \a painter paints on. For a text view in a
@@ -166,14 +186,15 @@ public:
      */
     static void paintTextGround(QPainter &painter, const QTextBlock &block,
                                 const QPointF &pos, const QBrush &ground);
-    /** The ground for paintTextGround(), by one setting
-     * (docs/HandsOnQueue.md entry 111, as ruled): with
-     * View/DockOverlayThemeItemColor on, "Item background follows the
-     * theme", the ground the tree gives its items (overlayItemBackground());
-     * with it off the text view's own background -- \a own where the view
-     * has a colour of its own (the Python console's, Editor/Background), or
-     * else the base colour of the application's palette, which is what the
-     * view stands on when it is docked -- at the overlay's opacity.
+    /** The ground for paintTextGround() and for the items of the selection
+     * view: the ground the tree gives its items (overlayItemBackground()),
+     * followed by the theme or the tree's item background colour as set
+     * (docs/HandsOnQueue.md entry 98, 2026-10-14). With neither -- the
+     * setting off and no colour set -- the text view's own background, as
+     * entry 111 ruled: \a own where the view has a colour of its own (the
+     * Python console's, Editor/Background), or else the base colour of the
+     * application's palette, which is what the view stands on when it is
+     * docked -- at the overlay's opacity.
      *
      * A theme may keep a text of another kind in its text views than in its
      * items: Classic has a black text in the console, for the white page a
@@ -181,7 +202,8 @@ public:
      * view. Black on that dark was the "scrambled" text of the entry; the
      * setting off puts it back on its own white.
      */
-    static QBrush overlayTextGround(const QColor &own = QColor());
+    static QBrush overlayTextGround(const QColor &own = QColor(),
+                                    const QWidget *where = nullptr);
     /** The brush an item of an overlaid tree is backed with while the pointer
      * is on it (docs/HandsOnQueue.md entry 87): the theme's colour for that at
      * the opacity of the item backgrounds, as wide as those. No brush under

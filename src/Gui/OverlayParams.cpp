@@ -324,8 +324,7 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAutoView", "DockOverlayAutoView", App::ParamInfo::Bool, true)
         .setTitle("Auto hide in non 3D view")
         .setDoc("Hide overlay dock panels automatically while the active view is not\n"
-"a 3D view. Transparent panels also turn opaque over a maximized\n"
-"view that cannot be panned.")
+"a 3D view.")
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayDelay", "DockOverlayDelay", App::ParamInfo::Int, 200)
         .setTitle("Layout delay (ms)")
@@ -373,10 +372,11 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayThemeItemColor", "DockOverlayThemeItemColor", App::ParamInfo::Bool, true)
         .setTitle("Item background follows the theme")
-        .setDoc("Back the items of an overlaid tree view and property view with the\n"
-"colour of the 3D view's background as the theme has it -- the first\n"
-"colour of a gradient -- so that their text reads over the view.\n"
-"When off the tree view's own item background colour is used.")
+        .setDoc("Back the text of overlaid panels (tree, property view, selection\n"
+"view, Python console, report view) with the 3D view's background\n"
+"colour where the panel lies: a linear gradient's top colour (bottom\n"
+"for a panel at the bottom), a radial one averaged over the panel.\n"
+"When off the 'Item background color' is used.")
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAlpha", "DockOverlayAlpha", App::ParamInfo::Int, 180)
         .setTitle("Overlay background opacity")
@@ -505,8 +505,7 @@ void OverlayParams::removeCornerNaviCube() {
 const char *OverlayParams::docDockOverlayAutoView() {
     return QT_TRANSLATE_NOOP("OverlayParams",
 "Hide overlay dock panels automatically while the active view is not\n"
-"a 3D view. Transparent panels also turn opaque over a maximized\n"
-"view that cannot be panned.");
+"a 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -794,10 +793,11 @@ void OverlayParams::removeDockOverlayMoveNaviCube() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *OverlayParams::docDockOverlayThemeItemColor() {
     return QT_TRANSLATE_NOOP("OverlayParams",
-"Back the items of an overlaid tree view and property view with the\n"
-"colour of the 3D view's background as the theme has it -- the first\n"
-"colour of a gradient -- so that their text reads over the view.\n"
-"When off the tree view's own item background colour is used.");
+"Back the text of overlaid panels (tree, property view, selection\n"
+"view, Python console, report view) with the 3D view's background\n"
+"colour where the panel lies: a linear gradient's top colour (bottom\n"
+"for a panel at the bottom), a radial one averaged over the panel.\n"
+"When off the 'Item background color' is used.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

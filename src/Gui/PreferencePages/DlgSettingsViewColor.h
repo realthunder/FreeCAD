@@ -26,8 +26,15 @@
 
 #include <Gui/PropertyPage.h>
 #include <memory>
+#include <vector>
+
+class QGroupBox;
+class QLabel;
 
 namespace Gui {
+class PrefCheckBox;
+class PrefColorButton;
+class PrefWidget;
 namespace Dialog {
 class Ui_DlgSettingsViewColor;
 
@@ -59,9 +66,35 @@ protected Q_SLOTS:
 
 private:
 	void setGradientColorVisibility(bool val);
+  void setupOverlay();
+  void setupDisplayStyle();
+  void retranslateExtra();
 
 private:
   std::unique_ptr<Ui_DlgSettingsViewColor> ui;
+
+  // The groups "Overlay" and "Display Style" (docs/HandsOnQueue.md entry 98,
+  // 2026-10-14), made in code below the ones of the .ui file
+  QGroupBox *groupOverlay = nullptr;
+  QLabel *labelItemBackground = nullptr;
+  Gui::PrefColorButton *ItemBackground = nullptr;
+  Gui::PrefCheckBox *DockOverlayThemeItemColor = nullptr;
+  QGroupBox *groupDisplayStyle = nullptr;
+  QLabel *labelHiddenLineFaceColor = nullptr;
+  Gui::PrefColorButton *HiddenLineFaceColor = nullptr;
+  Gui::PrefCheckBox *HiddenLineOverrideFaceColor = nullptr;
+  QLabel *labelHiddenLineColor = nullptr;
+  Gui::PrefColorButton *HiddenLineColor = nullptr;
+  Gui::PrefCheckBox *HiddenLineOverrideColor = nullptr;
+  QLabel *labelHiddenLineBackground = nullptr;
+  Gui::PrefColorButton *HiddenLineBackground = nullptr;
+  Gui::PrefCheckBox *HiddenLineOverrideBackground = nullptr;
+  QLabel *labelShadowLightColor = nullptr;
+  Gui::PrefColorButton *ShadowLightColor = nullptr;
+  QLabel *labelShadowGroundColor = nullptr;
+  Gui::PrefColorButton *ShadowGroundColor = nullptr;
+  /// every preference widget of the two groups, saved and restored with the page
+  std::vector<Gui::PrefWidget*> extraPrefs;
 };
 
 } // namespace Dialog

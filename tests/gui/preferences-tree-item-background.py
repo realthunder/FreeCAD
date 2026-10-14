@@ -10,12 +10,23 @@ The setting (View/DockOverlayThemeItemColor, entry 69) was on the page,
 among the overlay's settings; the colour it stands in for
 (TreeView/ItemBackground) is in the section "Tree view".
 
+Both moved 2026-10-14 (entry 98): "move the item background color and auto
+settings from UI setting page to Display -> Colors page, in a group box named
+Overlay. Also create a groupbox in that page named 'Display Style', and put
+color related settings in Display -> Display Style page there (note, do not
+move, just duplicate those settings)."
+
 Claims, with the preferences open:
-  - the check box and the colour button are on the page, in one group box,
-    whose title is "Tree view", the check box in the row after the colour's;
+  - the check box and the colour button are in the preferences once each, in
+    one group box, whose title is "Overlay", the check box in the row after
+    the colour's;
   - the check box is on (the default) and the colour button and its label
     cannot be used;
-  - off: both can; on again: both cannot.
+  - off: both can; on again: both cannot;
+  - a group box "Display Style" beside it holds the colours of the display
+    styles page -- the hidden line face, line and background colours with
+    their override boxes, the shadow's light and ground colours -- and each
+    of those is still on the display styles page too.
 The dialog is left with its close button: nothing is asked.
 """
 import os
@@ -66,20 +77,19 @@ def group_box_of(widget):
 
 
 def look(dialog):
-    box = colour = None
-    for w in dialog.findChildren(QtWidgets.QCheckBox):
-        if entry_of(w) == "DockOverlayThemeItemColor":
-            box = w
-    for w in dialog.findChildren(QtWidgets.QPushButton):
-        if entry_of(w) == "ItemBackground":
-            colour = w
-    if not check("the check box and the colour button are in the preferences",
-                 box is not None and colour is not None, "%s, %s" % (box, colour)):
+    boxes = [w for w in dialog.findChildren(QtWidgets.QCheckBox)
+             if entry_of(w) == "DockOverlayThemeItemColor"]
+    colours = [w for w in dialog.findChildren(QtWidgets.QPushButton)
+               if entry_of(w) == "ItemBackground"]
+    if not check("the check box and the colour button are in the preferences, once each",
+                 len(boxes) == 1 and len(colours) == 1, "%d, %d" % (len(boxes), len(colours))):
         return
+    box, colour = boxes[0], colours[0]
     group = group_box_of(box)
     check("both are in one group box", group is not None and group is group_box_of(colour))
-    check("whose title is 'Tree view'", group is not None and group.title() == "Tree view",
+    check("whose title is 'Overlay'", group is not None and group.title() == "Overlay",
           group.title() if group is not None else None)
+    display_style(dialog, group)
     label = None
     for w in group.findChildren(QtWidgets.QLabel) if group is not None else []:
         if w.text().replace("&", "") == "Item background color":
@@ -103,6 +113,10 @@ def look(dialog):
     collect(group.layout())
 
     def row_of(widget):
+        # a grid's rows are its own (the group is made in code on its page)
+        grid = group.layout()
+        if isinstance(grid, QtWidgets.QGridLayout) and grid.indexOf(widget) >= 0:
+            return grid.getItemPosition(grid.indexOf(widget))[0]
         for i, row in enumerate(rows):
             if row.indexOf(widget) >= 0:
                 return i
@@ -122,6 +136,28 @@ def look(dialog):
     settle(200)
     check("on again: both cannot",
           not colour.isEnabled() and (label is None or not label.isEnabled()))
+
+
+def display_style(dialog, overlay_group):
+    """The colours of the display styles page, duplicated in a group beside"""
+    page = overlay_group.parentWidget() if overlay_group is not None else None
+    group = None
+    for g in (page.findChildren(QtWidgets.QGroupBox) if page is not None else []):
+        if g.title() == "Display Style":
+            group = g
+    if not check("a group box 'Display Style' on the same page", group is not None):
+        return
+    wanted = ("HiddenLineFaceColor", "HiddenLineOverrideFaceColor", "HiddenLineColor",
+              "HiddenLineOverrideColor", "HiddenLineBackground", "HiddenLineOverrideBackground",
+              "ShadowLightColor", "ShadowGroundColor")
+    inside = set(entry_of(w) for w in group.findChildren(QtWidgets.QWidget))
+    check("it holds the display styles' colours and override boxes",
+          all(name in inside for name in wanted),
+          [name for name in wanted if name not in inside])
+    everywhere = [entry_of(w) for w in dialog.findChildren(QtWidgets.QWidget)]
+    check("each of them is on the display styles page as well (twice in the preferences)",
+          all(everywhere.count(name) == 2 for name in wanted),
+          dict((name, everywhere.count(name)) for name in wanted))
 
 
 def act():

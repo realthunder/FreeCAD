@@ -81,7 +81,43 @@ from UNCOMMITTED code, on the reporter's word "push and then stage. no
 need to test staged copy": the wheel fix of entry 86, the final hover
 bar of 87, and the round -- 83, 91 redone, 96 in the menu, 99, 102,
 103, 104's ghost, 105, 106, 107; no test of the staged copy by the
-build session and none of that code read at the stage).
+build session and none of that code read at the stage), 2026-10-14
+08:10 (`7d5698c950`, "fcad dirty False" -- the first stage from a
+CLEAN tree since 2026-10-13 13:56 -- on the reporter's word "After
+done push and restage": everything of 2026-10-13's afternoon and
+evening in its committed form -- 83, 86's rule by what is painted,
+87's no outline over a background, 91, 96's menu icons, 98, 99 with
+the picking, 100 to 103, 104's ghost, 105 without the geometry
+search, 106, 107, 108 as ruled, 109, 110, 111 as ruled, 112, 113; the
+build r16; both suites green on the build before it, r15, which
+differs by one PartDesign Gui file and its header, NOT run again on
+r16; no test of the staged copy by the build session, the reporter's
+standing word), 2026-10-14 10:36 (labelled `0694f94687` and "dirty":
+the staging ran beside the build's tests before the build session
+committed; the uncommitted code, entries 115 and 98, committed after
+"unchanged" as `8cdd37309b` and `bd5f1c358d` -- the build session's
+word, not checked by the note-taker; on the reporter's word "after
+build r21, restage.", said to the build session: 114's crash fix,
+112's check box, 109's face lit by colour, 115's redraw, 98's ground by
+pattern and side and its outline over a ground, the test corrections;
+NOT the themes' change, NOT the audit's fixes; NOT pushed, origin
+`7d5698c950`; no test of the staged copy by the build session),
+2026-10-14 11:55 (labelled `260a43578f`, a queue commit, and "dirty"
+by uncommitted GUI test scripts only, its code `04e05bbd38`, by the
+build session's word; on the reporter's word "after entry 98 built,
+restage", said to the build session at 11:30: entry 116's six fixes,
+115's themes to one colour, 119's release fix, 98 as asked at 11:08
+with the averaged radial ground; a first try at 11:53 stopped in the
+installer's own check before copying anything; NOT pushed, origin
+`7d5698c950`; no test of the staged copy by the build session),
+2026-10-14 15:22 (`d3d1968480`, "fcad dirty False", the code
+`49ab88378a` built as r26; PUSHED just before, 15:20, origin
+`d3d1968480`; on the reporter's word to the build session about 14:58,
+"push and restage": beyond 11:55, 119's drags that end themselves,
+116's finding 5, 98's shorter tooltip, entry 75's corner box default,
+the dress-ups' expression renames; the Python suite 3757 OK on r26,
+ctest last whole on r24; no test of the staged copy by the build
+session).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -110,6 +146,399 @@ report views, the reporter's own files -- is kept beside the dev tree under
 read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
+
+**2026-10-14 17:41, the reporter, a NEW ENTRY 130:** surface finish "Blast" set
+on one object -- a warning, then no (pre)selection highlight on it; set
+back to "None" -- the highlight back, the finish still drawn. The warning
+read as an off-by-one in the property view's model; the rest not found by
+reading. Written here 17:43.
+
+**2026-10-14 17:19 to 17:25, the reporter, three messages: NEW ENTRIES 128
+and 129.** An audit of all icons drawn in dark lines only, asked and then
+WITHDRAWN ("looks like it is just techdraw missing some icon in some of
+its toolbar button") -- entry 128; TechDraw's printing to give vector
+output -- entry 129. Each under its entry. Written here 17:26.
+
+**2026-10-14 17:11, the reporter, a NEW ENTRY 127:** "new request, support
+print ony the selected Techdraw pages". Read: "Print All Pages" prints
+every page of the active document; the selected ones to be printed in its
+stead or beside it. Written here 17:12.
+
+**2026-10-14 17:04, the reporter, a NEW ENTRY 126:** "new defect, bgfx
+rendering line pattern scale 1 does not seems right. scale 2 looks
+normal." Read in the source; a candidate (a scaled screen, dashes counted
+in the view's own pixels); three points put. Written here 17:07.
+
+**2026-10-14 about 16:41, the reporter, two messages:** "new request, do not
+show trailing zeros for float property values in omni search" -- a NEW
+ENTRY 125; and a QUESTION (no entry): "check which setting controls the
+whole selection transparency"
+ANSWERED by the note-taker from the source, nothing run: a WHOLE object
+selected and drawn on top takes its transparency from
+`View/TransparencyOnTop` -- on the preference page Display > Display
+styles, labelled "Transparency" ("Transparency for the selected object
+when being shown on top", default 0.5, `src/Gui/ViewParams.py` 268 to
+270; the page `DlgSettingsDrawStyles.cpp` 108 to 115). It is read for the
+selection colour while "selection on top" is on
+(`SoFCUnifiedSelection.cpp` 306 to 310), for the on-top group's display
+mode (`View3DInventorSelection.cpp` 121) and by the render engine's
+on-top line pass (`SoFCRenderer.cpp` 807). The reporter's configuration
+stores 0.5. A second one, for a selected FACE (picking through,
+a part highlight on top): `View/SelectionTransparency`, 0.5, on no
+preference page (`ViewParams.py` 302 to 305; `SoFCRenderCache.cpp` 3131).
+Written here 16:43.
+
+**2026-10-14 between 16:15 and 16:41, the reporter: "way 2 then" -- a
+NEW ENTRY 124:** the
+on-top clipping of a hidden body's selected feature (entry 108's side
+finding) to be fixed by widening each view's own clip box by its on-top
+entries' bounds. Written here 16:41.
+
+**2026-10-14 15:49, the reporter, a NEW ENTRY 123:** the selection view in
+an overlay backed as the property editor is -- the same colour and alpha
+for its list column. Read in the source: the property editor backs whole
+rows, the selection view only the text. Written here 15:50.
+
+**2026-10-14 15:46, the reporter: THREE NEW ENTRIES, 120 to 122, in one
+message:** "new request, check what is gating the transparent overlay mode. with item background feature, we can enable transparency mode in all cases. btw, check why the report view has a different background in overlay non-transparency mode than non-overlay mode. Python console shares the same background color. another request, make overlay auto hide hint color theme aware, current color is not visible in dark theme"
+- 120: what gates the transparent mode -- read: an overlay turns opaque
+  over a maximized view that cannot be panned, while "Auto hide in non 3D
+  view" is on; to be dropped "in all cases".
+- 121: the report view's ground in a non-transparent overlay -- a
+  candidate: the overlay sheet's own ground for text boxes.
+- 122: the auto-hide hint's colour -- the Dark overlay sheet gives it a
+  dark grey on a dark view.
+Written here 15:49.
+
+**2026-10-14 15:22: PUSHED (15:20) and STAGED (15:22, clean) on the
+reporter's word to the build session about 14:58: "push and restage.
+anything else in the notes".** The reporter's word relayed by the build
+session (its messages stamped 15:00 and 15:23); the note-taker did not
+hear it. SEEN by the note-taker, reads only: the reflog of
+`origin/LinkVibe`, "update by push" 2026-10-14 15:20:51, origin
+`d3d1968480` = the local head; the staged copy's `INSTALLED.txt` --
+"installed 2026-10-14 15:22:25", "fcad d3d1968480", "fcad dirty False".
+- WHAT WENT, beyond the push of 07:56: everything of the day -- 114's
+  crash fix, 112's check box, 109, 115's redraw and themes, 98 to its
+  last request, 116's seven fixes, 119 with its drag rule, entry 75's
+  corner box default, the dress-ups' expression renames, the tests, the
+  design `docs/OnViewValueEditing.md`, the logs and the queue.
+- NEW IN THE REPORTER'S COPY beyond 11:55: 119's drags that end
+  themselves, 116's finding 5, 98's shorter tooltip, 75's corner box,
+  the dress-ups' renames.
+- "anything else in the notes": answered by the build session from the
+  note-taker's list, sent to it 15:23 -- what waits for the reporter's
+  answer, what for their look on the stage, what for the build session,
+  what for nobody.
+- The rows of 75, 98, 116 and 119 say so; "Stages so far" has it.
+
+**2026-10-14 14:31: a state from the build session (its message stamped
+14:35, written here 14:31). Origin is still `7d5698c950`; the staged copy
+the one of 11:55 (code `04e05bbd38`). Committed LOCAL since, not staged,
+not pushed -- "a push or a restage of this waits for the user's word".**
+SEEN by the note-taker in `git log`, nothing run.
+- `721b639bca` -- 119, drags end when the button is found up: 11 of 11
+  on the build r25.
+- `adf1a2f6a5` -- 116, finding 5.
+- `f0113275f2` -- 98, the tooltip of "Item background follows the theme"
+  cut to 309 characters (the omni search's 400-character test had failed
+  at 428).
+- `1ac972b406` -- an OLDER DEFECT of entry 75 found by a test: the 3D View
+  page's "Show coordinate system in the corner" box was still checked by
+  default, so a fresh profile's first OK wrote the setting ON; 7 of 7.
+  Under entry 75.
+- `49ab88378a` -- the dress-ups' expression renames, old -> new (the
+  note-taker's reading of 13:26, widened by the build session):
+  `TestDressUpNamesFollow` failed on r25 before it
+  ("`.ChamferInfo.Edge12.Size` left for Edge19"), passes on r26.
+- Tests `ac2040cc94`, `e050b0467d`; the build session's log `0aaa65e8db`.
+- SUITES: the build r26 = all of it -- Python 3757 OK ("29 more skips,
+  all the sandbox's: my chain did not set FCX_PYODIDE, not the code");
+  ctest last whole on r24, 957 with one omni search failure since fixed
+  (that test passes alone on r25). Three screen tests run offscreen
+  before pass on the real screen on r25 (overlay-see-through 62,
+  task-panel-in-view 89, task-panel-overlay 43).
+- NOT spoken of: entry 118 (the light's arrow).
+
+**2026-10-14 13:30, the build session CONFIRMS the note-taker's reading of
+13:26 (entry 117's document, 6.4) -- and finds it wider; it fixes it on
+its own judgement, not an entry.** From its message stamped 13:45, written
+here 13:30.
+- "(1) As you said: in PropertyFilletSegments::connectLinkProperty the
+  per-point p1 and p2 are both built from `path`, so each point's rename
+  is a path into itself, and the extra ++i skips every second point."
+- "(2) Worse, the whole map is BACKWARDS, in Segments and in
+  PropertyChamferEdges::connectLinkProperty (about 1139) alike:
+  signalUpdateElementReference(old, new) is stored as
+  referenceUpdates[new] = old, the loop's `sub` is the new name and `key`
+  the old, and `path` is built from sub, `pathNew` from key -- renames
+  new -> old, while renameExpressions takes old -> new
+  (PropertyExpressionEngine.cpp 1431). So an expression on a fillet's
+  per-edge segment or a chamfer's per-edge size is never moved to the
+  edge's new name. The corners' code (about 710) has it the right way."
+- "I am fixing it on my own judgement since it is a plain bug in the
+  fork's code: test TestDressUpNamesFollow (TestFillet.py, a pad with a
+  cut lowered, as testNamesFollowTopology) and the fix are written, not
+  yet built (r25 is building)."
+- "Seen on the way, not touched: PropertyFilletSegments::getPyObject
+  returns entries without their edge names while setPyObject wants
+  (edge, points); PropertyChamferEdges::setPyObject refuses 4 or more
+  items but then reads items 3 and 4."
+The note-taker's note: what the reporter would meet -- an expression
+bound to one edge's own fillet radius or chamfer size stays on the old
+edge name after a change upstream renames that edge. No entry unless the
+reporter says; the fix will show under the build session's commit.
+
+**2026-10-14 11:55: STAGED again, on the reporter's word to the build
+session at 11:30, "after entry 98 built, restage" -- NOT pushed (origin
+`7d5698c950`).** From the build session (its message stamped 12:05,
+written here 11:59). SEEN by the note-taker, reads only: the staged
+copy's `INSTALLED.txt` -- "installed 2026-10-14 11:54:53", "fcad
+260a43578f ...", "fcad dirty True", "occt a81d25f148", "coin d2da5cc93",
+"FreeCADGui 2026-10-14 11:45:07"; and three commits in `git log` made
+after it.
+- The label is the queue's commit `260a43578f`; "dirty True from
+  uncommitted GUI test scripts only (no source)" -- the build session's
+  word; the code is `04e05bbd38`.
+- IN THE REPORTER'S COPY NOW, beyond 10:36: 116's six fixes
+  (`fbeac04f4c`), the themes to one colour (`3f12b16dfa`), 119's release
+  fix (`f83174eb42`), 98 as asked at 11:08 with the averaged radial
+  ground (`04e05bbd38`).
+- "The first try at 11:53 failed in the installer's own 'is it running'
+  check (a null process path, a process exiting mid-list) before copying
+  anything; rerun OK."
+- TESTS ON r23 (the dev build, offscreen): "98 confirmed -- radial
+  ground (133,133,164) = the computed average, not the rim; selection
+  view follows linear/radial/one colour; the item colour backs console
+  and report view with the setting off; only the six known offscreen
+  'below the last line' fails. 119's test: the release over the
+  see-through panel reaches the border and the cell changes (on the
+  staged r21 copy it failed: no release)."
+- COMMITTED LOCAL AFTER THE STAGE, NOT in it: `721b639bca` (119, the
+  reporter's 11:50 word, "lost tracking"), `adf1a2f6a5` (116, finding
+  5), `ac2040cc94` (tests). "Build r24 with its tests and both suites
+  queued behind the r23 tests."
+- The two full suites on r23 are not spoken of; the last whole run is
+  of r22 (ctest 957, Python 3755).
+
+**2026-10-14 11:49: the reporter's words to the build session, relayed by
+it (its message stamped 11:55); the note-taker did not hear them.**
+- 11:20: "accept the theme colours. and agree with your average color
+  proposal." -- entry 115's themes COMMITTED `3f12b16dfa`; entry 98's
+  proposal accepted.
+- about 11:15 and 11:50: a NEW DEFECT -- entry 119, a splitter drag
+  released over a transparent panel; fixed `f83174eb42`.
+- 11:30: "after entry 98 built, restage" -- a build r23 runs (98, 119,
+  the themes, 116's fixes), the stage to follow it.
+COMMITTED, LOCAL (SEEN in `git log`, nothing run): `fbeac04f4c` (116's
+six fixes, 11:32), `3f12b16dfa` (115's themes, 11:32), `f83174eb42`
+(119, 11:36), `04e05bbd38` (98's request of 11:08, 11:36). Suites on the
+build r22 (116's fixes): ctest 957 of 957, Python 3755 OK. Nothing
+pushed since `7d5698c950`. Each under its entry. Written here 11:49.
+
+**2026-10-14 11:42, the reporter, a NEW ENTRY 118:** the scene light's
+manipulator does not work, no draggable arrow is seen. By the source it
+is Coin's directional light dragger (entry 63) fed through an overlay
+capture; the cause not found by reading; two points put. Written here
+11:46.
+
+**2026-10-14 11:41, the reporter, three things in one message:** "116, yes
+fix finding 5. I've already told build session about 98 and theme colours.
+I'd like to rework dressup editing manipulator. make this an try. note
+that this fork support both default radius and per edge (one or two)
+radius. consider that. And in general, I want be able to enter text
+without task panel, by using editdatumlabel. survey what other CAD do and
+propose a design"
+- Entry 116: finding 5 to be fixed -- under the entry.
+- Entry 98 (the proposal of 11:20) and the THEMES' COLOURS: the reporter
+  has answered both TO THE BUILD SESSION; those words have not reached
+  the note-taker -- asked of the build session 11:42, recorded when
+  relayed.
+- A NEW ENTRY, 117: rework the dress-up manipulator; values entered in
+  the view by the editable datum label; a survey of other CAD and a
+  proposed design first.
+Written here 11:42.
+
+**2026-10-14 11:25, the reporter, a QUESTION (no entry):** "question, why
+there are two arrows editing the fillet"
+ANSWERED by the note-taker from the source, nothing run, the reporter's
+screen not seen: by design, upstream's. The fillet's edit panel makes
+TWO radius handles (`radiusGizmo`, `radiusGizmo2`,
+`src/Mod/PartDesign/Gui/TaskFilletParameters.cpp` lines 221, 222), both
+driving the ONE "Radius" box. Both stand at the middle of the first edge
+of the fillet, one lying in EACH of the two faces that meet there,
+pointing into its face (`setGizmoPositions`, lines 305 to 313;
+`getDraggerPlacementFromEdgeAndFace` in `src/Mod/Part/App/GizmoHelper.cpp`
+line 151) -- so each shows where the rounding will meet that face, and
+dragging either one changes the radius (corrected where the faces are not
+square to each other, lines 315 to 321). Ported from upstream FreeCAD
+(6e896b1248) by `a56e0777da` on 2026-09-24 ("Fillet (radius on both faces
+of the first edge)"). Beside them the fork's corner handles (setback
+corners, 2026-10-07) are shown for the current corner only. It becomes an
+entry if the reporter wants it otherwise. Written here 11:26.
+
+**2026-10-14 11:08, the reporter, a NEW REQUEST under entry 98:** the tree's
+item colour (automatic ground off) for the tree, the console, the report
+view and the SELECTION VIEW; a PROPOSAL asked for a better automatic
+colour under a RADIAL background; the item colour and the automatic
+switch MOVED to Display > Colors in a group box "Overlay"; a group box
+"Display Style" there duplicating the colour settings of Display >
+Display styles. Under the entry. Written here 11:10.
+
+**2026-10-14 10:36: STAGED again, on the reporter's word to the build
+session about 10:26, "after build r21, restage." -- NOT pushed (no word
+for a push; origin is `7d5698c950`).** From the build session (its
+message stamped 10:45, written here 10:44); the reporter's word
+relayed, the note-taker did not hear it. SEEN by the note-taker, reads
+only: the staged copy's `INSTALLED.txt` -- "installed 2026-10-14
+10:36:23", "fcad 0694f94687 ... entry 116 ...", "fcad dirty True",
+"occt a81d25f148", "coin d2da5cc93", "FreeCADGui 2026-10-14 10:28:08";
+and in `git log` the two commits made after the stage, `8cdd37309b`
+(10:42:21) and `bd5f1c358d` (10:42:32).
+- "DIRTY because the staging ran beside r21's tests, before I
+  committed; the uncommitted code was entries 115 and 98, and it is now
+  committed unchanged: 8cdd37309b (115) and bd5f1c358d (98). So the
+  staged copy's code = 0694f94687 + those two = the tree at bd5f1c358d."
+  That the committed code is the staged code is the build session's
+  word; the note-taker cannot check it.
+- "The staged FreeCAD was not running; nothing closed. Not tested by me
+  on the staged copy."
+- IN THE REPORTER'S COPY NOW, beyond the stage of 08:10: 114's crash fix,
+  112's check box, 109's face lit by colour, 115's redraw at a change of
+  the pattern, 98's ground by pattern and side and its outline over a
+  ground, the test corrections. NOT in it: the themes' change (held for
+  the reporter's confirmation), the audit's fixes (entry 116; written,
+  being applied).
+- TESTS ON r21: "tests/gui/view-background-pattern-redraw.py 6 of 6
+  offscreen AND on the screen (on the copy of 08:10 it failed four of six
+  on both). tests/gui/overlay-text-ground.py offscreen 24 pass: the tree
+  (left) and the console (bottom) take the colour for their side under
+  linear ((51,51,101) and (171,171,193)), radial (both (171,171,193)) and
+  one colour (234,230,220); the text edged on its ground (the console 571
+  pixels of outline beside 907 of ground); the four failing claims are
+  the known ones (a stretch below the last line). Neighbours:
+  overlay-item-outline-and-hover 34, overlay-pass-through 14,
+  overlay-preset-follows-the-theme 45, overlay-task-title-button 7. Not
+  shown on the real screen: how the outline over a ground LOOKS -- it is
+  the user's to judge on the stage."
+- The two full suites are not spoken of for r21.
+- NEXT, the build session's: the audit's six fixes applied and built
+  "unless they say otherwise"; finding 5 waits for the reporter's word;
+  the themes wait for their confirmation.
+- LOCAL, not pushed: everything since `7d5698c950` -- 9bfa88b726,
+  778bde3979, 463a36a58b, 92d235551a, 8cdd37309b, bd5f1c358d, the logs
+  and the queue.
+
+**2026-10-14 10:23: the reporter's words to the build session since
+10:00, relayed by it (its message stamped 10:23); the note-taker did not
+hear them. In its order:** (1) about 10:00 "change light theme background
+simple color to its old center gradient color. entry 98, the outline yes,
+gate it to the existing outline system, which default on" (2) about 10:01
+"wait for the background color, simple color is which setting? is it the
+gradient center color setting?" (3) about 10:04 "spawn an agent to audit
+for missing signal auto disconnect". Written here 10:23.
+- (1) and (2), the Light theme's colour: under entry 115 -- HELD by the
+  build session until the reporter confirms.
+- (1), the outline: under entry 98 -- the go-ahead, in a build r21.
+- (3), the audit: a NEW ENTRY, 116, with its seven findings.
+- Also in the message: entry 109 works at the level of the scene's
+  materials, COMMITTED `92d235551a`, local (SEEN in `git log`); entry
+  115's first redraw fix did not work, put right in r21.
+- Origin is still `7d5698c950`; the staged copy the one of 08:10, with
+  entry 114's crash. Nothing is said of a word to push or restage.
+
+**2026-10-14 09:57: the crash fix of entry 114 (`778bde3979`) and entry
+112's check box (`463a36a58b`) are COMMITTED, LOCAL -- "still waiting for
+the user's word to push and restage". Entry 115 REPRODUCED on the staged
+copy, the missing redraw fixed in a build r20; entry 109's first fix lit
+nothing, corrected in r20; answers on entry 98.** From the build session
+(its message stamped 09:58, written here 09:57). The two commits and
+their files SEEN by the note-taker in `git log`, nothing run. Origin is
+still `7d5698c950`, the staged copy the one of 08:10 -- WITH the crash
+of entry 114 in it. Each part under its entry. The reporter's answer of
+09:54 on the themes (both to the simple colour) crossed this message.
+
+**2026-10-14 09:47, the reporter, a NEW REQUEST under entry 98:** the
+automatic item background (the console and the report view included)
+takes the colour of the 3D view's background by its pattern and by where
+the overlay is docked -- radial: 'End'; linear: 'Start' at the top, the
+left or the right, 'Stop' at the bottom; no gradient: the single colour.
+Under the entry, with the note-taker's reading of the three names.
+Written here 09:49.
+
+**2026-10-14 09:38 and 09:40, the reporter: a new defect, entry 115 --
+the 3D view's background shows a LINEAR gradient where radial is set and
+does not respond to a change of the setting; and a question on entry 98
+-- can the text's outline be drawn even where it has a background.**
+Written here 09:41. 115: the configuration and the source read, the
+cause not found, three points put. 98: under the entry, the answer the
+build session's.
+
+**2026-10-14 09:10: entry 114's crash REPRODUCED on the staged copy by the
+build session -- the note-taker's candidate is right, its fix (one line)
+is in a build r18 since 09:09, NOT committed; a push and a restage "need
+the user's word -- I ask them". And TWO CORRECTIONS by the build session
+to its own earlier reports: entry 109 lights nothing on the screen under
+a per-view edit; entry 104's ghost fix is UNVERIFIED.** From its message
+stamped 09:11, written here 09:10. Each under its entry.
+- THE RISK ON THE COPY STAGED AT 08:10, in its words: "any page view
+  that has been destroyed leaves the dead observer -- a page closed, its
+  document closed, reverted or loaded again -- and the next write of a
+  key in Mod/TechDraw/Colors may call it. EVERY theme switch after that
+  is at risk on the copy staged at 08:10; yesterday's copy of 16:55 did
+  not have 2a317f254e and is not affected."
+- "ALSO in the tree, not committed: the check box for
+  Colors/BackgroundAs3DView on TechDraw's colour page (entry 112's
+  missing part)."
+- A build r17 "never got past its configure step (ninja's code page
+  query hung for 27 minutes; killed)"; the cavity trace it carried is
+  taken out again.
+
+**2026-10-14 09:00: A CRASH on the copy staged at 08:10 -- entry 114:
+switching the theme to Dark by Tools > Preset configurations > Themes
+ends the program.** The reporter, 09:00; the debugger's log and the dump
+read by the note-taker on their word, written here 09:04. The theme
+writes TechDraw's `Colors` settings and a destroyed observer of that
+group is called. A candidate by reading, not shown by a run: the page
+view's observer that entry 112's commit `2a317f254e` attached to that
+group is never detached -- so the crash would be a REGRESSION OF TODAY'S
+STAGE, met whenever a TechDraw colour is written after a page's view
+has gone. Under the entry.
+
+**2026-10-14 08:10: STAGED -- and PUSHED at 07:56 -- on the reporter's word
+"After done push and restage." Origin/LinkVibe = `7d5698c950` (was
+`5c0b30ce1b`); the staged copy is `7d5698c950`, "fcad dirty False".** From
+the build session (its message stamped 08:12, written here 08:12). SEEN
+by the note-taker, nothing run but reads: the reflog of
+`origin/LinkVibe`, "update by push" at 2026-10-14 07:56:08; the staged
+copy's `INSTALLED.txt` -- "installed 2026-10-14 08:10:46", "fcad
+7d5698c950 ... PD: what an edit shows on top goes by the preview and by
+whether its path is shown", "fcad dirty False", "occt a81d25f148", "coin
+d2da5cc93".
+- THE PUSH carries: `905d023394` (111, its first form), `26f0a30de0`
+  (109), `1109842583` (99 a and c), `56504486e6` (113), `023552c8fd`
+  (111 as ruled), `7d5698c950` (108 as ruled), the log's `5d3cb157e6`
+  and `90ab3880a3`, and the queue's commits up to `5d47dd485b`.
+- THE STAGE: "The first stage from a CLEAN tree since 13:56 yesterday:
+  the code of the commit, built as r16." "NOT tested by me on the staged
+  copy (the user's standing word)."
+- THE REPORTER'S RUNNING COPY WAS CLOSED by the build session: "The
+  staged FreeCAD was running (pid 103640, started 2026-10-13 16:56); the
+  user typed 'Check if staged copy is running. Close it for me, no need
+  to save' and I closed it at about 08:09, unsaved, on that word." The
+  reporter's word reached the note-taker by this relay only.
+- SUITES: "both are green on r15 (ctest 957 of 957, Python 3755 OK). r16
+  differs from r15 by PartDesign/Gui/Utils.cpp and .h alone; the suites
+  were NOT run again on r16."
+- IN THE REPORTER'S COPY NOW, for the first time: 86's rule, 87's no
+  outline over a background, 96's menu icons as redone, 98, 99's
+  picking, 100, 101, 103's button, 105 without the geometry search, 108
+  as ruled, 109, 110's two fixes, 111 as ruled, 112, 113. The rows and
+  "Stages so far" say so.
+- ONE NEIGHBOUR TEST fails one claim, on yesterday's staged copy too:
+  under entry 108.
+- LOCAL since the push: the build session's log `65ccdb4b42` and this
+  change of the queue.
 
 **2026-10-14 07:36: THE REPORTER RULED on entry 108 this morning and gave
 the word for a PUSH and a RESTAGE "after done" -- said to the build
@@ -2113,7 +2542,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `selection-on-top-hidden-edges.py` failed two claims since the new defaults -- LOOKED INTO 18:57: the test's fault, not the drawing; the test corrected `846d40819a`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52, 18 of 18. As it stood in work at 16:36: the two defaults changed (1.0 and 1.5); no theme, preset or the browser viewer names either, so points a and b have nothing to decide. OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
 | 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; its test has NOT passed (the first measure was wrong, the new one never ran); the glyphs' look under Dark is for the reporter to judge on the stage. SINCE 18:57: the rewritten test ran on the staged build, 43 of 44 -- the Dark glyphs ARE a dim grey in the stage of 17:52; drawn in WHITE now, `2d945c8268`, local, NOT built, NOT staged. 21:03: BUILT and tested, `overlay-title-buttons-theme.py` 44 of 44, the glyphs 66 to 104 of 255 lighter than a dark title bar (54 to 82 before); pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `overlay-title-buttons-theme.py` 44 PASS, 0 FAIL]. As it stood in work at 16:36: the title buttons draw their glyph in the button's own text colour (a property `iconColor` a sheet can override); the "in its view" button shown only while the Tasks tab shows a dialog a view owns. OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
 | 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63). ANSWERED 16:04: the name is `Std_DisplayStyle`; `Std_DrawStyle` takes its old icon back and the new command the split cube; the new command to the RIGHT of `Std_DrawStyle`, in the View menu too; the overlap is not looked into for its own sake | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `7970f5b7d6`; `Std_DisplayStyle` is in the view's context menu too, as the reporter said at 16:41. As it stood in work at 16:36: done as answered; the view's context menu keeps `Std_DrawStyle` alone (the build session's choice, not said by the reporter) -- OVERRULED by the reporter 16:41: `Std_DisplayStyle` goes into the context menu too. OPEN; the four points answered 16:04; the context menu not named in the answer |
-| 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-axes-over-the-cube.py` 8 claims, no FAIL. As it stood in work at 16:36: `View/CornerCoordSystem` off by default, in the preference pack template too; the cube's axes drawn last with no depth test, in both drawing paths. OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered |
+| 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-axes-over-the-cube.py` 8 claims, no FAIL. As it stood in work at 16:36: `View/CornerCoordSystem` off by default, in the preference pack template too; the cube's axes drawn last with no depth test, in both drawing paths. OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered. AN OLDER DEFECT FOUND 2026-10-14 by the build session's test `preferences-ok-keeps-defaults`: Display > 3D View's "Show coordinate system in the corner" box was still CHECKED by default in its page while this entry made the setting default off, so a fresh profile's first OK in the preferences wrote it ON. FIXED `1ac972b406`, LOCAL, not staged, not pushed (its test 7 of 7). PUSHED 2026-10-14 15:20 (origin `d3d1968480`), STAGED 2026-10-14 15:22 from a clean tree: the corner box default (`1ac972b406`) in the reporter's copy now |
 | 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-clear-of-panels.py` 16 claims, no FAIL. As it stood in work at 16:36: the docks leave no room, `DockOverlayCheckNaviCube` removed; new `View/DockOverlayMoveNaviCube`, on by default; the cube slides along its edge clear of overlaid docks and of a task panel over its view, and back. OPEN; the request turned 16:18; the two points of before fall away; the three new ones answered 16:20: the cube slides along its edge in the same corner; with the setting off a panel simply covers it; it moves for a momentary panel too and comes back; nothing left unanswered |
 | 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
 | 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space. ANSWERED 18:29: NO new mode -- from the property view the omni search opens with text already typed that leads to the current object, document or view and ends with a dot, so the list shows all its properties; Ctrl+F applies in the tree view and the property view ONLY; the tree's "Search..." menu item is kept and opens the omni search; opened from the tree view it scrolls the tree by itself as before and sets and clears the item's background as before | DONE `b70dab6401`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `omni-search-from-tree-and-property-view.py` 18 PASS, 0 FAIL] (21:03): its own test `omni-search-from-tree-and-property-view.py` 18 claims, no FAIL; found by it and fixed with it: opened on a lone dot (several objects selected) the omni search selected the first object in place of them all with the tree's "sync view" on. Before, 18:57: written in a second working copy, not built; the build session's choices on the three smaller points are under the entry, one of them (g) against the note-taker's reading. The four points answered 18:29 |
@@ -2121,37 +2550,54 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | DONE `53a231cc72`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `recovery-dialog-check-all.py` 13 PASS, 0 FAIL] (23:17): its own test `recovery-dialog-check-all.py` 13 claims, no FAIL; "Start Recovery" cannot be pressed with nothing ticked. As built: the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
 | 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
 | 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
-| 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request). ANSWERED 13:29: the cell's MENU button and its TWO CORNER handles, each checked by itself; moved only if the cell has area not covered by an overlay panel -- fully covered, or less than 40 left in a dimension, it stays [CHANGED by the reporter 13:33: not 40 pixels but TWICE THE SIZE OF THE HANDLE; and when they slide the handles must not overlap one another]; clear of the same things as the cube, slid as the cube is; NO setting, always; every cell | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `view-cell-handles-clear-of-panels.py` 19 of 19 (in the source 15:52). Prepared as a script 15:36. The five points answered 13:29; two smaller points left, not blocking. COMMITTED `d00ab5ddcf` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted |
+| 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request). ANSWERED 13:29: the cell's MENU button and its TWO CORNER handles, each checked by itself; moved only if the cell has area not covered by an overlay panel -- fully covered, or less than 40 left in a dimension, it stays [CHANGED by the reporter 13:33: not 40 pixels but TWICE THE SIZE OF THE HANDLE; and when they slide the handles must not overlap one another]; clear of the same things as the cube, slid as the cube is; NO setting, always; every cell | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `view-cell-handles-clear-of-panels.py` 19 of 19 (in the source 15:52). Prepared as a script 15:36. The five points answered 13:29; two smaller points left, not blocking. COMMITTED `d00ab5ddcf` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree (the committed form `d00ab5ddcf`) |
 | 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | FIXED `a3acdd0947`, PUSHED 2026-10-13 13:57, STAGED 2026-10-13 13:56 (fixed 11:33): its test `tree-tooltip-only-over-its-item.py` 14 of 14, twice, offscreen. As written 10:17; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
 | 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; FIXED `1f01bf3f30`, PUSHED 2026-10-13 13:57, STAGED 2026-10-13 13:56 (fixed 11:33), `overlay-see-through.py` 62 of 62 and with a copy of the reporter's configuration the ground is the applied theme's at once: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
-| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced. THE REPORTER RETESTED about 13:38 on the staged copy: the tree view, Python console and report view DO click through but NOT wheel through; the task panel, no click and no wheel. REPRODUCED so by the build session (13:51): THE WHEEL's cause FOUND -- a wheel event falls through into the handling of a context menu event and is read as one (lines of 2022); a fix in the source, NOT built. The Tasks panel's "no click" NOT reproduced with its eye on; the reporter's configuration has that panel's eye OFF. ONE point for the reporter: is the eye of the panel that holds the Tasks pressed, and is a task panel shown in it then. THE WHEEL's fix STAGED 2026-10-13 16:55. THE REPORTER 16:44, made exact: ONLY A FULLY TRANSPARENT background passes, the eye pushed or not; a guest panel's ground at 150 does NOT pass -- so the build session's plan of 16:12 is DROPPED, and its "by design, nothing passes with the eye off" WITHDRAWN by it (measured on the real screen: the eye-off Tasks overlay paints nothing over 89% of its area). The change written, in NO build. THE TASKS PANEL's cause FOUND (16:12): since entry 69 a task panel has a ground everywhere (alpha 150), and the pass rule passes only where the alpha is 0 -- so over a panel in edit nothing passes; NOT changed yet, a plan of the build session's ANSWERED by the reporter 16:13: the plan -- yes; and for the eye, "I want pass through based on transparent background". The reporter about 15:56: "eye pushed or not, same, no pass through". The wheel's fix COMMITTED `8d2e4379c8`, PUSHED 2026-10-13 15:58, NOT in the stage of 13:56 (14:50): on the final build the wheel zooms the view over the tree's and the Tasks panel's clear part, `overlay-pass-through.py` 14 of 14 twice and 15 of 15 with the reporter's configuration. THE EYE-OFF POINT ANSWERED 17:22: "pass through as long as fully transparent, which is what the user would expect" -- with the pointer in the panel too. THE RULE (what is painted decides, the eye not asked) COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); `overlay-see-through.py` 62 of 62 on the real screen |
-| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. COMMITTED `9b2a76c2dd` and `a4beaec622`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted; the final hover bar STAGED 2026-10-13 16:55; DECIDED 17:04 under entry 98: no outline on the text and icon of an item that has a background -- a change to what is built, NOT started -- the border and the setting; the hover's bar in an EARLIER form (as wide as the item but about 246 of 255 opaque, with the outline round it). FIXED IN THE SOURCE (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). 12:43: two readings of the build session's on the hover WITHDRAWN by it; a third form is building. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking. NO OUTLINE where an item has its background (decided 17:04 under entry 98): COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55) |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced. THE REPORTER RETESTED about 13:38 on the staged copy: the tree view, Python console and report view DO click through but NOT wheel through; the task panel, no click and no wheel. REPRODUCED so by the build session (13:51): THE WHEEL's cause FOUND -- a wheel event falls through into the handling of a context menu event and is read as one (lines of 2022); a fix in the source, NOT built. The Tasks panel's "no click" NOT reproduced with its eye on; the reporter's configuration has that panel's eye OFF. ONE point for the reporter: is the eye of the panel that holds the Tasks pressed, and is a task panel shown in it then. THE WHEEL's fix STAGED 2026-10-13 16:55. THE REPORTER 16:44, made exact: ONLY A FULLY TRANSPARENT background passes, the eye pushed or not; a guest panel's ground at 150 does NOT pass -- so the build session's plan of 16:12 is DROPPED, and its "by design, nothing passes with the eye off" WITHDRAWN by it (measured on the real screen: the eye-off Tasks overlay paints nothing over 89% of its area). The change written, in NO build. THE TASKS PANEL's cause FOUND (16:12): since entry 69 a task panel has a ground everywhere (alpha 150), and the pass rule passes only where the alpha is 0 -- so over a panel in edit nothing passes; NOT changed yet, a plan of the build session's ANSWERED by the reporter 16:13: the plan -- yes; and for the eye, "I want pass through based on transparent background". The reporter about 15:56: "eye pushed or not, same, no pass through". The wheel's fix COMMITTED `8d2e4379c8`, PUSHED 2026-10-13 15:58, NOT in the stage of 13:56 (14:50): on the final build the wheel zooms the view over the tree's and the Tasks panel's clear part, `overlay-pass-through.py` 14 of 14 twice and 15 of 15 with the reporter's configuration. THE EYE-OFF POINT ANSWERED 17:22: "pass through as long as fully transparent, which is what the user would expect" -- with the pointer in the panel too. THE RULE (what is painted decides, the eye not asked) COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); `overlay-see-through.py` 62 of 62 on the real screen. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the rule by what is painted, the eye not asked, is in the reporter's copy now |
+| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. COMMITTED `9b2a76c2dd` and `a4beaec622`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted; the final hover bar STAGED 2026-10-13 16:55; DECIDED 17:04 under entry 98: no outline on the text and icon of an item that has a background -- a change to what is built, NOT started -- the border and the setting; the hover's bar in an EARLIER form (as wide as the item but about 246 of 255 opaque, with the outline round it). FIXED IN THE SOURCE (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). 12:43: two readings of the build session's on the hover WITHDRAWN by it; a third form is building. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking. NO OUTLINE where an item has its background (decided 17:04 under entry 98): COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55). STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: no outline over an item's background is in the reporter's copy now |
 | 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | COMMITTED `9b2a76c2dd`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, measured on a first build (11:33): nothing of the tree's scroll bar more opaque than 150, the handle at 150, the rest clear, Dark and Light. The four points answered 10:51; one side effect not said: a clear track passes clicks through |
 | 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | COMMITTED `d3e1604e2e`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, its test PASS on a first build (11:33): the button did not use the common helper and opened its menu in a mode in which Qt draws a small mark on the icon; it is a menu button like the others now, 44 wide where it was 32. The three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
 | 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | COMMITTED `d3e1604e2e`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, its test PASS on a first build (11:33): the common helper was called BEFORE the action was added and took the tool bar's last button, the one of the action before -- in a run of menu buttons each was set up by the next and the last by none (`Std_SelUp`; Edit's Redo too); all twelve callers set up their own button now. The points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
-| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | REDONE STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: its test 12 of 12 under Dark and Light; with a copy of the reporter's configuration the clear button is 23 by 20, the caption 92 by 20 (in the source 15:08): as high as the row (the caption button's height), the width from the glyph's proportions. THE REPORTER ON THE STAGE OF 13:56 (14:20): a REGRESSION -- the button is now TOO SMALL in width. NOT FINISHED. HOW WIDE, answered 14:28: the width fitted by the ICON's aspect ratio, from the ROW's height. STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43): the note-taker's candidate was it -- the theme's least width of 80 for every push button; this one, an icon with no caption, is told it has none, in `LinkSubWidget`, so in every panel that uses the row. The three points not needed for it. Before, a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED. The redone width COMMITTED `51075fbda3` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted |
+| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | REDONE STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: its test 12 of 12 under Dark and Light; with a copy of the reporter's configuration the clear button is 23 by 20, the caption 92 by 20 (in the source 15:08): as high as the row (the caption button's height), the width from the glyph's proportions. THE REPORTER ON THE STAGE OF 13:56 (14:20): a REGRESSION -- the button is now TOO SMALL in width. NOT FINISHED. HOW WIDE, answered 14:28: the width fitted by the ICON's aspect ratio, from the ROW's height. STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43): the note-taker's candidate was it -- the theme's least width of 80 for every push button; this one, an icon with no caption, is told it has none, in `LinkSubWidget`, so in every panel that uses the row. The three points not needed for it. Before, a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED. The redone width COMMITTED `51075fbda3` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree (the committed form `51075fbda3`) |
 | 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | The fix COMMITTED `518c2026d0`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. THE CAUSE SHOWN (12:43) -- OLD code, not this morning's merges nor the OCCT sync: a sketch asked for the name of its wire drops the kind "Wire" and keeps the number (`SketchObject::checkSubName`, lines of 2018 to 2024; the released build has them too). A fix in the source; with a first form of it, after the migration recompute the three read `Wire2`, `Wire1`, `Wire2`; NOT committed. LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
 | 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | COMMITTED `7f3ef57348`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43). The four points answered about 11:34, nothing left unanswered |
 | 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | COMMITTED `7f3ef57348`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43): Tab completes and the focus stays in the box; Return hands it to the value's editor, as before. Answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | COMMITTED `7f3ef57348`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43); a LIMIT (13:51): a FURTHER step typed small ("/ Crate.placement.") brings up no list and stays as typed. The three points answered 11:38, nothing left unanswered |
-| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE MENU'S ICON STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE MENU'S TINT NOT SHOWN either way on that build (17:25): its test fails offscreen, where the colour scheme does not change; changed again for the next build (in the source 15:08): the four `Std_DockOverlayToggle<Side>` commands get the glyph tinted white under a dark theme. THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. COMMITTED `cbb01f5de3`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said. THE MENU'S ICONS: COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); shown on the build r7 on the real screen 19 of 19, with the reporter's configuration too -- by the build session the copy staged 16:55 "may well" have had them working, its failing run was offscreen |
+| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE MENU'S ICON STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE MENU'S TINT NOT SHOWN either way on that build (17:25): its test fails offscreen, where the colour scheme does not change; changed again for the next build (in the source 15:08): the four `Std_DockOverlayToggle<Side>` commands get the glyph tinted white under a dark theme. THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. COMMITTED `cbb01f5de3`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said. THE MENU'S ICONS: COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); shown on the build r7 on the real screen 19 of 19, with the reporter's configuration too -- by the build session the copy staged 16:55 "may well" have had them working, its failing run was offscreen. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the menu's icons as redone are in the reporter's copy now |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | COMMITTED `3549b0a19f`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED ON A BUILD (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
-| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); ANSWERED 17:04: the backing behind the TEXT only; in the SAME BACKGROUND THE TREE'S ITEMS USE (not the widget's own, as the note-taker had read it); these two panels only; and the text's outline dropped wherever there is a background -- in the TREE too, a change to entry 87 as built. Nothing left unanswered. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55) (the text's ground, no outline over a ground; `overlay-text-ground.py` with it). A CHANGE TO ANSWER b BY ENTRY 111's FIX (22:06, `905d023394`, local): under DARK the console's and the report view's ground is now dark (40), NOT the tree items' grey -- ONE POINT for the reporter under entry 111. ANSWER b MADE PRECISE 23:04 under entry 111: the tree items' background while the automatic item background setting is on, the widget's own background while it is off. By `023552c8fd` (2026-10-13 23:46, local): the ground is the tree items' with the item background setting on, the panel's own with it off |
-| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | The dashes (0xFFF0) and the scale's default (200) STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE PICKING DOES NOT WORK on that build (17:25): the test fails, the face is still picked -- the cause found, changed for the next build (in the source 15:08); the PICKING in the source, in the build of 15:45 (15:52); its test shows the defect on the staged copy -- at four points of the X axis inside a box the pick is the box's face. The reporter's configuration as copied 14:52 stores `DatumScale` 300 -- set by the reporter since. The four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default. 19:17: (b) the default scale 200 ALONE is COMMITTED `6e7232e7c2`, PUSHED 2026-10-13 19:24; (c) THE PICKING STILL DOES NOT WORK after two changes, offscreen and on the real screen -- the build r8 carries a trace to find out why; (a) the dashes are in the same file as (c) and wait with it, NOT committed (they are in the staged copy of 16:55). 20:15: (c) REWORKED after the trace (the scene pass never used the rule; now a pass of its own whenever a single pick ends on a face) -- in the tree, NOT built, not committed. (a) the dashes: last looked at on the builds r5/r7 (three quarters line, a quarter gap), not by itself since; (c) in the build r9 (20:17). (c) STILL NOT WORKING on the builds r9 and r10 (22:06); the cause found in two parts (the kept pick paths start below the camera; applied one by one a ray pick keeps only the last path's hits); a build r11 applies them in one traversal, results to come. Not committed. (c) WORKS on the build r14 (23:20): `datum-picked-through-a-face.py` 3 of 3 on the real screen -- the X axis picked through a box, and a datum plane by its face; (a) the dashes and (c) COMMITTED `1109842583`, LOCAL, not pushed, not staged. The whole entry is committed now |
-| 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. THE REPORTER ASKS (17:22) what the border's colour is now -- answered by the note-taker from the theme file, by calculation: about #646464 (a grey of 100) on panels of about #2C2C2C (44); the note-taker's guess of step 4 would be about #323232 (50), too near the panels to be seen. How much darker is still the reporter's to say. DECIDED 17:32: the border is #4B4B4B. Which borders and the check boxes: not said, taken as the general border colour, the check boxes as they are. COMMITTED `062f56a133` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `GeneralBorderColor` "#4B4B4B" in `Dark.yaml`, the check boxes and radio buttons as they were |
-| 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. ANSWERED in part 17:22: a NEW GROUP COMMAND, "say Std_SplitView", holding everything of the split view and its cells, placed AFTER the menu item "Standard views"; the second group (from `Std_ViewTitleBar` to the end) not spoken of in the answer. ANSWERED 17:32: `Std_ViewCreate` stays where it is; the title bar items go into a NEW GROUP COMMAND of the build session's naming, at the END of the View menu. Nothing left unanswered. COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `Std_SplitView` ("Split view") after "Standard views", `Std_WindowBars` ("Title, menu and status bars") the last entry, Create new view where it was |
-| 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:08); the reporter's configuration stores no value, so they get it. Nothing to ask; one note of the note-taker's on configurations that have the value written. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted |
-| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | THE CAUSE FOUND and reproduced with a copy of the reporter's configuration, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE BUTTON IS STILL NOT THERE on that build (17:25): the cause of 15:08 was WRONG for an overlaid Tasks panel -- an overlay's title bar never carried the button; added for the next build (in the source 15:08): the Tasks dock's title bar is made at start-up before the task view is in its dock, so it is a plain dock's bar for good and the button does not exist; the bar is now replaced by a task one when the task view is found in a dock. The three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown. The button on each overlay's own title bar: COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); 7 of 7 with the reporter's configuration on the build r7 |
-| 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | (1) THE GHOST: the cause FOUND by reading, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:52) -- what a view hides of its own accord stayed in the depth and normal prepass the cavity pass reads; it is left out now. (2) THE SHOW-THROUGH: NOT found, needs pictures on the real screen. The four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered. THE GHOST: COMMITTED `038b8b1b1a` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted, 5 of 5 on the build r7; the show-through (2) NOT STARTED. THE SHOW-THROUGH (2): NOT REPRODUCED by a probe of the build session's (22:06), and the probe inconclusive -- the Cavity setting changed no pixel of its pictures. Nothing found |
-| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `TestShapeBinder` 13 OK; on `scanner.FCStd` the migration recompute ends with `Binder008` in the error "No context ...", `Sketch043`, `Pad033` and `Binder017` keeping their shapes -- built with the geometry search as fallback, which the reporter ruled out at 17:22 (in the source 15:52); designed 15:36; "does not move" judged FIRST by the placements the binder keeps of its last update and by the geometry search only where it keeps none -- the build session's choice, NOT the reporter's word, to be told to them. AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. ANSWERED 15:28: OFF HOLD, to be built; "not moved" judged against the shape in the file by a GEOMETRY SEARCH; if no path leaves it unmoved the binder is in ERROR, "No context, please double click the binder in the desired context to refresh"; of equal paths the first that `getParents()` returns. Nothing left unanswered. It had been ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`). THE ORDER ANSWERED 17:22: yes, by the saved placements -- and NO geometry search at all, "just compare placement is enough". COMMITTED `00dec0a56d` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has the EARLIER form, with the geometry search: the kept placements alone, no geometry search; a binder with NOTHING kept takes the first path, as a new binder does (the build session's choice on the point left to it). `Binder008` on the committed rule (19:21, the build session): it HAS a kept matrix in the file (`Cache_Body004`), so it is compared and should end in the "No context" error as at 17:25 -- EXPECTED, NOT RUN on the committed form. RUN (20:15, the build session, on the build r8 with the committed binder source): `scanner.FCStd` recomputed, the log has the "No context ..." error once and `Fillet011`'s "Invalid edge link: ?Edge93" as before -- the log line does not name the object. `Sketch043`, `Pad033` and `Binder017` Valid after the migration recompute on the build r15 (2026-10-13 23:46, the probe of entry 113) |
-| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `property-group-rank.py` 12 of 12, in the reporter's form (in the source 15:52): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name). COMMITTED `650a6dee96` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted; three cases of the Python suite expected the group named "Appearances" and failed -- corrected to "Appearances#1" with it |
-| 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED 17:25: the root fix shown on the dev build -- a failing script feature's status reads its plain message (in the source 15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry. COMMITTED `6df0613233` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted, with a unit test in `src/Mod/Test/Document.py` |
-| 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry. REPRODUCED 19:17 by the build session on a small model (a pad and a pocket, the pocket in edit); the cause found (a body hidden in the document stops the scene's capture at its switch); a fix in the build r8, NOT committed. COMMITTED `5c0b30ce1b`, PUSHED 2026-10-13 20:13, NOT staged; `edit-shows-base-with-body-hidden.py` 5 of 5 on the build r8. WITH THE BODY HIDDEN the base is drawn ON TOP, see-through; with it shown, in place and solid -- the two pictures are NOT the same, taken by the build session as what was asked: ONE POINT for the reporter under the entry. A side finding there too (a selected feature of a hidden body cut off by the clip planes). ON THE REPORTER'S FILE (22:06, the build session): `scanner.FCStd` with a copy of their configuration, the feature "Draft" (`Body008`, base `Pad036`) in edit -- the picture with the body hidden is THE SAME as with it shown, 0.0000 of the pixels differ. THE REPORTER ASKS 23:04 what the clip plane finding is -- answered by the note-taker from the build session's words and its picture; whether it becomes an entry is still the reporter's to say. RULED by the reporter 2026-10-14 (said to the build session, relayed 07:36): with everything on the edit's path VISIBLE the panel's "Show preview" check box decides -- on top when the preview is on, in its place when off; with anything on the path HIDDEN always on top; the whole editing path counts, not the body alone. In the build r16, NOT committed; a push and a RESTAGE asked for after it. Point a of 2026-10-13 20:15 answered by this |
-| 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry. HALF DONE 19:17, NOT committed: shown on `scanner.FCStd`'s `Fillet011` -- the feature has no DressUpShape, which is where the panel looked; the lookup falls back to the shape the feature keeps; the second half (a list filled anew gives a missing reference no mapped name) in the build r8. DOES NOT WORK on the build r8 (20:15): "the hover on a missing reference sets no preselection at all", being looked at; not committed. WHY, found on paper (20:17): in the edit the feature HAS a dress-up shape, of the references that are left, so the fallback to the kept shape never applied; changed to "when the dress-up shape has no face for the reference" -- in the build r9, not shown yet. WORKS on the build r10 (22:06), COMMITTED `26f0a30de0`, LOCAL, not pushed, not staged: on `scanner.FCStd`'s `Fillet011` the two missing references preselect the preview's faces ("Fillet011.;AddSub;Face4" and "...Face3"); shown offscreen by the preselection's name, NOT pictured that the face is drawn lit |
-| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (B) IN THE REPORTER'S LIVE SESSION TODAY WAS SET OFF BY THE NOTE-TAKER'S OWN SCRIPT (found 17:03): the first look of 16:13:11 called `menuBar()` on the main window, which makes a menu bar and pushes the kit's spacer out -- the tool bar rows slid under the title bar a moment later. The note-taker's "read-only, nothing changed" was WRONG. (A) is the reporter's own finding, before any look. BOTH REPRODUCED by the build session on the real screen, the causes shown, fixes written for the next build: (A) the menu reveal button's width flips between its own 50 and the sheet's 88; (B) ANY `menuBar()` call does it, the window's guard against it no longer works. (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry. THE REPORTER 17:22 on the point of 17:03: "I remember see it once before" -- the row under the title bar WAS seen once before the note-taker's script; when is not said. BOTH PARTS COMMITTED `6d1dc1f9f1` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); `title-bar-keeps-its-room.py` 7 of 7 on the real screen with the reporter's configuration |
-| 111 | 2026-10-13 | the Python console or the report view overlaid on a TechDraw page drawn by the bgfx renderer: after a change of theme the text in the overlay is SCRAMBLED over the page -- in the same overlay the half that lies over a 3D view is right (a screenshot; said as "new defect and request"). MORE from the reporter 17:10: under LIGHT it is fine; under CLASSIC it is scrambled too, over the 3D view AND over the page; "it seems that the scramble is related to text outline drawing" | OPEN; ANSWERED 17:11: the "request" IS entry 112; before the change of theme the text is right; a page drawn by Qt and the other panels not checked, guessed not related; the eye taken to be beside the point. Nothing waits for the reporter. NOT STARTED (19:17); the build session's note: the outline is gone over a ground since `8ef425ceae`, "which may change what the user sees there". REPRODUCED 20:15 by the build session on the staged copy of 16:55: it is CONTRAST, not corruption -- under Dark light text on the page's light ground, only the outline's dark pieces seen; under Classic BLACK text on the dark overlay sheet. Entries 98 and 112 make Dark readable on the dev build; a change for Classic in the tree, not built. THE CLASSIC PART COMMITTED `905d023394` (22:06), LOCAL, not pushed, not staged: the console's black text stands on a light ground (232). A SIDE EFFECT under DARK: the console's ground is dark (40) now, not the tree items' -- ONE POINT for the reporter under the entry. THE POINT ANSWERED 23:04: gated by the tree's automatic item background setting -- the tree items' background when it is on, the widget's own background when it is off. The legibility rule of `905d023394` is replaced by this (the note-taker's reading). Not started. AS RULED, in the tree and in the build r15 (23:20), not committed: the setting ON, the tree items' ground; OFF, the view's own background at the overlay's opacity (the console's editor background where one is set, else the palette's base colour). AS RULED: COMMITTED `023552c8fd` (2026-10-13 23:46), LOCAL, not pushed, not staged; `overlay-text-ground.py` offscreen 20 pass, 4 fail as before the change; NOT shown on the real screen. With the setting ON Classic's black text is on the dark item ground again -- "what the ruling makes of it" |
-| 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11). ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; the smaller point answered 17:17: A SETTING gates it, by default the same as the 3D view; and the Qt-drawn page too IF it is easy -- to be looked at by the build session. COMMITTED `2a317f254e` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): the setting `Colors/BackgroundAs3DView` (on by default), the Qt-drawn page too (one rule for both); 6 of 6; NO check box in TechDraw's preference page yet |
-| 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003` |
+| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); ANSWERED 17:04: the backing behind the TEXT only; in the SAME BACKGROUND THE TREE'S ITEMS USE (not the widget's own, as the note-taker had read it); these two panels only; and the text's outline dropped wherever there is a background -- in the TREE too, a change to entry 87 as built. Nothing left unanswered. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55) (the text's ground, no outline over a ground; `overlay-text-ground.py` with it). A CHANGE TO ANSWER b BY ENTRY 111's FIX (22:06, `905d023394`, local): under DARK the console's and the report view's ground is now dark (40), NOT the tree items' grey -- ONE POINT for the reporter under entry 111. ANSWER b MADE PRECISE 23:04 under entry 111: the tree items' background while the automatic item background setting is on, the widget's own background while it is off. By `023552c8fd` (2026-10-13 23:46, local): the ground is the tree items' with the item background setting on, the panel's own with it off. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the text's ground, by the item background setting (`023552c8fd`, PUSHED 2026-10-14 07:56). THE REPORTER ASKS 2026-10-14 09:40: can the text's OUTLINE be drawn even with the background -- some colours are hard to see on some backgrounds, an automatic background cannot work in all cases; a reading by the note-taker under the entry, the answer the build session's. A NEW REQUEST 2026-10-14 09:47: WHICH colour of the 3D view's background the automatic item background takes (the console and the report view included) -- radial: the 'End' colour; linear: the 'Start' colour for an overlay docked top, left or right, the 'Stop' colour for one docked at the bottom; no gradient: the single colour. Today it is the gradient's FIRST colour always. Not started; two smaller points under the entry. THE BUILD SESSION ANSWERS the question of 09:40 (2026-10-14 09:57): YES, the outline can be laid over the ground and under the letters, around the letters only; not built, it builds on the reporter's word and asks whether the tree's items are meant. The request of 09:47 understood as read, checked against pictures; not started. THE OUTLINE: GO-AHEAD by the reporter about 10:00 (said to the build session, relayed 2026-10-14 10:23): "the outline yes, gate it to the existing outline system, which default on"; in a build r21 with the colour rule of 09:47, not committed. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: `bd5f1c358d` -- the ground by the background's pattern and the panel's side (09:47) and the outline over a ground (the go-ahead of 10:00) are in the reporter's copy; how the outline over a ground LOOKS is not shown on a real screen, theirs to judge. A NEW REQUEST 2026-10-14 11:08, four parts: (1) with the automatic ground OFF the tree's own item colour applies to the tree, the Python console, the report view AND the selection view (it changes the ruling of 2026-10-13 23:04 for the console and the report view); (2) a PROPOSAL asked: a better automatic colour under a RADIAL background, to blend in; (3) the item colour and the automatic switch MOVED from the UI page to Display > Colors, in a group box "Overlay"; (4) a group box "Display Style" on that page DUPLICATING the colour settings of Display > Display styles. Not started; four smaller points under the entry. THE BUILD SESSION'S PROPOSAL for part 2 (2026-10-14 11:13), for the reporter: under a radial background each panel's ground is the background's colour AVERAGED OVER THE PANEL'S RECTANGLE (the 'End' colour shows only in the view's corners); a ground per row offered, not proposed. WAITS FOR THE REPORTER'S YES OR NO. Parts 1, 3, 4 read alike by both sessions, to be built after the running build. THE PROPOSAL ACCEPTED by the reporter (to the build session 11:20, relayed): "agree with your average color proposal". THE REQUEST OF 11:08 DONE, COMMITTED `04e05bbd38` (the averaging in `f83174eb42`, the same file), LOCAL, not pushed, not staged yet: the item colour for the tree, the console, the report view and the selection view; with no colour set the text views keep their own ground; the settings on Display > Colors, groups "Overlay" and "Display Style". STAGED 2026-10-14 11:55 (labelled `260a43578f`, dirty by test scripts only, its code `04e05bbd38`), NOT pushed: the request of 11:08 and the averaged radial ground are in the reporter's copy -- on the dev build the radial ground (133,133,164) is the computed average, not the rim. "Item background follows the theme": its tooltip cut to 309 characters (`f0113275f2`, local) -- the omni search's 400-character test had failed at 428 on the build r24. PUSHED 2026-10-14 15:20 (origin `d3d1968480`), STAGED 2026-10-14 15:22 from a clean tree: the shorter tooltip in the reporter's copy; everything of the entry pushed |
+| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | The dashes (0xFFF0) and the scale's default (200) STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE PICKING DOES NOT WORK on that build (17:25): the test fails, the face is still picked -- the cause found, changed for the next build (in the source 15:08); the PICKING in the source, in the build of 15:45 (15:52); its test shows the defect on the staged copy -- at four points of the X axis inside a box the pick is the box's face. The reporter's configuration as copied 14:52 stores `DatumScale` 300 -- set by the reporter since. The four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default. 19:17: (b) the default scale 200 ALONE is COMMITTED `6e7232e7c2`, PUSHED 2026-10-13 19:24; (c) THE PICKING STILL DOES NOT WORK after two changes, offscreen and on the real screen -- the build r8 carries a trace to find out why; (a) the dashes are in the same file as (c) and wait with it, NOT committed (they are in the staged copy of 16:55). 20:15: (c) REWORKED after the trace (the scene pass never used the rule; now a pass of its own whenever a single pick ends on a face) -- in the tree, NOT built, not committed. (a) the dashes: last looked at on the builds r5/r7 (three quarters line, a quarter gap), not by itself since; (c) in the build r9 (20:17). (c) STILL NOT WORKING on the builds r9 and r10 (22:06); the cause found in two parts (the kept pick paths start below the camera; applied one by one a ray pick keeps only the last path's hits); a build r11 applies them in one traversal, results to come. Not committed. (c) WORKS on the build r14 (23:20): `datum-picked-through-a-face.py` 3 of 3 on the real screen -- the X axis picked through a box, and a datum plane by its face; (a) the dashes and (c) COMMITTED `1109842583`, LOCAL, not pushed, not staged. The whole entry is committed now. `1109842583` (the dashes and the picking) PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the whole entry is in the reporter's copy now |
+| 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. THE REPORTER ASKS (17:22) what the border's colour is now -- answered by the note-taker from the theme file, by calculation: about #646464 (a grey of 100) on panels of about #2C2C2C (44); the note-taker's guess of step 4 would be about #323232 (50), too near the panels to be seen. How much darker is still the reporter's to say. DECIDED 17:32: the border is #4B4B4B. Which borders and the check boxes: not said, taken as the general border colour, the check boxes as they are. COMMITTED `062f56a133` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `GeneralBorderColor` "#4B4B4B" in `Dark.yaml`, the check boxes and radio buttons as they were. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree |
+| 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. ANSWERED in part 17:22: a NEW GROUP COMMAND, "say Std_SplitView", holding everything of the split view and its cells, placed AFTER the menu item "Standard views"; the second group (from `Std_ViewTitleBar` to the end) not spoken of in the answer. ANSWERED 17:32: `Std_ViewCreate` stays where it is; the title bar items go into a NEW GROUP COMMAND of the build session's naming, at the END of the View menu. Nothing left unanswered. COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `Std_SplitView` ("Split view") after "Standard views", `Std_WindowBars` ("Title, menu and status bars") the last entry, Create new view where it was. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree |
+| 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:08); the reporter's configuration stores no value, so they get it. Nothing to ask; one note of the note-taker's on configurations that have the value written. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree (the committed form `8ef425ceae`) |
+| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | THE CAUSE FOUND and reproduced with a copy of the reporter's configuration, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE BUTTON IS STILL NOT THERE on that build (17:25): the cause of 15:08 was WRONG for an overlaid Tasks panel -- an overlay's title bar never carried the button; added for the next build (in the source 15:08): the Tasks dock's title bar is made at start-up before the task view is in its dock, so it is a plain dock's bar for good and the button does not exist; the bar is now replaced by a task one when the task view is found in a dock. The three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown. The button on each overlay's own title bar: COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); 7 of 7 with the reporter's configuration on the build r7. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the button on an overlay's title bar is in the reporter's copy now |
+| 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | (1) THE GHOST: the cause FOUND by reading, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:52) -- what a view hides of its own accord stayed in the depth and normal prepass the cavity pass reads; it is left out now. (2) THE SHOW-THROUGH: NOT found, needs pictures on the real screen. The four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered. THE GHOST: COMMITTED `038b8b1b1a` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted, 5 of 5 on the build r7; the show-through (2) NOT STARTED. THE SHOW-THROUGH (2): NOT REPRODUCED by a probe of the build session's (22:06), and the probe inconclusive -- the Cavity setting changed no pixel of its pictures. Nothing found. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree (the ghost's committed form `038b8b1b1a`); the show-through (2) still not found. A CORRECTION by the build session (2026-10-14 09:10): the ghost's fix `038b8b1b1a` is UNVERIFIED -- cavity shading is not drawn at all in the pictures its test sessions take, so its test's "5 of 5" said nothing. For (2): a cleaner probe has the hidden block's EDGE LINES coming through a cover in "Flat Lines" from x16 zoomed out, nothing in Shaded |
+| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `TestShapeBinder` 13 OK; on `scanner.FCStd` the migration recompute ends with `Binder008` in the error "No context ...", `Sketch043`, `Pad033` and `Binder017` keeping their shapes -- built with the geometry search as fallback, which the reporter ruled out at 17:22 (in the source 15:52); designed 15:36; "does not move" judged FIRST by the placements the binder keeps of its last update and by the geometry search only where it keeps none -- the build session's choice, NOT the reporter's word, to be told to them. AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. ANSWERED 15:28: OFF HOLD, to be built; "not moved" judged against the shape in the file by a GEOMETRY SEARCH; if no path leaves it unmoved the binder is in ERROR, "No context, please double click the binder in the desired context to refresh"; of equal paths the first that `getParents()` returns. Nothing left unanswered. It had been ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`). THE ORDER ANSWERED 17:22: yes, by the saved placements -- and NO geometry search at all, "just compare placement is enough". COMMITTED `00dec0a56d` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has the EARLIER form, with the geometry search: the kept placements alone, no geometry search; a binder with NOTHING kept takes the first path, as a new binder does (the build session's choice on the point left to it). `Binder008` on the committed rule (19:21, the build session): it HAS a kept matrix in the file (`Cache_Body004`), so it is compared and should end in the "No context" error as at 17:25 -- EXPECTED, NOT RUN on the committed form. RUN (20:15, the build session, on the build r8 with the committed binder source): `scanner.FCStd` recomputed, the log has the "No context ..." error once and `Fillet011`'s "Invalid edge link: ?Edge93" as before -- the log line does not name the object. `Sketch043`, `Pad033` and `Binder017` Valid after the migration recompute on the build r15 (2026-10-13 23:46, the probe of entry 113). STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the rule by the kept placements alone, no geometry search |
+| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `property-group-rank.py` 12 of 12, in the reporter's form (in the source 15:52): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name). COMMITTED `650a6dee96` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted; three cases of the Python suite expected the group named "Appearances" and failed -- corrected to "Appearances#1" with it. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree (the committed form `650a6dee96`) |
+| 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED 17:25: the root fix shown on the dev build -- a failing script feature's status reads its plain message (in the source 15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry. COMMITTED `6df0613233` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted, with a unit test in `src/Mod/Test/Document.py`. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree (the committed form `6df0613233`) |
+| 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry. REPRODUCED 19:17 by the build session on a small model (a pad and a pocket, the pocket in edit); the cause found (a body hidden in the document stops the scene's capture at its switch); a fix in the build r8, NOT committed. COMMITTED `5c0b30ce1b`, PUSHED 2026-10-13 20:13, NOT staged; `edit-shows-base-with-body-hidden.py` 5 of 5 on the build r8. WITH THE BODY HIDDEN the base is drawn ON TOP, see-through; with it shown, in place and solid -- the two pictures are NOT the same, taken by the build session as what was asked: ONE POINT for the reporter under the entry. A side finding there too (a selected feature of a hidden body cut off by the clip planes). ON THE REPORTER'S FILE (22:06, the build session): `scanner.FCStd` with a copy of their configuration, the feature "Draft" (`Body008`, base `Pad036`) in edit -- the picture with the body hidden is THE SAME as with it shown, 0.0000 of the pixels differ. THE REPORTER ASKS 23:04 what the clip plane finding is -- answered by the note-taker from the build session's words and its picture; whether it becomes an entry is still the reporter's to say. RULED by the reporter 2026-10-14 (said to the build session, relayed 07:36): with everything on the edit's path VISIBLE the panel's "Show preview" check box decides -- on top when the preview is on, in its place when off; with anything on the path HIDDEN always on top; the whole editing path counts, not the body alone. In the build r16, NOT committed; a push and a RESTAGE asked for after it. Point a of 2026-10-13 20:15 answered by this. AS RULED: COMMITTED `7d5698c950`, PUSHED 2026-10-14 07:56, STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; `edit-on-top-by-preview-and-path.py` 9 of 9 on the build r16, the real screen. The "Show on top" check box is gone and `Part/EditOnTop` no longer read (the build session's consequence). THE CLIP PLANE FINDING: the reporter asks 2026-10-14 16:00 how to fix it -- answered by the note-taker from the source, nothing run: the view's near and far planes are fitted to a bounding box of the scene that leaves out what a hidden body holds, so the on-top drawing of its selected feature falls outside them; three ways under the entry. THE CLIP PLANE FINDING became ENTRY 124 (between 16:15 and 16:41), the reporter choosing way 2 |
+| 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry. HALF DONE 19:17, NOT committed: shown on `scanner.FCStd`'s `Fillet011` -- the feature has no DressUpShape, which is where the panel looked; the lookup falls back to the shape the feature keeps; the second half (a list filled anew gives a missing reference no mapped name) in the build r8. DOES NOT WORK on the build r8 (20:15): "the hover on a missing reference sets no preselection at all", being looked at; not committed. WHY, found on paper (20:17): in the edit the feature HAS a dress-up shape, of the references that are left, so the fallback to the kept shape never applied; changed to "when the dress-up shape has no face for the reference" -- in the build r9, not shown yet. WORKS on the build r10 (22:06), COMMITTED `26f0a30de0`, LOCAL, not pushed, not staged: on `scanner.FCStd`'s `Fillet011` the two missing references preselect the preview's faces ("Fillet011.;AddSub;Face4" and "...Face3"); shown offscreen by the preselection's name, NOT pictured that the face is drawn lit. `26f0a30de0` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; still not pictured that the face lights up -- the reporter's to see. A CORRECTION by the build session (2026-10-14 09:10): under a per-view edit, the reporter's setting, NOTHING LIGHTS on the screen -- the hover names the preview's face but the picture does not change (0 pixels; an ordinary edge lights 82). So on the staged copy the entry is HALF: the name, not the light. A fix written, not built. THE REPORTER 2026-10-14 09:42 makes it precise: a hover in the 3D VIEW over the preview shape never reacts, and that is EXPECTED; the request is the hover over the EDGE LIST IN THE PANEL -- the edge lit if its reference is there, the preview's fillet face lit if the reference is missing. So the correction of 09:10 stands as the thing still missing. 2026-10-14 09:57: the first fix (the build r19) lit NOTHING -- a bug of the build session's own (the face count asked of the wrong property), corrected, in the build r20; not shown yet. WORKS on the build r20 at the level of the scene's materials (2026-10-14 10:23): the pointer on a missing reference's item gives the preview one face in the highlight colour; COMMITTED `92d235551a`, LOCAL, not pushed, not staged; NOT pictured on a screen. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: the face lit by colour `92d235551a` is in the reporter's copy now -- theirs to see. PUSHED 2026-10-14 15:20 (origin `d3d1968480`) |
+| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (B) IN THE REPORTER'S LIVE SESSION TODAY WAS SET OFF BY THE NOTE-TAKER'S OWN SCRIPT (found 17:03): the first look of 16:13:11 called `menuBar()` on the main window, which makes a menu bar and pushes the kit's spacer out -- the tool bar rows slid under the title bar a moment later. The note-taker's "read-only, nothing changed" was WRONG. (A) is the reporter's own finding, before any look. BOTH REPRODUCED by the build session on the real screen, the causes shown, fixes written for the next build: (A) the menu reveal button's width flips between its own 50 and the sheet's 88; (B) ANY `menuBar()` call does it, the window's guard against it no longer works. (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry. THE REPORTER 17:22 on the point of 17:03: "I remember see it once before" -- the row under the title bar WAS seen once before the note-taker's script; when is not said. BOTH PARTS COMMITTED `6d1dc1f9f1` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); `title-bar-keeps-its-room.py` 7 of 7 on the real screen with the reporter's configuration. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: both fixes are in the reporter's copy now |
+| 111 | 2026-10-13 | the Python console or the report view overlaid on a TechDraw page drawn by the bgfx renderer: after a change of theme the text in the overlay is SCRAMBLED over the page -- in the same overlay the half that lies over a 3D view is right (a screenshot; said as "new defect and request"). MORE from the reporter 17:10: under LIGHT it is fine; under CLASSIC it is scrambled too, over the 3D view AND over the page; "it seems that the scramble is related to text outline drawing" | OPEN; ANSWERED 17:11: the "request" IS entry 112; before the change of theme the text is right; a page drawn by Qt and the other panels not checked, guessed not related; the eye taken to be beside the point. Nothing waits for the reporter. NOT STARTED (19:17); the build session's note: the outline is gone over a ground since `8ef425ceae`, "which may change what the user sees there". REPRODUCED 20:15 by the build session on the staged copy of 16:55: it is CONTRAST, not corruption -- under Dark light text on the page's light ground, only the outline's dark pieces seen; under Classic BLACK text on the dark overlay sheet. Entries 98 and 112 make Dark readable on the dev build; a change for Classic in the tree, not built. THE CLASSIC PART COMMITTED `905d023394` (22:06), LOCAL, not pushed, not staged: the console's black text stands on a light ground (232). A SIDE EFFECT under DARK: the console's ground is dark (40) now, not the tree items' -- ONE POINT for the reporter under the entry. THE POINT ANSWERED 23:04: gated by the tree's automatic item background setting -- the tree items' background when it is on, the widget's own background when it is off. The legibility rule of `905d023394` is replaced by this (the note-taker's reading). Not started. AS RULED, in the tree and in the build r15 (23:20), not committed: the setting ON, the tree items' ground; OFF, the view's own background at the overlay's opacity (the console's editor background where one is set, else the palette's base colour). AS RULED: COMMITTED `023552c8fd` (2026-10-13 23:46), LOCAL, not pushed, not staged; `overlay-text-ground.py` offscreen 20 pass, 4 fail as before the change; NOT shown on the real screen. With the setting ON Classic's black text is on the dark item ground again -- "what the ruling makes of it". `905d023394` and `023552c8fd` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; not shown on the real screen by the build session |
+| 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11). ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; the smaller point answered 17:17: A SETTING gates it, by default the same as the 3D view; and the Qt-drawn page too IF it is easy -- to be looked at by the build session. COMMITTED `2a317f254e` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): the setting `Colors/BackgroundAs3DView` (on by default), the Qt-drawn page too (one rule for both); 6 of 6; NO check box in TechDraw's preference page yet. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; still no check box on TechDraw's preference page. Its commit `2a317f254e` is the cause of the CRASH of entry 114. The check box for `Colors/BackgroundAs3DView` is in the tree, not committed (2026-10-14 09:10). THE CHECK BOX COMMITTED `463a36a58b` (2026-10-14 09:29), LOCAL, not pushed, not staged: on TechDraw's colour page, with a test. The check box tested 2026-10-14 09:58: `techdraw-page-ground-preference.py` 6 of 6 offscreen. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: the check box `463a36a58b` is in the reporter's copy now. PUSHED 2026-10-14 15:20 (origin `d3d1968480`) |
+| 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003`. `56504486e6` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; the real double click under `Lens003` is the reporter's to try |
+| 114 | 2026-10-14 | A CRASH on the copy staged 08:10: switching the theme to Dark by Tools > Preset configurations > Themes > Dark theme ends the program (an access violation) | OPEN; the debugger's log, the short crash log and the DUMP read by the note-taker on the reporter's word: the theme writes `PreSelectColor` into TechDraw's `Colors` settings and one of that group's observers is an object already destroyed; a candidate by reading, NOT shown by a run: the page view's observer added for entry 112 (`2a317f254e`) is attached to that group and never detached; one point under the entry, NOT ANSWERED. THE CANDIDATE IS RIGHT (2026-10-14 09:10, the build session): REPRODUCED on the staged copy of 08:10 by a new test -- a page's view opened, its document closed, a theme applied: the session ends with the reporter's stack to the line. The fix, one line (`hGrpColors->Detach(this)`), is in a build; NOT committed. The point a no longer needed for the cause. THE FIX COMMITTED `778bde3979` (09:27), LOCAL, not pushed, not staged: the page's view takes itself off the `Colors` group; with its test. A push and a restage wait for the reporter's word. THE FIX TESTED (09:58, the build session, on the build r18 = the committed code): its test 6 of 6 offscreen, the session goes on through a TechDraw colour written and two themes applied after a page's view has gone; five neighbours pass; the two full suites NOT run on that build. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: the crash fix `778bde3979` is in the reporter's copy now. TWO MORE CRASHES of this morning on the copy staged 08:10, found by the build session in the crash logs: 09:34 at the SAME address as this entry's, and 09:52 executing a bad address -- both on a button's release; their dumps read by the note-taker 14:41: no symbols (the binaries they need were replaced by the later stages), but the 09:52 registers have the same pattern as this entry's crash. Read by both sessions as the same crash, which the fix of 10:36 removes. PUSHED 2026-10-14 15:20 (origin `d3d1968480`) |
+| 115 | 2026-10-14 | the 3D view's background does not follow its settings: the preference is a RADIAL gradient, a LINEAR one is shown, and it does not respond to a change of the setting | OPEN; the reporter's configuration and the source read by the note-taker, nothing run: the configuration says radial (`Gradient` 0, `RadialGradient` 1); the cause NOT found by reading; one thing that can give linear -- every theme writes `Gradient` 1, which wins over radial; three points under the entry, NOT ANSWERED. MADE PRECISE by the reporter 09:50: a COLOUR change shows at once; a change of the PATTERN does not -- it shows only when the mouse moves over the 3D view, even with the preferences open. A CANDIDATE by reading, not shown: setting the pattern asks for no redraw (old code); points b and c answered by this, one new point under the entry (what a theme does to the pattern). POINT d ANSWERED 09:54: "change both theme to default to Simply color" -- the Dark and the Light theme are to give the ONE-COLOUR background ("Simple color"), no gradient. Not started; one smaller point under the entry (Light's single colour is the same dark grey as Dark's). REPRODUCED 09:57 by the build session on the staged copy: the settings arrive, the REDRAW is missing -- the note-taker's candidate right; fixed in the tree (`setGradient` touches the node), in a build, not committed. THE THEMES: after Dark or Light both keys are on, the view is LINEAR and the preference page opens with "Radial" selected -- page and view disagree; the themes' change waits on the reporter's answer of 09:54, which crossed this. THE THEMES (09:58): the build session applies the reporter's answer to `Dark.cfg` and `Light.cfg` after its running build; for LIGHT's single colour it takes #C3C3C3, the theme's present top colour, "unless the user names another; said to them". THE REPORTER to the build session about 10:00 and 10:01 (relayed 10:23): Light's simple colour to be "its old center gradient color" -- then "wait for the background color, simple color is which setting?"; answered by the build session; the themes' change is HELD until the reporter confirms, the theme files untouched. THE REDRAW: the first fix did not ask for one; put right in a build r21; on the staged copy NO change of pattern repaints the view, a gradient to one colour included. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: the redraw at a change of the pattern (`8cdd37309b`; its test 6 of 6 offscreen and on the screen, four of six failing on the copy of 08:10) is in the reporter's copy; the THEMES' change is NOT -- held for the reporter's confirmation. THE THEMES' COLOURS ACCEPTED by the reporter (to the build session 11:20, relayed): COMMITTED `3f12b16dfa`, LOCAL, not pushed -- Light and Dark: Simple on, both gradients off; Light's single colour #C3C3C3, Dark's #3C3C3C as it was. STAGED 2026-10-14 11:55 (labelled `260a43578f`, dirty by test scripts only, its code `04e05bbd38`), NOT pushed: the themes' one colour is in the reporter's copy. PUSHED 2026-10-14 15:20 (origin `d3d1968480`) |
+| 116 | 2026-10-14 | a task, said by the reporter to the build session after entry 114's crash: "spawn an agent to audit for missing signal auto disconnect" | AUDITED 10:23 by a read-only agent of the build session's; no second case of entry 114's kind (every other parameter observer detaches from every group it attached to); SEVEN findings of other kinds, two HIGH (an Assembly view provider's connection to the main window never released; Mesh's fill-hole command), none from today's work; fixes written for six, NOT applied; one (the selection singleton) "left for a word". WHAT IT COVERED (10:24): the observers and the signal and Qt connections under `src/Gui`, `src/Mod` and `src/App`; NOT the modules' App parts beyond its searches, `src/Base` beyond two files, anything in Python, `src/3rdParty`; SIX more places listed for a second look, not verified, not fixed. The six fixes are what the build session does next "unless they say otherwise" -- put to the reporter by it. FINDING 5 (the selection singleton's static connection): the reporter 11:41 "yes fix finding 5". FIXES 1, 2, 3, 4, 6, 7 COMMITTED `fbeac04f4c` (2026-10-14 11:32), LOCAL, not pushed; ctest 957 of 957 and Python 3755 OK on the build r22; finding 5 next. STAGED 2026-10-14 11:55 (labelled `260a43578f`, dirty by test scripts only, its code `04e05bbd38`), NOT pushed: the six fixes are in the reporter's copy. FINDING 5 COMMITTED `adf1a2f6a5` (11:57), LOCAL, not staged: each selection instance follows the preselection's decimals itself. PUSHED 2026-10-14 15:20 (origin `d3d1968480`), STAGED 2026-10-14 15:22 from a clean tree: all seven fixes in the reporter's copy now (finding 5, `adf1a2f6a5`) |
+| 117 | 2026-10-14 | a change request: REWORK the dress-up features' editing manipulator (the handles in the 3D view), with this fork's default radius and per-edge radius (one or two) in mind; and, in general, entering values WITHOUT the task panel, by the on-view editable datum label; a SURVEY of what other CAD programs do and a PROPOSED DESIGN asked first | OPEN, a survey and a proposal asked; relayed to the build session; three points under the entry, not put as blocking. THE REPORTER 12:28: "You do the survey and design and you assumptions are correct" -- the SURVEY and the DESIGN are the NOTE-TAKER's to do; the readings a, b, c confirmed (all dress-ups with handles, the fillet first; every feature's edit in general). THE SURVEY AND THE DESIGN WRITTEN 12:39 by the note-taker: `docs/OnViewValueEditing.md` -- one on-view value bound to a property PATH (a handle and a clickable label each), so per-edge and per-point values get their own; one arrow per radius; typing by click, Tab, type-while-dragging; a feature's values in the view without the panel as a later step. NOT BUILT; six points (a to f) for the reporter at its end. THE SIX POINTS ANSWERED about 13:21: one arrow; the default's label always at the top middle, the others beside an active handle only; a button at the arrow's root cycling default / one radius / two radii; no typing during a drag, the active handle takes typing; outside an edit questioned -- proposed to drop; edge groups -- "show me how": the document REVISED (`39f35dd406`) with the decisions and a section on how groups would be built. LEFT: whether outside-an-edit is dropped, and whether groups are wanted, in which form. THE REPORTER 13:25, more general: the handle's root a BUTTON opening a CONTEXT MENU -- for the fillet the mode (default, one radius, two radii) and a remove action, other features their own operations; the document revised (`d488495906`). THE REPORTER 13:28: with a handle active, SPACE opens its context menu and ENTER starts typing in its dimension; the document revised (`aa4c5ee4ab`). THE REPORTER 13:46: outside-an-edit DROPPED; EDGE GROUPS by their own rule -- an automatic group id per customised edge, changed from the menu to join, every value change mirrored to the group, the group highlighted with the active handle; 13:47: a VISUAL HINT asked for default against customised handles -- proposed. The document revised (`92f4b73baf`); the design is now complete but for each feature's menu entries and the note-taker's smaller proposals. THE REPORTER 13:49: in the group sub-menu each item's label LEADS WITH THE GROUP ID, then a short summary of its setting; the document revised (`cee2c9033d`). THE VISUAL HINT DECIDED 13:50 and 13:51: the HANDLE'S COLOUR, default one colour and customised another, the root button the same colour as its handle; the note-taker's shapes, group colours and edge band not taken. Whether each group has its own colour not said -- taken as one; the document revised (`0901981604`). THE REPORTER 13:53: "agree with your proposal" -- the note-taker's smaller proposals agreed; THE DESIGN IS AGREED IN FULL, nothing left open (`fae1b1b149`). NOT BUILT: building it waits for the reporter's word. THE REPORTER 13:54: EACH GROUP ITS OWN COLOUR, from an automatically generated set of distinct colours -- the note-taker's "one colour" reading replaced; the document revised (`ea43e34a7d`) |
+| 118 | 2026-10-14 | the scene light's manipulator does not work: no draggable arrow is seen; the reporter thinks it does not use the manipulator the shadow light had (a directional light's) | OPEN; the source read by the note-taker, nothing run: it IS Coin's directional light dragger, as entry 63 asked (2026-10-09), drawn through an overlay capture of its own; the cause NOT found by reading; two points under the entry, NOT ANSWERED. NOT LOOKED AT until 14:32; the build session STARTS on it then (its message stamped 14:40): on the dev build r26, the real screen, pictures by saveRenderDump -- the handle switched on as the Display style menu does, whether the arrow is drawn, whether a drag turns the light. The reporter's two points stay open. NOT REPRODUCED 14:41 by the build session, on the screen, with a fresh profile and with a copy of the reporter's configuration, on the dev build and on the copy staged 11:55: the orange arrow is drawn over the model, a drag turns the headlight, Escape takes it down. The difference is in how the reporter meets it -- the points a and b, and the build session's own question (which document, a split view) put to the reporter |
+| 119 | 2026-10-14 | a split view overlaid by a task panel: the splitter dragged to close a split and the mouse released over the panel's transparent area -- the split is not closed and the drag's frame stays ("the mouse release event is not passthrough"); said to the build session about 11:15 | FIXED by the build session, COMMITTED `f83174eb42` (its message calls it "entry 117", made before the queue's 117 existed), LOCAL, not pushed, not staged; its test fails on the staged copy as it should. A further word of the reporter's 11:50: every handle drag should end itself and hide its frame when tracking is lost -- in work. STAGED 2026-10-14 11:55 (labelled `260a43578f`, dirty by test scripts only, its code `04e05bbd38`), NOT pushed: the release fix is in the reporter's copy (its test passes on the dev build, failed on the copy of 10:36). THE REPORTER'S 11:50 WORD DONE: COMMITTED `721b639bca` (11:57), LOCAL, not staged -- the view cells' border and corner, and the in-view task panel's title drag, end when the left button is found up; the test committed with it. THE LOST-TRACKING RULE `721b639bca`: 11 of 11 on the build r25; on the stage of 11:55 its "release never comes" part fails, as expected. LOCAL, not staged. PUSHED 2026-10-14 15:20 (origin `d3d1968480`), STAGED 2026-10-14 15:22 from a clean tree: the drags that end themselves (`721b639bca`) are in the reporter's copy now |
+| 120 | 2026-10-14 | a change request: find what GATES an overlay's transparent mode, and with the item background feature let transparency be on IN ALL CASES | OPEN; the gate read by the note-taker in the source, nothing run: a transparent panel turns opaque while the active view is a MAXIMIZED view that cannot be panned, when "Auto hide in non 3D view" is on |
+| 121 | 2026-10-14 | the report view's background in an overlay that is NOT transparent differs from its background when not overlaid; the Python console's is the same in both | OPEN; a candidate read by the note-taker, not shown: the overlay style sheet gives every text box a ground of its own (#6e6e6e under Dark) |
+| 122 | 2026-10-14 | a change request: the overlay's AUTO-HIDE HINT colour to follow the theme -- under Dark it cannot be seen | OPEN; read by the note-taker: the Dark overlay sheet gives the hint a dark grey (50, 50, 50 at 0.6), on a dark view |
+| 123 | 2026-10-14 | a change request: the SELECTION VIEW in overlay mode -- its list column backed with the SAME colour and alpha as the property editor's | OPEN; read by the note-taker: the property editor backs whole rows (alternating), the selection view since `04e05bbd38` only the text, with the tree's text ground; one point under the entry, not put as blocking |
+| 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started |
+| 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
+| 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
+| 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking |
+| 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry. THE REPORTER about 17:27: "Basically the entire Techdraw Extend Dimensions toolbar has invisible icons". FOUND by the note-taker 17:30: 14 TechDraw extension icons draw NOTHING in Qt's SVG renderer -- all of them, and only they, wrap their drawing in an Inkscape filter blending with "BackgroundImage", which this Qt's SVG renderer (it renders filters) cannot do; the icons of that toolbar. A correction: the all-icons audit DID run (17:20, offscreen, read only), the note-taker had written it had not. THE BUILD SESSION (17:35) confirms the cause by one file and takes way 1: a script that drops those filters and their uses from the 14 files and nothing else -- written, to be applied after its running build, then built and pictured. Not committed. 17:51: the 14 icons fixed in the tree (the filters removed), not built yet |
+| 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry. PROBED 17:35 by the build session on the copy staged 15:22: a page exported to PDF (the path "print to file" and Print All to a file share) is VECTOR already -- 0 images, about 12448 path operators, 172 text runs. Left: the NATIVE printer path (to a printer, "Microsoft Print to PDF" among them), where Qt prints through GDI and turns antialiased or part-transparent drawing into images. TWO POINTS for the reporter: which printer or output, and which part looked like pixels |
+| 130 | 2026-10-14 | SURFACE FINISH: set to "Blast" on one object -- a warning in the report view ("dataChanged() called with an invalid index range"), the finish drawn, but the object then shows NO (PRE)SELECTION HIGHLIGHT; set back to "None" -- no warning, the highlight back, but the finish STILL DRAWN | OPEN; read by the note-taker, nothing run: the warning is an off-by-one in the property view's model, harmless by reading; the highlight and the finish that stays NOT found; one point under the entry. 17:51, the build session: the WARNING's off-by-one confirmed, fixed in the tree, not built; the missing highlight and the finish that stays NOT REPRODUCED by a script on the copy staged 15:22 (a Part box, its appearance's finish set to blasted and back from Python: the grain shows and goes, the highlight works). It hangs on HOW the reporter set it -- point a, made precise: which object, and the steps in the property view |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -11090,7 +11536,7 @@ ended by itself.** From the build session's message of 2026-10-13 07:32, written
 - For the reporter to confirm by hand: Edit > Preferences on the staged
   copy.
 
-## 83. A view cell's menu and handle should slide out from under an overlay panel, as the navigation cube does (a change request) -- OPEN, the five points answered 2026-10-13 13:29: the menu button and the two corner handles, each by itself, only where twice the handle's size of the cell is left clear (first said as 40), and never overlapping one another; always, no setting; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `d00ab5ddcf` 2026-10-13, pushed 19:24
+## 83. A view cell's menu and handle should slide out from under an overlay panel, as the navigation cube does (a change request) -- OPEN, the five points answered 2026-10-13 13:29: the menu button and the two corner handles, each by itself, only where twice the handle's size of the cell is left clear (first said as 40), and never overlapping one another; always, no setting; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `d00ab5ddcf` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 09:52, the reporter:** "new request, view cell menu and handle
 should be aware of overlay panel position and slide out to make accessible
@@ -11435,7 +11881,7 @@ From the build session's message of 2026-10-13 11:33, written here 11:34. `overl
 configuration the panel's ground is the applied theme's right away, Dark,
 Light, Dark".
 
-## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered; RETESTED by the reporter 13:38 -- click passes, the wheel does not; the wheel's cause found 13:51, a fix in the source; the Tasks panel's eye to be said; the wheel's fix COMMITTED `8d2e4379c8`, pushed 2026-10-13 15:58, not staged; the Tasks panel's cause found 16:12 (entry 69's ground), the plan accepted 16:13 and DROPPED 16:57 on the reporter's word of 16:44 (only a fully transparent background passes, the eye pushed or not); the wheel's fix STAGED 2026-10-13 16:55; the pass to go by the transparent background, not changed yet; the rule by what is painted COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered; RETESTED by the reporter 13:38 -- click passes, the wheel does not; the wheel's cause found 13:51, a fix in the source; the Tasks panel's eye to be said; the wheel's fix COMMITTED `8d2e4379c8`, pushed 2026-10-13 15:58, not staged; the Tasks panel's cause found 16:12 (entry 69's ground), the plan accepted 16:13 and DROPPED 16:57 on the reporter's word of 16:44 (only a fully transparent background passes, the eye pushed or not); the wheel's fix STAGED 2026-10-13 16:55; the pass to go by the transparent background, not changed yet; the rule by what is painted COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
 pass through no longer works"
@@ -11776,7 +12222,7 @@ with the eye off) is answered by it: what is solid does not pass, what
 is fully transparent does; no more is asked. Nothing of this entry
 waits for the reporter.
 
-## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, COMMITTED `9b2a76c2dd` and `a4beaec622`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted (border, setting; the hover in an earlier form); OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail; no outline over an item's background COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24
+## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, COMMITTED `9b2a76c2dd` and `a4beaec622`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted (border, setting; the hover in an earlier form); OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail; no outline over an item's background COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
 has a darker border, which is unwanted. in addition, mouse hovering draw
@@ -12215,7 +12661,7 @@ its test PASS on a first build; NOT committed.** From the build session's messag
   with a menu is a menu button with the name, none without a menu has
   it; `Std_SelUp` and `Std_DisplayStyle` 44 wide like `Std_SelBack`.
 
-## 91. PartDesign edit panels: the button that clears the link references is stretched -- on the stage of 13:56 the button is TOO SMALL in width (the reporter 14:20), to be fitted by the icon's aspect ratio from the row's height (14:28); STAGED 2026-10-13 13:56 from uncommitted code, not committed; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the redone width COMMITTED `51075fbda3` 2026-10-13, pushed 19:24
+## 91. PartDesign edit panels: the button that clears the link references is stretched -- on the stage of 13:56 the button is TOO SMALL in width (the reporter 14:20), to be fitted by the icon's aspect ratio from the row's height (14:28); STAGED 2026-10-13 13:56 from uncommitted code, not committed; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the redone width COMMITTED `51075fbda3` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 11:05, the reporter:** "new defect, part design pocket edit panel,
 but button to 'temporary clear link references for new selection' got
@@ -12682,7 +13128,7 @@ step) is built for the steps where a list is shown, which is also the
 condition the reporter set in answer a; a later step typed small that
 brings up no list is not corrected.
 
-## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- on the stage of 13:56 fine on the title bar, INVISIBLE in the menu View > Dock window overlays under Dark (the reporter 14:09); COMMITTED `cbb01f5de3`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the menu's icons COMMITTED `648cf34f83` 2026-10-13, pushed 19:24
+## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- on the stage of 13:56 fine on the title bar, INVISIBLE in the menu View > Dock window overlays under Dark (the reporter 14:09); COMMITTED `cbb01f5de3`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the menu's icons COMMITTED `648cf34f83` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 11:17, the reporter:** "new request, add a border to the close icon
 for overlay pannel, so it does not look like a icon not found defect"
@@ -12928,7 +13374,7 @@ document with a page in a group, its view open, reverted twice; "on the
 staged copy it crashes at the first revert"); the scanner file reverted
 with and without the migration recompute: no crash, no crash log.
 
-## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, not started; the text's outline off where it has a background (added 2026-10-13 14:13); the four points answered 17:04: the text only, the tree items' background, these two, no outline where there is a background; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged
+## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, not started; the text's outline off where it has a background (added 2026-10-13 14:13); the four points answered 17:04: the text only, the tree items' background, these two, no outline where there is a background; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged; STAGED 2026-10-14 08:10; ASKED 2026-10-14: the outline to be drawn even where the text has a background; a NEW REQUEST 2026-10-14: the automatic item background takes the gradient's colour by pattern and by the side the overlay is docked at; the outline over a background: GO-AHEAD 2026-10-14, gated by the existing outline setting; in a build; STAGED 2026-10-14 10:36; a NEW REQUEST 2026-10-14 11:08: the item colour for the selection view too, a better automatic colour under radial (a proposal), the settings moved to Display > Colors; the proposal accepted and the request of 11:08 COMMITTED `04e05bbd38` 2026-10-14, local; STAGED 2026-10-14 11:55
 
 **2026-10-13 12:11, the reporter:** "new request, when in overlay transparent
 mode, add text background (same color for their widget background) for
@@ -13036,7 +13482,275 @@ The note-taker's reading:
   under entry 87.
 Nothing of this entry is left unanswered.
 
-## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- the dashes and the default in a build 2026-10-13 15:08, the picking not started; the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the default scale COMMITTED `6e7232e7c2` 2026-10-13, pushed 19:24; the picking STILL NOT WORKING 19:17, the dashes wait with it; the picking still not working on the builds r9 and r10 (22:06), its cause found, a build r11 to come; the picking WORKS on the build r14, the dashes and the picking COMMITTED `1109842583` 2026-10-13, local
+**2026-10-14 09:40, the reporter asks:** "entry 98, text background. is
+it possible to draw text outline even with the background? because some
+color is not quite visible to some background color. it becomes diffcult
+for auto background to work in all cases"
+
+The note-taker's reading, not the reporter's words:
+- A question, and by its reason a request in the making: the text of an
+  overlaid console or report view -- the tree's items too, not said --
+  should have its OUTLINE as well where it has a background behind it.
+- The reason: no one background suits every text colour (the green of
+  a comment on the items' grey, the black of Classic on a dark ground --
+  entry 111); with an outline the text would read whatever the ground,
+  and the automatic choice of a ground would not have to be right in
+  every case.
+- It turns back the reporter's own point d of 2026-10-13 17:04 ("drop it
+  too if has background"), which was given because "tree item with
+  background does not show outline anyway" -- and which `8ef425ceae`
+  built: no outline over a ground.
+
+READ in what is recorded here, nothing run; the ANSWER is the build
+session's to give:
+- Why an item with a background showed no outline before: the outline
+  is an effect on the panel's painted picture -- it edges whatever the
+  panel painted solid. Where a ground is painted behind the letters the
+  solid thing is the ground's rectangle, so the edge goes round the
+  rectangle and not round the letters (the build session, 2026-10-13
+  17:25: the effect "leaves out its shadow wherever the source is at
+  least as opaque as such a ground").
+- So, by the note-taker's reading, NOT shown: it is possible only if
+  the letters are edged apart from their ground -- the text painted or
+  taken by itself for the outline, the ground laid under both. Whether
+  that is easy in the three panels (a text view's own outline pen for
+  the console and the report view, an item painter for the tree) is for
+  the build session to say.
+NOT said: whether the tree's items are meant too; and whether, with the
+outline there, the ground stays as ruled at 23:04 (entry 111: by the
+item background setting) -- taken as yes.
+
+**2026-10-14 09:47, the reporter, a NEW REQUEST under this entry:** "also
+entry 98, new request, when 3d view background is radial, then auto item
+background (including python console and report view) color should select
+the 'End'. if gradiant is Linear, then when overlay dock in top or left or
+right, use 'Start' color. when docked bottom, use 'Stop' color. If no
+gradiant, just use the single color"
+
+The note-taker's reading, not the reporter's words:
+- It is about the AUTOMATIC item background -- the ground an overlaid
+  tree's items get while "Item background follows the theme" is on, and
+  with it the ground behind the text of the Python console and the
+  report view (as ruled 2026-10-13 23:04). Which colour of the 3D
+  view's background it takes is to depend on the background's pattern
+  and on where the overlay is docked:
+  - RADIAL gradient: the 'End' colour -- the rim's, the colour the
+    gradient has at the edges of the view, where the panels are.
+  - LINEAR gradient, the overlay docked at the TOP, the LEFT or the
+    RIGHT: the 'Start' colour -- the top's.
+  - LINEAR gradient, the overlay docked at the BOTTOM: the 'Stop'
+    colour -- the bottom's.
+  - NO gradient: the single background colour.
+- The sense of it, the note-taker's: the item ground should be the
+  colour the view's background has where the panel lies, so that the
+  text is backed by what is really behind it.
+
+READ in the source, nothing run:
+- Today (`OverlayManager::overlayItemBackground`,
+  `src/Gui/OverlayManager.cpp` about line 2324): with a gradient of
+  either kind the ground is `BackgroundColor2`, the gradient's FIRST
+  colour -- the top of a linear one, the CENTRE of a radial one; with no
+  gradient `BackgroundColor`. It does not know where the overlay is
+  docked.
+- The names: the preference page (Display > Colors) labels the three
+  colours "Top:", "Middle:", "Bottom:" for a linear gradient and
+  "Central:", "Midway:", "End:" for a radial one
+  (`DlgSettingsViewColor.cpp` lines 160 to 170). So the reporter's
+  'End' is `BackgroundColor3` (the last colour: the bottom of a linear
+  gradient, the rim of a radial one). 'Start' and 'Stop' are not on the
+  page; read as the first and the last colour -- "Top:"
+  (`BackgroundColor2`) and "Bottom:" (`BackgroundColor3`).
+- So by this reading: radial -> `BackgroundColor3`; linear, top / left
+  / right -> `BackgroundColor2`; linear, bottom -> `BackgroundColor3`;
+  none -> `BackgroundColor`.
+
+NOT said, lettered; neither put as blocking:
+a. A panel docked at the LEFT or the RIGHT under a linear gradient
+   spans the view from top to bottom; the request gives it the 'Start'
+   (top) colour as a whole -- taken as said.
+b. A task panel shown IN its view, and a panel floating or docked in
+   the main window while its text has a ground: which side counts --
+   not said; taken as the rule for "top, left or right".
+The middle colour (`UseBackgroundColorMid`) is not spoken of and is
+taken as never used for the ground. This request bears on entry 115
+too: the reporter's own background is meant to be radial.
+
+**2026-10-14 09:57, the build session ANSWERS the question of 09:40 and
+takes the request of 09:47 as read.** From the build session's message, which it stamps 09:58; written here 09:57.
+- THE QUESTION (an outline even with the background), its answer "for
+  them": "YES, it can be done: the effect knows the text from its ground
+  by opacity (letters are solid, a ground is at the overlay's alpha), so
+  the dark edge can be laid OVER the ground and UNDER the letters,
+  around the letters only -- not under the whole ground and around its
+  rim, which was the look entries 87 and 98 d took away. Not built; I
+  build it on their word, and I ask them whether the tree's items are
+  meant too."
+- THE REQUEST (which colour the automatic ground takes): "understood as
+  you read it -- radial: BackgroundColor3 ('End'); linear, overlay at
+  the top, left or right: BackgroundColor2 (the top colour); linear,
+  overlay at the bottom: BackgroundColor3; one colour: BackgroundColor.
+  Checked against pictures of the staged copy: under Dark the linear
+  view is 124 at the top and 63 at the bottom, colours 2 = 7c7c7c and 3
+  = 3c3c3c, so 2 is the top and 3 the bottom; radial is 124 at the
+  centre. It needs the overlay's side passed to overlayItemBackground
+  (tree, property view, the two text panels). Next after r20; not
+  started."
+The note-taker's notes: the answer puts right the note-taker's reading
+of 09:40 (that the letters would have to be painted apart from their
+ground) -- the effect can tell them apart by opacity. It WAITS FOR THE
+REPORTER'S WORD: build the outline over a ground, and for the tree's
+items too or the two text panels only.
+
+**2026-10-14 10:23: the reporter's GO-AHEAD for the outline over a
+background -- said to the build session about 10:00, relayed by it; the
+note-taker did not hear it:** "entry 98, the outline yes, gate it to the
+existing outline system, which default on"
+
+The build session's reading, in its words: "no setting of its own, it
+comes and goes with the overlay's outline effect, and so for everything
+that effect covers, the tree's items included. In build r21 with the
+colour rule of 09:47." From the build session's message, which it stamps 10:23; written here 10:23.
+The note-taker's notes: so the question whether the tree's items are
+meant is answered by the gate -- whatever the overlay's outline effect
+covers gets the outline over its ground. This TURNS BACK what
+`8ef425ceae` built on the reporter's point d of 2026-10-13 17:04 and on
+entry 87's decision (no outline where an item has a background): with
+the effect on, which is the default, text over a ground is edged again
+-- around the letters, not around the ground's rim, by the build
+session's answer of 09:57. Not committed.
+
+**2026-10-14 11:08, the reporter, a NEW REQUEST under this entry:** "new
+request, entry 98, item background color (when auto not enabled) shall
+apply to tree view and python console and report view, and selection
+view. suggest a way to calculate a better auto item background color when
+radial background is enabled, so it blend in better. assuming overlaid on
+a 3d view. also move the item background color and auto settings from UI
+setting page to Display -> Colors page, in a group box named Overlay. Also
+create a groupbox in that page named 'Display Style', and put color
+related settings in Display -> Display Style page there (note, do not
+move, just duplicate those settings)."
+
+The note-taker's reading, not the reporter's words -- four parts:
+1. WITH THE AUTOMATIC GROUND OFF ("Item background follows the theme"
+   off), the tree view's own "Item background color" applies to the tree
+   view, the Python console, the report view AND the selection view.
+   - This CHANGES the ruling of 2026-10-13 23:04 for the console and the
+     report view: their ground with the switch off was to be "its own
+     widget background" (built as the console's editor background, else
+     the palette's base colour); now it is the tree's item colour.
+   - The SELECTION VIEW is new to this entry.
+2. A PROPOSAL IS ASKED, not a change: a better way to work out the
+   automatic colour under a RADIAL background, so that the ground blends
+   into the view behind it -- the panel taken to lie over a 3D view.
+   Today, by the rule of 09:47, a radial background gives the rim's
+   colour ('End', `BackgroundColor3`) to every panel. The proposal is
+   the build session's to make.
+3. MOVE "Item background color" (`TreeView/ItemBackground`) and the
+   automatic switch ("Item background follows the theme",
+   `View/DockOverlayThemeItemColor`) from the UI page (Display > UI,
+   `DlgSettingsUI`) to Display > Colors (`DlgSettingsViewColor`), into a
+   group box named "Overlay". Moved: they leave the UI page.
+4. On the same Colors page, a group box "Display Style" holding the
+   COLOUR settings of the page Display > Display styles
+   (`DlgSettingsDrawStyles`) -- DUPLICATED, not moved: they stay where
+   they are and appear on the Colors page as well.
+
+READ in the source, nothing run:
+- The two settings of part 3 are made in code on the UI page
+  (`src/Gui/PreferencePages/DlgSettingsUI.cpp` lines 261 to 278: a colour
+  button `ItemBackground`, group `TreeView`, transparency allowed; a
+  check box `DockOverlayThemeItemColor`).
+- The colour settings of the Display styles page (its title "Display
+  styles", `DlgSettingsDrawStyles.cpp` line 972), by their names: the
+  hidden line style's `HiddenLineFaceColor`, `HiddenLineColor`,
+  `HiddenLineBackground`, each with its "override" check box
+  (`HiddenLineOverrideFaceColor`, `HiddenLineOverrideColor`,
+  `HiddenLineOverrideBackground`), and the shadow's `ShadowLightColor`
+  and `ShadowGroundColor` -- five colour buttons and three check boxes,
+  by the note-taker's count; a setting with a colour in it made some
+  other way would not be in this list.
+
+NOT said, lettered; none put as blocking:
+a. The SELECTION VIEW with the automatic switch ON: does it get the
+   automatic ground too, as the tree does? Taken as yes -- the request
+   names it beside the others.
+b. Which settings are "color related" on the Display styles page:
+   taken as the five colours above with the three override check boxes
+   that switch them on.
+c. The UI page after the move: the row that held the two settings goes
+   away.
+d. The automatic colour of 09:47 for a LINEAR background or one colour
+   stays as it is; part 2 is about RADIAL only.
+
+**2026-10-14 11:13, the build session's PROPOSAL for part 2 -- "please put
+it to the user as mine" -- and its reading and order of the rest.** From
+its message stamped 11:20, written here 11:13. "Nothing built yet: build
+r22 (the audit's fixes) and both suites are running, no source edits
+meanwhile."
+- WHY 'End' BLENDS BADLY, "read in SoFCBackgroundGradient.cpp (the
+  renderer draws the same): the radial background is NOT round on the
+  screen. In the view's own -1..1 coordinates it runs from the first
+  colour (BackgroundColor2) at the centre, to the middle colour
+  (BackgroundColor4) on an oval of half-width 0.42 and half-height 0.71,
+  to the last colour (BackgroundColor3) on a circle of radius 1.41 --
+  which touches the view only at its four CORNERS. So the 'End' colour
+  is seen only in the corners; the middle of the left or right edge is
+  about 60 percent of the way from the middle colour to the last, the
+  middle of the bottom edge about 50 percent, and a panel along an edge
+  spans the whole of that range."
+- THE PROPOSAL: "the automatic ground under a radial background is the
+  background's own colour AVERAGED OVER THE PANEL'S RECTANGLE -- the
+  overlay's area mapped into the view's -1..1 coordinates, the radial
+  formula above evaluated on a coarse grid (say 8 by 8) and averaged.
+  One colour per panel, so the items keep one even ground, and it is the
+  colour actually seen around them; it follows the view's size and the
+  panel's size and side by itself, and needs no setting."
+- OFFERED, NOT PROPOSED: "a ground per ROW, the background's colour at
+  that row's own place -- seamless with the view behind, but a long
+  tree's rows would shift in shade from top to bottom. And the same
+  averaging would do for a LINEAR gradient too (better than 'Start' for
+  a tall left panel, which spans top to bottom) -- only if the user
+  wants it; their rule of 09:47 for linear stands as built."
+- PARTS 1, 3, 4: read as the note-taker read them -- (1) "replaces the
+  23:04 rule ('its own widget background') that I built this morning;
+  the selection view gets a ground in an overlay as the other three, the
+  automatic one with the switch ON"; (3) the two settings move and leave
+  the UI page; (4) the duplicates, the note-taker's list of five colours
+  and three override boxes "is what I will check against the page".
+- ITS ORDER: "after r22 and its suites -- part 1 and the selection
+  view's ground, then the preference pages (3 and 4; a .ui change needs
+  two builds), then part 2 once the user has said yes or no to the
+  proposal. The themes' colours (still 'wait') and the audit's finding
+  5 stay held."
+FOR THE REPORTER, lettered:
+e. The proposal (the build session's): under a RADIAL background, the
+   automatic ground of each panel = the background's colour averaged
+   over the area the panel covers. Yes or no?
+f. Offered beside it: a ground per ROW (seamless, but a long tree
+   shifts in shade); and the same averaging for a LINEAR background in
+   place of the 'Start'/'Stop' rule of 09:47. Wanted, or not?
+
+**2026-10-14 11:49: the PROPOSAL ACCEPTED and the request of 11:08 DONE.**
+From the build session's message, which it stamps 11:55; written here 11:49; the reporter's words in it typed to the build session, the note-taker did not hear them.
+- The reporter, 11:20: "accept the theme colours. and agree with your
+  average color proposal."
+- "98's radial ground = the gradient averaged over what the overlay
+  covers of the 3D view (8x8 points, SoFCBackgroundGradient's geometry)."
+- "98 as asked 11:08 is DONE and committed 04e05bbd38 (its averaging
+  code went into f83174eb42, same file): the item colour (auto off)
+  backs tree, Python console, report view AND selection view (new
+  delegate); with no colour set the text views keep their own ground
+  (111); both settings moved to Display > Colors, group 'Overlay'; group
+  'Display Style' there duplicates the display styles page's colours
+  (hidden line face/line/background + override boxes, shadow
+  light/ground)."
+SEEN in `04e05bbd38`: `DlgSettingsViewColor.cpp` (+176), `DlgSettingsUI.cpp`
+(-46), `SelectionView.cpp`, the parameter files. The note-taker's notes:
+"with no colour set the text views keep their own ground" is the build
+session's rule for the case the reporter's words did not cover (the
+item colour empty). Not staged yet; the stage after the build r23.
+
+## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- the dashes and the default in a build 2026-10-13 15:08, the picking not started; the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the default scale COMMITTED `6e7232e7c2` 2026-10-13, pushed 19:24; the picking STILL NOT WORKING 19:17, the dashes wait with it; the picking still not working on the builds r9 and r10 (22:06), its cause found, a build r11 to come; the picking WORKS on the build r14, the dashes and the picking COMMITTED `1109842583` 2026-10-13, local; STAGED 2026-10-14 08:10
 
 **2026-10-13 12:19, the reporter:** "new defect, the App::origin plane and axis
 when blocked, shows a dash line/border, but the dash is too sparse, barely
@@ -13251,7 +13965,7 @@ before it). With this, a, b and c of the entry are all committed; d
 ("same for all") is how they were built. Not in the staged copy: the
 copy of 16:55 has the dashes and the default, not the picking.
 
-## 100. The Dark theme's borders a bit more subtle: a darker grey (a change request) -- OPEN, three points not answered; DECIDED 2026-10-13 17:32: #4B4B4B; COMMITTED `062f56a133` 2026-10-13, pushed 19:24, not staged
+## 100. The Dark theme's borders a bit more subtle: a darker grey (a change request) -- OPEN, three points not answered; DECIDED 2026-10-13 17:32: #4B4B4B; COMMITTED `062f56a133` 2026-10-13, pushed 19:24, not staged; STAGED 2026-10-14 08:10
 
 **2026-10-13 13:40, the reporter:** "new request, make the dark theme border a
 bit more subtle, i.e. darker gray"
@@ -13338,7 +14052,7 @@ buttons keep the lighter one: an empty box has to be made out" -- as the
 note-taker had taken the unanswered points at 17:32. No test or picture
 of it is named in the message. Not pushed, not staged.
 
-## 101. The View menu: the view cell operations grouped, and the items from Std_ViewTitleBar to the end grouped (a change request) -- OPEN, three points not answered; the first group answered 2026-10-13 17:22: a group command Std_SplitView after "Standard views"; the second group answered 17:32: a group command at the end of the menu, Std_ViewCreate left in place; COMMITTED `648cf34f83` 2026-10-13, pushed 19:24, not staged
+## 101. The View menu: the view cell operations grouped, and the items from Std_ViewTitleBar to the end grouped (a change request) -- OPEN, three points not answered; the first group answered 2026-10-13 17:22: a group command Std_SplitView after "Standard views"; the second group answered 17:32: a group command at the end of the menu, Std_ViewCreate left in place; COMMITTED `648cf34f83` 2026-10-13, pushed 19:24, not staged; STAGED 2026-10-14 08:10
 
 **2026-10-13 14:18, the reporter:** "new request, group view cell operations in
 View menu. also group item Std_ViewTitleBar until the end in View menu."
@@ -13434,7 +14148,7 @@ status bars" -- so the menu bar's and the status bar's switches are in
 it, as the reporter's first sentence of 14:18 had them. Not pushed, not
 staged.
 
-## 102. The default of DockOverlayAlpha changed to 180 (a change request) -- in the source 2026-10-13 15:08, in a build, not committed; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24
+## 102. The default of DockOverlayAlpha changed to 180 (a change request) -- in the source 2026-10-13 15:08, in a build, not committed; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 14:31, the reporter:** "new request, change default DockOverlayAlpha
 to 180"
@@ -13465,7 +14179,7 @@ Notes, the note-taker's, READ, nothing run:
 committed.** From the build session's message of 2026-10-13 15:08, written here 15:07. "DockOverlayAlpha default 180; the user's config
 stores no value, so they get it."
 
-## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- the cause FOUND 2026-10-13 15:08 (the title bar made before the task view is in its dock), a fix in a build; answered 2026-10-13 14:38: never seen since entry 73's rule, the panel in an overlay; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the button on the overlay's title bar COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged
+## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- the cause FOUND 2026-10-13 15:08 (the title bar made before the task view is in its dock), a fix in a build; answered 2026-10-13 14:38: never seen since entry 73's rule, the panel in an overlay; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the button on the overlay's title bar COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged; STAGED 2026-10-14 08:10
 
 **2026-10-13 14:32, the reporter:** "new default, the switch panel to view button
 on task panel no longer visible, even in editing. I tested edit pad"
@@ -13575,7 +14289,7 @@ edit, pressing it puts the panel into the view)"; the test is
 `tests/gui/overlay-task-title-button.py`, in the commit. Not pushed; the
 staged copy of 16:55 does not have it.
 
-## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- the ghost's cause found 2026-10-13 15:52, a fix in a build; the show-through not found; the four points answered 2026-10-13 14:50: zoomed out only; the object the edit hides in its view; the ghost goes when the body is hidden; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the ghost COMMITTED `038b8b1b1a` 2026-10-13, pushed 19:24; the show-through not started
+## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- the ghost's cause found 2026-10-13 15:52, a fix in a build; the show-through not found; the four points answered 2026-10-13 14:50: zoomed out only; the object the edit hides in its view; the ghost goes when the body is hidden; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the ghost COMMITTED `038b8b1b1a` 2026-10-13, pushed 19:24; the show-through not started; STAGED 2026-10-14 08:10; CORRECTED 2026-10-14: the ghost's fix UNVERIFIED (the cavity pass does not run in the test sessions); edge lines seen through a cover in Flat Lines when zoomed out
 
 **2026-10-13 14:36, the reporter:** "new defect, when in per view edit, cavity
 effect still shows for per view hidden object. also for normal visible
@@ -13715,7 +14429,31 @@ pictures do not change with the Cavity setting did not draw the effect at
 all, so it says nothing either way; as at 15:52, pictures from the
 reporter's real screen (the model, the zoom) are what would move it.
 
-## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- an idea for the migration 2026-10-13 15:18 (a binder with no context takes the shortest path that does not move its shape), OFF HOLD and to be built (answered 15:28); it had been on hold 15:09 by the reporter, entry 17's ruling kept; answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation; STAGED 2026-10-13 16:55 from uncommitted code, not tested; "not moved" by the saved placements alone, no geometry search (17:22); COMMITTED `00dec0a56d` 2026-10-13, pushed 19:24
+**%(D)s %(T)s, the build session CORRECTS its reports of 2026-10-13
+19:17 and 22:06: the GHOST's fix is UNVERIFIED; and for the second
+defect, EDGE LINES are seen through a cover.** %(SRC)s
+- "cavity shading is NOT drawn at all in the pictures my test sessions
+  take -- the Cavity setting on and off, default and strong values, the
+  default configuration and a copy of the user's: 0 pixels differ, 0
+  levels. So tests/gui/cavity-not-for-view-hidden.py could never see the
+  effect, and its '5 of 5' says nothing about the ghost's fix
+  038b8b1b1a: that fix is UNVERIFIED by me. Why the pass does not run in
+  those sessions is not found (the trace build hung)."
+- "For the second defect, a cleaner probe (a cover that hides a grooved
+  block entirely, so both-against-cover-alone must be equal): Shaded 0
+  pixels at every zoom; 'Flat Lines' 4 to 118 pixels from x16 zoomed out
+  (once at x4 and x8 in perspective) -- the hidden block's edge lines
+  coming through the cover. That may be what the user sees or part of
+  it; the cavity part cannot be tested until the pass runs for me."
+The note-taker's notes: so of this entry NOTHING is shown fixed -- the
+ghost (1) has a fix in the staged copy whose effect only the reporter's
+own screen can show (the cavity effect does draw there: they reported
+it); the show-through (2) has a first finding, edge lines through a
+cover in "Flat Lines" when zoomed far out, which the reporter did not
+describe in those words ("show-through when zoomed out"). Whether the
+reporter's display mode is Flat Lines was never said.
+
+## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- an idea for the migration 2026-10-13 15:18 (a binder with no context takes the shortest path that does not move its shape), OFF HOLD and to be built (answered 15:28); it had been on hold 15:09 by the reporter, entry 17's ruling kept; answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation; STAGED 2026-10-13 16:55 from uncommitted code, not tested; "not moved" by the saved placements alone, no geometry search (17:22); COMMITTED `00dec0a56d` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 14:45, the reporter:** "new defect, after loading scanner document
 and recompute for migration, Sketch043 silently broken, no error is shown.
@@ -14088,7 +14826,7 @@ note-taker's note: that the one error is `Binder008`'s is by inference --
 one such line, and `Binder008` the binder expected to give it; what
 `Sketch043` and `Pad033` came out as in this run is not said.
 
-## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59; the form decided 15:11, "Appearances#1"; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `650a6dee96` 2026-10-13, pushed 19:24
+## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59; the form decided 15:11, "Appearances#1"; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `650a6dee96` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 14:52, the reporter:** "new request, name 'Appearance' property group
 name in object to 'Object Appearance' so that it does not show as the
@@ -14314,7 +15052,7 @@ name will meet the same -- the name as stored now ends in "#1"; only
 what Qt shows is stripped (the reporter's decision of 15:06). Not put as
 a question.
 
-## 107. A recompute cancelled with Esc: the error box shows the abort as raw program text -- the root cause FOUND 2026-10-13 15:52 (errors coming back through Python lost their message and class), a fix in a build; answered 2026-10-13 15:43: "Recompute cancelled", the replacement kept, the abort handled as an abort; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `6df0613233` 2026-10-13, pushed 19:24
+## 107. A recompute cancelled with Esc: the error box shows the abort as raw program text -- the root cause FOUND 2026-10-13 15:52 (errors coming back through Python lost their message and class), a fix in a build; answered 2026-10-13 15:43: "Recompute cancelled", the replacement kept, the abort handled as an abort; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `6df0613233` 2026-10-13, pushed 19:24; STAGED 2026-10-14 08:10
 
 **2026-10-13 15:38, the reporter, with a screenshot:** "new defect, when
 recompute, I press esc to cancel the recompute, the error message pop up
@@ -14434,7 +15172,7 @@ SEEN in the commit: `src/Base/PyTools.c`, `src/Gui/CommandLink.cpp`,
 message); whether to narrow it to the abort alone is still the
 reporter's, not asked for by them.
 
-## 108. Editing a feature of an invisible body: its base feature is not shown on top as it is when the body is visible, and as the old fork shows it -- OPEN, answered 2026-10-13 16:03: not shown at all when the body is hidden; right when it is visible; REPRODUCED 2026-10-13 19:17, a fix in a build, not committed; COMMITTED `5c0b30ce1b`, pushed 2026-10-13 20:13, not staged; one point for the reporter (the base on top and see-through with the body hidden, in place and solid with it shown); RULED 2026-10-14: visible -- by the "Show preview" check box (on top if on, normal if off); hidden anywhere on the editing path -- always on top; in a build, not committed
+## 108. Editing a feature of an invisible body: its base feature is not shown on top as it is when the body is visible, and as the old fork shows it -- OPEN, answered 2026-10-13 16:03: not shown at all when the body is hidden; right when it is visible; REPRODUCED 2026-10-13 19:17, a fix in a build, not committed; COMMITTED `5c0b30ce1b`, pushed 2026-10-13 20:13, not staged; one point for the reporter (the base on top and see-through with the body hidden, in place and solid with it shown); RULED 2026-10-14: visible -- by the "Show preview" check box (on top if on, normal if off); hidden anywhere on the editing path -- always on top; in a build, not committed; STAGED 2026-10-14 08:10
 
 **2026-10-13 15:58, the reporter:** "new defect, when double click to edit a
 feature with invisible body, the feature (previous history step of the
@@ -14696,7 +15434,129 @@ configuration has `EditOnTop` off (the build session, 2026-10-13
 as the same thing. Not said by the reporter: whether the clip plane
 finding above becomes an entry.
 
-## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02; half done 2026-10-13 19:17, not committed; does not work on the build r8 (20:15), being looked at; WORKS on the build r10, COMMITTED `26f0a30de0` 2026-10-13, local; not pictured
+**2026-10-14 08:12, the build session: the ruling BUILT, 9 of 9 on the
+real screen; COMMITTED `7d5698c950`, PUSHED 07:56, STAGED 08:10.** From the build session's message, which it stamps 08:12; written here 08:12.
+- "tests/gui/edit-on-top-by-preview-and-path.py 9 of 9 -- preview on:
+  everything shown, the body hidden, the part hidden with the body shown
+  give ONE picture (0.0000 of the pixels differ); preview off: the
+  feature in its place, another picture than with the preview (0.1094
+  differ); preview off and the body hidden: something drawn and not the
+  in-place picture (0.0849 differ); the edit left with the body hidden:
+  nothing." On the build r16, "the real screen, the pointer not moved".
+- "Nine edit neighbours pass (pd-preview-per-view 38,
+  pd-edit-shown-per-view 13, edit-per-view 25, edit-hide 25,
+  sketch-edit-hide 25, tempovis-per-view 16, per-view-visibility 45,
+  selection-on-top-hidden-edges 18, cavity-not-for-view-hidden 5)."
+- "ONE neighbour fails one claim: pd-origin-in-edit, 'ring: drawn, the Z
+  axis at the body', 4 pixels where it asks for more than 5 -- and the
+  SAME 4 on the copy staged yesterday 16:55, run for comparison, so it
+  is not this change's; not looked into further (my guess, not checked:
+  the origin at twice the size since entry 99 b moves the axis out of
+  the strip the test counts in)."
+SEEN in the commit: `src/Mod/PartDesign/Gui/Utils.cpp`, `Utils.h`, the
+new test, the old test deleted. The note-taker's notes: the test shows
+the rule on a small model (a body in a part); the reporter's own case of
+2026-10-13 15:58 is theirs to try on the copy staged now. The failing
+claim of `pd-origin-in-edit.py` is NOT an entry: it is a test's claim,
+the same on yesterday's copy, its cause a guess of the build session's
+-- whether the origin's Z axis is drawn rightly in an edit since the
+scale's default went to 200 is not shown either way.
+
+**2026-10-14 08:16, the build session: the failing claim of
+`pd-origin-in-edit.py` EXPLAINED -- the test's own, corrected `9bfa88b726`,
+local, not pushed; the program is not touched.** From its message stamped
+08:20, written here 08:16.
+- "looked at in the test's own picture
+  (g-r16-pd-origin-in-edit-dev\02-ring-edit.png): the Z axis IS drawn
+  in the edit -- a blue line from above the ring down through it. An
+  origin's axis starts a little way off the origin point, and twice as
+  far since an origin is drawn at twice the size (6e7232e7c2, entry 99
+  b); the test counted blue only in the short strip between the origin
+  and the ring's underside, which that gap now covers: 4 pixels."
+- "The strip now runs to above the ring: 116 pixels of the axis with the
+  ring in edit, 0 with the box in edit (the attacher hides the axes),
+  the test 15 of 15 on build r16, real screen."
+- "It was my change of yesterday (the default scale) that broke the
+  test's claim, on every build since, the staged one of 16:55 included;
+  no behaviour of the program is touched by the correction."
+So the note-taker's point of 08:12 (whether the origin's Z axis is drawn
+rightly in an edit since the default went to 200) is answered: it is,
+by the build session's look at the picture; the picture not opened by
+the note-taker.
+
+**2026-10-14 16:00, the reporter asks:** "regarding the show on top clipping
+problem, any suggesstion how to fix it"
+
+The note-taker's reading: the side finding of 2026-10-13 20:14 -- a
+selected feature of a HIDDEN body is drawn on top but cut off by the
+view's clip planes, only the corner nearest the camera drawn.
+
+ANSWERED by the note-taker from the source, nothing run -- the likely
+mechanism and three ways, for the build session to show and choose:
+- The near and far planes are set every frame by Coin's AUTO CLIPPING
+  (`SoRenderManager::VARIABLE_NEAR_PLANE`, `src/Gui/Quarter/QuarterWidget.cpp`
+  309) from a bounding box of the view's scene. That box is the render
+  engine's bounds of what it draws (`View3DInventorViewer::onGetBoundingBox`,
+  `View3DInventorViewer.cpp` 5121 to 5128) united with a traversal of the
+  scene (`SoFCUnifiedSelection::getBoundingBox`, `SoFCUnifiedSelection.cpp`
+  499 to 537), in which a body hidden in the document is a switch turned
+  off. So the hidden body's feature is in neither, and when it is all the
+  view shows -- or lies beyond what is shown -- the planes are fitted to
+  something else and cut it.
+- The on-top group sits in the same scene (the aux root, under the
+  selection node, `View3DInventorSelection.cpp` 155 to 158), and its
+  entries answer the bounding box by their own path
+  (`SoFCPathAnnotation::getBoundingBox`, `SoFCUnifiedSelection.cpp` 4518 to
+  4537) -- with the switches of that path pushed on. That they still do
+  not widen the box is what the picture says; why (the clip pass's
+  visibility mode, or the hidden switch on the path) is to be traced.
+WAYS, the note-taker's:
+1. FIX THE PATH'S BOX: make the on-top entries count in the clip pass
+   whatever the visibility of the containers on their path -- where the
+   trace shows them dropped. Smallest change, if the trace finds one
+   place.
+2. WIDEN IN THE HOOK: in `View3DInventorViewer::onGetBoundingBox`, which
+   every clip pass already calls, also unite the bounds of every on-top
+   entry, taken from its view provider by object and sub-name (the bounds
+   of the shape itself, visibility not asked). Robust; costs a lookup per
+   entry and frame, cacheable per selection change.
+3. GIVE THE ON-TOP PASS ITS OWN DEPTH RANGE: what is drawn on top is
+   drawn over the finished scene with a depth of its own, so its near and
+   far planes need not be the scene's -- fit them to the on-top entries'
+   bounds for that pass alone (in the engine: the overlay that draws the
+   on-top group). Fixes it at the root, and leaves the scene's depth
+   precision alone even when the on-top object lies far away; the most
+   work.
+The note-taker's recommendation: 2, then 3 if the scene's own depth
+suffers when an on-top object is far from it. NOT AN ENTRY of its own yet
+-- the reporter's question is recorded here, under the entry where it was
+found.
+
+**2026-10-14 16:14, the reporter asks:** "will this affect other view scene?"
+
+ANSWERED by the note-taker from the source, nothing run:
+- Each 3D view has its own camera, its own auto clipping and its own
+  on-top group (`View3DInventorSelection`, one per viewer,
+  `View3DInventorViewer.cpp` 1866), and the bounds hook is a node of that
+  view's own scene root calling that view's own code (`RendererBounds`,
+  `addRendererBoundsNode`, 5140 to 5155). So way 2 widens only the clip
+  range of a view that HAS the object on top -- every view of the
+  document where it is selected does, each for itself; a view that does
+  not draw it is not touched.
+- The one cost there is that view's depth precision: near and far are
+  stretched to take in the on-top object, so a far-away on-top object
+  makes the rest of that view's depth coarser. Way 3 (an own depth range
+  for the on-top pass) does not have it.
+- Way 1 is the one that could reach OTHER views: the clip pass's walk of
+  the scene builds bounding-box caches that every view shares (the
+  comment at `SoFCUnifiedSelection.cpp` 525 to 529: "what it builds below
+  is then every view's"), so letting hidden content into that walk could
+  put it into boxes other views use, for clipping and for pick culling.
+  Way 2 adds its bounds in the per-view hook, outside those caches.
+So the note-taker's recommendation stands: way 2, per view, no shared
+cache touched; way 3 if a view's depth precision suffers.
+
+## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02; half done 2026-10-13 19:17, not committed; does not work on the build r8 (20:15), being looked at; WORKS on the build r10, COMMITTED `26f0a30de0` 2026-10-13, local; not pictured; STAGED 2026-10-14 08:10; CORRECTED 2026-10-14: nothing lights on the screen under a per-view edit; a fix written, not built; made precise 2026-10-14: the hover over the panel's edge list, not the 3D view; the face lit by its colour, read from the scene's materials; COMMITTED `92d235551a` 2026-10-14, local; not pictured; STAGED 2026-10-14 10:36
 
 **2026-10-13 16:00, the reporter:** "defect (from old fork), when a dress up
 feature fails because of reference name moved, those missing edge preview
@@ -14839,7 +15699,72 @@ The note-taker's note: so the block of 20:17 above, and the
 note-taker's own note under it, are put right by this -- in the edit
 the preview shape DOES hold the faces of the missing edges.
 
-## 110. In the customized title bar (A) the space between the menu reveal button and the docked tool bar is sometimes bigger and sometimes gone, and (B) the first tool bar row came to stand under the title bar (B in the live session was set off by the note-taker's own script, 17:03; whether it is entry 6 again is NOT shown by today) -- OPEN, CAUGHT in the live session 2026-10-13 16:23; both parts COMMITTED `6d1dc1f9f1` 2026-10-13, pushed 19:24, not staged
+**%(D)s %(T)s, the build session CORRECTS its report of 2026-10-13
+22:06: under a per-view edit NOTHING LIGHTS on the screen.** %(SRC)s
+"ENTRY 109 does NOT light anything on the screen under a per-view edit,
+which is the user's setting: the hover NAMES the preview's face
+('Fillet011.;AddSub;Face4', as reported) but the picture of the view with
+that preselection and without it differ in 0 pixels, where an ordinary
+edge of the base lights 82. The preview is a node of the edit session
+there, not under the feature's switch, so the highlight's path leads
+nowhere. A fix is written (the panel colours the preview's face
+directly), not built. So on the staged copy 109 is half: the name, not
+the light."
+The note-taker's note: this is what was left open at 22:06 ("NOT
+pictured: that the face is drawn lit") -- now pictured, and it is not.
+On the copy staged at 08:10 the reporter will see NO highlight on a
+missing reference's fillet face; the request is not met there.
+
+**2026-10-14 09:42, the reporter:** "entry 109, 3d hover never reacts to the
+preview fillet shape, if that's what you mean. it is expected. when mouse
+hover the edge list in the panel, it shall highlight the edge if reference
+is there. I expect the feature to highlight the preview fillet face if the
+reference is missing"
+
+The note-taker's reading, not the reporter's words:
+- Said in answer to the note-taker's report of the correction of 09:10
+  ("nothing lights up on screen"), which did not say WHERE the pointer
+  is -- the note-taker's wording, put right here.
+- A hover in the 3D VIEW over the preview's fillet shape never reacts.
+  That is EXPECTED and is not this entry.
+- The entry is the hover over the EDGE LIST IN THE EDIT PANEL: an item
+  whose reference is there lights its EDGE (as it does); an item whose
+  reference is MISSING is to light the PREVIEW'S FILLET FACE for it.
+- This is the request as it was taken at 2026-10-13 16:02. And the
+  build session's correction of 09:10 is about exactly this hover -- the
+  pointer on an item of the panel's list, a missing reference: the
+  right face is NAMED as preselected, but nothing is lit in the view
+  under a per-view edit. So on the copy staged at 08:10 the request is
+  NOT met; its fix ("the panel colours the preview's face directly") is
+  written, not built.
+Nothing new is asked of the build session by this; nothing waits for
+the reporter.
+
+**2026-10-14 09:57, the build session: its first fix lit NOTHING -- a bug
+of its own, corrected, in the build r20.** From the build session's message, which it stamps 09:58; written here 09:57. "build r19 (the panel
+colours the preview's face) lit NOTHING -- read from the scene's
+materials offscreen, the same before, during and after the hover. Cause,
+mine: the face count was taken from the property a plain add/sub feature
+previews ('AddSubShape'), and a dress-up's preview draws 'DressUpShape',
+so the count was 0 and the call gave up. Corrected to ask the preview's
+own view which property it draws; in r20, with the same probe." Not
+shown yet; not committed.
+
+**2026-10-14 10:23, the build session: WORKS on the build r20 at the
+level it can read; COMMITTED `92d235551a`, local.** From the build session's message, which it stamps 10:23; written here 10:23. "scanner.FCStd,
+Fillet011 in edit, the pointer on each item of the panel, the scene's
+materials read -- with the pointer on either MISSING reference the
+preview's material has one face in the highlight colour (0.88, 0.88, 0.08,
+opaque) beside the preview's own (1.0, 0.39, 1.0 at 0.8 transparency); on
+a found reference and off the list it is one colour again. COMMITTED
+92d235551a, local. NOT pictured on the screen (a hover needs the
+pointer)." SEEN in the commit: `TaskDressUpParameters.cpp`, `.h`,
+`ViewProviderAddSub.cpp`, `.h`; no test file. The note-taker's note: read
+from the scene's materials offscreen, so what the reporter will SEE --
+one face of the preview turning yellow when the pointer is on a missing
+reference's line in the panel -- is theirs to confirm after a restage.
+
+## 110. In the customized title bar (A) the space between the menu reveal button and the docked tool bar is sometimes bigger and sometimes gone, and (B) the first tool bar row came to stand under the title bar (B in the live session was set off by the note-taker's own script, 17:03; whether it is entry 6 again is NOT shown by today) -- OPEN, CAUGHT in the live session 2026-10-13 16:23; both parts COMMITTED `6d1dc1f9f1` 2026-10-13, pushed 19:24, not staged; STAGED 2026-10-14 08:10
 
 **2026-10-13 16:11, the reporter:** "regression, sometimes the margin before the
 toolbar docked in customized title bar gets bigger. check my current live
@@ -15272,7 +16197,7 @@ files `src/Gui/MainWindow.cpp` and the title bar kit's
 have it -- there a call of `menuBar()` by anything still moves the first
 tool bar row, and the menu reveal button can still change its width.
 
-## 111. An overlaid Python console or report view over a TechDraw page drawn by bgfx: the text is scrambled after a change of theme -- OPEN, four points not answered; by theme: Dark over the page, Classic everywhere, Light fine; the text outline suspected (the reporter 17:10); REPRODUCED 2026-10-13 20:15: contrast, not corruption; 98 and 112 cure Dark, a change for Classic not built; the Classic part COMMITTED `905d023394` 2026-10-13, local; one point for the reporter (the console's ground under Dark is dark, not the tree items'); the ground ANSWERED 2026-10-13 23:04: by the tree's automatic item background setting, else the widget's own background; as ruled in the build r15 (23:20), not committed; as ruled COMMITTED `023552c8fd` 2026-10-13, local; not shown on the real screen
+## 111. An overlaid Python console or report view over a TechDraw page drawn by bgfx: the text is scrambled after a change of theme -- OPEN, four points not answered; by theme: Dark over the page, Classic everywhere, Light fine; the text outline suspected (the reporter 17:10); REPRODUCED 2026-10-13 20:15: contrast, not corruption; 98 and 112 cure Dark, a change for Classic not built; the Classic part COMMITTED `905d023394` 2026-10-13, local; one point for the reporter (the console's ground under Dark is dark, not the tree items'); the ground ANSWERED 2026-10-13 23:04: by the tree's automatic item background setting, else the widget's own background; as ruled in the build r15 (23:20), not committed; as ruled COMMITTED `023552c8fd` 2026-10-13, local; not shown on the real screen; STAGED 2026-10-14 08:10
 
 **2026-10-13 17:06, the reporter, with a screenshot:** "new defect and request.
 for python console and report view if overlaid on top of a techdraw page
@@ -15487,7 +16412,7 @@ for Classic is the reporter's to see, not asked as a point. The four
 failing claims are said to be the test's own (a panel too narrow for
 what it asks), from before the change; not looked at by the note-taker.
 
-## 112. The background of a TechDraw page's view the same as the 3D view's (a change request) -- OPEN, answered 2026-10-13 17:12: around the sheet, the gradient too, the bgfx renderer's pages (the Qt-drawn ones too if easy), behind a setting that is on by default; COMMITTED `2a317f254e` 2026-10-13, pushed 19:24, not staged; no check box in the preference page yet
+## 112. The background of a TechDraw page's view the same as the 3D view's (a change request) -- OPEN, answered 2026-10-13 17:12: around the sheet, the gradient too, the bgfx renderer's pages (the Qt-drawn ones too if easy), behind a setting that is on by default; COMMITTED `2a317f254e` 2026-10-13, pushed 19:24, not staged; no check box in the preference page yet; STAGED 2026-10-14 08:10; the check box COMMITTED `463a36a58b` 2026-10-14, local; STAGED 2026-10-14 10:36
 
 **2026-10-13 17:08, the reporter:** "new request, techdraw page background same
 as 3d view"
@@ -15587,7 +16512,7 @@ its own colour (`Colors/Background`). The note-taker's note: until a
 check box is there, the setting is reached by the parameter editor (or
 the settings search, if it lists the key -- not shown).
 
-## 113. A double click on Binder008 under Lens003: "self linking" in the report view -- OPEN, the live session read; two points not answered; ANSWERED 2026-10-13 23:04: a self link allowed for a hidden-scope link, a binder at the root has itself as its context; as ruled in the build r15 (23:20), not committed; WORKS on the build r15, COMMITTED `56504486e6` 2026-10-13, local; the real double click under Lens003 not tried
+## 113. A double click on Binder008 under Lens003: "self linking" in the report view -- OPEN, the live session read; two points not answered; ANSWERED 2026-10-13 23:04: a self link allowed for a hidden-scope link, a binder at the root has itself as its context; as ruled in the build r15 (23:20), not committed; WORKS on the build r15, COMMITTED `56504486e6` 2026-10-13, local; the real double click under Lens003 not tried; STAGED 2026-10-14 08:10
 
 **2026-10-13 17:40, the reporter:** "new defect, check live session. when double
 click Binder008 in tree view grouped under Lens003, I got error in report
@@ -15775,6 +16700,1405 @@ try after a restage. And this run also shows entry 105 on the committed
 code by name: `Binder008` in the error after the migration recompute,
 `Sketch043` and `Pad033` Valid.
 
+## 114. A crash: switching the theme to Dark by Tools > Preset configurations > Themes -- OPEN; the log and the dump read: a destroyed observer of TechDraw's Colors settings is called; a candidate by reading, entry 112's page view observer never detached; one point not answered; REPRODUCED 2026-10-14 on the staged copy, the candidate RIGHT; the fix in a build, not committed; the fix COMMITTED `778bde3979` 2026-10-14, local, waiting for the word to push and restage; STAGED 2026-10-14 10:36
+
+**2026-10-14 09:00, the reporter:** "new crash. check live cdb and crash dump. I
+am switching theme to dark using Tools -> Preset configurations -> Themes
+-> Dark theme"
+
+READ by the note-taker on the reporter's word -- the live debugger's LOG,
+the program's short crash log and the DUMP. The live debugger
+(`cdb.exe`, process 91176) and the crashed program under it (`FreeCAD.exe`,
+process 126244, "not responding") were NOT touched: nothing typed into
+them, nothing attached to them; they still stand at the second chance.
+The dump was opened OFFLINE by a second debugger of the note-taker's own
+(its output to a file, a limit of 90 s; it ended by itself), eight reads
+and no more.
+- The session: the reporter's copy under cdb (`tools\fcad-user-cdb.cmd`),
+  the stage of 08:10 today (`7d5698c950`), started 08:52:40, up for 6 min
+  20 s at the crash. TechDraw's modules were loaded in it (the log:
+  `TechDraw.pyd`, `TechDrawGui.pyd`).
+- The log `D:\works\sw\tools\dbg\cdb_fcad_user.log`: "Access violation
+  - code c0000005 (first chance)" at 08:59:00, "Attempt to read from
+  address 00007fff00000009", in
+  `FreeCADBase!Base::Subject<char const *>::Notify+0x3e`
+  (`src\Base\Observer.h` @ 185), the instruction `call qword ptr
+  [rax+8]` with rax = 00007fff00000001 -- a call through the table of
+  an object whose memory holds something else. Then the dump written,
+  then the second chance.
+- The program's own short log,
+  `%APPDATA%\FreeCAD\crash-2026_10_14-08_59_10_889.log`: "native
+  exception 0xc0000005 at 00007FF83A7F939E (FreeCADBase.dll+0x16939e),
+  reading 0x7fff00000009", "event type 3, receiver QMenu" -- the
+  release of the mouse button on the menu.
+- The stack, from the crash outwards:
+  1. `Base::Subject<char const *>::Notify` (`Observer.h` @ 185) --
+     `(*Iter)->OnChange(*this, rcReason)`, the call of ONE observer of a
+     settings group
+  2. `ParameterGrp::_SetAttribute` (`Parameter.cpp` @ 755) -- the
+     notice to the group's old-style observers that a key was written
+  3. `ParameterGrp::SetUnsigned` (`Parameter.cpp` @ 926)
+  4. `ParameterGrp::insertTo` (`Parameter.cpp` @ 292, the copy of the
+     unsigned values), under four more `insertTo` (@ 257), one for each
+     group on the way down
+  5. `Gui::PreferencePack::applyConfigChanges`
+     (`PreferencePackManager.cpp` @ 173) <- `PreferencePack::apply` (@
+     119) <- `PreferencePackManager::apply` (@ 342)
+  6. `Gui::PresetsAction::applyPreferencePack` (`Action.cpp` @ 3300) <-
+     `PresetsAction::onAction` (@ 3270) <- `QMenu::mouseReleaseEvent`
+- The DUMP,
+  `D:\works\sw\tools\dbg\dumps\fcad_user_av_6428_2026-10-14_08-59-06-356_ed24.dmp`
+  (6.0 MB), read at the crash's own registers: the key being written is
+  "PreSelectColor"; the group is named "Colors", its parents "TechDraw",
+  "Mod", "Preferences" -- TechDraw's `Colors` settings.
+- Kept, outside the repository, in `..\dl\handson\2026-10-14\entry114`:
+  the whole debugger log (it is written over at the next start under the
+  debugger), the short crash log, the note-taker's eight debugger
+  commands and what they printed. The dump stays where the debugger
+  wrote it.
+
+The note-taker's reading, from the log and the dump: applying the Dark
+theme copies its values into the settings one by one; when it writes
+TechDraw's preselection colour, the group `Mod/TechDraw/Colors` tells its
+observers, and ONE OF THEM NO LONGER EXISTS -- an object that was
+destroyed without taking itself off the group's list. SHOWN by the dump:
+which group and which key. NOT shown by it: which object that observer
+was.
+
+A CANDIDATE, READ in the source, nothing run, NOT shown:
+- `QGVPage::Private` (`src/Mod/TechDraw/Gui/QGVPage.cpp`), the observer
+  a TechDraw page's view keeps, attaches to three groups when the view
+  is made (lines 154 to 160): the 3D view's, TechDraw's `General`, and
+  -- added by `2a317f254e` (entry 112, the page view's background
+  following the 3D view's, 2026-10-13) -- TechDraw's `Colors`:
+  `hGrpColors->Attach(this)`.
+- Its `detach()` (line 231) takes it off the first two only:
+  `hGrp->Detach(this)`, `hGrpGeneral->Detach(this)`. There is no
+  `hGrpColors->Detach(this)`.
+- So once a page's view has been destroyed -- the page closed, its
+  document closed, or the view made anew -- TechDraw's `Colors` group
+  keeps a pointer to it, and the next write of ANY key in that group
+  calls it: a theme (all three name TechDraw colours), or a colour
+  changed on TechDraw's preference page.
+- It fits what is shown: the group, a key of the group, a theme writing
+  it, the copy staged at 08:10 being the first to have `2a317f254e`.
+  Whether a page's view had been open and was gone before the switch is
+  NOT known -- the point below.
+
+NOT said, lettered for an answer:
+a. Before switching the theme in that session: had a TechDraw page been
+   open in a view and been CLOSED again -- or the document that has the
+   pages closed, reverted or loaded a second time? (If yes, the
+   candidate above is the path; if no page view was ever closed, it is
+   something else.)
+
+**2026-10-14 09:10, the build session: the candidate is RIGHT -- REPRODUCED
+on the staged copy; the fix in a build, not committed.** From the build session's message, which it stamps 09:11; written here 09:10.
+- "It is my fault: entry 112's commit 2a317f254e added
+  hGrpColors->Attach(this) to QGVPage::Private and no Detach."
+  "CONFIRMED in the source: QGVPage.cpp attaches to three groups (lines
+  156, 158, 160) and detach() took it off two."
+- "REPRODUCED on the staged copy of 08:10, offscreen, its own home (the
+  user's cdb session not touched): new
+  tests/gui/techdraw-colour-after-page-view-closed.py -- a page's view
+  opened, its document closed, then a theme applied: the session ends
+  with EXIT -1073741819, and its crash.log has the user's stack to the
+  line: Base::Subject<char const*>::Notify (Observer.h 185) <-
+  ParameterGrp::_SetAttribute (Parameter.cpp 755) <- SetUnsigned (926)
+  <- insertTo (292, 257 ...)."
+- "(A single SetUnsigned of PreSelectColor after the first close did NOT
+  end it -- the freed observer happened to be harmless there; the theme
+  after the second close did.)" "Result and crash log:
+  ..\dl\handson\2026-10-12\s1\g-e114-before-staged."
+- "So the answer to your question to the user is not needed for the
+  cause: any page view that has been destroyed leaves the dead observer
+  ... EVERY theme switch after that is at risk on the copy staged at
+  08:10; yesterday's copy of 16:55 did not have 2a317f254e and is not
+  affected."
+- "THE FIX, one line: hGrpColors->Detach(this) in
+  QGVPage::Private::detach(). In build r18 with the test; behind the
+  build the test and five neighbours run on it. Not committed yet. A
+  push and a restage of it need the user's word -- I ask them."
+The note-taker's notes: the point a above is NOT needed any more and is
+left unanswered without loss. Until a restage the reporter's copy can
+end at any theme switch -- and, by the same path, at a change of a
+TechDraw colour on its preference page -- once a TechDraw page's view
+has been closed in the session; in a session where no page view was
+ever destroyed it does not arise. It does not always end the program
+(the build session's first try did not): a freed observer may be called
+harmlessly, which is no safer.
+
+**2026-10-14 09:57, the build session: the fix COMMITTED `778bde3979`
+(09:27), local -- waiting for the reporter's word to push and restage.**
+From the build session's message, which it stamps 09:58; written here 09:57. SEEN in the commit: `src/Mod/TechDraw/Gui/QGVPage.cpp` (6 lines)
+and `tests/gui/techdraw-colour-after-page-view-closed.py`. The results
+of that test and of the five neighbours on the build with the fix are
+not in this message. The copy the reporter runs (staged 08:10, under the
+debugger since 09:35) still has the crash.
+
+**2026-10-14 09:58, the build session: the fix TESTED on the build r18 (of
+09:26), "which is the committed code 778bde3979 + 463a36a58b".** From the build session's message, which it stamps 10:01; written here 09:58.
+- "tests/gui/techdraw-colour-after-page-view-closed.py, offscreen: 6 of
+  6, EXIT 0 -- a page's view open; its document closed, the view gone; a
+  TechDraw colour written, the session goes on; a second page's view
+  open; a theme applied after it is gone, the session goes on; and
+  another theme. On the staged copy of 08:10 the same test ends at the
+  theme, EXIT -1073741819 (reported 09:11)."
+- "Neighbours on r18, none failing: techdraw-page-ground-as-3d-view 6
+  (real screen), theme-owns-techdraw-preselect 7, theme-switch-contrast
+  39, overlay-preset-follows-the-theme 45, revert-document 12."
+- "The two full suites were NOT run on r18."
+So the test is seen failing on the staged copy and passing with the fix.
+Still local, not pushed, not staged: the reporter's word for that is not
+given as far as either session has heard.
+
+**2026-10-14 14:41: TWO MORE CRASHES this morning, found by the build
+session in the reporter's crash logs (its message stamped 14:55), both on
+the copy staged 08:10, which lacked this entry's fix.**
+- READ by the note-taker, the short logs: "2026-10-14 09:34:56.101 FATAL
+  pid 116176 ... native exception 0xc0000005 at 00007FF83A7F939E
+  (FreeCADBase.dll+0x16939e), reading 0x8", "event type 3, receiver
+  QPushButton" -- the SAME instruction as the crash of 08:59; and
+  "2026-10-14 09:52:47.313 FATAL pid 32220 ... native exception
+  0xc0000005 at 000001D684615550, executing 0x1d684615550", "event type
+  3, receiver QPushButton" -- pid 32220 is the session the reporter
+  started under the debugger at 09:35.
+- Their dumps exist (`fcad_user_av_e61c_2026-10-14_09-34-47-285_c5d0.dmp`,
+  `fcad_user_av_adcc_2026-10-14_09-52-43-877_7ddc.dmp`). Opened offline by
+  the note-taker 14:41 (a second debugger, output to a file, a time
+  limit; it ended by itself): NO SYMBOLS -- the copy installed now is a
+  later build, so the dumps' own binaries are gone; the stacks show only
+  `FreeCADBase` around xerces' `XMLString::release` (the settings code
+  uses xerces). The 09:52 registers have the SAME PATTERN as the 08:59
+  crash's at `Base::Subject::Notify` (rdi = rdx - 0x10, r9 = 1, r12 = 4,
+  r13 = 0, the same flags), its instruction pointer in freed memory -- a
+  call through a dead observer that this time landed somewhere
+  executable.
+- Read by the build session, and by the note-taker on this evidence, as
+  the SAME crash as this entry's -- a theme or a setting written after a
+  TechDraw page's view had gone; the stage of 10:36 has the fix. The
+  build session asked the reporter to say otherwise. Kept in
+  `..\dl\handson\2026-10-14\entry114` (the two short logs and the
+  debugger's output).
+
+## 115. The 3D view's background does not follow its settings: radial is set, linear is shown, a change of the setting does nothing -- OPEN; the configuration says radial; the cause not found by reading; three points not answered; made precise 2026-10-14 09:50: colours respond at once, the pattern only at the next redraw (the mouse over the view) -- a candidate by reading: no redraw is asked for; point d ANSWERED 2026-10-14 09:54: both themes default to the simple colour; REPRODUCED 2026-10-14 09:57, the redraw fixed in a build, not committed; STAGED 2026-10-14 10:36; the themes to one colour COMMITTED `3f12b16dfa` 2026-10-14, local; the themes STAGED 2026-10-14 11:55
+
+**2026-10-14 09:38, the reporter:** "new defect, 3d view background color and
+gradient pattern does not follow settings. my preference is radial, what
+shows is linear and does not response to setting change"
+
+The note-taker's reading, not the reporter's words:
+- Two things are said to be wrong with the 3D view's background: its
+  COLOUR and its GRADIENT PATTERN. The pattern: the reporter has radial
+  set, the view shows a linear gradient. And a change of the setting
+  changes nothing in the view.
+- On which copy is not said; taken as the copy staged at 08:10 today,
+  which runs under the debugger since 09:35 (process 32220) -- started
+  again after the crash of entry 114.
+
+READ by the note-taker, nothing run, the running program not looked
+into (no word for that):
+- The reporter's configuration (`%APPDATA%\FreeCAD\user.cfg`, written
+  09:37), group `Preferences/View`: `Gradient` 0, `RadialGradient` 1,
+  `UseBackgroundColorMid` 1; the colours `BackgroundColor` 1010580735,
+  `BackgroundColor2` 2088533247, `BackgroundColor3` 1010580735,
+  `BackgroundColor4` 2088533247; the theme named is "Dark". So what is
+  STORED says radial, with a middle colour.
+- How the view takes it (`src/Gui/View3DSettings.cpp` line 264): at a
+  change of `Gradient` or `RadialGradient` -- linear if `Gradient` is
+  on, ELSE radial if `RadialGradient` is on, else none; set on every
+  viewer the settings object knows
+  (`View3DInventorViewer::setGradientBackground`, line 3589). The same
+  is done once when a view is made (lines 84, 85).
+- The render engine is fed the type from the viewer
+  (`View3DInventorViewer::Private::backgroundFeed`, line 1008: linear
+  if the viewer's node says LINEAR, else radial) and draws both
+  (`src/Gui/Renderer/BGFXViewEnv.cpp` line 578: a strip for linear, a
+  32-segment circle for radial).
+- By this reading a stored radial should show radial, and a change
+  should reach the view at once. THE CAUSE IS NOT FOUND by reading.
+- ONE THING THAT CAN GIVE LINEAR, a candidate for part of it, not
+  shown: every theme's file sets BOTH `Gradient` 1 and `RadialGradient`
+  1 (`src/Gui/PreferencePacks/Dark/Dark.cfg` lines 96 and 97; Light the
+  same; Classic `Gradient` 1, `RadialGradient` 0), and with both on the
+  code above takes LINEAR. So right after a theme is applied the view
+  is linear whatever the reporter had -- and the reporter applied a
+  theme this morning (entry 114). That does not explain a change of
+  the setting doing nothing afterwards, and the stored `Gradient` is 0
+  now.
+
+NOT said, lettered for an answer:
+a. SINCE WHEN: was the radial background right on yesterday's copy
+   (staged 16:55) and wrong since this morning's stage -- or since the
+   theme was switched to Dark this morning?
+b. WHICH CHANGE gets no response: the choice of pattern on the
+   preference page (linear / radial / one colour), the colours there,
+   or both -- and does a RESTART of the program show the radial
+   background?
+c. THE COLOUR: what is wrong with it besides the pattern -- colours
+   other than the ones set, or only the way they are laid out?
+
+**2026-10-14 09:50, the reporter:** "entry 115. color change is responsive
+instantly. gradient pattern change not, but it does apply if I move mouse
+over 3d view, even with preference dialog open"
+
+The note-taker's reading, not the reporter's words:
+- A change of the background's COLOURS shows in the 3D view at once:
+  nothing wrong there (point c answered -- the colour itself is not the
+  defect).
+- A change of the PATTERN (linear / radial / one colour) does NOT show
+  at once. It shows as soon as the mouse moves over the 3D view, with
+  the preferences dialog still open (point b answered: it is the
+  pattern; no restart is needed).
+- So the setting IS taken; what is missing is the view being drawn
+  again when the pattern changes.
+
+A CANDIDATE, READ in the source, nothing run, NOT shown:
+- The colours' handler (`src/Gui/View3DSettings.cpp` line 425) ends in
+  the viewer's `setBackgroundColor`, which has the view drawn again.
+- The pattern's handler (line 264) calls
+  `View3DInventorViewer::setGradientBackground` (line 3589): it writes
+  the pattern into the background node by
+  `SoFCBackgroundGradient::setGradient`, a plain assignment that tells
+  nobody (`SoFCBackgroundGradient.cpp` line 161), and sets the
+  background's switch ONLY IF its value changes (lines 3603, 3604).
+  Between linear and radial the switch keeps its value, so nothing is
+  told and nothing is drawn until something else draws the view -- the
+  mouse over it.
+- From one colour to a gradient, or back, the switch does change: by
+  this reading THAT change should show at once. Not said by the
+  reporter either way.
+- By `git blame` both halves are old: the "only if it changes" of
+  2020, the pattern written into the node of 2023. So by reading this
+  is NOT a regression of today's stage -- point a (since when) is not
+  needed for the cause. The reporter met it today, by the note-taker's
+  guess, because the theme switch had turned the pattern linear and
+  they set it back.
+
+ONE NEW POINT, the note-taker's, lettered for an answer:
+d. WHAT A THEME DOES TO THE PATTERN. The Dark and the Light theme each
+   write `Gradient` 1 AND `RadialGradient` 1, and with both on the
+   program shows LINEAR -- so applying a theme turns a radial background
+   linear (which, by the note-taker's guess, is how the reporter came
+   to see linear this morning). Should a theme (1) leave the pattern as
+   the user has it, (2) give RADIAL, as its file seems to mean by
+   naming it, or (3) stay as it is, linear?
+
+**2026-10-14 09:54, the reporter answers point d:** "change both theme to
+default to Simply color"
+
+The note-taker's reading, not the reporter's words:
+- "both theme": the two the point named, DARK and LIGHT.
+- "Simply color": the choice "Simple color" of the preference page
+  (Display > Colors: "Simple color", "Linear gradient", "Radial
+  gradient") -- ONE background colour, no gradient.
+- So each of the two themes is to write the pattern as the simple
+  colour: `Gradient` 0 and `RadialGradient` 0 (and `Simple` 1 for the
+  page's radio button), where each writes `Gradient` 1 and
+  `RadialGradient` 1 now. A theme then no longer turns the view linear;
+  it turns it to one colour -- a user who wants a gradient sets it
+  after applying the theme.
+- With this, and with the new request of 09:47 under entry 98, the
+  automatic item background under a theme as applied is the SINGLE
+  colour.
+
+READ in the theme files, nothing run -- one thing that follows:
+- The single colour each theme stores (`BackgroundColor`):
+  Dark 1010580735 = #3C3C3C; LIGHT THE SAME, 1010580735 = #3C3C3C
+  (`src/Gui/PreferencePacks/Light/Light.cfg` line 111); Classic
+  336897023 = #1414A3, a dark blue.
+- So with the simple colour as its default the LIGHT theme would show a
+  3D view in the same dark grey as Dark's -- its gradient colours
+  (`BackgroundColor2` #C3C3C3, `BackgroundColor3` #F6F6F6) are what
+  made it light until now.
+
+NOT said, lettered; not put as blocking:
+e. LIGHT's single colour: stay #3C3C3C (a dark view under the Light
+   theme), or get a light colour of its own -- and which.
+f. CLASSIC (`Gradient` 1, `RadialGradient` 0: linear) is not one of
+   "both"; taken as left as it is.
+The redraw at a change of the pattern (the candidate of 09:50) is the
+other half of this entry and stands as it was.
+
+**2026-10-14 09:57, the build session: REPRODUCED on the staged copy of
+08:10 -- the settings arrive, the REDRAW is missing; fixed in the tree,
+in a build r20, not committed. And what a theme leaves behind.** From the build session's message, which it stamps 09:58; written here 09:57.
+- "(1) By the parameters and by the PREFERENCE PAGE itself (its radio
+  buttons clicked, Apply) the pattern is followed: radial -> radial,
+  linear -> linear, one colour -> flat, and the colours follow -- when
+  the view is drawn again, which my probe does before each picture. So
+  the settings arrive; what is missing is the redraw, as the user said
+  at 09:50 and as you read: SoFCBackgroundGradient::setGradient assigns
+  and tells nobody, and between linear and radial the switch does not
+  change. FIXED in the tree: setGradient touches the node when the
+  pattern changes. New tests/gui/view-background-pattern-redraw.py
+  counts what the view's scene is told (a picture cannot test it:
+  taking one draws the view)."
+- "(2) The THEMES: applying Dark or Light stores Gradient True AND
+  RadialGradient True (Classic not looked at), the view draws LINEAR,
+  and the preference page then OPENS WITH 'Radial' SELECTED (read from
+  the page: radioButtonGradient False, rbRadialGradient True) -- the
+  page restores both buttons and the last one wins, the code asks
+  Gradient first. So after a theme the page says radial and the view is
+  linear; that is how a radial preference turned linear this morning (a
+  copy of the user's configuration of yesterday 14:52 already has both
+  stored true). NOT changed by me: which of the three the user wants is
+  your open point to them. Whatever they choose, the page and the view
+  should agree on what 'both on' means; I do that with their answer."
+The note-taker's notes: (2) is the reporter's first sentence of 09:38
+shown -- "my preference is radial, what shows is linear": the page SAID
+radial while the view drew linear. It is older than this morning: their
+configuration of yesterday 14:52 had both keys on. The reporter's answer
+of 09:54 (both themes to the simple colour) crossed this message; the
+note-taker's smaller point e (Light's single colour is Dark's dark
+grey) stands. Still to be settled by the build session, its own word:
+what "both on" means for the page and the view alike.
+
+**2026-10-14 09:58, the build session on the themes:** From the build session's message, which it stamps 10:01; written here 09:58. "the user's
+'change both theme to default to Simply color' is noted; I apply it to
+Dark.cfg and Light.cfg after build r20 ends (a build is running, no edits
+meanwhile). For Light's single colour I use #C3C3C3 -- its present top
+colour -- unless the user names another; said to them." So the
+note-taker's point e has a default, the build session's choice, open to
+the reporter's word: the Light theme's one-colour background #C3C3C3 (a
+light grey), not the #3C3C3C its file stores now. Classic is not spoken
+of.
+
+**2026-10-14 10:23: the reporter on the Light theme's colour -- said to
+the build session about 10:00 and 10:01, relayed by it; the note-taker
+did not hear it:** (1) "change light theme background simple color to its
+old center gradient color." (2) "wait for the background color, simple
+color is which setting? is it the gradient center color setting?"
+
+The build session's answer to (2), in its words: "the simple colour is
+its own setting, BackgroundColor; the gradient's centre/top is
+BackgroundColor2, the middle BackgroundColor4, the end/bottom
+BackgroundColor3. Light has BackgroundColor #3C3C3C (Dark's), 2 =
+#C3C3C3, 4 = #C3C3C3, 3 = #F6F6F6; Dark has #3C3C3C, 2 = #7C7C7C, 4 =
+#7C7C7C, 3 = #3C3C3C." And what it HOLDS: "What I understood and HOLD
+until they confirm ('wait'): both themes to the one-colour background;
+Light's BackgroundColor to #C3C3C3 (the value of its old centre colour),
+its gradient colours left; Dark's left at #3C3C3C unless they want its
+old centre #7C7C7C. NOT applied: the theme files are untouched." From the build session's message, which it stamps 10:23; written here 10:23.
+The note-taker's notes: (1) answers the note-taker's point e of 09:54 --
+Light's single colour is to be its old centre colour, #C3C3C3 -- and (2)
+then puts it on hold by the reporter's own "wait". NOT ANSWERED by the
+reporter since, as far as relayed: the confirmation; and Dark's single
+colour (#3C3C3C as stored, or its old centre #7C7C7C).
+
+**2026-10-14 10:23, the build session on the REDRAW: its first fix did not
+work; and the staged copy repaints at NO change of the pattern.** From the build session's message, which it stamps 10:23; written here 10:23.
+"my first fix (the node touched) did NOT ask for a redraw -- the
+background is not under the scene whose change draws the view. Put right
+in r21: the viewer asks for the redraw. The test now counts the paint
+events of the view's widget; on the STAGED copy of 08:10 it fails four
+claims, offscreen and on the screen alike -- linear to radial, radial to
+linear, to one colour, to radial from one colour: the view is not
+painted again in any of them (so the switch from a gradient to one
+colour is not shown at once either, which the user had not said)."
+The note-taker's note: this corrects the note-taker's reading of 09:50
+on one point -- a change between one colour and a gradient does NOT
+show at once either; the switch's change does not draw the view, for
+the reason the build session gives.
+
+## 116. A task: audit for signal connections and observers that are never released (after entry 114's crash) -- AUDITED 2026-10-14: no second case of 114's kind; seven findings of other kinds, two HIGH; fixes written for six, not applied; finding 5 to be fixed too (the reporter, 2026-10-14 11:41); six fixes COMMITTED `fbeac04f4c` 2026-10-14, local; finding 5 next; six fixes STAGED 11:55; finding 5 COMMITTED `adf1a2f6a5`, local
+
+**2026-10-14 about 10:04, the reporter -- said to the build session, relayed
+by it (its message stamped 10:23, written here 10:23); the note-taker
+did not hear it:** "spawn an agent to audit for missing signal auto
+disconnect"
+
+The note-taker's reading: after entry 114 (an observer left on a
+settings group by an object that was destroyed), the reporter asks for a
+search of the source for the same kind of fault -- connections and
+observers that are not released when their owner goes.
+
+THE AUDIT, as the build session reports it: "a read-only agent; I read
+its four worst findings in the source myself and they hold". Nothing of
+it read by the note-taker.
+- "No second case of entry 114's kind: every other parameter observer
+  detaches from every group it attached to."
+- "What it found, none of them from today's work":
+  1. "HIGH -- AssemblyGui::ViewProviderAssembly::setEdit connects the
+     MAIN WINDOW's workbenchActivated to a lambda on itself with no
+     context object, on every edit, keeping only the last handle;
+     unsetEdit never disconnects, the destructor only the last. After an
+     assembly edited twice is deleted, the next change of workbench
+     calls the freed provider. Came with the port of 2026-08-06."
+  2. "HIGH by structure, old upstream code -- MeshGui::MeshFillHole: its
+     connection to the application's signalChangedObject is released
+     only in finishEditing(); closing the view with the command running
+     leaves it."
+  3. "MEDIUM -- the same Assembly provider: two more connections
+     released only at the end of unsetEdit, past an early return, and
+     not in the destructor."
+  4. "MEDIUM, only with the DAG view on -- DAG::Model keeps a connection
+     per vertex to a view provider's icon signal, not released when the
+     model goes."
+  5. "MEDIUM, latent -- SelectionSingleton's constructor has a
+     function-static connection capturing the first instance's `this`;
+     there are per-view instances now."
+  6. "LOW -- Gui::Document: connectPinsReleased is the one of 27
+     connections its destructor does not disconnect (harmless today, the
+     slot uses no member)."
+  7. "LOW -- two single-shot timers with no context object (the Assembly
+     provider, Part's TaskAttacher)."
+- "Fixes for 1, 2, 3, 4, 6, 7 are written, not applied (a build is
+  running); 5 needs a member in a widely included header and is left
+  for a word."
+- "A note of the agent's worth keeping: Base::Subject::Notify walks its
+  observer set in place, so an observer destroyed from inside its own
+  OnChange would crash there even with a correct Detach."
+
+The note-taker's notes:
+- The reporter's words name "signal auto disconnect"; the audit covers
+  both the settings observers (entry 114's kind) and signal connections
+  -- how far it went through the source (all modules, or the ones
+  named) is not in the message.
+- NOT said by the reporter: whether the six written fixes are to go in
+  (taken as yes -- the audit was asked for after a crash), and the word
+  the build session waits for on finding 5.
+- The last note is a third kind, not a finding with a fix: an observer
+  destroyed inside its own notice. Not an entry.
+
+**2026-10-14 10:24, the build session on what the audit COVERED, "as the
+agent stated it".** From its message stamped 10:27, written here 10:24.
+- "LOOKED AT: every `Attach(`/`Detach(` outside the generated
+  *Params.cpp under src/Gui, src/Mod and src/App (attach matched to
+  detach per handle, the destructor opened for most); the console
+  observers; every signal `.connect(` under src/Gui (219 lines), src/Mod
+  (about 130) and src/App (about 95), compared member by member with the
+  connection members and the `.disconnect()` calls; Qt `connect` with a
+  lambda capturing `this` and no context object under src/Gui (102 in 37
+  files) and src/Mod (about 45), the 14 with a global sender one by one;
+  the 19 single-shot timers with no context; the 15 stored Qt connection
+  handles."
+- "NOT COVERED, in its words: src/Mod/*/App beyond what the greps
+  listed; src/Base beyond Observer.h and ParameterPy; anything in
+  Python; src/3rdParty; installEventFilter as a class (Qt drops a
+  deleted filter by itself)."
+- "NOT VERIFIED by it, listed for a second look, none of them fixed by
+  me: ViewProviderSketch's six edit connections (released at the end of
+  unsetEdit only); the two Gizmo classes' spin box lambdas; Coin event
+  callbacks added more often than removed in seven files;
+  Gui::DocumentModel's twelve discarded connections (used by the Sandbox
+  module's tree only); WorkbenchGroup's three; two PartDesign helper
+  objects."
+- "The fixes I wrote are for findings 1, 2, 3, 4, 6 and 7; you are right
+  that the user has not said 'fix them' -- they asked for the audit. I
+  put it to them as what I do next unless they say otherwise; finding 5
+  waits."
+The note-taker's note: so the audit is a search by pattern with its
+worst findings read; six further places are NAMED and not judged. Whether
+they get the second look is not said by anyone.
+
+**2026-10-14 11:41, the reporter:** "116, yes fix finding 5" -- the
+selection singleton's function-static connection that captures the
+first instance (the build session's "left for a word"): to be fixed
+too. The word, given to the note-taker, relayed to the build session
+11:42.
+
+## 117. Rework the dress-up editing manipulator, with default and per-edge radii; values entered in the view without the task panel; a survey of other CAD and a proposed design first (a change request) -- OPEN, said 2026-10-14; the survey and the design given to the note-taker 2026-10-14 12:28, the readings confirmed; the survey and the design WRITTEN 2026-10-14 12:39, `docs/OnViewValueEditing.md`, six points for the reporter; the six points ANSWERED about 2026-10-14 13:21, the design revised; outside-an-edit dropped and edge groups decided 2026-10-14 13:46; a visual hint proposed 13:47; the design AGREED in full 2026-10-14 13:53, not built
+
+**2026-10-14 11:41, the reporter:** "I'd like to rework dressup editing
+manipulator. make this an try. note that this fork support both default
+radius and per edge (one or two) radius. consider that. And in general, I
+want be able to enter text without task panel, by using editdatumlabel.
+survey what other CAD do and propose a design"
+
+The note-taker's reading, not the reporter's words:
+- "make this an try": make this an ENTRY -- this one.
+- THE MANIPULATOR of the dress-up features' edit (fillet, chamfer, and
+  the like) -- the handles drawn in the 3D view while the panel is open
+  (the reporter's question of 11:25 about the fillet's two arrows came
+  just before) -- is to be REWORKED.
+- It has to fit what this fork's fillet can hold: a DEFAULT radius for
+  every edge, and PER EDGE a radius of its own -- one, or two (a radius
+  at each end, a varying fillet).
+- IN GENERAL, not for the dress-ups alone: a value is to be ENTERED IN
+  THE VIEW, without going to the task panel, by the editable datum label
+  -- the box that comes up on a dimension label in the view, as the
+  sketcher's on-view parameters have it.
+- FIRST a SURVEY of how other CAD programs do this (handles on fillets
+  and chamfers, per-edge values, typing a value in the view), then a
+  PROPOSED DESIGN. Nothing to be built before the design is put.
+
+READ in the source, nothing run -- pointers:
+- The handles today: upstream's gizmos, ported 2026-09-24
+  (`a56e0777da`: "Fillet (radius on both faces of the first edge),
+  Chamfer (distance, second distance or angle), Thickness (value) and
+  Draft (angle)"); the fork's setback corner handles (2026-10-07). In
+  the fillet panel: `src/Mod/PartDesign/Gui/TaskFilletParameters.cpp`
+  (`setupGizmos`, line 215; two radius arrows for the FIRST edge only,
+  lines 305 to 313). The gizmo classes: `src/Gui/Inventor/Draggers/Gizmo.h`.
+- The fillet's values: `src/Mod/PartDesign/App/FeatureFillet.h` --
+  `Radius` (the default), `Segments` (`Part::PropertyFilletSegments`,
+  the per-edge values), `Corners`, `UseAllEdges`; the per-edge element
+  `Part::FilletElement` holds two radii (`r1`, `r2`;
+  `src/Mod/Part/App/PropertyTopoShape.h` line 415).
+- The editable label: `src/Gui/EditableDatumLabel.cpp` (with
+  `SoDatumLabel`); used today by the sketcher's on-view parameters
+  (`src/Mod/Sketcher/Gui/DrawSketchController.h`), and in
+  `MirrorViewer.cpp`, `PatternWidgets.cpp`, `TaskImage.cpp`.
+
+NOT said, lettered; none put as blocking:
+a. WHICH dress-ups: all those with handles today (fillet, chamfer,
+   draft, thickness) -- taken so, the fillet first by the reporter's
+   note on its radii.
+b. "In general": every feature's edit (a pad's length, a pocket's
+   depth, a pattern's count ...) may take a value in the view -- taken
+   so; the design to say where it starts.
+c. WHO surveys and proposes: relayed to the build session as its task;
+   the note-taker writes only this queue.
+
+**2026-10-14 12:28, the reporter:** "You do the survey and design and you
+assumptions are correct"
+
+The note-taker's reading:
+- The SURVEY of other CAD programs and the PROPOSED DESIGN are given to
+  the NOTE-TAKER, not the build session (the note-taker had taken them
+  as the build session's, point c).
+- "you assumptions are correct": the readings a and b stand -- all the
+  dress-ups with handles today (fillet, chamfer, draft, thickness), the
+  fillet first; and "in general" is every feature's edit, the design to
+  say where it starts.
+- The design is to be a document for the reporter to judge; nothing is
+  built from it until they say. Its place and commit are recorded here
+  when it is written.
+
+**2026-10-14 12:39, the note-taker: the SURVEY and the DESIGN written --
+`docs/OnViewValueEditing.md`, not built.** From a read of the source
+(an agent of the note-taker's, read-only, its findings with file and
+line) and six web searches; nothing run.
+- WHAT THE SOURCE SHOWS that bears on it: the fillet's per-edge values
+  are `Segments` -- per edge any number of (position, radius) points; two
+  radii are two points at 0 and 1, no separate r1/r2 in PartDesign. The
+  handles are bound to SPIN BOXES, not to properties, and come in fixed
+  pools: both radius arrows drive the DEFAULT radius only, on the first
+  edge only; no handle drives a per-edge value, on any dress-up. The
+  editable datum label is already used outside the sketcher -- the
+  patterns' clickable extent and spacing labels -- and both handles and
+  labels are fed to the Direct3D render engine BY THE SOURCE; NOT SEEN
+  RUN (the build session, 12:45: entry 118's arrow is fed the same way
+  and not seen -- "keep it a claim until someone looks"; the document
+  says so since `8054e44db8`, 12:41).
+- THE SURVEY (SolidWorks, Fusion 360, Inventor, Onshape, NX, Creo,
+  CATIA, SketchUp/Shapr3D, upstream FreeCAD), with its sources: one handle
+  per value with its number beside it; the number is the way in for
+  typing; per-edge values at their edges; a varying radius as points with
+  radius and position handles; values often per edge GROUP; typing during
+  a drag and Tab between values in the fast ones. Some of it is marked as
+  general knowledge, not from a page found.
+- THE DESIGN, in short: (1) one building block, an on-view value bound to
+  a property PATH (`Segments.Edge12[1].Radius`), with a handle and a
+  clickable label, rebuilt after each recompute -- no fixed pools; the
+  panel bound to the same path; (2) typing: click a label, Enter, Escape,
+  emptied = back to the default, Tab between values, a digit during a drag
+  opens the value; (3) the fillet: ONE arrow per radius on the face turned
+  to the camera, the default on one edge with markers on the others, own
+  values at their edges, varying points with position handles and a
+  context menu ("Vary along this edge", "Add a point here" ...); (4) the
+  same for chamfer, draft and thickness; (5) without the panel: first in
+  an edit with the panel hidden, then a selected feature's values shown
+  and typed in the view without an edit; (6) two settings; (7) nothing
+  new for the thin client or the render engine.
+- ORDER OF WORK proposed: the building block with the fillet's default
+  radius first; per-edge values; the other dress-ups; panel optional;
+  outside an edit.
+FOR THE REPORTER, in the document's last section: (a) one arrow or two;
+(b) which labels show at once; (c) how a varying radius is made in the
+view; (d) type while dragging; (e) how a feature's values are shown
+outside an edit; (f) edge groups.
+
+**2026-10-14 about 13:21, the reporter answers the design's six points:**
+"entry 117. a, one. b, the default radius always show in the top middle.
+others only show besides the handle when Tab or clicked (show highlight
+for the active handle). c, How other CAD does this? my thoughts are
+something pressable, maybe sit at the root of the arrow handle. each press
+toggle a state between default, per edge one radius, two radius. d, no
+need, active handle accepts typing is enought, I think. e, double-click is
+entering edit right? so what's the point of modify without entering edit.
+f, show me how would you implement it."
+
+Asked just before it, and answered by the note-taker in the session: "I
+don't get how 'without entering an edit at all' could possibly work. Did
+other CAD offer the same" -- yes: Creo's plain "Edit" shows a feature's
+dimensions without its full edit, SolidWorks' double-click on a dimension
+opens a Modify box with Rebuild; here it would be a property write and a
+recompute, as the property view does; values only, never references.
+
+The note-taker's reading and what was done:
+- a: ONE arrow per radius.
+- b: the DEFAULT radius's label ALWAYS shown, at the TOP MIDDLE of the
+  view; every other label only beside its handle while that handle is
+  ACTIVE (by Tab or a click), the active handle highlighted.
+- c: a PRESSABLE at the ROOT of each arrow; each press cycles the edge:
+  default -> its own one radius -> its own two radii -> default. The
+  survey's answer to "how other CAD does this": none found has a button on
+  the handle; they use a type choice in the dialog (Fusion, SolidWorks,
+  Onshape, CATIA) or, in an old Creo answer, a right-click on the radius
+  handle, "Add radius" -- so the button is this fork's own.
+- d: no typing during a drag; the ACTIVE handle takes typed digits.
+- e: a question, read as doubting the step -- answered (above and in the
+  document): in FreeCAD a double click IS the edit, and the edit itself
+  will take typed values with the panel hidden, so the step is PROPOSED
+  TO DROP; it stays out of the order of work unless the reporter wants
+  it.
+- f: "show me how": a section added, "Edge groups: how it would be
+  built" -- Form A (recommended): groups kept inside `Segments`, an edge
+  naming its group, saved so that older builds fall back to the default
+  radius, the kernel unchanged, one arrow per group, Tab once per group;
+  the two-radii direction problem across edges and its two ways out;
+  tests. Form B: groups as shared expressions, no new storage.
+- The document REVISED to these answers: `docs/OnViewValueEditing.md`,
+  commit `39f35dd406`, local, not built.
+- SEEN ON THE WAY, by reading only, recorded in the document's 6.4, not
+  an entry: `PropertyFilletSegments::connectLinkProperty`
+  (`src/Mod/Part/App/PropertyDressUp.cpp` 184 to 197) builds both the old
+  and the new per-point expression path from the OLD name, and steps its
+  index twice -- an expression on a per-point radius of a renamed edge
+  may be left pointing at the old name. Told to the build session.
+LEFT for the reporter: whether outside-an-edit is dropped; whether edge
+groups are wanted, and in which form.
+
+**2026-10-14 13:25, the reporter, a second thought on point c:** "or, maybe
+that's better and more general, make the root of the handle pressable,
+like show it as a button, when clicked show the context menu to selection
+various options. for fillet, that's the mode selection (default, per edge
+one radius, two radius), and a remove action. for other features put their
+own operations"
+
+The note-taker's reading and what was done:
+- It REPLACES the cycling press of 13:21: the root of EVERY handle is
+  drawn as a button; a click opens a context menu.
+- The fillet's edge handle: the mode as three checkable entries
+  ("Default radius", "One radius", "Two radii") and "Remove" -- read as
+  taking the edge out of the fillet, as the panel's remove does (the
+  note-taker's reading; "a remove action" is not said further).
+- Other features: their own operations in the same menu. The document
+  gives examples, marked as the note-taker's, to be settled feature by
+  feature (Pad/Pocket: Reversed, Symmetric, the length type; Revolution,
+  Hole, Draft, Thickness, Chamfer likewise); it notes that several
+  handles flip "Reversed" on a plain click today, which the menu would
+  take over.
+- The document revised: `docs/OnViewValueEditing.md`, commit `d488495906`,
+  local, not built.
+
+**2026-10-14 13:28, the reporter:** "when there is active handle, override
+space bar handling to activate the context menu as if the root button is
+pressed. Override enter to start typing in dimension"
+
+The note-taker's reading and what was done:
+- While a handle is ACTIVE (by Tab or a click): SPACE opens its context
+  menu, as a press on its root button would; ENTER opens its label for
+  typing (the note-taker: with the current value selected). Only while a
+  handle is active -- otherwise Space keeps its meaning, today "Toggle
+  visibility" (`StdCmdToggleVisibility`, `src/Gui/CommandView.cpp` 951,
+  read), and Enter its own.
+- Once the label is open: Enter commits, Escape restores and leaves the
+  handle active -- the note-taker's addition, marked so in the document.
+- The document revised: `docs/OnViewValueEditing.md` 3.2, commit
+  `aa4c5ee4ab`, local, not built.
+
+**2026-10-14 13:46, the reporter:** "yes, drop. about the group, my idea is
+for all customized edge store a new group id auto assigned when first
+enter the customization  mode. user can change the group id to join. in
+the context menu add a selection for group. when an edge's radius (one or
+two, or point ratio, whatever), mirror the same change to all edge with
+the same group id. when activate a handle (by click or tab), hight all in
+the same group. enter/space act only on the actual activated handle, but
+the value change will be mirrored just the same"
+
+**2026-10-14 13:47, the reporter:** "suggest a visual hint to differentiate
+default and customized edge handle"
+
+The note-taker's reading and what was done (`docs/OnViewValueEditing.md`,
+commit `92f4b73baf`, local, not built):
+- "yes, drop": the step "outside an edit" (3.5.2) is DROPPED.
+- GROUPS, the reporter's own rule, replacing the two forms the
+  note-taker had sketched: every CUSTOMISED edge carries a group id,
+  assigned automatically (a new one) when it first leaves the default;
+  the root button's menu gets a "Group" entry to change the id and so
+  JOIN another group; any change to an edge's values -- one radius, two
+  radii, a point's position, whatever -- is MIRRORED to every edge of its
+  group; activating a handle highlights its whole group; Enter and Space
+  act on the active handle only, the change mirrored all the same.
+- How the note-taker would build it (section 6): the id stored per edge
+  in `Segments` beside the edge's own values, so the file stays complete
+  and an older build makes the same fillet (only the mirroring is lost
+  there); the mirroring done in the property's setter, so the panel, the
+  handles and Python all mirror alike. The note-taker's own smaller
+  proposals, marked so: the newest write wins if two members' expressions
+  disagree; a "reversed in its group" flag per member for two radii (each
+  edge's start and end follow its own direction); Tab unchanged (every
+  handle, not once per group).
+- THE VISUAL HINT, proposed in 3.3: the root button's SHAPE says the
+  mode (hollow ring = default, filled disc = one radius, a filled disc at
+  each end = two radii, a ticked disc = varying) -- shape, not colour
+  alone; COLOUR says default or group (default handles neutral, thinner,
+  part-transparent; customised handles solid in their group's colour from
+  a short palette, the id small inside the disc); optionally the edge
+  itself banded in its group's colour while editing.
+LEFT for the reporter: the other features' menu entries, feature by
+feature; the note-taker's smaller proposals in section 6; whether the
+visual hint is what they want.
+
+**2026-10-14 13:49, the reporter:** "in the context menu for group selection,
+for the item label, lead with group id, then follow by short summary of the
+setting (radius, and stuff)"
+
+The note-taker's reading and what was done: each item of the "Group"
+sub-menu reads as the group's ID FIRST, then a short summary of its
+setting. The note-taker's forms in the document (6.1), for the build to
+settle: "2   R 3 mm"; two radii "3   R 3 mm -> 5 mm"; varying "4   R 2 to 6
+mm, 4 points"; the member count at the end where it helps, "(3 edges)";
+the edge's own group checked; the group's colour swatch beside it, the id
+the same one shown in its root buttons. `docs/OnViewValueEditing.md`,
+commit `cee2c9033d`, local, not built.
+
+**2026-10-14 13:50 and 13:51, the reporter:** "visual hint, different handle
+color will do" -- "root button same color as handle"
+
+The note-taker's reading and what was done: default and customised edges
+are told apart by the HANDLE'S COLOUR alone -- one colour for the default
+handles, another for the customised -- and the ROOT BUTTON takes the same
+colour as its handle. The note-taker's proposal of 13:47 (the button's
+shape for the mode, a colour per group, a band along the edge) is not
+taken. NOT said: one colour for all customised handles or one per group --
+taken as ONE; a group shows itself by the highlight when a handle is
+active. `docs/OnViewValueEditing.md`, commit `0901981604`, local, not built.
+
+**2026-10-14 13:53, the reporter:** "agree with your proposal"
+
+The note-taker's reading: said to the note-taker's list of what was left --
+the smaller proposals of section 6 (in an expression conflict inside a
+group the newest write wins and the panel marks the others; a "reversed in
+its group" flag per member for two radii; Tab visits every handle) are
+AGREED. Read also as taking the other features' menu entries of 3.3 as a
+starting set, settled when each feature is built, and one colour for all
+customised handles -- the note-taker's reading of a short answer, marked
+so in the document. With it the design has NOTHING LEFT OPEN:
+`docs/OnViewValueEditing.md`, commit `fae1b1b149`, local. Building it is not
+yet asked for -- it waits for the reporter's word.
+
+**2026-10-14 13:54, the reporter:** "each group show its own color. choose
+color from a set of distinct ones (auto generated)"
+
+The note-taker's reading and what was done: every group's handles and
+root buttons in a colour of their own, generated automatically and
+distinct -- the note-taker's reading of 13:51 (one colour for all
+customised handles) is REPLACED. The note-taker's way, in the document
+for the build to settle: a hue per group id stepped by the golden ratio
+at one saturation and value that read on both themes, skipping hues too
+near the default handles' colour or the highlight, so a group keeps its
+colour across sessions without storing it; the group sub-menu shows each
+group's colour beside its label. `docs/OnViewValueEditing.md`, commit
+`ea43e34a7d`, local, not built.
+
+## 118. The scene light's manipulator does not work: no draggable arrow -- OPEN; it is Coin's directional light dragger by the source; the cause not found by reading; two points not answered; NOT REPRODUCED 2026-10-14 14:41, on the screen
+
+**2026-10-14 11:42, the reporter:** "also new entry, the scene light
+maniuplator is not working. I don't think it uses the shadow light (which
+is actually directional light) manipulator, because I don't see the
+draggable arrow"
+
+The note-taker's reading, not the reporter's words:
+- The handle that turns the scene's light in the view (entry 63, the
+  headlight's direction, from the Display style menu) does not work:
+  the reporter sees NO draggable arrow.
+- The reporter's guess: it is not the manipulator the shadow light had
+  -- Coin's directional light dragger, with its arrow -- that entry 63
+  asked for.
+- On which copy is not said; taken as the copy staged 10:36 today.
+
+READ in the source, nothing run -- pointers, and the guess checked:
+- It IS Coin's directional light dragger:
+  `View3DInventorViewer::setLightManipulator`
+  (`src/Gui/View3DInventorViewer.cpp` line 6953) makes a
+  `SoFCDirectionalLightDragger` -- the subclass of Coin's
+  `SoDirectionalLightDragger` the shadow light's `SoFCDirectionalLight`
+  carries (`src/Gui/SoFCDirectionalLight.h` lines 42, 95) -- and gives
+  its arrow an orange of its own (lines 6966 to 6981). The comment over
+  it (line 6842) quotes entry 63: "why note use coin light manipulator
+  like what shadow light is using". So by the source the reporter's
+  guess does not hold; that the arrow is not SEEN is the defect.
+- It is hung under an annotation in the view's aux root (lines 6990 and
+  after), and -- because nothing Coin draws by itself reaches the screen
+  under the Direct3D back end, the Windows default -- it is fed to the
+  render engine as an OVERLAY CAPTURE of its own
+  (`OverlayLightManip`, lines 696, 718, 1483 to 1491). Its events go to
+  it first by an action of its own (`lightManipEvent`, line 6864).
+- The button that switches it on: the Display style menu's light
+  direction button (`src/Gui/DisplayOptions.cpp` lines 237 to 243); it
+  closes the menu when switched on.
+- Made 2026-10-09 and 2026-10-10 (`b20c825573`, `8fed56f3df`); entry 63
+  was staged 2026-10-10 09:44. Whether it ever showed its arrow on the
+  reporter's screen is not recorded here.
+- THE CAUSE IS NOT FOUND by reading.
+
+NOT said, lettered for an answer:
+a. HOW it was switched on, and what IS seen: the light direction button
+   of the Display style menu? After it, nothing at all in the view -- or
+   something (a handle, a ball) without its arrow? Does a drag in the
+   middle of the view turn the light?
+b. Has the arrow been seen on an earlier stage (since 2026-10-10), or
+   never?
+
+**2026-10-14 14:41, the build session: NOT REPRODUCED, on the screen.**
+From the build session's message, which it stamps 14:55; written here 14:41.
+- "tests/gui/display-style-menu.py on the SCREEN ('Direction' in the
+  Display style menu): a fresh profile on r26 38/38; the user's user.cfg
+  of 11:23 today (copied, read only) on r26 and on the copy STAGED 11:55:
+  the handle is the SoFCDirectionalLightDragger, the orange arrow drawn
+  over the model in the middle of the view (picture
+  g-e118-user-staged\handle-up.png, s1), its shaft found 175 px long, a
+  drag of it turns the headlight (7.2 deg) and not the camera, Escape
+  takes it down."
+- "The one failure with the user's cfg, 'the preference is untouched',
+  is the test assuming a fresh profile, not the light."
+- "So the difference is in how the user meets it -- one view, a 10 mm box
+  in the test." Asked of the reporter by the build session: "how switched
+  on and what is seen (nothing, or a small grey disc -- with the light
+  straight into the screen the arrow points away from the viewer and only
+  its base shows); which document and whether the view was split into
+  cells; ever seen on an earlier stage."
+The note-taker's note: the build session's guess about a light "straight
+into the screen" would fit "I don't see the draggable arrow" without any
+defect in the drawing -- the arrow seen end on. The picture was not
+opened by the note-taker.
+
+## 119. A split view overlaid by a task panel: a splitter drag released over the panel's transparent area neither closes the split nor clears the drag's frame -- FIXED `f83174eb42` (called "entry 117" in its message), local; every handle drag to end itself when tracking is lost, in work; STAGED 2026-10-14 11:55; the lost-tracking rule COMMITTED `721b639bca`, local
+
+**2026-10-14 about 11:15, the reporter -- typed to the build session, relayed
+by it:** "new defect. with a split view overlaid by task panel, if I drag
+the splitter to close that split and release the mouse inside the
+transparent area of the panel, the view is not closed, and the frame
+visual stays. Looks like the mouse release event is not passthrough"
+
+**2026-10-14 about 11:50, the reporter -- to the build session:** "Will a
+split drag handle got notified it lost tracking? That's the place to hide
+the tracking frame so they do not stall. Same for other handle dragging"
+
+From the build session's message, which it stamps 11:55; written here 11:49; the reporter's words in it typed to the build session, the note-taker did not hear them.
+- The fix: "the overlay no longer passes on a release whose press it did
+  not pass on; the test fails on the staged copy (border gets no release)
+  as it should." COMMITTED `f83174eb42` ("Gui: a mouse release goes where
+  its press went, not through an overlay"; `src/Gui/OverlayManager.cpp`),
+  LOCAL, not pushed, not staged. The test,
+  `tests/gui/overlay-release-goes-with-its-press.py`, is NOT in the
+  commit -- untracked in the tree as this is written (the note-taker's
+  `git status`).
+- THE NUMBER: the build session called this "entry 117" in that commit's
+  message and its test "before your 117 existed"; the queue's 117 is the
+  dress-up manipulator, and this is 119. The commit message stays as it
+  is.
+- To 11:50, the build session's answer: "no, Qt sends no event when an
+  implicit press grab ends; I am making every drag of that kind end
+  itself when its button is found up." In work.
+The note-taker's reading: the release over the panel was passed through
+to the view below, which never had the press -- the splitter, which had
+the press, never got its release, so its drag neither finished nor
+cleared its frame. The reporter's second word asks for a sturdier rule
+for every handle: a drag that has lost its mouse ends by itself.
+
+## 120. What gates an overlay's transparent mode; with the item background, transparency in all cases (a change request) -- OPEN, the gate read in the source
+
+**2026-10-14 15:46, the reporter, one message for entries 120 to 122:** "new request, check what is gating the transparent overlay mode. with item background feature, we can enable transparency mode in all cases. btw, check why the report view has a different background in overlay non-transparency mode than non-overlay mode. Python console shares the same background color. another request, make overlay auto hide hint color theme aware, current color is not visible in dark theme"
+
+The note-taker's reading, not the reporter's words:
+- Find what keeps an overlay panel from being transparent although its
+  transparent mode is on, and -- now that the items and the text have a
+  ground of their own (entry 98), which keeps them readable over anything
+  -- let transparency hold IN ALL CASES.
+
+READ in the source by the note-taker, nothing run:
+- `OverlayTabWidget::isTransparent` (`src/Gui/OverlayWidgets.cpp` 1296 to
+  1308): the panel's transparent switch (`actTransparent`, saved per panel
+  as `Transparent`) -- and, while `View/DockOverlayAutoView` ("Auto hide in
+  non 3D view", on by default) is on, NOT transparent when the active view
+  is MAXIMIZED and does not answer "CanPan" (a view that cannot be panned:
+  not a 3D view). Its documentation says so: "Transparent panels also turn
+  opaque over a maximized view that cannot be panned"
+  (`src/Gui/OverlayParams.py` 104 to 107).
+- That is the one condition found in the panel; the overlay MODES
+  (`OverlayManager.cpp` about 978 to 992: "transparent all", "transparent
+  none", toggle) set the switch itself, they do not gate it.
+- So, by this reading, "in all cases" means: drop the maximized
+  non-panning view condition from `isTransparent` (the auto-hide part of
+  that setting stays as it is). NOT shown that nothing else gates it --
+  the build session to look on the screen.
+
+NOT said, not put as blocking: whether the SETTING's documentation is to
+change with it (taken as yes: its second sentence goes).
+
+## 121. The report view's background in a non-transparent overlay differs from its background when not overlaid; the Python console's does not -- OPEN, a candidate by reading
+
+**2026-10-14 15:46, the reporter:** the second part of the message above --
+"btw, check why the report view has a different background in overlay
+non-transparency mode than non-overlay mode. Python console shares the
+same background color."
+
+The note-taker's reading: in an overlay whose transparent mode is OFF,
+the report view shows another background than when it is docked as
+usual; the Python console shows the same in both -- so the report view
+should match it, by the reporter's words.
+
+A CANDIDATE, read in the source, nothing run, not shown:
+- The overlay style sheet in use under Dark
+  (`src/Gui/Stylesheets/overlay/Dark-Outline.qss`, chosen when none is
+  named, `OverlayManager.cpp` 264 to 290) gives every `QTextEdit` and
+  `QPlainTextEdit` in an overlay a ground of its own, `background :
+  #6e6e6e` (lines 6 to 17). The report view is a text box of that kind.
+- The Python console takes its colours from the editor's settings (the
+  theme's Editor colours), set on the widget itself, which would win over
+  that rule -- so it looks the same overlaid or not. By the note-taker's
+  reading only; the build session to show which rule paints each.
+
+## 122. The overlay's auto-hide hint colour to follow the theme -- under Dark it cannot be seen (a change request) -- OPEN, read in the source
+
+**2026-10-14 15:46, the reporter:** the third part of the message above --
+"another request, make overlay auto hide hint color theme aware, current
+color is not visible in dark theme"
+
+The note-taker's reading: the strip that hints where an auto-hidden
+overlay panel will come out (`OverlayProxyWidget`) is to take a colour
+that shows under the theme in use; under Dark today it cannot be seen.
+
+READ in the source, nothing run:
+- The hint's colour is a style sheet property, `qproperty-hintColor` of
+  `Gui--OverlayProxyWidget`; its default in the code is rgba(50, 50, 50,
+  150) (`src/Gui/OverlayWidgets.cpp` 98).
+- `Dark-Outline.qss` (line 105), the sheet used under Dark: rgba(50, 50,
+  50, 0.6) -- a dark grey at 60% over a dark 3D view; `Light-Outline.qss`
+  (line 100): rgba(250, 250, 250, 0.6) -- a near-white over a light view.
+  So each theme's hint is the colour of the view it lies on -- by this
+  reading both are hard to see, the Dark one as the reporter says. The
+  older sheets (`Dark_overlay.qss` and others) use rgba(100, 100, 100,
+  0.6).
+NOT said: what colour, and whether "theme aware" means the theme's own
+accent or a contrast to the 3D view's background behind it (which entry
+98 now knows, by pattern and side) -- the note-taker's proposal: a colour
+taken against the view's background where the hint lies, as entry 98's
+ground is; not put as blocking.
+
+## 123. The selection view in an overlay: its list column backed as the property editor is, the same colour and alpha (a change request) -- OPEN, read in the source
+
+**2026-10-14 15:49, the reporter:** "new request, for selection view in
+overlay mode, set the same background color and alpha for its list column
+as the property editor"
+
+The note-taker's reading, not the reporter's words: in an overlay, the
+selection view's list is to have the property editor's background -- the
+same colour, at the same opacity -- behind its rows, so the two panels
+look alike.
+
+READ in the source, nothing run:
+- The property editor in an overlay paints its ROWS, the whole width
+  (`PropertyEditor::overlayRowBackground`,
+  `src/Gui/propertyeditor/PropertyEditor.cpp` 216 to 230): one row in two
+  with the overlay item ground (`OverlayManager::overlayItemBackground`,
+  the automatic ground or the item colour of entry 98), the other with the
+  palette's alternate colour -- both at the overlay's alpha
+  (`overlayAlpha`).
+- The selection view, since entry 98's request of 11:08 (`04e05bbd38`),
+  paints only BEHIND THE TEXT and its icon, as the tree does, with
+  `OverlayManager::overlayTextGround` (`OverlayGroundDelegate`,
+  `src/Gui/Selection/SelectionView.cpp` 83 to 110; also its pick list,
+  173).
+- So, by this reading: the selection view's list takes the property
+  editor's row painting -- whole rows, the same two colours, the same
+  alpha -- in place of the text-only ground.
+
+NOT said, lettered, not put as blocking:
+a. The ALTERNATING rows (the property editor's every second row in the
+   palette's alternate colour): taken as part of "the same background".
+b. The selection view's PICK LIST (the second list, the pick-selection
+   list) -- taken as the same.
+
+## 124. A selected feature of a hidden body is drawn on top but cut off by the view's clip planes -- OPEN, to be fixed by way 2 (the reporter's choice)
+
+Found by the build session on 2026-10-13 (20:14) while it worked on entry
+108, and recorded there as a side finding: on the copy staged 16:55 and
+since, a small model (a body with a pad and a pocket), the body HIDDEN,
+the pad SELECTED (by script or in the tree) -- the pad is drawn on top,
+but only a three-sided corner piece of it, the corner nearest the camera
+(`..\dl\handson\2026-10-12\s1\g-e108g-staged\b-selected-Pad_.png`).
+
+**2026-10-14 16:00 to 16:15, the reporter and the note-taker:**
+- 16:00, the reporter: "regarding the show on top clipping problem, any
+  suggesstion how to fix it" -- answered by the note-taker from the
+  source (under entry 108): the view's near and far planes come from
+  Coin's auto clipping over a bounding box of the scene that a hidden
+  body is not in; three ways.
+- 16:14, the reporter: "will this affect other view scene?" -- answered
+  (under entry 108): way 2 is per view and touches no shared cache; way
+  1 could reach other views through the shared bounding-box caches.
+- between 16:15 and 16:41 (the note-taker first wrote 16:15, the time
+  of its own answer before it), the reporter: "way 2 then"
+
+THE NOTE-TAKER'S READING: the reporter chooses WAY 2, and with it asks
+for the fix -- an entry of its own, this one. Way 2: in the view's own
+bounds hook (`View3DInventorViewer::onGetBoundingBox`,
+`src/Gui/View3DInventorViewer.cpp` 5121, reached from the per-view
+`RendererBounds` node, 5140 to 5155), also unite the bounds of every
+entry in that view's on-top group, taken from its view provider by object
+and sub-name -- the bounds of the shape itself, its visibility not asked;
+cacheable per selection change. Only a view that draws the object on top
+is affected; the one cost is that view's depth precision when the on-top
+object is far from the rest (way 3 is the remedy if that shows).
+Not started; relayed to the build session 16:41.
+
+## 125. The omni search: a float property's value without trailing zeros (a change request) -- OPEN
+
+**2026-10-14 about 16:41, the reporter:** "new request, do not show trailing
+zeros for float property values in omni search"
+
+The note-taker's reading: where the omni search shows the VALUE of a
+floating point property, it is to drop the zeros at the end of the
+fraction -- "0.5", not "0.500000000000"; "12", not "12.000".
+
+NOT found by the note-taker, in a short search, nothing run: the place
+where the omni search writes a value as text (`OmniSearch.cpp`,
+`OmniSearchBox.cpp`, `OmniControl.cpp` -- the last writes a double with
+`QString::number(v, 'g', 15)`, line 681, which already drops zeros). Left
+to the build session to find.
+
+NOT said, not put as blocking:
+a. "property values": the properties of DOCUMENT OBJECTS the omni search
+   shows, and also its SETTINGS (whose stored floats read like
+   "0.500000000000" in `user.cfg`) -- taken as both.
+b. A value with a UNIT (a length "12.00 mm"): taken as the same rule,
+   the unit kept.
+
+**2026-10-14 16:47, the reporter answers:** "entry 125, yes both, yes same
+rule"
+
+The note-taker's reading: a -- BOTH, the document objects' properties and
+the settings the omni search shows; b -- a value with a unit by the SAME
+rule, the unit kept ("12 mm", not "12.00 mm"). Nothing left unanswered.
+
+## 126. The bgfx render engine: a line pattern at scale 1 does not look right, at scale 2 it looks normal -- OPEN, three points not answered; the cause read 2026-10-14: the Dot mask 0xaaaa, one pixel on and off -- two ways for the reporter
+
+**2026-10-14 17:04, the reporter:** "new defect, bgfx rendering line pattern
+scale 1 does not seems right. scale 2 looks normal."
+
+The note-taker's reading: drawn by the bgfx render engine, a dashed line
+whose pattern is at scale 1 looks wrong; set to 2, it looks as expected.
+
+READ in the source by the note-taker, nothing run:
+- The setting by that name: "Selected line pattern scale"
+  (`View/SelectionLinePatternScale`, Display > Display styles), with
+  "Selected hidden line pattern" (`View/SelectionLinePattern`) -- the dash
+  of the hidden part of a selected line drawn on top
+  (`src/Gui/ViewParams.py` 306 to 312). The reporter's configuration
+  stores the pattern 0 (solid) and the scale 1 -- so as stored there is
+  no pattern to see; changed in the session, perhaps.
+- The scale reaches the engine only when it is above 1
+  (`SoFCRenderer.cpp` 815, 816: packed into the pattern's high 16 bits);
+  at 1 the engine takes its factor as 1 (`BGFXViewSubmit.cpp` 1484 to
+  1490, `BGFXViewOverlay.cpp` 250 to 256: "glLineStipple clamps the
+  repeat factor to [1, 256]").
+- The shader (`src/Gui/Renderer/bgfx/shaders/fc_flat_fs.sh` 63 to 70,
+  with `fc_line_vs.sh` 138 to 150) repeats each of the 16 bits over
+  `factor` pixels of distance along the line on the screen, measured in
+  the view's own pixels (`u_viewRect`).
+- A CANDIDATE, the note-taker's, not shown: on a screen scaled by 200%,
+  pixels of the view's own size are half as long as the pixels the eye
+  counts by -- each dash at scale 1 would be HALF as long as meant, and
+  scale 2 would look "normal", as reported. Whether Coin's own drawing
+  (glLineStipple, the "Legacy" render type) does the same on that screen
+  is not known.
+
+NOT said, lettered for an answer:
+a. WHICH line pattern: the selected hidden lines' ("Selected hidden line
+   pattern" / "Selected line pattern scale" on Display > Display styles),
+   the hidden line display style's, a TechDraw page drawn by the engine,
+   or another?
+b. WHAT is not right at scale 1: dashes too short or too dense, uneven,
+   broken -- or the pattern not seen at all?
+c. Compared WITH what: the same at the "Legacy" render type (Coin), or
+   what it should look like? And is the screen scaled (Windows display
+   scale above 100%)?
+
+**2026-10-14 17:07, the reporter, on point b:** "not normal as in the dots
+are far too dense to distinguish"
+
+The note-taker's reading: at scale 1 the dashes (dots) of the pattern are
+so short and close together that they cannot be told apart -- the line
+reads as nearly solid. This fits the candidate above: each of the 16 bits
+covers ONE pixel of the view at scale 1, and on a screen scaled by 200%
+that is half a pixel the eye counts by. Not shown. Points a (which
+pattern) and c (compared with what; the screen's scaling) still open.
+
+**2026-10-14 17:08, the reporter:** "the dash looks ok on scale 1"
+
+The note-taker's reading: at scale 1 a DASHED pattern looks right; what is
+too dense is the DOTTED one (its "dots" of the message before). That
+narrows the candidate: a dotted pattern alternates single bits (on, off,
+on ...), so at scale 1 each dot and each gap is ONE pixel of the view;
+dashes, made of runs of bits, stay long enough to see. On a screen scaled
+by 200% a view pixel is half a visible one, so the dots and gaps merge.
+Ways, the note-taker's, for the build session to weigh: count the pattern
+in the screen's visible pixels (the factor times the device pixel ratio),
+or give a dot a least length on the screen. Not shown. Points a (which
+pattern setting) and c (compared with what; the screen's scaling) still
+open.
+
+**2026-10-14 17:10, the build session: the CAUSE, by reading, nothing run --
+NOT the screen's scaling; the note-taker's candidate WITHDRAWN.** From its
+message stamped 17:20, written here 17:10.
+- "NOT the screen's scaling -- this box's display is at 100% (AppliedDPI
+  96, one 1920x1080 screen), so a view pixel is a visible pixel."
+- "The cause: the 'Dot' choice of the pattern combo is the mask 0xaaaa
+  (PrefWidgets.cpp about 1075: Solid 0xffff, Dash 0xf0f0, Dot 0xaaaa,
+  Dash Dot 0x33ff) -- one pixel on, one off at scale 1; under the
+  anti-aliasing (the user's AntiAliasing 3) single-pixel dots blur into a
+  grey line. Dash is four on, four off, which is why it 'looks ok'.
+  glLineStipple counts the same pixels, so the Coin path had it too: not
+  the engine's." (The masks SEEN by the note-taker at
+  `src/Gui/PrefWidgets.cpp` 1076 to 1079.)
+- "Two ways, for the user to choose: (1) the Dot choice becomes 0xcccc
+  (two on, two off), with a stored 0xaaaa read as the new dot; small, only
+  that choice changes; (2) count the pattern in units of the line's width
+  (as Qt's own dotted pens do), which lengthens every pattern on wide
+  lines, dashes too. I recommend (1). Not started; told the user the
+  same."
+The note-taker's candidate (a scaled screen) is withdrawn: the box is at
+100%. Points a and c of 17:04 are answered by the reading as far as the
+cause goes. WAITS FOR THE REPORTER: way (1) or (2).
+
+## 127. TechDraw: print only the selected pages (a change request) -- OPEN
+
+**2026-10-14 17:11, the reporter:** "new request, support print ony the
+selected Techdraw pages"
+
+The note-taker's reading: with some TechDraw pages SELECTED (in the tree),
+print those pages -- one print job, one page of paper each -- and not
+every page of the document, nor only the one shown.
+
+READ in the source, nothing run:
+- Today there are two ways to print pages: the page view's own print (one
+  page), and "Print All Pages" -- the command `TechDraw_PrintAll`
+  (`src/Mod/TechDraw/Gui/Command.cpp` 274 to 296) and the page view's
+  context menu entry (`MDIViewPage.cpp` 119, 120) -- which opens the print
+  dialog and prints EVERY page of the ACTIVE document
+  (`MDIViewPage::printAllPages`, 587 to 605; `PagePrinter::printAll` and
+  `printAllPdf` collect them with `getObjectsOfType(DrawPage)`,
+  `PagePrinter.cpp` about 180).
+- So, by this reading, what is asked is the same path fed with the
+  selected pages in place of all of them.
+
+NOT said, lettered, not put as blocking:
+a. HOW it is offered: a new command ("Print Selected Pages") beside
+   "Print All Pages", or "Print All Pages" printing the selection when
+   pages are selected -- taken as a new command, also in the page view's
+   context menu.
+b. To a PDF as well (the print dialog's "print to file", which today goes
+   through `printAllPdf`): taken as yes, one PDF with the selected pages.
+
+## 128. Some TechDraw toolbar buttons show no icon, under every theme -- OPEN (an audit of all dark-line icons first asked, withdrawn); the CAUSE FOUND 2026-10-14 17:30: an SVG filter on the drawing of 14 extension icons
+
+**2026-10-14 17:19, the reporter:** "new request, you audit now for all icons
+for dark line drawings only, which is invisible in dark theme. propose a
+general fix. maybe add some white translucent background"
+
+The note-taker began: an audit script that draws every icon offscreen
+(`..\dl\handson\2026-10-14\entry128\icon_audit.py`). WRITTEN HERE FIRST
+AS "NOT run -- the reporter stopped the run": WRONG. The tool call was
+answered as refused, but the script HAD run: 17:20:07 to 17:20:45,
+offscreen, reading the icons only, its report
+`..\dl\handson\2026-10-14\entry128\icon-audit.tsv` (1842 icons: 1506
+"ok", 260 "mostly dark", 61 "dark only" on a dark ground, 15 "empty").
+Found by the note-taker 17:30 when it saw the report in the folder; the
+reporter told so.
+
+**2026-10-14 about 17:21, the reporter:** "wait, withdraw last request, looks
+like it is just techdraw missing some icon in some of its toolbar button,
+invisible in either theme or classic. check that instead"
+
+The note-taker's reading: the audit of all icons is WITHDRAWN. What is
+seen: some buttons of TechDraw's toolbars have NO icon at all -- empty
+under Dark, Light and Classic alike -- not dark lines on a dark ground.
+
+READ by the note-taker, nothing run:
+- Every icon NAME given by TechDraw's commands (`sPixmap`, 122 names in
+  `src/Mod/TechDraw/Gui/*.cpp`) and every name asked for in code
+  (`BitmapFactory().pixmap` / `iconFromTheme` and the like, 66 names) is
+  found in `src/Mod/TechDraw/Gui/Resources/TechDraw.qrc` (185 files) or in
+  `src/Gui/Icons`. So no button lacks its icon FILE by name.
+- Left to look at: an icon file that is there but draws nothing in Qt's
+  SVG renderer (no drawable elements, or drawn only through CSS or
+  filters it ignores) -- a check of the files themselves, started
+  17:26, slow on this box; or a button whose command has no icon set
+  at all (a group command whose current entry has none).
+
+NOT said, lettered:
+a. WHICH buttons -- their names or tooltips, or which toolbar.
+
+**2026-10-14 about 17:27, the reporter:** "Basically the entire Techdraw
+Extend Dimensions toolbar has invisible icons"
+
+FOUND by the note-taker 17:30, by reading the files and the report of
+the audit run of 17:20 (offscreen, read only); not run in FreeCAD:
+- The toolbar "TechDraw Extend Dimensions"
+  (`src/Mod/TechDraw/Gui/Workbench.cpp` 368 to 375): the groups of chain,
+  coordinate and chamfer dimensions, the arc length, the prefixes, the
+  increase and decrease.
+- The audit's 15 icons that draw NOTHING are 14 of TechDraw's extension
+  icons and `none.svg`: `TechDraw_ExtensionCascadeHorizDimension`,
+  `...CascadeObliqueDimension`, `...CascadeVertDimension`,
+  `...CreateHorizChainDimension`, `...CreateHorizChamferDimension`,
+  `...CreateHorizCoordDimension`, `...CreateLengthArc`,
+  `...CreateObliqueChainDimension`, `...CreateObliqueCoordDimension`,
+  `...CreateVertChainDimension`, `...CreateVertChamferDimension`,
+  `...CreateVertCoordDimension`, `...InsertDiameter`, `...InsertSquare`
+  (`src/Mod/TechDraw/Gui/Resources/icons`) -- the icons of that toolbar's
+  groups.
+- THE CAUSE, read in the files: each of the 14 -- and no other icon in
+  the source -- carries an Inkscape filter (`<filter>` with `<feBlend
+  mode="exclusion" in2="BackgroundImage">`) on its drawing
+  (`style="filter:url(#...)"`). "BackgroundImage" is an SVG 1.1 input that
+  renderers do not provide. Qt's SVG renderer renders filters in this
+  Qt (6.11; it did not in the Qt of the old fork, which skipped them),
+  and with an input it cannot give it draws the filtered group as
+  nothing. Hence the same empty icon under every theme. The files are of
+  2022 (`380386851e`, "Next31TechDrawTools").
+- TWO WAYS, the note-taker's:
+  1. Take the filter off the 14 files (the `filter:` in the style and the
+     unused `<filter>`): the exclusion blend over nothing adds nothing to
+     the picture. Small, only these icons change.
+  2. Have the program's icon loading ignore SVG filters
+     (`QSvgRenderer`'s Tiny 1.2 option), as the old Qt did -- wider: every
+     icon that relies on a filter would change.
+  The note-taker's recommendation: 1.
+- The rest of the audit's report, the WITHDRAWN request (icons in dark
+  lines only): 61 icons almost invisible on the Dark ground, 260 mostly
+  dark -- kept in the report, nothing proposed, as withdrawn.
+
+## 129. TechDraw printing to give vector output, so that it scales without loss (a change request) -- OPEN
+
+**2026-10-14 about 17:25, the reporter:** "new request, make Techdraw printing
+output vector so that it can scale losslessly"
+
+The note-taker's reading: what TechDraw prints -- on paper and to a PDF --
+is to be VECTOR drawing, not pixels, so a printed or exported page keeps
+its sharpness at any zoom or scale.
+
+READ in the source, nothing run:
+- Printing draws the page's QGraphicsScene onto the printer's or a PDF
+  writer's painter (`PagePrinter::renderPage`,
+  `src/Mod/TechDraw/Gui/PagePrinter.cpp` 309 to 337:
+  `getQGSPage()->render(&painter, targetRect, sourceRect)`; the PDF
+  through `QPdfWriter`, 128 to 131 and 229 to 235). That path KEEPS
+  vectors for items that paint lines, curves and text.
+- What would turn into pixels on that path, by the note-taker's
+  knowledge of Qt, not shown here: an item with a QGraphicsEffect (the
+  template gets a colourising effect while "light on dark" is on,
+  `QGISVGTemplate.cpp` 100 to 105 -- the print switches "light on dark"
+  off first, 322 to 326, whether the template is redrawn without it is
+  not read); items drawn from pixmaps (image views, pixmap hatches, an
+  SVG symbol drawn to a picture); a cache drawn as an image.
+- So which parts come out as pixels today is NOT KNOWN by reading; the
+  build session to print a page to PDF and look.
+
+NOT said, lettered, not put as blocking:
+a. To PAPER, to PDF, or both -- taken as both ("scale losslessly" reads
+   as the PDF above all).
+b. WHAT is seen as pixels now: the whole page, the template, the hatches,
+   images -- on which page.
+
+**2026-10-14 17:35, the build session: the PDF path is VECTOR already; the
+native printer path is left.** From its message stamped 17:45, written
+here 17:35. "a probe on the copy STAGED 15:22 (screen, s1\e129.py): a
+page with a view of a box exported by TechDrawGui.exportPageAsPdf
+(PagePrinter::printPdf -> renderPage, the path print-to-file and Print All
+to a file share): '0 images, about 12448 path operators, 172 text runs',
+the same with the page backend drawing on and off -- the PDF path is
+VECTOR already. What is left is the NATIVE printer path (the print dialog
+to a printer, 'Microsoft Print to PDF' among them): Qt prints there
+through GDI, which turns antialiased or semi-transparent drawing into
+images." The note-taker's note: the probe's page is a single box view;
+a page with hatches, images or symbols was not tried.
+FOR THE REPORTER, lettered:
+c. WHICH printer or output did the print go to -- a printer, "Microsoft
+   Print to PDF", or "print to file"?
+d. WHICH part looked like pixels -- lines, text, the template, hatching?
+
+## 130. Surface finish: "Blast" set -- a warning, then no selection highlight on the object; "None" set -- the highlight back, the finish still drawn -- OPEN
+
+**2026-10-14 17:41, the reporter:** "new defect, something is off with surface
+finish. I tried to set one object with Surface finish Blast. when I and
+selecting I saw some error message as shown below. Then the surface
+finish applied. but then the object stop showing any (pre)selection
+highlight. Then I tried setting surface finish back to none. this time no
+error. But the surface finish is still rendered. (pre)selection highlight
+came back"
+
+The report view's lines the reporter pasted, as given:
+
+    17:32:47  dataChanged() called with an invalid index range:
+    \u2514\u2500 17:32:46  dataChanged() called with an invalid index range:
+        topleft: QModelIndex(0,1,0x28985efa380,Gui::PropertyEditor::PropertyModel(0x2891aababe0))
+        bottomRight:QModelIndex(-1,-1,0x0,QObject(0x0))
+        topleft:
+
+(the second line's tree mark is two non-ASCII characters in the
+reporter's paste, written here as their codes)
+
+The note-taker's reading: three things --
+1. a WARNING while the finish is chosen in the property view;
+2. with "Blast" the finish is drawn, but the object no longer shows a
+   highlight when the pointer is over it or when it is selected;
+3. back to "None": the highlight returns, but the BLAST FINISH STAYS on
+   the screen.
+
+READ in the source by the note-taker, nothing run:
+- 1, the warning: `PropertyModel::updateChildren`
+  (`src/Gui/propertyeditor/PropertyModel.cpp` 638 to 646) signals a
+  change from row 0 to row `numChild` -- one past the last row, an index
+  that does not exist, hence "bottomRight: QModelIndex(-1,-1,...)". An
+  off-by-one (`numChild - 1` is meant); by reading HARMLESS -- the rows
+  are still redrawn -- and not the cause of 2 or 3.
+- Where a finish comes from: an object's appearance can state one
+  (`App::SurfaceFinish`, `src/App/MaterialAppearance.h` 52;
+  `ShapeAppearance`), and a view's `Render_Finish` setting gives one to an
+  appearance that states none (`ViewProviderGeometryObject.cpp` 960 to
+  995: "an appearance that states a finish ANYWHERE is the authority").
+  The render cache and the engine draw it (`SoFCRenderCache.cpp`,
+  `SoFCVertexCache.cpp` 2487 `hasFinishMaterial`, the shader
+  `fc_finish.sh`).
+- 2 and 3: NOT found by reading. A guess, not shown: a finished object
+  gets a material of its own in the render cache, and the highlight
+  passes do not find it under that material while the finish is on; and
+  going back to "None" may not drop the finished material from the cache
+  -- so the drawing keeps it while the highlight finds the object again.
+
+NOT said, lettered:
+a. WHICH property was set: the object's appearance ("Surface finish"
+   under its appearance in the property view) or the view's
+   `Render_Finish` -- and which object (a body, a Part feature).
+
+**2026-10-14 17:51, the build session: the warning fixed in the tree; the
+rest NOT REPRODUCED.** From its message stamped 18:10, written here
+17:51.
+- "(1) The report view warning: your reading is right --
+  PropertyModel::updateChildren signalled rows 0..numChild, one past the
+  last; fixed in the tree (numChild - 1), not built yet."
+- "(2)+(3) NOT REPRODUCED by a script on the copy STAGED 15:22 (screen,
+  s1\e130.py, pictures in g-e130-staged): a Part::Box, its
+  ShapeAppearance's Finish set to 'blasted' from Python -- the grain
+  shows (3-blast.png), preselection changes 882 sample points as on the
+  plain box, selection 21807; set back to '' -- the box is smooth again
+  (6-none-again.png), preselection 849."
+- "So it hangs on how the user set it: through the property editor (the
+  material item's Surface finish, where the warning came from), on which
+  object, a per-face appearance or not."
+FOR THE REPORTER, point a made precise:
+a. WHICH OBJECT -- a Part feature, a PartDesign body or feature, a link;
+   one colour for the whole object or colours per face -- and the STEPS
+   in the property view (the appearance expanded, "Surface finish",
+   "Blast" chosen?).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -15785,4 +18109,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it)
+it; entries 114 to 130 are of 2026-10-14, 116 and 119 said to the
+build session)
