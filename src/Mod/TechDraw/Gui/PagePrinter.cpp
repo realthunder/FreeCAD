@@ -170,14 +170,17 @@ void PagePrinter::print(QPrinter* printer)
 }
 
 //static routine to print all pages in a document
-void PagePrinter::printAll(QPrinter* printer, App::Document* doc)
+void PagePrinter::printAll(QPrinter* printer, App::Document* doc,
+                           const std::vector<App::DocumentObject*>& pages)
 {
 //    Base::Console().Message("PP::printAll()\n");
     QPainter painter(printer);
     QPageLayout pageLayout = printer->pageLayout();
     bool firstTime = true;
-    std::vector<App::DocumentObject*> docObjs =
-        doc->getObjectsOfType(TechDraw::DrawPage::getClassTypeId());
+    // the pages given -- the selected ones (docs/HandsOnQueue.md entry 127)
+    // -- or every page of the document
+    std::vector<App::DocumentObject*> docObjs = !pages.empty()
+        ? pages : doc->getObjectsOfType(TechDraw::DrawPage::getClassTypeId());
     for (auto& obj : docObjs) {
         Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj);
         if (!vp) {
@@ -215,7 +218,8 @@ void PagePrinter::printAll(QPrinter* printer, App::Document* doc)
 }
 
 //static routine to print all pages in a document to pdf
-void PagePrinter::printAllPdf(QPrinter* printer, App::Document* doc)
+void PagePrinter::printAllPdf(QPrinter* printer, App::Document* doc,
+                              const std::vector<App::DocumentObject*>& pages)
 {
 //    Base::Console().Message("PP::printAllPdf()\n");
     double dpmm = printer->resolution() / 25.4;
@@ -233,8 +237,8 @@ void PagePrinter::printAllPdf(QPrinter* printer, App::Document* doc)
     QPageLayout pageLayout = printer->pageLayout();
 
     bool firstTime = true;
-    std::vector<App::DocumentObject*> docObjs =
-        doc->getObjectsOfType(TechDraw::DrawPage::getClassTypeId());
+    std::vector<App::DocumentObject*> docObjs = !pages.empty()
+        ? pages : doc->getObjectsOfType(TechDraw::DrawPage::getClassTypeId());
     for (auto& obj : docObjs) {
         Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj);
         if (!vp) {

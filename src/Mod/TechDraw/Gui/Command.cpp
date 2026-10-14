@@ -296,6 +296,33 @@ void CmdTechDrawPrintAll::activated(int iMsg)
 bool CmdTechDrawPrintAll::isActive() { return DrawGuiUtil::needPage(this); }
 
 //===========================================================================
+// TechDraw_PrintSelected
+//===========================================================================
+
+// The pages selected and no others (docs/HandsOnQueue.md entry 127, "support
+// print ony the selected Techdraw pages"): to a printer, or to one PDF.
+DEF_STD_CMD_A(CmdTechDrawPrintSelected)
+
+CmdTechDrawPrintSelected::CmdTechDrawPrintSelected() : Command("TechDraw_PrintSelected")
+{
+    sAppModule = "TechDraw";
+    sGroup = QT_TR_NOOP("TechDraw");
+    sMenuText = QT_TR_NOOP("Print Selected Pages");
+    sToolTipText = QT_TR_NOOP("Prints the selected pages, in the order they were selected");
+    sWhatsThis = "TechDraw_PrintSelected";
+    sStatusTip = sToolTipText;
+    sPixmap = "actions/TechDraw_PrintAll";
+}
+
+void CmdTechDrawPrintSelected::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    MDIViewPage::printPages(MDIViewPage::selectedPages());
+}
+
+bool CmdTechDrawPrintSelected::isActive() { return !MDIViewPage::selectedPages().empty(); }
+
+//===========================================================================
 // TechDraw_View
 //===========================================================================
 
@@ -1728,6 +1755,7 @@ void CreateTechDrawCommands()
     rcCmdMgr.addCommand(new CmdTechDrawPageTemplate());
     rcCmdMgr.addCommand(new CmdTechDrawRedrawPage());
     rcCmdMgr.addCommand(new CmdTechDrawPrintAll());
+    rcCmdMgr.addCommand(new CmdTechDrawPrintSelected());
     rcCmdMgr.addCommand(new CmdTechDrawView());
     rcCmdMgr.addCommand(new CmdTechDrawBrokenView());
     rcCmdMgr.addCommand(new CmdTechDrawActiveView());

@@ -91,6 +91,11 @@ public:
     void printPdf(std::string file);
     void printPreview() override;
     static void printAllPages();
+    /// The pages selected (in the tree or elsewhere), in the order chosen;
+    /// none when no page is selected (docs/HandsOnQueue.md entry 127)
+    static std::vector<App::DocumentObject*> selectedPages();
+    /// Print \a pages with the print dialog, to a printer or to one PDF
+    static void printPages(const std::vector<App::DocumentObject*>& pages);
     static void printAll(QPrinter* printer,
                          App::Document* doc);
     static void printAllPdf(QPrinter* printer,
@@ -149,6 +154,7 @@ private:
     QAction *m_exportDXFAction;
     QAction *m_exportPDFAction;
     QAction *m_printAllAction;
+    QAction *m_printSelectedAction;
 
     std::string m_objectName;
     std::string m_documentName;

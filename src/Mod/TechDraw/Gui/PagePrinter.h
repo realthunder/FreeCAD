@@ -70,10 +70,13 @@ public:
     void printPdf(std::string file);
     void printPreview();
     static void printAllPages();
+    /// \a pages, or every page of \a doc where none are given
     static void printAll(QPrinter* printer,
-                         App::Document* doc);
+                         App::Document* doc,
+                         const std::vector<App::DocumentObject*>& pages = {});
     static void printAllPdf(QPrinter* printer,
-                            App::Document* doc);
+                            App::Document* doc,
+                            const std::vector<App::DocumentObject*>& pages = {});
     static void printBannerPage(QPrinter* printer, QPainter& painter,
                                 QPageLayout& pageLayout,
                                 App::Document* doc,

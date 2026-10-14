@@ -119,6 +119,11 @@ MDIViewPage::MDIViewPage(ViewProviderPage* pageVp, Gui::Document* doc, QWidget* 
     m_printAllAction = new QAction(tr("Print All Pages"), this);
     connect(m_printAllAction, &QAction::triggered, this, qOverload<>(&MDIViewPage::printAllPages));
 
+    m_printSelectedAction = new QAction(tr("Print Selected Pages"), this);
+    connect(m_printSelectedAction, &QAction::triggered, this, []() {
+        printPages(selectedPages());
+    });
+
     isSelectionBlocked = 0;
 
     QString tabText = QString::fromUtf8(pageVp->getDrawPage()->getNameInDocument());
@@ -249,11 +254,16 @@ bool MDIViewPage::onHasMsg(const char* pMsg) const
     else if (strcmp("CanPan",pMsg) == 0) {
         return true;
     }
-    else if (strcmp("Redo", pMsg) == 0 && getAppDocument()->getAvailableRedos() > 0) {
-        return true;
+    // A view with no document any more (docs/HandsOnQueue.md entry 132: the
+    // menus' update asked a page view whose document was gone, and read a
+    // null pointer) can neither undo nor redo -- as MDIView::onHasMsg asks
+    else if (strcmp("Redo", pMsg) == 0) {
+        App::Document* doc = getAppDocument();
+        return doc && doc->getAvailableRedos() > 0;
     }
-    else if (strcmp("Undo", pMsg) == 0 && getAppDocument()->getAvailableUndos() > 0) {
-        return true;
+    else if (strcmp("Undo", pMsg) == 0) {
+        App::Document* doc = getAppDocument();
+        return doc && doc->getAvailableUndos() > 0;
     }
     else if (strcmp("Print", pMsg) == 0) {
         return true;
@@ -497,6 +507,9 @@ void MDIViewPage::contextMenuEvent(QContextMenuEvent* event)
     menu.addAction(m_exportDXFAction);
     menu.addAction(m_exportPDFAction);
     menu.addAction(m_printAllAction);
+    // while pages are selected (docs/HandsOnQueue.md entry 127)
+    if (!selectedPages().empty())
+        menu.addAction(m_printSelectedAction);
     menu.exec(event->globalPos());
 }
 
@@ -602,6 +615,36 @@ void MDIViewPage::printAllPages()
             PagePrinter::printAllPdf(&printer, doc);
         }
     }
+}
+
+std::vector<App::DocumentObject*> MDIViewPage::selectedPages()
+{
+    std::vector<App::DocumentObject*> pages;
+    for (auto& sel : Gui::Selection().getSelectionEx("*", App::DocumentObject::getClassTypeId(),
+                                                     Gui::ResolveMode::FollowLink)) {
+        auto obj = sel.getObject();
+        if (obj && obj->isDerivedFrom(TechDraw::DrawPage::getClassTypeId())
+                && std::find(pages.begin(), pages.end(), obj) == pages.end())
+            pages.push_back(obj);
+    }
+    return pages;
+}
+
+void MDIViewPage::printPages(const std::vector<App::DocumentObject*>& pages)
+{
+    if (pages.empty())
+        return;
+    QPrinter printer(QPrinter::HighResolution);
+    printer.setFullPage(true);
+
+    QPrintDialog dlg(&printer, Gui::getMainWindow());
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    App::Document* doc = pages.front()->getDocument();
+    if (printer.outputFileName().isEmpty())
+        PagePrinter::printAll(&printer, doc, pages);
+    else
+        PagePrinter::printAllPdf(&printer, doc, pages);
 }
 
 //flag to prevent selection activity within mdivp
