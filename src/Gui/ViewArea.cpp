@@ -96,6 +96,35 @@ bool isEscape(const QEvent *ev)
         && static_cast<const QKeyEvent*>(ev)->key() == Qt::Key_Escape;
 }
 
+/** How a drag of the left button learns of its end, from the application's
+ * events while it lasts (docs/HandsOnQueue.md entry 119). Qt tells a widget
+ * nothing when the grab its press gave it ends, and the release need not
+ * reach it: a filter of the application's may take it on the way -- an
+ * overlay passed it on to the view under a see-through panel -- and the
+ * drag went on, its frames on the screen. The filter of a drag, installed
+ * at its press, is asked before every one installed earlier.
+ *
+ * Returns Release for the left button's release, whichever widget it is
+ * for; Lost for a mouse event that finds the left button up, a release
+ * that never came; Nothing otherwise.
+ */
+enum class DragEnd { Nothing, Release, Lost };
+DragEnd dragEndOf(const QEvent *ev)
+{
+    switch (ev->type()) {
+    case QEvent::MouseButtonRelease:
+        return static_cast<const QMouseEvent*>(ev)->button() == Qt::LeftButton
+            ? DragEnd::Release : DragEnd::Nothing;
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonDblClick:
+        return (static_cast<const QMouseEvent*>(ev)->buttons() & Qt::LeftButton)
+            ? DragEnd::Nothing : DragEnd::Lost;
+    default:
+        return DragEnd::Nothing;
+    }
+}
+
 } // namespace
 
 namespace Gui {
@@ -456,9 +485,24 @@ protected:
             // that takes the mouse away, ends the drag without a release
             // ever arriving here: the frames would stay on the screen.
             if (ev->type() == QEvent::ApplicationDeactivate
-                    || (ev->type() == QEvent::WindowDeactivate && watched == window())
-                    || (ev->type() == QEvent::UngrabMouse && watched == this))
+                    || (ev->type() == QEvent::WindowDeactivate && watched == window()))
                 cancelDrag();
+            // The left button let go, wherever the release is going: the
+            // drag is carried out here and now, and a release for this
+            // handle is taken, not left to a filter after this one
+            switch (dragEndOf(ev)) {
+            case DragEnd::Release: {
+                const bool mine = (watched == this);
+                mouseReleaseEvent(static_cast<QMouseEvent*>(ev));
+                // (this handle may be gone: a closed cell takes it along)
+                return mine;
+            }
+            case DragEnd::Lost:
+                cancelDrag();
+                break;
+            default:
+                break;
+            }
         }
         return QSplitterHandle::eventFilter(watched, ev);
     }
@@ -1200,9 +1244,22 @@ bool ViewAreaZone::eventFilter(QObject *watched, QEvent *ev)
         // takes the mouse away, ends the drag without a release ever
         // arriving here: the frames would stay on the screen.
         if (ev->type() == QEvent::ApplicationDeactivate
-                || (ev->type() == QEvent::WindowDeactivate && watched == window())
-                || (ev->type() == QEvent::UngrabMouse && watched == this))
+                || (ev->type() == QEvent::WindowDeactivate && watched == window()))
             cancelDrag();
+        // The left button let go, wherever the release is going (as the
+        // border's drag above)
+        switch (dragEndOf(ev)) {
+        case DragEnd::Release: {
+            const bool mine = (watched == this);
+            mouseReleaseEvent(static_cast<QMouseEvent*>(ev));
+            return mine;
+        }
+        case DragEnd::Lost:
+            cancelDrag();
+            break;
+        default:
+            break;
+        }
     }
     return QWidget::eventFilter(watched, ev);
 }
