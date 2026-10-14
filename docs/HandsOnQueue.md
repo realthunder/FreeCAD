@@ -147,6 +147,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 17:04, the reporter, a NEW ENTRY 126:** "new defect, bgfx
+rendering line pattern scale 1 does not seems right. scale 2 looks
+normal." Read in the source; a candidate (a scaled screen, dashes counted
+in the view's own pixels); three points put. Written here 17:07.
+
 **2026-10-14 about 16:41, the reporter, two messages:** "new request, do not
 show trailing zeros for float property values in omni search" -- a NEW
 ENTRY 125; and a QUESTION (no entry): "check which setting controls the
@@ -2571,6 +2576,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 123 | 2026-10-14 | a change request: the SELECTION VIEW in overlay mode -- its list column backed with the SAME colour and alpha as the property editor's | OPEN; read by the note-taker: the property editor backs whole rows (alternating), the selection view since `04e05bbd38` only the text, with the tree's text ground; one point under the entry, not put as blocking |
 | 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started |
 | 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
+| 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17750,6 +17756,49 @@ The note-taker's reading: a -- BOTH, the document objects' properties and
 the settings the omni search shows; b -- a value with a unit by the SAME
 rule, the unit kept ("12 mm", not "12.00 mm"). Nothing left unanswered.
 
+## 126. The bgfx render engine: a line pattern at scale 1 does not look right, at scale 2 it looks normal -- OPEN, three points not answered
+
+**2026-10-14 17:04, the reporter:** "new defect, bgfx rendering line pattern
+scale 1 does not seems right. scale 2 looks normal."
+
+The note-taker's reading: drawn by the bgfx render engine, a dashed line
+whose pattern is at scale 1 looks wrong; set to 2, it looks as expected.
+
+READ in the source by the note-taker, nothing run:
+- The setting by that name: "Selected line pattern scale"
+  (`View/SelectionLinePatternScale`, Display > Display styles), with
+  "Selected hidden line pattern" (`View/SelectionLinePattern`) -- the dash
+  of the hidden part of a selected line drawn on top
+  (`src/Gui/ViewParams.py` 306 to 312). The reporter's configuration
+  stores the pattern 0 (solid) and the scale 1 -- so as stored there is
+  no pattern to see; changed in the session, perhaps.
+- The scale reaches the engine only when it is above 1
+  (`SoFCRenderer.cpp` 815, 816: packed into the pattern's high 16 bits);
+  at 1 the engine takes its factor as 1 (`BGFXViewSubmit.cpp` 1484 to
+  1490, `BGFXViewOverlay.cpp` 250 to 256: "glLineStipple clamps the
+  repeat factor to [1, 256]").
+- The shader (`src/Gui/Renderer/bgfx/shaders/fc_flat_fs.sh` 63 to 70,
+  with `fc_line_vs.sh` 138 to 150) repeats each of the 16 bits over
+  `factor` pixels of distance along the line on the screen, measured in
+  the view's own pixels (`u_viewRect`).
+- A CANDIDATE, the note-taker's, not shown: on a screen scaled by 200%,
+  pixels of the view's own size are half as long as the pixels the eye
+  counts by -- each dash at scale 1 would be HALF as long as meant, and
+  scale 2 would look "normal", as reported. Whether Coin's own drawing
+  (glLineStipple, the "Legacy" render type) does the same on that screen
+  is not known.
+
+NOT said, lettered for an answer:
+a. WHICH line pattern: the selected hidden lines' ("Selected hidden line
+   pattern" / "Selected line pattern scale" on Display > Display styles),
+   the hidden line display style's, a TechDraw page drawn by the engine,
+   or another?
+b. WHAT is not right at scale 1: dashes too short or too dense, uneven,
+   broken -- or the pattern not seen at all?
+c. Compared WITH what: the same at the "Legacy" render type (Coin), or
+   what it should look like? And is the screen scaled (Windows display
+   scale above 100%)?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -17760,5 +17809,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 125 are of 2026-10-14, 116 and 119 said to the
+it; entries 114 to 126 are of 2026-10-14, 116 and 119 said to the
 build session)
