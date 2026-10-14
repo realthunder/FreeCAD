@@ -84,8 +84,12 @@ general knowledge and not from a page found, it says so.
   used only by the sketcher's constraint editing.
 - Drawing under the render engine: gizmos hang under the editing root,
   which is already captured into the `OverlayEditing` overlay; labels hang
-  under the on-view root, captured as `OverlayOnView`. Both reach the screen
-  under Direct3D with no new capture.
+  under the on-view root, captured as `OverlayOnView`
+  (`View3DInventorViewer.cpp` 684, 693, fed at 1427, 1472). So BY THE
+  SOURCE both are fed to the Direct3D render engine with no new capture.
+  NOT SEEN RUN: entry 118 (the light's arrow, also fed as an overlay
+  capture and not seen) shows a capture can be fed and still not show --
+  to be looked at on the screen before relying on it.
 - Other features with handles: Pad/Pocket (length, offset, taper),
   Revolution (angles), Helix (height), Hole (depth), the primitives. Only
   the patterns let a value be typed in the view.
@@ -230,8 +234,9 @@ panel. Two steps, the second built on the first:
 ### 3.7 Thin client and drawing
 
 Labels are `OnViewEntry`s already, so a browser client gets them through the
-existing stream; handles draw through the editing overlay. Nothing new is
-needed for the Direct3D render engine.
+existing stream; handles draw through the editing overlay. By the source
+nothing new is needed for the Direct3D render engine -- a claim until it is
+seen on the screen (1.4, and entry 118).
 
 ## 4. Order of work
 
