@@ -19056,8 +19056,8 @@ but not before it."
 
 So there are two kinds of served document, and the ops of 32.22 answer by
 which it is (`Reach`, `Gui/SceneLog.cpp`).
-(*Since, 2026-10-14: to become one rule by branch, of which these two
-are the defaults -- designed and agreed in 32.25, not built.*)
+(*Since, 2026-10-14: one rule by branch, of which these two are the
+defaults -- 32.25.*)
 
 **A shared document** is one served as it is: the desktop and every
 client are in it. Where it is in its log is the host's to move. Below
@@ -19192,7 +19192,7 @@ one more): the host shows the overlay the desktop's way before the
 page asks for its own edit; it is on the host, under the object, and
 not in the page.
 
-### 32.25 Design: read and write by branch, rows applied, requests to merge (2026-10-14, agreed, not built)
+### 32.25 Read and write by branch, rows applied, and requests to merge (2026-10-14)
 
 **Asked (user, 2026-10-14)**: "I would like to change the log access
 model a bit. Each client can be assign a read and write permission of
@@ -19207,12 +19207,9 @@ that branch. Client with write access can handle the merge. So i am
 thinking maybe store the merge request in the log database somewhere,
 and add some ui in log panel to work on it."
 
-**Agreed (user, the same day)**, to the proposal below as it stands,
-its defaults included: "Agree with your proposal. Document the design.
-Start in next session." So this section is the design, and nothing of
-it is in the tree. It replaces the two kinds of served document of
-32.23 with one rule, of which they are the two defaults; what is built
-today is 32.22 to 32.24.
+**Agreed (user, the same day)** to the proposal as it stood, its defaults
+included, and built from it. This replaces the two kinds of served
+document of 32.23 with one rule, of which they are the two defaults.
 
 **What one may is by branch.** The host's connection, and the desktop,
 may all of it. Anyone else, of a branch:
@@ -19229,21 +19226,36 @@ may all of it. Anyone else, of a branch:
   from it, names a version -- and deals with the requests to merge into
   it (`log.mergeRequest`, `log.closeRequest`). The point is a version of
   the branch, or where the branch forks when none is said: nothing
-  before it is restored to or branched from. A branch made from one
-  that is written, since the point, is its maker's own: written from
-  its fork, and its to delete. A branch that was given is not: the host
-  deletes it.
+  before it is restored to or branched from. A branch it makes
+  (`log.branch`) is its maker's own: written from its fork, and its to
+  delete. A branch that was given is not: the host deletes it.
 
 A branch that is not read is not listed, and is unknown to the one who
-asks: its rows are no rows, its name no branch.
+asks: its rows are no rows, its name no branch -- nor are the versions
+taken on it versions, nor the requests of it requests. An op that names
+one answers as it does for none: `UnknownRow`, `UnknownVersion`,
+`UnknownBranch`, `UnknownRequest`. The edit that shows a row's change
+(`edit` with `row`, 32.21) is no op of the log and asks the same
+(`Gui::logRowListed`).
 
 **Where it is said.** In the log's store, table `access`: the user's
 kind and name -- who the log says wrote a row, whichever login -- the
-branch, read or write, and the point (`from_seq`, `from_version`, both 0
-for the fork). `Document::setBranchAccess()` / `clearBranchAccess()`,
+branch, read or write, the point (`from_seq`, `from_version`, both 0
+for the fork) and `made`. `Document::setBranchAccess()` /
+`clearBranchAccess()`,
 `doc.setTransactionAccess(kind, name, branch, write=False, version=0)`,
-`clearTransactionAccess`, `getTransactionAccess`. A branch deleted takes
-what was said of it with it.
+`clearTransactionAccess`, `getTransactionAccess`. The point is a version
+of the branch itself; one of another branch is refused. A branch deleted
+takes what was said of it with it.
+
+**Who made a branch is said, not told from where it forks.** When a
+connection that is not the host's makes a branch, the op writes the line
+of it: that user, the branch, write from the fork, `made`. That line is
+all that makes the branch the user's. A branch the host makes off one a
+client writes is the host's, and unknown to the client; so is a branch
+an import made, and one another client of the same document made. The
+host saying something else of that user and branch is in place of the
+line, `made` with it.
 
 **Where nothing is said** (`Reach`, `Gui/SceneLog.cpp`):
 
@@ -19268,7 +19280,11 @@ one step of the asker's own (31.12, `Document::pickRows`). Where what
 they set meets what was set here since, each needs a side. The desktop's
 panel asks each; the op takes one side for them all, `fallback` (`ours`,
 `theirs`), and without it answers `Conflicts` with how many, and nothing
-moves. The page then asks which side.
+moves. The page then asks which side. With no side said the op asks the
+preview, which changes nothing, and does the apply only where that finds
+no conflict: the apply itself begins by taking out a merge that was
+undone (31.21), rows and redo, before it finds what it cannot do.
+`log.mergeRequest` does the same.
 
 **Requests to merge.** Table `mergerequest` of the store: the branch to
 merge and the one to merge it into, who asked (kind and name), a note,
@@ -19283,13 +19299,15 @@ with who ended it, when, and the row the merge wrote.
 | `log.requests` | | anyone who edits | those of branches the asker reads, and its own: `id`, `source`, `target`, `by`, `byKind`, `note`, `time`, `state`, `closed`, `closedBy`, `result`; `mine`, `handles` (the asker writes the target), `here` (the document is on the target) |
 | `log.request` | `source`, `target`, `note` | one who reads both | `request`; `Refused` where the same is asked already |
 | `log.closeRequest` | `request`, `state` | `withdrawn`: who asked; `rejected`: who writes the target | |
-| `log.mergeRequest` | `request`, `fallback` | who writes the target, in a document that is on it | `row`, `forwarded`, `failed`; `Conflicts` as for `log.apply`, the request staying open |
+| `log.mergeRequest` | `request`, `fallback` | who writes the target and reads the source, in a document that is on the target | `row`, `forwarded`, `failed`; `Conflicts` as for `log.apply`, the request staying open |
 
 A merge is into the branch a document is on (28), so a request is dealt
 with in a document that is on its target; asked elsewhere the op says
 so. A merge done answers the requests that asked for it by whichever
 way it was done -- the desktop's "Merge...", Python, the op
-(`Document::mergeBranch`).
+(`Document::mergeBranch`). A request's number is never another's later
+(`AUTOINCREMENT`), so a page that still shows one that went with its
+branch does not act on the next.
 
 **The cue across documents.** The documents of one file have the one
 log: a row written in one is among what a client of another is listed.
@@ -19304,7 +19322,12 @@ asked before. Every list says `host` and `write` -- the asker writes the
 branch the document is on -- and `floor`, the row it writes it from; a
 row and a version say `within`, that a document may be moved from them;
 a branch says `write`, `floor` and `made`. `own`, `root` and a branch's
-`within` of 32.23 are gone.
+`within` of 32.23 are gone. A version is listed where its branch is read
+and its row is listed -- one taken on another branch at a row both have
+is the other's -- and the point a branch is written from is listed
+though it be another branch's, unnamed as to which. A version is named
+by who writes its own branch since the point: the one a branch forks
+from is the other branch's, and its name is what keeps it (16.3).
 
 **The page.** A third list, "Requests", with how many are open in its
 name: a line to ask a merge -- the branch, the one to merge it into, a
@@ -19316,9 +19339,12 @@ theirs for all of them, or keep ours.
 
 **The desktop.** The log's panel has "Serve branch...", for a document
 that is shared: the branch is named, made and served, and the status
-line says the document a client joins. "Access..." lists what is said
-of users and branches and says more: a user the log knows, reads or
-writes, the branch, and for a write the version it starts at. The
+line says the document a client joins, and goes on saying it
+(`SceneServeSource::signalServed` has the panel look again when a
+document begins or ends being served). "Access..." lists what is said
+of users and branches -- "writes, made it" for a branch a client made --
+and says more: a user the log knows, reads or writes, the branch, and
+for a write the version it starts at. The
 requests list of the panel shows the merges asked for beside what an
 import brought: "Merge..." where the document is on the branch it is to
 go into, and "Reject".
@@ -19327,7 +19353,39 @@ go into, and "Reject".
 the point is its own to take back: taking back is what one who reads
 does, and the point is where writing starts. Deleting is of a branch
 the asker made, where it was of any but the one served. The branch a
-served one was made from is listed, to be asked back into.
+served one was made from is listed, to be asked back into. And two who
+join one served document are two: each writes the branch that was
+served, and a branch one of them makes is that one's. Where the
+document is left on it, the other reads it there and does not move the
+document -- "moving the document", above -- until its maker or the host
+does.
+
+**A branch another document is on is not deleted**
+(`Document::deleteBranch`): its rows would go from under that document.
+It was refused only for the branch of the document asked.
+
+**What reading it over found.** The first draft compiled and passed its
+own tests as written, and was then read by a second reader for what one
+may that the design forbids. What that found, each fixed and each now a
+case of the tests:
+
+- the draft told who made a branch from where it forked -- any branch
+  made off one the asker writes, since the point, by anyone. So a branch
+  the host made off a client's was the client's to delete, an import's
+  branch likewise, and two clients of one document each other's. It also
+  locked a client out three ways -- a branch made at the serving point
+  while on another, a branch between two deleted, a fast-forward of the
+  served branch moving its fork -- each leaving the document on a branch
+  its clients only read. Who made a branch is now said (above), and none
+  of the three can happen;
+- `edit` with `row` showed the change of any row, of any branch;
+- an apply or a merge refused for conflicts had already taken out an
+  undone merge;
+- an unread branch's row, version and request each answered other than
+  one that does not exist, and a request was merged by one who did not
+  read what it merged;
+- a write could be said from a version of another branch, by Python;
+- the version a branch forks from was its writer's to unname.
 
 **Left.** Each conflict picked by itself in the browser, which is the
 merge's own panel (the third stage of 32.21). The requests of 30.20 --
@@ -19336,43 +19394,27 @@ panel and are not asked through these ops. Access is said by user;
 there is no group, and no access of "everyone who edits" to a branch
 other than the two defaults.
 
-**Order of work.**
+A branch that is not read is unknown by what an op answers of it, and
+not by every word listed of the branches that are read: the version a
+branch forks from is named `branch <name>` and is the parent's, a record
+of a switch or a merge names the other branch, and a new branch's name
+that is taken is refused as taken. `log.rows` says the log's last row
+number, whoever asks. None of it is a row, a value or a shape.
 
-1. The store: the two tables, and what a deleted branch takes with it.
-   `Document`'s four calls and the six of Python.
-2. The ops: `Reach` by branch in place of host / own; the lists
-   filtered and flagged; `log.apply`; the four of the requests; the cue
-   across the documents of a file.
-3. The page: the model, "Apply row here", the "Requests" list, the one
-   question of sides.
-4. The desktop's panel: "Serve branch...", "Access...", the requests
-   asked for in its list; a merge answering its requests.
-5. Tests: `tests/gui/serve-log-acts.py` and its browser half restated
-   -- an editor who reads, is given another branch to read, applies a
-   row, meets a conflict, asks, withdraws; the host merging and
-   rejecting; a client in a branch served, asking its work back -- the
-   gate of the card's model, and a check of the desktop's dialog.
+A user is who the log says: for a browser its grant counts, a label and
+the first six digits of its key (30.32). What is said of that user is
+said of whoever shows that name; the door decides who may show it.
 
-A first draft of all five was written while this was discussed and is
-kept outside the tree (`~/.cache/lv-merge/access/` on the Linux box:
-three scripts that patch the tree in order, the ops and the page as
-whole files, the two tests). It has not been compiled.
-
-**Decided with it** (each was put to the user as an assumption, and
-stands):
-
-- access is said by user in the log's store, not with the sharing
-  grants: a branch's number means something only there, and it goes
-  with the file;
-- with nothing said, a client reads the branch of the document it
-  joined; whoever joins a document opened from a branch to be served
-  writes that branch from where it forks, and reads the one it was made
-  from;
-- a merge or an apply that meets conflicts, asked from a browser, takes
-  one side for all of them; each picked by itself stays the desktop's;
-- a client deletes the branches it made, not one it was given;
-- its own row from before the point it writes from is its own to take
-  back.
+**Tests.** `tests/gui/serve-log-acts.py` (89: clients A, B, the host
+and C as before, and D, another who joins the branch's document),
+`tests/gui/serve-log-acts-browser.py` (33, by hand: it skips where there
+is no browser), `web/src/widgets/gate.ts` (13 checks of the card's model
+more, 247), `scripts/transaction-log-access-check.py` (36, the desktop's
+panel: the "Access..." dialog, "Serve branch...", the merges asked for
+in the request list, and the two things of the log the ops lean on -- a
+point is a version of its branch, a refused apply leaves an undone merge
+to be redone, which fails with the op's question of the preview taken
+out).
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 

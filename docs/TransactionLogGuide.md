@@ -493,9 +493,12 @@ above the tabs. It is hidden while there are none.
   unread*.
 - **Right-click a branch that was brought in** for: *Merge...*, *Open in a
   document of its own*, *Delete*.
+- **Right-click a merge that was asked for** (*merge A into B*, from
+  someone connected to the shared document, section 12) for: *Merge...*,
+  when the document is on the branch it goes into, and *Reject*.
 
 The Conflicts column says how many conflicts a merge would have, before you
-open it.
+open it. It is empty for a merge that was asked for: its preview says.
 
 ## 12. The history in a browser
 
@@ -525,13 +528,15 @@ the object goes into an edit, the panel with the slider comes up, and
 
 ![A step's change, shown from the History panel](images/transaction-log/14-log-browser-shown.png)
 
-What the panel lets you do depends on how the document was shared with
-you. Whatever you ask is done by the computer that shares the document,
-and the panel says in one line what it did, or in red why it did not. A
-button that is greyed says in its tip whose it is to press.
+What the panel lets you do depends on what the sharer lets you do with
+each branch: **read** it, or **write** it. Whatever you ask is done by the
+computer that shares the document, and the panel says in one line what it
+did, or in red why it did not. A button that is greyed says in its tip
+whose it is to press. A branch you may not read is not in any list.
 
 **In a document shared as it is**, everybody is in the same document, and
-where it is in its history is for the person sharing it to decide. You can:
+where it is in its history is for the person sharing it to decide: you
+read its branch. You can:
 
 - **Undo a step of your own that is not the last.** Click the step, then
   **Undo row**. To undo several as one, hold Ctrl (or the command key)
@@ -546,7 +551,7 @@ and renaming one are the sharer's there.
 
 **In a branch served to you** you have a document of your own: the sharer
 made a branch where their document was and opened it for you, and theirs
-does not move with what you do. From that point on the history is yours:
+does not move with what you do. From that point on you write it:
 
 ![Steps, branches and versions from the History panel](images/transaction-log/15-log-browser-acts.png)
 
@@ -564,16 +569,57 @@ does not move with what you do. From that point on the history is yours:
 ![The versions, from the History panel](images/transaction-log/15-log-browser-versions.png)
 
 What was there before the branch was served to you is listed in grey: you
-can read it, and go back to the point you were served from, but no
-further. The branch you were given is not yours to delete. Your work goes
-back to the sharer's document when they merge your branch (section 10).
+can read it, undo a step of your own in it, and go back to the point you
+were served from, but no further. The branch you were given is not yours
+to delete. The sharer's branch, the one yours was made from, is in the
+list too: you read it.
 
-The sharer starts this from the Python console, for now:
-`Gui.serveBranch(App.ActiveDocument, "name of the branch")` returns the new
-document, and you join it by its name.
+**A branch you read and are not on.** Its steps are in the list in
+italics, with its name. Two things can be done with it:
 
-Merging, applying a step of another branch, trimming and squashing are
-done in the desktop's panel for now.
+- **Take a step of it.** Click the step, then **Apply row N here**: what
+  that step set is written to the branch you are on, as one step of your
+  own, which undo takes back. Several at once as for undo. Where a step
+  sets something that was also set here since the two branches parted,
+  the panel asks one question for all of them: **Take theirs**, or
+  **Keep ours**.
+- **Ask for a merge.** The third list, **Requests**, has a line at its
+  top: *Merge* a branch *into* another, a note if you like, **Ask**. Both
+  must be branches you read. This is how the work you did in a branch
+  served to you goes back: ask for your branch to be merged into the
+  sharer's.
+
+A request stays in the list, open ones first, with who asked and when,
+and the number of open ones is in the list's name. Click one to act on
+it: **Withdraw** takes back one of your own; **Merge** and **Reject** are
+for whoever writes the branch it is to go into -- and a merge is done in a
+document that is on that branch, so the button says so when yours is not.
+A merge that meets conflicts asks the same one question.
+
+**For the sharer**, in the Transaction Log panel on the desktop:
+
+- **Serve branch...** makes a branch where the document is and serves it
+  in a document of its own, with no window. It asks for the branch's name
+  and the status line then says the document's name, which is what someone
+  joins it by. The button is there for a document that is shared.
+  (`Gui.serveBranch(App.ActiveDocument, "name")` does the same from the
+  Python console.)
+- **Access...** says who may what, and lists what has been said: pick a
+  user -- anyone who has connected to the document -- **reads** or
+  **writes**, the branch, and for a write the version it starts from, or
+  where the branch forks. **Set** says it, **Remove** takes the chosen
+  line away. With nothing said for someone, they read the branch of the
+  document they joined and write a branch that was served to them, as
+  described above; a line here is in place of that, so a served branch can
+  be made read only for one person.
+- **The merges asked for** are in the panel's request list (section 11),
+  beside the files that were sent: *merge A into B*, who asked, the note.
+  Double-click one, or **Merge...** in its menu, to open the merge's
+  preview -- where each conflict is given its own side -- when the document
+  is on the branch it goes into; **Reject** ends it. However the merge is
+  done, the request is answered by it.
+
+Trimming and squashing are done in the desktop's panel.
 
 ## 13. I want to...
 
