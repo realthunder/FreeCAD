@@ -10950,4 +10950,10 @@ void ViewParams::migrate()
         hGrp->RemoveFloat("BacklightIntensity");
         break;
     }
+
+    // The Dot choice of the line pattern combo was 0xaaaa, one pixel on and
+    // one off, which anti-aliasing blurs into a grey line; it is 0xcccc now
+    // (PrefWidgets.cpp). A stored old Dot becomes the new one.
+    if (hGrp->GetInt("SelectionLinePattern", 0) == 0xaaaa)
+        hGrp->SetInt("SelectionLinePattern", 0xcccc);
 }

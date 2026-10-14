@@ -1075,7 +1075,10 @@ namespace {
     {Qt::SolidLine, 0, QT_TRANSLATE_NOOP("LinePattern", "No change")},
     {Qt::SolidLine, 0xffff, QT_TRANSLATE_NOOP("LinePattern", "Solid")},
     {Qt::DashLine, 0xf0f0, QT_TRANSLATE_NOOP("LinePattern", "Dash")},
-    {Qt::DotLine, 0xaaaa, QT_TRANSLATE_NOOP("LinePattern", "Dot")},
+    // Two pixels on, two off: one on and one off (0xaaaa, the old Dot) blurs
+    // into a grey line under anti-aliasing. ViewParams::migrate() reads a
+    // stored 0xaaaa as this one.
+    {Qt::DotLine, 0xcccc, QT_TRANSLATE_NOOP("LinePattern", "Dot")},
     {Qt::DashDotLine, 0x33ff, QT_TRANSLATE_NOOP("LinePattern", "Dash Dot")},
   }};
 } // anonymous namespace
