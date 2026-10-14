@@ -110,6 +110,49 @@ struct LogUser
     std::string name;
 };
 
+/** What a user may do of one branch's history (sec 32.25). A user is who
+ * the log says wrote a row: a kind and a name (LogUser), whichever login.
+ *
+ * `read`: the branch's rows and versions are listed to the user, who may
+ * apply its rows to the branch it works on and ask for it to be merged
+ * into another it reads. `write`: the user also moves a document that is
+ * on the branch -- restores a version of it, switches to it, branches from
+ * it, deletes what was branched from it -- from a point on: `fromSeq` and
+ * `fromVersion`, the branch's own fork where both are 0. The host needs no
+ * entry. `made`: the user made the branch, by a branch it writes -- it is
+ * the user's own, and the user's to delete; one that was given is not.
+ */
+struct LogAccess
+{
+    std::string kind;
+    std::string name;
+    int64_t branch {0};
+    bool write {false};
+    int64_t fromSeq {0};
+    int64_t fromVersion {0};
+    bool made {false};
+};
+
+/** A request to merge one branch into another (sec 32.25): asked by a user
+ * who reads both, dealt with by one who writes the second, or the host.
+ */
+struct LogMergeRequest
+{
+    int64_t id {0};
+    int64_t source {0};     ///< the branch to merge
+    int64_t target {0};     ///< the branch to merge it into
+    std::string kind;       ///< who asks: the user's kind and name
+    std::string name;
+    std::string note;
+    double created {0};
+    /// `open`, or how it ended: `merged`, `rejected`, `withdrawn`
+    std::string state {"open"};
+    double closed {0};
+    std::string closedKind; ///< who ended it
+    std::string closedName;
+    int64_t result {0};     ///< the row the merge wrote, where it was merged
+};
+
 /** A session row (sec 11, 30.6): one login of one user -- the process's
  * own for the desktop user, opened with the log, and one more for each
  * admitted connection. `user` names its LogUser; `access` is what a
@@ -456,6 +499,29 @@ public:
      * the versions are the state at `to`, and stay on it.
      */
     virtual void anchorVersions(const std::vector<int64_t>& seqs, int64_t to) = 0;
+
+    /** The access users have of branches (sec 32.25), by user and branch.
+     * setAccess() writes the entry of its user and branch, replacing the
+     * one there; clearAccess() takes it away, false where there was none.
+     * A branch removed takes its entries, and the requests that name it,
+     * with it (removeBranch()).
+     */
+    //@{
+    virtual std::vector<LogAccess> accesses() = 0;
+    virtual void setAccess(const LogAccess& access) = 0;
+    virtual bool clearAccess(const std::string& kind, const std::string& name,
+                             int64_t branch) = 0;
+    //@}
+    /** The requests to merge a branch into another (sec 32.25), oldest
+     * first. addMergeRequest() assigns and returns the id;
+     * updateMergeRequest() writes how one ended, false where there is no
+     * such request.
+     */
+    //@{
+    virtual std::vector<LogMergeRequest> mergeRequests() = 0;
+    virtual int64_t addMergeRequest(LogMergeRequest& request) = 0;
+    virtual bool updateMergeRequest(const LogMergeRequest& request) = 0;
+    //@}
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;

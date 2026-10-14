@@ -483,6 +483,34 @@ public:
      * branch the document is on. Returns the rows removed.
      */
     size_t deleteBranch(const std::string& name);
+    /** What a user may do of a branch's history (docs/TransactionLog.md sec
+     * 32.25), kept in the log by the user's kind and name and the branch.
+     * Read: the branch is listed to the user, who applies its rows to the
+     * one it works on and asks for merges of it. With `write` the user
+     * also moves a document that is on the branch -- from version
+     * `fromVersion` on, or from where the branch forks when that is 0 --
+     * and deals with the requests to merge into it. clearBranchAccess()
+     * takes what was said away, false when nothing was. Both throw where
+     * there is no log, no such branch, no such kind of user or no such
+     * version.
+     */
+    void setBranchAccess(const std::string& kind, const std::string& name,
+                         const std::string& branch, bool write, int64_t fromVersion = 0);
+    bool clearBranchAccess(const std::string& kind, const std::string& name,
+                           const std::string& branch);
+    /** Ask for branch `source` to be merged into `target` (sec 32.25): a
+     * request kept in the log under whoever acts, for one who writes
+     * `target` to deal with. Returns its id. Throws where there is no log,
+     * a branch is unknown, the two are one, or the same is asked already
+     * and not yet dealt with.
+     */
+    int64_t requestMerge(const std::string& source, const std::string& target,
+                         const std::string& note = std::string());
+    /** End request `id` under whoever acts: `rejected`, `withdrawn`, or
+     * `merged` with the row the merge wrote. False where there is no such
+     * request still open; throws on another word.
+     */
+    bool closeMergeRequest(int64_t id, const std::string& state, int64_t result = 0);
     /// What compactFileState() dropped.
     struct CompactResult
     {

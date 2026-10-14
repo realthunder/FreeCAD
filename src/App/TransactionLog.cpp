@@ -311,6 +311,15 @@ public:
     { return inner().renameBranch(id, name); }
     bool updateBranch(const LogBranch& branch) override { return inner().updateBranch(branch); }
     bool removeBranch(int64_t id) override { return inner().removeBranch(id); }
+    std::vector<LogAccess> accesses() override { return inner().accesses(); }
+    void setAccess(const LogAccess& access) override { inner().setAccess(access); }
+    bool clearAccess(const std::string& kind, const std::string& name, int64_t branch) override
+    { return inner().clearAccess(kind, name, branch); }
+    std::vector<LogMergeRequest> mergeRequests() override { return inner().mergeRequests(); }
+    int64_t addMergeRequest(LogMergeRequest& request) override
+    { return inner().addMergeRequest(request); }
+    bool updateMergeRequest(const LogMergeRequest& request) override
+    { return inner().updateMergeRequest(request); }
     bool forwardBranch(int64_t id, int64_t head, const std::vector<int64_t>& seqs) override
     { return inner().forwardBranch(id, head, seqs); }
     void anchorVersions(const std::vector<int64_t>& seqs, int64_t to) override
@@ -1467,6 +1476,13 @@ int64_t TransactionLog::login(const Actor& actor)
 bool TransactionLog::logout(const Actor& actor)
 {
     return _c.closeLogin(actor);
+}
+
+std::pair<std::string, std::string> TransactionLog::userOf(const Actor* actor) const
+{
+    if (!actor || actor->kind == Actor::Local)
+        return {Actor::kindName(Actor::Local), _c._localName};
+    return {Actor::kindName(actor->kind), actor->name};
 }
 
 int64_t TransactionLog::importSession(const LogSession& session, const LogUser& user,

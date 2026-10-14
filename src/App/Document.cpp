@@ -8089,6 +8089,125 @@ Shared sharedWith(TransactionStore& store, int64_t except)
 
 } // namespace
 
+namespace {
+
+/// What is said of a file's branches is every document's of the file to
+/// hear (sec 32.25): each has the one log
+void fileBranchesChanged(TransactionLog* log)
+{
+    for (Document* doc : log->documents())
+        doc->signalBranchesChanged(*doc);
+}
+
+} // namespace
+
+void Document::setBranchAccess(const std::string& kind, const std::string& name,
+                               const std::string& branchName, bool write, int64_t fromVersion)
+{
+    // docs/TransactionLog.md sec 32.25
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    auto& store = log->store();
+    LogBranch branch;
+    if (!store.findBranch(branchName, branch))
+        THROWM(Base::ValueError, "no branch '" + branchName + "'");
+    Actor::Kind known;
+    if (name.empty() || !Actor::kindFromName(kind, known))
+        THROWM(Base::ValueError, "no such user: a kind the log has, and a name");
+    LogAccess access;
+    access.kind = kind;
+    access.name = name;
+    access.branch = branch.id;
+    access.write = write;
+    if (write && fromVersion > 0) {
+        // The point is a version of the branch itself: one of another
+        // would let the user go to a state that is not this branch's
+        LogVersion version;
+        if (!store.getVersion(fromVersion, version) || version.branch != branch.id)
+            THROWM(Base::ValueError, "no such version of branch '" + branchName + "'");
+        access.fromVersion = version.num;
+        access.fromSeq = version.seq;
+    }
+    store.setAccess(access);
+    fileBranchesChanged(log);
+}
+
+bool Document::clearBranchAccess(const std::string& kind, const std::string& name,
+                                 const std::string& branchName)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    LogBranch branch;
+    if (!log->store().findBranch(branchName, branch))
+        THROWM(Base::ValueError, "no branch '" + branchName + "'");
+    if (!log->store().clearAccess(kind, name, branch.id))
+        return false;
+    fileBranchesChanged(log);
+    return true;
+}
+
+int64_t Document::requestMerge(const std::string& source, const std::string& target,
+                               const std::string& note)
+{
+    // docs/TransactionLog.md sec 32.25
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    auto& store = log->store();
+    LogBranch from;
+    LogBranch into;
+    if (!store.findBranch(source, from))
+        THROWM(Base::ValueError, "no branch '" + source + "'");
+    if (!store.findBranch(target, into))
+        THROWM(Base::ValueError, "no branch '" + target + "'");
+    if (from.id == into.id)
+        THROWM(Base::ValueError, "a branch is not merged into itself");
+    for (const LogMergeRequest& r : store.mergeRequests()) {
+        if (r.state == "open" && r.source == from.id && r.target == into.id)
+            THROWM(Base::ValueError, "that merge is asked for already: request "
+                                         + std::to_string(r.id));
+    }
+    const auto who = log->userOf(ActorScope::current().get());
+    LogMergeRequest request;
+    request.source = from.id;
+    request.target = into.id;
+    request.kind = who.first;
+    request.name = who.second;
+    request.note = note;
+    request.created = std::chrono::duration<double>(
+                          std::chrono::system_clock::now().time_since_epoch()).count();
+    store.addMergeRequest(request);
+    fileBranchesChanged(log);
+    return request.id;
+}
+
+bool Document::closeMergeRequest(int64_t id, const std::string& state, int64_t result)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    if (state != "merged" && state != "rejected" && state != "withdrawn")
+        THROWM(Base::ValueError, "a request ends merged, rejected or withdrawn");
+    auto& store = log->store();
+    for (LogMergeRequest r : store.mergeRequests()) {
+        if (r.id != id || r.state != "open")
+            continue;
+        const auto who = log->userOf(ActorScope::current().get());
+        r.state = state;
+        r.closed = std::chrono::duration<double>(
+                       std::chrono::system_clock::now().time_since_epoch()).count();
+        r.closedKind = who.first;
+        r.closedName = who.second;
+        r.result = result;
+        store.updateMergeRequest(r);
+        fileBranchesChanged(log);
+        return true;
+    }
+    return false;
+}
+
 bool Document::renameBranch(const std::string& name, const std::string& newName)
 {
     TransactionLog* log = getTransactionLog();
@@ -8263,6 +8382,13 @@ size_t Document::deleteBranch(const std::string& name)
         THROWM(Base::ValueError, "no branch '" + name + "'");
     if (branch.id == log->branch())
         THROWM(Base::ValueError, "branch '" + name + "' is the one the document is on");
+    // Nor one another document of the file is on (sec 32.25): its rows
+    // would go from under that document
+    if (Document* holder = log->holderOf(branch.id)) {
+        if (holder != this)
+            THROWM(Base::ValueError, "branch '" + name + "' is the one document "
+                                         + holder->getName() + " is on");
+    }
 
     const Shared shared = sharedWith(store, branch.id);
     // What another branch merged of it stays (sec 31.19, the user's: "keep
@@ -10629,7 +10755,18 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
                                             const std::map<std::string, std::string>& picks,
                                             const std::string& fallback, int64_t version)
 {
-    return _merge(branch, picks, fallback, version, nullptr);
+    MergeResult result = _merge(branch, picks, fallback, version, nullptr);
+    // The requests that asked for this merge are answered by it (sec
+    // 32.25), by whichever way it was done
+    TransactionLog* log = getTransactionLog();
+    LogBranch source;
+    if (log && result.unresolved.empty() && log->store().findBranch(branch, source)) {
+        for (const LogMergeRequest& r : log->store().mergeRequests()) {
+            if (r.state == "open" && r.source == source.id && r.target == log->branch())
+                closeMergeRequest(r.id, "merged", result.seq);
+        }
+    }
+    return result;
 }
 
 Document::UndoneMerge Document::undoneMerge()

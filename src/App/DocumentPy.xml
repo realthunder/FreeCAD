@@ -508,6 +508,68 @@ Rename a branch. False without a log; no such branch, or a new name that
 is empty or taken, raises.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="setTransactionAccess">
+      <Documentation>
+        <UserDocu>setTransactionAccess(kind, name, branch, write=False, version=0)
+
+Say what a user may do of a branch's history (docs/TransactionLog.md sec
+32.25). The user is who the log says wrote a row: `kind` ('verified',
+'invited', 'enrolled', ...) and `name`. Read: the branch is listed to the
+user, who applies its rows to the one it works on and asks for merges of
+it. With `write` the user also moves a document that is on the branch --
+restores, switches, branches, deletes what was branched from it -- from
+version `version` on, or from where the branch forks when that is 0, and
+deals with the requests to merge into it. Replaces what was said before.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="clearTransactionAccess">
+      <Documentation>
+        <UserDocu>clearTransactionAccess(kind, name, branch) -> bool
+
+Take away what setTransactionAccess() said of this user and branch. False
+when nothing was said.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionAccess">
+      <Documentation>
+        <UserDocu>getTransactionAccess() -> list of dict
+
+What is said of users and branches (docs/TransactionLog.md sec 32.25):
+'kind', 'name', 'branch' (its name), 'write', and for a write the point it
+starts at, 'from_seq' and 'from_version' -- both 0 for where the branch
+forks. 'made': the user made the branch, as a client of a served document,
+and it is the user's to delete.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="requestTransactionMerge">
+      <Documentation>
+        <UserDocu>requestTransactionMerge(source, target, note='') -> int
+
+Ask for branch `source` to be merged into `target` (docs/TransactionLog.md
+sec 32.25): kept in the log under whoever acts, for one who writes `target`
+to deal with. Returns the request's id. Raises when the same is asked
+already and not yet dealt with.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionMergeRequests">
+      <Documentation>
+        <UserDocu>getTransactionMergeRequests() -> list of dict
+
+The requests to merge a branch into another, oldest first: 'id', 'source'
+and 'target' (the branches' names, empty for one that is gone), 'by' and
+'by_kind' (who asked), 'note', 'created', 'state' ('open', 'merged',
+'rejected', 'withdrawn'), and of one that ended 'closed', 'closed_by' and
+'result' -- the row the merge wrote.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="closeTransactionMergeRequest">
+      <Documentation>
+        <UserDocu>closeTransactionMergeRequest(id, state, result=0) -> bool
+
+End a request under whoever acts: 'rejected', 'withdrawn', or 'merged' with
+the row the merge wrote. False when there is no such request still open.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="trimTransactionBranch" Keyword="true">
       <Documentation>
         <UserDocu>trimTransactionBranch(name, version=0, bridge=True) -> int

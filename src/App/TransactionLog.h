@@ -386,6 +386,10 @@ public:
     /// The connection left: its session is closed, which is all that says
     /// so (sec 30.6 U2). False when the log had no session of it.
     bool logout(const Actor& actor);
+    /** Who `actor` is as this log names a user (LogUser): the kind and the
+     * name -- the desktop's own for none, or for the desktop user.
+     */
+    std::pair<std::string, std::string> userOf(const Actor* actor) const;
 
     /** What the rows written while it is set are known by (sec 30.13 F3):
      * an imported row is the fork's own, so it goes under the session it
