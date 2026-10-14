@@ -1565,10 +1565,15 @@ void TaskSketcherConstraints::updateList()
     // new constraints have to be added first
     slotConstraintsChanged();
 
-    // enforce constraint visibility
+    // enforce constraint visibility. Read from the group, not from
+    // SketcherParams: this runs inside OnChange() of the setting too (the
+    // visibility written there changes the constraints), and the observers of
+    // a group are told in no fixed order, so the cache may not have the new
+    // value yet -- it hid again what OnChange() had just shown.
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
-    bool visibilityTracksFilter = Sketcher::SketcherParams::getVisualisationTrackingFilter();
+    bool visibilityTracksFilter = hGrp->GetBool(
+        "VisualisationTrackingFilter", Sketcher::SketcherParams::defaultVisualisationTrackingFilter());
     change3DViewVisibilityToTrackFilter(visibilityTracksFilter);
 }
 
