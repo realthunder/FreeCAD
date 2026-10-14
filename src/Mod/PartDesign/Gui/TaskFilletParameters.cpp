@@ -25,6 +25,8 @@
 
 #ifndef _PreComp_
 # include <QAction>
+# include <QTimer>
+# include <Precision.hxx>
 # include <BRepAdaptor_Curve.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
 # include <BRepLProp_SLProps.hxx>
@@ -53,8 +55,10 @@
 #include <Base/Console.h>
 #include <Base/ExceptionSafeCall.h>
 #include <Base/Tools.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
+#include <Gui/ViewerContext.h>
 #include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureFillet.h>
 
@@ -209,7 +213,83 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     refresh();
     ui->filletRadius->selectAll();
 
+    // The default radius in the view: its label always at the top middle,
+    // its arrow the handle that takes typing once active
+    // (docs/OnViewValueEditing.md 3.1 to 3.3)
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
     setupGizmos(DressUpView);
+    onViewValues->addValue(ui->filletRadius, tr("Radius"),
+                           Gui::OnViewValueSet::Place::TopMiddle, radiusGizmo);
+    connect(onViewValues.get(), &Gui::OnViewValueSet::cameraChanged, this, [this]() {
+        placeRadiusGizmo();
+    });
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskFilletParameters::attachOnViewValues()
+{
+    auto vp = getDressUpView();
+    if (!onViewValues || !vp) {
+        return;
+    }
+    if (auto view = vp->getEditViewer()) {
+        if (view != onViewValues->getView()) {
+            onViewValues->attach(view);
+            placeRadiusGizmo(true);
+        }
+    }
+    onViewValues->refresh();
+}
+
+void TaskFilletParameters::placeRadiusGizmo(bool force)
+{
+    if (!radiusGizmo || !radiusPlaced) {
+        return;
+    }
+    int face = radiusFace;
+    auto vp = getDressUpView();
+    Gui::ViewerContext* view = onViewValues ? onViewValues->getView() : nullptr;
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (view && fillet) {
+        // The view's direction where the arrows are: the gizmos' frame is the
+        // editing transform less the feature's placement (ViewProviderDragger)
+        Base::Matrix4D mat = vp->getDocument()->getEditingTransform();
+        Base::Matrix4D placement = fillet->Placement.getValue().toMatrix();
+        placement.inverse();
+        mat *= placement;
+        mat.inverse();
+        const SbVec3f v = view->getViewDirection();
+        Base::Vector3d dir = mat * Base::Vector3d(v[0], v[1], v[2]) - mat * Base::Vector3d();
+        if (dir.Length() > Precision::Confusion()) {
+            dir.Normalize();
+            // An arrow in the face turned toward the camera lies flat on the
+            // screen; the other one points into it. A little either way of
+            // even does not move it, so that it does not flicker.
+            constexpr double hysteresis = 0.05;
+            double along[2];
+            for (int i = 0; i < 2; ++i) {
+                Base::Vector3d d = radiusPlacements[i].dir;
+                d.Normalize();
+                along[i] = std::fabs(d * dir);
+            }
+            if (along[1 - face] + hysteresis < along[face]) {
+                face = 1 - face;
+            }
+        }
+    }
+    if (face == radiusFace && !force) {
+        return;
+    }
+    radiusFace = face;
+    radiusGizmo->Gizmo::setDraggerPlacement(radiusPlacements[face].position,
+                                            radiusPlacements[face].dir);
+    if (gizmoContainer) {
+        gizmoContainer->calculateScaleAndOrientation();
+    }
 }
 
 void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
@@ -219,7 +299,6 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
     }
 
     radiusGizmo = new Gui::LinearGizmo(ui->filletRadius);
-    radiusGizmo2 = new Gui::LinearGizmo(ui->filletRadius);
 
     // The handles of the current corner, one per fillet, each driving a
     // hidden spin box. The container takes a fixed list, so there is a pool.
@@ -270,7 +349,7 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
     }
     static_assert(CornerGizmoCount == 6 && CornerFaceGizmoCount == 4,
                   "the container below lists every corner gizmo");
-    gizmoContainer = GizmoContainer::create({radiusGizmo, radiusGizmo2,
+    gizmoContainer = GizmoContainer::create({radiusGizmo,
                                              cornerGizmos[0].gizmo, cornerGizmos[1].gizmo,
                                              cornerGizmos[2].gizmo, cornerGizmos[3].gizmo,
                                              cornerGizmos[4].gizmo, cornerGizmos[5].gizmo,
@@ -307,10 +386,10 @@ void TaskFilletParameters::setGizmoPositions()
     auto [face1, face2] = getAdjacentFacesFromEdge(edge, baseShape);
 
     DraggerPlacementProps props1 = getDraggerPlacementFromEdgeAndFace(edge, face1);
-    radiusGizmo->Gizmo::setDraggerPlacement(props1.position, props1.dir);
-
     DraggerPlacementProps props2 = getDraggerPlacementFromEdgeAndFace(edge, face2);
-    radiusGizmo2->Gizmo::setDraggerPlacement(props2.position, props2.dir);
+    radiusPlacements[0] = {props1.position, props1.dir};
+    radiusPlacements[1] = {props2.position, props2.dir};
+    radiusPlaced = true;
 
     // The dragger length won't be equal to the radius if the two faces
     // are not orthogonal so this correction is needed
@@ -318,7 +397,8 @@ void TaskFilletParameters::setGizmoPositions()
     double correction = 1 / std::tan(angle / 2);
 
     radiusGizmo->setMultFactor(correction);
-    radiusGizmo2->setMultFactor(correction);
+    // one arrow, in the face turned more toward the camera
+    placeRadiusGizmo(true);
 
     setCornerGizmoPositions();
 }
@@ -526,6 +606,7 @@ void TaskFilletParameters::finishedRecomputeFeature()
     // The edge list or the base may have changed; the radius alone does not
     // move the gizmos, but reading the placement again is cheap.
     setGizmoPositions();
+    attachOnViewValues();
 }
 
 void TaskFilletParameters::onRefDeleted() {

@@ -102,6 +102,8 @@ class GuiExport LinearGizmo: public Gizmo
 {
 public:
     using ClickCallback = std::function<void()>;
+    /// Called when the pointer lets go of the handle, dragged or only clicked
+    using ReleaseCallback = std::function<void(bool dragged)>;
 
     LinearGizmo(QuantitySpinBox* property);
     ~LinearGizmo() override = default;
@@ -125,7 +127,17 @@ public:
     void setAddFactor(const double val);
     void setDraggerStyle(LinearDraggerStyle style);
     void setClickCallback(ClickCallback callback);
+    void setReleaseCallback(ReleaseCallback callback);
     void setVisibility(bool visible);
+    /** Draw the handle in its active colour while not dragged: the handle
+     * that takes typed values (docs/OnViewValueEditing.md 3.2).
+     */
+    void setHighlighted(bool highlighted);
+    /** Whether letting go of the handle puts the focus in its spin box, the
+     * way upstream has it (the default). A handle whose value is typed in
+     * the view keeps the focus in the view instead.
+     */
+    void setFocusBoxOnRelease(bool focus);
 
 private:
     SoLinearDragger* dragger = nullptr;
@@ -134,7 +146,10 @@ private:
     QMetaObject::Connection formulaDialogConnection;
     LinearDraggerStyle draggerStyle = LinearDraggerStyle::Arrow;
     bool hasDragged = false;
+    bool highlighted = false;
+    bool focusBoxOnRelease = true;
     ClickCallback clickCallback;
+    ReleaseCallback releaseCallback;
 
     void draggingStarted();
     void draggingFinished();

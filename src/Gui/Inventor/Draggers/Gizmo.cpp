@@ -202,14 +202,39 @@ void LinearGizmo::updateColorTheme()
     Base::Color baseColor = styleParameterManager->resolve(StyleParameters::LinearGizmoBaseColor);
     Base::Color activeColor = styleParameterManager->resolve(StyleParameters::LinearGizmoActiveColor);
 
-    dragger->color = baseColor.asValue<SbColor>();
+    // the active handle wears the colour of one being dragged
+    dragger->color = (highlighted ? activeColor : baseColor).asValue<SbColor>();
     dragger->activeColor = activeColor.asValue<SbColor>();
 
     auto baseGeom = SO_GET_PART(dragger, "baseGeom", SoArrowBase);
+    if (!baseGeom) {
+        return;
+    }
     Base::Color baseGeomColor = styleParameterManager->resolve(
         StyleParameters::DimensionVisualizerColor
     );
     baseGeom->color = baseGeomColor.asValue<SbColor>();
+}
+
+void LinearGizmo::setHighlighted(bool highlighted)
+{
+    if (this->highlighted == highlighted) {
+        return;
+    }
+    this->highlighted = highlighted;
+    if (dragger) {
+        updateColorTheme();
+    }
+}
+
+void LinearGizmo::setFocusBoxOnRelease(bool focus)
+{
+    focusBoxOnRelease = focus;
+}
+
+void LinearGizmo::setReleaseCallback(ReleaseCallback callback)
+{
+    releaseCallback = std::move(callback);
 }
 
 GizmoPlacement LinearGizmo::getDraggerPlacement()
@@ -332,8 +357,14 @@ void LinearGizmo::draggingFinished()
         clickCallback();
     }
 
-    property->setFocus();
-    property->selectAll();
+    if (focusBoxOnRelease) {
+        property->setFocus();
+        property->selectAll();
+    }
+    // Last: it may make the handle the active one, which takes the focus
+    if (releaseCallback) {
+        releaseCallback(hasDragged);
+    }
 }
 
 void LinearGizmo::draggingContinued()

@@ -74,7 +74,11 @@ public:
         // the end point; param1 is the distance of the dimension arc from the
         // centre, measured along the arc's middle direction (negative puts it
         // past the centre).
-        ARCLENGTH
+        ARCLENGTH,
+        // The text alone, centred on the first point, upright: no dimension
+        // line, no arrows. A value that stands for no geometry -- a feature's
+        // default shown at a fixed place of the view (docs/OnViewValueEditing.md).
+        TEXT
     };
 
     static void initClass();

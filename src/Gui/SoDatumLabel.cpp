@@ -297,6 +297,7 @@ SoDatumLabel::SoDatumLabel()
     SO_NODE_DEFINE_ENUM_VALUE(Type, RADIUS);
     SO_NODE_DEFINE_ENUM_VALUE(Type, DIAMETER);
     SO_NODE_DEFINE_ENUM_VALUE(Type, ARCLENGTH);
+    SO_NODE_DEFINE_ENUM_VALUE(Type, TEXT);
     SO_NODE_SET_SF_ENUM_TYPE(datumtype, Type);
 
     SO_NODE_ADD_FIELD(param1, (0.f));
@@ -495,6 +496,9 @@ public:
         }
         else if (label->datumtype.getValue() == SoDatumLabel::ARCLENGTH) {
             corners = computeArcLengthBBox();
+        }
+        else if (label->datumtype.getValue() == SoDatumLabel::TEXT) {
+            corners = computeTextBBox();
         }
 
         const SbVec3f* extension = label->extensionLines.getValues(0);
@@ -804,6 +808,27 @@ private:
         return corners;
     }
 
+    std::vector<SbVec3f> computeTextBBox() const
+    {
+        if (label->pnts.getNum() < 1) {
+            return {};
+        }
+        SbVec2s imgsize;
+        int nc;
+        int srcw = 1;
+        int srch = 1;
+        const unsigned char * dataptr = label->image.getValue(imgsize, nc);
+        if (dataptr) {
+            srcw = imgsize[0];
+            srch = imgsize[1];
+        }
+        float imgHeight = scale * (float) (srch);
+        float imgWidth  = imgHeight * (float) srcw / (float) srch;
+        const SbVec3f p = label->pnts[0];
+        return {p + SbVec3f(-imgWidth / 2, -imgHeight / 2, 0.f),
+                p + SbVec3f(imgWidth / 2, imgHeight / 2, 0.f)};
+    }
+
 private:
     float scale;
     SoDatumLabel* label;
@@ -832,6 +857,9 @@ SbVec3f SoDatumLabel::getLabelTextCenter()
     // Get the points stored
     const SbVec3f* points = this->pnts.getValues(0);
     SbVec3f p1 = points[0];
+    if (datumtype.getValue() == SoDatumLabel::TEXT || this->pnts.getNum() < 2) {
+        return p1;
+    }
     SbVec3f p2 = points[1];
 
     if (datumtype.getValue() == SoDatumLabel::DISTANCE ||
@@ -1477,6 +1505,14 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         emitLine(at(extension[i]), at(extension[i + 1]));
     }
 
+    if (dt == TEXT) {
+        // no leaders: the number alone, upright at the point
+        if (npts > 0)
+            this->textOffset = points[0];
+        this->textAngle = 0.f;
+        return;
+    }
+
     if (dt == DISTANCE || dt == DISTANCEX || dt == DISTANCEY) {
         if (npts < 2)
             return;
@@ -1772,6 +1808,23 @@ void SoDatumLabel::generatePrimitives(SoAction * action)
     // Get the points stored
     const SbVec3f *points = this->pnts.getValues(0);
     SbVec3f p1 = points[0];
+    if (this->datumtype.getValue() == TEXT) {
+        // the number's box, upright at the point
+        SoPrimitiveVertex pv;
+        pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
+        this->beginShape(action, TRIANGLE_STRIP);
+        for (const SbVec3f& corner : {SbVec3f(-this->imgWidth / 2, -this->imgHeight / 2, 0.f),
+                                      SbVec3f(-this->imgWidth / 2, this->imgHeight / 2, 0.f),
+                                      SbVec3f(this->imgWidth / 2, -this->imgHeight / 2, 0.f),
+                                      SbVec3f(this->imgWidth / 2, this->imgHeight / 2, 0.f)}) {
+            pv.setPoint(p1 + corner);
+            shapeVertex(&pv);
+        }
+        this->endShape();
+        return;
+    }
+    if (this->pnts.getNum() < 2)
+        return;
     SbVec3f p2 = points[1];
 
     // Change the offset and bounding box parameters depending on Datum Type
@@ -2335,6 +2388,11 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
                       SbVec3f(cos(geom.endangle), sin(geom.endangle), 0.f));
             glEnd();
         }
+    }
+    else if (this->datumtype.getValue() == TEXT) {
+        // the number alone, upright at the point
+        textOffset = points[0];
+        angle = 0.f;
     }
 
     if (hasText) {

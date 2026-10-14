@@ -44,6 +44,7 @@ class Ui_TaskFilletParameters;
 
 namespace Gui {
 class ExpressionBinding;
+class OnViewValueSet;
 class QuantitySpinBox;
 }
 
@@ -125,10 +126,23 @@ private:
     std::unique_ptr<Ui_TaskFilletParameters> ui;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    /// The default radius's one arrow (docs/OnViewValueEditing.md 3.3), in
+    /// whichever of the two faces beside the first edge is turned more toward
+    /// the camera
     Gui::LinearGizmo* radiusGizmo = nullptr;
-    Gui::LinearGizmo* radiusGizmo2 = nullptr;
+    struct RadiusPlacement {
+        Base::Vector3d position;
+        Base::Vector3d dir;
+    };
+    RadiusPlacement radiusPlacements[2];
+    bool radiusPlaced = false;
+    int radiusFace = 0;
     void setupGizmos(ViewProviderDressUp* vp);
     void setGizmoPositions();
+    /// Put the radius arrow in the face turned more toward the camera
+    void placeRadiusGizmo(bool force = false);
+    /// Show the values in the view the feature is edited in, once it has one
+    void attachOnViewValues();
 
     /// One handle per fillet of the current corner, at most this many
     static constexpr int CornerGizmoCount = 6;
@@ -150,6 +164,10 @@ private:
                                      const std::string &vertexName,
                                      const gp_Pnt &point,
                                      const CornerEdges &faces);
+
+    /// The values shown and typed in the view. Last, so that it goes before
+    /// the handles it highlights.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
 };
 
 /// simulation dialog for the TaskView
