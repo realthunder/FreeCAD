@@ -34,7 +34,8 @@ import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefu
          requestText, rowBranchWhy, rowUndoable, rowUndoWhy, rowsAppliable, sortRequests,
          switchable, undoLabel, versionText, versionWhy,
          changeName, changePicked, changeTakes, picksOf, previewText, sortChanges,
-         unpickedConflicts } from '../logmodel.ts';
+         unpickedConflicts, keepText, keptCountText, keptLines, keptObjectText, keptRowText,
+         keptTabText, opKeepable, opKeptText } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -943,6 +944,47 @@ function checkLog(): void {
           === 'Apply row 7: 3 changes, 1 conflict'
         && previewText({ what: 'merge', count: 0, conflicts: 0, forward: 2 }, 'Merge a into b')
           === 'Merge a into b: nothing here moved since, 2 rows taken as they are');
+
+  // what is kept in the file (sec 32.27)
+  const lines = keptLines(
+    [{ ref: 'aa', cid: 3, obj: 'Cut', label: 'Cut', here: true, prop: 'Shape', seq: 7, row: true,
+       release: true },
+     { ref: 'bb', cid: 9, here: false, prop: 'Shape', seq: 2, row: false, release: false,
+       why: 'the host lets it go' }],
+    [{ cid: 1, obj: 'Box', label: 'Bracket', here: true, release: false, why: 'host',
+       values: [{ ref: 'cc', prop: 'Shape', seq: 4, alone: false },
+                { ref: 'aa', prop: 'Shape', seq: 7, alone: true }] }]);
+  check(t, 'the kept are listed values first, then each object with its values under it',
+        lines.map((l) => l.kind).join(',') === 'value,value,object,under,under'
+        && lines[2].count === 2 && lines[4].alone && !lines[3].alone,
+        lines.map((l) => l.kind).join(','));
+  check(t, 'an object is named by its label, or said to be gone',
+        keptObjectText({ cid: 1, obj: 'Box', label: 'Bracket', here: true }) === 'Bracket (Box)'
+        && keptObjectText({ cid: 3, obj: 'Cut', label: 'Cut', here: true }) === 'Cut'
+        && keptObjectText({ cid: 9, here: false }) === 'obj:9, not in the document');
+  check(t, 'a row gone says so; an object has no row',
+        keptRowText(lines[0]) === '7' && keptRowText(lines[1]) === '2, gone'
+        && keptRowText(lines[2]) === '');
+  check(t, 'every key is its own, so a line stays chosen across a refresh',
+        new Set(lines.map((l) => l.key)).size === lines.length);
+  check(t, 'the tab carries the count; an object how many values',
+        keptTabText(0) === 'Kept' && keptTabText(3) === 'Kept (3)'
+        && keptCountText(1) === '1 value' && keptCountText(2) === '2 values');
+  const keptOp = (extra: Record<string, unknown>): any => ({ idx: 0, op: 'set', kind: 'obj',
+    prop: 'Shape', type: '', after: 'aa', obj: 'Cut', here: true, ...extra });
+  check(t, 'an op says its value is kept, by itself or with its object',
+        opKeptText(keptOp({})) === '' && opKeptText(keptOp({ keptValue: true })) === 'kept'
+        && opKeptText(keptOp({ keptObject: true })) === 'all of it kept'
+        && opKeptText(keptOp({ keptValue: true, keptObject: true })) === 'kept, and all of it');
+  check(t, "a value is kept from an op that set one, of an object still here",
+        opKeepable(keptOp({})) && !opKeepable(keptOp({ after: undefined }))
+        && !opKeepable(keptOp({ kind: 'doc' })) && !opKeepable(keptOp({ here: false }))
+        && !opKeepable(keptOp({ op: 'create' })));
+  check(t, 'a keep says how many, and nothing where the log has none',
+        keepText(1, true, 'of Cut at row 7') === '1 value of Cut at row 7 kept: a save writes it '
+          + 'into the file'
+        && keepText(2, false, 'of Cut') === '2 values of Cut let go'
+        && keepText(0, true, '').startsWith('Nothing kept'));
 }
 
 checkLog();

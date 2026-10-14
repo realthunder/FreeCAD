@@ -4,7 +4,8 @@
 // (widgets/gate.ts).
 
 import type {
-  LogBranch, LogChange, LogOp, LogReach, LogRequest, LogRow, LogVersion,
+  LogBranch, LogChange, LogKeptObject, LogKeptValue, LogOp, LogReach, LogRequest, LogRow,
+  LogVersion,
 } from './control';
 
 /// What a refusal says, in the card's words.
@@ -278,4 +279,93 @@ export function previewText(p: { what: string; source?: string; count: number;
   const many = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
   if (p.forward) return `${title}: nothing here moved since, ${many(p.forward, 'row')} taken as they are`;
   return `${title}: ${many(p.count, 'change')}, ${many(p.conflicts, 'conflict')}`;
+}
+
+// -- What is kept in the file (docs/TransactionLog.md sec 32.27) ----------
+
+/// One line of the list of the kept, as the desktop's Kept tab has it: each
+/// value kept by itself, then each object kept and under it the values the
+/// log has of it.
+export interface KeptLine {
+  key: string;               // what a line is chosen by
+  kind: 'value' | 'object' | 'under';
+  cid: number;
+  object: string;            // in words
+  prop: string;
+  seq: number;
+  rowThere: boolean;
+  ref: string;               // none: an object kept
+  alone: boolean;            // a value kept by itself
+  release: boolean;          // the asker may let it go, or stop keeping it
+  why: string;               // why not
+  count: number;             // an object's: how many values are listed
+}
+
+/// An object of the list in words: its label, or its number where the
+/// document no longer has it.
+export function keptObjectText(o: { cid: number; obj?: string; label?: string;
+                                     here: boolean }): string {
+  if (!o.here) return `obj:${o.cid}, not in the document`;
+  return o.label && o.label !== o.obj ? `${o.label} (${o.obj})` : (o.obj ?? `obj:${o.cid}`);
+}
+
+export function keptLines(values: LogKeptValue[], objects: LogKeptObject[]): KeptLine[] {
+  const lines: KeptLine[] = [];
+  for (const v of values) {
+    lines.push({ key: `v:${v.ref}`, kind: 'value', cid: v.cid, object: keptObjectText(v),
+                 prop: v.prop, seq: v.seq, rowThere: v.row, ref: v.ref, alone: true,
+                 release: v.release, why: v.why ?? '', count: 0 });
+  }
+  for (const o of objects) {
+    lines.push({ key: `o:${o.cid}`, kind: 'object', cid: o.cid, object: keptObjectText(o),
+                 prop: '', seq: 0, rowThere: false, ref: '', alone: false,
+                 release: o.release, why: o.why ?? '', count: o.values.length });
+    for (const v of o.values) {
+      lines.push({ key: `u:${o.cid}:${v.ref}`, kind: 'under', cid: o.cid,
+                   object: keptObjectText(o), prop: v.prop, seq: v.seq, rowThere: true,
+                   ref: v.ref, alone: v.alone, release: !!v.release, why: v.why ?? '',
+                   count: 0 });
+    }
+  }
+  return lines;
+}
+
+/// The tab's title: the count, so that something kept is seen unopened.
+export function keptTabText(count: number): string {
+  return count ? `Kept (${count})` : 'Kept';
+}
+
+/// The row a kept value is of, in words: a row trimmed or squashed away
+/// says so, and the value is there all the same.
+export function keptRowText(line: { kind: string; seq: number; rowThere: boolean }): string {
+  if (line.kind === 'object') return '';
+  return line.rowThere ? String(line.seq) : `${line.seq}, gone`;
+}
+
+/// What an object's line says of its values.
+export function keptCountText(n: number): string {
+  return n === 1 ? '1 value' : `${n} values`;
+}
+
+/// What an op says of its value where it is kept, as the desktop's "yes,
+/// kept"; empty where it is not.
+export function opKeptText(op: LogOp): string {
+  if (op.keptValue && op.keptObject) return 'kept, and all of it';
+  if (op.keptValue) return 'kept';
+  return op.keptObject ? 'all of it kept' : '';
+}
+
+/// Whether an op's value can be kept from it: a value an object's property
+/// was set to.
+export function opKeepable(op: LogOp): boolean {
+  return op.kind === 'obj' && op.op === 'set' && !!op.after && !!op.obj && op.here !== false;
+}
+
+/// What a keep said done, in the card's words.
+export function keepText(values: number, keep: boolean, where: string): string {
+  if (!values) return keep ? 'Nothing kept: the log holds no such value'
+                           : 'Nothing let go: no such value was kept';
+  const many = values === 1 ? '1 value' : `${values} values`;
+  return keep ? `${many} ${where} kept: a save writes ${values === 1 ? 'it' : 'them'} into the file`
+              : `${many} ${where} let go`;
 }

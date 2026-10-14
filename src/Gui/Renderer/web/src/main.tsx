@@ -383,7 +383,9 @@ render(() => (
     <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
                 viewOnly={viewOnly} doc={() => docs().current} />
     <LogPanel open={logOpen} onClose={() => setLogOpen(false)}
-              viewOnly={viewOnly} doc={() => docs().current} />
+              viewOnly={viewOnly} doc={() => docs().current}
+              selected={() => [...new Set(selection()
+                .filter((s) => s.obj && s.home !== false).map((s) => s.obj!))]} />
     <OmniBox open={omniOpen} onClose={() => setOmniOpen(false)}
              selection={selection} viewOnly={viewOnly} host={isHost} />
     <ConsolePanel open={consoleOpen} onClose={() => setConsoleOpen(false)}

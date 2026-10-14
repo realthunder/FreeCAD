@@ -33,25 +33,31 @@
 // here since, the card asks one side for all of them, or opens the list of
 // what it would do -- `log.preview` -- and a side is picked for each
 // conflict; a merge undone at the head is rolled back.
+//
+// What is kept in the file (sec 32.27): a fourth tab lists the values a
+// save writes though no kept version reaches them -- each kept by itself,
+// each object kept -- and an op's value, an object, or the objects selected
+// as they are at a version are kept, or let go, from here.
 
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
 import {
-  logApply, logBranches, logCloseRequest, logDeleteBranch, logMergeRequest, logNameVersion,
-  logNewBranch, logOps, logPreview, logRenameBranch, logRequest, logRequests, logRestore,
-  logRollBack, logRows, logSnapshot, logSwitchBranch, logUndoRows, logValue, logVersions,
-  onConnection, onLogChanged, showRowChange,
+  logApply, logBranches, logCloseRequest, logDeleteBranch, logKeep, logKeepObject, logKept,
+  logMergeRequest, logNameVersion, logNewBranch, logOps, logPreview, logRelease, logRenameBranch,
+  logRequest, logRequests, logRestore, logRollBack, logRows, logSnapshot, logSwitchBranch,
+  logUndoRows, logValue, logVersions, onConnection, onLogChanged, showRowChange,
   type LogBranch, type LogChange, type LogOp, type LogOpsReply, type LogReach, type LogRequest,
   type LogRow, type LogSides, type LogValueReply, type LogVersion,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
 import {
-  actRefusal, branchNameProblem, changeName, changePicked, changeTakes, deletable, logAuthor,
-  logOpText, logRefusal, logWhen, mayMove, mergeNewest, moveWhy, picksOf, pickRows,
+  actRefusal, branchNameProblem, changeName, changePicked, changeTakes, deletable, keepText,
+  keptCountText, keptLines, keptRowText, keptTabText, logAuthor, logOpText, logRefusal,
+  logWhen, mayMove, mergeNewest, moveWhy, opKeepable, opKeptText, picksOf, pickRows,
   previewText, requestActs, requestProblem, requestState, requestText, rowBranchWhy,
   rowUndoable, rowUndoWhy, rowsAppliable, sortChanges, sortRequests, switchable, undoLabel,
-  unpickedConflicts, versionText, versionWhy,
+  unpickedConflicts, versionText, versionWhy, type KeptLine,
 } from './logmodel.ts';
 
 const POS_KEY = 'fcviewer.log.pos';
@@ -63,6 +69,9 @@ export interface LogPanelProps {
   viewOnly: Accessor<boolean>;
   /// The document the viewer is joined to; empty means the backend's own.
   doc: Accessor<string>;
+  /// The objects selected in the page, by name: what is kept as it is at a
+  /// version
+  selected?: Accessor<string[]>;
 }
 
 /// A question the card asks before an act: a name to give, or a yes to
@@ -112,7 +121,11 @@ export function LogPanel(props: LogPanelProps) {
   const [records, setRecords] = createSignal((() => {
     try { return localStorage.getItem(RECORDS_KEY) === '1'; } catch { return false; }
   })());
-  const [tab, setTab] = createSignal<'rows' | 'versions' | 'requests'>('rows');
+  const [tab, setTab] = createSignal<'rows' | 'versions' | 'requests' | 'kept'>('rows');
+  const [kept, setKept] = createSignal<KeptLine[]>([]);
+  const [keptCount, setKeptCount] = createSignal(0);
+  const [keptKey, setKeptKey] = createSignal<string | null>(null);
+  const [keptValue, setKeptValue] = createSignal<LogValueReply | null>(null);
   const [requests, setRequests] = createSignal<LogRequest[]>([]);
   const [request, setRequest] = createSignal<number | null>(null);
   const [reqSource, setReqSource] = createSignal('');
@@ -154,6 +167,8 @@ export function LogPanel(props: LogPanelProps) {
   const chosenRow = () => rows().find((r) => r.seq === selected()) ?? null;
   const chosenRequest = () => requests().find((r) => r.id === request()) ?? null;
   const openRequests = () => requests().filter((r) => r.state === 'open').length;
+  const chosenKept = () => kept().find((k) => k.key === keptKey()) ?? null;
+  const selectedObjects = () => props.selected?.() ?? [];
   /// Why the document is not the asker's to move
   const hereWhy = () => moveWhy(reach());
   /// Why the rows chosen are not taken back: the first that says
@@ -210,12 +225,20 @@ export function LogPanel(props: LogPanelProps) {
       setRequests(sortRequests(q.requests));
       if (request() !== null && !q.requests.some((x) => x.id === request())) setRequest(null);
     } catch { /* said by the rows */ }
-    if (tab() !== 'versions') return;
+    if (tab() === 'versions') {
+      try {
+        const v = await logVersions(props.doc());
+        // Newest first, as the rows are
+        setVersions([...v.versions].reverse());
+        if (version() !== null && !v.versions.some((x) => x.num === version())) setVersion(null);
+      } catch { /* said by the rows */ }
+    }
+    // Asked with every list, whichever is shown: the tab's name counts them
     try {
-      const v = await logVersions(props.doc());
-      // Newest first, as the rows are
-      setVersions([...v.versions].reverse());
-      if (version() !== null && !v.versions.some((x) => x.num === version())) setVersion(null);
+      const k = await logKept(props.doc());
+      setKept(keptLines(k.values, k.objects));
+      setKeptCount(k.count);
+      if (keptKey() !== null && !kept().some((x) => x.key === keptKey())) chooseKept(null);
     } catch { /* said by the rows */ }
   };
 
@@ -558,6 +581,65 @@ export function LogPanel(props: LogPanelProps) {
     return `Version ${v.num} has no name now`;
   });
 
+  // What is kept in the file (sec 32.27). Nothing of it is a row: the list
+  // is asked again after each act, and the host's cue says when another
+  // kept or let go.
+
+  /// A line of the list chosen: a value's text is read, as an op's is
+  const chooseKept = (key: string | null) => {
+    setKeptKey(key);
+    setKeptValue(null);
+    const line = kept().find((k) => k.key === key);
+    if (!line?.ref) return;
+    logValue(line.ref, props.doc())
+      .then((r) => { if (keptKey() === key) setKeptValue(r); })
+      .catch(() => { /* the line says what it is */ });
+  };
+  /// An op's value, at the row chosen
+  const keepOpValue = (op: LogOp, keep: boolean) => {
+    const seq = selected();
+    if (seq === null || !op.obj) return;
+    void act(async () => {
+      const r = await logKeep({ obj: op.obj, prop: op.prop, row: seq }, keep, props.doc());
+      if (selected() === seq) choose([seq]);
+      return keepText(r.values, keep, `of ${op.label || op.obj} at row ${seq}`);
+    });
+  };
+  const keepObject = (what: { obj?: string; cid?: number }, name: string, keep: boolean) =>
+    void act(async () => {
+      const r = await logKeepObject(what, keep, props.doc());
+      const seq = selected();
+      if (seq !== null) choose([seq]);
+      if (!r.changed) return keep ? `Every value of ${name} was kept already`
+                                  : `The values of ${name} were not kept`;
+      return keep ? `Every value of ${name} is kept: a save writes them into the file`
+                  : `The values of ${name} are no longer kept`;
+    });
+  /// The objects selected, as they are at a version's row
+  const keepSelectedAt = (v: LogVersion, keep: boolean) => {
+    const objects = selectedObjects();
+    if (!objects.length || !v.seq) return;
+    void act(async () => {
+      const r = await logKeep({ objects, row: v.seq }, keep, props.doc());
+      return keepText(r.values, keep, `of ${objects.length === 1 ? objects[0]
+                                             : `${objects.length} objects`} at ${versionText(v)}`);
+    });
+  };
+  const releaseKept = (line: KeptLine) => void act(async () => {
+    await logRelease(line.ref, props.doc());
+    return `${line.object}.${line.prop} let go`;
+  });
+  /// A value under an object kept by itself too, or no more
+  const keepAlone = (line: KeptLine) => void act(async () => {
+    const r = await logKeep({ cid: line.cid, prop: line.prop, row: line.seq }, !line.alone,
+                            props.doc());
+    return keepText(r.values, !line.alone, `of ${line.object} at row ${line.seq}`);
+  });
+  const showKeptRow = (line: KeptLine) => {
+    setTab('rows');
+    choose([line.seq]);
+  };
+
   createEffect(() => {
     if (!props.open()) return;
     props.doc();
@@ -569,6 +651,11 @@ export function LogPanel(props: LogPanelProps) {
     setVersion(null);
     setRequests([]);
     setRequest(null);
+    setKept([]);
+    setKeptCount(0);
+    // (not chooseKept: it reads the list, which this effect must not follow)
+    setKeptKey(null);
+    setKeptValue(null);
     oldest = 0;
     setAsk(null);
     setPicker(null);
@@ -647,12 +734,17 @@ export function LogPanel(props: LogPanelProps) {
         </div>
 
         <div class="fc-log-acts">
-          <For each={['rows', 'versions', 'requests'] as const}>
+          <For each={['rows', 'versions', 'requests', 'kept'] as const}>
             {(which) => (
               <button class="fc-log-act fc-log-tab" classList={{ 'fc-log-sel': tab() === which }}
-                      data-tab={which} onClick={() => setTab(which)}>
+                      data-tab={which} onClick={() => setTab(which)}
+                      title={which === 'kept'
+                        ? 'the values a recompute wrote -- shapes -- that a save writes into the '
+                          + 'file though no kept version reaches them'
+                        : undefined}>
                 {which === 'rows' ? 'Rows' : which === 'versions' ? 'Versions'
-                  : openRequests() ? `Requests (${openRequests()})` : 'Requests'}
+                  : which === 'kept' ? keptTabText(keptCount())
+                    : openRequests() ? `Requests (${openRequests()})` : 'Requests'}
               </button>
             )}
           </For>
@@ -903,6 +995,9 @@ export function LogPanel(props: LogPanelProps) {
                         <span class="fc-log-optext">{logOpText(op)}</span>
                         <Show when={op.derived}><span class="fc-log-kind">derived</span></Show>
                         <Show when={op.kind === 'view'}><span class="fc-log-kind">view</span></Show>
+                        <Show when={opKeptText(op)}>
+                          <span class="fc-log-kind fc-log-kept">{opKeptText(op)}</span>
+                        </Show>
                         <Show when={op.shows}>
                           <button class="fc-log-show" disabled={props.viewOnly()}
                                   title="show the shape before and after this row"
@@ -933,6 +1028,30 @@ export function LogPanel(props: LogPanelProps) {
                   </button>
                 )}
               </For>
+              <Show when={opKeepable(chosenOp()!)}>
+                <button class="fc-log-side" data-act="keep-value" disabled={busy()}
+                        title={chosenOp()!.keptValue
+                          ? 'let go of this value: a save then leaves it out of the file, unless '
+                            + 'a kept version reaches it or its object is kept'
+                          : 'keep this value in the file: a save leaves a value a recompute wrote '
+                            + 'out, unless a kept version reaches it'}
+                        onClick={() => keepOpValue(chosenOp()!, !chosenOp()!.keptValue)}>
+                  {chosenOp()!.keptValue ? 'Let go' : 'Keep'}
+                </button>
+                <button class="fc-log-side" data-act="keep-object"
+                        disabled={busy() || (!!chosenOp()!.keptObject && !reach().host)}
+                        title={chosenOp()!.keptObject
+                          ? (reach().host ? 'stop keeping every value of it'
+                            : 'every value of an object is kept on every branch: the host lets '
+                              + 'them go')
+                          : 'keep every value of it the log has and will have: the file grows '
+                            + 'by each'}
+                        onClick={() => keepObject({ obj: chosenOp()!.obj },
+                                                  chosenOp()!.label || chosenOp()!.obj!,
+                                                  !chosenOp()!.keptObject)}>
+                  {chosenOp()!.keptObject ? 'Stop keeping all' : 'Keep all of it'}
+                </button>
+              </Show>
               <span class="fc-log-spacer" />
               <Show when={value()}>
                 <span class="fc-log-kind">
@@ -1022,7 +1141,123 @@ export function LogPanel(props: LogPanelProps) {
                                                `version ${chosenVersion()!.num}`)}>
                 Branch from here...
               </button>
+              <button class="fc-log-act" data-act="keep-selected"
+                      disabled={busy() || !selectedObjects().length || !chosenVersion()!.seq}
+                      title={!chosenVersion()!.seq ? 'this version was taken at no row'
+                        : !selectedObjects().length ? 'select the objects to keep as they are here'
+                          : 'what a recompute made of the objects selected -- their shapes -- '
+                            + 'there, written into the file by a save though the version is not '
+                            + 'kept'}
+                      onClick={() => keepSelectedAt(chosenVersion()!, true)}>
+                Keep selected here
+              </button>
+              <button class="fc-log-act" data-act="let-go-selected"
+                      disabled={busy() || !selectedObjects().length || !chosenVersion()!.seq}
+                      title="let go of the objects selected as they are here"
+                      onClick={() => keepSelectedAt(chosenVersion()!, false)}>
+                Let go of selected
+              </button>
             </div>
+          </Show>
+        </Show>
+
+        <Show when={!picker() && tab() === 'kept'}>
+          <div class="fc-log-rows fc-log-keptlist">
+            <table>
+              <thead>
+                <tr>
+                  <th>Kept</th><th>Object</th><th>Property</th><th class="fc-log-num">Row</th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={kept()}>
+                  {(k) => (
+                    <tr classList={{ 'fc-log-sel': keptKey() === k.key,
+                                     'fc-log-under': k.kind === 'under',
+                                     'fc-log-away': k.kind !== 'under' && !k.rowThere
+                                                    && k.kind === 'value' }}
+                        data-key={k.key} data-kind={k.kind}
+                        title={k.kind === 'value' && !k.rowThere
+                          ? 'the row it was kept at is no longer in the log; the value is there '
+                            + 'all the same'
+                          : k.ref || undefined}
+                        onClick={() => chooseKept(k.key)}>
+                      <td>
+                        {k.kind === 'value' ? 'one value' : k.kind === 'object' ? 'every value'
+                          : ''}
+                        <Show when={k.kind === 'under' && k.alone}>
+                          <span class="fc-log-kind">by itself too</span>
+                        </Show>
+                      </td>
+                      <td>{k.kind === 'under' ? '' : k.object}</td>
+                      <td>{k.kind === 'object' ? keptCountText(k.count) : k.prop}</td>
+                      <td class="fc-log-num">{keptRowText(k)}</td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+            <Show when={!kept().length}>
+              <div class="fc-log-empty">Nothing is kept beyond what the versions keep.</div>
+            </Show>
+          </div>
+
+          <Show when={chosenKept()}>
+            <div class="fc-log-rowacts">
+              <Show when={chosenKept()!.kind === 'value'}>
+                <button class="fc-log-act" data-act="kept-release"
+                        disabled={busy() || !chosenKept()!.release}
+                        title={chosenKept()!.why
+                               || ('a save then leaves it out of the file, unless a kept version '
+                                   + 'reaches it or its object is kept')}
+                        onClick={() => releaseKept(chosenKept()!)}>
+                  Let go
+                </button>
+              </Show>
+              <Show when={chosenKept()!.kind === 'object'}>
+                <button class="fc-log-act" data-act="kept-stop"
+                        disabled={busy() || !chosenKept()!.release}
+                        title={chosenKept()!.why || 'those kept by themselves stay kept'}
+                        onClick={() => keepObject({ cid: chosenKept()!.cid },
+                                                  chosenKept()!.object, false)}>
+                  Stop keeping all
+                </button>
+              </Show>
+              <Show when={chosenKept()!.kind === 'under'}>
+                <button class="fc-log-act" data-act="kept-alone"
+                        disabled={busy() || (chosenKept()!.alone && !chosenKept()!.release)}
+                        title={chosenKept()!.alone
+                          ? (chosenKept()!.why || 'kept by itself no more: it goes with its row')
+                          : 'it then stays when its row goes, in a trim or a squash, and when '
+                            + 'the object is no longer kept'}
+                        onClick={() => keepAlone(chosenKept()!)}>
+                  {chosenKept()!.alone ? 'Not by itself' : 'Keep by itself'}
+                </button>
+              </Show>
+              <Show when={chosenKept()!.kind !== 'object' && chosenKept()!.rowThere}>
+                <button class="fc-log-act" data-act="kept-row"
+                        onClick={() => showKeptRow(chosenKept()!)}>
+                  Show row {chosenKept()!.seq}
+                </button>
+              </Show>
+            </div>
+            <Show when={chosenKept()!.kind === 'object'}>
+              <div class="fc-log-empty">
+                Every value a recompute writes of this object is written into the file by a
+                save, and each one to come is kept as it is made. They are kept by the rows that
+                made them: a row trimmed or squashed takes its value with it.
+              </div>
+            </Show>
+            <Show when={keptValue()}>
+              <div class="fc-log-valuehead">
+                <span class="fc-log-kind">
+                  {keptValue()!.bytes} bytes{keptValue()!.truncated ? ', the start of it' : ''}
+                  {keptValue()!.attachments.length
+                    ? `, ${keptValue()!.attachments.length} attached` : ''}
+                </span>
+              </div>
+              <pre class="fc-log-value">{keptValue()!.text}</pre>
+            </Show>
           </Show>
         </Show>
 

@@ -557,6 +557,8 @@ export interface LogOp {
   label?: string;
   here?: boolean;            // the object is in the document now
   shows?: boolean;           // its view can show the two states
+  keptValue?: boolean;       // the value after is kept in the file by itself
+  keptObject?: boolean;      // every value of the object is kept in the file
 }
 
 export interface LogOpsReply {
@@ -805,6 +807,67 @@ export function logMergeRequest(
   request: number, sides?: LogSides, doc?: string,
 ): Promise<LogPlace & { row: number; forwarded: number; failed: number }> {
   return sendOp('log.mergeRequest', withDoc(doc, { request, ...sidesOf(sides) }));
+}
+
+// What a save writes into the file though no kept version reaches it: the
+// values a recompute wrote -- shapes -- kept (docs/TransactionLog.md sec
+// 32.11, 32.27).
+
+/// A value kept by itself: it stays when its row goes.
+export interface LogKeptValue {
+  ref: string;
+  cid: number;
+  obj?: string;              // where the document has the object
+  label?: string;
+  here: boolean;             // the object is in the document
+  prop: string;
+  seq: number;               // the row it was kept at
+  row: boolean;              // that row is still in the log
+  release: boolean;          // the asker may let it go
+  why?: string;              // and why not
+}
+
+/// An object every value of which is kept, and those the log has of it.
+export interface LogKeptObject {
+  cid: number;
+  obj?: string;
+  label?: string;
+  here: boolean;
+  /// `release` and `why` of one kept by itself too, as for LogKeptValue
+  values: Array<{ ref: string; prop: string; seq: number; alone: boolean; release?: boolean;
+                  why?: string }>;
+  release: boolean;          // the asker may stop keeping it
+  why?: string;
+}
+
+export function logKept(
+  doc?: string,
+): Promise<LogPlace & LogReach & { values: LogKeptValue[]; objects: LogKeptObject[];
+                                   count: number }> {
+  return sendOp('log.kept', withDoc(doc, {}));
+}
+
+/// Keep, or let go of, the value of an object at a row (0: where the
+/// document is); with no `prop` every value of it a recompute wrote. One
+/// object by name or id, or several by name. `values` is how many moved.
+export function logKeep(
+  what: { obj?: string; cid?: number; objects?: string[]; prop?: string; row?: number },
+  keep: boolean, doc?: string,
+): Promise<LogPlace & { row: number; values: number }> {
+  return sendOp('log.keep', withDoc(doc, { ...what, keep }));
+}
+
+/// Keep every value of an object the log has and will have, or stop: the
+/// host's, that.
+export function logKeepObject(
+  what: { obj?: string; cid?: number }, keep: boolean, doc?: string,
+): Promise<LogPlace & { cid: number; changed: boolean }> {
+  return sendOp('log.keepObject', withDoc(doc, { ...what, keep }));
+}
+
+/// Let go of a value kept by itself, by its ref: one whose row is gone too.
+export function logRelease(ref: string, doc?: string): Promise<LogPlace & { ref: string }> {
+  return sendOp('log.release', withDoc(doc, { ref }));
 }
 
 /// The host's "this document's log has other rows now": the document's
