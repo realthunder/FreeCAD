@@ -147,6 +147,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 15:49, the reporter, a NEW ENTRY 123:** the selection view in
+an overlay backed as the property editor is -- the same colour and alpha
+for its list column. Read in the source: the property editor backs whole
+rows, the selection view only the text. Written here 15:50.
+
 **2026-10-14 15:46, the reporter: THREE NEW ENTRIES, 120 to 122, in one
 message:** "new request, check what is gating the transparent overlay mode. with item background feature, we can enable transparency mode in all cases. btw, check why the report view has a different background in overlay non-transparency mode than non-overlay mode. Python console shares the same background color. another request, make overlay auto hide hint color theme aware, current color is not visible in dark theme"
 - 120: what gates the transparent mode -- read: an overlay turns opaque
@@ -2538,6 +2543,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 120 | 2026-10-14 | a change request: find what GATES an overlay's transparent mode, and with the item background feature let transparency be on IN ALL CASES | OPEN; the gate read by the note-taker in the source, nothing run: a transparent panel turns opaque while the active view is a MAXIMIZED view that cannot be panned, when "Auto hide in non 3D view" is on |
 | 121 | 2026-10-14 | the report view's background in an overlay that is NOT transparent differs from its background when not overlaid; the Python console's is the same in both | OPEN; a candidate read by the note-taker, not shown: the overlay style sheet gives every text box a ground of its own (#6e6e6e under Dark) |
 | 122 | 2026-10-14 | a change request: the overlay's AUTO-HIDE HINT colour to follow the theme -- under Dark it cannot be seen | OPEN; read by the note-taker: the Dark overlay sheet gives the hint a dark grey (50, 50, 50 at 0.6), on a dark view |
+| 123 | 2026-10-14 | a change request: the SELECTION VIEW in overlay mode -- its list column backed with the SAME colour and alpha as the property editor's | OPEN; read by the note-taker: the property editor backs whole rows (alternating), the selection view since `04e05bbd38` only the text, with the tree's text ground; one point under the entry, not put as blocking |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17549,6 +17555,40 @@ accent or a contrast to the 3D view's background behind it (which entry
 taken against the view's background where the hint lies, as entry 98's
 ground is; not put as blocking.
 
+## 123. The selection view in an overlay: its list column backed as the property editor is, the same colour and alpha (a change request) -- OPEN, read in the source
+
+**2026-10-14 15:49, the reporter:** "new request, for selection view in
+overlay mode, set the same background color and alpha for its list column
+as the property editor"
+
+The note-taker's reading, not the reporter's words: in an overlay, the
+selection view's list is to have the property editor's background -- the
+same colour, at the same opacity -- behind its rows, so the two panels
+look alike.
+
+READ in the source, nothing run:
+- The property editor in an overlay paints its ROWS, the whole width
+  (`PropertyEditor::overlayRowBackground`,
+  `src/Gui/propertyeditor/PropertyEditor.cpp` 216 to 230): one row in two
+  with the overlay item ground (`OverlayManager::overlayItemBackground`,
+  the automatic ground or the item colour of entry 98), the other with the
+  palette's alternate colour -- both at the overlay's alpha
+  (`overlayAlpha`).
+- The selection view, since entry 98's request of 11:08 (`04e05bbd38`),
+  paints only BEHIND THE TEXT and its icon, as the tree does, with
+  `OverlayManager::overlayTextGround` (`OverlayGroundDelegate`,
+  `src/Gui/Selection/SelectionView.cpp` 83 to 110; also its pick list,
+  173).
+- So, by this reading: the selection view's list takes the property
+  editor's row painting -- whole rows, the same two colours, the same
+  alpha -- in place of the text-only ground.
+
+NOT said, lettered, not put as blocking:
+a. The ALTERNATING rows (the property editor's every second row in the
+   palette's alternate colour): taken as part of "the same background".
+b. The selection view's PICK LIST (the second list, the pick-selection
+   list) -- taken as the same.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -17559,5 +17599,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 122 are of 2026-10-14, 116 and 119 said to the
+it; entries 114 to 123 are of 2026-10-14, 116 and 119 said to the
 build session)
