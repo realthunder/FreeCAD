@@ -205,6 +205,28 @@ def at_phase(name):
         change("on try", Height=40)
     elif name == "switched":
         change("taller still", Height=30)
+    elif name == "restored":
+        # In the first document, on the branch the page's was made from
+        doc = state["doc"]
+        doc.openTransaction("on main")
+        doc.getObject("Box").Length = 30
+        doc.recompute()
+        doc.commitTransaction()
+    elif name == "applied":
+        # One more row of the page's user, to have something to merge back
+        served = state["served"]
+        served.pushTransactionActor("invited", CLIENT)
+        try:
+            change("mine last", Height=21)
+        finally:
+            served.popTransactionActor()
+    elif name == "asked":
+        doc = state["doc"]
+        state["asked"] = [(r["source"], r["target"], r["by"], r["by_kind"], r["state"],
+                           r["note"]) for r in doc.getTransactionMergeRequests()]
+        state["merge"] = doc.mergeTransactionBranch(BRANCH)
+        state["ended"] = [(r["source"], r["target"], r["state"])
+                          for r in doc.getTransactionMergeRequests()]
 
 
 def build():
@@ -342,7 +364,7 @@ def verify():
         check("a row from before is offered neither to be taken back nor branched from, "
               "and the card says why",
               (out.get("beforeUndo") or {}).get("disabled") is True
-              and "before" in (out.get("beforeUndo") or {}).get("title", "")
+              and "theirs" in (out.get("beforeUndo") or {}).get("title", "")
               and (out.get("beforeBranch") or {}).get("disabled") is True
               and "before" in (out.get("beforeBranch") or {}).get("title", ""),
               (out.get("beforeUndo"), out.get("beforeBranch")))
@@ -428,6 +450,52 @@ def verify():
         check("the branch the document was served from is not offered to be switched to",
               sorted(on_try.get("offered", [])) == sorted([BRANCH, "try"])
               and len(on_try.get("options", [])) > len(on_try.get("offered", [])), on_try)
+        applied = s.get("applied", {})
+        says = out.get("applySays") or {}
+        check("a row of the branch this one was made from, which it reads, comes into the card "
+              "and is offered to be applied here, not to be taken back",
+              out.get("mainRow") is True and says.get("disabled") is False
+              and says.get("text", "").startswith("Apply row ")
+              and (out.get("applyUndoSays") or {}).get("disabled") is True,
+              (out.get("mainRow"), says, out.get("applyUndoSays")))
+        check("applied, the host has what it set in the page's document, and the first is as "
+              "it was",
+              out.get("applyAsked") is True and said(out.get("applySaid"), "applied as row")
+              and applied.get("box") == (30, 12, 16) and applied.get("main", ((),))[0]
+              == (30, 12, 16)
+              and any(r[2] == "pick" for r in applied.get("rows", [])),
+              (out.get("applySaid"), applied.get("box"), applied.get("main")))
+
+        asked = s.get("asked", {})
+        check("a merge is asked of two branches, and of none it is not",
+              out.get("noRequests") == 0 and (out.get("askNothing") or {}).get("disabled") is True
+              and out.get("pickedSource") is True and out.get("pickedTarget") is True
+              and (out.get("askSays") or {}).get("disabled") is False,
+              (out.get("noRequests"), out.get("askNothing"), out.get("askSays")))
+        reqs = out.get("requests") or []
+        check("the page asks for its branch to be merged back: the card lists it, and the host "
+              "has it under the page's user",
+              out.get("askAsked") is True and said(out.get("askSaid"), "merge %s into main" % BRANCH)
+              and len(reqs) == 1 and reqs[0].get("what") == "merge %s into main" % BRANCH
+              and reqs[0].get("state") == "open" and CLIENT in reqs[0].get("who", "")
+              and state.get("asked") == [(BRANCH, "main", CLIENT, "invited", "open",
+                                          "the work of the page")]
+              and "(1)" in (out.get("requestTab") or ""),
+              (out.get("askSaid"), reqs, state.get("asked"), out.get("requestTab")))
+        acts = out.get("requestActs") or [None, None, None]
+        check("it is the page's to withdraw, and not its to merge or reject",
+              [a and a.get("disabled") for a in acts] == [True, True, False], acts)
+        merged = s.get("merged", {})
+        ends = out.get("requestsEnd") or []
+        check("the host merges it in the first document, which then has the page's work",
+              state.get("ended") == [(BRANCH, "main", "merged")]
+              and merged.get("main", ((),))[0] == (30, 12, 21) and asked.get("box") == (30, 12, 21),
+              (state.get("ended"), merged.get("main"), asked.get("box")))
+        check("and the card says so by itself, with nothing left to do of it",
+              out.get("mergedSeen") is True and len(ends) == 1 and "merged" in ends[0].get("state", "")
+              and [a and a.get("disabled") for a in (out.get("requestActsEnd") or [])]
+              == [True, True, True], (ends, out.get("requestActsEnd")))
+
         check("the row of the other branch is listed as away, and not offered to be taken back",
               len(away) == 1 and away[0].get("away") is True
               and (out.get("awaySays") or {}).get("disabled") is True,
@@ -457,12 +525,14 @@ def verify():
               and ("trunk", True) in renamed.get("branches", [])
               and not any(n == BRANCH for n, _ in renamed.get("branches", [])),
               (out.get("renameStarts"), out.get("renamed"), renamed.get("branches")))
-        check("none of it moved the document the branch was served from",
-              renamed.get("main") == listed.get("main")
+        before_main = s.get("restored", {})
+        check("nothing the page did moved the document the branch was served from",
+              before_main.get("main") == listed.get("main")
               and listed.get("main", ((), [], 0))[0] == (14, 12, 16)
               and len(listed.get("main", ((), [], 0))[1]) == 1
-              and listed["main"][1][0] != BRANCH,
-              (listed.get("main"), renamed.get("main")))
+              and listed["main"][1][0] != BRANCH
+              and renamed.get("main", ((), [], 0))[1] == listed["main"][1],
+              (listed.get("main"), before_main.get("main"), renamed.get("main")))
     except Exception:
         note("FAIL verify:\n" + traceback.format_exc())
     finish()
