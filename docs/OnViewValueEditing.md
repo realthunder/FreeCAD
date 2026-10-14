@@ -169,6 +169,14 @@ recompute (where today the fillet panel repositions its pools).
   active by Tab or a click is highlighted and shows its label beside it; a
   digit typed then goes into that label without a further click. No typing
   during a drag.
+- KEYS WHILE A HANDLE IS ACTIVE (decided by the reporter 2026-10-14
+  13:28): SPACE opens the handle's context menu, as if its root button
+  were pressed; ENTER starts typing in the handle's dimension (its label
+  opens with the current value selected). Only while a handle is active:
+  otherwise Space keeps its own meaning -- today "Toggle visibility"
+  (`StdCmdToggleVisibility`, `CommandView.cpp` 951) -- and Enter its own.
+  Once the label is open, Enter commits (as above) and Escape restores
+  and leaves the handle active.
 - Each commit is one undo step.
 
 ### 3.3 The fillet
