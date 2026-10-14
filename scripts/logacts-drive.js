@@ -6,8 +6,9 @@
 // a browser can show is read here: that a row chosen can be taken back and
 // several at once, that a refusal is said with the host's reason, that a
 // snapshot is asked a name and listed, that a branch is made, switched from
-// and renamed from the card, that a version is restored -- and that the
-// card follows the host each time, by itself.
+// and renamed from the card, that a version is restored, that a value is
+// kept in the file and let go (sec 32.27) -- and that the card follows the
+// host each time, by itself.
 //
 // Usage:  node scripts/logacts-drive.js <url> <settle_ms>
 // LOGACTS_PHASES and LOGACTS_RESULT name files (node buffers stdout to a
@@ -270,7 +271,10 @@ async function answer(page, text) {
 
     // Restored to the version kept
     await page.evaluate(() => window.__fcTab('versions'));
-    await waitFor(page, () => window.__fcVersions().some((v) => v.name === 'kept'), 15000);
+    // (the list shown first is the one of the last visit, until the host
+    // answers again: what is read is what it comes to)
+    await waitFor(page, () => window.__fcVersions().some((v) => v.name === 'kept' && !v.now),
+                  15000);
     out.versionsChanged = await page.evaluate(() => window.__fcVersions());
     out.versionPicked = await page.evaluate(() => {
       const kept = window.__fcVersions().find((v) => v.name === 'kept');
@@ -392,6 +396,58 @@ async function answer(page, text) {
     out.pickerSaid = await page.evaluate(() => window.__fcStatus());
     out.pickerGone = await page.evaluate(() => !document.querySelector('.fc-log-picker'));
     await phase('picked');
+
+    // What is kept in the file (sec 32.27): the box's shape at the row the
+    // page's user made last, kept from its op; listed in a tab of its own,
+    // its text read there, and let go from there
+    await page.evaluate(() => window.__fcTab('rows'));
+    await waitFor(page, () => window.__fcClickRow('mine last'), 15000);
+    const shapeOp = () => [...document.querySelectorAll('.fc-log-op')]
+      .find((d) => /Box: Shape/.test(d.textContent));
+    await waitFor(page, `(${shapeOp})()`, 15000);
+    out.keepOp = await page.evaluate(() => {
+      const d = [...document.querySelectorAll('.fc-log-op')]
+        .find((x) => /Box: Shape/.test(x.textContent));
+      if (d) d.click();
+      return !!d;
+    });
+    await waitFor(page, () => !!window.__fcAct('keep-value'), 10000);
+    out.keepSays = await page.evaluate(
+      () => ['keep-value', 'keep-object'].map((a) => window.__fcActSays(a)));
+    out.keepAsked = await page.evaluate(() => window.__fcClickAct('keep-value'));
+    await waitFor(page, () => /kept:/.test((window.__fcStatus() || {}).text || ''), 20000);
+    out.keepSaid = await page.evaluate(() => window.__fcStatus());
+    const keptTab = () => (document.querySelector('.fc-log [data-tab="kept"]') || {}).textContent;
+    await waitFor(page, `(${keptTab})() === 'Kept (1)'`, 15000);
+    out.keptTab = await page.evaluate(keptTab);
+    out.opKept = await waitFor(
+      page, () => [...document.querySelectorAll('.fc-log-op .fc-log-kept')]
+        .some((e) => e.textContent === 'kept'), 15000);
+    await phase('kept');
+    await page.evaluate(() => window.__fcTab('kept'));
+    await waitFor(page, () => document.querySelectorAll('.fc-log-keptlist tbody tr').length > 0,
+                  10000);
+    out.keptLines = await page.evaluate(
+      () => [...document.querySelectorAll('.fc-log-keptlist tbody tr')].map((tr) => ({
+        kind: tr.dataset.kind, cells: [...tr.querySelectorAll('td')].map((td) => td.innerText.trim()),
+      })));
+    await page.evaluate(() => {
+      const tr = document.querySelector('.fc-log-keptlist tbody tr');
+      if (tr) tr.click();
+    });
+    out.keptValueShown = await waitFor(page, () => !!document.querySelector('.fc-log-value'),
+                                       15000);
+    out.keptActs = await page.evaluate(
+      () => ['kept-release', 'kept-row'].map((a) => window.__fcActSays(a)));
+    await shot(page, 'kept');
+    out.releaseAsked = await page.evaluate(() => window.__fcClickAct('kept-release'));
+    await waitFor(page, () => /let go/.test((window.__fcStatus() || {}).text || ''), 20000);
+    out.releaseSaid = await page.evaluate(() => window.__fcStatus());
+    await waitFor(page, `(${keptTab})() === 'Kept'`, 15000);
+    out.keptTabEnd = await page.evaluate(keptTab);
+    out.keptEmpty = await page.evaluate(
+      () => document.querySelectorAll('.fc-log-keptlist tbody tr').length === 0);
+    await phase('released');
   }
   catch (e) {
     out.failure = String((e && e.stack) || e);

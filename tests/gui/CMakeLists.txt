@@ -195,6 +195,10 @@ fc_add_gui_test(GuiServeLogActs_tests_run serve-log-acts.py
                 --timeout 300)
 fc_add_gui_test(GuiServeLogActsBrowser_tests_run serve-log-acts-browser.py
                 --timeout 600)
+# What is kept in the file (sec 32.27): values a recompute wrote kept, and
+# let go, by an editor, the host and one who writes the branch.
+fc_add_gui_test(GuiServeLogKept_tests_run serve-log-kept.py
+                --timeout 240)
 
 # The preference PerViewEdit: an edit runs in the one view it is started
 # in. The other 3D windows of the document do not join -- they keep the

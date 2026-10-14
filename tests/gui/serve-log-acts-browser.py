@@ -41,6 +41,10 @@ Chrome do it through scripts/logacts-drive.js. Asserted:
   - a row of the branch it was made from that meets what was set here
     asks one side for all, or opens the list of what it would do; a side
     picked for its conflict, it is applied with it (sec 32.26);
+  - a value is kept in the file from its op, which then says so, the tab
+    counts it and the host keeps it; it is listed with its object and
+    property, its text read, and let go from there by the page's user, who
+    writes the branch (sec 32.27);
   - none of it moved the document the branch was served from.
 
 Needs the built viewer (build/wasm/fcviewer.html; `ninja -C build/wasm`),
@@ -190,6 +194,7 @@ def sample():
         "branches": sorted((b["name"], bool(b["current"]))
                            for b in doc.getTransactionBranches()),
         "versions": sorted((v["kind"], v["name"]) for v in doc.getTransactionVersions()),
+        "kept": [(k["object"], k["prop"]) for k in doc.getKeptTransactionValues()],
     }
 
 
@@ -552,6 +557,29 @@ def verify():
               out.get("pickerYes") is True and said(out.get("pickerSaid"), "applied as row")
               and out.get("pickerGone") is True and picked.get("box", (0, 0, 0))[2] == 50,
               (out.get("pickerSaid"), picked.get("box")))
+        ks = out.get("keepSays") or [{}, {}]
+        check("an op's value is offered to be kept, and every value of its object",
+              out.get("keepOp") is True and ks[0].get("text") == "Keep"
+              and ks[0].get("disabled") is False and ks[1].get("text") == "Keep all of it",
+              ks)
+        check("kept from the card: said, the op says so, the tab counts it, the host keeps it",
+              out.get("keepAsked") is True and said(out.get("keepSaid"), "kept: a save writes")
+              and out.get("opKept") is True and out.get("keptTab") == "Kept (1)"
+              and s.get("kept", {}).get("kept") == [("Box", "Shape")],
+              (out.get("keepSaid"), out.get("keptTab"), s.get("kept", {}).get("kept")))
+        lines = out.get("keptLines") or [{}]
+        ka = out.get("keptActs") or [{}, {}]
+        check("listed with its object and property, its text read, the page's user's to let go",
+              len(lines) == 1 and lines[0].get("kind") == "value"
+              and lines[0].get("cells", [])[1:3] == ["Box", "Shape"]
+              and out.get("keptValueShown") is True and ka[0].get("disabled") is False
+              and (ka[1].get("text") or "").startswith("Show row"),
+              (lines, ka))
+        check("let go from the list: said, the tab and the host have nothing kept",
+              out.get("releaseAsked") is True and said(out.get("releaseSaid"), "let go")
+              and out.get("keptTabEnd") == "Kept" and out.get("keptEmpty") is True
+              and s.get("released", {}).get("kept") == [],
+              (out.get("releaseSaid"), out.get("keptTabEnd"), s.get("released", {}).get("kept")))
         before_main = s.get("restored", {})
         check("nothing the page did moved the document the branch was served from",
               before_main.get("main") == listed.get("main")
