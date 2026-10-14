@@ -82,7 +82,9 @@
 #include "Application.h"
 #include "Document.h"
 #include "FileDialog.h"
+#include "SceneLog.h"
 #include "SceneRequests.h"
+#include "SceneServeSource.h"
 #include "Selection.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -916,6 +918,18 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
                                "file; this one stays where it is, and either is merged into "
                                "the other with Merge... (sec 30)"));
     branchBar->addWidget(_openBranch);
+    _serveBranch = new QPushButton(tr("Serve branch..."), this);
+    _serveBranch->setObjectName(QStringLiteral("TransactionServeBranch"));
+    _serveBranch->setToolTip(tr("Make a branch here and serve it in a document of its own, "
+                                "with no window: whoever joins it works there, and moves it "
+                                "about its history from this point on, while this document "
+                                "stays where it is. For a document that is shared (sec 32.23)"));
+    branchBar->addWidget(_serveBranch);
+    _access = new QPushButton(tr("Access..."), this);
+    _access->setObjectName(QStringLiteral("TransactionAccess"));
+    _access->setToolTip(tr("What each user of the shared document may do of a branch: read "
+                           "it, or write it from a point on (sec 32.25)"));
+    branchBar->addWidget(_access);
     _allBranches = new QCheckBox(tr("All branches"), this);
     _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
     branchBar->addWidget(_allBranches);
@@ -1134,6 +1148,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_mergeBranch, &QPushButton::clicked, this, &TransactionLogView::onMergeBranch);
     connect(_importFile, &QPushButton::clicked, this, &TransactionLogView::onImportFile);
     connect(_openBranch, &QPushButton::clicked, this, &TransactionLogView::onOpenBranch);
+    connect(_serveBranch, &QPushButton::clicked, this, &TransactionLogView::onServeBranch);
+    connect(_access, &QPushButton::clicked, this, &TransactionLogView::onAccess);
     connect(_requests, &QTreeWidget::itemActivated, this,
             [this](QTreeWidgetItem* item, int) { onRequestActivated(item); });
     connect(_requests, &QTreeWidget::customContextMenuRequested, this,
@@ -1149,6 +1165,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
 
     //NOLINTBEGIN
     _connRequests = SceneRequests::signalChanged().connect([this]() { scheduleRefresh(); });
+    // "Serve branch..." is for a document that is served (sec 32.25)
+    _connServed = SceneServeSource::signalServed().connect([this]() { scheduleRefresh(); });
     _connActiveDoc = Application::Instance->signalActiveDocument.connect(
         [this](const Gui::Document& doc) {
             attach(doc.getDocument());
@@ -2245,6 +2263,8 @@ void TransactionLogView::refreshBranches()
         _mergeBranch->setEnabled(false);
         _importFile->setEnabled(false);
         _openBranch->setEnabled(false);
+        _serveBranch->setEnabled(false);
+        _access->setEnabled(false);
         return;
     }
     int current = -1;
@@ -2269,6 +2289,10 @@ void TransactionLogView::refreshBranches()
     _mergeBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
     _importFile->setEnabled(_doc != nullptr && !l->detached());
     _openBranch->setEnabled(_doc != nullptr && !l->detached());
+    // A branch is served beside a document that is: there is a door then
+    _serveBranch->setEnabled(_doc != nullptr && !l->detached()
+                             && SceneServeSource::sourceFor(_doc) != nullptr);
+    _access->setEnabled(_doc != nullptr);
     _renameBranch->setEnabled(_doc != nullptr && _branch->currentIndex() >= 0);
 }
 
@@ -2929,6 +2953,245 @@ private:
 
 } // namespace
 
+void TransactionLogView::onServeBranch()
+{
+    if (!_doc)
+        return;
+    bool ok = false;
+    const QString text = QInputDialog::getText(
+        this, tr("Serve a branch"),
+        tr("Name of the branch to serve from here (empty for one made up):"),
+        QLineEdit::Normal, QString(), &ok);
+    if (!ok)
+        return;
+    QString said;
+    try {
+        App::Document* served = serveBranchOf(_doc, text.trimmed().toStdString());
+        auto l = served->getTransactionLog();
+        App::LogBranch branch;
+        if (l)
+            l->store().getBranch(l->branch(), branch);
+        said = tr("Branch %1 is served in document %2: a client joins it by that name (?doc=%2)")
+                   .arg(QString::fromStdString(branch.name), QString::fromUtf8(served->getName()));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("serve a branch of " << _doc->getName() << ": " << e.what());
+        said = tr("No branch served: %1").arg(QString::fromUtf8(e.what()));
+    }
+    // Said after the refresh, which writes the line: and the line of every
+    // refresh after names the branch and its document (updateStatus)
+    refresh();
+    _status->setText(said);
+}
+
+namespace {
+
+/** Who may what of a branch (docs/TransactionLog.md sec 32.25): what is
+ * said in the log, one line each, and a line to say more.
+ */
+class AccessDialog : public QDialog
+{
+public:
+    AccessDialog(App::Document* doc, QWidget* parent)
+        : QDialog(parent)
+        , _doc(doc)
+    {
+        setWindowTitle(QObject::tr("Access to branches"));
+        setObjectName(QStringLiteral("TransactionAccessDialog"));
+        auto layout = new QVBoxLayout(this);
+        auto note = new QLabel(
+            QObject::tr("Who reads a branch is listed it, applies its rows to the branch they "
+                        "work on, and asks for merges of it. Who writes it also restores, "
+                        "switches and branches there from a point on, and deals with the "
+                        "requests to merge into it. With nothing said, a client reads the "
+                        "branch of the document it joins, and writes one served to it."),
+            this);
+        note->setWordWrap(true);
+        layout->addWidget(note);
+        _list = new QTreeWidget(this);
+        _list->setObjectName(QStringLiteral("TransactionAccessList"));
+        _list->setRootIsDecorated(false);
+        _list->setHeaderLabels({QObject::tr("User"), QObject::tr("Branch"), QObject::tr("May"),
+                                QObject::tr("From")});
+        layout->addWidget(_list, 1);
+
+        auto row = new QHBoxLayout;
+        _user = new QComboBox(this);
+        _user->setObjectName(QStringLiteral("TransactionAccessUser"));
+        _user->setEditable(false);
+        _branch = new QComboBox(this);
+        _branch->setObjectName(QStringLiteral("TransactionAccessBranch"));
+        _level = new QComboBox(this);
+        _level->setObjectName(QStringLiteral("TransactionAccessLevel"));
+        _level->addItem(QObject::tr("reads"));
+        _level->addItem(QObject::tr("writes"));
+        _from = new QComboBox(this);
+        _from->setObjectName(QStringLiteral("TransactionAccessFrom"));
+        auto set = new QPushButton(QObject::tr("Set"), this);
+        set->setObjectName(QStringLiteral("TransactionAccessSet"));
+        row->addWidget(_user, 2);
+        row->addWidget(_level);
+        row->addWidget(_branch, 1);
+        row->addWidget(new QLabel(QObject::tr("from"), this));
+        row->addWidget(_from, 2);
+        row->addWidget(set);
+        layout->addLayout(row);
+
+        auto buttons = new QHBoxLayout;
+        auto remove = new QPushButton(QObject::tr("Remove"), this);
+        remove->setObjectName(QStringLiteral("TransactionAccessRemove"));
+        auto close = new QPushButton(QObject::tr("Close"), this);
+        buttons->addWidget(remove);
+        buttons->addStretch(1);
+        buttons->addWidget(close);
+        layout->addLayout(buttons);
+
+        connect(close, &QPushButton::clicked, this, &QDialog::accept);
+        connect(set, &QPushButton::clicked, this, [this]() { setOne(); });
+        connect(remove, &QPushButton::clicked, this, [this]() { removeOne(); });
+        connect(_branch, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this](int) { fillFrom(); });
+        connect(_level, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this](int index) { _from->setEnabled(index == 1); });
+        _from->setEnabled(false);
+        fill();
+        resize(620, 360);
+    }
+
+private:
+    App::TransactionLog* log() const
+    {
+        return _doc ? _doc->getTransactionLog() : nullptr;
+    }
+
+    void fill()
+    {
+        auto l = log();
+        _list->clear();
+        _user->clear();
+        _branch->clear();
+        if (!l)
+            return;
+        std::map<int64_t, std::string> branches;
+        for (const auto& b : l->store().branches()) {
+            branches[b.id] = b.name;
+            _branch->addItem(QString::fromStdString(b.name));
+        }
+        std::map<int64_t, App::LogVersion> versions;
+        for (const auto& v : l->store().versions())
+            versions[v.num] = v;
+        // Those the log knows that are not the desktop's own: who came to
+        // the shared document, and who wrote a row
+        for (const auto& u : l->store().users()) {
+            if (u.kind == "local" || u.name.empty())
+                continue;
+            _user->addItem(QStringLiteral("%1 (%2)").arg(QString::fromStdString(u.name),
+                                                         QString::fromStdString(u.kind)),
+                           QStringList {QString::fromStdString(u.kind),
+                                        QString::fromStdString(u.name)});
+        }
+        for (const auto& a : l->store().accesses()) {
+            auto item = new QTreeWidgetItem(_list);
+            item->setText(0, QStringLiteral("%1 (%2)").arg(QString::fromStdString(a.name),
+                                                           QString::fromStdString(a.kind)));
+            item->setData(0, Qt::UserRole, QStringList {QString::fromStdString(a.kind),
+                                                        QString::fromStdString(a.name),
+                                                        QString::fromStdString(
+                                                            branches[a.branch])});
+            item->setText(1, QString::fromStdString(branches[a.branch]));
+            // One the user made, as a client, is the user's own to delete
+            item->setText(2, a.made ? QObject::tr("writes, made it")
+                             : a.write ? QObject::tr("writes") : QObject::tr("reads"));
+            if (a.write) {
+                auto v = versions.find(a.fromVersion);
+                item->setText(3, a.fromVersion == 0 ? QObject::tr("where it forks")
+                                 : v == versions.end()
+                                     ? QObject::tr("version %1").arg(a.fromVersion)
+                                     : v->second.name.empty()
+                                         ? QObject::tr("version %1").arg(a.fromVersion)
+                                         : QObject::tr("version %1 (%2)")
+                                               .arg(a.fromVersion)
+                                               .arg(QString::fromStdString(v->second.name)));
+            }
+        }
+        for (int c = 0; c < _list->columnCount(); ++c)
+            _list->resizeColumnToContents(c);
+        fillFrom();
+    }
+
+    /// The points a write of the branch chosen can start at: its fork, or
+    /// a version taken on it
+    void fillFrom()
+    {
+        _from->clear();
+        _from->addItem(QObject::tr("where it forks"), 0);
+        auto l = log();
+        App::LogBranch branch;
+        if (!l || !l->store().findBranch(_branch->currentText().toStdString(), branch))
+            return;
+        for (const auto& v : l->store().versions()) {
+            if (v.branch != branch.id)
+                continue;
+            _from->addItem(v.name.empty() ? QObject::tr("version %1").arg(v.num)
+                                          : QObject::tr("version %1 (%2)")
+                                                .arg(v.num)
+                                                .arg(QString::fromStdString(v.name)),
+                           static_cast<qlonglong>(v.num));
+        }
+    }
+
+    void setOne()
+    {
+        const QStringList who = _user->currentData().toStringList();
+        if (!_doc || who.size() != 2 || _branch->currentText().isEmpty())
+            return;
+        try {
+            const bool write = _level->currentIndex() == 1;
+            _doc->setBranchAccess(who[0].toStdString(), who[1].toStdString(),
+                                  _branch->currentText().toStdString(), write,
+                                  write ? _from->currentData().toLongLong() : 0);
+        }
+        catch (Base::Exception& e) {
+            QMessageBox::warning(this, windowTitle(), QString::fromUtf8(e.what()));
+        }
+        fill();
+    }
+
+    void removeOne()
+    {
+        auto item = _list->currentItem();
+        const QStringList said = item ? item->data(0, Qt::UserRole).toStringList()
+                                      : QStringList();
+        if (!_doc || said.size() != 3)
+            return;
+        try {
+            _doc->clearBranchAccess(said[0].toStdString(), said[1].toStdString(),
+                                    said[2].toStdString());
+        }
+        catch (Base::Exception& e) {
+            QMessageBox::warning(this, windowTitle(), QString::fromUtf8(e.what()));
+        }
+        fill();
+    }
+
+    App::Document* _doc;
+    QTreeWidget* _list {nullptr};
+    QComboBox* _user {nullptr};
+    QComboBox* _branch {nullptr};
+    QComboBox* _level {nullptr};
+    QComboBox* _from {nullptr};
+};
+
+} // namespace
+
+void TransactionLogView::onAccess()
+{
+    if (!_doc)
+        return;
+    AccessDialog dialog(_doc, this);
+    dialog.exec();
+}
+
 void TransactionLogView::onOpenBranch()
 {
     if (!_doc)
@@ -3282,6 +3545,8 @@ constexpr int RoleRequestId = Qt::UserRole + 20;       // a sent file's number
 constexpr int RoleRequestBranch = Qt::UserRole + 21;   // a branch's name
 constexpr int RoleRequestFrom = Qt::UserRole + 22;     // the copy's branch it came from
 constexpr int RoleRequestStopped = Qt::UserRole + 23;  // its import stopped at a row
+constexpr int RoleMergeRequest = Qt::UserRole + 24;    // an asked merge's id (sec 32.25)
+constexpr int RoleMergeTarget = Qt::UserRole + 25;     // and the branch it is to merge into
 
 QString whenText(double time)
 {
@@ -3312,6 +3577,35 @@ void TransactionLogView::refreshRequests()
         item->setToolTip(0, tr("Sent by %1. Nothing of it has been opened: bringing it in "
                                "reads it, as a file handed over any other way would be read")
                                 .arg(from));
+    }
+    // Sec 32.25: a merge someone asked for, of one branch of this file
+    // into another, not yet dealt with.
+    {
+        std::map<int64_t, std::string> names;
+        for (const auto& b : l->store().branches())
+            names[b.id] = b.name;
+        for (const auto& r : l->store().mergeRequests()) {
+            if (r.state != "open" || !names.count(r.source) || !names.count(r.target))
+                continue;
+            auto item = new QTreeWidgetItem(_requests);
+            item->setData(0, RoleMergeRequest, static_cast<qlonglong>(r.id));
+            item->setData(0, RoleRequestBranch, QString::fromStdString(names[r.source]));
+            item->setData(0, RoleMergeTarget, QString::fromStdString(names[r.target]));
+            item->setText(0, tr("merge %1 into %2")
+                                 .arg(QString::fromStdString(names[r.source]),
+                                      QString::fromStdString(names[r.target])));
+            QString from = QString::fromStdString(r.name);
+            if (r.kind != "verified" && r.kind != "local")
+                from += QStringLiteral(" (%1)").arg(QString::fromStdString(r.kind));
+            item->setText(1, from);
+            item->setText(2, whenText(r.created));
+            item->setText(3, r.note.empty() ? tr("asked") : QString::fromStdString(r.note));
+            item->setToolTip(0, r.target == l->branch()
+                                    ? tr("Asked by %1: Merge... does it, here").arg(from)
+                                    : tr("Asked by %1: it is merged in a document that is "
+                                         "on %2").arg(from, QString::fromStdString(
+                                                                names[r.target])));
+        }
     }
     // H1: a branch an import made that this branch has not taken.
     bool ask = false;
@@ -3393,10 +3687,28 @@ void TransactionLogView::onRequestActivated(QTreeWidgetItem* item)
     if (!item)
         return;
     const QString branch = item->data(0, RoleRequestBranch).toString();
+    // A merge that was asked for is done where the document is on the
+    // branch it is to go into
+    if (item->data(0, RoleMergeRequest).toLongLong() > 0) {
+        const QString target = item->data(0, RoleMergeTarget).toString();
+        if (target == currentBranchName())
+            mergeBranch(branch);
+        else
+            _status->setText(tr("That is to merge into %1: switch to it first").arg(target));
+        return;
+    }
     if (!branch.isEmpty())
         mergeBranch(branch);
     else
         bringRequest(item->data(0, RoleRequestId).toULongLong());
+}
+
+QString TransactionLogView::currentBranchName() const
+{
+    auto l = log();
+    App::LogBranch mine;
+    return l && l->store().getBranch(l->branch(), mine) ? QString::fromStdString(mine.name)
+                                                        : QString();
 }
 
 void TransactionLogView::onRequestContextMenu(const QPoint& pos)
@@ -3407,6 +3719,26 @@ void TransactionLogView::onRequestContextMenu(const QPoint& pos)
     const QString branch = item->data(0, RoleRequestBranch).toString();
     const qulonglong id = item->data(0, RoleRequestId).toULongLong();
     QMenu menu(this);
+    // Sec 32.25: a merge that was asked for
+    const qlonglong asked = item->data(0, RoleMergeRequest).toLongLong();
+    if (asked > 0) {
+        const QString target = item->data(0, RoleMergeTarget).toString();
+        const bool here = target == currentBranchName();
+        auto merge = menu.addAction(tr("Merge..."), this, [this, branch]() { mergeBranch(branch); });
+        merge->setEnabled(here);
+        if (!here)
+            merge->setText(tr("Merge... (switch to %1 first)").arg(target));
+        menu.addAction(tr("Reject"), this, [this, asked]() {
+            try {
+                _doc->closeMergeRequest(asked, "rejected");
+            }
+            catch (Base::Exception& e) {
+                FC_ERR("reject request " << asked << ": " << e.what());
+            }
+        });
+        menu.exec(_requests->viewport()->mapToGlobal(pos));
+        return;
+    }
     if (!branch.isEmpty()) {
         menu.addAction(tr("Merge..."), this, [this, branch]() { mergeBranch(branch); });
         // An import that stopped left the file it read held (sec 30.29):
@@ -4171,6 +4503,17 @@ void TransactionLogView::updateStatus()
                     modeText += QStringLiteral(", ")
                               + tr("%1 behind").arg(static_cast<qulonglong>(state.behind));
             }
+        }
+        // A branch of the file served in a document of its own (sec 32.25):
+        // the name a client joins it by
+        for (App::Document* other : l->documents()) {
+            auto theirs = other != _doc ? other->getTransactionLog() : nullptr;
+            App::LogBranch served;
+            if (theirs && SceneServeSource::serving(other)
+                    && theirs->store().getBranch(theirs->branch(), served))
+                modeText += QStringLiteral(", ")
+                          + tr("%1 served in %2").arg(QString::fromStdString(served.name),
+                                                      QString::fromUtf8(other->getName()));
         }
     }
     catch (Base::Exception&) {

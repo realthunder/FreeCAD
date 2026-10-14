@@ -102,6 +102,8 @@ private Q_SLOTS:
     void onMergeBranch();
     void onImportFile();
     void onOpenBranch();
+    void onServeBranch();
+    void onAccess();
     void onRequestActivated(QTreeWidgetItem* item);
     void onRequestContextMenu(const QPoint& pos);
     /// Ask the merge's preview of each request how many conflicts it finds.
@@ -213,6 +215,8 @@ private:
     /// The request list (sec 30.20 H2): files sent and not read, and the
     /// branches an import made that this branch has not taken.
     void refreshRequests();
+    /// The name of the branch the document is on; empty with no log
+    QString currentBranchName() const;
     /// importFile() with who sent the file; false when nothing came.
     /// `sent` is the row of a file the log holds (sec 30.29), whose bytes
     /// `path` is a copy of: it is then brought in as that file. Without
@@ -252,6 +256,7 @@ private:
     fastsignals::scoped_connection _connNewDoc;
     fastsignals::scoped_connection _connRestoreDoc;
     fastsignals::scoped_connection _connRequests;
+    fastsignals::scoped_connection _connServed;
     /// What the preview said of a request, by branch: the head it was
     /// asked of, this branch's head then, and the conflicts -- -2 for a
     /// branch with nothing to give, which is no request.
@@ -277,6 +282,8 @@ private:
     QPushButton* _importFile {nullptr};
     QTreeWidget* _requests {nullptr};
     QPushButton* _openBranch {nullptr};
+    QPushButton* _serveBranch {nullptr};
+    QPushButton* _access {nullptr};
     QCheckBox* _allBranches {nullptr};
     QCheckBox* _hideRecords {nullptr};
     QCheckBox* _showLogins {nullptr};

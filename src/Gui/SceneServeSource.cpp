@@ -2427,6 +2427,7 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
     auto *raw = source.get();
     sources[doc] = std::move(source);
     serveOrder().push_back(doc);
+    signalServed()();
     return raw;
 }
 
@@ -2453,7 +2454,14 @@ void SceneServeSource::unserve(Document *doc)
         }
         logins.clear();
     }
-    servedDocuments().erase(doc);
+    if (servedDocuments().erase(doc) > 0)
+        signalServed()();
+}
+
+fastsignals::signal<void()> &SceneServeSource::signalServed()
+{
+    static fastsignals::signal<void()> served;
+    return served;
 }
 
 App::PropertyContainer *SceneServeSource::ownRenderProperties() const
