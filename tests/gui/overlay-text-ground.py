@@ -24,17 +24,22 @@ lines written to the console and to the report view:
     part of the rows its text is on -- and nothing at all on a stretch below
     its last line. Its colour is the 3D view's background where the overlay
     is: the pattern linear, the first colour for an overlay at the top, the
-    left or the right and the last for one at the bottom; radial, the last
-    colour; one colour, that colour;
+    left or the right and the last for one at the bottom; radial, the
+    gradient averaged over what the overlay covers of the 3D view (asked
+    11:08 the same day, "suggest a way to calculate a better auto item
+    background color when radial background is enabled, so it blend in
+    better"; the average, proposed and agreed); one colour, that colour;
   - the same for the report view, and the tree's items follow the same rule;
   - with "Item background follows the theme" off (View/
-    DockOverlayThemeItemColor) each of the two stands on its OWN background
-    instead, at the same opacity: the console's colour where it has one
-    (Editor/Background), else the base colour of the application's palette
-    (docs/HandsOnQueue.md entry 111, as ruled: "gate by auto tree background
-    color setting. Follow tree item background color if enabled, else use
-    its own widget background" -- the Classic theme keeps a black text in
-    the console and gives the tree's items a dark ground);
+    DockOverlayThemeItemColor) and an item background colour set
+    (TreeView/ItemBackground), each of the two stands on that colour, at its
+    own opacity -- "item background color (when auto not enabled) shall apply
+    to tree view and python console and report view, and selection view";
+  - with the setting off and no colour set, each stands on its OWN
+    background, at the overlay's opacity: the console's colour where it has
+    one (Editor/Background), else the base colour of the application's
+    palette (docs/HandsOnQueue.md entry 111 -- the Classic theme keeps a
+    black text in the console and gives the tree's items a dark ground);
   - the text is edged on its ground: beside the letters the panel has
     pixels more opaque than the ground -- the outline laid over the ground
     and under the letters (it was dropped there once, when it was laid under
@@ -129,8 +134,70 @@ def ground_for(tab):
     if VIEW.GetBool("Gradient", True):
         return last if tab.objectName() == "OverlayBottom" else first
     if VIEW.GetBool("RadialGradient", False):
-        return last
+        return radial_average(tab) or last
     return one
+
+
+def radial_at(x, y, centre, middle, rim, use_middle):
+    """The radial background at a point of its view, x and y from -1 to 1, as
+    SoFCBackgroundGradient draws it"""
+    def mix(a, b, t):
+        t = min(max(t, 0.0), 1.0)
+        return [a[i] + (b[i] - a[i]) * t for i in range(3)]
+    R = 2 ** 0.5
+    if not use_middle:
+        return mix(centre, rim, (x * x + y * y) ** 0.5 / R)
+    a, b = 0.3 * 2 ** 0.5, 0.5 ** 0.5
+    inner = ((x / a) ** 2 + (y / b) ** 2) ** 0.5
+    if inner <= 1.0:
+        return mix(centre, middle, inner)
+    lo, hi = 0.0, 1.0
+    for _ in range(16):
+        s = (lo + hi) / 2
+        ra, rb = a + (R - a) * s, b + (R - b) * s
+        if (x / ra) ** 2 + (y / rb) ** 2 > 1.0:
+            lo = s
+        else:
+            hi = s
+    return mix(middle, rim, (lo + hi) / 2)
+
+
+def radial_average(tab):
+    """The radial background averaged over what an overlay covers of the 3D
+    view it covers most of, on an 8 by 8 grid; None with no view under it"""
+    panel = QtCore.QRect(tab.mapToGlobal(QtCore.QPoint(0, 0)), tab.size())
+    best, view, area = 0, None, None
+    for w in QtWidgets.QApplication.allWidgets():
+        try:
+            if cls(w) != "Gui::View3DInventorViewer" or not w.isVisible():
+                continue
+            gl = w.viewport()
+        except (RuntimeError, AttributeError):
+            continue
+        rect = QtCore.QRect(gl.mapToGlobal(QtCore.QPoint(0, 0)), gl.size())
+        common = panel.intersected(rect)
+        size = common.width() * common.height()
+        if size > best:
+            best, view, area = size, rect, common
+    if view is None:
+        return None
+    colours = [rgb_of(VIEW.GetUnsigned(k, d)) for k, d in (
+        ("BackgroundColor2", 0x333365FF), ("BackgroundColor4", 0x6F6F93FF),
+        ("BackgroundColor3", 0xABABC1FF))]
+    centre, middle, rim = [[c / 255.0 for c in colour] for colour in colours]
+    use_middle = VIEW.GetBool("UseBackgroundColorMid", False)
+    n = 8
+    total = [0.0, 0.0, 0.0]
+    for j in range(n):
+        for i in range(n):
+            px = area.left() + (i + 0.5) * area.width() / n
+            py = area.top() + (j + 0.5) * area.height() / n
+            x = 2.0 * (px - view.left()) / max(1, view.width()) - 1.0
+            y = 1.0 - 2.0 * (py - view.top()) / max(1, view.height())
+            at = radial_at(x, y, centre, middle, rim, use_middle)
+            for k in range(3):
+                total[k] += at[k]
+    return tuple(int(round(total[k] / (n * n) * 255)) for k in range(3))
 
 
 def commonest_ground(tab, widget):
@@ -248,8 +315,28 @@ def pattern_step():
     was = (VIEW.GetBool("Gradient", True), VIEW.GetBool("RadialGradient", False))
     tree = find("Gui::TreeWidget")
     console = find("Gui::PythonConsole")
+    # the selection view, a line in it: "item background color ... shall
+    # apply to ... selection view" (entry 98, 2026-10-14)
+    holder = find("Gui::DockWnd::SelectionView")
+    dock = holder
+    while dock is not None and not isinstance(dock, QtWidgets.QDockWidget):
+        dock = dock.parentWidget()
+    if dock is not None:
+        dock.toggleViewAction().setChecked(True)
+        dock.show()
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(FreeCAD.ActiveDocument.Name, "Box")
+    settle(1500)
+    selection = None
+    if holder is not None:
+        lists = [w for w in holder.findChildren(QtWidgets.QTreeWidget) if w.isVisible()]
+        selection = lists[0] if lists else None
+    check("the selection view is in an overlay, a line in it",
+          selection is not None and overlay_of(selection) is not None
+          and selection.topLevelItemCount() >= 1)
     panels = [("the tree", tree.viewport() if tree is not None else None),
-              ("the Python console", console.viewport() if console is not None else None)]
+              ("the Python console", console.viewport() if console is not None else None),
+              ("the selection view", selection.viewport() if selection is not None else None)]
     try:
         for label, linear, radial in (("linear", True, False), ("radial", False, True),
                                       ("one colour", False, False)):
@@ -260,6 +347,9 @@ def pattern_step():
                 tab = overlay_of(widget) if widget is not None else None
                 if tab is None or not eye(tab, True):
                     continue
+                for i in range(tab.count()):
+                    if tab.widget(i) is not None and tab.widget(i).isAncestorOf(widget):
+                        tab.setCurrentIndex(i)
                 settle(400)
                 got = commonest_ground(tab, widget)
                 want = ground_for(tab)
@@ -273,8 +363,38 @@ def pattern_step():
         settle(800)
 
 
+def item_colour_step():
+    """The setting off and an item background colour set: each panel on that
+    colour (its opacity the overlay's here, which look() measures by)"""
+    tree = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/TreeView")
+    had = tree.GetUnsigned("ItemBackground", 0)
+    alpha = VIEW.GetInt("DockOverlayAlpha", 180)
+    colour = (0x30, 0x60, 0x90)
+    tree.SetUnsigned("ItemBackground", (colour[0] << 24) | (colour[1] << 16) | (colour[2] << 8)
+                     | alpha)
+    VIEW.SetBool("DockOverlayThemeItemColor", False)
+    settle(1500)
+    try:
+        for name, cls_name in (("the Python console, an item colour set", "Gui::PythonConsole"),
+                               ("the report view, an item colour set",
+                                "Gui::DockWnd::ReportOutput")):
+            widget = find(cls_name)
+            if widget is not None:
+                look(name, widget, colour)
+    finally:
+        VIEW.RemBool("DockOverlayThemeItemColor")
+        if had:
+            tree.SetUnsigned("ItemBackground", had)
+        else:
+            tree.RemUnsigned("ItemBackground")
+        settle(600)
+
+
 def own_step():
-    """The setting off: each panel on its own background"""
+    """The setting off and no item colour: each panel on its own background"""
+    tree = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/TreeView")
+    had = tree.GetUnsigned("ItemBackground", 0)
+    tree.RemUnsigned("ItemBackground")
     VIEW.SetBool("DockOverlayThemeItemColor", False)
     settle(1500)
     base = QtWidgets.QApplication.palette().color(QtGui.QPalette.Base)
@@ -292,6 +412,8 @@ def own_step():
             look("the report view, the setting off", report, base)
     finally:
         VIEW.RemBool("DockOverlayThemeItemColor")
+        if had:
+            tree.SetUnsigned("ItemBackground", had)
         settle(600)
 
 
@@ -315,5 +437,5 @@ def advance():
     QtCore.QTimer.singleShot(1000, advance)
 
 
-STEPS[:] = [start, console_step, report_step, pattern_step, own_step]
+STEPS[:] = [start, console_step, report_step, pattern_step, item_colour_step, own_step]
 QtCore.QTimer.singleShot(3000, advance)
