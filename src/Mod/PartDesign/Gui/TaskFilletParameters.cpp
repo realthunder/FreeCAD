@@ -317,8 +317,12 @@ void TaskFilletParameters::placeEdgeHandles(bool force)
         handle.gizmo->Gizmo::setDraggerPlacement(handle.placements[face].position,
                                                  handle.placements[face].dir);
         if (onViewValues) {
-            onViewValues->setHandleAnchor(handle.gizmo,
-                                          toWorld * handle.placements[face].position);
+            // a knob's label by the knob, which stands its distance along
+            Base::Vector3d anchor = handle.placements[face].position;
+            if (handle.position && handle.box) {
+                anchor += handle.placements[face].dir * handle.box->rawValue();
+            }
+            onViewValues->setHandleAnchor(handle.gizmo, toWorld * anchor);
         }
         moved = true;
     }
@@ -498,6 +502,40 @@ void TaskFilletParameters::updateEdgeHandles()
                             setEdgePointRadius(edge, point, radius);
                         });
                 edgeHandles.push_back(handle);
+
+                // A point inside the edge has a place too: a knob that slides
+                // along the edge, its value the distance from the edge's start
+                const auto& segment = segments[point];
+                const bool inside = segment.length > 0.0
+                    || (segment.param > 0.0 && segment.param < 1.0);
+                if (!inside || edgeMode(segments) != VaryingMode) {
+                    continue;
+                }
+                EdgeHandle along;
+                along.edge = edge;
+                along.point = point;
+                along.position = true;
+                auto alongBox = new Gui::QuantitySpinBox(this);
+                alongBox->hide();
+                alongBox->setUnit(Base::Unit::Length);
+                alongBox->setMinimum(0.0);
+                alongBox->setMaximum(INT_MAX);
+                along.box = alongBox;
+                along.gizmo = new Gui::LinearGizmo(alongBox);
+                along.gizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
+                along.gizmo->setColor(customisedColor());
+                const int place = onViewValues->addValue(
+                    alongBox, tr("P%1").arg(point + 1), Gui::OnViewValueSet::Place::AtHandle,
+                    along.gizmo);
+                onViewValues->setMenu(place, [this](QMenu& menu, Gui::LinearGizmo* gizmo) {
+                    fillEdgeMenu(menu, gizmo);
+                });
+                gizmoContainer->appendGizmo(along.gizmo);
+                connect(alongBox, qOverload<double>(&Gui::QuantitySpinBox::valueChanged), this,
+                        [this, edge, point](double distance) {
+                            setEdgePointPosition(edge, point, distance);
+                        });
+                edgeHandles.push_back(along);
             }
         }
     }
@@ -508,6 +546,10 @@ void TaskFilletParameters::updateEdgeHandles()
     for (auto& handle : edgeHandles) {
         handle.placed = false;
         const auto& segments = fillet->Segments.getValue(handle.edge);
+        if (handle.position) {
+            placeAlongHandle(handle, baseShape, segments);
+            continue;
+        }
         double fraction = 0.5;
         if (handle.point >= 0 && segments.size() > 1
                 && handle.point < static_cast<int>(segments.size())) {
@@ -560,6 +602,90 @@ void TaskFilletParameters::updateEdgeHandles()
         handle.placed = true;
     }
     placeEdgeHandles(true);
+}
+
+void TaskFilletParameters::placeAlongHandle(EdgeHandle& handle, Part::TopoShape& baseShape,
+                                            const Part::PropertyFilletSegments::Segments& segments)
+{
+    // From the edge's start toward its end, the knob as far along as the
+    // point is. Measured on the chord: exact on a straight edge, near on a
+    // gently curved one.
+    if (handle.point >= static_cast<int>(segments.size())) {
+        handle.gizmo->setVisibility(false);
+        return;
+    }
+    try {
+        Part::TopoShape edge = baseShape.getSubTopoShape(handle.edge.c_str(), true);
+        if (edge.isNull()) {
+            handle.gizmo->setVisibility(false);
+            return;
+        }
+        BRepAdaptor_Curve curve(TopoDS::Edge(edge.getShape()));
+        gp_Pnt start = curve.Value(curve.FirstParameter());
+        gp_Pnt end = curve.Value(curve.LastParameter());
+        gp_Vec chord(start, end);
+        const double length = GCPnts_AbscissaPoint::Length(curve);
+        if (chord.Magnitude() < Precision::Confusion() || length < Precision::Confusion()) {
+            handle.gizmo->setVisibility(false);
+            return;
+        }
+        handle.chord = chord.Magnitude();
+        handle.length = length;
+        const auto& segment = segments[handle.point];
+        const double fraction = segment.length > 0.0
+            ? std::min(1.0, segment.length / length) : segment.param;
+        chord.Normalize();
+        for (auto& placement : handle.placements) {
+            placement.position = Base::Vector3d(start.X(), start.Y(), start.Z());
+            placement.dir = Base::Vector3d(chord.X(), chord.Y(), chord.Z());
+        }
+        {
+            QSignalBlocker blocker(handle.box);
+            handle.box->setValue(fraction * handle.chord);
+        }
+        // reads the box: the knob goes where the point is
+        handle.gizmo->setMultFactor(1.0);
+        handle.gizmo->setVisibility(true);
+        handle.placed = true;
+    }
+    catch (Standard_Failure&) {
+        handle.gizmo->setVisibility(false);
+    }
+    catch (Base::Exception&) {
+        handle.gizmo->setVisibility(false);
+    }
+}
+
+void TaskFilletParameters::setEdgePointPosition(const std::string& edge, int point, double distance)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    EdgeHandle* handle = nullptr;
+    for (auto& h : edgeHandles) {
+        if (h.position && h.edge == edge && h.point == point) {
+            handle = &h;
+        }
+    }
+    if (!fillet || !handle || handle->chord <= 0.0) {
+        return;
+    }
+    Part::PropertyFilletSegments::Segments segments = fillet->Segments.getValue(edge);
+    if (point < 0 || point >= static_cast<int>(segments.size())) {
+        return;
+    }
+    const double fraction = std::clamp(distance / handle->chord, 0.0, 1.0);
+    auto& segment = segments[point];
+    // as the point was given: by its length along the edge, or its fraction
+    if (segment.length > 0.0) {
+        segment.length = std::max(Precision::Confusion(), fraction * handle->length);
+    }
+    else {
+        segment.param = fraction;
+    }
+    setupTransaction();
+    fillet->Segments.setValue(edge, std::move(segments));
+    refresh();
+    recompute();
 }
 
 void TaskFilletParameters::setEdgePointRadius(const std::string& edge, int point, double radius)

@@ -163,6 +163,11 @@ private:
         HandlePlacement placements[2];
         int face = 0;
         bool placed = false;
+        /// A knob sliding along the edge for the point's place, not an arrow
+        /// for its radius; its box holds the distance along the chord
+        bool position = false;
+        double chord = 0.0;
+        double length = 0.0;
     };
     std::vector<EdgeHandle> edgeHandles;
     /// What edgeHandles were made for: edges and their numbers of points
@@ -182,6 +187,11 @@ private:
     static int edgeMode(const Part::PropertyFilletSegments::Segments& segments);
     void setEdgeMode(const std::string& edge, int mode, double radius);
     void setEdgePointRadius(const std::string& edge, int point, double radius);
+    /// The knob of a point inside its edge: from the start along the chord
+    void placeAlongHandle(EdgeHandle& handle, Part::TopoShape& baseShape,
+                          const Part::PropertyFilletSegments::Segments& segments);
+    /// A point moved to \a distance along its edge's chord
+    void setEdgePointPosition(const std::string& edge, int point, double distance);
     /// Take the edge out of the fillet, as the panel's removal does
     void removeEdge(const std::string& edge);
     //@}
