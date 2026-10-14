@@ -1,5 +1,5 @@
-"""The Display style menu: the style as a combo box, the anti-aliasing, and
-the lights of the view.
+"""The Display style menu -- the anti-aliasing, the shading and the lights of
+the view -- and the Draw style list beside it.
 
 docs/HandsOnQueue.md entry 63: "make the existing default display style
 options into a combobox with corresonding icons shown in the menu. also put
@@ -17,16 +17,28 @@ properties. the button is for save it into the settings". Changed since:
 views. do the light handle with manipulator", and "use the below icon you
 designed for display style toolbutton icon for now" (the split cube).
 
-The menu is brought to the state it has when shown by its own aboutToShow,
-which is what builds its sections; nothing is popped up.
+Entry 74 turned the first of those back: "the Std_DrawStyle command, the
+newly added combo box overlaps with draw style selection. I want to restore
+the Std_DrawStyle command back to only show the draw style list selection
+without any customized menu items. Add a new Std_DsiplayStyle command to show
+the customized menu (remove the draw style combo), put it beside the
+Std_DrawStyle in the toolbar"; the name Std_DisplayStyle, the old icon back
+on Std_DrawStyle and the split cube on the new command, the new command on
+the right of the old in the tool bar, and in the View menu too.
+
+The menus are brought to the state they have when shown by their own
+aboutToShow, which is what builds the sections; nothing is popped up.
 
 Claims, with two 3D views of one document open:
-  - the tool button's icon is the command's own, and stays when the style
-    changes;
-  - the menu has the style combo, an entry a style with its icon, and none
-    of the styles' own rows is shown any more;
-  - the combo shows the active view's style, and picking another sets it on
-    the active view and leaves the other view's alone;
+  - Std_DrawStyle's menu is the list: a row a style, shown, and no combo box,
+    no anti-aliasing, no lights in it;
+  - its tool button wears the active style's icon, which changes with the
+    style; a style run sets it on the active view and leaves the other
+    view's alone;
+  - Std_DisplayStyle stands right of it in the tool bar and after it in the
+    View menu; its button's icon is its own and stays when the style changes;
+  - its menu has no style combo; it has the anti-aliasing, the shading
+    options and the lights;
   - the anti-aliasing combo shows the setting, and picking another stores it;
   - the lights section shows what lights the view: the headlight on, the
     fill light off, as the preferences have them; it has no "All views"
@@ -91,17 +103,26 @@ def prop(view, name, default=None):
 
 
 def menu():
-    """A Display style menu, brought to the state it is shown in. The last
-    one there is: the tool bars are rebuilt now and then, each time with a
-    new menu, and one that was left behind is no longer kept up."""
+    """The Display style menu, brought to the state it is shown in."""
+    found = FreeCADGui.getMainWindow().findChild(QtWidgets.QMenu, "DisplayStyleMenu")
+    if found is None:
+        raise RuntimeError("no Display style menu in the main window")
+    found.aboutToShow.emit()
+    settle(0.2)
+    return found
+
+
+def style_menu():
+    """A Draw style menu, brought to the state it is shown in. The last one
+    there is: the tool bars are rebuilt now and then, each time with a new
+    menu, and one that was left behind is no longer kept up."""
     found = None
     for m in FreeCADGui.getMainWindow().findChildren(QtWidgets.QMenu):
         texts = [a.text().replace("&", "") for a in m.actions()]
-        if m.findChild(QtWidgets.QComboBox, "DrawStyleCombo") is not None or (
-                "Wireframe" in texts and "Flat Lines" in texts):
+        if "Wireframe" in texts and "Flat Lines" in texts:
             found = m
     if found is None:
-        raise RuntimeError("no Display style menu in the main window")
+        raise RuntimeError("no Draw style menu in the main window")
     found.aboutToShow.emit()
     settle(0.2)
     return found
@@ -114,13 +135,18 @@ def child(m, kind, name):
     return w
 
 
-def button_image():
-    """The icon the Display style tool button wears"""
+def button_of(text):
+    """The tool button of the command with this menu text"""
     for button in FreeCADGui.getMainWindow().findChildren(QtWidgets.QToolButton):
         action = button.defaultAction()
-        if action is not None and action.text().replace("&", "") == "Display style":
-            return button.icon().pixmap(32, 32).toImage()
+        if action is not None and action.text().replace("&", "") == text and button.isVisible():
+            return button
     return None
+
+
+def button_image(text):
+    button = button_of(text)
+    return button.icon().pixmap(32, 32).toImage() if button is not None else None
 
 
 def start():
@@ -141,43 +167,73 @@ def start():
 
 
 def style():
-    m = menu()
-    combo = child(m, QtWidgets.QComboBox, "DrawStyleCombo")
-    names = [combo.itemText(i) for i in range(combo.count())]
-    icons = sum(1 for i in range(combo.count()) if not combo.itemIcon(i).isNull())
-    check("the menu has the style combo, an entry a style, each with its icon",
-          combo.count() >= 8 and icons == combo.count() and "Wireframe" in names,
-          "%d entries, %d with an icon: %s" % (combo.count(), icons, names))
-    rows = [a.text() for a in m.actions()
-            if a.isVisible() and a.text().replace("&", "") in names]
-    check("none of the styles' own rows is shown", not rows, rows)
+    m = style_menu()
+    rows = [a.text().replace("&", "") for a in m.actions() if a.isVisible()]
+    check("the Draw style menu is the list: a row a style, shown",
+          len(rows) >= 7 and "Wireframe" in rows and "Flat Lines" in rows
+          and "Shaded" in rows, rows)
+    extras = [w.objectName() or w.metaObject().className()
+              for w in m.findChildren(QtWidgets.QWidget)
+              if isinstance(w, (QtWidgets.QComboBox, QtWidgets.QSlider, QtWidgets.QPushButton))]
+    check("and nothing else: no combo box, no anti-aliasing, no lights in it",
+          not extras and m.findChild(QtWidgets.QCheckBox, "Light_EnableHeadlight") is None,
+          extras)
+
+    draw, display = button_of("Draw style"), button_of("Display style")
+    if not check("the tool bar has both buttons", draw is not None and display is not None):
+        return
+    bar = draw.parentWidget()
+    order = [a.text().replace("&", "") for a in bar.actions()]
+    check("Display style stands right of Draw style in the tool bar",
+          display.parentWidget() == bar and "Draw style" in order
+          and "Display style" in order
+          and order.index("Display style") == order.index("Draw style") + 1, order)
+    for top in FreeCADGui.getMainWindow().menuBar().actions():
+        if top.text().replace("&", "") == "View" and top.menu() is not None:
+            entries = [a.text().replace("&", "") for a in top.menu().actions()]
+            check("and after it in the View menu",
+                  "Draw style" in entries and "Display style" in entries
+                  and entries.index("Display style") == entries.index("Draw style") + 1,
+                  [e for e in entries if "style" in e])
+
     active, other = S["active"], S["other"]
     before = str(other.DrawStyle)
-    button_icon = button_image()
-    if button_icon is not None:
-        button_icon.save(os.path.join(OUT, "button-icon.png"))
-    styles = [combo.itemIcon(i).pixmap(32, 32).toImage() for i in range(combo.count())]
-    check("the tool button's icon is the command's own, not one of the styles'",
-          button_icon is not None and not button_icon.isNull()
-          and not [i for i in styles if i == button_icon])
-    check("the combo shows the active view's style",
-          combo.currentText().replace(" ", "") == str(active.DrawStyle).replace(" ", ""),
-          "combo %r, the view %r" % (combo.currentText(), str(active.DrawStyle)))
-    combo.setCurrentIndex(names.index("Wireframe"))
-    combo.activated.emit(combo.currentIndex())
+    own = button_image("Display style")
+    if own is not None:
+        own.save(os.path.join(OUT, "display-style-icon.png"))
+    was = button_image("Draw style")
+    FreeCADGui.runCommand("Std_DrawStyleWireframe", 0)
     settle()
-    check("picking Wireframe sets it on the active view",
+    check("Wireframe run: it is the active view's style",
           str(active.DrawStyle) == "Wireframe", str(active.DrawStyle))
-    check("and leaves the other view's style alone", str(other.DrawStyle) == before,
+    check("and the other view's is left alone", str(other.DrawStyle) == before,
           "%r, was %r" % (str(other.DrawStyle), before))
-    check("the tool button's icon is the same after the style changed",
-          button_image() == button_icon)
-    m2 = menu()
-    check("the combo shows it the next time the menu comes up",
-          child(m2, QtWidgets.QComboBox, "DrawStyleCombo").currentText() == "Wireframe")
-    combo.setCurrentIndex(names.index("Flat Lines"))
-    combo.activated.emit(combo.currentIndex())
+    now = button_image("Draw style")
+    if now is not None:
+        now.save(os.path.join(OUT, "draw-style-icon-wireframe.png"))
+    check("the Draw style button wears the style's icon: it changed with the style",
+          was is not None and now is not None and now != was)
+    check("the Display style button's icon is its own, and stayed",
+          own is not None and not own.isNull() and button_image("Display style") == own
+          and own != now and own != was)
+    # a row is a widget of its own in the menu: a radio button and the text
+    ticked = sorted(set(
+        [b.text().replace("&", "") for b in style_menu().findChildren(QtWidgets.QAbstractButton)
+         if b.isChecked() and b.text()]
+        + [a.text().replace("&", "") for a in style_menu().actions() if a.isChecked()]))
+    check("the list ticks the style the view is in", ticked == ["Wireframe"], ticked)
+    FreeCADGui.runCommand("Std_DrawStyleFlatLines", 0)
     settle()
+
+    m = menu()
+    check("the Display style menu has no style combo, and no style row",
+          m.findChild(QtWidgets.QComboBox, "DrawStyleCombo") is None
+          and not [a for a in m.actions() if a.text().replace("&", "") in rows])
+    kinds = sorted(set(w.metaObject().className() for w in m.findChildren(QtWidgets.QWidget)
+                       if w.metaObject().className().endswith("OptionsWidget")))
+    check("it has the anti-aliasing, the shading options and the lights",
+          kinds == ["Gui::AntiAliasingOptionsWidget", "Gui::LightOptionsWidget",
+                    "Gui::ShadingOptionsWidget"], kinds)
 
 
 def lights():

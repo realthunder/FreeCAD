@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 # include <algorithm>
+# include <cmath>
 # include <cfloat>
 # ifdef FC_OS_WIN32
 #  include <windows.h>
@@ -87,6 +88,8 @@
 #include "Command.h"
 #include "Action.h"
 #include "MainWindow.h"
+#include "OverlayManager.h"
+#include "OverlayParams.h"
 #include "SoTextImage.h"
 #include "View3DInventorViewer.h"
 #include "View3DInventor.h"
@@ -388,6 +391,11 @@ private:
 	bool inDragZone(short x, short y);
 
 	void handleResize();
+	/// Work out m_ShownX/m_ShownY for a viewport of this size, in its pixels
+	void placeClear(int width, int height);
+	/// What is laid over the view changed: place the cube again, and draw
+	/// if that moved it
+	void coverChanged();
 
 	void setHilite(int);
 
@@ -415,6 +423,10 @@ public:
 	/// left, y from the top, each a fraction of the room left to the cube.
 	float m_RelX = 1.0f;
 	float m_RelY = 0.0f;
+	/// Where the cube is shown: the stated position, or slid along its edge
+	/// clear of what is laid over the view (placeClear()).
+	float m_ShownX = 1.0f;
+	float m_ShownY = 0.0f;
 	int m_PrevWidth = 0;
 	int m_PrevHeight = 0;
 	int m_HiliteId = 0;
@@ -515,6 +527,11 @@ void NaviCube::getPosition(float &x, float &y) const {
     y = m_NaviCubeImplementation->m_RelY;
 }
 
+void NaviCube::getShownPosition(float &x, float &y) const {
+    x = m_NaviCubeImplementation->m_ShownX;
+    y = m_NaviCubeImplementation->m_ShownY;
+}
+
 NaviCubeImplementation::NaviCubeImplementation(Gui::View3DInventorViewer* viewer)
 	: m_View3DInventorViewer(viewer)
     , m_Shared(NaviCubeShared::instance(!viewer))
@@ -532,6 +549,14 @@ NaviCubeImplementation::NaviCubeImplementation(Gui::View3DInventorViewer* viewer
     QObject::connect(&autoHideTimer, &QTimer::timeout, [this](){
         redraw();
     });
+
+    // The cube gets out of the way of what is laid over its view
+    // (docs/HandsOnQueue.md entry 76). A served cube has no view to be
+    // covered in.
+    if (viewer && getMainWindow()) {
+        QObject::connect(OverlayManager::instance(), &OverlayManager::coverChanged,
+                         &timer, [this]() { coverChanged(); });
+    }
 }
 
 NaviCubeImplementation::~NaviCubeImplementation() {
@@ -1200,11 +1225,89 @@ void NaviCubeImplementation::drawNaviCube() {
 	drawCube();
 }
 
+/** Where the cube is shown: where the view stated it, unless something is
+ * laid over that -- an overlaid dock, a task panel over the view
+ * (OverlayManager::covered). Then it slides along the edge it is on, towards
+ * the middle of the view, to just past what covers it: sideways past a panel
+ * at the side, down or up past one along the top or the bottom, whichever is
+ * the shorter way. It stays in its corner's half of that edge's line and
+ * comes back when the panel goes; a panel leaves no room for it any more
+ * (docs/HandsOnQueue.md entry 76). With the setting off, or nowhere to go,
+ * it stays and is covered.
+ */
+void NaviCubeImplementation::placeClear(int width, int height) {
+	m_ShownX = m_RelX;
+	m_ShownY = m_RelY;
+	auto viewer = m_View3DInventorViewer;
+	if (!viewer || m_Dragging || width <= 0 || height <= 0 || !getMainWindow()
+	    || !OverlayParams::getDockOverlayMoveNaviCube())
+		return;
+	QWidget *widget = viewer->getGLWidget();
+	if (!widget || widget->width() <= 0)
+		return;
+	const QRegion covered = OverlayManager::instance()->covered(widget);
+	if (covered.isEmpty())
+		return;
+
+	Render::OverlayAnchor anchor;
+	NaviCube::fillPlacement(anchor, m_RelX, m_RelY, m_CubeWidgetSize);
+	int x, y, edge;
+	anchor.cornerRect(width, height, x, y, edge);
+	const int mx = int(anchor.marginX), my = int(anchor.marginY);
+	const int roomX = width - edge - 2 * mx, roomY = height - edge - 2 * my;
+	if (roomX <= 0 || roomY <= 0)
+		return;
+	const bool right = m_RelX >= 0.5f, bottom = m_RelY >= 0.5f;
+	// The viewport is in device pixels, what covers it in the widget's
+	const double scale = double(width) / widget->width();
+	QRect cube(x, y, edge, edge); // y down from the top, as cornerRect has it
+	for (int turn = 0; turn < 4; ++turn) {
+		QRect hit;
+		for (const QRect &r : covered) {
+			const QRect scaled(int(std::floor(r.left() * scale)), int(std::floor(r.top() * scale)),
+			                   int(std::ceil(r.width() * scale)), int(std::ceil(r.height() * scale)));
+			if (scaled.intersects(cube)) {
+				hit = scaled;
+				break;
+			}
+		}
+		if (hit.isNull())
+			break;
+		// as far from the panel as from the view's edge
+		const int toX = right ? hit.left() - mx - edge : hit.right() + 1 + mx;
+		const int toY = bottom ? hit.top() - my - edge : hit.bottom() + 1 + my;
+		const bool okX = toX >= mx && toX <= width - edge - mx;
+		const bool okY = toY >= my && toY <= height - edge - my;
+		if (okX && (!okY || std::abs(toX - cube.x()) <= std::abs(toY - cube.y())))
+			cube.moveLeft(toX);
+		else if (okY)
+			cube.moveTop(toY);
+		else
+			break;
+	}
+	m_ShownX = std::clamp(float(cube.x() - mx) / float(roomX), 0.0f, 1.0f);
+	m_ShownY = std::clamp(float(cube.y() - my) / float(roomY), 0.0f, 1.0f);
+}
+
+void NaviCubeImplementation::coverChanged() {
+	if (!m_View3DInventorViewer || (!m_PrevWidth && !m_PrevHeight))
+		return; // not placed yet: the first draw places it
+	const float x = m_ShownX, y = m_ShownY;
+	placeClear(m_PrevWidth, m_PrevHeight);
+	if (x == m_ShownX && y == m_ShownY)
+		return;
+	// Forces handleResize() to place the cube again.
+	m_PrevWidth = 0;
+	m_PrevHeight = 0;
+	redraw();
+}
+
 void NaviCubeImplementation::handleResize() {
 	if (!m_View3DInventorViewer)
 		return;
 	SbVec2s view = m_View3DInventorViewer->getSoRenderManager()->getSize();
 	if ((m_PrevWidth != view[0]) || (m_PrevHeight != view[1])) {
+		placeClear(view[0], view[1]);
 		// The same placement the backend and the browser make from the
 		// overlay anchor (OverlayAnchor::cornerRect), so the GL cube, the
 		// fed one and the pick zone cannot drift apart.
@@ -1264,7 +1367,7 @@ void NaviCube::fillPlacement(Render::OverlayAnchor &anchor, float x, float y, in
 
 void NaviCubeImplementation::fillPlacement(Render::OverlayAnchor &anchor) const
 {
-	NaviCube::fillPlacement(anchor, m_RelX, m_RelY, m_CubeWidgetSize);
+	NaviCube::fillPlacement(anchor, m_ShownX, m_ShownY, m_CubeWidgetSize);
 }
 
 void NaviCubeImplementation::fillCornerAnchor(Render::OverlayAnchor &anchor) const
@@ -1284,9 +1387,18 @@ void NaviCubeImplementation::buildCoinCube()
 	lightModel->model = SoLightModel::BASE_COLOR;
 	root->addChild(lightModel);
 
-	// Corner axes with stroke labels (drawNaviCube's m_ShowCS block).
+	// Corner axes with stroke labels (drawNaviCube's m_ShowCS block). Built
+	// here and added LAST, with the depth test off: the axes are drawn over
+	// the cube's faces, which hid the three of them behind the cube from
+	// most directions (docs/HandsOnQueue.md entry 75). They stay where they
+	// were.
+	SoSeparator *cs = nullptr;
 	if (NaviCubeShared::m_ShowCS) {
-		auto cs = new SoSeparator;
+		cs = new SoSeparator;
+		auto onTop = new SoDepthBuffer;
+		onTop->test = FALSE;
+		onTop->write = FALSE;
+		cs->addChild(onTop);
 		auto style = new SoDrawStyle;
 		style->lineWidth = 2.0f;
 		cs->addChild(style);
@@ -1347,7 +1459,6 @@ void NaviCubeImplementation::buildCoinCube()
 			sep->addChild(companion);
 			cs->addChild(sep);
 		}
-		root->addChild(cs);
 	}
 
 	// Cube faces: closed solid, backface-culled like the GL draw (the
@@ -1453,6 +1564,9 @@ void NaviCubeImplementation::buildCoinCube()
 		bsep->addChild(ls);
 		root->addChild(bsep);
 	}
+
+	if (cs)
+		root->addChild(cs);
 }
 
 void NaviCubeImplementation::buildCoinButtons()
@@ -1683,8 +1797,10 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, int hiliteId, bool hit) {
 
 	glClear(GL_DEPTH_BUFFER_BIT);
 
-	{
-		// Draw the axes
+	// The axes: drawn after the cube and with no depth test, over its faces
+	// (docs/HandsOnQueue.md entry 75); they were drawn first and the faces
+	// hid them.
+	auto drawAxes = [&]() {
 		if (m_ShowCS) {
 			glDisable(GL_TEXTURE_2D);
 			const float a=1.1f;
@@ -1747,7 +1863,7 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, int hiliteId, bool hit) {
 
 			glEnable(GL_TEXTURE_2D);
 		}
-	}
+	};
 
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glVertexPointer(3, GL_FLOAT, 0, (void*) m_VertexArray.data());
@@ -1856,6 +1972,10 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, int hiliteId, bool hit) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 	}
+
+	glDisable(GL_DEPTH_TEST);
+	drawAxes();
+	glEnable(GL_DEPTH_TEST);
 
     if (hit || (!m_AutoHideButton && !m_AutoHideCube)) {
         // Draw the rotate buttons

@@ -85,7 +85,11 @@
 #include "MouseSelection.h"
 #include "NavigationStyle.h"
 #include "OverlayParams.h"
+#include <QGuiApplication>
+#include <QStyleHints>
+
 #include "OverlayManager.h"
+#include "OverlayWidgets.h"
 #include "PieMenu.h"
 #include "SceneInspector.h"
 #include "Selection.h"
@@ -793,14 +797,6 @@ public:
     /// the tick does not invoke the command back.
     void syncChecked(const char *mode);
 
-    /// One icon on the button, whatever style the view is in: the menu
-    /// under it sets more than the style now, and the style shows in its
-    /// combo box (docs/HandsOnQueue.md entry 63). The button's tooltip
-    /// still names the active style.
-    void setActionIcon(Action *action, const QIcon &) override {
-        GroupCommand::setActionIcon(action, BitmapFactory().iconFromTheme(getPixmap()));
-    }
-
     virtual Action * createAction() {
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
@@ -823,25 +819,11 @@ public:
         // run.
         if (auto group = qobject_cast<Gui::ActionGroup*>(action))
             group->setExclusiveOptional(true);
-        // The renderer's shading options ride under the style list as a
-        // popover section: they are not exclusive with each other, so
-        // they cannot be entries in it (Gui/ShadingOptions.h). The menu
-        // is built by ActionGroup::addTo -- for the tool button and for
-        // the menu bar, and again whenever the toolbar is rebuilt -- so
-        // the section is installed on first show of each one.
-        //
-        // Two more ride with it (Gui/DisplayOptions.h): the styles
-        // themselves as one combo box at the top, in place of their rows,
-        // with the anti-aliasing beside it; and the lights of the view
-        // below the shading. In that order: the first hides what is in the
-        // menu when it runs, which has to be the rows and nothing else.
-        if (auto group = qobject_cast<Gui::ActionGroup*>(action)) {
-            QObject::connect(group, &Gui::ActionGroup::aboutToShow, [](QMenu *menu) {
-                DrawStyleOptionsWidget::install(menu);
-                ShadingOptionsWidget::install(menu);
-                LightOptionsWidget::install(menu);
-            });
-        }
+        // The list and nothing else (docs/HandsOnQueue.md entry 74). The
+        // shading options, the anti-aliasing and the lights, which rode in
+        // this menu as sections -- with the styles as a combo box at its
+        // top, since entry 63 -- are the menu of a command of their own,
+        // Std_DisplayStyle, beside this one.
         return action;
     }
 };
@@ -850,11 +832,10 @@ StdCmdDrawStyle::StdCmdDrawStyle()
   : GroupCommand("Std_DrawStyle")
 {
     sGroup        = "Standard-View";
-    sMenuText     = QT_TR_NOOP("Display style");
-    sToolTipText  = QT_TR_NOOP("Change the display style and shading of the objects");
-    sStatusTip    = QT_TR_NOOP("Change the display style and shading of the objects");
+    sMenuText     = QT_TR_NOOP("Draw style");
+    sToolTipText  = QT_TR_NOOP("Change the draw style of the objects");
+    sStatusTip    = QT_TR_NOOP("Change the draw style of the objects");
     sWhatsThis    = "Std_DrawStyle";
-    sPixmap       = "Std_DrawStyle";
     eType         = 0;
     bCanLog       = false;
     // One override mode per viewer, so the list is a pick-one: this is
@@ -907,6 +888,50 @@ void StdCmdDrawStyle::updateIcon(const MDIView *view)
         // restored document and from the console.
         syncChecked(mode.c_str());
     }
+}
+
+//===========================================================================
+// Std_DisplayStyle
+//===========================================================================
+
+/** The Display style menu: the anti-aliasing, the shading options and the
+ * lights of the active 3D view (Gui/DisplayOptions.h, Gui/ShadingOptions.h).
+ * Sections of widgets and no entry to run, so the command has an action of
+ * its own that only opens the menu. Split off Std_DrawStyle, whose list it
+ * had taken the place of (docs/HandsOnQueue.md entry 74).
+ */
+class StdCmdDisplayStyle : public Command
+{
+public:
+    StdCmdDisplayStyle();
+    const char* className() const override {return "StdCmdDisplayStyle";}
+
+protected:
+    void activated(int) override {}
+    bool isActive() override {
+        return Base::freecad_dynamic_cast<View3DInventor>(Application::Instance->activeView())
+            != nullptr;
+    }
+    Action *createAction() override {
+        Action *action = new DisplayStyleAction(this, getMainWindow());
+        applyCommandData(this->className(), action);
+        if (sPixmap)
+            action->setIcon(BitmapFactory().iconFromTheme(sPixmap));
+        return action;
+    }
+};
+
+StdCmdDisplayStyle::StdCmdDisplayStyle()
+  : Command("Std_DisplayStyle")
+{
+    sGroup        = "Standard-View";
+    sMenuText     = QT_TR_NOOP("Display style");
+    sToolTipText  = QT_TR_NOOP("The anti-aliasing, the shading and the lights of the 3D view");
+    sStatusTip    = sToolTipText;
+    sWhatsThis    = "Std_DisplayStyle";
+    sPixmap       = "Std_DisplayStyle";
+    eType         = 0;
+    bCanLog       = false;
 }
 
 //===========================================================================
@@ -2897,6 +2922,41 @@ bool StdCmdViewSplitMaximize::isActive()
     ViewArea *area = ViewArea::areaOf(view);
     return area && (area->cellCount() > 1 || area->maximizedCell());
 }
+
+//===========================================================================
+// Std_SplitView
+//===========================================================================
+
+/** The commands of the split view and of its cells, as one entry of the View
+ * menu (docs/HandsOnQueue.md entry 101). They are commands in their own
+ * right, with their own shortcuts; this holds them by name.
+ */
+class StdCmdSplitView : public GroupCommand
+{
+public:
+    StdCmdSplitView()
+        :GroupCommand("Std_SplitView")
+    {
+        sGroup        = "Standard-View";
+        sMenuText     = QT_TR_NOOP("Split view");
+        sToolTipText  = QT_TR_NOOP("Split the view area into cells, close or maximize a cell,\n"
+                                   "and choose what a cell shows");
+        sWhatsThis    = "Std_SplitView";
+        sStatusTip    = sToolTipText;
+        eType         = 0;
+        bCanLog       = false;
+
+        addCommand("Std_ViewSplitRight");
+        addCommand("Std_ViewSplitDown");
+        addCommand("Std_ViewSplitClose");
+        addCommand("Std_ViewSplitMaximize");
+        addCommand();
+        addCommand("Std_ViewCellShowObject");
+    }
+
+    const char* className() const override
+    { return "StdCmdSplitView"; }
+};
 
 //===========================================================================
 // Std_ViewCellShowObject
@@ -5221,10 +5281,66 @@ void StdCmdDockOverlayToggleTransparent::activated(int iMsg)
 // Std_DockOverlayToggleLeft
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleLeft)
+/** One of the four commands that show or hide the overlays of a side.
+ *
+ * Their icon is the close glyph of an overlay's title bar, a file drawn in
+ * black. A title button tints it when it paints; a menu does not, and in the
+ * menu of a dark theme the glyph was not to be seen
+ * (docs/HandsOnQueue.md entry 96). The action is given the glyph in the
+ * colour a title button would paint it.
+ */
+class StdCmdDockOverlaySide : public Gui::Command
+{
+public:
+    explicit StdCmdDockOverlaySide(const char *name)
+        :Command(name)
+    {}
+
+    Action *createAction() override
+    {
+        Action *action = Command::createAction();
+        applyThemeIcon(action);
+        // A theme sets its sheet first and its scheme after: when the icons
+        // are asked for again at the sheet's change the scheme is still the
+        // one being left, and the glyph stayed black in a dark menu. It is
+        // looked at again when the scheme itself changes.
+        QObject::connect(qGuiApp->styleHints(), &QStyleHints::colorSchemeChanged, action,
+                         [this]() { applyThemeIcon(getAction()); });
+        return action;
+    }
+
+    void refreshIcon() override
+    {
+        Command::refreshIcon();
+        applyThemeIcon(getAction());
+    }
+
+private:
+    void applyThemeIcon(Action *action)
+    {
+        if (!action || !getPixmap())
+            return;
+        QPixmap pixmap = BitmapFactory().pixmap(getPixmap());
+        if (Application::isDarkTheme())
+            pixmap = OverlayToolButton::tinted(pixmap, QColor(0xff, 0xff, 0xff));
+        action->setIcon(QIcon(pixmap));
+    }
+};
+
+#define DEF_STD_CMD_OVERLAY_SIDE(X) class X : public StdCmdDockOverlaySide \
+{\
+public:\
+    X();\
+    const char* className() const override\
+    { return #X; }\
+protected: \
+    void activated(int iMsg) override;\
+};
+
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleLeft)
 
 StdCmdDockOverlayToggleLeft::StdCmdDockOverlayToggleLeft()
-  :Command("Std_DockOverlayToggleLeft")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleLeft")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle left");
@@ -5246,10 +5362,10 @@ void StdCmdDockOverlayToggleLeft::activated(int iMsg)
 // Std_DockOverlayToggleRight
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleRight)
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleRight)
 
 StdCmdDockOverlayToggleRight::StdCmdDockOverlayToggleRight()
-  :Command("Std_DockOverlayToggleRight")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleRight")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle right");
@@ -5271,10 +5387,10 @@ void StdCmdDockOverlayToggleRight::activated(int iMsg)
 // Std_DockOverlayToggleTop
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleTop)
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleTop)
 
 StdCmdDockOverlayToggleTop::StdCmdDockOverlayToggleTop()
-  :Command("Std_DockOverlayToggleTop")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleTop")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle top");
@@ -5296,10 +5412,10 @@ void StdCmdDockOverlayToggleTop::activated(int iMsg)
 // Std_DockOverlayToggleBottom
 //===========================================================================
 
-DEF_STD_CMD(StdCmdDockOverlayToggleBottom)
+DEF_STD_CMD_OVERLAY_SIDE(StdCmdDockOverlayToggleBottom)
 
 StdCmdDockOverlayToggleBottom::StdCmdDockOverlayToggleBottom()
-  :Command("Std_DockOverlayToggleBottom")
+  :StdCmdDockOverlaySide("Std_DockOverlayToggleBottom")
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Toggle bottom");
@@ -5585,6 +5701,8 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdViewSplitClose());
     rcCmdMgr.addCommand(new StdCmdViewSplitMaximize());
     rcCmdMgr.addCommand(new StdCmdViewCellShowObject());
+    // after the commands it holds, which it takes by name
+    rcCmdMgr.addCommand(new StdCmdSplitView());
     rcCmdMgr.addCommand(new StdViewScreenShot());
     rcCmdMgr.addCommand(new StdViewLoadImage());
     rcCmdMgr.addCommand(new StdCmdSaveView());
@@ -5610,6 +5728,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdToggleClipPlane());
     rcCmdMgr.addCommand(new StdCmdClipPlaneDragger());
     rcCmdMgr.addCommand(new StdCmdDrawStyle());
+    rcCmdMgr.addCommand(new StdCmdDisplayStyle());
     rcCmdMgr.addCommand(new StdCmdViewSaveCamera());
     rcCmdMgr.addCommand(new StdCmdViewRestoreCamera());
     rcCmdMgr.addCommand(new StdCmdFreezeViews());

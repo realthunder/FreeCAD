@@ -285,7 +285,15 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
     if(!Relative.getValue()) 
         parent = 0;
     else {
-        if(parent && parent->getSubObject(parentSub.c_str())==this) {
+        if(parent == this) {
+            // Its own context: the binder as it stands at the root of its
+            // document, whatever it is held in besides. That is what a
+            // double click on it gives where it is listed by itself and not
+            // under one of its containers (docs/HandsOnQueue.md entry 113);
+            // nothing above it is asked, and the paths to it are not tried.
+            parentSub.clear();
+        }
+        else if(parent && parent->getSubObject(parentSub.c_str())==this) {
             auto parents = parent->getParents();
             if(parents.size()) {
                 parent = parents.begin()->first;
@@ -296,8 +304,33 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
         if(!parent && parentSub.empty()) {
             auto parents = getParents();
             if(parents.size()) {
-                parent = parents.begin()->first;
-                parentSub = parents.begin()->second;
+                // No context recorded. A binder that has no shape yet takes
+                // the first path to itself: that is a new binder, relative to
+                // where it was made. One that HAS a shape was placed without
+                // a context -- made or last updated before it was put where
+                // it is, as a binder an older file brings -- and the first
+                // path would carry it off by its container's placement, and
+                // everything made on it with it. It takes the shortest path
+                // under which its shape stays where it is, the first that
+                // getParents() answers among equals; with none there is no
+                // context to take, and it says so: it is the user's to give
+                // one, by a double click on the binder where it is meant
+                // (docs/HandsOnQueue.md entry 105).
+                int pick = 0;
+                if(_Version.getValue()>0 && !Shape.getValue().IsNull())
+                    pick = findUnmovedContext(parents);
+                if(pick < 0) {
+                    static const char *noContext = "No context, please double click the binder"
+                                                   " in the desired context to refresh";
+                    if(!isRecomputing()) {
+                        if(getDocument())
+                            getDocument()->setErrorDescription(this, noContext);
+                        return;
+                    }
+                    FC_THROWM(Base::RuntimeError, noContext);
+                }
+                parent = parents[pick].first;
+                parentSub = parents[pick].second;
             }
         }
         if(parent && (parent!=Context.getValue() || parentSub!=Context.getSubName(false)))
@@ -660,6 +693,119 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
     }
 }
 
+int SubShapeBinder::findUnmovedContext(
+        const std::vector<std::pair<App::DocumentObject*, std::string> > &parents) const
+{
+    // The shortest path first, and among equals the order they came in
+    auto depth = [&parents](int i) {
+        const std::string &sub = parents[i].second;
+        return std::count(sub.begin(), sub.end(), '.');
+    };
+    std::vector<int> order(parents.size());
+    for(int i=0;i<static_cast<int>(order.size());++i)
+        order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+            [&depth](int a, int b) {return depth(a) < depth(b);});
+    for(int i : order) {
+        if(!parents[i].first)
+            continue;
+        bool recorded = false;
+        const bool moves = contextMovesShape(parents[i].first, parents[i].second, &recorded);
+        // No placement kept to compare with: the first path, as a binder
+        // that has no shape yet takes it
+        if(!recorded)
+            return 0;
+        if(!moves)
+            return i;
+    }
+    return -1;
+}
+
+bool SubShapeBinder::contextMovesShape(App::DocumentObject *parent,
+                                       const std::string &parentSub,
+                                       bool *recorded) const
+{
+    if(recorded)
+        *recorded = false;
+    // The matrix each support would be bound by under this context, made as
+    // update() makes them
+    std::unordered_map<const App::DocumentObject*, Base::Matrix4D> mats;
+    bool first = true;
+    Base::Matrix4D matFirst;
+    for(auto &l : Support.getSubListValues()) {
+        auto obj = l.getValue();
+        if(!obj || !obj->getNameInDocument())
+            continue;
+        auto res = mats.emplace(obj,Base::Matrix4D());
+        if(!res.second)
+            continue;
+        auto link = obj;
+        std::string linkSub = l.getSubName();
+        std::string resolvedSub = parentSub;
+        auto resolved = parent->resolveRelativeLink(resolvedSub,link,linkSub,
+                                                    RelativeLinkOption::TopParent);
+        if(resolved) {
+            Base::Matrix4D mat;
+            if(resolved->getSubObject(resolvedSub.c_str(),0,&mat) == this) {
+                mat.inverseGauss();
+                res.first->second = Placement.getValue().toMatrix()*mat;
+            }
+        }
+        if(BindMode.getValue() == BindModeEnum::Float
+                || BindMode.getValue() == BindModeEnum::FloatFirst) {
+            Base::Matrix4D mat;
+            if(first || BindMode.getValue() == BindModeEnum::Float) {
+                first = false;
+                if(link)
+                    link->getSubObject(linkSub.c_str(),0,&mat);
+                Base::Vector3d t;
+                Base::Rotation r;
+                Base::Vector3d s;
+                Base::Rotation so;
+                mat.getTransform(t, r, s, so);
+                mat.setTransform(t, r, Base::Vector3d(1, 1, 1), Base::Rotation());
+                mat.inverse();
+                matFirst = mat;
+            }
+            res.first->second *= matFirst;
+        }
+    }
+    if(mats.empty())
+        return false;
+
+    // How the shape was placed at its last update is kept with the binder, a
+    // matrix for each support: the same matrices, the same place. Nothing
+    // else is asked, not the geometry: the binder binds the same object,
+    // whatever a recompute of an older file has made of that since (the
+    // reporter, docs/HandsOnQueue.md entry 105).
+    std::vector<std::pair<Base::Matrix4D, Base::Matrix4D> > kept;
+    for(auto &v : mats) {
+        std::string name("Cache_");
+        name += v.first->getNameInDocument();
+        if(v.first->getDocument() != getDocument()) {
+            name += "_";
+            name += v.first->getDocument()->getName();
+        }
+        auto prop = Base::freecad_dynamic_cast<App::PropertyMatrix>(
+                getDynamicPropertyByName(name.c_str()));
+        // Nothing kept of this support: nothing to go by
+        if(!prop)
+            return false;
+        kept.emplace_back(prop->getValue(), v.second);
+    }
+    if(recorded)
+        *recorded = true;
+    for(const auto &v : kept) {
+        for(int i=0;i<4;++i) {
+            for(int j=0;j<4;++j) {
+                if(fabs(v.first[i][j]-v.second[i][j]) > 1e-7)
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
 void SubShapeBinder::buildShape(TopoShape &result)
 {
     bool makeWire = true;
@@ -976,7 +1122,9 @@ App::DocumentObject *SubShapeBinder::getElementOwner(const Data::MappedName & na
 }
 
 void SubShapeBinder::slotRecomputedObject(const App::DocumentObject& Obj) {
-    if(Context.getValue() == &Obj
+    // (not for itself, where it is its own context: it has just been
+    // recomputed, and an update here would answer its own recompute)
+    if(Context.getValue() == &Obj && &Obj != this
         && !this->testStatus(App::ObjectStatus::Recompute2))
     {
         try {

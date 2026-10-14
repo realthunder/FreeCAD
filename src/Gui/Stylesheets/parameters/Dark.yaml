@@ -12,7 +12,8 @@ DefaultButtonBorderColor: "blend(@ButtonBorderColor, @AccentColor, 20)"
 ToolButtonCheckedBorderColor: "@PrimaryColorLighten5"
 ToolButtonCheckedBackground: "@CheckedButtonTopBackgroundColor"
 CheckBoxBackgroundColor: "@TextEditFieldBackgroundColor"
-# Not @GeneralBorderColor, which is black here: a box in the field colour
+# Not black, which @GeneralBorderColor was here until it took this same grey
+# (see it below): a box in the field colour
 # with a black edge, in a dialog one step lighter, shows no edge at all, and
 # an unchecked box read as a darker patch. The Light set's edge is darker
 # than its field; this one has to be lighter.
@@ -21,7 +22,14 @@ DialogBackgroundColor: "@PrimaryColorLighten3"
 GeneralAlternateBackgroundColor: "@PrimaryColorLighten2"
 GeneralBackgroundColor: "@PrimaryColor"
 GeneralBackgroundHoverColor: "@PrimaryColorLighten4"
-GeneralBorderColor: "@PrimaryColorDarken5"
+# Lighter than the grounds it is drawn on, not darker: @PrimaryColorDarken5 is
+# black here, and a black edge round a field or a button that is all but black
+# itself, in a dialog one step lighter, shows nothing -- fields, buttons, combo
+# boxes and tabs had no edge at all. It was the check boxes' grey,
+# @PrimaryColorLighten5, about #646464; a step more subtle since, by the
+# reporter's choice (docs/HandsOnQueue.md entry 100). The check boxes and the
+# radio buttons keep the lighter one: an empty box has to be made out.
+GeneralBorderColor: "#4B4B4B"
 GeneralBorderHoverColor: "@PrimaryColorLighten6"
 GeneralDisabledBackgroundColor: "@PrimaryColorDarken3"
 GeneralGridLinesColor: "@PrimaryColorLighten3"

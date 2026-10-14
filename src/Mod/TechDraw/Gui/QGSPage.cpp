@@ -108,9 +108,37 @@ QGSPage::QGSPage(ViewProviderPage* vpPage, QWidget* parent)
     //    setItemIndexMethod(QGraphicsScene::NoIndex);    //sometimes faster
 }
 
+//! The page's items, made the first time something needs them and not before.
+//!
+//! They used to be made while the document loaded, for every page: each view
+//! asking to be painted added its item (ViewProviderDrawingView::
+//! singleParentPaint) and each change of the page's Views made the missing
+//! ones (fixOrphans), whether or not anything was ever going to look at the
+//! page. That is every dimension laid out and formatted, every section face
+//! hatched from its SVG file, every frame and caption -- about four seconds
+//! of the wait after the open of a document with ten pages, on any box, for
+//! pages nobody had asked for.
+//!
+//! Now those two make nothing until the scene is populated, and what needs the
+//! items says so: showing the page (ViewProviderPage::showMDIViewPage),
+//! printing it (PagePrinter::renderPage), exporting it (saveSvg) and the
+//! renderer's and the server's page feed, which already made the items a page
+//! lacked. From then on the scene is kept up as before.
+void QGSPage::populate()
+{
+    if (m_populated) {
+        return;
+    }
+    addChildrenToPage();
+    updateTemplate(true);
+    redrawAllViews();
+}
+
 void QGSPage::addChildrenToPage()
 {
     //    Base::Console().Message("QGSP::addChildrenToPage()\n");
+    // whoever makes the items by hand has populated the scene
+    m_populated = true;
     // A fresh page is added and we iterate through its collected children and add these to Canvas View  -MLP
     // if docobj is a featureviewcollection (ex orthogroup), add its child views. if there are ever children that have children,
     // we'll have to make this recursive. -WF
@@ -369,6 +397,10 @@ void QGSPage::removeQViewFromScene(QGIView* view)
 
 bool QGSPage::addView(const App::DocumentObject* obj)
 {
+    if (!m_populated) {
+        // nothing looks at this page yet: populate() makes this item with the rest
+        return false;
+    }
     return attachView(const_cast<App::DocumentObject*>(obj));
 }
 
@@ -886,6 +918,11 @@ void QGSPage::fixOrphans(bool force)
 {
     Q_UNUSED(force)
 
+    if (!m_populated) {
+        // no item to be an orphan, and none to be made before populate()
+        return;
+    }
+
     // get all the DrawViews for this page, including the second level ones
     // if we ever have collections of collections, we'll need to revisit this
     TechDraw::DrawPage* thisPage = m_vpPage->getDrawPage();
@@ -1024,6 +1061,9 @@ void QGSPage::saveSvg(QString filename)
     // TODO: We only have m_vpPage because constructor gets passed a view provider...
     //NOTE: this makes wrong size pages in low-Rez
     TechDraw::DrawPage* page(m_vpPage->getDrawPage());
+
+    // a page nothing has shown yet has no items to export
+    populate();
 
     const QString docName(QString::fromUtf8(page->getDocument()->getName()));
     const QString pageName(QString::fromUtf8(page->getNameInDocument()));

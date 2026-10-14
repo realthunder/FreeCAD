@@ -175,13 +175,21 @@ void DrawViewCollection::unsetupObject()
     App::Document* doc = getDocument();
     std::string docName = doc->getName();
 
-    const std::vector<App::DocumentObject*> currViews = Views.getValues();
+    // By name, as DrawPage::unsetupObject does it: outside a transaction a removed view
+    // is deleted at once, and one that went with an earlier view of the list is a freed
+    // pointer by the time the loop reaches it.
+    std::vector<std::string> viewNames;
+    for (auto v : Views.getValues()) {
+        if (v && v->isAttachedToDocument()) {
+            viewNames.emplace_back(v->getNameInDocument());
+        }
+    }
     std::vector<App::DocumentObject*> emptyViews;
-    std::vector<App::DocumentObject*>::const_iterator it = currViews.begin();
-    for (; it != currViews.end(); it++) {
-        std::string viewName = (*it)->getNameInDocument();
-        Base::Interpreter().runStringArg("App.getDocument(\"%s\").removeObject(\"%s\")",
-                                          docName.c_str(), viewName.c_str());
+    for (const auto& viewName : viewNames) {
+        if (doc->getObject(viewName.c_str())) {
+            Base::Interpreter().runStringArg("App.getDocument(\"%s\").removeObject(\"%s\")",
+                                              docName.c_str(), viewName.c_str());
+        }
     }
     Views.setValues(emptyViews);
 }

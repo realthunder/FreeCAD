@@ -206,6 +206,11 @@
 #include "NavigationAnimation.h"
 #include "Utilities.h"
 
+#include <Base/CrashLog.h>
+#if defined(_MSC_VER)
+#include <Base/StackWalker.h>
+#endif
+
 FC_LOG_LEVEL_INIT("3DViewer",true,true)
 
 //#define FC_LOGGING_CB
@@ -2369,10 +2374,73 @@ bool View3DInventorViewer::containsViewProvider(const ViewProvider* vp) const
 }
 
 /// adds an ViewProvider to the view, e.g. from a feature
+namespace {
+
+#if defined(_MSC_VER)
+class SceneChangeStack: public StackWalker
+{
+public:
+    explicit SceneChangeStack(Base::CrashLog::Entry& entry)
+        : StackWalker(RetrieveVerbose | SymBuildPath)
+        , entry(entry)
+    {}
+
+protected:
+    void OnSymInit(LPCSTR, DWORD, LPCSTR) override
+    {}
+    void OnLoadModule(LPCSTR, LPCSTR, DWORD64, DWORD, DWORD, LPCSTR, LPCSTR, ULONGLONG) override
+    {}
+    void OnDbgHelpErr(LPCSTR, DWORD, DWORD64) override
+    {}
+    void OnOutput(LPCSTR text) override
+    {
+        entry.line(text);
+    }
+
+private:
+    Base::CrashLog::Entry& entry;
+};
+#endif
+
+/** A scene root's children are changed while that root, or another, is
+ * walking through its children for a bounding box.
+ *
+ * That is what an access violation in SoAction::traverse came from, once in
+ * some ten loads of a file this build had saved, in a repaint the restore of
+ * its view providers pumped (docs/HandsOnLog.md, the evening of 2026-10-12):
+ * the walk had counted 161 children and found none at the 160th. Who changes
+ * the list inside a walk was not on that stack. This says who, into the
+ * crash log, the first three times.
+ */
+void reportSceneChangeInWalk(const char* what, ViewProvider* provider)
+{
+    static int reported;
+    if (reported >= 3)
+        return;
+    ++reported;
+    std::ostringstream str;
+    str << "a view provider's root " << what
+        << " a scene root while a scene root walks its children for a bounding box";
+    auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(provider);
+    if (vpd && vpd->getObject() && vpd->getObject()->isAttachedToDocument())
+        str << ": " << vpd->getObject()->getFullName();
+    FC_ERR(str.str());
+    Base::CrashLog::Entry entry(Base::CrashLog::Severity::Caught, str.str());
+#if defined(_MSC_VER)
+    SceneChangeStack walker(entry);
+    walker.ShowCallstack();
+#endif
+}
+
+}  // namespace
+
 void View3DInventorViewer::addViewProvider(ViewProvider* pcProvider)
 {
     if(!_ViewProviderSet.insert(pcProvider).second)
         return;
+
+    if (SoFCUnifiedSelection::boundingBoxWalks() > 0)
+        reportSceneChangeInWalk("is put into", pcProvider);
 
     SoSeparator* root = pcProvider->getRoot();
 
@@ -2411,6 +2479,9 @@ void View3DInventorViewer::removeViewProvider(ViewProvider* pcProvider)
     if(it == _ViewProviderSet.end())
         return;
     _ViewProviderSet.erase(it);
+
+    if (SoFCUnifiedSelection::boundingBoxWalks() > 0)
+        reportSceneChangeInWalk("is taken out of", pcProvider);
 
     SoSeparator* root = pcProvider->getRoot();
 

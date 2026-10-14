@@ -104,6 +104,9 @@ Gui--OverlayToolButton {
   background: transparent;
   padding: 0px;
   border: none;
+  /* the glyphs of the title buttons, on this sheet's ground whatever the
+     theme around it is */
+  qproperty-iconColor: #000000;
 }
 
 Gui--OverlayToolButton::hover {
@@ -174,10 +177,9 @@ QWidget#ClippingScrollAreaContents {
   background-color: #80e6e6e6;
 }
 
-QSint--ActionGroup QFrame[class="content"] {
-    background-color: #a0e6e6e6; /* Task Panel background color */
-}
-
-QSint--ActionGroup QFrame[class="content"] > QWidget {
-    background-color: #80e6e6e6; /* Task Panel background color */
-}
+/* A task panel's ground is not stated here: it is the theme's own panel
+   colour at the opacity of View/DockOverlayAlpha, which the program puts
+   in front of this sheet (docs/HandsOnQueue.md entry 69). To state one
+   all the same:
+   QSint--ActionGroup QFrame[class="content"] { background-color: #a0e6e6e6; }
+*/

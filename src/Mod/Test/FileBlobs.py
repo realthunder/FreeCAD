@@ -609,6 +609,30 @@ class BlobPersistenceCases(BlobTestCase):
         self.assertContent(reopened.getObject("File1"), b"shared")
         self.assertContent(reopened.getObject("File2"), b"shared")
 
+    def testSchemaFourRestoreKeepsOneFileAndStagesNone(self):
+        """A per-property entry is restored out of memory: six properties with
+        one content come back onto one stored file, whitespace at its start
+        and all, and nothing is left under the properties' own names."""
+        doc = self.newDocument()
+        content = b"\n \tbegins with whitespace"
+        for i in range(6):
+            self.fileObject(doc, "File%d" % i, content, saveName="page%d.svg" % i)
+        self.fileObject(doc, "Other", b"other", saveName="other.txt")
+        doc.SaveSchemaVersion = 4
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        for i in range(6):
+            self.assertContent(reopened.getObject("File%d" % i), content)
+        self.assertContent(reopened.getObject("Other"), b"other")
+        self.assertEqual(len(set(reopened.getObject("File%d" % i).File for i in range(6))), 1)
+        self.assertEqual(len(self.storedBlobs(reopened)), 2)
+        staged = [
+            n for n in os.listdir(reopened.TransientDir) if n.startswith("page") or n == "other.txt"
+        ]
+        self.assertEqual(staged, [])
+
     def testUnwritableSchemaIsClamped(self):
         doc = self.newDocument()
         doc.SaveSchemaVersion = 99
@@ -1089,8 +1113,14 @@ class BlobExportImportCases(BlobTestCase):
         target = self.newDocument("BlobTarget")
         first = self.fileObject(source, "File1", b"shared", saveName="a.txt")
         second = self.fileObject(source, "File2", b"shared", saveName="b.txt")
-        target.copyObject([first, second])
+        copies = target.copyObject([first, second])
+        # A copy's content is restored out of memory into the pack store, and
+        # has a file only once asked for a path.
+        self.assertEqual(len(set(copy.File for copy in copies)), 1)
         self.assertEqual(len(self.storedBlobs(target)), 1)
+        project = self.projectPath("target.FCStd")
+        target.saveAs(project)
+        self.assertEqual(len(self.blobEntries(project)), 1)
 
     def testCopyCarriesOnlyTheExportedSubset(self):
         """A clipboard buffer must not carry blobs of unrelated objects."""
@@ -1098,8 +1128,14 @@ class BlobExportImportCases(BlobTestCase):
         target = self.newDocument("BlobTarget")
         wanted = self.fileObject(source, "File1", b"wanted")
         self.fileObject(source, "File2", b"unrelated")
-        target.copyObject([wanted])
+        copies = target.copyObject([wanted])
+        # As above: asked for its path first. What the store holds without a
+        # file is not seen by the count, so the saved target is counted too.
+        self.assertContent(copies[0], b"wanted")
         self.assertEqual(len(self.storedBlobs(target)), 1)
+        project = self.projectPath("target.FCStd")
+        target.saveAs(project)
+        self.assertEqual(len(self.blobEntries(project)), 1)
 
 
 # ---------------------------------------------------------------------------

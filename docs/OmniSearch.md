@@ -26,6 +26,24 @@ of the active view with `/` already typed and three suggestions:
 Pick one (Enter, Tab or click) or type the prefix; the space ends it. Text
 that does not start with `/` is an object query as typed.
 
+`Ctrl+F` in a tree view, and "Search..." in a document's context menu there,
+open the box with `/ ` typed -- the objects. The tree view's own search box,
+the first of the three places named above, is gone (2026-10-12,
+`docs/HandsOnQueue.md` entry 78): the box does what it did, in the tree view
+it was opened from -- the item the text names is scrolled to and marked, and
+the mark goes with the box. In the property view `Ctrl+F` opens the box with
+what leads to the thing the view shows, and the dot that lists its
+properties:
+
+| the property view shows | Data tab | View tab |
+|---|---|---|
+| one selected object | `/ Box.` | `/ Box.ViewObject.` |
+| several selected objects | `/ .` | `/ .ViewObject.` |
+| nothing selected: the document the tree has selected | `/ Doc#.` | `/ Doc#.ActiveView.` |
+
+The key is taken in those two places only; a text editor's `Ctrl+F` is its
+own.
+
 Below the three, while the text is still the lone `/` the box came up with,
 are the items last CONFIRMED in it, the newest first: up to ten, each once.
 Confirmed is carried out, not found -- a command run from the box, a

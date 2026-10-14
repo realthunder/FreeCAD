@@ -779,6 +779,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MergeConflictSide
+    ///
+    /// The side a conflict starts on when a merge, or rows applied, are
+    /// previewed (docs/TransactionLog.md sec 32.17): 0 ours (the default),
+    /// 1 theirs, 2 none -- it is asked. A side is what the dialog starts
+    /// each conflict on, and what is merged unless another is picked.
+    /// Asked, nothing is merged or shown until each conflict has a side.
+    /// A script merging with no side for a conflict is refused anyway.
+    static const long & getMergeConflictSide();
+    static const long & defaultMergeConflictSide();
+    static void removeMergeConflictSide();
+    static void setMergeConflictSide(const long &v);
+    static const char *docMergeConflictSide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RelativeStringID
     ///
     /// Write the ids in a document's string table as differences from the

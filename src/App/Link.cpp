@@ -2824,9 +2824,9 @@ Link::Link()
     }
     ADD_PROPERTY_TYPE(LinkExecute, (""), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkExecute].doc);
     ADD_PROPERTY_TYPE(ColoredElements, (nullptr), " Link", App::Prop_Hidden, getPropertyInfo()[PropIndex::PropColoredElements].doc);
-    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
-    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
-    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
+    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances#1", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
+    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances#1", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances#1", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChange, (long(0)), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChange].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeSource, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeSource].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeGroup, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeGroup].doc);
@@ -2918,9 +2918,9 @@ LinkElement::LinkElement()
     ADD_PROPERTY_TYPE(LinkCopyOnChangeSource, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeSource].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeGroup, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeGroup].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeTouched, (false), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeTouched].doc);
-    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
-    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
-    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
+    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances#1", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
+    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances#1", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances#1", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
     registerProperties();
     inherited_extension::initExtension(this);
 }
@@ -2999,9 +2999,9 @@ LinkGroup::LinkGroup()
     ADD_PROPERTY_TYPE(VisibilityList, (boost::dynamic_bitset<>{}), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropVisibilityList].doc);
     ADD_PROPERTY_TYPE(LinkMode, (long(0)), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkMode].doc);
     ADD_PROPERTY_TYPE(ColoredElements, (nullptr), " Link", App::Prop_Hidden, getPropertyInfo()[PropIndex::PropColoredElements].doc);
-    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
-    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
-    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
+    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances#1", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
+    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances#1", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances#1", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
     registerProperties();
     inherited_extension::initExtension(this);
 }

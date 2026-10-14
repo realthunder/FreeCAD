@@ -41,6 +41,8 @@
 # include <TopoDS.hxx>
 #endif
 
+#include <unordered_set>
+
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <App/Application.h>
@@ -509,9 +511,20 @@ QIcon ViewProviderAddSub::getIcon() const
     else
         return PartDesignGui::ViewProvider::getIcon();
 
+    // Most of these names have no artwork: a pad is additive and a pocket
+    // subtractive by nature, and only the other combinations have an icon of
+    // their own. A name that is not found is not remembered by the factory, so
+    // it was looked for again in every icon path and under every image format
+    // each time, and the tree asks on every status update of the item.
+    static std::unordered_set<std::string> missing;
+    if (missing.count(name))
+        return PartDesignGui::ViewProvider::getIcon();
+
     Gui::BitmapCacheContext ctx(getObject() ? getObject()->getTypeId().getName() : getTypeId().getName());
     auto pixmap = Gui::BitmapFactory().iconFromTheme(name.c_str(), true);
-    if (pixmap.isNull())
+    if (pixmap.isNull()) {
+        missing.insert(name);
         return PartDesignGui::ViewProvider::getIcon();
+    }
     return pixmap;
 }

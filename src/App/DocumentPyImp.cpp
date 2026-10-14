@@ -588,20 +588,30 @@ Py::Boolean DocumentPy::getHasPendingTransaction() const {
 
 PyObject*  DocumentPy::undo(PyObject * args)
 {
-    if (!PyArg_ParseTuple(args, ""))
+    int skip = 0;
+    if (!PyArg_ParseTuple(args, "|i", &skip))
         return nullptr;
-    if (getDocumentPtr()->getAvailableUndos())
-        getDocumentPtr()->undo();
-    Py_Return;
+    PY_TRY {
+        if (skip > 0)
+            getDocumentPtr()->undoSkipping(skip);
+        else if (getDocumentPtr()->getAvailableUndos())
+            getDocumentPtr()->undo();
+        Py_Return;
+    } PY_CATCH;
 }
 
 PyObject*  DocumentPy::redo(PyObject * args)
 {
-    if (!PyArg_ParseTuple(args, ""))
+    int skip = 0;
+    if (!PyArg_ParseTuple(args, "|i", &skip))
         return nullptr;
-    if (getDocumentPtr()->getAvailableRedos())
-        getDocumentPtr()->redo();
-    Py_Return;
+    PY_TRY {
+        if (skip > 0)
+            getDocumentPtr()->redoSkipping(skip);
+        else if (getDocumentPtr()->getAvailableRedos())
+            getDocumentPtr()->redo();
+        Py_Return;
+    } PY_CATCH;
 }
 
 PyObject* DocumentPy::clearUndos(PyObject * args)
@@ -863,6 +873,11 @@ Py::Int DocumentPy::getUndoCount() const
 Py::Int DocumentPy::getRedoCount() const
 {
     return Py::Int((long)getDocumentPtr()->getAvailableRedos());
+}
+
+Py::String DocumentPy::getUndoRefusal() const
+{
+    return Py::String(getDocumentPtr()->undoRefusal());
 }
 
 Py::List DocumentPy::getUndoNames() const
@@ -1242,11 +1257,26 @@ PyObject* DocumentPy::getTransactionCursor(PyObject *args)
 
 PyObject* DocumentPy::undoTransactionFromLog(PyObject *args)
 {
-    long long seq;
-    if (!PyArg_ParseTuple(args, "L", &seq))
+    PyObject* arg = nullptr;
+    if (!PyArg_ParseTuple(args, "O", &arg))
         return nullptr;
     PY_TRY {
-        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->undoLogged(seq)));
+        // One row, or several as one step (docs/TransactionLog.md sec 33.13).
+        if (PyLong_Check(arg)) {
+            const long long seq = PyLong_AsLongLong(arg);
+            if (seq == -1 && PyErr_Occurred())
+                return nullptr;
+            return Py::new_reference_to(Py::Boolean(getDocumentPtr()->undoLogged(seq)));
+        }
+        if (!PySequence_Check(arg) || PyUnicode_Check(arg)) {
+            PyErr_SetString(PyExc_TypeError, "expected a row number or a sequence of them");
+            return nullptr;
+        }
+        std::vector<int64_t> seqs;
+        const Py::Sequence list(arg);
+        for (Py::Sequence::size_type i = 0; i < list.size(); ++i)
+            seqs.push_back(static_cast<long long>(Py::Long(list[i])));
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->undoLogged(seqs)));
     } PY_CATCH;
 }
 
@@ -1715,6 +1745,81 @@ PyObject* DocumentPy::pickTransactions(PyObject *args)
         }
         return Py::new_reference_to(
             mergeResultToPy(getDocumentPtr()->pickRows(pickedRows(pyRows), picks, fallback)));
+    } PY_CATCH;
+}
+
+namespace {
+std::map<std::string, std::string> pickedSides(PyObject* pyPicks)
+{
+    std::map<std::string, std::string> picks;
+    if (pyPicks) {
+        Py::Dict dict(pyPicks);
+        for (auto it = dict.begin(); it != dict.end(); ++it) {
+            const auto item = *it;
+            picks[Py::String(item.first).as_std_string("utf-8")]
+                = Py::String(item.second).as_std_string("utf-8");
+        }
+    }
+    return picks;
+}
+
+Py::Dict mergeOutcomeToPy(const App::Document::MergeOutcome& outcome)
+{
+    Py::Dict d;
+    d.setItem("document", outcome.document ? Py::asObject(outcome.document->getPyObject())
+                                           : Py::None());
+    d.setItem("theirs", Py::Boolean(outcome.theirs));
+    Py::List values;
+    for (const auto& v : outcome.values) {
+        Py::Dict value;
+        value.setItem("cid", Py::Long(v.cid));
+        value.setItem("object", Py::String(v.object));
+        value.setItem("prop", Py::String(v.prop));
+        value.setItem("here", Py::Boolean(v.here));
+        values.append(value);
+    }
+    d.setItem("values", values);
+    Py::List removed;
+    for (long cid : outcome.removed)
+        removed.append(Py::Long(cid));
+    d.setItem("removed", removed);
+    Py::List failed;
+    for (const auto& name : outcome.failed)
+        failed.append(Py::String(name));
+    d.setItem("failed", failed);
+    Py::List unresolved;
+    for (const auto& c : outcome.unresolved)
+        unresolved.append(mergeChangeToPy(c));
+    d.setItem("unresolved", unresolved);
+    d.setItem("preview", mergePreviewToPy(outcome.preview));
+    return d;
+}
+}
+
+PyObject* DocumentPy::previewTransactionMergeResult(PyObject *args)
+{
+    const char* branch;
+    PyObject* pyPicks = nullptr;
+    const char* fallback = "";
+    long long version = 0;
+    if (!PyArg_ParseTuple(args, "s|O!sL", &branch, &PyDict_Type, &pyPicks, &fallback, &version))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(mergeOutcomeToPy(getDocumentPtr()->previewMergeResult(
+            branch, pickedSides(pyPicks), fallback, version)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::previewTransactionPickResult(PyObject *args)
+{
+    PyObject* pyRows = nullptr;
+    PyObject* pyPicks = nullptr;
+    const char* fallback = "";
+    if (!PyArg_ParseTuple(args, "O|O!s", &pyRows, &PyDict_Type, &pyPicks, &fallback))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(mergeOutcomeToPy(getDocumentPtr()->previewPickResult(
+            pickedRows(pyRows), pickedSides(pyPicks), fallback)));
     } PY_CATCH;
 }
 

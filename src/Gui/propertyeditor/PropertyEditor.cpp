@@ -53,6 +53,7 @@
 #include "PropertyEditor.h"
 #include "DlgAddProperty.h"
 #include "MainWindow.h"
+#include "OverlayManager.h"
 #include "PropertyItemDelegate.h"
 #include "PropertyModel.h"
 #include "PropertyView.h"
@@ -189,6 +190,45 @@ void PropertyEditor::setItemBackground(const QBrush& c)
     this->_itemBackground = c;
 }
 
+void PropertyEditor::setOverlayItemBackground(const QBrush& c)
+{
+    this->_overlayItemBackground = c;
+    viewport()->update();
+}
+
+void PropertyEditor::setOverlayAlpha(int alpha)
+{
+    this->_overlayAlpha = alpha;
+    viewport()->update();
+}
+
+void PropertyEditor::setOverlayLook(bool on)
+{
+    if (this->_overlayLook == on)
+        return;
+    this->_overlayLook = on;
+    // Overlaid, the rows are painted here, both kinds: the style's own
+    // alternate fill has the sheet's opacity and no other
+    setAlternatingRowColors(!on);
+    viewport()->update();
+}
+
+QBrush PropertyEditor::overlayRowBackground(const QModelIndex& index) const
+{
+    // Every second row the view shows, as the style counts them: by the
+    // rows above it, not by where it lies -- a row with a colour to show is
+    // taller than one with a number
+    int above = 0;
+    for (QModelIndex i = indexAbove(index.sibling(index.row(), 0)); i.isValid(); i = indexAbove(i))
+        ++above;
+    const bool alternate = above & 1;
+    if (!alternate)
+        return OverlayManager::overlayItemBackground(_overlayItemBackground, _overlayAlpha);
+    QColor colour = palette().color(QPalette::AlternateBase);
+    colour.setAlpha(OverlayManager::overlayAlpha(_overlayAlpha));
+    return QBrush(colour);
+}
+
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
 QStyleOptionViewItem PropertyEditor::viewOptions() const
 {
@@ -227,6 +267,23 @@ bool PropertyEditor::event(QEvent* event)
         }
     }
     return QTreeView::event(event);
+}
+
+// Ctrl+F in the property view: the omni search, with what the view shows
+// typed in (docs/HandsOnQueue.md entry 78). In the view alone -- the editor
+// is used in dialogs too, where the key stays what it was.
+void PropertyEditor::keyPressEvent(QKeyEvent* event)
+{
+    if (event->matches(QKeySequence::Find)) {
+        for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+            if (auto view = qobject_cast<PropertyView*>(w)) {
+                event->accept();
+                view->openOmniSearch(isViewEditor);
+                return;
+            }
+        }
+    }
+    QTreeView::keyPressEvent(event);
 }
 
 void PropertyEditor::commitData (QWidget * editor)

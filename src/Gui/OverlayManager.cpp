@@ -44,6 +44,8 @@
 
 #include <QPainterPath>
 #include <QPropertyAnimation>
+#include <QTextBlock>
+#include <QTextLayout>
 
 #include <array>
 #include <unordered_map>
@@ -62,6 +64,7 @@
 #include "MDIView.h"
 #include "NaviCube.h"
 #include "OverlayParams.h"
+#include "StyleParameters/ParameterManager.h"
 #include "OverlayWidgets.h"
 #include "TaskView/TaskView.h"
 #include "Tree.h"
@@ -154,6 +157,86 @@ public:
         if (activeStyleSheet.isEmpty()) {
             activeStyleSheet = _default;
         }
+
+        // What the settings state goes in FRONT of the sheet: a sheet that
+        // states its own for the same thing comes later and wins.
+        activeStyleSheet.prepend(fromSettings());
+    }
+
+    /** The rules the settings make (docs/HandsOnQueue.md entry 69): a task
+     * panel's ground, overlaid or shown in its view, is the theme's own
+     * panel colour at View/DockOverlayAlpha. The sheets carried a grey of
+     * their own for it, at an opacity of their own. What is inside the
+     * panel has no second ground over that one.
+     */
+    static QString fromSettings() {
+        const QPalette palette = qApp ? qApp->palette() : QPalette();
+        const QColor panel = themeColour("DialogBackgroundColor", palette.color(QPalette::Window));
+        const int alpha = OverlayManager::overlayAlpha();
+        QString rules = QStringLiteral(
+                   "QSint--ActionGroup QFrame[class=\"content\"] {"
+                   " background-color: rgba(%1,%2,%3,%4); }\n"
+                   "QSint--ActionGroup QFrame[class=\"content\"] > QWidget {"
+                   " background-color: transparent; }\n")
+            .arg(panel.red())
+            .arg(panel.green())
+            .arg(panel.blue())
+            .arg(alpha);
+
+        // A scroll bar of an overlaid panel (docs/HandsOnQueue.md entry 88):
+        // nothing of it but the handle, in the theme's own colours for it at
+        // View/DockOverlayAlpha, hovered and pressed too. The borders keep
+        // their widths -- they are where the two ends are -- and lose their
+        // colour.
+        const QColor top = themeColour("ButtonTopBackgroundColor", palette.color(QPalette::Button));
+        const QColor bottom = themeColour("ButtonBottomBackgroundColor", top);
+        const QColor hover = themeColour("GeneralBackgroundHoverColor",
+                                         palette.color(QPalette::Midlight));
+        auto rgba = [alpha](const QColor &c) {
+            return QStringLiteral("rgba(%1,%2,%3,%4)")
+                .arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha);
+        };
+        rules += QStringLiteral(
+                   "QScrollBar:horizontal, QScrollBar:vertical {"
+                   " background-color: transparent; border-color: transparent; }\n"
+                   "QScrollBar::add-page, QScrollBar::sub-page {"
+                   " background-color: transparent; }\n"
+                   "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,"
+                   " QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,"
+                   " QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover,"
+                   " QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {"
+                   " background-color: transparent; border-color: transparent; }\n"
+                   "QScrollBar::left-arrow, QScrollBar::right-arrow,"
+                   " QScrollBar::up-arrow, QScrollBar::down-arrow,"
+                   " QScrollBar::left-arrow:hover, QScrollBar::right-arrow:hover,"
+                   " QScrollBar::up-arrow:hover, QScrollBar::down-arrow:hover {"
+                   " border-image: none; image: none; background-color: transparent; }\n"
+                   "QScrollBar::handle:horizontal { border-color: transparent;"
+                   " background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+                   " stop:0 %1, stop:1 %2); }\n"
+                   "QScrollBar::handle:vertical { border-color: transparent;"
+                   " background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+                   " stop:0 %1, stop:1 %2); }\n"
+                   "QScrollBar::handle:horizontal:hover, QScrollBar::handle:vertical:hover,"
+                   " QScrollBar::handle:horizontal:pressed, QScrollBar::handle:vertical:pressed {"
+                   " border-color: transparent; background-color: %3; }\n")
+            .arg(rgba(top), rgba(bottom), rgba(hover));
+        return rules;
+    }
+
+    /// A colour of the theme in force, or \a fallback where the theme has none
+    static QColor themeColour(const char *name, const QColor &fallback) {
+        if (Application::Instance) {
+            if (auto manager = Application::Instance->styleParameterManager()) {
+                const Base::Color colour = manager->resolve(
+                    StyleParameters::ParameterDefinition<Base::Color> {
+                        name,
+                        Base::Color(float(fallback.redF()), float(fallback.greenF()),
+                                    float(fallback.blueF()))});
+                return QColor::fromRgbF(colour.r, colour.g, colour.b);
+            }
+        }
+        return fallback;
     }
 
     ParameterGrp::handle handle;
@@ -293,6 +376,10 @@ struct OverlayInfo {
     std::unordered_map<QDockWidget*, OverlayInfo*> &overlayMap;
     ParameterGrp::handle hGrp;
     fastsignals::scoped_connection conn;
+    /// "Show this task panel in its view", on this overlay's own title bar:
+    /// shown while the Tasks are in this overlay and have a panel to send
+    /// (OverlayManager::Private::syncTaskHostAction())
+    QAction actTaskHost;
 
     OverlayInfo(QWidget *parent,
                 const char *name,
@@ -406,6 +493,34 @@ enum class ToggleMode {
     Check,
 };
 
+namespace {
+/// Tells the manager when something registered with addCover() changes what
+/// it covers
+class CoverWatch : public QObject
+{
+public:
+    explicit CoverWatch(OverlayManager *manager)
+        : QObject(manager), manager(manager)
+    {}
+    bool eventFilter(QObject *, QEvent *ev) override
+    {
+        switch (ev->type()) {
+        case QEvent::Move:
+        case QEvent::Resize:
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::ParentChange:
+            Q_EMIT manager->coverChanged();
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+    OverlayManager *manager;
+};
+} // anonymous namespace
+
 class OverlayManager::Private {
 public:
 
@@ -445,6 +560,13 @@ public:
     std::map<QString, OverlayTabWidget*> _dockWidgetNameMap;
 
     bool raising = false;
+    /// The manager is made: set by its constructor's last line
+    bool ready = false;
+
+    /// What is laid over views beside the docks (OverlayManager::addCover),
+    /// and the watcher that tells when one of them moves, shows or hides
+    QList<QWidget*> covers;
+    QObject *coverWatch = nullptr;
 
     OverlayManager::ReloadMode curReloadMode = OverlayManager::ReloadMode::ReloadPending;
 
@@ -466,8 +588,11 @@ public:
         connect(&_timer, &QTimer::timeout, [this, host](){
             onTimer();
             Q_EMIT host->layoutChanged();
+            Q_EMIT host->coverChanged();
         });
         _timer.setSingleShot(true);
+
+        coverWatch = new CoverWatch(host);
 
         _reloadTimer.setSingleShot(true);
         connect(&_reloadTimer, &QTimer::timeout, [this]() {
@@ -504,6 +629,13 @@ public:
         Control().signalHostChanged.connect([this]() {
             syncTaskHostAction();
         });
+        // ... and so is the page the Tasks tab shows: asked a turn later,
+        // when the task view has done showing it
+        Control().signalDialogActivated.connect([this](const TaskOwner &) {
+            QTimer::singleShot(0, &_actTaskHost, [this]() {
+                syncTaskHostAction();
+            });
+        });
 
         retranslate();
         refreshIcons();
@@ -515,6 +647,18 @@ public:
             for(auto action : o->tabWidget->actions()) {
                 QObject::connect(action, &QAction::triggered, host, &OverlayManager::onAction);
             }
+            // An overlaid dock has no title bar of its own: the overlay's is
+            // shared by the docks in it, and it did not carry the button that
+            // shows a task panel in its view -- with the Tasks overlaid there
+            // was no such button anywhere (docs/HandsOnQueue.md entry 103).
+            // Each overlay has one, shown while the Tasks are in it.
+            o->actTaskHost.setData(QStringLiteral("OBTN TaskHost"));
+            o->actTaskHost.setIcon(_actTaskHost.icon());
+            o->actTaskHost.setVisible(false);
+            QObject::connect(&o->actTaskHost, &QAction::triggered, host, []() {
+                if (auto taskView = Control().taskPanel())
+                    taskView->sendShownToView();
+            });
             o->tabWidget->setTitleBar(createTitleBar(o->tabWidget));
         }
 
@@ -528,6 +672,8 @@ public:
         _actOverlay.setIcon(BitmapFactory().pixmap("qss:overlay/overlay.svg"));
         _actClose.setIcon(BitmapFactory().pixmap("qss:overlay/close.svg"));
         _actTaskHost.setIcon(BitmapFactory().pixmap("qss:overlay/taskhost.svg"));
+        for (auto o : _overlayInfos)
+            o->actTaskHost.setIcon(_actTaskHost.icon());
         for (OverlayTabWidget *tabWidget : _Overlays) {
             tabWidget->refreshIcons();
             for (auto handle : tabWidget->findChildren<OverlaySplitterHandle*>())
@@ -611,6 +757,9 @@ public:
 
     void refresh(QWidget *widget=nullptr, bool refreshStyle=false)
     {
+        // The Tasks may have been put into an overlay or taken out of one
+        syncTaskHostAction();
+
         if(refreshStyle) {
             OverlayStyleSheet::instance()->update();
             updateStyle = true;
@@ -722,20 +871,11 @@ public:
         if(tabbar)
             h -= tabbar->height();
 
-        int naviCubeSize = NaviCube::getNaviCubeSize();
-        // The cube is placed per view: keep clear of the active view's,
-        // and of none when that view does not show one.
-        int naviCorner = -1;
-        if (OverlayParams::getDockOverlayCheckNaviCube()) {
-            naviCorner = OverlayParams::getCornerNaviCube();
-            if (auto view = qobject_cast<View3DInventor*>(getMainWindow()->activeWindow())) {
-                auto viewer = view->getViewer();
-                if (!viewer->isEnabledNaviCube() || !viewer->getNaviCube())
-                    naviCorner = -1;
-                else
-                    naviCorner = int(viewer->getNaviCube()->getCorner());
-            }
-        }
+        // No room is left for a navigation cube any more: the cube moves
+        // clear of what is laid over its view (covered(), and
+        // docs/HandsOnQueue.md entry 76). The docks left a cube's width at
+        // the corner the preference names, whatever lay under them -- a
+        // TechDraw page, a cell with no cube.
 
         QRect rect;
         QRect rectBottom(0,0,0,0);
@@ -746,22 +886,7 @@ public:
         int delta = _bottom.tabWidget->getSizeDelta();
         h -= ofs.height();
 
-        auto getCubeSize = [naviCubeSize](OverlayInfo &info) -> int {
-            float scale = info.tabWidget->_imageScale;
-            if (scale == 0.0) {
-                scale = info.tabWidget->titleBar->grab().devicePixelRatio();
-                if (scale == 0.0)
-                    scale = 1.0;
-            }
-            return naviCubeSize/scale + 10;
-        };
-
-        int cubeSize = getCubeSize(_bottom);
-        if(naviCorner == 2)
-            ofs.setWidth(ofs.width()+cubeSize);
         int bw = w-10-ofs.width()-delta;
-        if(naviCorner == 3)
-            bw -= cubeSize;
         if(bw < 10)
             bw = 10;
 
@@ -779,12 +904,7 @@ public:
         rect = _left.tabWidget->getRect();
 
         ofs = _left.tabWidget->getOffset();
-        cubeSize = getCubeSize(_left);
-        if(naviCorner == 0)
-            ofs.setWidth(ofs.width()+cubeSize);
         delta = _left.tabWidget->getSizeDelta()+rectBottom.height();
-        if(naviCorner == 2 && cubeSize > rectBottom.height())
-            delta += cubeSize - rectBottom.height();
         int lh = std::max(h-ofs.width()-delta, 10);
 
         _left.tabWidget->setRect(QRect(ofs.height(),ofs.width(),rect.width(),lh));
@@ -798,12 +918,7 @@ public:
         rect = _right.tabWidget->getRect();
 
         ofs = _right.tabWidget->getOffset();
-        cubeSize = getCubeSize(_right);
-        if(naviCorner == 1)
-            ofs.setWidth(ofs.width()+cubeSize);
         delta = _right.tabWidget->getSizeDelta()+rectBottom.height();
-        if(naviCorner == 3 && cubeSize > rectBottom.height())
-            delta += cubeSize - rectBottom.height();
         int rh = std::max(h-ofs.width()-delta, 10);
         w -= ofs.height();
 
@@ -817,12 +932,7 @@ public:
         rect = _top.tabWidget->getRect();
 
         ofs = _top.tabWidget->getOffset();
-        cubeSize = getCubeSize(_top);
         delta = _top.tabWidget->getSizeDelta();
-        if(naviCorner == 0)
-            rectLeft.setWidth(std::max(rectLeft.width(), cubeSize));
-        else if(naviCorner == 1)
-            rectRight.setWidth(std::max(rectRight.width(), cubeSize));
         int tw = w-rectLeft.width()-rectRight.width()-ofs.width()-delta;
 
         _top.tabWidget->setRect(QRect(rectLeft.width()-ofs.width(),ofs.height(),tw,rect.height()));
@@ -1063,17 +1173,66 @@ public:
         OverlayTitleBar *widget = new OverlayTitleBar(parent);
         widget->setObjectName(QStringLiteral("OverlayTitle"));
         QList<QAction*> actions;
-        if (auto tabWidget = qobject_cast<OverlayTabWidget*>(parent))
+        if (auto tabWidget = qobject_cast<OverlayTabWidget*>(parent)) {
             actions = tabWidget->actions();
+            for (auto o : _overlayInfos) {
+                if (o->tabWidget == tabWidget)
+                    actions.prepend(&o->actTaskHost);
+            }
+        }
         else
             actions = task ? _taskActions : _actions;
         widget->setTitleItem(OverlayTabWidget::prepareTitleWidget(widget, actions));
+        widget->setProperty("taskActions", task);
         return widget;
+    }
+
+    /** The title bar of the dock that holds the task view has the buttons of
+     * a Tasks panel, the one that shows a panel in its view among them.
+     *
+     * setupTitleBar() decides that by what the dock holds when its bar is
+     * made, and for docks put back into overlays at start-up that is before
+     * the task view is in its dock: the bar was a plain dock's for good, and
+     * the button never there (docs/HandsOnQueue.md entry 103).
+     */
+    void ensureTaskTitleBar(QWidget *taskView)
+    {
+        for (QWidget *w = taskView ? taskView->parentWidget() : nullptr; w; w = w->parentWidget()) {
+            auto dock = qobject_cast<QDockWidget*>(w);
+            if (!dock)
+                continue;
+            auto bar = qobject_cast<OverlayTitleBar*>(dock->titleBarWidget());
+            if (bar && !bar->property("taskActions").toBool()) {
+                dock->setTitleBarWidget(createTitleBar(dock, true));
+                bar->deleteLater();
+            }
+            break;
+        }
     }
 
     void syncTaskHostAction()
     {
         _actTaskHost.setToolTip(QObject::tr("Show this task panel in its view"));
+        // Only while it has a panel to send: the Tasks tab also shows the
+        // watchers' page, and dialogs no view owns, and the button did
+        // nothing for those (docs/HandsOnQueue.md entry 73)
+        // Not asked while this is being made: the dock window manager makes
+        // the overlay manager from its own constructor, and asking for the
+        // task view there asks for the dock window manager again, which is
+        // not there yet and makes another -- without end. Nothing is shown
+        // that early, so there is no panel to send.
+        auto taskView = ready ? Control().taskPanel() : nullptr;
+        ensureTaskTitleBar(taskView);
+        const bool can = taskView && taskView->canSendShownToView();
+        if (_actTaskHost.isVisible() != can)
+            _actTaskHost.setVisible(can);
+        // ... and on the title bar of the overlay the Tasks are in
+        for (auto o : _overlayInfos) {
+            const bool here = can && o->tabWidget->isAncestorOf(taskView);
+            o->actTaskHost.setToolTip(_actTaskHost.toolTip());
+            if (o->actTaskHost.isVisible() != here)
+                o->actTaskHost.setVisible(here);
+        }
     }
 
     void onAction(QAction *action) {
@@ -1594,6 +1753,7 @@ OverlayManager::OverlayManager()
 {
     d = new Private(this, getMainWindow());
     qApp->installEventFilter(this);
+    d->ready = true;
 }
 
 OverlayManager::~OverlayManager()
@@ -1812,11 +1972,16 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
         if (!OverlayParams::getDockOverlayWheelPassThrough())
             return false;
         // fall through
-    case QEvent::ContextMenu: {
-        auto cev = static_cast<QContextMenuEvent*>(ev);
-        if (cev->reason() != QContextMenuEvent::Mouse)
+    case QEvent::ContextMenu:
+        // Asked of a context menu event alone. A wheel event falls through to
+        // here, and read as a context menu event its "reason" is whatever a
+        // wheel event holds at that place: where that is not 0 the wheel was
+        // never passed on to the view under a see-through panel
+        // (docs/HandsOnQueue.md entry 86).
+        if (ev->type() == QEvent::ContextMenu
+                && static_cast<QContextMenuEvent*>(ev)->reason() != QContextMenuEvent::Mouse)
             return false;
-    }   // fall through
+        // fall through
     case QEvent::MouseButtonDblClick:
     case QEvent::MouseButtonRelease:
     case QEvent::MouseButtonPress:
@@ -1948,7 +2113,13 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
 
         if (!activeTabWidget)
             activeTabWidget = findTabWidget(qApp->widgetAt(QCursor::pos()));
-        if(!activeTabWidget || !activeTabWidget->isTransparent())
+        // Passed on wherever the panel under the pointer has painted nothing,
+        // its transparent mode on or not: the reporter's rule is the
+        // background, "pass through on full transparent background". The mode
+        // used to be asked here as well, and a task panel, whose own ground
+        // is clear with the mode off too, passed nothing then
+        // (docs/HandsOnQueue.md entry 86).
+        if(!activeTabWidget)
             return false;
 
         ev->accept();
@@ -2102,14 +2273,122 @@ bool OverlayManager::isMouseTransparent() const
     return d->mouseTransparent;
 }
 
+int OverlayManager::overlayAlpha(int alpha)
+{
+    if (alpha < 0)
+        alpha = int(OverlayParams::getDockOverlayAlpha());
+    return std::clamp(alpha, 0, 255);
+}
+
+QBrush OverlayManager::overlayHoverBackground(int alpha)
+{
+    auto manager = Application::Instance ? Application::Instance->styleParameterManager()
+                                         : nullptr;
+    if (!manager)
+        return QBrush();
+    // A theme that has no colour for it draws no bar under the pointer
+    const auto value = manager->resolve(std::string("AccentHoverColor"));
+    if (!value || !std::holds_alternative<Base::Color>(*value))
+        return QBrush();
+    const Base::Color colour = std::get<Base::Color>(*value);
+    QColor hover = QColor::fromRgbF(colour.r, colour.g, colour.b);
+    hover.setAlpha(overlayAlpha(alpha));
+    return QBrush(hover);
+}
+
+void OverlayManager::paintTextGround(QPainter &painter, const QTextBlock &block,
+                                     const QPointF &pos, const QBrush &ground)
+{
+    const QTextLayout *layout = block.layout();
+    if (!layout || ground.style() == Qt::NoBrush)
+        return;
+    for (int i = 0, count = layout->lineCount(); i < count; ++i) {
+        const QRectF text = layout->lineAt(i).naturalTextRect().translated(pos);
+        // an empty line has no text to read and gets no ground
+        if (text.width() > 0)
+            painter.fillRect(text.adjusted(-2, 0, 2, 0), ground);
+    }
+}
+
+QBrush OverlayManager::overlayTextGround(const QColor &own)
+{
+    if (OverlayParams::getDockOverlayThemeItemColor())
+        return overlayItemBackground();
+    // The view's own background. Not its palette's: an overlay's style sheet
+    // has made that one transparent.
+    QColor colour = own.isValid() ? own : QApplication::palette().color(QPalette::Base);
+    colour.setAlpha(overlayAlpha());
+    return QBrush(colour);
+}
+
+QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha)
+{
+    QBrush brush = own;
+    if (brush.style() == Qt::NoBrush) {
+        App::Color colour;
+        if (!OverlayParams::getDockOverlayThemeItemColor()) {
+            // The tree view's own colour, as stored: alpha and all, and none
+            // at all while that setting is empty
+            if (!TreeParams::getItemBackground())
+                return QBrush();
+            colour.setPackedValue(TreeParams::getItemBackground());
+            return QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b, colour.a));
+        }
+        colour.setPackedValue(ViewParams::getGradient() || ViewParams::getRadialGradient()
+                                  ? ViewParams::getBackgroundColor2()
+                                  : ViewParams::getBackgroundColor());
+        brush = QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b));
+        alpha = overlayAlpha(alpha);
+    }
+    if (alpha >= 0) {
+        QColor colour = brush.color();
+        colour.setAlpha(std::min(alpha, 255));
+        brush.setColor(colour);
+    }
+    return brush;
+}
+
+void OverlayManager::addCover(QWidget *cover)
+{
+    if (!cover || d->covers.contains(cover))
+        return;
+    d->covers.append(cover);
+    cover->installEventFilter(d->coverWatch);
+    connect(cover, &QObject::destroyed, this, [this](QObject *gone) {
+        d->covers.removeAll(static_cast<QWidget*>(gone));
+        Q_EMIT coverChanged();
+    });
+    Q_EMIT coverChanged();
+}
+
+QRegion OverlayManager::covered(const QWidget *widget) const
+{
+    QRegion region = occupied(widget);
+    if (!widget)
+        return region;
+    for (QWidget *cover : d->covers) {
+        if (!cover->isVisible() || cover->window() != widget->window())
+            continue;
+        const QRect local = QRect(widget->mapFromGlobal(cover->mapToGlobal(QPoint(0, 0))),
+                                  cover->size()).intersected(widget->rect());
+        if (!local.isEmpty())
+            region += local;
+    }
+    return region;
+}
+
 QRegion OverlayManager::occupied(const QWidget *widget) const
 {
     QRegion region;
     if (!widget)
         return region;
     for (OverlayTabWidget *tabWidget : _Overlays) {
+        // Not asked whether it isOverlaid(): that is its see-through look,
+        // which the dock under the pointer and the one with the focus are
+        // taken out of for as long as that lasts. It stands over the view
+        // all the same, and a panel that took its strip for free then slid
+        // under it at every hover (docs/HandsOnQueue.md entry 68).
         if (!tabWidget || !tabWidget->count() || !tabWidget->isVisible()
-                || !tabWidget->isOverlaid()
                 || tabWidget->getState() > OverlayTabWidget::State::Normal)
             continue;
         const QRect global(tabWidget->mapToGlobal(QPoint(0, 0)), tabWidget->size());

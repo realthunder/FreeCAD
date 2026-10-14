@@ -1170,6 +1170,12 @@ void TaskView::sendShownToView()
         TaskPlacement::setPlace(view, TaskPlacement::Place::InView);
 }
 
+bool TaskView::canSendShownToView() const
+{
+    const TaskInfo *info = currentTaskInfo();
+    return info && info->owner.mdiView();
+}
+
 TaskPanelHost *TaskView::hostOf(const TaskDialog *dlg) const
 {
     for (const TaskInfo &info : taskInfos) {

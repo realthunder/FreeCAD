@@ -255,6 +255,32 @@ void PP_Fetch_Error_Text()
 
     Py_XDECREF(pystring);
 
+    /* Since Python 3.12 an exception is kept as its instance, and what
+     * PyErr_SetObject() was given is that instance's one argument. For an
+     * exception of ours that is the dictionary describing it
+     * (Base::Exception::getPyObject(), set by PY_CATCH), which was looked for
+     * as the value itself and no longer found: the exception came back with
+     * the dictionary's text for its message -- a cancelled recompute read
+     * "{'sclassname': 'class Base::AbortException', ..." -- and as no class
+     * of ours (docs/HandsOnQueue.md entry 107). */
+    if (errdata != NULL && !PyDict_Check(errdata) && PyExceptionInstance_Check(errdata)) {
+        PyObject *args = PyObject_GetAttrString(errdata, "args");
+        if (args == NULL) {
+            PyErr_Clear();
+        }
+        else {
+            if (PyTuple_Check(args) && PyTuple_GET_SIZE(args) == 1) {
+                PyObject *first = PyTuple_GET_ITEM(args, 0);      /* borrowed */
+                if (PyDict_Check(first) && PyDict_GetItemString(first, "sclassname") != NULL) {
+                    Py_INCREF(first);
+                    Py_DECREF(errdata);
+                    errdata = first;
+                }
+            }
+            Py_DECREF(args);
+        }
+    }
+
     pystring = NULL;
     pydict = NULL;
     if (errdata != NULL &&

@@ -202,12 +202,20 @@ object of this document.
     </Methode>
     <Methode Name="undo">
       <Documentation>
-        <UserDocu>Undo one transaction</UserDocu>
+        <UserDocu>undo(skip=0)
+
+Undo one step: the newest transaction with a name, and the changes made
+without one after it. 'skip' leaves that many of the newest steps as they are
+and undoes the one after: for a step that was refused. UndoRefusal says why
+an undo did nothing.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="redo">
       <Documentation>
-        <UserDocu>Redo a previously undone transaction</UserDocu>
+        <UserDocu>redo(skip=0)
+
+Redo a previously undone step. 'skip' leaves that many of the steps next to
+be redone as they are and redoes the one after.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="clearUndos">
@@ -447,7 +455,13 @@ Undo row `seq` of the transaction log though it is not the last step
 applies the row reversed. Refused -- False, with the conflicts reported --
 when anything done since changed a property the row set, a created object
 is gone, or a removed object's name or id is taken. Derived values are not
-restored; their objects are touched for recompute. False if there is no log.</UserDocu>
+restored; their objects are touched for recompute. False if there is no log.
+
+undoTransactionFromLog([seq, ...]) -> bool
+
+Several rows as one step (sec 33.13): one transaction applies them reversed,
+newest first. What the other rows of the list did is not held against a row;
+if any is refused none is undone.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="nameTransactionVersion">
@@ -706,6 +720,35 @@ For both, `picks` may also give 'ours' to the key of a change that asks
 nothing -- a 'take', a 'merge' -- and it is left out.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="previewTransactionMergeResult">
+      <Documentation>
+        <UserDocu>previewTransactionMergeResult(branch, picks={}, fallback='', version=0) -> dict
+
+What mergeTransactionBranch() with these arguments would make
+(docs/TransactionLog.md sec 32.17): this document as it is, read into a
+document of its own with no log and no view, what the merge takes written
+to it, and recomputed. Nothing of this document moves -- no step, no row
+but its tip as an unnamed version where it is none, no redo lost.
+{'document', 'theirs', 'values', 'removed', 'failed', 'unresolved',
+'preview'}: 'document' is that document, the caller's to close with
+App.closeDocument(), its objects under the ids this document's have; None
+where the merge would be refused ('unresolved'), brings nothing, or is a
+fast-forward -- 'theirs': what it makes is the other branch. 'values' is
+the geometry of every object the merge made, wrote or computed, each
+{'cid', 'object', 'prop', 'here'} -- 'here' says this document has the
+object; 'removed' the ids of the objects it removes; 'failed' the names
+of those whose recompute failed there. Raises as the merge does, and
+where a transaction is open.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="previewTransactionPickResult">
+      <Documentation>
+        <UserDocu>previewTransactionPickResult(rows, picks={}, fallback='') -> dict
+
+What pickTransactions() with these arguments would make, as
+previewTransactionMergeResult() says it.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getTransactionForkBranches">
       <Documentation>
         <UserDocu>getTransactionForkBranches(path) -> list of dict
@@ -894,6 +937,12 @@ Reorder object(s) in the tree view before a given object
         <UserDocu>Number of possible Redos</UserDocu>
       </Documentation>
       <Parameter Name="RedoCount" Type="Int"/>
+    </Attribute>
+    <Attribute Name="UndoRefusal" ReadOnly="true">
+      <Documentation>
+        <UserDocu>Why the last undo() or redo() was refused, empty when it was not</UserDocu>
+      </Documentation>
+      <Parameter Name="UndoRefusal" Type="String"/>
     </Attribute>
     <Attribute Name="UndoNames" ReadOnly="true">
       <Documentation>

@@ -28,7 +28,7 @@ import OverlayParams
 OverlayParams.declare()
 ]]]*/
 
-// Auto generated code (Gui/OverlayParams.py:166)
+// Auto generated code (Gui/OverlayParams.py:180)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -205,15 +205,48 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter DockOverlayCheckNaviCube
+    /// Accessor for parameter DockOverlayMoveNaviCube
     ///
-    /// Leave space for Navigation Cube in dock overlay
-    static const bool & getDockOverlayCheckNaviCube();
-    static const bool & defaultDockOverlayCheckNaviCube();
-    static void removeDockOverlayCheckNaviCube();
-    static void setDockOverlayCheckNaviCube(const bool &v);
-    static const char *docDockOverlayCheckNaviCube();
-    static void onDockOverlayCheckNaviCubeChanged();
+    /// Slide the navigation cube along its edge of the view, out from under
+    /// an overlaid panel or a task panel shown over the view, and back when
+    /// the panel is gone. When off a panel simply covers the cube.
+    static const bool & getDockOverlayMoveNaviCube();
+    static const bool & defaultDockOverlayMoveNaviCube();
+    static void removeDockOverlayMoveNaviCube();
+    static void setDockOverlayMoveNaviCube(const bool &v);
+    static const char *docDockOverlayMoveNaviCube();
+    static void onDockOverlayMoveNaviCubeChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DockOverlayThemeItemColor
+    ///
+    /// Back the items of an overlaid tree view and property view with the
+    /// colour of the 3D view's background as the theme has it -- the first
+    /// colour of a gradient -- so that their text reads over the view.
+    /// When off the tree view's own item background colour is used.
+    static const bool & getDockOverlayThemeItemColor();
+    static const bool & defaultDockOverlayThemeItemColor();
+    static void removeDockOverlayThemeItemColor();
+    static void setDockOverlayThemeItemColor(const bool &v);
+    static const char *docDockOverlayThemeItemColor();
+    static void onDockOverlayThemeItemColorChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DockOverlayAlpha
+    ///
+    /// Opacity, 0 to 255, of the backgrounds an overlaid panel keeps: of
+    /// the items of the tree view and of the property view, and of a task
+    /// panel.
+    static const long & getDockOverlayAlpha();
+    static const long & defaultDockOverlayAlpha();
+    static void removeDockOverlayAlpha();
+    static void setDockOverlayAlpha(const long &v);
+    static const char *docDockOverlayAlpha();
+    static void onDockOverlayAlphaChanged();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -422,7 +455,7 @@ public:
     static void onDockOverlayMinimumSizeChanged();
     //@}
 
-    // Auto generated code (Gui/OverlayParams.py:172)
+    // Auto generated code (Gui/OverlayParams.py:186)
     static const std::vector<QString> AnimationCurveTypes;
 
 // Auto generated code (Tools/params_utils.py:179)

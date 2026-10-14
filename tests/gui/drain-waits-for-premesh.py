@@ -21,7 +21,12 @@ progress bar steps once for each visual.
 What is done: a document of two plates -- one planar face with 1500 round
 holes each, about a second to mesh, far under the face count at which a
 shape takes the stand-in path instead -- and twenty spheres is made and
-saved, then opened three times in one process, once to warm up.
+saved three times over, no two alike, and the three are opened one after
+the other in one process, the first to warm up. Three files and not one
+opened three times: with shape values frozen a parse is kept under the hash
+of its bytes for a while after its document has closed
+(docs/TransactionLog.md sec 27.25), so the same file opened again comes with
+the shapes of the load before, meshed already, and nothing is in flight.
 
 What is asserted of each of the two loads after it, from the drain's own
 closing line and the GUI thread's CPU clock:
@@ -52,7 +57,7 @@ from PySide import QtCore
 
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
-PATH = os.path.join(OUT, "drain-waits.FCStd")
+PATH = os.path.join(OUT, "drain-waits-%d.FCStd")
 PLATES = int(os.environ.get("GT_PLATES", "2"))
 HOLES = int(os.environ.get("GT_HOLES", "1500"))
 SPHERES = int(os.environ.get("GT_SPHERES", "20"))
@@ -115,7 +120,7 @@ def next_load():
             verdict()
             return
         state["cur"] = {}
-        doc = FreeCAD.openDocument(PATH)
+        doc = FreeCAD.openDocument(PATH % state["load"])
         state["cur"]["name"] = doc.Name
         load = state["load"]
         QtCore.QTimer.singleShot(60000, lambda: unfinished(load))
@@ -196,10 +201,11 @@ def finish():
     QtCore.QTimer.singleShot(300, QtCore.QCoreApplication.quit)
 
 
-def plate(index):
-    """One planar face with HOLES round holes: a second to mesh, and one face."""
+def plate(index, load):
+    """One planar face with HOLES round holes: a second to mesh, and one face.
+    No two alike, of one file or of two."""
     side = int(math.ceil(math.sqrt(HOLES)))
-    pitch = 10.0 + 0.01 * index
+    pitch = 10.0 + 0.01 * index + 0.001 * load
     size = pitch * (side + 1)
     wires = [Part.makePolygon([FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(size, 0, 0),
                                FreeCAD.Vector(size, size, 0), FreeCAD.Vector(0, size, 0),
@@ -227,22 +233,23 @@ def build():
         # The lines read are log lines of the Part module
         FreeCAD.setLogLevel("Part", "Log")
         FreeCAD.Console.AttachObserver(observe)
-        doc = FreeCAD.newDocument("DrainWaits")
         valid = 0
-        for i in range(PLATES):
-            obj = doc.addObject("Part::Feature", "Plate%d" % i)
-            obj.Shape = plate(i)
-            obj.Placement.Base = FreeCAD.Vector(0, 0, 40 * (i + 1))
-            valid += 1 if obj.Shape.isValid() and len(obj.Shape.Faces) == 1 else 0
-        for i in range(SPHERES):
-            obj = doc.addObject("Part::Sphere", "S%d" % i)
-            obj.Radius = 8 + 0.01 * i
-            obj.Placement.Base = FreeCAD.Vector(30 * i, -40, 0)
-        doc.recompute()
-        doc.saveAs(PATH)
-        FreeCAD.closeDocument(doc.Name)
-        if not check("the plates are valid shapes of one face", valid == PLATES,
-                     "%d of %d" % (valid, PLATES)):
+        for load in range(LOADS):
+            doc = FreeCAD.newDocument("DrainWaits")
+            for i in range(PLATES):
+                obj = doc.addObject("Part::Feature", "Plate%d" % i)
+                obj.Shape = plate(i, load)
+                obj.Placement.Base = FreeCAD.Vector(0, 0, 40 * (i + 1))
+                valid += 1 if obj.Shape.isValid() and len(obj.Shape.Faces) == 1 else 0
+            for i in range(SPHERES):
+                obj = doc.addObject("Part::Sphere", "S%d" % i)
+                obj.Radius = 8 + 0.01 * i + 0.001 * load
+                obj.Placement.Base = FreeCAD.Vector(30 * i, -40, 0)
+            doc.recompute()
+            doc.saveAs(PATH % load)
+            FreeCAD.closeDocument(doc.Name)
+        if not check("the plates are valid shapes of one face", valid == PLATES * LOADS,
+                     "%d of %d" % (valid, PLATES * LOADS)):
             finish()
             return
         note("INFO %d plates of %d holes and %d spheres saved" % (PLATES, HOLES, SPHERES))

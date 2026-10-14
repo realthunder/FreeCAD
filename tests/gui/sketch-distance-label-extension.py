@@ -172,6 +172,11 @@ def run():
         mode = os.environ.get("GT_RENDER_CACHE")
         view_params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
         if mode is not None:
+            # another render cache mode is a setting only under the render
+            # type "Legacy": with the render engine it is 3 whatever is stored
+            if int(mode) != 3:
+                FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
+                    "Type", "Legacy")
             view_params.SetInt("RenderCache", int(mode))
         view_params.SetBool("ShowNaviCube", False)
         FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher/General").SetBool(

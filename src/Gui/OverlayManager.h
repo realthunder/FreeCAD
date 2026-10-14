@@ -23,12 +23,16 @@
 #ifndef FC_OVERLAYMANAGER_H
 #define FC_OVERLAYMANAGER_H
 
+#include <QBrush>
 #include <QObject>
 #include <QRegion>
 #include <FCGlobal.h>
 
 class QAction;
 class QDockWidget;
+class QPainter;
+class QPointF;
+class QTextBlock;
 class QString;
 class QPoint;
 class QWidget;
@@ -131,10 +135,72 @@ public:
      * For what is laid over a view and must not stand under a dock, nor
      * over one: a task panel in overlay mode
      * (docs/TaskPanelPerView.md sec 5.3). Only docks that are shown --
-     * not one that is hidden to its hint, or by the user. Empty when no
-     * dock is overlaid, and for a widget none of them reaches.
+     * not one that is hidden to its hint, or by the user -- and each of
+     * those whether it is see-through at the moment or has the pointer
+     * or the focus and is opaque. Empty when no dock is overlaid, and for
+     * a widget none of them reaches.
      */
     QRegion occupied(const QWidget *widget) const;
+
+    /** The brush an item of an overlaid view is backed with
+     * (docs/HandsOnQueue.md entry 69): of the tree view and of the property
+     * view, whose text has to read over the 3D view while the panel itself
+     * is transparent.
+     *
+     * \a own and \a alpha are what a style sheet set on the view (its
+     * overlayItemBackground and overlayAlpha properties): no brush and -1
+     * where it set nothing, and then the settings answer -- the 3D view's
+     * background colour as the theme has it, the first colour of a
+     * gradient, at View/DockOverlayAlpha; or, with
+     * View/DockOverlayThemeItemColor off, the tree view's own item
+     * background colour as it is stored.
+     */
+    static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1);
+    /// View/DockOverlayAlpha, or \a alpha where a style sheet set one
+    static int overlayAlpha(int alpha = -1);
+    /** Paint \a ground behind the text of one block of a text view, line by
+     * line and as wide as each line's text; \a pos is where the block's
+     * layout stands in what \a painter paints on. For a text view in a
+     * see-through overlay -- the Python console, the report view -- whose
+     * text has to read over the 3D view (docs/HandsOnQueue.md entry 98).
+     */
+    static void paintTextGround(QPainter &painter, const QTextBlock &block,
+                                const QPointF &pos, const QBrush &ground);
+    /** The ground for paintTextGround(), by one setting
+     * (docs/HandsOnQueue.md entry 111, as ruled): with
+     * View/DockOverlayThemeItemColor on, "Item background follows the
+     * theme", the ground the tree gives its items (overlayItemBackground());
+     * with it off the text view's own background -- \a own where the view
+     * has a colour of its own (the Python console's, Editor/Background), or
+     * else the base colour of the application's palette, which is what the
+     * view stands on when it is docked -- at the overlay's opacity.
+     *
+     * A theme may keep a text of another kind in its text views than in its
+     * items: Classic has a black text in the console, for the white page a
+     * docked one has, and gives the tree a light text on the dark of its 3D
+     * view. Black on that dark was the "scrambled" text of the entry; the
+     * setting off puts it back on its own white.
+     */
+    static QBrush overlayTextGround(const QColor &own = QColor());
+    /** The brush an item of an overlaid tree is backed with while the pointer
+     * is on it (docs/HandsOnQueue.md entry 87): the theme's colour for that at
+     * the opacity of the item backgrounds, as wide as those. No brush under
+     * a theme that has no such colour.
+     */
+    static QBrush overlayHoverBackground(int alpha = -1);
+
+    /** The parts of \a widget that are laid over: by the overlaid docks,
+     * as occupied() answers, and by whatever else registered itself with
+     * addCover() -- a task panel shown over its view.
+     *
+     * For what gets out of the way of all of them: the navigation cube
+     * (docs/HandsOnQueue.md entry 76).
+     */
+    QRegion covered(const QWidget *widget) const;
+    /// \a cover is laid over views while it is shown: covered() counts it,
+    /// and coverChanged() tells when it moves, shows or hides. Forgotten
+    /// when it is destroyed.
+    void addCover(QWidget *cover);
 
     bool isChangingMode() const
     {
@@ -188,6 +254,8 @@ Q_SIGNALS:
     /// The overlaid docks were laid out again: occupied() may answer
     /// differently now
     void layoutChanged();
+    /// covered() may answer differently now
+    void coverChanged();
 
 protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;

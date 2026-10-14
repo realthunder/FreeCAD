@@ -169,6 +169,13 @@ private:
         bool ok = false;
         SoFCVisibilityElement::Entry entry;
         std::pair<std::string, std::string> leaf;
+        /// The containers the occurrence is reached through, top first, the
+        /// leaf not among them. An occurrence a view shows has to be
+        /// captured, and the capture gets to it only through these: each of
+        /// them counts as shown by a view too, for the capture alone -- what
+        /// else it holds is tagged with it and stays hidden in every view
+        /// that has no entry showing it (docs/HandsOnQueue.md entry 108).
+        std::vector<std::pair<std::string, std::string>> steps;
         /// The objects the resolution went through: every step of the
         /// path and, for a link, what it links to. Compared, never
         /// dereferenced -- a deleted one may be gone.

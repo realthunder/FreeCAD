@@ -665,7 +665,8 @@ protected:
  * the zip central directory once and opens each entry as an independent
  * stream. Registered files can then be restored in any order, an entry
  * can be reopened after the walk, and entries can in principle be read
- * concurrently (every openEntry() owns its own file handle).
+ * concurrently: a stream has a file handle to itself for as long as it
+ * lives, and hands it on to the next stream when it is done.
  *
  * The reader itself streams the first archive entry (the document's
  * main XML), mirroring what the forward-only reader exposed.
@@ -688,7 +689,12 @@ protected:
     void readFiles(XMLReader &reader) override;
 
 private:
+    struct HandlePool;
+
     std::string _fileName;
+    /// the archive's open handles no entry stream is reading from; the
+    /// streams share it, as one of them may outlive this reader
+    std::shared_ptr<HandlePool> _handles;
     /// entry name -> local header offset, from the central directory
     std::unordered_map<std::string, std::streamoff> _offsets;
     /// archive order, for walking unregistered entries

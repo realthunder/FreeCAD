@@ -32,8 +32,11 @@
 # include <QTextCursor>
 #endif
 
+#include <QTextBlock>
+
 #include "TextEdit.h"
 #include "EditorParams.h"
+#include "OverlayManager.h"
 #include "SyntaxHighlighter.h"
 #include "Tools.h"
 #include <App/Color.h>
@@ -76,6 +79,34 @@ TextEdit::~TextEdit() = default;
 /**
  * Set the approproriate item of the completion box or hide it, if needed.
  */
+/** In a see-through overlay -- the Python console -- each line's text gets
+ * the ground the tree view gives its items there, as wide as the text and no
+ * wider: the text has to read over the 3D view, and the panel itself paints
+ * nothing (docs/HandsOnQueue.md entry 98).
+ */
+void TextEdit::paintEvent(QPaintEvent* e)
+{
+    if (testAttribute(Qt::WA_NoSystemBackground)) {
+        // (the colour a console or an editor has of its own, where one is set)
+        const unsigned long own = EditorParams::getHandle()->GetUnsigned("Background", 0);
+        const QBrush ground = OverlayManager::overlayTextGround(
+                own ? QColor((own >> 24) & 0xff, (own >> 16) & 0xff, (own >> 8) & 0xff)
+                    : QColor());
+        if (ground.style() != Qt::NoBrush) {
+            QPainter painter(viewport());
+            const QPointF offset = contentOffset();
+            for (QTextBlock block = firstVisibleBlock(); block.isValid(); block = block.next()) {
+                const QRectF box = blockBoundingGeometry(block).translated(offset);
+                if (box.top() > e->rect().bottom())
+                    break;
+                if (block.isVisible() && box.bottom() >= e->rect().top())
+                    OverlayManager::paintTextGround(painter, block, box.topLeft(), ground);
+            }
+        }
+    }
+    QPlainTextEdit::paintEvent(e);
+}
+
 void TextEdit::keyPressEvent(QKeyEvent* e)
 {
     QPlainTextEdit::keyPressEvent(e);

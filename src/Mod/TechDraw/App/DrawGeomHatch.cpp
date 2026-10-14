@@ -171,9 +171,10 @@ App::DocumentObjectExecReturn *DrawGeomHatch::execute()
 
 void DrawGeomHatch::onDocumentRestored()
 {
-    //rebuild the linesets
-    makeLineSets();
-
+    // The line sets are not rebuilt here: getTrimmedLines() and
+    // getFaceOverlay() make them when they find none, which is when the
+    // hatch is drawn, and making them opens the pattern file
+    // (docs/HandsOnQueue.md entry 47)
     App::DocumentObject::onDocumentRestored();
 }
 

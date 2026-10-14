@@ -294,8 +294,8 @@ def run():
                   "%.2f" % dashed)
 
         # -- points, the defining colour, a dimension's leaders, the axes --
-        # the construction colour is 0.86 of 255
-        WHITE, BLUE, PINK = (255, 255, 255), (0, 0, 219), (204, 51, 153)
+        # the construction colour is the preference's default, 0x0000DCFF
+        WHITE, BLUE, PINK = (255, 255, 255), (0, 0, 220), (204, 51, 153)
         got = point_colours(sk)
         note("points: %s" % (got,))
         check("the ends of a normal line are drawn in the curve colour",

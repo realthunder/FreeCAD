@@ -77,6 +77,15 @@ class TreeWidget : public QTreeWidget, public SelectionObserver
 
     Q_PROPERTY(int iconHeight READ iconHeight WRITE setIconHeight DESIGNABLE true SCRIPTABLE true)
     Q_PROPERTY(int itemSpacing READ itemSpacing WRITE setItemSpacing DESIGNABLE true SCRIPTABLE true)
+    /// What backs an item while the tree is overlaid, and how opaque it is
+    /// (docs/HandsOnQueue.md entry 69). Unset -- no brush, -1 -- they are the
+    /// settings' answer: the 3D view's background colour as the theme has
+    /// it, or the tree's own item background, at View/DockOverlayAlpha. A
+    /// style sheet overrides either:
+    ///     Gui--TreeWidget { qproperty-overlayItemBackground: #202830;
+    ///                       qproperty-overlayAlpha: 200; }
+    Q_PROPERTY(QBrush overlayItemBackground READ overlayItemBackground WRITE setOverlayItemBackground DESIGNABLE true SCRIPTABLE true)
+    Q_PROPERTY(int overlayAlpha READ overlayAlpha WRITE setOverlayAlpha DESIGNABLE true SCRIPTABLE true)
 
 public:
     explicit TreeWidget(const char *name, QWidget* parent=nullptr);
@@ -122,6 +131,14 @@ public:
 
     int itemSpacing() const;
     void setItemSpacing(int);
+
+    QBrush overlayItemBackground() const { return _overlayItemBackground; }
+    void setOverlayItemBackground(const QBrush &brush);
+    int overlayAlpha() const { return _overlayAlpha; }
+    void setOverlayAlpha(int alpha);
+    /// The brush an item is backed with while the tree is overlaid: the
+    /// properties above where a sheet set them, the settings otherwise
+    QBrush effectiveOverlayItemBackground() const;
 
     bool eventFilter(QObject *, QEvent *ev) override;
 
@@ -179,7 +196,6 @@ public:
     void startDragging();
 
     void resetItemSearch();
-    void startItemSearch(QLineEdit*);
     /** Prepare an item search and return the object that anchors it.
      *
      * Picks the document to search from the current selection (falling
@@ -258,9 +274,6 @@ private Q_SLOTS:
     void onUpdateStatus();
     void onItemPressed();
 
-Q_SIGNALS:
-    void emitSearchObjects();
-
 private:
     void slotNewDocument(const Gui::Document&, bool);
     void slotDeleteDocument(const Gui::Document&);
@@ -290,6 +303,9 @@ private:
     class Private;
     friend class Private;
     std::unique_ptr<Private> pimpl;
+
+    QBrush _overlayItemBackground;
+    int _overlayAlpha = -1;
 
     QAction* relabelObjectAction;
     QAction* finishEditingAction;
@@ -365,16 +381,7 @@ public:
     explicit TreePanel(const char *name, QWidget* parent=nullptr);
     ~TreePanel() override;
 
-    bool eventFilter(QObject *obj, QEvent *ev) override;
-
-private Q_SLOTS:
-    void accept();
-    void showEditor();
-    void hideEditor();
-    void itemSearch(const QString &text);
-
 private:
-    QLineEdit* searchBox;
     TreeWidget* treeWidget;
 };
 

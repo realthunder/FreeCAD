@@ -1837,7 +1837,23 @@ std::pair<std::string,std::string> SketchObject::getElementName(
 
     const char *mapped = Data::isMappedElement(name);
     Data::IndexedName index = checkSubName(name);
-    index.appendToStringBuffer(ret.second);
+    if (mapped && !index) {
+        // A mapped name of something the sketch's shape has and the sketch
+        // does not name itself: a wire, a face -- what a profile is linked
+        // to as Sketch.Wire2. checkSubName() knows edges and vertexes and
+        // the sketch's own kinds; of "Wire2" it kept the number and dropped
+        // the kind, and the old-style name handed back was "2". A link kept
+        // that beside its value, and the property view and the edit panels
+        // showed the profile as Sketch047.2 (docs/HandsOnQueue.md entry 92).
+        // The shape answers for these, as it does for the plain name.
+        const char *dot = strrchr(mapped, '.');
+        const auto occindex = Part::TopoShape::shapeTypeAndIndex(dot ? dot + 1 : mapped);
+        if (occindex.second)
+            return Part2DObject::getElementName(name, type);
+    }
+    // not a null name's number alone
+    if (index)
+        index.appendToStringBuffer(ret.second);
     if (auto realName = convertInternalName(ret.second.c_str())) {
         Data::MappedElement mappedElement;
         if (mapped)

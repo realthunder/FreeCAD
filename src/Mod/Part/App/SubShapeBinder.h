@@ -143,6 +143,16 @@ protected:
 
     void slotRecomputedObject(const App::DocumentObject& Obj);
 
+    /// Whether binding relative to \a parent through \a parentSub would put
+    /// the shape somewhere else than it is: by the placements kept of each
+    /// support at the last update. \a recorded, if given, says whether there
+    /// are such to go by.
+    bool contextMovesShape(App::DocumentObject *parent, const std::string &parentSub,
+                           bool *recorded = nullptr) const;
+    /// The shortest of \a parents that does not move the shape, or -1
+    int findUnmovedContext(
+            const std::vector<std::pair<App::DocumentObject*, std::string> > &parents) const;
+
     void slotLabelChanged();
 
     typedef fastsignals::scoped_connection Connection;

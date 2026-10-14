@@ -275,13 +275,13 @@ Params = [
        "Enable hidden line/point selection when SelectionOnTop is active."),
     ParamBool('PartialHighlightOnFullSelect', False,
        "Enable partial highlight on full selection for object that supports it."),
-    ParamFloat('SelectionLineThicken',  1.5,
+    ParamFloat('SelectionLineThicken',  1.0,
        title='Line width multiplier',
        doc="Muplication factor to increase the width of the selected line."),
     ParamFloat('SelectionLineMaxWidth',  4.0,
        title='Maximum line width',
        doc="Limit the selected line width when applying line thickening."),
-    ParamFloat('SelectionPointScale',  2.5,
+    ParamFloat('SelectionPointScale',  1.5,
        title='Point size multiplier',
        doc="Muplication factor to increase the size of the selected point.\n"
        "If zero, then use line multiplication factor."),
@@ -381,14 +381,10 @@ Params = [
         title='Task panels in their views', doc=
         "Show a task panel inside the view it belongs to, where it stays\n"
         "whichever view is active. When off, task panels are shown in the\n"
-        "Tasks tab of the combo view, which follows the active view. This is\n"
-        "for the panels opened from now on: one that is open stays where it\n"
-        "is, and a view keeps the place chosen with the button on its own\n"
-        "panel's title bar."),
-    ParamBool('TaskPanelInViewAll', False, on_change=True,
-        title='... and the panels that are open', doc=
-        "Apply the setting above to every view at once: the panels that are\n"
-        "open move, and a view's own choice of place is given up."),
+        "Tasks tab of the combo view, which follows the active view. A panel\n"
+        "that is open stays where it is, and a view keeps the place chosen\n"
+        "on its own panel's title bar, until \"Apply to live views\" on the\n"
+        "preference page moves them all."),
     ParamFloat('DraggerScale', 0.03,
         title='Transform dragger scale',
         doc="Size of the transform dragger relative to the viewport."),
@@ -801,7 +797,7 @@ Params = [
         "Draw origins, coordinate systems and datum elements at a constant size on\n"
         "screen, the way upstream FreeCAD does. When off, an origin is sized to the\n"
         "objects of its body or part."),
-    ParamFloat('DatumScale', 100.0, title='Datum scale',
+    ParamFloat('DatumScale', 200.0, title='Datum scale',
         doc="Size in percent of origins, coordinate systems and datum elements drawn\n"
             "at a constant size on screen.",
         proxy=ParamSpinBox(1.0, 1000.0, 10.0, 0)),
@@ -834,7 +830,7 @@ Params = [
     ParamFloat('EyeDistance', 5.0, title='Eye distance for stereo modes',
         doc="Offset between the left and the right eye image of a stereo 3D\n"
             "view. 0.1 to 1000. Applies at once to all open 3D views."),
-    ParamBool('CornerCoordSystem', True, title='Show coordinate system in the corner',
+    ParamBool('CornerCoordSystem', False, title='Show coordinate system in the corner',
         doc="Show the small coordinate system in the corner of every 3D view.\n"
             "Applies at once."),
     ParamInt('CornerCoordSystemSize', 10, title='Corner coordinate system size',

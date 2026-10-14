@@ -6,10 +6,10 @@ one that is open stays where it is, and the next one of a view that holds
 no place of its own goes by it. The button on a panel's own title bar,
 and the one on the combo view's, act on that panel and its view alone;
 the view keeps the place (its Task_Place property) and the next panel of
-that view follows it, whatever the preference says. The option beside the
-preference, View/TaskPanelInViewAll, makes every view follow the
-preference at once: the open panels move, and a view's own choice is given
-up.
+that view follows it, whatever the preference says. "Apply to live views",
+the button beside the preference (Control.applyPlaceToViews from here),
+makes every view follow the preference at once: the open panels move, and
+a view's own choice is given up.
 
 The side a panel is on in its view is the view's too (Task_Side): dragged
 to the other side, the view keeps it and it is remembered as the last
@@ -285,7 +285,6 @@ def build():
     VIEW.SetInt("RenderCache", 3)
     VIEW.SetBool("ShowNaviCube", False)
     VIEW.SetBool("UseNavigationAnimations", False)
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", False)
     TASKS.SetBool("TaskPanelAllowConcurrent", True)
     LAST.RemString("Side")
@@ -386,19 +385,84 @@ def each_view_by_its_own():
     claim("a view that holds a place: its next panel goes by that",
           lambda: in_its_view("a1", "sixth"))
 
-    VIEW.SetBool("TaskPanelInViewAll", True)
+    Control.applyPlaceToViews()
     settle(400)
-    check("with 'the panels that are open' on, every panel goes by the preference",
+    check("applied to the live views, every panel goes by the preference",
           in_tab("a1", "sixth") and hosts() == [], len(hosts()))
     check("not closed, nor told anything", calls("sixth") == ["open"], calls("sixth"))
     check("and the view gave its own place up", nothing(own("a1", "Task_Place")),
           own("a1", "Task_Place"))
     VIEW.SetBool("TaskPanelInView", True)
     settle(400)
-    claim("and the preference then moves the open panels",
+    claim("the preference changed after that moves no open panel by itself",
+          lambda: in_tab("a1", "sixth") and hosts() == [])
+    Control.applyPlaceToViews()
+    settle(400)
+    claim("and applied again it moves them",
           lambda: in_its_view("a1", "sixth") and in_its_view("a2", "fifth"))
-    VIEW.SetBool("TaskPanelInViewAll", False)
-    settle(200)
+
+
+def preferences():
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        if cls(w) == "Gui::Dialog::DlgPreferencesImp" and w.isVisible():
+            return w
+    return None
+
+
+def on_the_page():
+    """Inside the preferences dialog, on Display > UI, settings stored at OK only."""
+    dlg = preferences()
+    try:
+        if not check("the preferences are open", dlg is not None):
+            return
+        box = None
+        for w in dlg.findChildren(QtWidgets.QCheckBox):
+            if bytes(w.property("prefEntry") or b"").decode() == "TaskPanelInView":
+                box = w
+        button = dlg.findChild(QtWidgets.QPushButton, "applyTaskPanelInView")
+        if not check("the page has the check box and, beside it, 'Apply to live views'",
+                     box is not None and button is not None and button.isVisible()
+                     and button.parentWidget() == box.parentWidget()
+                     and abs(button.geometry().center().y() - box.geometry().center().y()) < 12,
+                     button.text() if button else "no button"):
+            return
+        check("no second check box about the panels that are open",
+              not [w for w in dlg.findChildren(QtWidgets.QCheckBox)
+                   if "panels that are open" in w.text()])
+        box.setChecked(False)
+        settle(300)
+        check("the box unchecked, not stored yet: nothing has moved",
+              VIEW.GetBool("TaskPanelInView", False) is True
+              and in_its_view("a1", "sixth") and in_its_view("a2", "fifth"))
+        button.click()
+        settle(500)
+        check("the button stores the setting", VIEW.GetBool("TaskPanelInView", True) is False)
+        check("and every open panel goes by it", in_tab("a1", "sixth") and hosts() == [],
+              len(hosts()))
+        check("not closed, nor told anything", calls("sixth") == ["open"], calls("sixth"))
+        box.setChecked(True)
+        button.click()
+        settle(500)
+        claim("checked and pressed again, the panels are back in their views",
+              lambda: in_its_view("a1", "sixth") and in_its_view("a2", "fifth"))
+    finally:
+        if dlg is not None:
+            dlg.close()
+
+
+@step
+def the_button_on_the_preference_page():
+    """docs/HandsOnQueue.md entry 70: "make it a button instead, with label
+    some thing like 'apply to live views'", and "button shall commit relevant
+    settings (in case auto apply is not on) and then apply to views"."""
+    general = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
+    general.SetBool("AutoApplyPreference", False)
+    QtCore.QTimer.singleShot(2000, on_the_page)
+    # modal: returns when on_the_page has closed the dialog
+    FreeCADGui.showPreferences("Display", 1)
+    general.RemBool("AutoApplyPreference")
+    check("the preference is on again, as the steps after this expect",
+          VIEW.GetBool("TaskPanelInView", False) is True)
 
 
 @step
@@ -496,7 +560,6 @@ def finish():
     if state["done"]:
         return
     state["done"] = True
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", False)
     TASKS.SetBool("TaskPanelAllowConcurrent", False)
     LAST.RemString("Side")

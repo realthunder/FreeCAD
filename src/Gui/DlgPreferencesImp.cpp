@@ -30,6 +30,8 @@
 # include <QApplication>
 # include <QCursor>
 # include <QDebug>
+# include <QKeyEvent>
+# include <QLineEdit>
 # include <QMenu>
 # include <QMessageBox>
 # include <QScreen>
@@ -753,6 +755,28 @@ void DlgPreferencesImp::showEvent(QShowEvent* ev)
         resize(width(), maxStartHeight);
         move(x(), heightDifference / 2);
     }
+}
+
+void DlgPreferencesImp::keyPressEvent(QKeyEvent *ev)
+{
+    // Return in an edit box is the box's: it takes what was typed, which
+    // with "Apply preferences at once" on is the setting stored. A line
+    // edit and a spin box leave the key unaccepted after that, and a dialog
+    // presses its default button for a Return nobody took -- OK, here, which
+    // closed the dialog under an edit (docs/HandsOnQueue.md entry 71). A
+    // button with the focus still answers the key itself.
+    if ((ev->key() == Qt::Key_Return || ev->key() == Qt::Key_Enter)
+            && !(ev->modifiers() & ~Qt::KeypadModifier)) {
+        QWidget *focus = focusWidget();
+        auto combo = qobject_cast<QComboBox*>(focus);
+        if (qobject_cast<QLineEdit*>(focus)
+                || qobject_cast<QAbstractSpinBox*>(focus)
+                || (combo && combo->isEditable())) {
+            ev->accept();
+            return;
+        }
+    }
+    QDialog::keyPressEvent(ev);
 }
 
 bool DlgPreferencesImp::eventFilter(QObject *o, QEvent *ev)

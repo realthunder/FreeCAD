@@ -33,6 +33,7 @@
 #endif
 
 #include <locale>
+#include <mutex>
 
 #include <boost/ref.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -1240,14 +1241,91 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
 
 // ----------------------------------------------------------
 
+/** The open handles of one archive that no entry stream is reading from.
+ *
+ * An entry stream needs a handle to itself while it lives: the main XML
+ * and a registered file, a nested restore, readers on other threads are
+ * alive together and each seeks and reads. But a handle opened anew for
+ * every entry is paid once an entry, and an open is not cheap everywhere:
+ * 1.2 ms on a Windows box whose file system is watched, 2 s for the 1652
+ * entries of one document against 2 ms for the same seeks and reads on one
+ * handle (docs/HandsOnLog.md, entry 47). So a stream gives its handle back
+ * when it is done and the next one takes it; a second handle is opened
+ * only while the first is in use.
+ */
+struct Base::ZipFileReader::HandlePool
+{
+    explicit HandlePool(const std::string &name)
+        :fileName(name)
+    {}
+
+    std::unique_ptr<std::ifstream> take()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (!idle.empty()) {
+                auto handle = std::move(idle.back());
+                idle.pop_back();
+                return handle;
+            }
+        }
+        return std::make_unique<Base::ifstream>(Base::FileInfo(fileName),
+                                                std::ios::in | std::ios::binary);
+    }
+
+    void give(std::unique_ptr<std::ifstream> handle)
+    {
+        // A handle that never opened is not worth keeping; one that read
+        // past the end or met a bad entry is as good as new after a seek,
+        // which is the first thing the next stream does with it.
+        if (!handle || !handle->is_open())
+            return;
+        handle->clear();
+        std::lock_guard<std::mutex> lock(mutex);
+        idle.push_back(std::move(handle));
+    }
+
+    /// What an entry stream holds of the pool: destroyed after the stream
+    /// that reads from the handle, being the base named first.
+    struct Lease
+    {
+        explicit Lease(std::shared_ptr<HandlePool> p)
+            :pool(std::move(p))
+            ,handle(pool->take())
+        {}
+        ~Lease()
+        {
+            pool->give(std::move(handle));
+        }
+
+        std::shared_ptr<HandlePool> pool;
+        std::unique_ptr<std::ifstream> handle;
+    };
+
+    /// An archive entry read through a handle of the pool's.
+    class EntryStream : private Lease, public zipios::ZipInputStream
+    {
+    public:
+        EntryStream(std::shared_ptr<HandlePool> pool, std::streampos pos)
+            :Lease(std::move(pool))
+            ,zipios::ZipInputStream(*handle, pos)
+        {}
+    };
+
+    const std::string fileName;
+    std::mutex mutex;
+    std::vector<std::unique_ptr<std::ifstream>> idle;
+};
+
 Base::ZipFileReader::ZipFileReader(const std::string &fileName, Base::XMLReader *parent)
     :Base::Reader(fileName, parent)
     ,_fileName(fileName)
+    ,_handles(std::make_shared<HandlePool>(fileName))
 {
     try {
         // The ZipFile object only serves to parse the central directory:
-        // entries are opened by local-header offset afterwards, each with
-        // its own file handle, so nothing of it needs to stay around.
+        // entries are opened by local-header offset afterwards, on a
+        // handle of the pool's, so nothing of it needs to stay around.
         zipios::ZipFile zip(fileName);
         for (const auto &entry : zip.entries()) {
             auto cdir = dynamic_cast<const zipios::ZipCDirEntry*>(entry.get());
@@ -1281,7 +1359,7 @@ Base::ZipFileReader::openEntry(const std::string &name) const
     auto it = _offsets.find(name);
     if (it == _offsets.end())
         return nullptr;
-    return std::make_unique<zipios::ZipInputStream>(_fileName, it->second);
+    return std::make_unique<HandlePool::EntryStream>(_handles, it->second);
 }
 
 void Base::ZipFileReader::readFiles(XMLReader &xmlReader)

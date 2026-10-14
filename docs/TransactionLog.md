@@ -18426,6 +18426,176 @@ with one more, the same change by its faces.
 
 **Next (32.4):** step 6 goes on -- the merged result, the stream.
 
+### 32.17 Step 6, third part: what the merge would make (2026-10-12)
+
+**Asked for since 32.2** ("what the merge would *make* -- that is a merge
+and a recompute in a document of its own, then a diff against it"), and
+last of Q3. Ours against theirs is not it: theirs lacks what ours did
+since the base, and shows it as removed.
+
+**Where the merge is made: three ways, and the one ruled.**
+
+| | How | What it costs |
+| --- | --- | --- |
+| A | In the document: merge, read the shapes, undo, roll back (31.23) | The redo steps go (`_clearMyRedos`); the view jumps twice; a served client sees a merge and its undo; a sent file held for the branch is let go (30.29) |
+| B | On a branch made for it, in a second document with no view, the branch deleted after | A "Delete branch" record each time, theirs' head version named "merged into ...", sent files let go, the branch lists of everyone redrawn: a special case in the log for each |
+| C | In a document with no log: ours' tip read as a version is read to compare against (27.60), the merge's write part applied to it, recomputed, closed with the dialog | The write part of `_merge` takes the document it writes to; the overlay reads a value from another open document |
+
+**Ruled (user, 2026-10-12): "C".**
+
+**As built, App.** `Document::previewMergeResult(branch, picks, fallback,
+version)` and `previewPickResult(rows, picks, fallback)`; Python
+`previewTransactionMergeResult()`, `previewTransactionPickResult()`.
+They are `_merge()` with a `MergeOutcome` to fill:
+
+- The plan, the sides, what goes in and every value read are the
+  merge's own code, on this document and its log: what is refused,
+  what is left out and what is merged by what it holds are the same by
+  construction, and not by a second copy of the rules.
+- Then the document as it is is read into one of its own.
+  `_leaveBranch()` takes the tip as a version where it is none --
+  unnamed, and the first thing a merge that writes does anyway
+  (31.21); rows applied take none, and their preview does -- and
+  `_openReadVersion()` reads it as `_readVersion()` does: joined to the file's history, blobs by hash, shapes already
+  parsed shared, no log, no view, undo off. It is `_readVersion()` with
+  the document left open; that one is now this and a closer. Its
+  objects have the ids this document's have.
+- The write part -- objects made and removed, dynamic properties,
+  values, placements kept (31.26), element references followed
+  (31.22), the recompute -- is the merge's, with the document it
+  writes to named: `into`, this one for a merge. What a merge does to
+  this document and nobody else stays outside: the rollback of an
+  undone merge, the transaction, the move along the log of a
+  fast-forward, the row and its annotation, the version named, the
+  sent files let go.
+- No transaction says whether anything was written there, so the write
+  part counts it: nothing written, nothing computed, as in a merge.
+
+`MergeOutcome`: `document`, the caller's to close; `theirs`, a
+fast-forward -- the rows are taken as they are and what the merge makes
+is the other branch, so none is made; `values`, the geometry
+(`GeoFeature::getPropertyOfGeometry`) of every object the merge made,
+wrote the geometry of, or computed -- which reaches past the plan's
+lines to what is made of what changed -- each with whether this
+document has the object; `removed`; `failed`, the objects whose
+recompute failed there and had not before; `unresolved`, where a
+conflict has no side and there is no document, as there is no merge.
+Refused while a transaction is open: the tip cannot be taken as a
+version then, and an older one would be shown as the document.
+
+**What it leaves in the log:** one `snapshot` record, the tip's
+version, the first time; asked again with nothing done since, nothing.
+No step, no redo lost, no branch, no row of a merge. Checked by the
+tests below, row by row.
+
+**A conflict's side is a setting (user, 2026-10-12: "create a setting
+for conflict resolve, default to ours").** I had asked whether the
+result should wait until every conflict has a side; in the dialog every
+conflict has one from the start, so what was open was which.
+`MergeConflictSide` (Preferences/Document; 0 ours, the default, 1
+theirs) is the side a conflict starts on in the preview of a merge and
+of rows applied -- and so what the result is shown with and what is
+merged unless another is picked. A view provider's conflict keeps ours
+(28.6 Q2). A merge asked for by a script with no side for a conflict is
+refused as before (28.6 Q3): the setting is the dialog's.
+
+**Or it is asked (user, 2026-10-12: "Add an option to ask on
+conflict").** `MergeConflictSide` 2: a conflict starts with no side --
+its list says "pick a side" -- and nothing is decided for the user.
+`picks()` leaves it out; "Merge" is disabled and says how many are
+asked ("Merge (2 to pick)"), so the refusal of 28.6 Q3 is never
+reached from the dialog; the result is not made while one is missing,
+and its line says "N conflict(s) have no side" -- it is made when the
+last one is picked. "All ours" and "All theirs" answer them all.
+
+**As built, Gui.** The bar of the merge's preview, and of rows applied,
+has a fourth pair, **ours against the result**.
+
+- *Made when asked for:* choosing the pair makes it, with the sides as
+  they are picked, under a wait cursor. A side picked or a change
+  unticked after that drops it, and makes it again where it is what is
+  looked at; "All ours" and "All theirs" make it once. Stale (32.15),
+  it is closed and none is made: "the document has changed: preview
+  again".
+- *How a value of it is read:* a ref of the form `doc:` and a
+  document's name is the value the object of that id has in that open
+  document (`ViewProviderDocumentObject::showValueDiff`, Part's
+  `ViewProviderPartExt`). Such a shape is known by being that shape, as
+  the object's own is, and not by the ref: each result's document has a
+  name no other had (`<name>_merged<n>`).
+- *What is listed:* with no change selected, the changes' objects and,
+  after them, every object the result computed that no line names.
+- *What theirs made* (left since 32.10, "counted only") is drawn: the
+  result's document has a view provider of it, though no view, and
+  that goes into this document's 3D views where theirs left the object
+  shown -- hidden as a picture, not selectable, and asked to show its
+  geometry against no value: all of it new. The bar holds it as a
+  value of another document's object (`Value::document`), shown
+  whatever is chosen; the line that makes it, selected, shows it
+  alone. It leaves the views before its document closes, whoever
+  closes that.
+- *Said after what was found:* "N object(s) made by the merge", "N
+  object(s) are removed", "N object(s) fail to compute in the result:
+  names" -- two changes that each compute and do not together, known
+  before the merge -- "a fast-forward: the result is theirs", "the
+  result is the document as it is", or why there is none.
+
+**Measured** (`~/.cache/lv-merge/mr/scale/scale.py`, the scanner model
+of 27.52: 615 objects, a 5.5 MB file that opens in 2.7 s; a pad made
+longer on one branch, another on the other): the preview 0.03 s; the
+result 3.2 s the first time, the tip's version taken, and 2.1 s again,
+86 values; closing it 0.05 s; the merge itself 1.0 s, and the volume of
+the body's tip the same to the last digit. So a result costs the merge
+and a read of the document, on the main thread.
+
+**Pictures** (`~/.cache/lv-merge/mr/pic1/pic.py`, under `xvfb-run`; the
+two in the guide): ours taller, theirs longer with a ball added. Against
+theirs the height is red, removed; against the result it is grey, kept,
+the length cyan and the ball cyan.
+
+**Left.**
+
+- *On the main thread, and waited for.* A recompute of a document is
+  not handed to a thread; this is a use for the kernel out of process
+  (docs/ComputeBoundaries.md).
+- *Made again whole when a side changes*: a read of the document each
+  time. The document could be kept and the sides written over it.
+- *Closing the result's document clears the selection*, as closing any
+  document does (`Gui::Application::slotDeleteDocument`).
+- *What the merge removes* is counted, and not drawn as gone.
+- *Only geometry.* A length that would differ is not listed: the
+  dialog's lines say it.
+- *A view opened while the result is shown* does not have what theirs
+  made.
+- *The file's string table grows by what the result's recompute
+  named*: the result's document shares it (27.60), and what nothing
+  holds goes at the next compaction (27.47). Not measured.
+- The browser: the stream, next.
+
+**Tests.** `parttests.ShapeDiffTest.MergedResultTest` (+6): the result
+is what the merge then makes, by volume and by every element name, with
+a step undone before it still to be redone, the rows and the branches
+as they were and no row more the second time; a conflict -- none
+without a side, each side's result, two results two documents; a
+fast-forward; what theirs made, and a fillet that neither side broke
+and the two together do, said and found invalid there and valid here;
+rows applied; not while a transaction is open. The Gui check (+14,
+128, and 132 with the asking): from the merge dialog -- made when the pair is chosen, by the
+material, nothing of the document moved, the dialog still open, with
+no change selected the object chosen, what theirs made drawn in this
+document's view all new and alone when its line is selected, gone with
+another pair, made once; stale; the side the setting says; a side
+changed and the result made again; its document gone with the dialog;
+asked (+4, 132) -- no side to start with and Merge waiting, no result
+meanwhile, both there once it is picked, nothing merged by looking.
+
+**Gates** (`~/.cache/lv-merge/gates-lv.sh`, both freezes): the 20 Gui
+checks clean; Python 3680, OK, frozen and not; gtest entries 947 of 947
+both; driven 271 of 273, the two the golden raster pictures that wait
+for their references (33.14).
+
+**Next (32.4):** the stream.
+
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
 `origin/Transaction` at `09c96678f1` was merged into `LinkVibe` on the
@@ -18726,3 +18896,343 @@ mechanism on Linux. `aWireMergeCopiesNothingForRounding`. The case of
 off: Python 3132 OK both ways, ctest 920 of 920 both ways, the 19 Gui
 checks with no failure. The Windows box, with the first part of the
 rule by hand in its kernel: the names of that test the same on and off.
+
+### 33.11 A step refused is said, and can be gone past
+
+**Ruled (user, 2026-10-12):** every change made without a name rides
+along with the step before it (33.4 as built; the narrower way, only
+recomputes, was offered and declined); and a refusal is said in a
+dialog, with a way past the step.
+
+**When a step is refused.** Only where it is taken through the log:
+it is not the newest thing written -- another author's step lies above
+it, or a change with no name came between an undo and its redo -- or
+it is past the hot window. Then: a property it set was written again
+since, to another value (`Length of id 12 was changed since, by row
+57`); an object it made is gone, or one it removed cannot come back
+under its name or id; or its row or a value is no longer in the log.
+For one user an undo is refused only for a step whose history was
+trimmed, and a redo where a change with no name set what it sets.
+
+**What there was.** The reason went to the report view and nowhere
+else: the command looked as if it did nothing. And `undo()` takes the
+newest step first, so every further one tried the same step: nothing
+below it could be reached from Edit > Undo.
+
+**Built.**
+
+- `Document::undoSkipping(skip)` / `redoSkipping(skip)`, Python
+  `undo(skip)` / `redo(skip)`: the step after the `skip` newest of the
+  actor's, with the implicit ones that go with it (`_myRun(undo,
+  skip)`). It has steps above it, so it goes through the log, selective
+  as 30.10 item 3 has it, and is refused in its turn where what it left
+  was changed since. Fewer steps than were to be left: nothing.
+  `UndoRefusal` in Python is why the last one did nothing.
+- `Gui::Document::undo(steps, ask)` / `redo`: with `ask`, a refused
+  step is said in a dialog -- the step's name, the reasons with each
+  object by its label, and the step after it offered: **Skip this
+  step** takes that one and leaves the refused one where it is,
+  **Cancel** nothing. With no step after it, the reason and **OK**.
+  Asked with no guard held and the document not marked as in a
+  transaction. `ask` is the user's own undo: the view's Undo and Redo
+  messages, so Ctrl+Z, the menu and the arrow's list. A script's and a
+  client's (`SceneControl`, which answers `Refused` itself) are not
+  asked.
+- The arrow's list sends one message a step; it stops at one after
+  which the list is no shorter, where each further message tried the
+  refused step again.
+
+**A range of steps.** Checked, as asked: the arrow beside Undo lists
+the named steps newest first, and clicking one takes every step from
+the newest down to it -- a range from the top, and no other. The log
+panel takes several rows as selected, and **Undo row N** acts on the
+one clicked alone; several rows of this branch are undone one at a
+time. An undo of the rows selected: 33.13.
+
+**Tests.** Python `testAStepRefusedIsSaidAndGonePast`: an undo leaving
+the newest step, fewer steps than to be left, a redo refused by a
+write with no name -- the reason, nothing moved, no row -- the step
+after it taken with its shape, the refused one still refused. Gui
+check `scripts/transaction-log-undo-check.py` (13, `$UNDOCHECK_OUT`),
+through `Std_Undo` and `Std_Redo`: no dialog for a step that goes; the
+refused redo said with its reason and the object's label, the step
+after it offered; cancelled, nothing moved; gone past, the step after
+redone with its shape; the refused one alone said with nothing
+offered.
+
+### 33.12 Two things a step taken through the log met
+
+Found on the Windows box once 33.4 was merged: LinkVibe's two tests do
+`undo()`, `recompute()`, `redo()`, the recompute is now a step that
+does not end the redo, and the redo goes through the log
+(`_revertStep`) where it used to come from the step's copies. Taken
+from LinkVibe as it was built there (`26b48d53fc`).
+
+- **A property replaced under its name.** A row that removed a dynamic
+  property and added one of the same name and another type -- a pattern
+  changing its kind, whose `Offset` is a length or an angle -- was
+  reverted into an object with no such property: the one in place kept
+  the removed one from coming back, and was then removed as the row's
+  addition. The one in place goes first, and is not removed again.
+- **Not reacted to.** The values went back with object code reacting
+  to each, in the order of a hash map: a pattern given its suppressed
+  indices before its grid worked the positions out of them on the grid
+  of before. They go back under the flag an undo sets
+  (`isPerformingTransaction()`), as the same revert already did for a
+  cold step with the document at its state; the recompute after is
+  outside it. The panel's **Undo row** (`undoLogged`) applied its row
+  the same unguarded way and is now under the flag too: a row's values
+  are whole, and nothing has to be worked out of them.
+
+**Gates** for 33.11 and 33.12, the freeze on and off: Python 3133 OK
+both ways, ctest 920 of 920 both ways, the 20 Gui checks with no
+failure. On the Windows box, 33.1 to 33.10 merged into LinkVibe with
+33.12's first form: ctest 850 of 850, Python 3641 OK.
+
+### 33.13 The rows selected, undone as one step
+
+**Asked (user, 2026-10-12):** the next thing after the merge -- the log
+panel undoing the rows selected, where it undid the one clicked.
+
+**One step, not one a row.** Both were weighed. A step a row is the
+loop there already was: each undo is checked against the document as
+the one before left it, a refusal in the middle leaves the ones before
+it done, and Edit > Undo then takes them back one at a time. One step
+is one thing to take back, and all of the rows or none. Built as one
+step; what it gives up is the `inverts` of each row, which a row that
+undoes several cannot carry (below). **Ruled (user, 2026-10-12): one
+step.**
+
+**As built.**
+
+- `Document::undoLogged(seqs)`, Python
+  `undoTransactionFromLog([seq, ...])` (a number still does the one
+  row, as 24.7 has it; a row named twice counts once). One transaction:
+  the rows are taken back newest first, each read from the document as
+  the newer ones left it, so that a row making an object and a newer
+  one removing it go together -- the removal taken back first, which
+  puts there the object the other then unmakes -- and so do a row making
+  an object and a newer one editing it.
+- **The refuse rule among them.** 24.7's rule asks whether anything
+  later left a property in another state than the row did. A later row
+  that is undone with it is no such thing: it is taken back first.
+  `checkSelective` is handed the rows undone together and looks under
+  each of them for the newest op of a row that is not one -- so two rows
+  on one property, the older refused alone, go together; and a row
+  between two selected ones that is not selected still refuses them.
+- **All or none.** What the log alone can say is asked of every row
+  before any is taken back: a refusal there writes nothing, and every
+  row in the way is named in the report view. What only the document
+  can say -- an object's name taken, an object gone -- is asked row by
+  row on the way down; a refusal there aborts the transaction, which
+  puts back the rows already taken back, and nothing is logged. The
+  redo steps are cleared once every row is taken back, where 24.7
+  cleared them before the first: a refusal leaves them.
+- **The row written.** Kind `undo`, as one row's is. `inverts` names
+  the row for one; for several it is 0, one row not being what it
+  inverts, and the name says what was undone: `Undo Pad, Fillet`,
+  oldest first, three names at most and `and N more`; `Undo N rows`
+  where none has a name. It is one undo step and one redo step.
+- **The panel.** With several rows of this branch selected the menu
+  says **Undo N rows**, and acts on the selection; with one, or with a
+  click on a row outside the selection, **Undo row N** as before. The
+  entry is offered where every row is one that can be undone (`user`,
+  `implicit`, `undo`, `redo`, `pick`). A refusal is said in the panel's
+  status line, the reasons in the report view. `undoRows(seqs)` is the
+  slot behind it.
+
+**Tests.** Gtest `severalRowsUndoneAreOneStep`: two rows on one
+property, the older refused alone, undone together in one row of kind
+`undo` with no `inverts` and both names, and one undo bringing both
+back; a row between two selected that is not selected refuses both
+with nothing written and its property named; one row in a list keeps
+its `inverts`; a row making an object, refused alone, undone with the
+one editing it; a row making an object and one removing it undone
+together; and a row making an object removed since by a row not
+selected, refused by the log with the redo step left. Gtest
+`severalRowsRefusedLateArePutBack`, the refusal only the document can
+make: a view provider's change whose object was removed since -- the
+removal wrote nothing under that name -- selected with a newer row;
+the newer one is taken back and put back (one abort signalled), the
+document as it was, no row, the undo names and the redo step
+untouched, no transaction left open. Gui check
+`transaction-log-undo-check.py` (20), through the panel's slot: two of
+four steps undone as one row named for both, the shape following, one
+Edit > Undo bringing both back, and a refused pair said in the panel
+with nothing moved.
+
+### 33.14 What LinkVibe's driven Gui tests met
+
+The merge of 33.11 to 33.13's branch into LinkVibe (2026-10-12) was
+the first run on Linux of LinkVibe's driven Gui tests
+(`scripts/gui-test.sh`, under xvfb) with this work in the tree: the
+Windows box, where the earlier merges were made and gated, cannot run
+them. What follows is what was this work's doing. What was not -- tests
+written on the Windows box and never run here, and two faults of the
+legacy renderer and the Linux title bar -- is in `docs/Testing.md`.
+
+**Faults, fixed.**
+
+- **A pinned version not shown as one.** The tree shows a pinned
+  version's label in italic (27.22) when it is told the label; it was
+  told before the version was marked frozen, and showed it right only
+  because a document used to say it was modified during its restore.
+  One whose view providers are built later does not.
+  `openFileVersion` says the label again once the version is frozen.
+- **A body's Transparency not reaching its Tip.** `ViewProviderBody`
+  handed the value to the Tip while still inside the guard it holds
+  against the echo of its own base call, so the hand-over was dropped
+  as an echo. The guard covers the base call alone.
+- **A served selection under the mapped name.** A box names its
+  elements (docs/PrimitiveNames.md), so a selection of its face is held
+  as `;Top.Face6`, and went to the client so; the viewer places an
+  element by `Face6` and paints the whole object for a name it cannot
+  place. The message carries the plain name
+  (`Data::oldElementName`).
+- **A look's shading model lost on the way to the object.** A write to
+  `ShapeAppearance` goes to the object's store a look at a time
+  (`Feature::writeFaces`), and a look given to a list is read in the
+  model that list is in -- so `convertPBR(true)` on an object that had
+  a colour, or followed its material card, left it Phong, and the
+  metallic set next threw `material list is not in PBR mode`: a glTF
+  import of the chess set. Where the model changes, the lists kept for
+  the faces -- the object's own look and the looks by number -- are
+  converted first.
+- **A binder's mapping switched off by its own look.** A
+  `SubShapeBinder`'s view provider ends the mapping of the face colour
+  when its colour is set, as a colour picked. The object's look
+  arriving under the view provider's name (`mirrorAppearance`) was
+  taken for one: the view provider's `MapFaceColor` read false where
+  the object's read true, and a colour picked afterwards found nothing
+  left to switch off, so the object kept mapping. A look mirrored is
+  not a colour picked.
+- **A first picture held as a refinement.** A shape parsed before is
+  kept by its content (`ShapeParseCache`, 27.35), so a file opened again
+  in one session comes with its meshes. A shape drawn as a box whose
+  finer mesh was there already was queued as a refinement, which a
+  load holds back until it has built its visuals
+  (docs/DocumentLoad.md sec 18.11 says a first picture is not). Such a
+  body is marked as a first picture and is not held.
+
+**Tests that leaned on what changed.**
+
+- *Undo is each author's (30.10).* Three served-sketch tests read the
+  desktop's `UndoCount` for a step a client made; it is the client's.
+  They read it as the client (`wsclient.client_undos`), and the one
+  that undid the client's step from the desktop has the client undo
+  it.
+- *A save writes the history (27.5).* Its blobs may be zstd members,
+  which `zipfile` reads from Python 3.14 on: two tests that rewrote a
+  saved archive read it through `ArchiveMembers`.
+- *The looks are the object's.* A view provider's colours are names
+  over them and are not written to `GuiDocument.xml` at schema 5. Two
+  sketch tests made "a file from before AutoColor" by stripping
+  `AutoColor` from a file just saved, which is then no file an older
+  build wrote: they save it at schema 4 first. The binder test wrote
+  its flag into `GuiDocument.xml`; it reads the object's.
+- *A box names its elements.* A fillet corner's face is named from the
+  vertex's name, `RearRT`, not `Vertex7`.
+- *A parse is kept by content.* A test that opened one file three
+  times to see three loads mesh opens three files.
+- *The tree makes no undo step of its own (30.8).* It is brought up to
+  date before a transaction closes, and gives a rank only to an object
+  that has none. The test of the tree itemising inside a command's
+  nested loop while an import is live found everything itemised
+  already -- the fit's command closes the implicit transaction the
+  import wrote into -- and no rank written. It runs the import inside
+  a transaction of its own and leaves the imported objects without a
+  rank; the write the guard must let through is then made inside the
+  loop as before. Not run against the exemption reverted.
+
+**Not settled.**
+
+- **A sketch's automatic colours were saved.** Ruled and built: 33.15.
+- **A colour set on the object ends no mapping.** The rule that a
+  colour picked ends a binder's mapping is the view provider's;
+  `obj.ShapeColor = ...` leaves the flags. Not looked into further.
+- **A binder of a file from before the looks were the object's.** A
+  file made to look like one lost the binder's flag and colour at
+  open; it was not a faithful old file, and no real one is on this
+  box.
+
+**Gates** for 33.13 and 33.14, on LinkVibe with the branch and OcctFix
+merged, the freeze on and off: Python 3674 OK both ways; the ctest
+entries that are not driven, 947 of 947 both ways; the 20 Gui checks
+with no failure (`ur` 20). The 273 driven Gui and render tests, once,
+the freeze as it defaults: all but the two golden raster pictures,
+which a change to the cavity shader made on LinkVibe moved and whose
+references are not made again (`docs/Testing.md`). How these are run
+on LinkVibe -- the driven tests given no `FREECAD_USER_HOME`, from
+wiped profiles -- is that page's fourth trap.
+
+### 33.15 A sketch's automatic colours are no look of the object
+
+**What there was.** With `AutoColor` on a sketch takes its edge, vertex
+and face colours from the theme: the settings a theme writes
+(`View/SketchEdgeColor`, `SketchVertexColor`, and
+`Mod/Sketcher/General/FaceColor`), which the Sketcher's Appearance page
+also sets. It is there so that they stay out of the file (LinkVibe,
+upstream's feature), and it worked by writing them into the view
+provider's colour properties. Those are names over the object's looks
+since docs/ShapeAppearanceDesign.md sec 14.6: the theme's colours
+became the object's, were saved with it, and a setting changed rewrote
+them in every open sketch as an `implicit` row, the document not
+marked modified. The checks that an automatic colour is not saved
+looked at the view provider's property and passed.
+
+**Ruled (user, 2026-10-12).** With the option on the colour is the
+setting's and not the object's, and the object is not touched. The
+view provider sets its colours the same whatever the option says; on,
+the properties are ignored and what is drawn is filled in from the
+settings; off, the sketch goes to its own colour, a sketch's white
+edges, and nothing is written then either.
+
+**As built.**
+
+- **The properties** are the sketch's own always: white edges and
+  points and the face colour its constructor sets -- the `FaceColor`
+  setting as it is when the sketch is made, as it was before there was
+  an AutoColor -- given to a new object as any kind's look is
+  (`giveClassAppearance()`), names over the object's looks from then
+  on. The constructor no longer writes the
+  settings into them, and nothing else does.
+- **What is drawn.** The colours of the edges and of the points reach
+  their nodes through `setHighlightedEdges()` and
+  `setHighlightedPoints()`, now virtual; a sketch under AutoColor puts
+  the settings' there and does not look at what it is handed. A colour
+  or a material written puts itself into its node past those, so the
+  sketch puts the settings' back after it. The faces are drawn by a
+  view provider of their own (the internal faces), which keeps values
+  of its own: the settings' under AutoColor, the sketch's otherwise.
+  `applyAutomaticColors()` makes all of it again -- at attach, at the
+  end of a restore, when the option or a setting changes.
+- **Turned off**, the same call draws from the properties: the
+  object's colours. Nothing is given to the object. Two forms built
+  before this one were ruled out the same day: the properties detached
+  from the object while the option is on, and what the sketch showed
+  kept as the object's when it is turned off.
+- **While on**, the colour properties are hidden from the property
+  editor, as before: a write to one changes the object and nothing on
+  the screen.
+- `getDrawnColors()` on a Part view provider (Python too) says what the
+  nodes hold, by kind, with a sketch's faces: the one way to ask what
+  is on the screen, where the properties no longer say.
+
+**Left as it is.** A file of LinkVibe from before this, saved with the
+option on, recorded the theme's colours of that day in its view file,
+and at open they become the object's as any older file's colours do:
+white in every theme shipped, and seen only once the option is turned
+off. Shapes made from a sketch take a colour from the sketch object
+where they take one at all, never the theme's.
+
+**Tests.** `tests/gui/sketch-auto-color.py` (33), reading what is
+drawn beside the properties: a new sketch drawn in the settings'
+colours with its properties and its object white; a setting changed
+recolours it, changes neither the object nor the property and makes no
+row of the log; turned off it is drawn white and the object is as it
+was; a colour set then is the object's and is drawn; turned on again
+it is drawn in the setting's and keeps its own colour, which is drawn
+again once it is off; reopened, and the files from before AutoColor,
+as before. `sketch-auto-face-color.py` (16) the same for the faces;
+`sketch-color-map-automatic.py` reads the drawn colour for its
+premise.

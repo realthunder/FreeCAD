@@ -352,6 +352,13 @@ Params = [
             'would have taken from the log anyway and compares: a mismatch\n'
             'names a value changed without aboutToSetValue (sec 23.6). Always\n'
             'on in a debug build.'),
+    ParamInt('MergeConflictSide', 0,
+        doc='The side a conflict starts on when a merge, or rows applied, are\n'
+            'previewed (docs/TransactionLog.md sec 32.17): 0 ours (the default),\n'
+            '1 theirs, 2 none -- it is asked. A side is what the dialog starts\n'
+            'each conflict on, and what is merged unless another is picked.\n'
+            'Asked, nothing is merged or shown until each conflict has a side.\n'
+            'A script merging with no side for a conflict is refused anyway.'),
     ParamBool('RelativeStringID', True,
         doc = "Write the ids in a document's string table as differences from the\n"
               "id before, which makes the saved file smaller. Turn off to write\n"

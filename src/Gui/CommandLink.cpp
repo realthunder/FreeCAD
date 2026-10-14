@@ -675,6 +675,16 @@ static void linkConvert(bool unlink) {
 
         Command::updateActive();
 
+    } catch (const Base::AbortException&) {
+        // The recompute after the replacement, cancelled with Esc. The
+        // replacement is done and is kept; what there is to say is that the
+        // recompute was cancelled, not that the replacement failed, and not
+        // the exception's own text (docs/HandsOnQueue.md entry 107).
+        committer.close(false);
+        QMessageBox::information(getMainWindow(),
+                unlink?QObject::tr("Unlink"):QObject::tr("Replace link"),
+                QObject::tr("Recompute cancelled"));
+        return;
     } catch (const Base::Exception& e) {
         committer.close(true);
         auto title = unlink?QObject::tr("Unlink failed"):QObject::tr("Replace link failed");

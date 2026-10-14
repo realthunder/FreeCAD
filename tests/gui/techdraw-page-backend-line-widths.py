@@ -137,10 +137,13 @@ def other_ink(pixels, paper, line):
 
 # name: (where the line is, millimetres from the view's middle; whether it
 # runs across; the stretch along it to look for ink in, as it may be dashed)
-# The model is small enough for the whole view to be in the window at this
-# zoom: a box 30 by 20 seen from above, a pocket 16 by 10 hidden in it.
+# The model is a box 30 by 20 seen from above, a pocket 16 by 10 hidden in
+# it. Every line is looked at within 6.5 mm of the view's middle across and
+# 11 mm up and down: the page stands in half of the document's window, 427
+# pixels of a 1280 pixel screen, and the box's sides, 15 mm out, are 300
+# pixels from the middle at this zoom -- outside it.
 LINES = {
-    "visible edge": ((-15.0, -7.5), False, (-9.0, -6.0)),
+    "visible edge": ((0.0, 10.0), True, (-6.0, 6.0)),
     "hidden line": ((0.0, 5.0), True, (-6.0, 6.0)),
     "cosmetic line": ((0.0, -2.5), True, (-6.0, 6.0)),
     "section line": ((0.0, 2.5), True, (-6.0, 6.0)),
@@ -158,6 +161,9 @@ def widest(img, name, paper):
     for i in range(steps + 1):
         along = lo + i / ZOOM
         p = at(along, my) if across else at(mx, along)
+        if not (half <= p.x() < img.width() - half and half <= p.y() < img.height() - half):
+            raise RuntimeError("the %s is looked for outside the picture, at %d, %d of %d x %d"
+                               % (name, p.x(), p.y(), img.width(), img.height()))
         px = cut(img, p.x(), p.y(), across, half)
         total = ink(px, paper)
         if best is None or total > best[0]:

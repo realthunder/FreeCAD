@@ -245,15 +245,25 @@ def look(kind, what, colour):
             check("%s: %s selected by itself, behind a face, is drawn at full colour" % (kind, name),
                   strength > 0.85, "%.2f of a visible selected edge" % strength)
             return
-        visible = [lines(image, colour, e)[0] for e in state["edges"]
-                   if not e["hidden"] and e["room"] >= CLEAR]
+        both = [lines(image, colour, e) for e in state["edges"]
+                if not e["hidden"] and e["room"] >= CLEAR]
+        visible = [on for on, _sides in both]
         full = max(visible) if visible else 0
         if what == "selected":
             state["full"] = full
+        # Every visible edge stands out from the lighter of its two sides, by
+        # a third of what the strongest does. Not "all as strong as the
+        # strongest": of an edge on the outline the half over the face beside
+        # it is behind that face and dimmed like a hidden edge, and of a line
+        # two pixels wide (View/SelectionLineThicken 1, entry 72) that leaves
+        # one pixel, which the render engine smooths over two.
+        stand = [(on - max(sides)) / float(full - max(sides)) if full > max(sides) else 0.0
+                 for on, sides in both]
         if not check("%s, %s: the visible edges are drawn in the highlight colour" % (kind, what),
-                     full > 100 and min(visible) > 0.8 * full,
-                     "%d edges, the colour's lean %d to %d" % (
-                         len(visible), min(visible) if visible else 0, full)):
+                     full > 100 and min(stand) > 0.33,
+                     "%d edges, the colour's lean %d to %d, the weakest %.2f over its ground" % (
+                         len(visible), min(visible) if visible else 0, full,
+                         min(stand) if stand else 0.0)):
             return
         found = []
         for e in state["edges"]:

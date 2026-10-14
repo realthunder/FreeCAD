@@ -693,6 +693,34 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
       glEnable(GL_DEPTH_TEST);
       FC_GLERROR_CHECK;
     }
+    // No depth offset that was not meant for filled faces. Nothing above
+    // sets the offset of the faces laid down here, so they are drawn with
+    // whatever the draw before left on: for a highlight that is its own
+    // faces' offset, toward the eye and switched on for polygons drawn as
+    // points only (SoFCRenderCache: Material::Triangle gets POINTS). GL
+    // says that leaves a filled face where it is; Mesa's llvmpipe moves it
+    // all the same, and every line of the solid pass that lies on a face
+    // then fails its depth test against that face
+    // (tests/gui/selection-on-top-hidden-edges.py, "Legacy").
+    const int8_t filled = static_cast<int8_t>(
+        this->material.polygonoffsetstyle & SoPolygonOffsetElement::FILLED);
+    if (filled != this->material.polygonoffsetstyle) {
+      setGLFeature(GL_POLYGON_OFFSET_LINE,
+                   this->material.polygonoffsetstyle,
+                   filled,
+                   SoPolygonOffsetElement::LINES);
+      setGLFeature(GL_POLYGON_OFFSET_POINT,
+                   this->material.polygonoffsetstyle,
+                   filled,
+                   SoPolygonOffsetElement::POINTS);
+      this->material.polygonoffsetstyle = filled;
+      SoPolygonOffsetElement::set(state,
+                                  dummynode,
+                                  this->material.polygonoffsetfactor,
+                                  this->material.polygonoffsetunits,
+                                  SoPolygonOffsetElement::FILLED,
+                                  filled != 0);
+    }
     return true;
   }
 

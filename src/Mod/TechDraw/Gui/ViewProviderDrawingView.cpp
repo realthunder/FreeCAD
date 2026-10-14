@@ -295,20 +295,39 @@ void ViewProviderDrawingView::finishRestoring()
     // name: the view may be gone by then. Only where the page already has
     // an item for the view; a load that builds its view providers before
     // any page is shown asks nothing.
+    //
+    // "A turn later" is not always after the slice: the slice's progress bar
+    // pumps events, and a turn that comes from there finds the document
+    // still restoring, so the item drew nothing once more and nothing asked
+    // a third time (tests/gui/techdraw-page-before-its-view-providers.py,
+    // failing since the archive was read faster, 2026-10-12). Asked again
+    // until the document is no longer restoring.
     TechDraw::DrawView* view = getViewObject();
     if (view && view->isAttachedToDocument() && getQView()) {
-        const std::string docName = view->getDocument()->getName();
-        const std::string viewName = view->getNameInDocument();
-        QTimer::singleShot(0, qApp, [docName, viewName]() {
-            App::Document* doc = App::GetApplication().getDocument(docName.c_str());
-            auto late = doc
-                ? dynamic_cast<TechDraw::DrawView*>(doc->getObject(viewName.c_str()))
-                : nullptr;
-            if (late) {
-                late->requestPaint();
-            }
-        });
+        paintOnceRestored(view->getDocument()->getName(), view->getNameInDocument(), 0);
     }
+}
+
+void ViewProviderDrawingView::paintOnceRestored(const std::string& docName,
+                                                const std::string& viewName,
+                                                int tries)
+{
+    QTimer::singleShot(tries ? 50 : 0, qApp, [docName, viewName, tries]() {
+        App::Document* doc = App::GetApplication().getDocument(docName.c_str());
+        auto late = doc
+            ? dynamic_cast<TechDraw::DrawView*>(doc->getObject(viewName.c_str()))
+            : nullptr;
+        if (!late) {
+            return;
+        }
+        // a minute at most: a document that never leaves the state is not
+        // this view's to wait for
+        if (doc->testStatus(App::Document::Status::Restoring) && tries < 1200) {
+            paintOnceRestored(docName, viewName, tries + 1);
+            return;
+        }
+        late->requestPaint();
+    });
 }
 
 void ViewProviderDrawingView::updateData(const App::Property* prop)

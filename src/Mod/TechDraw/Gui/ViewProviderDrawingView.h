@@ -106,6 +106,13 @@ public:
     static void fixColorAlphaValues(Gui::ViewProviderDocumentObject* vp);
 
 private:
+    /// Ask the view to be painted once its document is no longer being
+    /// restored: a page item draws no view of a restoring document
+    static void paintOnceRestored(const std::string& docName,
+                                  const std::string& viewName,
+                                  int tries);
+
+private:
     void multiParentPaint(std::vector<TechDraw::DrawPage*>& pages);
     void singleParentPaint(const TechDraw::DrawView* dv);
 

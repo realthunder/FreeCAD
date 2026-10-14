@@ -275,6 +275,39 @@ staged. GUI tests by hand on that build, no FAIL:
 The full suites were not run again (one accessor in App, two labels in the
 pattern panels, two test scripts since the run above).
 
+The session of 2026-10-12 (the reporter: "fetch and merge remote LinkVibe.
+sync all relevant repos and submodules. build and test first, then stage.
+after then resume fixing issues in the notes"). origin/LinkVibe
+(`3016b5c0db`, 596 commits past `9e1cf7d9f9`, most of them the Transaction
+branch) merged as `ffb143c047` with no conflict; OCCT `LinkVibe-801`
+fast-forwarded 79 commits to `5755a62295`; Coin and pivy were current and
+no submodule pointer moved. Both full suites on the merge: ctest 951 of
+951; Python 3644 tests with 2 failures, 52 skipped, 6 expected failures.
+The two are copy tests of `FileBlobs` and the fault was the tests', fixed
+`69b103d1de`; the two thickness failures carried since 2026-10-04 did not
+appear. "The sync of 2026-10-12", at the end, has the account.
+
+Staged 2026-10-12 14:04:58 at `4474fcb17e` (OCCT `5755a62295`, Coin
+`d2da5cc93`), on that word; the reporter's own FreeCAD was not running. It
+is the first stage from LinkVibe: the copy under test was PartDesignPort's
+`72180a4812` until now, so it gains everything LinkVibe had and
+PartDesignPort did not, and today's merge on top. Of the queue it has, for
+the first time: entry 47's fixes (`24f7c8a2bd`, `93fc6cd58a`, `43fdcb1435`,
+`ee9583a247`, `d38ac38d7b`, `0049176c22`, `5c45b43220`, `48b9aaa0ba`,
+`4172eb2018`), entry 67 (`39b548048b`), entry 58's three fixes and the
+note in the pattern panels (`2a45e36492`), entry 30's one overlay preset
+(`438216ad93`, `5c021cb111`), entry 48's budget fix (`31c09e28e7`), entry
+52's frame report on Direct3D (`d79122782b`), and entry 61's rounding
+setting on the Advanced page (`a343a386b6`). Smoke-tested on the staged
+copy right after, no FAIL: `techdraw-never-shown-page-exports.py` 10,
+`techdraw-page-items-when-needed.py` 10,
+`close-during-view-provider-drain.py` 7, `techdraw-page-backend-switch.py`
+11, `tooltip-icon-and-images.py` 6, `render-type-default-and-legacy.py`
+13, `view-cell-menu.py` 15, and two loads of `scanner.FCStd`. NOT pushed:
+the merge and everything local since `9e1cf7d9f9`, the code in it `d38ac38d7b`, `0049176c22`,
+`39b548048b`, `5c45b43220`, `48b9aaa0ba`, `4172eb2018`, `69b103d1de` and
+`4474fcb17e`.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -326,7 +359,7 @@ Evidence that does not belong in the repository is under
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 | 52 | MEASURED `00f295f8d7`, not pushed; nothing dropped; one finding for the reporter | the lines' computed coverage is what gets a fractional width right, MSAA or not: a line is within 0.09 px of the width asked for without MSAA and 0.13 px with 4x, against 0.75 and 0.26 px as plain quads (and 1.29 and 0.29 px between two angles of one width). Its cost is under what the benchmark resolves: one leg run twice differs by 0.2 ms of GPU time, more than coverage differs from plain quads on `scanner.FCStd` or on 20000 view-long lines. With MSAA 4x a line is up to 0.13 px lighter than asked; not changed. Found on the way and fixed, `d79122782b`: on Direct3D every frame report was of an empty frame |
 | 48 | both FIXED: `31c09e28e7` (pushed), and `8a7595512d` (not pushed), which is the TEST's -- the "real defect" below is WITHDRAWN, see "48, again" | `per-view-shown-eviction.py`: a stated GPU budget was held against everything the process holds on a backend that reports it, so the test's 1 MB was standing pressure on Direct3D; it is held against the geometry uploaded, as the setting says. `element-color-hide.py`: a real defect -- one view's own hide of a path takes the object out of the other view, pick and drawing, when the hiding view is traversed first; in both link modes; reproduced by a probe, the cache at fault not found. WITHDRAWN 2026-10-10 evening: the probe and the test both took view 1 for "the other view"; with the two views told apart there is no leak, and the test is 624 of 624 |
-| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, not pushed; the rest of the wait MEASURED: 22 s of the 33 from the open to the model are the ten TechDraw pages', none on the screen; 10 s of them FIXED `ee9583a247` (a folder listed for every edge drawn), not pushed; the pages' work at load is for the reporter; x16win asked for its numbers | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
+| 47 | MEASURED on PartDesignPort and on LinkVibe, 2026-10-10; half of the wait in my sessions FIXED `24f7c8a2bd` (the clipboard asked on every pass over the commands), pushed 23:20; the crash on a close inside the load FIXED `93fc6cd58a`, as the reporter chose, and the close by hand asking to save FIXED `43fdcb1435`, pushed 2026-10-11 08:10; the rest of the wait MEASURED (a first "22 s of the 33 are the TechDraw pages', none on the screen" WITHDRAWN, its control had no `GuiDocument.xml`): on a control made in the GUI TechDraw is about 10 s of 21 to 25, paid whether a page shows or not, and the largest part of it was not TechDraw's -- every included file restored through a staging file, FIXED `5c45b43220` (one to two seconds off the open here), not pushed; of the earlier figure 10 s FIXED `ee9583a247` (a folder listed for every edge drawn), pushed with them; the pages' work at load is for the reporter; x16win's numbers in, 2026-10-11: on a box nobody watches (an older, smaller save of the file, `a810955c86`) the open returns in 7.3 to 9.4 s and the model is there 8 to 11 s after it, whole at 12 s -- the clipboard's cost and the file system's are this box's, the two drains' own 8.6 s are every box's; on the same file and the pushed head x16win waits the same 10 s after the open as this box; the 1 s pass after the drain was PartDesign looking for icons that do not exist, FIXED `d38ac38d7b` `0049176c22`, not pushed; a page's items made at the load for a page nobody shows FIXED `48b9aaa0ba` (they are made when the page is first shown, printed or exported: with no page shown the model is there 3 to 4 s after the open, as without TechDraw, where it took 7 to 8), the dimension formatter `4172eb2018`, not pushed; the original now 17 to 18 s from the open asked to the model, 31 to 35 s on 2026-10-10 | not one load in three: after EVERY first open of `scanner.FCStd` the view is the background and the navigation cube until the view providers, built in slices after the open returns, are all there -- 35 to 40 s on PartDesignPort, 20 to 23 s on LinkVibe. A close that a timer delivers INSIDE one of those slices takes the document from under it: 5 of 6 on PartDesignPort, 1 of 12 on LinkVibe |
 | 58 | AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, pushed; the warning on entering edit DONE `2a45e36492`, not pushed; the rest listed with a proposal each | one open and one recompute with the reporter's two addons. Fixed: the origin's point had no icon file; one dimension's tolerance was warned of 56 times; and the limit on typed-in pattern counts cut a FILE's count -- the code wheel's 1024 lines were made 1000 at every load since 2026-10-02. Left: 90 "hasher mismatch" from the optics addon's rays, 45 references found again by geometry, a section view said three times over, a sketch whose first solver fails unnamed, three TechDraw view providers writing into the document while attached |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -5022,7 +5055,7 @@ two agree. Nine more GUI tests take their second view the same way
 (`grep -A4 Std_ViewCreate tests/gui`); they pass, being the first document
 of their run, and are left as they are.
 
-## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe, 14 to 18 s after `24f7c8a2bd`; a close from inside the load crashed on both, FIXED `93fc6cd58a`
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches: it is every open, 35 to 40 s on PartDesignPort and 20 to 23 s on LinkVibe, 14 to 18 s after `24f7c8a2bd`, 10 s after `ee9583a247`, and 8 to 11 s on a box nobody watches; a close from inside the load crashed on both, FIXED `93fc6cd58a`
 
 **The entry:** once in three sessions the first load's view was empty 13 s
 after opening, the background and the navigation cube only.
@@ -5240,6 +5273,13 @@ the drain, by class, of the steps slow enough to be logged:
 | `TechDrawGui::ViewProviderViewSection` (9) | 0.13 s | 0.64 s | 0.19 s |
 | PartDesign's Pocket, Pad, Pattern, Fillet, Hole, Helix | 1.2 s | | 1.6 s |
 
+**WITHDRAWN 2026-10-11: the comparison that follows, its "22 s of the 33"
+and its "none of which is on the screen".** The copy was saved by
+`FreeCADCmd` and so has no `GuiDocument.xml`: it lacks every view
+provider record, not TechDraw's alone. And five of the ten pages are
+saved visible and open as views at the load. Measured properly further
+down ("TechDraw's share, with a control that is one"). Left as written:
+
 And the file without its 229 TechDraw objects (`mk-notd.py`: a copy, the
 objects removed, saved; 457 objects, 5.0 MB), plain runs, two each,
 alternating:
@@ -5303,9 +5343,408 @@ and what it says about a function it did not walk to is a lead, not a
 measure. What remains of TechDraw's 13 s is the pages' own work at load,
 which is the question above.
 
-How much of all this another box pays is not known: the 12.6 s were dear
-because each question to the file system is, here. x16win's numbers are
-not in.
+How much of all this another box pays: the 12.6 s were dear because each
+question to the file system is, here. See the next paragraph.
+
+**The same load on a box nobody watches (x16win, 2026-10-11).** A ROG Flow
+X16, 16 threads, 62 GB, Windows 11, not company managed; RelWithDebInfo at
+`a810955c86` -- with the clipboard change, WITHOUT `ee9583a247` and the
+three commits before it. Not the same file: its `scanner.FCStd` is an
+older save (5,516,554 bytes, 615 objects after the open, 8 pages; ours
+6,119,171 bytes, 686 objects, 10 pages). Every run under cdb, with a
+configuration of its own; four loads, the fourth with the log and the
+trace on. The box that asks for a recompute comes up there as here.
+
+| | this box, `a810955c86` | x16win, `a810955c86` |
+|---|---|---|
+| the open returns after | 17.6, 18.6 s | 9.4, 7.3, 7.3, 7.5 s |
+| the model first on the screen, after that | 13.9, 17.2 s | 8 to 11 s (a frame every 2 s: none at 6.3 s, some of it at 8.0 and 8.1 s in two runs, none at 8.4 and 8.8 s in the other two) |
+| the model whole, after that | 12 to 13 s after `ee9583a247`; not read off before it | 12.0 s, all four |
+| from the open to the model | 32 to 35 s | 15 to 19 s, whole at 19 to 21 s |
+| one question to the clipboard | 170 ms, and no answer | 0.1 to 0.2 ms (1.4 ms the session's first), 4 formats |
+| one pass over the commands, the document open | 0.006 s | 0.007 s |
+| the view provider drain | 17 slices, 7.35 s (at the merge) | 44 slices, 5.89 s: update 3.11 s, restore 1.40 s, finish 1.65 s |
+| Part's visual drain | 14 slices, 2.68 s | 12 slices, 2.67 s, the longest 1.21 s |
+| the pre-mesh | 0.66 s | 0.69 s, 152 shapes |
+| TechDraw's results taken on the GUI thread (`QFutureWatcher`) | 6.1 s | 0.25 s in 4 |
+
+What it says:
+
+- The wait is not this box's alone. Where a question to the file system
+  costs nothing and the clipboard answers, the model is still not there
+  for 8 to 11 s after the open, and whole at 12 s. The two drains' own
+  work (5.9 s and 2.7 s) is most of that, and it costs the same on both
+  boxes. Its trace agrees: of the dispatches over 10 ms at depth 0 in that
+  window, 8.2 s are 52 queued calls to the application (the slices), 1.4 s
+  ten timers it could not name (the trace there is before `e7e7454dba`'s
+  names).
+- The clipboard's cost is my sessions'. A box that is granted the
+  clipboard answers in 0.1 to 0.2 ms, so `24f7c8a2bd` is worth about 1 ms
+  a pass there against 0.8 s here. Whether the reporter's own FreeCAD on
+  this laptop is refused the clipboard is still not known; that commit's
+  message calling an older 765 ms pass "never the document" was an
+  inference and is no stronger for this.
+- The file system's cost is this box's. TechDraw's results on the GUI
+  thread are 0.25 s there against 6.1 s here, so `ee9583a247` should give
+  little there. Not measured: that box has not got the commit.
+- The open itself, 7.3 to 9.4 s for the smaller file, is not broken down.
+- Not tried there: copying and pasting objects (it would write that
+  user's clipboard, and nobody on that box asked for it).
+
+The script's count failed there: `geometryPixels` and the average colour
+read -1 in every frame, because the view is multisampled (4) and the
+engine does not read such a depth back (`depthSampleable = samples <= 1`,
+`BGFXViewLifecycle.cpp`). The pictures were good, and x16win counted the
+pixels that differ from the empty frame instead; the times above are from
+that count. The script does that count itself now, for every run
+(`9e1cf7d9f9`): on this box it is 0 where the geometry count stands at
+4839, and jumps and stands at the same frames.
+
+**The same build the morning after, 2026-10-11 08:00.** Four plain loads
+to try the script's new line, six hours after the last ones, nothing
+built between: the open returned after 18.3, 14.5, 15.1 and 14.1 s, and
+the model was first there 13.1, 10.1, 10.1 and 9.4 s after that. So the
+day's first load is dearer by 4 to 5 s at the open and 3 s after it, and
+the three that follow are 0.5 to 1.5 s over last night's 13.3 to 13.6 s.
+I take the first for the box's files not yet read that day; I did not
+look into it. It is the same size as what `ee9583a247` was measured to
+gain, so a single load says nothing about that commit either way: its
+before and after were three loads each within fifteen minutes.
+
+**Pushed** 2026-10-11 08:10 on the reporter's word, `a810955c86` to
+`9e1cf7d9f9`; x16win asked to measure the same load on it.
+
+**x16win on `9e1cf7d9f9`, and on this very file (2026-10-11).** The
+reporter had the file fetched to that box: 6,119,171 bytes, the same
+SHA-256 as ours. Same conditions as its first runs (cdb, a configuration
+of its own, Direct3D 11 with 4 samples, so the times are from the frames
+compared). Three plain loads, a frame every 2 s:
+
+| | this box, `ee9583a247` | x16win, `9e1cf7d9f9` |
+|---|---|---|
+| the open returns after | 13.3 to 13.6 s (six loads that night), 14.1 to 15.1 s (three the morning after) | 8.3, 8.1, 8.1 s |
+| the model first on the screen, after that | 9.4 to 10.7 s | 10.0, 10.1 s (a third of it in the frame), and between 10.1 and 12.7 s in the third load |
+| all of it but the last change | 10.1 to 10.7 s | 12.3 to 12.7 s |
+| whole | 12 to 13 s | by 14.0 s |
+| from the open to the model | 23 to 25 s | 18 s, whole by 22 s |
+
+So with the same file the wait AFTER the open is the same ten seconds on
+both boxes; what this box pays more is at the open, 5 to 7 s. And
+`ee9583a247` buys nothing there, as expected: its older file, one load at
+the new head, opened in 7.1 s with the model first at 10.6 s and whole at
+12.0 s, inside the spread of its three loads at `a810955c86` (9.4, 7.3,
+7.3 s; 8.1 to 10.9 s; 12.0 s).
+
+Its fourth load, the log and the trace on (10 ms):
+
+- the view provider drain: 320 view providers in 56 slices, 7.36 s, the
+  longest 0.64 s -- update 3.50 s, restore 1.90 s, finish 1.88 s (the
+  sweep 2.61 s of the finishing), attach 0.22 s, instantiate 0.14 s;
+- Part's visual drain: 275 visuals in 11 slices, 2.74 s, the longest
+  1.20 s; the pre-mesh 166 shapes in 0.77 s;
+- "slow turn" by name: view provider drain 56 turns, 8.05 s (the longest
+  918 ms = work 637 + yielded 281, budget 500); visual drain 11 turns,
+  3.12 s; none of "deferred files" or "level landing";
+- the dispatches to a `QTimer` without a name, which its first report
+  could not place: four have a turn of the view provider drain run inside
+  them (two of those with a paint of the 3D view: the script's own sample,
+  whose frame dump lets the loop run), so their time is the drain's and
+  must not be added to it; the rest are paints, and 496 ms and 321 ms in
+  the visual drain;
+- ONE dispatch to `activityTimer`, 692 ms, the first after the drain's
+  last line. On that box a pass over every command's `isActive()` is
+  7 ms, so it is not that. This is the "one pass of about 1 s after the
+  drain" left unnamed here, and it is every box's.
+
+`tests/gui/close-during-view-provider-drain.py` there, under cdb: 7 of 7,
+no exception.
+
+**The pass after the drain is the tree's items, and icons that are not
+there -- FIXED `d38ac38d7b`, `0049176c22`.** In the profile of the night
+before, all 14 samples under `MainWindow::_updateActions` have the same
+stack: a command's `isActive()` (`linkConvertible`) asks the tree for its
+selection, `TreeWidget::getSelection` runs the tree's pending update, and
+that makes the new document's items. 11 of the 14 are in
+`PartDesignGui::ViewProviderAddSub::getIcon` -> `iconFromTheme` ->
+`loadPixmap`: the function builds an icon name for the feature's kind
+(`PartDesign_AdditivePad`, `PartDesign_SubtractivePocket`), and for the
+commonest features there is no such artwork -- only the other
+combinations have their own. The icon factory keeps what it finds and
+nothing of what it does not, so every ask tried the name as a path, in
+the icon paths, and under every image format Qt reads, and did all of it
+twice (`iconFromTheme` repeated a failed lookup to have it reported, for
+a caller that wants no report too). The tree asks when it makes an item
+and on every status update of it.
+
+The names not found are remembered, and the silent repeat is gone.
+Measured together, on this file (161 PartDesign objects of 686):
+
+| | before | after |
+|---|---|---|
+| `ViewObject.Icon` of every object, three turns | 0.59, 1.03, 0.91 s -- 5 to 9 ms each for 49 pads, 37 pockets, 12 fillets, 7 holes, 5 patterns | 0.010, 0.005, 0.005 s |
+| null icons | 0 | 0 |
+| the dispatch to `activityTimer` after the drain, two traced loads | 1032, 869 ms | 347, 106 ms |
+| the open returns after, three plain loads | 14.1 to 15.1 s that morning | 13.2 to 13.4 s |
+| the model first on the screen, after that | 9.4 to 10.1 s | 9.0 to 9.3 s |
+
+The open's 13.2 to 13.4 s is last night's figure again and not this
+change's (nothing of it runs before the open returns); the half second
+to a second off the model's arrival is. Four GUI tests on it (close
+during the drain, PartDesign's GUI defects and port fixes, tooltip
+icons): 80 checks, none failed. Not pushed. What a status update of a
+tree item cost while working on such a document -- the same search, per
+item -- I did not measure apart from the first row.
+
+**Why the icon is missing (the reporter, 2026-10-11: "Why the icon is
+missing. Chase that.").** It was never there, and was not meant to be.
+`ViewProviderAddSub::getIcon` is from `d0e314ea97` (2021-07-29,
+"PartDesign: rename 'Common' operation to 'Intersecting', add more
+icons"): the plain icon is the feature's natural kind -- `PartDesign_Pad`
+an additive pad, `PartDesign_Pocket` a subtractive pocket -- and artwork
+was drawn only for the other kinds (`SubtractivePad`, `IntersectingPad`,
+`AdditiveHole`, `AdditiveGroove`, `SubtractiveRevolution`, ...). The
+function asks for the kind's own name every time and takes the plain
+icon when the answer is nothing. `2a66c17138` (2021-09-14, "fix feature
+pocket icon") renamed `SubtractivePocket.svg` to `AdditivePocket.svg`
+for that reason: the drawing was the unusual pocket's. Nothing was
+deleted since (no deletion of such a file in the history), the resource
+list and the folder agree (one stray, `Part_Slice.svg`, on disk and not
+listed; PartDesign names it only as a command), and no "Cannot find icon" is in any
+of today's logs. So no feature shows a wrong icon; what was wrong is
+what the nothing cost:
+
+- every view provider under `ViewProviderAddSub` asks, also those that
+  have no kinds at all -- the dress-ups (`PartDesign_AdditiveFillet`),
+  the patterns, the Boolean;
+- in 2021 the ask was one `pixmap(name, true)`; `iconFromTheme` took its
+  place in `5403a4484c` (2022), and since `ea6f80d7ac` (2026-08-04, our
+  own artwork before Qt's theme) that function searches ours first and
+  again last, so the miss was searched for twice;
+- the factory has never kept a miss.
+
+It is the only caller in the tree that looks a name up silently and
+expects not to find it.
+
+**TechDraw's share, with a control that is one (2026-10-11; the reporter:
+"Then the techdraw one").** Starting on the pages I read the archive of
+the copy "without TechDraw" that the 22 s came from: it has no
+`GuiDocument.xml`. `mk-notd.py` ran in `FreeCADCmd`, and a console save
+writes no view provider records at all, so that copy differed from the
+file in two things at once. What the records are in the original: 357 of
+677 name a colour file (`DiffuseColor`, `LineColorArray`,
+`PointColorArray`, `MappedColors`, `OverrideColorList`, `MaterialList`)
+-- every Part, PartDesign, Link and Sketch object and not one of the 229
+of TechDraw -- and a record that names a file cannot be parked for the
+drain (`Gui::Document::RestoreDocFile`): its view provider is made, its
+shape read and its update run inside the open. Also wrong in what I
+wrote: five of the ten pages are saved visible (`Page001`, `002`, `003`,
+`008`, `009`), so five page views are opened by the load; the 3D view is
+halved by it, which the frames' size had been saying all along.
+
+The control, made in the GUI this time (`e47g.py`): a copy opened, and
+when its load was over saved as it is (`ctl\scanner-resaved.FCStd`, 686
+objects, 686 records, the same 357 naming a file), then its TechDraw
+objects removed and saved again (`ctl\scanner-resaved-notd.FCStd`, 457
+objects and records). Plain loads, two rounds of the three:
+
+| | the original | re-saved | re-saved, no TechDraw |
+|---|---|---|---|
+| the open returns after | 14.8, 13.7 s | 13.8, 12.4 s | 8.4, 7.3 s |
+| the model first on the screen, after that | 10.4, 9.1 s | 9.1, 8.1 s (part of it), all but the last change a second later | by 4.1, 4.0 s -- there at the first frame compared |
+| from the open to the model | 23 to 25 s | 20.5 to 23 s | 11.3 to 12.5 s at most |
+
+So the TechDraw objects are about 5 s of the open and 5 s or more of the
+wait after it: ten of this file's 21 to 25 seconds. Next to the
+withdrawn figure -- 22 of 33, of which `ee9583a247` has since taken ten
+-- that is the same size, and it stood on a comparison that could not
+show it. The re-save by itself is worth a second or two (the pages'
+projections are stored by this build and not made again).
+
+**A crash found on the way: a page removed outside a transaction.** The
+first run of the control script removed the 229 objects with
+`doc.removeObject` and no transaction, and the session died: access
+violation, executing an address in a string table, in
+`TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under
+`App::Document::removeObject` (`q2\crash-drawpage`). The function takes
+the page's list of views and removes them one by one; a part view
+removes its dimensions and balloons as it goes, those stand in the
+page's list too, and outside a transaction a removed object is deleted
+at once -- so the loop came to a freed pointer and asked it
+`isAttachedToDocument()`. Inside a transaction the object lives on,
+which is why deleting a page by hand does not do this; a script does,
+and so would a delete with undo off. Changed to go by name
+(`DrawPage`, and `DrawViewCollection` which has the same loop), with a
+test (`TDTest/DrawPageRemoveTest.py`): FIXED `39b548048b` (the notes
+session's entry 67). The test passes on the old code as well -- in the
+console the freed pointer threw instead of crashing, and the page said
+"DP::unsetupObject - Page - error while deleting children" -- so what
+shows the change is that line, in the test's log before and not after;
+and the crash's own case, the 229 objects removed in the GUI with no
+transaction: 686 -> 457 objects, no exception, no warning. TechDraw's
+Python tests 9 of 9, three of its GUI tests 34 checks. Not tried: a
+delete by hand with undo switched off. Not pushed.
+
+**What TechDraw's ten seconds are: not the pages on the screen, and
+mostly not drawing.** Two things measured before touching its design.
+
+First, the same file with every page hidden (`e47h.py`,
+`ctl\scanner-resaved-hidden.FCStd`: the five visible pages' `Visibility`
+set false, saved), two rounds:
+
+| | five pages shown | all pages hidden | no TechDraw |
+|---|---|---|---|
+| the open returns after | 13.9, 12.4 s | 12.2, 12.5 s | 7.2, 7.2 s |
+| the model first on the screen, after that | 7.3, 8.1 s | 7.2, 7.1 s | by 4.0, 4.1 s (not at 3.2, 3.0 s) |
+| the model whole | 9.0, 9.1 s | 9.0, 9.0 s | 5.0 s |
+
+A page being on the screen costs half a second at most. The ten seconds
+are paid by a document that shows no page at all.
+
+Second, a profile that can be read. The sampler lost most of its stacks
+last night and again this morning, and the hook was only part of why:
+`dbghelp` walks a frame by its module's unwind tables and knows the
+modules that were loaded when it was last told, so a session sampled from
+its start broke in every module loaded after -- nearly all of FreeCAD's.
+`stacksample.py` now refreshes the module list as it goes, and where a
+walk does stop in a hook's frame takes it up again from the raw stack (a
+value pointing into code tried as a return address, kept if the walk from
+there ends at the thread's start): 943 of 1074 samples whole. Two loads
+sampled, pages hidden and no TechDraw (`loadprof5`, `loadprof6`;
+`profdiff.py` sets the two side by side, `tdprof.py` lists TechDraw's
+frames). The sampled load is about 1.3 times slower than a plain one; in
+sampled seconds, what the TechDraw objects add:
+
+| | s | what |
+|---|---|---|
+| `App::PropertyFileIncluded::RestoreDocFile` | 4.8 | the included files -- ten templates, ten images, the hatch patterns: each written to a staging file, read back to be hashed, then renamed into the store (2.95 s) or, the store having that content already, deleted (1.33 s). All of it calls to the file system. None in the file without TechDraw: nothing else there includes a file |
+| the pages' items made and drawn in the view provider drain | 2.6 | `QGIViewDimension::updateDim` 0.8, section faces and their SVG hatch 0.55, `QGSPage::fixOrphans` adding dimensions 0.53, the views' frames and captions 0.56, preferences read at each (`Preferences::getPreferenceGroup` 0.49) -- for pages no view shows |
+| `serveDeferredFiles` | 1.4 | entries served in the drain, 1.3 s of it closing the stream each was opened with: the archive opened and closed once per entry |
+| `DrawProjGroupItem::onDocumentRestored` | 1.0 | projection group items projecting again at the restore (`makeGeometryForShape`, `findCentroid`) where their projection was stored |
+| `PropertyGeomFormatList::Restore` | 0.5 | a `LineFormat` made by default opens a file (the line standard) |
+
+So a page doing its drawing when first shown is worth the second row,
+about two plain seconds, on any box. The first row is the largest and is
+this laptop's: the same calls cost nearly nothing where no watcher sits
+on the file system (x16win opens this file in 8.2 s, this box in 13).
+It is also not TechDraw's: any document with included files pays it.
+`FileBlobManager::readBlobEntry` already holds an entry in memory for
+that reason ("on Windows 61 ms of the 85 an entry took, all of it
+filesystem round trips"); the per-property entry of a schema 4 save --
+what this build writes by default -- still went through the staging file.
+
+**The included files restored out of memory (`5c45b43220`).**
+`PropertyFileIncluded::RestoreDocFile` reads the entry into memory and
+hands it to `adoptBytes()`, as `readBlobEntry()` does; over 16 MB it is
+staged as before. Content the store holds costs no file operation, new
+content its one write. A test in `FileBlobs.py`
+(`testSchemaFourRestoreKeepsOneFileAndStagesNone`: six properties with
+the same content, one with another, a schema 4 save, reopened -- two
+stored files, nothing left staged). It passes on the old code too: the
+old code was slow, not wrong.
+
+Sampled again on the hidden-pages control (`loadprof7`, against
+`loadprof5`): `RestoreDocFile` 4.83 -> 0.00 s, `adoptFile` 4.63 -> 0,
+`wsopen_s` 3.87 -> 0.64, the open 16.2 -> 13.3 sampled seconds. Plain
+loads, seconds, the open and then the model's first pixels after it (a
+picture each second, so the second figure is a bracket):
+
+| | open, before | open, now | model after, before | now |
+|---|---|---|---|---|
+| the original | 13.7, 14.8 | 11.7, 12.5, 12.9, 15.7 | 9.1, 10.4 | 8-9, 9-10, 9-10, 11-12 |
+| re-saved, pages hidden | 12.2, 12.5 | 10.2, 10.6, 11.5 | 7.1, 7.2 | 7-8, 7-8, 7-8 |
+| re-saved, no TechDraw | 7.2, 7.2 | 7.2, 7.9, 8.0 | about 4 | 3-4, 3-4, 3-5 |
+
+So one to two seconds off the open of a document with included files,
+on this laptop; the control without any moved by 0.7 s on its own, and
+one load of the original took 15.7 s, so the gain on the original is
+not separable from the scatter by these four runs -- the profile is the
+evidence that the work is gone. The wait after the open is untouched,
+as it should be. Less than the 4.8 sampled seconds promised: the
+sampler charges a file-system call more than 1.3 times.
+
+App's C++ tests 32 of 32, the Python suite 3414 with the two known
+thickness failures.
+
+Two traps of this run. (1) `ctestr.cmd` gave a fresh app data directory
+and no `FCX_PYODIDE`, so three sandbox tests failed with "expression
+sandbox image is not available" -- the launcher's, not the change's;
+`fullctest.cmd` names the runtime and `ctestr.cmd` does now. (2) The
+chain hung twice in `run.cmd`'s `chcp 65001`, for two and a half hours
+the first time: `chcp.com` had exited, its process object stayed, and
+`cmd` waited on it for ever; the run's `run.log` stays held, so the same
+tag cannot be used again. `gui.cmd` now goes through `q2\runq.cmd`, a
+copy of `run.cmd` without the `chcp` (which only a compile needs).
+
+**A page makes its items when something needs them (`48b9aaa0ba`).**
+The reporter's "then the techdraw one". The load made the Qt items of
+every page: a view asking to be painted added its item
+(`ViewProviderDrawingView::singleParentPaint` -> `QGSPage::addView`) and
+each change of a page's `Views` made the missing ones
+(`QGSPage::fixOrphans`), page shown or not, and every property a view
+provider then restored drew the item again. `QGSPage::populate()` now
+makes them all at once and until it has run those two make nothing and
+`ViewProviderTemplate` attaches no template. It runs when the page is
+shown (`showMDIViewPage` -> `addChildrenToPage`, as before), printed
+(`PagePrinter::renderPage`) or exported (`saveSvg`); `PageServe` and
+`renderPageVg` already made the items a page lacked, by the same
+`addChildrenToPage`. `TechDrawGui.getSceneForPage()` hands out the scene
+as it is and does not populate it.
+
+Plain loads, three each, the model's first pixels after the open (a
+picture each second):
+
+| | before | now |
+|---|---|---|
+| the original (five of ten pages shown) | 8-9, 9-10, 9-10, 11-12 | 6-7, 6-7, 6-7 (whole at 7-8) |
+| re-saved, every page hidden | 7-8, 7-8, 7-8 | 2-3, 3-4, 3-4 |
+| re-saved, no TechDraw | 3-4, 3-4, 3-5 | 3-4, 3-4, 3-4 |
+
+The open itself is as it was (12.3, 12.9, 14.7 / 10.1, 11.4, 11.5 /
+8.0, 8.0, 8.1 s). So with no page shown TechDraw costs the wait after
+the open nothing any more, and the profile's "2.6 sampled seconds" for
+this part was short of it: four plain seconds. What is left of
+TechDraw's share is in the open (about 3 s here: the projection group
+items projecting again, the default `LineFormat`'s file, the module's
+own import) and, where pages are shown at the load, their items.
+
+The first showing of a page after the load (`q2\e47i.py`, each of the
+ten pages of the hidden control shown in turn): `show()` 0.06 to 0.23 s
+(33 views: 0.23 s), 1.3 s for all ten -- against the four seconds the
+load spent on them, because the load drew each item again at every
+property restored. The pictures of the pages are byte for byte those of
+the same pages in the control that shows them at the load (four of the
+five; the fifth was pictured in a narrower cell). In the hidden control
+no showing touched an object (224 touched before and after all ten); in
+the control with five shown the count went from 223 to 224 at the first
+showing -- which object, and whether the showing or a late projection
+did it, NOT looked into.
+
+Tests: `tests/gui/techdraw-page-items-when-needed.py`, new, 10 of 10 (a
+page saved hidden has no item after the load, none after a dimension is
+added to it, and shown for the first time draws both). Its first run
+failed one check for the test's own reason: the two dimensions measured
+the same edge length and were drawn one over the other. NOT run against
+the old code. The 14 TechDraw GUI tests 231 checks of 231; TechDraw's
+Python tests 9 of 9. NOT tried: printing a page that was never shown
+(`TechDraw_PrintAll`, which is what the `populate()` in `renderPage` is
+for) -- it needs a print dialog; a hand check for the reporter.
+
+**The dimension formatter's expressions made once (`4172eb2018`).**
+`DimensionFormatter` made five or more `QRegularExpression` objects at
+each call, each compiled at its first match (`loadprof7`: 2.2 sampled
+seconds under `formatValue`, `pcre2-16.dll` 1.4 s innermost in the view
+provider drain). Static now. It matters where pages are on the screen
+at the load, their dimensions drawn again at every property restored:
+the original, three loads, the model 5-6, 5-6, 5-6 s after the open
+(6-7 to 7-8 before), the open 11.2, 11.4, 11.5 s. The first showing of
+a page is as it was (0.07 to 0.22 s): one pass over a page's dimensions
+was never the cost. TechDraw's Python tests 9 of 9, the dimension click
+test 12 of 12, the page items test 10 of 10.
+
+Where entry 47 stands on this laptop, the original file, from the open
+asked to the model on the screen: 31 to 35 s on 2026-10-10 (the open
+18 s, the model 13 to 17 s after it), 23 to 25 s this morning, 17 to
+18 s now (11.2 to 11.5 s the open, 5 to 6 s after it).
 
 **The close.** The script closes its document when its last frame is
 taken.
@@ -5358,3 +5797,961 @@ for this drain.
 Pictures and logs: `..\dl\handson\2026-10-10\q2\g-r-e47b-*-dev`
 (PartDesignPort), `g-s-e47b-*-dev` (LinkVibe; the crash is
 `g-s-e47b-close15-3-dev`, its stack in `FreeCAD.log`).
+
+## The sync of 2026-10-12 -- merged `ffb143c047`, both suites, STAGED 14:04 at `4474fcb17e`; not pushed
+
+Asked for by the reporter (the words are in the head of this file). Tools,
+chains and results: `..\dl\handson\2026-10-12\s1`.
+
+**The merge.** origin/LinkVibe at `3016b5c0db` into the local line, which
+was 24 commits ahead of `9e1cf7d9f9`. No conflict. Two files were changed
+on both sides, `src/App/PropertyFile.cpp` and `src/Mod/Test/FileBlobs.py`;
+both merged by themselves and were read afterwards. OCCT: `LinkVibe-801`
+fast-forwarded to `5755a62295` (its `tests/fork` to `e3b90cb`), rebuilt
+(33 steps). Coin `LinkVibe` and pivy `rt-0.6.10` had nothing new. The
+three feedstock repositories are not on this box. FreeCAD rebuilt, 2055
+steps, no failed step.
+
+**The suites, on the merge.** ctest 951 of 951 in 721 s. Python: 3644
+tests, 2 failures, 52 skipped, 6 expected failures. The two thickness
+failures carried since the OCCT merge of 2026-10-04 are not among them.
+
+**The two failures: `FileBlobs`' copy tests, and the tests were wrong.**
+`BlobExportImportCases.testCopySharedContentStaysShared` and
+`testCopyCarriesOnlyTheExportedSubset` count the files of the target
+document's store straight after a copy and found 0 where they expect 1.
+Two changes met: an included file is restored out of memory since
+`5c45b43220` (mine, 2026-10-11), and the remote's store keeps content
+adopted that way in its pack, where it has no file of its own until
+something asks for its path (`docs/FileBlobsManager.md` sec 15.7,
+`ArchiveBlobStore` on by default). The content is there and is shared as
+the tests mean it to be; only the place they looked in is empty. The
+tests ask for the path first and then count, and count the blob entries
+of the saved target as well, which is what a user ends up with:
+`69b103d1de`. `FreeCADCmd -t FileBlobs` on the rebuilt tree: 95 tests, 2
+skipped, OK. The full Python suite was NOT run a second time.
+
+**GUI tests on the dev tree, by hand** (they are not in ctest on this
+box), no FAIL: `close-during-view-provider-drain.py` 7,
+`msaa-reaches-the-view.py` 12, `omni-search-recent-items.py` 18,
+`overlay-preset-follows-the-theme.py` 45,
+`pattern-count-over-the-limit.py` 16,
+`render-type-default-and-legacy.py` 13,
+`techdraw-dimension-click-no-recompute.py` 12,
+`techdraw-page-backend-switch.py` 11,
+`techdraw-page-before-its-view-providers.py` 12,
+`techdraw-page-items-when-needed.py` 10, `techdraw-section-line-click.py`
+10, `tooltip-icon-and-images.py` 6, `view-cell-menu.py` 15.
+
+**A test for the export of a page nothing has shown (`4474fcb17e`).**
+Left untried on 2026-10-11 (entry 47, "a page makes its items when
+something needs them"). `tests/gui/techdraw-never-shown-page-exports.py`:
+a page saved hidden and reopened has an empty scene; exported to a PDF and
+to an SVG before anything shows it, the PDF is the size of the one made
+while it was on the screen (6117 bytes both), the SVG has the same 8
+paths and the same text, the dimension's `30`. 10 of 10, on the dev tree
+and on the staged copy. Its first run failed one claim of mine that was
+wrong: that the export opens no view. Python's `exportPageAsPdf` and
+`exportPageAsSvg` bring the page's view up themselves and always did. So
+this does NOT cover `TechDraw_PrintAll`, which prints every page from its
+scene with no view and has no way in from Python; by reading,
+`PagePrinter::renderPage` populates the scene first. It stays a hand
+check for the reporter. Not done: a Python entry for
+`PagePrinter::printAllPdf`, which would make it a test.
+
+**The reporter's addons in every GUI test** (the reporter, during the
+build: "duplicate the third party workbench in the staged envrionment, so
+that when you testing, those object got loaded correctly"). A test runs on
+an application data directory of its own, with no `Mod`; the reporter's
+has `fasteners` 0.5.51 and `OpticsWorkbench` 1.2.2. Every load of
+`scanner.FCStd` measured for entry 47 so far therefore logged 111
+`ModuleNotFoundError` (`FastenersCmd`, `OpticalObject`, `Ray`) and showed
+a document the reporter never sees. Now: `..\tools\sync-test-addons.cmd`
+mirrors the two into `..\dl\test-addons\Mod` (603 files; the reporter's
+own directory is only read), and the launcher links it into each test's
+home, unless told not to. With it: 0 such errors, 630 commands where
+there were 612. The two full suites still run without; they open none of
+the reporter's files.
+
+**`scanner.FCStd` after the merge, the box quiet** (the open, then the
+model's first pixels after it, a picture each second; whole a second or
+two later):
+
+| | the open | the model, s after the open |
+|---|---|---|
+| 2026-10-11, `4172eb2018`, no addons | 11.2, 11.4, 11.5 | 5-6, 5-6, 5-6 |
+| today, dev tree, no addons | 13.4, 10.5, 10.3 | 6-7, 6-7, 6-7 |
+| today, dev tree, with the addons | 14.8, 12.6 | 8-9, 6-7 |
+| today, the staged copy, with the addons | 11.3, 11.5 | 7-8, 6-7 |
+
+So the merge put about a second on the wait after the open, like for
+like; NOT looked into (what the remote added to a restore is the first
+suspect, not shown). With the addons the model is whole at 10 to 12 s
+after the open, as without them. One earlier load with the addons, the
+first of the day's on the dev tree, had the model at 10.3 s; not seen
+again in the four after it.
+
+**The stage.** `install-user.ps1` at 14:04:58, `INSTALL-USER: OK`; what
+it has is in the head of this file. Seven GUI tests and two loads on the
+staged copy after it, no FAIL, every one with the addons and no
+`ModuleNotFoundError`.
+
+**What went wrong on the way.** The rebuild at the two test commits sat
+from 11:41 to 13:50 without starting: its chain hung in the `chcp` of
+`.conda\run.cmd`'s first line, the build log empty, and the wait I had
+set watched for the end marker alone. Found when the reporter asked for
+the status. It was the first chain to run the new progress helper
+(`..\tools\build-progress.ps1`, the reporter: "next time, when you build,
+show completion percentage in cmd") in its own console; whether that is
+the cause is not shown -- the same hang has happened without it. The
+helper has a window of its own now, and a wait gives up when no log has
+grown for 15 minutes.
+
+## The afternoon of 2026-10-12: entries 68 and 70 to 76, the archive's handles, the Dark borders -- STAGED 17:52 at `22ece75a08`, PUSHED 17:56 (`11070a22ff`)
+
+The reporter tested the stage of 14:04 and reported while this ran; the
+note-taking session passed the entries and the answers on. Evidence:
+`..\dl\handson\2026-10-12\s1` (`g-e-*`, `g-f-*` the tests on the two
+builds, `g-o-*` the two tests that were run against the build before).
+
+| # | State | In one line |
+|---|---|---|
+| 47 | the handles FIXED `1c53d547d2`, staged | `ZipFileReader::openEntry` opened the archive anew for each of the 1652 entries, 1.2 ms an open on this box. A pool of handles: by the load's own log, old and new turn about, reading the archive goes from about 3.8 s (832 property files 2.0 to 2.2 s, 209 shapes 0.5 s, the deferred shapes' opens 1.1 to 1.3 s) to 0.2 s. The second the morning's merge put on the wait is NOT attributed: the transaction log is ruled out (five loads each way, open 14.2 s off and 13.9 s on, the two drains the same to a tenth) |
+| 68 | FIXED `22ece75a08`, staged | reproduced by its test on the build before: with the left dock in use the panel went to x 324, under the tree at 320 to 581, and came back. `OverlayManager::occupied()` skipped a dock that is not see-through at the moment, which the one with the pointer or the focus is |
+| 70 | DONE `22ece75a08`, staged | the check box "... and the panels that are open" and its setting are gone (my choice, left to me); "Apply to live views" beside "Task panels in their views" stores that setting and moves the open panels; `Control.applyPlaceToViews()` |
+| 71 | FIXED `93b08fd472`, staged | reproduced on the build before: Return in the author field closed the dialog. The dialog keeps Return from an edit box; the box stores at once only with "Apply preferences at once" on, a tenth of a second after the key |
+| 72 | DONE `22ece75a08`, staged | defaults 1.0 and 1.5. `selection-on-top-hidden-edges.py` then fails two claims of the highlight colour on the visible edges ("the colour's lean 135 to 205", "90 to 145"): NOT looked into, most likely the thinner line the default now gives |
+| 73 | DONE `22ece75a08`, staged; its test NOT passing | the title buttons' glyphs are drawn light under a dark theme, and an overlay sheet states its own colour (`qproperty-iconColor`); the "in its view" button shows only while the Tasks tab shows a dialog a view owns. The first rule (the button's own palette colour) gave a dim grey and was replaced; the test's first measure took a button's edge for its ground, and the measure written since (the button pictured with its icon and without) has not run |
+| 74 | DONE `7970f5b7d6`, staged | Std_DrawStyle the plain list, its button the active style's icon; Std_DisplayStyle (anti-aliasing, shading, lights; the split cube) right of it in the tool bar, after it in the View menu and in the view's context menu |
+| 75 | DONE `22ece75a08`, staged | `View/CornerCoordSystem` off by default (a profile that stores it keeps it); the cube's axes drawn last, no depth test, both drawing paths: 59, 43 and 72 pixels of red, green and blue over the cube in isometric, none with the axes off |
+| 76 | DONE `22ece75a08`, staged | the docks leave no room (`DockOverlayCheckNaviCube` gone); `View/DockOverlayMoveNaviCube`, on by default: the cube slides along its edge clear of docks and of a task panel over its view, and back |
+| Dark borders | DONE `d25fa8539c`, staged | the reporter, 17:20: "check dark theme border color for various widget's. looks like many are style dark color which is invisible". `GeneralBorderColor` was black on grounds all but black; it takes the check boxes' grey. Pictures: `g-darkborders-staged` |
+| 69 | IN WORK, not in the tree | the two settings, the tree's and the property view's row backgrounds and the task panel's opacity are written in a second working copy (`D:\works\sw\fcad-wt`), not built. Point 1, the reporter 17:07: "overlay has a setting, 'transparent mode' to control this behavior, but right now it seems borken, fix it" -- not looked into yet; a probe is written (`s1\e69probe.py`) |
+
+**What went wrong on the way.** The first build of the batch (17:04)
+died at start-up: entry 73's sync asked for the task view from inside the
+overlay manager's constructor, which the dock window manager calls from
+its own, and each made the other again without end. Found with cdb,
+fixed, rebuilt. The second build's title glyphs were a dim grey; a third
+build. One test of mine left the preferences with `reject()` after
+changing a setting: "Revert changes?" sat on the reporter's screen from
+about 17:21 to 17:28 (the reporter: "beware of the preference dialog popup
+asking revert of not when you exit"); the tests use `close()` now. The
+Python suite on the handle pool's build was stopped by hand at about 84
+percent after 40 minutes, no failure up to there.
+
+**Tests on the staged build (`22ece75a08`), by hand, the box in use:**
+no FAIL in `task-panel-clear-of-docks.py` 21,
+`preferences-enter-in-an-edit-box.py` 12, `task-panel-place.py` 59,
+`navicube-axes-over-the-cube.py` 8, `navicube-clear-of-panels.py` 16,
+`task-panel-kept-any-view.py` 15, `task-panel-combo.py` 66,
+`task-panel-side.py` 61. With failures, none looked into:
+`display-style-menu.py` 37 of 38 (a press on the light handle selected the
+box; it passed one run earlier), `task-panel-in-view.py` 89 of 90 (a click
+back into the other view does not make it the active one),
+`task-panel-overlay.py` 42 of 47 (two of the five want libX11; the others
+ask what is under a point of the screen), `task-panel-owner.py` did not
+start here (`wsclient` is not on the launcher's path),
+`overlay-title-buttons-theme.py` as said. ctest on the handle pool's
+build: 954 of 955, the one a wrong check in the new test. ctest and the
+Python suite on the staged build were started at 17:5x and had not ended
+when this was written (`s1\ctest8.log`, `s1\pytest8.log`).
+
+**Pushed** 17:56 on the reporter's word ("push. continue in next
+session"): origin/LinkVibe at `11070a22ff`, a merge with `a98ad48342`, the
+one commit the remote had gained (App: a temporary document comes
+emptied). That merge is NOT built or tested here; the stage is the commit
+before it.
+
+## The evening of 2026-10-12: what was pushed did not compile elsewhere; entries 69, 73 and 78; entry 47's second named -- all LOCAL, not pushed, not staged
+
+The reporter: "continus as planned", then at about 18:30 "The box is quiet
+now. Resume speed test as you see fit". Evidence:
+`..\dl\handson\2026-10-12\s1` (`g-h-*` the tests on the build of the stage,
+`g-i-*` and `g-j-*` on the builds of this evening, `g-rs-*` and `g-rd-*`
+the restart probe on the staged copy and on the new build, `g-q-*` and
+`prof47-*` the quiet loads and their profiles).
+
+**What was pushed at 17:56 compiles on this box alone -- FIXED
+`23e57d647c`, not pushed.** `22ece75a08` was regenerated with cog from the
+second working copy, and cog writes the path it is run with where a
+generated file names its source: `src/Gui/PreferencePages/DlgSettingsUI.cpp`
+had `#include "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"`,
+and the comments of `DlgSettingsUI.h`, `OverlayParams.h` and `ViewParams.h`
+the same path. Found when a regeneration from `src/Gui` turned those lines
+into a diff. The reporter was told at once and asked for the word to push.
+Cog is run from `src/Gui` of the MAIN tree, never from a second copy.
+
+**ctest on the build of the stage (`22ece75a08`): 954 of 955.** The one:
+`testOmniSearch::test_everySettingIsDocumentedBriefly`, "over 400
+characters: Gui::ViewParams::TaskPanelInView (495)" -- entry 70's text.
+Said in six lines, `97e1ee791d`. The Python suite on that build was
+stopped by hand at 18:33, 1504 tests in and no failure up to there, to
+give the loads below a quiet box; it has no result.
+
+| # | State | In one line |
+|---|---|---|
+| 73 | FIXED `2d945c8268`; its test 44 of 44 | the rewritten measure ran on the build of the stage: 43 of 44, and the Dark glyphs a dim grey. The icon files are black at half opacity, so `#d0d0d0` ended 54 to 71 of 255 over a dark title bar where the same glyph is 59 to 120 darker than a light one. Drawn in white: 66 to 104 |
+| 72 | its side effect was the test's, `846d40819a` | `selection-on-top-hidden-edges.py`: nothing is drawn wrong. Of an edge on the outline the half over the face beside it is behind that face and dimmed like a hidden edge, in both renderers; of a line two pixels wide that leaves one pixel, which the render engine smooths over two. The claim was a precondition that kept the hidden edges' claims from running under the render engine at all: 18 of 18 now, the hidden edges 0.44 to 0.48 of a visible one there, 0.50 to 0.51 under Coin |
+| 78 | DONE `b70dab6401`, its test 18 of 18 | the tree panel's own search box is gone; Ctrl+F and "Search..." in a tree view open the omni search with `/ ` typed (`OmniSearchBox::open(text, tree)`), and the box scrolls and marks in the tree view it was opened from, as it already did in the main one. Ctrl+F in the property view types what leads to the thing shown and a dot: `/ Box.` and `/ Box.ViewObject.` (Data and View tab) for one object, `/ .` and `/ .ViewObject.` for several, `/ Doc#.` and `/ Doc#.ActiveView.` with nothing selected. Found by its test: a lone `.` was looked up in the tree, named the first selected object, and with the tree's "sync view" on SELECTED it in place of them all; a query with a leading dot is not looked up in the tree any more |
+
+**Entry 47 on a quiet box, 18:34 to 18:43** (the dev build of
+`22ece75a08`, no addons, `g-q-*`): the open 11.8, 11.5, 8.3, 8.8 and
+10.1 s; the model's first pixels 6 to 7 s after it in three loads of five,
+7 to 8.4 and 8 to 9 in the other two. 2026-10-11 had 5 to 6. So the second
+the morning's merge put on the wait is there on a quiet box too.
+
+It is named, from the load's own log and two sampled profiles
+(`prof47-qp1-samples.txt`, `prof47-qp2-samples.txt`; `profnew.py` lists
+what is in them and in no profile of before, `profwho.py` who calls a
+function and what is inside it):
+
+- **The looks of an older file, taken over when it is read: about 0.4 s.**
+  `PartGui::ViewProviderPartExt::finishAppearance`, 0.56 and 0.66 sampled
+  seconds, all of it new. For a file that has no `ElementAppearance` yet
+  every Part view provider takes its object's looks over, and then asks for
+  everything that depends on its object and for the dependency list of all
+  of that (`App::Document::getDependencyList`, 0.30 and 0.38 s of it) to
+  make again what was made from it before -- once an object. The view
+  providers' "finish" by the load's log: 1.58 s on 2026-10-10, 2.09 to
+  2.12 s now. The control, 20:14 to 20:19 on the build of this evening,
+  turn about with the original (`g-j-orig-*`, `g-j-resaved-*`):
+  `ctl\scanner-resaved.FCStd`, the same document saved by this build, has
+  "finish" at 1.69 and 1.70 s. NOT changed: one pass when the view
+  providers are all done would do what the pass per object does, and needs
+  a signal for that moment, which the looks' design (the other branch's)
+  does not have. The reporter's to decide.
+- **Included files written to disk when first asked for by a path: 0.4 to
+  1.6 sampled seconds.** `App::FileBlobManager::materialize` under
+  `PropertyFileIncluded::getValue`: a section view's hatch pattern at the
+  open (`DrawViewSection::makeLineSets`), a page's template and image when
+  the page is shown. A handful of files, each a file creation, which is
+  what is dear on this box (`ofstream` open 1.3 of 1.58 s in one profile,
+  `setPermissions` 0.31 of 0.44 s in the other); the two profiles differ
+  by a second in it. NOT changed.
+
+What the control showed beside it, NOT explained: the resaved file opens
+in 7.0 to 7.1 s where the original takes 10.1 to 10.6 s, its view
+providers' "update" is 0.005 s where the original's is 2.6 s, and its
+visuals take 1.0 s where the original's take 2.4 to 2.7 s -- and the model
+is on the screen no sooner after the open, 7 to 9 s. From the open asked
+to the model: about 15 s resaved, about 18 s original.
+
+| # | State | In one line |
+|---|---|---|
+| 69 | DONE `bbe8525de7`, its test 58 of 58; the reporter's point 1 NOT settled | the settings `View/DockOverlayThemeItemColor` (on) and `View/DockOverlayAlpha` (150), the tree's and the property view's item backing, the task panel's ground, the Qt properties. And a defect, reproduced on the staged copy under Dark (`g-rs-a1`, `g-rs-b1`): of the docks put into overlays together all but the tree view stay SOLID -- property view, selection view, transaction log -- until the pointer has been in the overlay and out, or the eye is pressed. The look was given to the widgets an overlay held when its mode was set; `OverlayTabWidget::addWidget` has it set again. On the new build none is solid (`g-rd-*`). The transparent mode itself I could not see broken: with the eye on a dock with the focus keeps its look, first session and after a restart, Dark and Light. Whether the defect is what "transparent mode ... seems borken" means is not known |
+
+**Tests on the builds of this evening** (the merged head `11070a22ff`
+with everything above; the last build 20:30). ctest: 955 of 955 (13
+minutes, `ctest11.log`). GUI tests, no FAIL:
+`overlay-see-through.py` 58, `omni-search-from-tree-and-property-view.py`
+18, `overlay-title-buttons-theme.py` 44, `selection-on-top-hidden-edges.py`
+18, `task-panel-clear-of-docks.py` 21, `navicube-clear-of-panels.py` 16,
+`overlay-preset-follows-the-theme.py` 45, `task-panel-place.py` 59,
+`task-panel-combo.py` 66, `display-style-menu.py` 38 (it had failed one
+claim on the stage, another the run before: not seen again),
+`task-panel-owner.py` 34 (it had not started: the launcher's guard hands
+the script to `exec`, which puts no directory on the path; the guard
+does now), `omni-search-recent-items.py` 18, `omni-search-highlighted-row.py`
+20, `omni-search-slash-word.py` 10, and the three of `51380b613c`:
+`omni-search-first-bring-up.py` 8, `task-panel-in-view.py` 89,
+`task-panel-overlay.py` 43.
+
+**Entry 69, what `bbe8525de7` has, by the reporter's points.**
+- Point 1, "when the panel is moved to overlay mode change its background
+  to transparent": the defect of the row above, fixed. Nothing else was
+  changed for it; the transparent mode (the eye) is as it was.
+- Point 2, the tree view: an item of an OVERLAID tree is backed with the 3D
+  view's background colour -- `View/BackgroundColor2` where
+  `View/Gradient` or `View/RadialGradient` is on, `View/BackgroundColor`
+  otherwise -- at the opacity of `View/DockOverlayAlpha`. Read when the
+  item is painted, so it follows a theme and a change of the 3D view's
+  colour by itself. A docked tree is as it was.
+- Point 3, the property view, overlaid: what has no row is clear; an
+  ordinary row is backed as a tree item is; an alternate row keeps the
+  overlay sheet's `alternate-background-color`, at `View/DockOverlayAlpha`.
+- Point 4, the task panel, in an overlaid Tasks tab and in its view: the
+  theme's `DialogBackgroundColor` at `View/DockOverlayAlpha`.
+- The settings, both on the preference page "Display / UI" among the
+  overlay ones and in the omni search: `View/DockOverlayThemeItemColor`
+  ("Item background follows the theme", on) -- off, the tree view's own
+  `TreeView/ItemBackground` is used as it is stored, its own alpha and
+  all, and nothing while that is empty; `View/DockOverlayAlpha` ("Overlay
+  background opacity", 150, 0 to 255).
+- The Qt properties: `overlayItemBackground` (a brush) and `overlayAlpha`
+  (an integer, -1 for "the setting") on `Gui--TreeWidget` and on
+  `Gui--PropertyEditor--PropertyEditor`; a sheet's
+  `qproperty-overlayItemBackground` is used with the alpha it states. The
+  task panel's ground a sheet overrides by stating
+  `QSint--ActionGroup QFrame[class="content"] { background-color: ... }`.
+
+**Entry 47, part (a): the question for the reporter.** Reading a file that
+was last saved before the looks were moved to the object costs about
+0.4 s here, once a load, until the file is saved again. Three ways:
+1. Leave it. The cost goes with the first save by the new version, and
+   that save takes three seconds off the open by itself (measured above,
+   not explained).
+2. One pass when all view providers are restored, in place of the pass
+   each one makes for everything that depends on its object. It needs a
+   signal for "the view providers of this document are all done", which
+   the progressive restore does not give yet; the looks' code is the
+   other branch's, so it is that branch's change or agreed with it.
+3. Keep the pass per object and make it cheaper: ask for the dependency
+   list of the dependents already taken over only, and skip it where
+   there are none. About half of it, by my estimate, not measured.
+Mine: 1, and 2 if files of before the change stay in use for long.
+
+**Entry 79 (the queue's number): a crash at the load of the resaved file
+-- OPEN.** One of three loads of `ctl\scanner-resaved.FCStd` on the build
+of 20:01 died at 20:17:00 (`g-j-resaved-2-dev`): access violation in
+`CoinRT4!SoAction::traverse`, reading 0. The stack is in the test home's
+`crash.log`, the locals in its `crash.dmp`:
+
+    Gui::Document::runDeferredRestoreSlice     Document.cpp 3812, phase one,
+      Base::SequencerLauncher::next              between two objects
+      Gui::SequencerBar::setValue -> pumpEvents
+        ... paint of the main window, of the 3D view ...
+        Gui::View3DInventorViewer::renderScene
+        SoRenderManagerP::setClippingPlanes      a bounding box of the scene
+          Gui::SoFCUnifiedSelection::getBoundingBox
+          SoGroup::getBoundingBox                lastchildindex 160, i 159
+          SoChildList::traverse                  node 0
+          SoAction::traverse(0)
+
+The walk counted 161 children of the scene root when it began and found
+none at index 159: the list was shortened under it (`SbPList::operator[]`
+past the end gives 0). Coin checks for that in a debug build only. What
+takes roots out of the scene root INSIDE the walk is not on the stack;
+the places that do (`View3DInventorViewer::removeViewProvider`, from
+`Gui::Document::handleChildren3D`) are called from the document's
+signals and the restore's slices, none from a traversal that I could
+find by reading. Not seen again in seven loads under cdb.
+
+**Entry 79, the cause.** A detector was built in for it
+(`SoFCUnifiedSelection::boundingBoxWalks()`, asked by the viewer where it
+adds and removes a view provider's root; it writes who did into the crash
+log the first three times). It named the culprit on the first load
+(`g-m-resaved-1-dev\home\crash-2026_10_12-22_03_16_968.log`):
+
+    SoRenderManagerP::setClippingPlanes          the repaint's bounding box
+      Gui::SoFCUnifiedSelection::getBoundingBox  the walk of the scene root
+        PartGui::SoFCCoordinate3::getBoundingBox a visual built on demand
+          PartDesignGui::ViewProvider::updateVisual        ViewProvider.cpp 683
+            PropertyPartShape::getShape -> ensureRestored -> serveFromBlob
+              PropertyPartShape::setValue -> hasSetValue   the serve announces
+                App::DocumentObject::onChanged -> signalChangedObject
+                  Gui::Document::slotChangedObject
+                    Gui::Document::handleChildren3D
+                      View3DInventorViewer::removeViewProvider
+
+The visual of a PartDesign feature is built on demand inside the walk; it
+reads `SuppressedShape`, which is still parked from the load; serving a
+parked shape sets the property, the set is announced, and the document
+answers an announced change by regrouping the view provider's children --
+taking the roots of claimed ones out of the scene root under the walk.
+
+Why the original `scanner.FCStd` never showed it and the same document
+saved again by this build did -- READ in the two files, the mechanism
+between them my reading of the code, not shown by a run: both carry
+`SuppressedShape` for their 126 PartDesign features. The original, and the
+copy a build of 2026-10-11 saved, name a file for it
+(`file="Pad.SuppressedShape.brp"`); the copy this build saved names a blob
+(`hash="d483..."`), the form the morning's merge brought. A shape that
+names a file is served by the restore's own slices before a view provider
+exists; one that names a blob stays parked until something asks for it,
+and the first to ask can be the visual built inside a walk. So what is
+exposed is a file SAVED BY A BUILD THAT HAS THE MERGE -- the stages of
+2026-10-12 14:04 and 17:52 and this evening's builds --, at any later
+load, one load in a few here. I first wrote "a file saved before the
+property was stored"; that was wrong, the original has the property. The
+feature's own `Shape` is served the same way from the same place, so the
+hole is not that one property's.
+
+Fixed in `Gui::Document::handleChildren3D`: asked for while a scene root is
+walking its children, the regrouping is put on a list and done by a queued
+call once the walk is over. The detector stays.
+
+Entry 79 FIXED `9b9a479164`. On the build with it (22:29), twelve loads of
+`ctl\scanner-resaved.FCStd` and two of the original (`g-p-resaved-*`,
+`g-p-orig-*`): no crash log -- the detector's, which had fired on the
+first load of the build before, or a crash's -- and the picture the same
+to the pixel, 98659 of 464380. The open 6.9 to 8.2 s resaved, 10.1 and
+10.2 s original.
+
+| # | State | In one line |
+|---|---|---|
+| 80 | DONE `53a231cc72`, its test 13 of 13 | "in file recovery prompt dialog, add check box in first column to toggle select all", in the header, half ticked with some rows ticked, the rows with a warning ticked by it too. The box is the header's icon, a check indicator as the rows have it; a press on it is taken before the header sees it and sorts nothing; a recovered row has no box and is not counted. The test leaves three documents of a dead session in the cache directory before the start-up's check runs |
+| 81 (the queue's number) | FIXED `b3e1247e6d`; the gain for the reporter NOT measured | saving over an existing file, `BackupPolicy::applyTimeStamp` lists the file's directory and asked `isFile()` of EVERY entry before looking at its name: one question to the file system an entry, at every save. The Python suite, saving into a temporary directory of mine that had grown to 3400 entries, took half a minute a save (a sample of its thread: `Document::save -> applyTimeStamp -> isFile`). The name is looked at first now. For the reporter it is what saving into a folder of many files costs on this box |
+
+**The Python suite has no result from before 22:40.** Three starts: on
+the build of the stage, stopped by me at 18:33 for the quiet loads (1504
+tests, no failure); on the code of `51380b613c`, stopped at 21:49 after an
+hour (1647 tests, no failure) -- entry 81; and with ctest on the build of
+22:03, stopped at once because that build lacked entry 79's fix.
+
+**Entry 47: why the resaved file opens three seconds sooner and shows the
+model no sooner -- by the load's own log** (`g-j-orig-2`, `g-j-resaved-3`).
+The original: "677 objects, 1651 files, xml 3.08 s, files 3.38 s, total
+6.46 s", then 2.8 s between the restore and the projection groups, the
+open 10.1 s. The resaved: "686 objects, 263 files, xml 2.71 s, files
+0.13 s, total 2.84 s", then 3.2 s, the open 7.1 s. The three seconds are
+the FILES: a document in the merge's form does not read its 1400 shape
+and property files while it opens; they are blobs, served when the view
+providers are restored or when first asked for. The work has moved behind
+the open, which is why the model is on the screen no sooner after it. And
+the view providers' record is 464 properties where it was 10665 (the
+looks are the object's), 0.01 s where it was 0.4 s.
+
+The 3 s both files spend between the restore and the end of the open is
+TechDraw answering "the document is restored" (two sampled profiles, 1.3
+and 2.0 sampled s): every section view read its hatch pattern file, which
+is first written out where the document keeps it as a blob (0.56 and
+1.12 s); every projection group item of a file that stored no projection
+projects again (0.4, 0.5 s; a file saved by this version stores it); a
+page brings its views up to date (0.16, 0.26 s).
+
+**Both suites on `b3e1247e6d`** (the build of 22:29, a temporary directory
+that started empty): ctest 955 of 955 (`ctest13.log`); Python "Ran 3645
+tests in 804.529s, OK (skipped=52, expected failures=6)" (`pytest13.log`)
+-- thirteen minutes, where the run before it had done 1647 tests in an
+hour (entry 81). GUI tests on that build, no FAIL:
+`recovery-dialog-check-all.py` 13, `overlay-see-through.py` 58,
+`omni-search-from-tree-and-property-view.py` 18,
+`overlay-title-buttons-theme.py` 44, `task-panel-in-view.py` 89,
+`task-panel-place.py` 59, `task-panel-combo.py` 66,
+`navicube-clear-of-panels.py` 16, `selection-on-top-hidden-edges.py` 18,
+`close-during-view-provider-drain.py` 7.
+
+Nothing of this evening is pushed or staged: origin/LinkVibe is
+`5de7d97293`, the copy under test `22ece75a08` of 17:52. The copy under
+test has entry 79's crash and what was pushed has the include of the top
+of this section.
+
+## The night of 2026-10-12 to 13: entry 47 further, and entry 53 again -- all LOCAL, not pushed, not staged
+
+The reporter, about 22:45: "Once done. Continue fix the issues in the
+notes". The queue's inbox was empty and its entries done or with the
+reporter but for entry 47, so that one. Evidence as above, `s1`: `g-q-*`,
+`g-r-*` the first build of these changes, `g-t-*`, `g-u-*` the second,
+`prof48-rp*` four sampled loads.
+
+| # | State | In one line |
+|---|---|---|
+| 47 | `3e64f3e9d6` | the material library asked the file system for the canonical form of its own directory once a material while it was read (`Library::getDirectoryPath`), and the first Part feature of a session reads the libraries: the restore's "addObject" 1.82 s -> 1.52 to 1.60 s, its total 6.46 s -> 6.17 to 6.25 s, three loads of the original each way |
+| 47 | `00fa69e485`, NO gain shown | a section view made its hatch lines at every restore, drawn or not: it opened its pattern file, which a document in the blob form first writes out. Made when first drawn now; a hatch object's own copy of the same at a restore is gone. The time between the restore and the end of the open is what it was, 2.76 to 2.93 s against 2.84 s |
+| 53, again | FIXED `5d63c7152d` | `techdraw-page-before-its-view-providers.py` passed on the build of 2026-10-12 11:21 and fails two claims on the copy staged at 17:52 and since: under Qt's drawing the view of a page opened and not recomputed has no outline until something repaints it. The repaint the view provider asks for "a turn later" can come from the progress bar's own pump, inside the slice, with the document still restoring. Asked again until it is not. 12 of 12. Which change of the afternoon moved the timing was not looked for |
+
+**What that gap is, and a correction to what I wrote above.** I put the
+3 s between the restore and the end of the open down to TechDraw's answer
+to "the document is restored", from the samples. By the clock the change
+to the section views took nothing off it. One of the sampled profiles
+shows why: 1.6 sampled seconds of the open are the recompute question
+("Some document(s) require recomputation for migration purpose") waiting
+for my script to answer it, with the restore's slices running inside its
+event loop. So that gap, in every load I have measured since 2026-10-10,
+holds a wait that is the measuring script's.
+
+**A second thing the measuring did.** Two of three loads of the resaved
+file on the first build showed the model at 13 s where it had come at 8 to
+9 s. The slices' own times were the same in all three. Sampled: a picture
+of the view is a file creation (`BGFXView::writeDumpImage`, 3 of 15
+sampled seconds in `CreateFileW` in the slowest load) and the slices run
+nested inside the picture's event pump; one picture a second held the
+load back. With the picture schedule of the twelve loads of 22:3x (every
+2 s), six loads of the resaved file on the second build: the open 6.7 to
+6.9 s (6.9 to 8.2 s in the twelve), the model whole at 8.0 s in all six
+(in nine of the twelve). The original, three loads: the open 9.9 to
+10.2 s, the model in the picture asked for at 8 s after it, which was
+taken at 8.3 to 8.9 s.
+
+TechDraw's GUI tests on the second build, no FAIL:
+`techdraw-page-before-its-view-providers.py` 12,
+`techdraw-page-backend-hatch.py` 39, `techdraw-never-shown-page-exports.py`
+10, `techdraw-page-items-when-needed.py` 10,
+`techdraw-dimension-click-no-recompute.py` 12,
+`techdraw-page-backend-single-draw.py` 17; on the first,
+`techdraw-page-backend-switch.py` 11 and `techdraw-section-line-click.py`
+10, and the Material and TechDraw ctests 49 of 49.
+
+**Both suites on `5d63c7152d`** (the build of 2026-10-13 00:0x, a
+temporary directory that started empty): ctest 955 of 955 (`ctest16.log`);
+Python "Ran 3645 tests in 804.008s, OK (skipped=52, expected failures=6)"
+(`pytest16.log`).
+
+**Entry 66 (a), the preferences' first opening: the material change takes
+nothing off it.** A fresh profile, no document, the dialog opened twice
+(`e66b.py`, `g-v-pref-*`): the first opening 2.20 s on the staged copy,
+2.23 and 1.99 s on this build; the second 0.19 to 0.20 s on both. So the
+1.8 s that entry put down to the Material module reading its library is
+not the question this change stopped asking.
+
+**The copy staged at 17:52 dies when the preferences are opened -- the
+include of the top of the evening's section, on this box.** Found by the
+timing above: one of its two runs on the staged copy ended with
+`0xC0000374`, heap corruption. Then eight sessions on each build, turn
+about, each opening the preferences twice (`g-w-pref-*`): the staged copy
+ended with `0xC0000374` in SIX of eight (seven of ten with the two
+before) -- while the dialog was being built, after its first close, or at
+the session's end with the script's work done; this build in none of
+ten.
+
+Read in the sources, not shown under a debugger: `22ece75a08` has
+`#include "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"`
+in `DlgSettingsUI.cpp`, and from 16:41 to 18:48 that file in the second
+working copy was entry 69's, with three members more
+(`DockOverlayThemeItemColor`, `labelDockOverlayAlpha`,
+`DockOverlayAlpha`); the staged `FreeCADGui.dll` was built at 17:35.
+`resource.cpp`, which makes the page (`PrefPageProducer<DlgSettingsUI>`),
+includes the main tree's header. So the page is allocated by the size of
+one class and constructed by the code of another, three pointers longer:
+24 bytes written past the end of the block. `23e57d647c` is the fix; it is
+in every build of mine since 20:00 and NOT in the copy under test.
+
+For the reporter: on the staged copy, opening Edit > Preferences can end
+the program, at once or some time after. A restage ends it; so far I have
+no word for one.
+
+**Why the path got there, and the generator fixed, `49dca0ebbc`.**
+`src/Tools/params_utils.py` took its module's directory by splitting the
+file name at "src" + the system's separator; a module reached through a
+path written with forward slashes on Windows was not split, and the whole
+path went into what it generated. It makes the path absolute and normal
+first now, and refuses a module that is not below a `src/` directory.
+Checked: `OverlayParams`, `ViewParams.h` and `DlgSettingsUI` regenerated
+with absolute paths in forward slashes come out unchanged. The function
+is at the END of that file on purpose: every generated file carries that
+file's line numbers in its comments, and a line added above the
+generating functions rewrites all 47 at their next regeneration.
+
+State at 2026-10-13 01:00: local head `49dca0ebbc`, both suites green on
+`5d63c7152d` (only this log and the generator after it), nothing pushed,
+nothing staged. The copy under test has the queue's entries 82, 79 and
+53's regression; a restage and the push wait for the reporter's word.
+
+## 2026-10-13, the day: the merges, entries 84 to 97 -- PUSHED `724e03c074` and STAGED 13:56; the fixes since LOCAL
+
+The reporter, 06:31: "Fine. Push and restage" (pushed 06:33 at
+`4b52e58423`, staged 06:52); 06:43: "After staging, Merge with remote
+branch SolidBody, build only no test. Onece build pass merge with remote
+branch Transaction. After build pass merge with OcctFix, build and test.";
+09:13: "also sync occt"; 09:20: "after freecad build, stage first, then
+proceed with test". Then a morning of hands-on on the staged copy, the
+entries below, and at 13:53 "re-stage now", "push also".
+
+**The merges.** `origin/SolidBody` (`714003dc33`), then
+`origin/Transaction` (`5a5b5ff906`); `origin/OcctFix` was inside
+Transaction already ("Already up to date"). The OCCT fork synced and
+rebuilt (`a81d25f148`, `tools\build-occt.cmd`, 23 steps). The merged head
+failed two ctests, both one cause: a text of `MergeConflictSide` grown to
+391 characters by the two sides; `47ed30316a`. A FreeCAD configure after
+the OCCT sync hung 11 minutes in "Performing Test _flag_found" once; killed
+and started again it ran through.
+
+**Entries 84 to 97,** each with a GUI test in `tests/gui` unless said.
+Evidence: `..\dl\handson\2026-10-12\s1` (`g-*` the GUI runs, `c-*` the
+console runs, `b-*` the builds), the debugger's log of entry 97 in
+`..\dl\handson\2026-10-13\entry97`.
+
+| # | State | In one line |
+|---|---|---|
+| 69 | answered | why the staged copy did not show the see-through panels with the reporter's configuration: the item backing works under any overlay sheet, but `Dark_overlay.qss` -- what the Dark theme named until entry 30 -- leaves a panel's ground solid, and a theme writes its keys only when it is applied; applying the theme again took the new sheet (the reporter, 10:04) |
+| 84 | `a3acdd0947`, pushed | the tree's tip came up for an item the pointer had left: the timer asked `itemAt(QCursor::pos())`, which still answers beside the view or under a widget laid over it. The item waited for is remembered and the tip shown only with the pointer still on it, in the viewport, nothing over it; a document's row starts its own delay |
+| 85 | `1f01bf3f30`, pushed | a task panel's ground in the colour of the theme being left: the overlay's sheet was made when the keys it is chosen by were written, before the theme's own colours were in force. Made again in the main window's style change, after them |
+| 86 | `8d2e4379c8` | the wheel over the clear part of an overlaid panel did nothing: in `OverlayManager`'s filter `case QEvent::Wheel` fell through into the context menu's case and read `reason()` of a wheel event (2022 code). The reporter's "task panel, no click or wheel through" I could not show: with the panel's eye on, a move and a click pass on the staged copy; their saved configuration has the right overlay's eye off, where nothing passes by design -- asked |
+| 87 | `9b2a76c2dd`, `a4beaec622` | a darker rim round a tree item under Dark: the outline effect outlined the item's own backing; it outlines only what is more opaque than the backing now. The hover: Qt's own bar over the whole row left a trail under the effect; the tree draws its own, over the item as its background is, in the theme's hover colour at the overlay's opacity. "Item background follows the theme" stands in the Tree view group of the preferences, the colour beside it greyed while it is on |
+| 88 | `9b2a76c2dd` | a transparent overlay's scroll bars: no ground, the handle at the overlay's opacity (rules in `OverlayStyleSheet::fromSettings()`) |
+| 89, 90 | `d3e1604e2e` | `Std_DisplayStyle` with a small triangle in its icon, `Std_SelUp`'s arrow over its icon: `setupMenuToolButton()` ran before the action was added to the bar, so the button it styled was not the one shown. After `addAction` at all twelve places |
+| 91 | first form staged, redone | see below |
+| 92 | `518c2026d0` | `Pocket023.Profile` read "Sketch047.2" after the migration recompute: `SketchObject::getElementName` answered a wire's or a face's mapped name with the old-style name (code of 2018 to 2024); it goes to `Part2DObject` for those now. `PartDesignTests/TestSketchWireProfile.py` |
+| 93, 94, 95 | `7f3ef57348` | the omni search opened from the tree types "/ " and the selection's path; Tab on a property leaves the typing in the box; a name typed in small letters is corrected to the object found wherever the property list comes up. A limit told to the reporter: a further step typed small (`/ Crate.placement.`) brings no list, which is the expression completer's |
+| 96 | `cbb01f5de3`; the menu, see below | the close glyph of an overlay is a cross in a square frame (`overlay/close.svg`) |
+| 97 | `3549b0a19f` | File > Revert crashed with a TechDraw page's view open: tearing the document down closes the view, which writes `Visibility` and its group's `HiddenChildren`, and that opened a transaction naming objects then deleted. No transaction is opened while a document clears itself (`DocumentP::clearing`) |
+
+**A wart in the local history.** In `9b2a76c2dd`, `a4beaec622`,
+`d3e1604e2e`, `3549b0a19f` and `518c2026d0` the file `src/Gui/Tree.cpp` is
+mis-assembled and does not compile; `7f3ef57348` and everything after has
+it as built and tested. Cause: the entries were committed one by one out
+of one working tree with a zero-context partial patch
+(`git apply --unidiff-zero`), which put the inserted hunks in the wrong
+places. And a `git reset --soft` of mine at 14:37 took a queue commit of
+the note-taking session into `7f3ef57348`. Neither is put right: rewriting
+the branch needs the reporter's word, and they had them pushed as they
+are (15:58, origin `ed2cb69298`). The lessons: whole files with
+`git commit -o`, never a zero-context patch; no reset below my own newest
+commit while two sessions commit.
+
+**Both suites** on the code staged at 13:56 (the build of 13:07): ctest
+957 of 957 (`ctest27.log`); Python "Ran 3746 tests in 954.199s, OK
+(skipped=52, expected failures=6)" (`pytest27.log`). On the build of 14:10
+(the tip, with the wheel fix and the final hover bar): ctest 957 of 957
+(`ctest28.log`), the Python suite not run again; the new GUI tests and
+their neighbours pass, `overlay-see-through.py` 60 of 62 on the real
+screen (two claims about focus, lost while the reporter worked at it) and
+57 of 59 offscreen (two that need a window larger than the offscreen
+screen's 800 by 800) -- no claim fails in both.
+
+## 2026-10-13, the afternoon: entries 83, 86, 91, 96 and 98 to 113 -- three builds; staged once at 16:55 from the first
+
+The reporter worked hands-on at the staged copy all afternoon and sent
+entries as they came, through the note-taking session; answers to points
+arrived the same way, often minutes apart. Three builds: "r5" (16:48,
+staged 16:55 on "push and then stage"), "r6" (17:44), "r7" (18:20). Five
+parallel jobs, not eight: beside the reporter's two FreeCAD sessions eight
+ran the compiler out of heap. Evidence: `..\dl\handson\2026-10-12\s1`,
+`g-v1-*` (r5), `g-w1-*`, `g-w2-*` (r6), `g-x1-*`, `g-x2-*` (r7), the
+probes `e86t*.py`, `e99*.py`, `e101.py`, `e103.py`, `e105.py`, `e107b.py`,
+`e108*.py`, `e109*.py`, `e110.py`; offscreen (`QT_QPA_PLATFORM=offscreen`)
+wherever a test moves the pointer, on the real screen where it needs
+pictures, the colour scheme or the custom title bar -- those do not move
+the pointer.
+
+| # | State on r7 | In one line |
+|---|---|---|
+| 83 | works, 19 of 19 | a view cell's menu button and its two corner handles slide to just past what `OverlayManager::covered()` reports, each by itself, only if the clear part of the cell is at least two of it wide and high, never one over another (`ViewAreaCell::placeChrome`) |
+| 86 | works; the eye-off case NOT shown by me | the reporter's rule, "pass through as long as fully transparent": `OverlayTabWidget::testAlpha` no longer answers "outside" for a panel with its transparent mode off and the pointer in it, and the filter no longer asks the mode. Shown on the real screen without the pointer: with the eye off and the pointer outside, the Tasks overlay paints nothing over 89% of itself, as with the eye on. What it paints with the pointer IN it and the eye off needs the reporter's pointer |
+| 91 | works, 12 of 12 | the clear button of a reference row: as high as the row's caption button, its glyph cut to what is drawn of it and scaled to that height, the width from the glyph's proportions (23 by 20 beside a caption 20 high, with the reporter's configuration) |
+| 96 | works on the real screen, 19 of 19 | the four "Toggle left/right/top/bottom" menu icons are light under a dark theme: set again when the colour scheme itself changes -- a theme sets its sheet first, its scheme after |
+| 98 | works; one side claim open | in a see-through overlay the Python console and the report view paint the tree's item ground behind each line's text, at paint time (the document is not touched); the outline effect leaves its shadow out wherever the source is at least as opaque as such a ground, which takes the outline off a tree item that has its background too (a change to entry 87) |
+| 99 | a, b work; c DOES NOT | dashes `0xFFF0`; `View/DatumScale` 200 by default; the pick through a face in front is written twice over (a pick-through mark on the datum's dashed part; its paths kept by the render cache manager and asked after the on-top pass) and still ends on the face, offscreen and on the real screen. Not committed. To be instrumented |
+| 100 | in | the Dark theme's border `#4B4B4B` (`GeneralBorderColor`); check boxes and radio buttons keep the lighter grey |
+| 101 | works | View menu: "Split view" (`Std_SplitView`) after "Standard views", "Title, menu and status bars" (`Std_WindowBars`) at the end; group commands that hold the old commands by name |
+| 102 | in | `DockOverlayAlpha` 180 by default |
+| 103 | works, 7 of 7 with the reporter's configuration | each overlay's own title bar has the "show this task panel in its view" button, shown while the Tasks are in that overlay and show a panel that has a view. My first cause was wrong: the button had only ever been on a DOCKED Tasks dock's title bar (docs/TaskPanelPerView.md 14.6 says so) |
+| 104 | the ghost: works, 5 of 5; the show-through: NOT found | what a view hides of its own accord was kept in the depth and normal prepass with the draws whose selection is drawn in their place, and the prepass's cache key did not hold what a view hides. Not scored against a build without the change: there is none left |
+| 105 | works, 13 binder tests | a `Relative` binder with a shape and no context takes the shortest path to itself that leaves the placements it keeps of its supports (`Cache_<support>`) as they are; with none it takes no context and is in error with the reporter's text. No geometry search (the reporter). On scanner.FCStd: `Binder008` in that error after the migration recompute, `Sketch043` and `Pad033` as the file has them |
+| 106 | works, 12 of 12 | a property group's rank is an ending `#<rank>` of its name, not shown; the property view orders by rank, then name, one group a shown name at the largest rank; the object's looks are in "Appearances#1" |
+| 107 | works | since Python 3.12 the dictionary our catch macro hands Python with an exception is the exception instance's argument, and `PP_Fetch_Error_Text` looked for it as the value: every error of ours that crossed Python came back as the dictionary's text. Found again in `PyTools.c`; a cancelled recompute after a link replacement keeps the replacement and says "Recompute cancelled" |
+| 108 | reproduced; a change written, not built | a feature in edit with its body hidden shows no base feature: what a view shows of its own accord is captured only if the capture gets to it, and a hidden body's switch stops it. `edits_108.py`: the containers of a shown occurrence count as shown too, for the capture |
+| 109 | half in | a failed dress-up has no `DressUpShape`; the faces of the shape it keeps still trace back to the missing edges (shown on `Fillet011`). `TaskDressUpParameters::getItemElement` falls back to that shape; the list filled anew drops the mapped name of a missing reference, the second half (`edits_109b.py`) |
+| 110 | works, 7 of 7 with the reporter's configuration | (A) the menu reveal button was 50 or 88 wide by whether its own size or the sheet's `min-width: 80px` had the last word; (B) a plain `QMainWindow::menuBar()` -- any call from Python -- put an empty menu bar into the slot that holds the title bar's spacer, and the guard of 2026-08-29 put back a spacer Qt had hidden and scheduled for deletion. Today's (B) in the reporter's session was set off by a look script of the note-taking session; the reporter had seen it once before |
+| 112 | works, 6 of 6 | a TechDraw page view's ground follows the 3D view's colour or gradient behind `Colors/BackgroundAs3DView`, on by default; Qt paints that ground whichever way the page is drawn, so both ways have it. No check box in the preference page yet |
+| 111, 113 | not started | 113 waits for the reporter's two points |
+
+**Both suites on r7** (a temporary directory that started empty): ctest
+957 of 957 (`ctest31.log`); Python "Ran 3752 tests in 909.870s, FAILED
+(failures=3, skipped=52, expected failures=6)" (`pytest31.log`) -- the
+three are `parttests.ElementAppearanceTest` cases that expected the
+object's group to be named "Appearances"; corrected to "Appearances#1",
+that module again on the same build: 35 OK (`pytest32.log`). The GUI
+tests of r7: every one named above, and of the neighbours on the real
+screen `overlay-see-through.py` 62 of 62 (the clean run owed since the
+morning), `overlay-title-buttons-theme.py` 44, `navicube-clear-of-panels.py`
+16, `task-panel-in-view.py` 89, `task-panel-overlay.py` 43,
+`selection-on-top-hidden-edges.py` 18; offscreen
+`overlay-item-outline-and-hover.py` 34, `overlay-pass-through.py` 14 and 15
+with the reporter's configuration, `toolbar-menu-buttons.py` 11,
+`omni-search-object-typing.py` 16, `tree-tooltip-only-over-its-item.py` 14,
+`task-panel-clear-of-docks.py` 21, `revert-document.py` 12,
+`preferences-tree-item-background.py` 11,
+`overlay-preset-follows-the-theme.py` 45, `theme-switch-contrast.py` 39.
+`overlay-text-ground.py` fails two side claims offscreen (the panel is 28
+pixels wide there) and its console claim with the reporter's
+configuration (50 wide); the report view's ground is there, 67882 pixels
+on 159 rows in the item ground's colour, 16 of an outline's.
+
+**Committed 19:1x, local, twelve commits on `156f45903f`**, each with whole
+files: `6df0613233` (107), `8ef425ceae` (86, 98, 102, 103: they meet in the
+overlay's sources), `648cf34f83` (96 in the menu, 101), `d00ab5ddcf` (83),
+`51075fbda3` (91), `650a6dee96` (106), `00dec0a56d` (105), `038b8b1b1a`
+(104's ghost), `6d1dc1f9f1` (110), `062f56a133` (100), `2a317f254e` (112),
+`6e7232e7c2` (99's default scale). NOT committed: entry 99's dashes and
+its pick (one file holds both, and the pick does not work), entry 109's
+half.
+
+**What the afternoon's mistakes were, so that they are not made again.**
+The copy staged at 16:55 carried three fixes that did not work (96 not
+shown either way, 99 c, 103), found by the first tests half an hour later:
+the reporter asked for the stage before the tests, and got told. The
+offscreen platform is not the screen: it has no colour scheme (96's test
+failed there and passed on the screen), shows an eye-off overlay solid
+where the screen shows it clear, and has no render engine; a claim is
+judged on the platform that can show it. A `git checkout --` of a header
+to take an edit back gives the header a new time and costs a full build.
+
+## 2026-10-13, the evening: entries 108, 111, 99 (c) again, 109 -- PUSHED twice, 19:24 and 20:13; not staged
+
+**Pushed.** 19:24 on the reporter's "push and continue": origin
+`LinkVibe` = `b7480369e7`, the afternoon's twelve commits. 20:13 on their
+"after finish current issue. push then continue": origin = `5c0b30ce1b`,
+entry 108. The staged copy is still the one of 16:55.
+
+**Entry 108, a feature in edit with its body hidden shows no base -- FIXED
+`5c0b30ce1b`.** A view's own "shown" marked the display-mode switch of the
+occurrence's leaf alone (`ViewVisibility::countShown` ->
+`SoFCSwitch::setPerViewShown`); the scene capture, shared by every view,
+stops at a switch that is off, so nothing inside a body hidden in the
+document was captured, whatever a view's table said. The containers a
+shown occurrence is reached through count as shown for the capture now
+(`Resolution::steps`); what else they hold is captured tagged and stays
+hidden in every view with no entry for it.
+
+What is then drawn with the body hidden is the base feature ON TOP,
+see-through, its far edges with it -- not the solid base the edit shows
+with the body shown. That is not the fix's doing: `PartDesignGui`'s
+`Monitor` (the old fork's rule, `Utils.cpp` about line 900) puts the base
+in the view's on-top group whenever a container on the path is hidden,
+`Mod/Part/EditOnTop` or not, and the on-top display draws with
+`TransparencyOnTop`. Found the long way round: the see-through box was
+first taken for a fault of the fix, then shown to be the pad by its
+colour, then to stay see-through after the body was shown again, which
+is the on-top group's doing and no capture's. My reading of the
+reporter's "show on top is supposed to be shown regardless of normal
+visibility" is that this display is what is asked; "just make it the
+same regardless of body visible or not" I read as "the base feature in
+both cases". If the same PICTURE was meant, the rule in `Monitor` is
+what to change -- a point for the reporter.
+
+`tests/gui/edit-shows-base-with-body-hidden.py`, real screen, pictures
+by the renderer: 5 of 5 on build r8. Its model is left as the commands
+leave a body -- the tip shown, the pad and the sketches hidden: the
+first version left the pad shown in the document, which no hand-made
+model has. Its third claim is not "the same picture" but "wherever the
+edit with the body shown drew, the edit with the body hidden draws
+too", read against the view's ground row by row, because a task panel
+changes the view's size and a picture in an edit does not lie on one out
+of it (0.95 of it; the rest is see-through grey within eight levels of
+the ground). Not scored against a build without the fix: none was kept.
+Twelve per-view neighbours on r8, none failing: `edit-hide` 25,
+`edit-per-view` 25, `pd-edit-shown-per-view` 13, `pd-preview-per-view`
+38, `per-view-visibility` 45, `per-view-clip-cache` 15,
+`element-color-hide` 624, `tempovis-per-view` 16,
+`per-view-shown-eviction` 5, `per-view-resolve-selective` 19,
+`selection-per-view` 26, `sketch-edit-hide` 25.
+
+**A side finding, not fixed, on the staged copy of 16:55 as well:** with
+a body hidden, one of its features selected (`Body`, `Pad.`) is shown on
+top but CUT OFF by the view's clip planes -- only the corner nearest the
+camera is drawn (`g-e108g-staged\b-selected-Pad_.png`). The pass that
+sets the clip planes walks the scene by what is visible, and what is
+only on top is not in its box.
+
+**Entry 111, the overlaid console's text "scrambled" after a change of
+theme -- it is contrast; REPRODUCED on the staged copy.** The screen was
+locked, so nothing was read off it: what the overlay paints, with its
+own opacity, was laid over a plain light ground and a plain dark one
+(`e111.py`; `g-e111d-staged`, `g-r8-e111d-dev`). Under Dark, on the
+staged copy, the console's light text with its dark outline over a
+light ground is the reporter's screenshot to the letter: the letters
+are there, as light as the ground, and only the outline's dark pieces
+are seen. The light ground was the TechDraw page's view before entry
+112. Light is fine because its text is dark and its outline light.
+Under Classic the text is BLACK -- the editor colours of a white docked
+console -- while Classic names the overlay sheet `Dark-Outline.qss` for
+its dark 3D view: dark on dark with a dark outline, everywhere. On the
+dev build entry 98's ground behind the text and entry 112's page ground
+make Dark readable. For Classic the ground is the items', the dark of
+the 3D view, and black on it still reads badly:
+`OverlayManager::overlayTextGround()` takes how light the text is from
+the colours its highlighter gives the lines shown, and where that is
+within a third of the scale of the ground it gives a light ground to a
+dark text and a dark one to a light, at the same opacity (in build r9).
+
+**Entry 99 (c), why the pick-through never worked.** The trace put into
+build r8 (`FC_PICK_TRACE`, taken out again) on the real screen: the
+on-top pass returned nothing, so the pass I had added behind it never
+ran; the scene pass ran with pick-all in the front-face mode, where
+`SoFCRayPickAction::afterPick` returns at once and the nearest hit of
+the whole list is taken -- the rule I had written inside `afterPick` was
+never reached, though the annotation's `rayPick` was, 97 times. Put
+right in r9 as a pass of its own (`Private::pickThroughFace`): whenever
+a single pick has ended on a face, from whichever pass, the nodes drawn
+through the scene are asked by themselves and the nearest edge or
+vertex among them takes the pick. `SoFCSelectionAction.*` are back to
+what is committed; the annotation keeps its `pickThrough` field for the
+capture's path table and loses its `rayPick`.
+
+**Entry 109, the hover on a missing reference.** On r8 it set no
+preselection at all (before: the missing edge's name on the base, which
+lights nothing). The kept shape does hold the faces: `Face28` traces to
+the edge that was `Edge93`, `Face26` to `Edge89` (headless, `e109j.py`;
+my probe of the afternoon compared with the leading `;` and found none).
+But in the edit the feature has a dress-up shape of the references that
+are left, so "use the kept shape when there is none" never applied; it
+is "when the dress-up shape has no face for the reference" in r9.
+
+**Binder008 on the committed rule (entry 105)**: run on r8 as part of
+entry 109's probe, `scanner.FCStd` recomputed -- one "No context, please
+double click the binder in the desired context to refresh" in the log
+(`SubShapeBinder.cpp(322)`; the line names no object, that it is
+Binder008's is by inference) and `Fillet011` "Invalid edge link:
+?Edge93" as before.
+
+**Build r9 (20:16 to 20:38): what it showed.** The Python suite, whole:
+"Ran 3752 tests in 923.037s, OK (skipped=52, expected failures=6)"
+(`pytest33.log`) -- the first whole run with the corrected
+`ElementAppearanceTest`. ctest's first run ran nothing: the discovery of
+the tests timed out on two test programs right after the build
+(`ctest33.log`, "Process terminated due to timeout"); run again behind
+the suite (`ctest34.log`).
+
+- **99 (c) still picked the box's face.** The cause, the third and the
+  real one: the paths the render cache manager keeps for a pick of its
+  own start at the scene root the capture is applied to, and the camera
+  is traversed BEFORE that root. A ray pick applied to such a path has
+  no view to cast its ray in and hits nothing. That holds for the late
+  pick as well, which is older than this entry: under the renderer a
+  datum plane could not be picked by its face at all -- shown on r9 with
+  the box hidden, the pointer inside the XY plane and off its lines:
+  nothing (`e99plane.py`). `applyPick()` puts each path behind the view's
+  own path down to the root's parent, for both
+  (`Private::pathAboveRoot()`); the datum test asks for the plane too.
+  In build r10.
+- **109, the cause.** In the edit the preview shape (`DressUpShape`) is
+  made of the kept shape's four fillet faces, the two of the missing
+  edges among them, under a hasher of its own (`#2b4;:Hb66,F` stands for
+  `#1feb4;:G;FLT;:Hb65:7,F`, and that for the edge
+  `#1fc00;:G11#1fd48;CUT;:H-b65:f,E`, which is the missing reference).
+  `TopoShape::traceElement()` expands each hashed name by the shape's
+  own hasher alone and stopped after the first step: the second name is
+  the document's. So the look-up by a missing reference -- the old
+  fork's own code for this very hover -- has found nothing since the
+  preview got its own hasher. `getItemElement` traces by itself now: a
+  name the shape's hasher does not know is the document's, and so is
+  every name behind it. In build r10. (The document's hasher has all
+  four ids at every stage, read from Python; `Shape.getElementHistory`
+  from Python stops at the same place in a GUI session and does not
+  headless, which is what sent me to the kept shape first.)
+- **111 for Classic** works as built: under Classic the console's text
+  stands on a light ground (232 at the overlay's opacity), under Light
+  on the items' own. Under DARK it turned dark (40) as well, which I had
+  not meant: the items' ground there is (125, 125, 125) and the
+  console's comments are (106, 153, 85), the same lightness to a few
+  levels -- by the rule "too near to read" the Dark theme's own item
+  ground fails for this text. Kept, and to be told: it departs from the
+  reporter's "same background used by the tree item" in their own theme,
+  for the sake of text that reads.
+- One run of entry 109's probe out of three on r9 took ANOTHER course
+  through the migration recompute of `scanner.FCStd`: 295 objects in 25
+  s instead of 394 in 55 to 61, `Thickness` "Invalid face reference",
+  `Helix003` and `Pocket037` failing, no "auto change element reference"
+  at all (67 in the others), `Fillet011` "Invalid edge link: Edge88".
+  The next run was the usual one again. Not looked into; a recompute of
+  that file is not always the same recompute.
+- `box-selection-gate`, `selection-per-view` and
+  `sketch-face-on-solid-pick` do not run offscreen (no GL context: the
+  first crashes in `RubberbandSelection::terminate`, the others need a
+  picture by the renderer); on the real screen 6, 26 and 91, none
+  failing. The other pick and overlay tests on r9: `pick-edge-in-face`
+  24, `per-view-visibility-pick-cull` 4, `reopen-claimed-child-pick` 9,
+  `view-selection-point` 4, `selection-on-top-hidden-edges` 18,
+  `overlay-item-outline-and-hover` 34, `overlay-pass-through` 14,
+  `overlay-task-title-button` 7, `overlay-preset-follows-the-theme` 45,
+  `theme-switch-contrast` 39, `edit-shows-base-with-body-hidden` 5,
+  `cavity-not-for-view-hidden` 5, `pd-preview-per-view` 38.
+
+**Builds r10 to r14 (21:22 to 23:08): entry 109 works, entry 99 (c) at
+last.** ctest on r9 and on r10: "100% tests passed out of 957"
+(`ctest34.log`, `ctest35.log`).
+
+- **109 works on r10, COMMITTED `26f0a30de0`.** `scanner.FCStd`,
+  `Fillet011` in edit after the migration recompute, the pointer on each
+  item of the panel (offscreen, `e109p.py`): the two missing references
+  preselect "Fillet011.;AddSub;Face4" and "Fillet011.;AddSub;Face3",
+  the preview's faces of those edges; the two that are found as before.
+  That the face is drawn lit was not pictured. No test in the tree: the
+  evidence needs the reporter's file and addons.
+- **111 for Classic COMMITTED `905d023394`**, and overtaken the same
+  evening: see the rulings below.
+- **108 on the reporter's file**, their configuration, `Draft` of
+  `Body008` in edit: with the body hidden the picture is the one with it
+  shown (0.0000 of the pixels differ), preview and base there. Why the
+  small model's two pictures differ and these do not is not known.
+- **104's second defect, not reproduced**, and the probe says nothing
+  either way: a grooved block under a cover, seven zooms, both cameras,
+  three gaps (`e104z.py`) -- switching `Cavity` changed no pixel of its
+  pictures, so the effect was not drawn in them at all.
+- **99 (c): r10 and r11 still picked the box's face.** r10 put the paths
+  behind the view's path, one apply a path: a ray pick forgets its hits
+  at the start of each traversal, so only the last path's were left. r11
+  made it one list; still nothing. Then the trace again (r13), and the
+  fact that three readings of the source had not given: AT THE PICK THE
+  TABLE OF PATHS IS EMPTY ("doThroughPick: table 0", "doLatePick: table
+  0" in 27 picks of 39). Each kept path had a `SoPathSensor` that took
+  it out of the table at any change of the scene before it -- the
+  highlight of a preselection is one -- and only a new capture of that
+  very node put it back, which a capture that finds its caches whole
+  never makes. r14 keeps the paths, as real paths that follow the scene,
+  and asks at the pick whether each still leads to its node
+  (`livePickPaths()`); behind the view's path, in one traversal.
+  COMMITTED `1109842583` with the dashes of (a). On r14, the real
+  screen, the pointer not moved: `datum-picked-through-a-face.py` 3 of 3
+  -- the X axis through the box at 12, 20, 28 and 36 pixels from the
+  origin, the box's face beside the lines, a plane of the origin with
+  the box hidden; ten pick neighbours, none failing (`pick-edge-in-face`
+  24, `sketch-face-on-solid-pick` 91, `selection-per-view` 26,
+  `selection-on-top-hidden-edges` 18, `per-view-visibility-pick-cull` 4,
+  `reopen-claimed-child-pick` 9, `view-selection-point` 4,
+  `box-selection-gate` 6, `sketch-datum-label-pick` 12,
+  `sketch-constraint-external-pick` 20). The same three faults held for
+  the late pick, which is older than the entry: under the renderer a
+  datum plane could not be picked by its face; it can now. The datum
+  test is a test of the screen: offscreen there is no render engine, so
+  no capture and no path.
+
+**What entry 99 (c) cost, so that it is not paid again.** Four builds
+went on readings of the source, each of them true and none of them the
+cause that mattered; the one build with a trace named it in a line. A
+pick that "finds nothing" is asked first what it was applied to and how
+many of those there were, before why.
+
+**The reporter's rulings of 23:04** (relayed): "Entry 113. I see what is
+wrong, previous commit fotbids link to itself. It should be allowed for
+hidden scope link. Binder at root means the context is link to itself.
+Entry 111, gate by auto tree background color setting. Follow tree item
+background color if enabled, else use its own widget background."
+
+- **113**: `PropertyXLink::setValue` lets a link of hidden scope name
+  its owner -- no back link is kept for one, so it is no cycle; any other
+  self link is refused as before. `SubShapeBinder::update` takes a
+  context that is the binder itself as the root of the document and
+  does not climb to a container (it climbed to the first path, which is
+  entry 105's move again); `slotRecomputedObject` does not answer the
+  binder's own recompute. My choices: `PropertyXLink` only -- the type
+  of the binder's `Context` and the refusal met; `PropertyLink` and the
+  link lists keep the refusal of 2026-08-18 and its nullifying at
+  restore. Entry 105's rule is unchanged: a binder with no context and no
+  unmoved path still errors and asks for the double click, which now
+  works where the binder is listed by itself. "Previous commit": none
+  found -- the refusal is in `origin/LinkDaily` as well. Three unit
+  tests in `TestShapeBinder.py`.
+- **111**: the rule of `905d023394` (a ground by how light the text is)
+  goes. `overlayTextGround()`: with `View/DockOverlayThemeItemColor` on,
+  the tree items' ground; off, the view's own background at the
+  overlay's opacity -- the console's `Editor/Background` where one is
+  set, otherwise the base colour of the application's palette (the
+  view's own palette has been made transparent by the overlay's sheet).
+  The test asks both.
+
+**Build r15 (23:18 to 23:39): both rulings work and are COMMITTED,
+local** -- `56504486e6` (113), `023552c8fd` (111 as ruled).
+
+- 113: `PartDesignTests.TestShapeBinder` "Ran 17 tests in 4.973s, OK"
+  (`pytest-binder3.log`). On `scanner.FCStd` after its migration
+  recompute (`e113b.py`, offscreen): Binder008, held in LinkGroup001 and
+  in the "No context" error, selected by itself and double clicked --
+  `doubleClicked` true, no "self linking"; then valid, its context
+  itself, its placement as it was, the centre of its shape 0.000000 mm
+  from where it was as opened, and the same after one more recompute;
+  Sketch043, Pad033 and Binder017 valid, Fillet011 in its own error as
+  before ("Invalid edge link: ?Edge93", entry 109's).
+- 111: `overlay-text-ground.py` offscreen 20 pass -- the setting on,
+  both panels on the items' ground (51, 51, 101); off, both on white,
+  the palette's base and the console's own there. The four that fail
+  are the stretch below the last line, as before. The neighbours:
+  `overlay-item-outline-and-hover` 34, `overlay-preset-follows-the-theme`
+  45, `overlay-pass-through` 14.
+
+Both suites on r15, the committed code (23:43 to 00:11): ctest "100%
+tests passed out of 957" (`ctest36.log`); Python "Ran 3755 tests in
+859.336s, OK (skipped=52, expected failures=6)" (`pytest36.log`) -- three
+more than on r9, the binder's.
+
+**Where the evening leaves things.** Origin `LinkVibe` = `5c0b30ce1b`
+(20:13). LOCAL on top of it, not pushed: `905d023394` (111, first form),
+`26f0a30de0` (109), `1109842583` (99 a and c, the late pick), `56504486e6`
+(113), `023552c8fd` (111 as ruled), and the note-taker's queue commits
+between them. The staged copy is the one of 16:55. Open with the
+reporter: entry 108's see-through base with the body hidden (wanted so,
+or the same picture as with it shown); whether the clipped on-top
+display of a hidden body's feature and the odd migration run become
+entries. Not found: entry 104's creases showing through.

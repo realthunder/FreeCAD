@@ -532,7 +532,8 @@ static const App::ParamRegistry::Registrar _TreeParamsRegistrar({
         .setOnChange(),
     App::ParamInfo("Gui", "TreeParams", "User parameter:BaseApp/Preferences/TreeView", "ItemBackground", "ItemBackground", App::ParamInfo::Hex, 0x00000000)
         .setTitle("Item background color")
-        .setDoc("Tree view item background. Only effective in overlay.")
+        .setDoc("Tree view item background. Only effective in overlay, and only\n"
+"while 'Item background follows the theme' is off.")
         .setOnChange()
         .setProxy("Color")
         .setTransparency(true),
@@ -1370,7 +1371,8 @@ void TreeParams::removeItemSpacing() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *TreeParams::docItemBackground() {
     return QT_TRANSLATE_NOOP("TreeParams",
-"Tree view item background. Only effective in overlay.");
+"Tree view item background. Only effective in overlay, and only\n"
+"while 'Item background follows the theme' is off.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

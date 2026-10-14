@@ -12,18 +12,23 @@ switched it off again. Only UseBinderStyle had the restore guard
 (b0621a4b5b).
 
 Scene: a binder in the binder style (its own colour), saved with the
-face colour mapped, as the user file's were. Claims, per open mode (ProgressiveLoad
-off, then on): the binder's MapFaceColor, MapLineColor, MapPointColor and
-MapTransparency are the saved ones. And after the opens, setting the colour still turns the
-mapping off, as it did.
+face colour mapped, as the user file's were. The flags are the object's
+(docs/ShapeAppearanceDesign.md sec 14.6) and the view provider's are names
+over them, so both are read. Claims, per open mode (ProgressiveLoad off,
+then on): the binder's MapFaceColor, MapLineColor, MapPointColor and
+MapTransparency are the saved ones, by either name. And after the opens,
+setting the colour still turns the mapping off, as it did.
 
 Scored against the tree before the fix: the eager open reads
-MapFaceColor false.
+MapFaceColor false. And against the tree as first merged with the looks
+kept on the object (docs/TransactionLog.md sec 33.14): the view provider's
+flag reads false where the object's reads true, in both open modes, and a
+colour set leaves the object's on -- the object's look arriving under the
+view provider's name was taken for a colour picked.
 """
 import os
 import time
 import traceback
-import zipfile
 
 import FreeCAD
 import FreeCADGui
@@ -68,32 +73,21 @@ def build(path):
     doc.recompute()
     wait(1)
     # Named "Binder...", it takes the binder style when attached: its own
-    # colour (the datum yellow). The user file's binders were saved with the
-    # face colour mapped as well, which a binder made today does not keep
-    # (the style's own colour update switches it off again), so the saved
-    # flag is written in as that file has it.
+    # colour (the datum yellow), with the face colour mapped as the user
+    # file's binders had it. The object keeps that now; what the view
+    # provider says of it is the same value under the older name.
+    saved = flags(binder)
     doc.saveAs(path)
     FreeCAD.closeDocument(doc.Name)
     wait(0.5)
-    with zipfile.ZipFile(path) as z:
-        entries = {i.filename: z.read(i.filename) for i in z.infolist()}
-    xml = entries["GuiDocument.xml"].decode("utf-8")
-    start = xml.index('<ViewProvider name="Binder"')
-    end = xml.index("</ViewProvider>", start)
-    block = xml[start:end]
-    at = block.index('<Property name="MapFaceColor"')
-    val = block.index('value="', at) + len('value="')
-    block = block[:val] + "true" + block[block.index('"', val):]
-    entries["GuiDocument.xml"] = (xml[:start] + block + xml[end:]).encode("utf-8")
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-        for n, data in entries.items():
-            z.writestr(n, data)
-    return (True, False, False, False)
+    return saved
 
 
 def run():
     path = os.path.join(OUT, "binder-map.FCStd")
     saved = build(path)
+    check("the binder is saved with its face colour mapped",
+          saved == (True, False, False, False), dict(zip(FLAGS, saved)))
     for progressive in (False, True):
         mode = "progressive" if progressive else "eager"
         RENDER.SetBool("ProgressiveLoad", progressive)
@@ -101,15 +95,19 @@ def run():
         while FreeCADGui.isBuildingVisuals():
             QtCore.QCoreApplication.processEvents()
         wait(1)
-        vp = doc.getObject("Binder").ViewObject
+        obj = doc.getObject("Binder")
+        vp = obj.ViewObject
         got = flags(vp)
         check("%s open: the binder keeps its saved Map*Color" % mode,
-              got == saved, dict(zip(FLAGS, got)))
+              got == saved and flags(obj) == saved,
+              "view provider %s, object %s" % (dict(zip(FLAGS, got)),
+                                              dict(zip(FLAGS, flags(obj)))))
         if progressive:
             vp.ShapeColor = (0.9, 0.9, 0.1)
             wait(0.2)
             check("a colour set after the open still turns its mapping off",
-                  not vp.MapFaceColor, vp.MapFaceColor)
+                  not vp.MapFaceColor and not obj.MapFaceColor,
+                  "view provider %s, object %s" % (vp.MapFaceColor, obj.MapFaceColor))
         FreeCAD.closeDocument(doc.Name)
         wait(0.5)
 

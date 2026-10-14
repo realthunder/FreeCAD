@@ -4689,7 +4689,12 @@ void PropertyXLink::setValue(App::DocumentObject *lValue,
         return;
     }
 
-    if(lValue == owner)
+    // A link to its own container is a cycle -- but for a link of hidden
+    // scope, which takes no part in its owner's dependencies (no back link
+    // is kept for one, below) and may name the owner: a binder that stands
+    // at the root of its document has itself for its context
+    // (docs/HandsOnQueue.md entry 113).
+    if(lValue == owner && _pcScope != LinkScope::Hidden)
         THROWM(Base::ValueError, "self linking")
 
     aboutToSetValue();

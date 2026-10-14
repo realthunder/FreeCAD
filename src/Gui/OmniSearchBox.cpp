@@ -30,6 +30,7 @@
 # include <QAbstractItemView>
 # include <QIcon>
 # include <QImage>
+# include <QAbstractProxyModel>
 # include <QApplication>
 # include <QCheckBox>
 # include <QCompleter>
@@ -1075,22 +1076,35 @@ void OmniSearchEdit::setInputText(const QString &text)
 // for the focus that activation brings.
 void OmniSearchEdit::requestChooser()
 {
+    requestInput(QStringLiteral("/"));
+}
+
+// As the chooser: the text brings a popup up, which waits for the focus. The
+// text itself is in the box at once -- but for the chooser's lone slash,
+// which says nothing without its list and comes with it as it always did.
+void OmniSearchEdit::requestInput(const QString &text)
+{
     if (hasFocus()) {
-        chooserPending = false;
-        setInputText(QStringLiteral("/"));
+        pendingInput.clear();
+        setInputText(text);
         return;
     }
-    chooserPending = true;
+    pendingInput = text;
+    if (text != QLatin1String("/")) {
+        setText(text);
+        setCursorPosition(text.size());
+    }
 }
 
 void OmniSearchEdit::focusInEvent(QFocusEvent *event)
 {
     QLineEdit::focusInEvent(event);
-    if (chooserPending) {
-        chooserPending = false;
-        QTimer::singleShot(0, this, [this]() {
+    if (!pendingInput.isEmpty()) {
+        const QString text = pendingInput;
+        pendingInput.clear();
+        QTimer::singleShot(0, this, [this, text]() {
             if (isVisible() && hasFocus())
-                setInputText(QStringLiteral("/"));
+                setInputText(text);
         });
     }
 }
@@ -1274,8 +1288,43 @@ void OmniSearchEdit::runObjectQuery()
         auto popup = objCompleter->popup();
         popup->removeEventFilter(this);
         popup->installEventFilter(this);
+        if (input.query.endsWith(QLatin1Char('.')))
+            correctTypedCase();
     }
     resolveObjectQuery();
+}
+
+// A dot typed, and the list of what the text before it has: the text has
+// resolved, whatever the letters' case it was typed in -- "pocket023." lists
+// Pocket023's properties. The text takes the names of what it resolved to
+// (docs/HandsOnQueue.md entry 95: "should auto correct object name to the
+// resolved object", at each step, and whenever the list is shown).
+void OmniSearchEdit::correctTypedCase()
+{
+    if (!objCompleter || input.mode != Mode::Object || !objCompleter->popup()->isVisible())
+        return;
+    auto proxy = qobject_cast<QAbstractProxyModel*>(objCompleter->completionModel());
+    if (!proxy || !proxy->rowCount())
+        return;
+    // Any row of the list: its path is that of what the text resolved to,
+    // and its own name after the last dot
+    // through QCompleter: the override is private in ExpressionCompleter
+    const QCompleter *completer = objCompleter;
+    QString resolved = completer->pathFromIndex(proxy->mapToSource(proxy->index(0, 0)));
+    int dot = resolved.lastIndexOf(QLatin1Char('.'));
+    if (dot <= 0)
+        return;
+    resolved.truncate(dot + 1);
+    const QString typed = text();
+    if (resolved.size() > typed.size() - input.offset - objectSkip()
+            || !typed.endsWith(resolved, Qt::CaseInsensitive)
+            || typed.endsWith(resolved, Qt::CaseSensitive))
+        return;
+    Base::StateLocker guard(completing);
+    const QString full = typed.left(typed.size() - resolved.size()) + resolved;
+    setText(full);
+    setCursorPosition(full.size());
+    input = parseInput(full);
 }
 
 void OmniSearchEdit::resolveObjectQuery()
@@ -1355,9 +1404,12 @@ void OmniSearchEdit::activateObject()
 }
 
 // Tab on a popup: take its current row (the first when none is), as a
-// click on it would.
+// click on it would -- but for the focus: Tab completes what is being typed,
+// and the typing goes on. A click or Return on a property hands the focus to
+// the editor of its value (docs/HandsOnQueue.md entry 94).
 bool OmniSearchEdit::chooseCurrentRow()
 {
+    Base::StateLocker tab(byTab);
     auto c = activeCompleter();
     if (!c || !c->popup()->isVisible())
         return false;
@@ -1549,11 +1601,25 @@ OmniSearchBox::~OmniSearchBox()
 
 TreeWidget *OmniSearchBox::tree() const
 {
+    if (launchTree)
+        return launchTree;
     return TreeWidget::instance();
 }
 
 void OmniSearchBox::open()
 {
+    open(QString());
+}
+
+void OmniSearchBox::open(const QString &text, TreeWidget *from)
+{
+    // Open already, for another tree view: that one is done with its search
+    if (launchTree != from) {
+        if (auto t = tree())
+            t->resetItemSearch();
+    }
+    launchTree = from;
+
     App::DocumentObject *owner = nullptr;
     if (auto t = tree())
         owner = t->startItemSearch();
@@ -1585,7 +1651,10 @@ void OmniSearchBox::open()
     show();
     raise();
     activateWindow();
-    lineEdit->requestChooser();
+    if (text.isEmpty())
+        lineEdit->requestChooser();
+    else
+        lineEdit->requestInput(text);
     lineEdit->setFocus();
     qApp->removeEventFilter(this);
     qApp->installEventFilter(this);
@@ -1603,6 +1672,7 @@ void OmniSearchBox::hideEvent(QHideEvent *event)
     hidePanels();
     if (auto t = tree())
         t->resetItemSearch();
+    launchTree = nullptr;
     Selection().rmvPreselect();
     QFrame::hideEvent(event);
 }
@@ -1705,11 +1775,16 @@ void OmniSearchBox::onModeChanged(Mode mode)
 void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
 {
     auto t = tree();
+    // A ".Name" query is about the selection, which the tree shows already.
+    // So is the lone "." the property view's Ctrl+F types for several
+    // selected objects: looked up in the tree it named the first of them,
+    // and with the tree's "sync view" on that one was selected in place of
+    // them all (docs/HandsOnQueue.md entry 78).
+    const bool local = lineEdit->currentInput().query.trimmed().startsWith(QLatin1Char('.'));
     if (match.prop) {
         if (panelHost->isVisible() && !propertyPanel->isFor(match.prop))
             hidePanels();
-        // A ".Name" query is about the selection, which the tree shows already
-        if (lineEdit->currentInput().query.trimmed().startsWith(QLatin1Char('.')))
+        if (local)
             return;
         if (t)
             t->resetItemSearch();
@@ -1730,7 +1805,7 @@ void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
     }
     if (panelHost->isVisible())
         hidePanels();
-    if (t)
+    if (t && !local)
         t->itemSearch(lineEdit->currentInput().query, false);
 }
 
@@ -1738,12 +1813,20 @@ void OmniSearchBox::onObjectActivated(const ObjectMatch &match)
 {
     if (!match.prop)
         return;
-    addRecentItem(Mode::Object, lineEdit->text());
+    // Completed by Tab, the text is not confirmed yet and the typing goes on
+    // in the box: the property's editor is shown and does not take the focus
+    // (docs/HandsOnQueue.md entry 94). Return hands it over.
+    const bool typing = lineEdit->completingByTab();
+    if (!typing)
+        addRecentItem(Mode::Object, lineEdit->text());
     if (!propertyPanel->isFor(match.prop)) {
         propertyPanel->setProperty(match.prop, match.obj, match.props);
         showPanel(propertyPanel);
     }
-    propertyPanel->focusEditor();
+    if (typing)
+        lineEdit->setFocus();
+    else
+        propertyPanel->focusEditor();
 }
 
 void OmniSearchBox::onObjectUnresolved()

@@ -62,7 +62,10 @@ Part::Part()
     // What the part lays over what it holds, as a link does
     // (docs/ShapeAppearanceDesign.md sec 14.6.4): the store, and the names
     // over it, which are in no file
-    static const char *appearances = "Appearances";
+    // "#1": the group's rank. A property view shows the groups by rank, then
+    // by name, and without the rank this one stood first, above "Base"
+    // (Gui/PropertyGroupName.h)
+    static const char *appearances = "Appearances#1";
     ADD_PROPERTY_TYPE(ElementAppearance, (0), appearances,
             (PropertyType)(Prop_Hidden|Prop_Output),
             "The looks the part gives what it holds: its own, and those of the\n"

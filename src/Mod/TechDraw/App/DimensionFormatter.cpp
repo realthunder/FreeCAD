@@ -302,7 +302,7 @@ std::string DimensionFormatter::getFormattedDimensionValue(const int partial) co
 
         // tolerance might start with a plus sign that we don't want, so cut it off
         // note plus sign is not at pos = 0!
-        QRegularExpression plus(QString::fromUtf8("^\\s*\\+"));
+        static const QRegularExpression plus(QString::fromUtf8("^\\s*\\+"));
         tolerance.remove(plus);
 
         return (labelText +
@@ -327,15 +327,24 @@ std::string DimensionFormatter::getFormattedDimensionValue(const int partial) co
 QString DimensionFormatter::formatValueToSpec(const double value, const QString& formatSpecifier) const
 {
     QString formattedValue;
-    if (formatSpecifier.contains(QRegularExpression(QStringLiteral("%.*[wW]")))) {
+    // Made once: a QRegularExpression is compiled when it is first matched, and
+    // these were made anew at every call -- five or more compilations for each
+    // text of each dimension drawn.
+    static const QRegularExpression rxNoTrailingZeros(QStringLiteral("%.*[wW]"));
+    static const QRegularExpression rxLowerW(QStringLiteral("%(.*)w"));
+    static const QRegularExpression rxUpperW(QStringLiteral("%(.*)W"));
+    static const QRegularExpression rxZerosAfterDigits(
+        QStringLiteral("([0-9][0-9]*\\.[0-9]*[1-9])00*$"));
+    static const QRegularExpression rxZerosAfterPoint(QStringLiteral("([0-9][0-9]*)\\.0*$"));
+    if (formatSpecifier.contains(rxNoTrailingZeros)) {
         QString fs = formatSpecifier;
-        fs.replace(QRegularExpression(QStringLiteral("%(.*)w")), QStringLiteral("%\\1f"));
-        fs.replace(QRegularExpression(QStringLiteral("%(.*)W")), QStringLiteral("%\\1F"));
+        fs.replace(rxLowerW, QStringLiteral("%\\1f"));
+        fs.replace(rxUpperW, QStringLiteral("%\\1F"));
         formattedValue = QString::asprintf(Base::Tools::toStdString(fs).c_str(), value);
         // First, try to cut trailing zeros, if AFTER decimal dot there are nonzero numbers
         // Second, try to cut also decimal dot and zeros, if there are just zeros after it
-        formattedValue.replace(QRegularExpression(QStringLiteral("([0-9][0-9]*\\.[0-9]*[1-9])00*$")), QStringLiteral("\\1"));
-        formattedValue.replace(QRegularExpression(QStringLiteral("([0-9][0-9]*)\\.0*$")), QStringLiteral("\\1"));
+        formattedValue.replace(rxZerosAfterDigits, QStringLiteral("\\1"));
+        formattedValue.replace(rxZerosAfterPoint, QStringLiteral("\\1"));
     } else {
         if (isNumericFormat(formatSpecifier)) {
             formattedValue = QString::asprintf(Base::Tools::toStdString(formatSpecifier).c_str(), value);
@@ -347,7 +356,7 @@ QString DimensionFormatter::formatValueToSpec(const double value, const QString&
 
 bool DimensionFormatter::isNumericFormat(const QString& formatSpecifier) const
 {
-    QRegularExpression rxFormat(QStringLiteral("%[+-]?[0-9]*\\.*[0-9]*[aefgwAEFGW]")); //printf double format spec
+    static const QRegularExpression rxFormat(QStringLiteral("%[+-]?[0-9]*\\.*[0-9]*[aefgwAEFGW]")); //printf double format spec
     QRegularExpressionMatch rxMatch;
     int pos = formatSpecifier.indexOf(rxFormat, 0, &rxMatch);
     if (pos != -1)  {
@@ -361,7 +370,7 @@ QStringList DimensionFormatter::getPrefixSuffixSpec(const QString& fSpec) const
 {
     QStringList result;
     //find the %x.y tag in FormatSpec
-    QRegularExpression rxFormat(QStringLiteral("%[+-]?[0-9]*\\.*[0-9]*[aefgwAEFGW]")); //printf double format spec
+    static const QRegularExpression rxFormat(QStringLiteral("%[+-]?[0-9]*\\.*[0-9]*[aefgwAEFGW]")); //printf double format spec
     QRegularExpressionMatch rxMatch;
     int pos = fSpec.indexOf(rxFormat, 0, &rxMatch);
     if (pos != -1)  {
@@ -427,7 +436,7 @@ bool DimensionFormatter::isTooSmall(const double value, const QString& formatSpe
         return false;
     }
 
-    QRegularExpression rxFormat(QStringLiteral("%[+-]?[0-9]*\\.*([0-9]*)[aefgwAEFGW]")); //printf double format spec
+    static const QRegularExpression rxFormat(QStringLiteral("%[+-]?[0-9]*\\.*([0-9]*)[aefgwAEFGW]")); //printf double format spec
     QRegularExpressionMatch rxMatch = rxFormat.match(formatSpec);
     if (rxMatch.hasMatch()) {
         QString decimalGroup = rxMatch.captured(1);

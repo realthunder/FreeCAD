@@ -28,6 +28,7 @@ Claims:
   - three items are stored, under Preferences/OmniSearch/Recent.
 """
 import os
+import time
 import traceback
 
 import FreeCAD
@@ -110,6 +111,17 @@ def dismiss():
     box = named("OmniSearchBox")
     if box is not None and box.isVisible():
         box.hide()
+    # With no window manager nothing takes the focus the box gives up, and
+    # Qt's xcb plugin holds a focus-out back for a moment in case a focus-in
+    # follows. A box brought up again inside that moment -- hidden here, or
+    # by the command it has just run -- is given the focus by the server and
+    # no activation by Qt: its edit gets no focus-in, and the lone slash that
+    # waits for one replaces what is typed when the focus does come. So let
+    # the moment pass.
+    end = time.monotonic() + 0.5
+    while time.monotonic() < end:
+        QtCore.QCoreApplication.processEvents()
+        time.sleep(0.01)
     settle()
 
 

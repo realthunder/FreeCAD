@@ -763,9 +763,18 @@ static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
     }
 }
 
-static inline QToolButton *setupMenuToolButton(QWidget *w)
+/** The tool button a tool bar made for \a action, as a menu button: the name
+ * is what the style sheets give the strip beside the icon its room by. To be
+ * called AFTER the action is added. It used to be called before, and took
+ * the tool bar's last button -- the one of the action added BEFORE this one:
+ * in a run of menu buttons each was set up by the next, and the last of the
+ * run by none, its mark drawn over its icon (Std_SelUp,
+ * docs/HandsOnQueue.md entry 90).
+ */
+static inline QToolButton *setupMenuToolButton(QWidget *w, QAction *action)
 {
-    QToolButton* tb = w->findChildren<QToolButton*>().last();
+    auto bar = qobject_cast<QToolBar*>(w);
+    auto tb = bar ? qobject_cast<QToolButton*>(bar->widgetForAction(action)) : nullptr;
     if (tb) {
         tb->setPopupMode(QToolButton::MenuButtonPopup);
         tb->setObjectName(QStringLiteral("qt_toolbutton_menubutton"));
@@ -805,7 +814,7 @@ void ActionGroup::addTo(QWidget *widget)
         }
         else if (widget->inherits("QToolBar")) {
             widget->addAction(action());
-            auto tb = setupMenuToolButton(widget);
+            auto tb = setupMenuToolButton(widget, action());
             auto menu = new QMenu(widget);
             fillGroupMenu(menu, actions(), isExclusive());
             tb->setMenu(menu);
@@ -2183,8 +2192,8 @@ void UndoAction::addTo (QWidget * widget)
     if (widget->inherits("QToolBar")) {
         actionChanged();
         connect(action(), &QAction::changed, this, &UndoAction::actionChanged);
-        setupMenuToolButton(widget);
         widget->addAction(_toolAction);
+        setupMenuToolButton(widget, _toolAction);
     }
     else {
         widget->addAction(action());
@@ -2237,8 +2246,8 @@ void RedoAction::addTo ( QWidget * widget )
     if (widget->inherits("QToolBar")) {
         actionChanged();
         connect(action(), &QAction::changed, this, &RedoAction::actionChanged);
-        setupMenuToolButton(widget);
         widget->addAction(_toolAction);
+        setupMenuToolButton(widget, _toolAction);
     }
     else {
         widget->addAction(action());
@@ -2291,10 +2300,8 @@ void DockWidgetAction::addTo ( QWidget * widget )
         _menu->aboutToShow();
     }
 
-    if (qobject_cast<QToolBar*>(widget)) {
-        setupMenuToolButton(widget);
-    }
     widget->addAction(action());
+    setupMenuToolButton(widget, action());
 }
 
 // --------------------------------------------------------------------
@@ -2318,10 +2325,8 @@ void ToolBarAction::addTo ( QWidget * widget )
       getMainWindow()->setToolBarMenu(_menu);
     }
 
-    if (qobject_cast<QToolBar*>(widget)) {
-        setupMenuToolButton(widget);
-    }
     widget->addAction(action());
+    setupMenuToolButton(widget, action());
 }
 
 // --------------------------------------------------------------------
@@ -2343,10 +2348,8 @@ void WindowAction::addTo ( QWidget * widget )
             getMainWindow()->setWindowsMenu(_menu);
         }
 
-        if (qobject_cast<QToolBar*>(widget)) {
-            setupMenuToolButton(widget);
-        }
         widget->addAction(action());
+        setupMenuToolButton(widget, action());
     }
     else {
         menu->addActions(groupAction()->actions());
@@ -2374,9 +2377,8 @@ void ViewCameraBindingAction::addTo ( QWidget * widget )
         connect(_menu, &QMenu::aboutToShow, this, &ViewCameraBindingAction::onShowMenu);
         connect(_menu, &QMenu::triggered, this, &ViewCameraBindingAction::onTriggered);
     }
-    if (qobject_cast<QToolBar*>(widget))
-        setupMenuToolButton(widget);
     widget->addAction(action());
+    setupMenuToolButton(widget, action());
 }
 
 void ViewCameraBindingAction::onShowMenu()
@@ -2477,9 +2479,8 @@ void SelUpAction::addTo ( QWidget * widget )
         action()->setMenu(_menu);
         connect(_menu, &QMenu::aboutToShow, this, &SelUpAction::onShowMenu);
     }
-    if (qobject_cast<QToolBar*>(widget))
-        setupMenuToolButton(widget);
     widget->addAction(action());
+    setupMenuToolButton(widget, action());
 }
 
 void SelUpAction::onShowMenu()
@@ -2624,9 +2625,8 @@ void SelStackAction::addTo ( QWidget * widget )
         action()->setMenu(_menu);
         connect(_menu, &QMenu::aboutToShow, this, [this]() {populate();});
     }
-    if (qobject_cast<QToolBar*>(widget))
-        setupMenuToolButton(widget);
     widget->addAction(action());
+    setupMenuToolButton(widget, action());
 }
 
 // --------------------------------------------------------------------
@@ -2720,9 +2720,8 @@ void CmdHistoryAction::addTo ( QWidget * widget )
         connect(_menu, &QMenu::aboutToShow, this, &CmdHistoryAction::onShowMenu);
     }
 
-    if (qobject_cast<QToolBar*>(widget))
-        setupMenuToolButton(widget);
     widget->addAction(action());
+    setupMenuToolButton(widget, action());
 }
 
 static long _RecentCommandID;
@@ -2970,9 +2969,8 @@ void ToolbarMenuAction::addTo ( QWidget * widget )
         update();
         connect(_menu, &QMenu::aboutToShow, this, &ToolbarMenuAction::onShowMenu);
     }
-    if (qobject_cast<QToolBar*>(widget))
-        setupMenuToolButton(widget);
     widget->addAction(action());
+    setupMenuToolButton(widget, action());
 }
 
 void ToolbarMenuAction::onShowMenu()
@@ -3207,9 +3205,8 @@ void ExpressionAction::addTo ( QWidget * w )
         _pimpl->init(_menu);
     }
 
-    if (qobject_cast<QToolBar*>(w))
-        setupMenuToolButton(w);
     w->addAction(action());
+    setupMenuToolButton(w, action());
 }
 
 void ExpressionAction::onAction(QAction *action) {
@@ -3262,9 +3259,8 @@ void PresetsAction::addTo ( QWidget * w )
       connect(_menu, &QMenu::triggered, this, &PresetsAction::onAction);
     }
 
-    if (qobject_cast<QToolBar*>(w))
-        setupMenuToolButton(w);
     w->addAction(action());
+    setupMenuToolButton(w, action());
 }
 
 void PresetsAction::onAction(QAction *action) {

@@ -165,6 +165,10 @@ struct DocumentP
     /// The document is being destroyed: what is still open is not logged
     /// (Document::~Document).
     bool closing {false};
+    /// The document's objects are being taken down to be read in again or
+    /// to leave it empty (Document::restore, Document::clearDocument): what
+    /// the teardown writes joins no transaction, see transactionsWanted().
+    bool clearing {false};
     /// A crash recovery rebuilding the document from its log (sec 25.2):
     /// what it writes is in the log already, and is no transaction.
     bool replaying {false};

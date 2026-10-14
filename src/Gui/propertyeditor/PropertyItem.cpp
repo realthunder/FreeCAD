@@ -60,6 +60,7 @@
 #include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
 #include <Gui/Placement.h>
+#include <Gui/PropertyGroupName.h>
 #include <Gui/QuantitySpinBox.h>
 #include <Gui/Selection.h>
 #include <Gui/SpinBox.h>
@@ -647,7 +648,8 @@ void PropertyItem::setPropertyName(const App::Property &prop) {
     if(!group)
         group = "Base";
     QString propName = QString::fromUtf8(name);
-    QString prefix = QString::fromUtf8(group);
+    // The group's name as shown, without its rank
+    QString prefix = QString::fromStdString(Gui::propertyGroupDisplayName(group));
     prefix.replace(QStringLiteral(" "), QString());
     prefix += QStringLiteral("_");;
     if(propName.size() > prefix.size()) {

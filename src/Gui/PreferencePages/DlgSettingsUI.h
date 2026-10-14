@@ -25,6 +25,7 @@
 
 class QTimer;
 class QPropertyAnimation;
+class QPushButton;
 
 /*[[[cog
 import DlgSettingsUI
@@ -82,7 +83,6 @@ private:
     Gui::PrefCheckBox *PerViewEdit = nullptr;
     Gui::PrefCheckBox *PerViewSelection = nullptr;
     Gui::PrefCheckBox *TaskPanelInView = nullptr;
-    Gui::PrefCheckBox *TaskPanelInViewAll = nullptr;
     QLabel *labelDocumentTarget = nullptr;
     Gui::PrefComboBox *DocumentTarget = nullptr;
     QLabel *labelDocViewTarget = nullptr;
@@ -99,6 +99,7 @@ private:
     QGroupBox * groupTreeview = nullptr;
     QLabel *labelItemBackground = nullptr;
     Gui::PrefColorButton *ItemBackground = nullptr;
+    Gui::PrefCheckBox *DockOverlayThemeItemColor = nullptr;
     QLabel *labelItemBackgroundPadding = nullptr;
     Gui::PrefSpinBox *ItemBackgroundPadding = nullptr;
     Gui::PrefCheckBox *ResizableColumn = nullptr;
@@ -149,7 +150,9 @@ private:
     Gui::PrefSpinBox *DockOverlayWheelDelay = nullptr;
     QLabel *labelDockOverlayAlphaRadius = nullptr;
     Gui::PrefSpinBox *DockOverlayAlphaRadius = nullptr;
-    Gui::PrefCheckBox *DockOverlayCheckNaviCube = nullptr;
+    Gui::PrefCheckBox *DockOverlayMoveNaviCube = nullptr;
+    QLabel *labelDockOverlayAlpha = nullptr;
+    Gui::PrefSpinBox *DockOverlayAlpha = nullptr;
     QLabel *labelDockOverlayHintTriggerSize = nullptr;
     Gui::PrefSpinBox *DockOverlayHintTriggerSize = nullptr;
     QLabel *labelDockOverlayHintSize = nullptr;
@@ -206,6 +209,8 @@ private:
     QPropertyAnimation *animator2;
     qreal t2 = 0;
     qreal a2 = 0, b2 = 0;
+    /// "Apply to live views", beside "Task panels in their views"
+    QPushButton *applyTaskPanelInView = nullptr;
 
     // user code end
     // -----------------------------------------------------------------------------------

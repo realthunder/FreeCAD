@@ -36,6 +36,7 @@
 # include <QPointer>
 # include <QSpacerItem>
 # include <QSplitter>
+# include <QStyleOption>
 # include <QTabBar>
 # include <QTextStream>
 # include <QTimerEvent>
@@ -333,6 +334,79 @@ OverlayToolButton::OverlayToolButton(QWidget *parent)
     setCursor(Qt::ArrowCursor);
 }
 
+void OverlayToolButton::setIconColor(const QColor &color)
+{
+    if (_iconColor == color)
+        return;
+    _iconColor = color;
+    update();
+}
+
+QColor OverlayToolButton::effectiveIconColor() const
+{
+    if (_iconColor.isValid())
+        return _iconColor;
+    // Not the button's palette: under a style sheet that is not the colour
+    // its neighbours' text is drawn in, and it changes with the window
+    // being the active one. A dark theme has light glyphs, a light one the
+    // files as they are. White and nothing dimmer: the files are black at
+    // half opacity, so a glyph ends half way from its ground to this colour.
+    return Application::isDarkTheme() ? QColor(0xff, 0xff, 0xff) : QColor();
+}
+
+QPixmap OverlayToolButton::tinted(const QPixmap &pixmap, const QColor &color)
+{
+    if (pixmap.isNull() || !color.isValid())
+        return pixmap;
+    QImage image = pixmap.toImage().convertToFormat(QImage::Format_ARGB32);
+    const int r = color.red(), g = color.green(), b = color.blue();
+    for (int y = 0; y < image.height(); ++y) {
+        auto line = reinterpret_cast<QRgb*>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const QRgb px = line[x];
+            const int alpha = qAlpha(px);
+            if (!alpha)
+                continue;
+            // how light the pixel is, of 255: none of the colour at white
+            const int light = qGray(px);
+            line[x] = qRgba((r * (255 - light) + qRed(px) * light) / 255,
+                            (g * (255 - light) + qGreen(px) * light) / 255,
+                            (b * (255 - light) + qBlue(px) * light) / 255,
+                            alpha);
+        }
+    }
+    QPixmap out = QPixmap::fromImage(image);
+    out.setDevicePixelRatio(pixmap.devicePixelRatio());
+    return out;
+}
+
+void OverlayToolButton::initStyleOption(QStyleOptionToolButton *option) const
+{
+    QToolButton::initStyleOption(option);
+    if (option->icon.isNull())
+        return;
+    const QColor color = effectiveIconColor();
+    // Black on a button whose text is black: the file as it is
+    if (!color.isValid() || (color.rgb() & 0xffffff) == 0)
+        return;
+    if (_tintedOf != option->icon.cacheKey() || _tintedIn != color.rgba()
+            || _tintedAt != option->iconSize) {
+        _tinted = QIcon();
+        for (auto mode : {QIcon::Normal, QIcon::Disabled}) {
+            for (auto state : {QIcon::Off, QIcon::On}) {
+                _tinted.addPixmap(
+                    tinted(option->icon.pixmap(option->iconSize, devicePixelRatioF(), mode, state),
+                           color),
+                    mode, state);
+            }
+        }
+        _tintedOf = option->icon.cacheKey();
+        _tintedIn = color.rgba();
+        _tintedAt = option->iconSize;
+    }
+    option->icon = _tinted;
+}
+
 // --------------------------------------------------------------------
 
 OverlayTabWidget::OverlayTabWidget(QWidget *parent, Qt::DockWidgetArea pos)
@@ -523,6 +597,15 @@ QWidget *OverlayTabWidget::createTitleButton(QAction *action, int size)
     button->setAutoRaise(true);
     button->setContentsMargins(0,0,0,0);
     button->setFixedSize(size,size);
+    // A button made by hand does not follow its action's visibility, as one
+    // in a tool bar does: the "show this panel in its view" button is there
+    // only while the Tasks tab shows a panel that has a view.
+    if (!action->isVisible())
+        button->hide();
+    QObject::connect(action, &QAction::changed, button, [button, action]() {
+        if (button->isHidden() == action->isVisible())
+            button->setVisible(action->isVisible());
+    });
     return button;
 }
 
@@ -576,7 +659,11 @@ bool OverlayTabWidget::event(QEvent *ev)
 
 int OverlayTabWidget::testAlpha(const QPoint &_pos, int radiusScale)
 {
-    if (!count() || (!isOverlaid() && !isTransparent()) || !isVisible())
+    // Whatever state the panel is in -- its transparent mode on or off, the
+    // pointer in it or not -- what it has painted is what is asked for: the
+    // answer was "outside" for a panel with the mode off and the pointer in
+    // it, whatever it showed there (docs/HandsOnQueue.md entry 86).
+    if (!count() || !isVisible())
         return -1;
 
     if (tabBar()->isVisible() && tabBar()->tabAt(tabBar()->mapFromGlobal(_pos))>=0)
@@ -1076,6 +1163,9 @@ void OverlayTabWidget::_setOverlayMode(QWidget *widget, OverlayOption option)
     widget->setStyleSheet(OverlayManager::instance()->getStyleSheet());
 #endif
 
+    if (auto editor = qobject_cast<PropertyEditor::PropertyEditor*>(widget))
+        editor->setOverlayLook(option != OverlayOption::Disable);
+
     if (qobject_cast<QScrollBar*>(widget)) {
         auto parent = widget->parentWidget();
         if (parent) {
@@ -1567,6 +1657,13 @@ void OverlayTabWidget::addWidget(QDockWidget *dock, const QString &title)
         }
         setRect(rect);
     }
+
+    // The see-through look is given to the widgets the tab widget holds at
+    // the moment its mode is set. A dock that comes after that has none of
+    // it -- solid among see-through neighbours, until the pointer has come
+    // into the tab widget and left it -- so the mode is set again on the
+    // manager's next turn (docs/HandsOnQueue.md entry 69).
+    touch();
 
     saveTabs();
 }
@@ -2514,6 +2611,24 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     QTransform restoreTransform = painter->worldTransform();
     painter->setWorldTransform(QTransform());
 
+    // What is outlined: text, icons, whatever is painted to be read over the
+    // 3D view -- not the see-through backgrounds an overlaid panel keeps
+    // behind its items (docs/HandsOnQueue.md entries 69 and 87). Outlined
+    // with the rest, such a background had the outline's dark laid under the
+    // whole of it and a rim around it: (124,124,124) at 150 came to the
+    // screen as (98,98,98) at 232 in a frame of (50,50,50). So only what is
+    // more opaque than those backgrounds are makes the outline.
+    const QImage source = px.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QImage ink = source;
+    const int limit = std::min(OverlayManager::overlayAlpha() + 8, 250);
+    for (int y = 0; y < ink.height(); ++y) {
+        auto line = reinterpret_cast<QRgb*>(ink.scanLine(y));
+        for (int x = 0, width = ink.width(); x < width; ++x) {
+            if (qAlpha(line[x]) <= limit)
+                line[x] = 0;
+        }
+    }
+
     // Calculate size for the background image
     QImage tmp(px.size(), QImage::Format_ARGB32_Premultiplied);
     tmp.setDevicePixelRatio(px.devicePixelRatioF());
@@ -2522,7 +2637,7 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     QPainterPath clip;
     tmpPainter.setCompositionMode(QPainter::CompositionMode_Source);
     if(_size.width() == 0 && _size.height() == 0)
-        tmpPainter.drawPixmap(QPoint(0, 0), px);
+        tmpPainter.drawImage(QPoint(0, 0), ink);
     else {
         // exclude splitter handles
         auto splitter = qobject_cast<QSplitter*>(parent());
@@ -2553,7 +2668,7 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
         for (int x=-_size.width();x<=_size.width();++x) {
             for (int y=-_size.height();y<=_size.height();++y) {
                 if (x || y) {
-                    tmpPainter.drawPixmap(QPoint(x, y), px);
+                    tmpPainter.drawImage(QPoint(x, y), ink);
                     tmpPainter.setCompositionMode(QPainter::CompositionMode_SourceOver);
                 }
             }
@@ -2576,6 +2691,31 @@ void OverlayGraphicsEffect::draw(QPainter* painter)
     tmpPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
     tmpPainter.fillRect(tmp.rect(), color());
     tmpPainter.end();
+
+    // No outline where what is drawn stands on a ground of its own: a tree
+    // item with its background, a line of the console with its, a button. The
+    // outline is there for what has to read straight over the 3D view; over a
+    // ground it only smeared the ground's edge and the text's
+    // (docs/HandsOnQueue.md entry 98, and so entry 87's "text and icons keep
+    // their outline" for an item that has a background). Taken out wherever
+    // the source is at least as opaque as such a ground, at the place the
+    // outline would be drawn.
+    {
+        const int ground = std::max(OverlayManager::overlayAlpha() - 3, 1);
+        const QPoint shift(qRound(_offset.x()), qRound(_offset.y()));
+        for (int y = 0; y < tmp.height(); ++y) {
+            const int sy = y + shift.y();
+            if (sy < 0 || sy >= source.height())
+                continue;
+            auto line = reinterpret_cast<QRgb*>(tmp.scanLine(y));
+            auto under = reinterpret_cast<const QRgb*>(source.constScanLine(sy));
+            for (int x = 0, width = tmp.width(); x < width; ++x) {
+                const int sx = x + shift.x();
+                if (sx >= 0 && sx < source.width() && qAlpha(under[sx]) >= ground)
+                    line[x] = 0;
+            }
+        }
+    }
 
     // draw the blurred shadow...
     painter->drawImage(QPointF(offset.x()+_offset.x(), offset.y()+_offset.y()), tmp);

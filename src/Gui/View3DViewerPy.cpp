@@ -32,6 +32,7 @@
 
 #include "PythonWrapper.h"
 #include "View3DViewerPy.h"
+#include "NaviCube.h"
 #include "View3DInventorViewer.h"
 
 
@@ -107,6 +108,15 @@ void View3DInventorViewerPy::init_type()
         "setEnabledNaviCube(bool): enables or disables the navi cube of the viewer.");
     add_varargs_method("isEnabledNaviCube", &View3DInventorViewerPy::isEnabledNaviCube,
         "isEnabledNaviCube() -> bool: check whether the navi cube is enabled.");
+    add_varargs_method("isCornerCoordSystemShown",
+        &View3DInventorViewerPy::isCornerCoordSystemShown,
+        "isCornerCoordSystemShown() -> bool: whether the view shows the small coordinate\n"
+        "system in its corner (View/CornerCoordSystem).");
+    add_varargs_method("getNaviCubeShown", &View3DInventorViewerPy::getNaviCubeShown,
+        "getNaviCubeShown() -> (x, y): where the navigation cube is shown, each 0..1 of the\n"
+        "room the view leaves it, x from the left and y from the top -- the view's\n"
+        "NaviCubeX and NaviCubeY unless the cube has slid along its edge to be clear of\n"
+        "a panel laid over the view. None when the view has no cube.");
     add_varargs_method("setNaviCubeCorner", &View3DInventorViewerPy::setNaviCubeCorner,
         "setNaviCubeCorner(int): sets the corner where to show the navi cube:\n"
         "0=top left, 1=top right, 2=bottom left, 3=bottom right");
@@ -648,6 +658,28 @@ Py::Object View3DInventorViewerPy::setNaviCubeCorner(const Py::Tuple& args)
         throw Py::IndexError("Value out of range");
     _viewer->setNaviCubeCorner(pos);
     return Py::None();
+}
+
+Py::Object View3DInventorViewerPy::isCornerCoordSystemShown(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    return Py::Boolean(_viewer->isFeedbackVisible());
+}
+
+Py::Object View3DInventorViewerPy::getNaviCubeShown(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    NaviCube *cube = _viewer->getNaviCube();
+    if (!cube)
+        return Py::None();
+    float x = 0.0f, y = 0.0f;
+    cube->getShownPosition(x, y);
+    Py::Tuple shown(2);
+    shown.setItem(0, Py::Float(x));
+    shown.setItem(1, Py::Float(y));
+    return shown;
 }
 
 Py::Object View3DInventorViewerPy::getPickedList(const Py::Tuple &args, const Py::Dict &kwds)

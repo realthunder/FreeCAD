@@ -36,6 +36,7 @@
 # include <QMessageBox>
 # include <QPushButton>
 # include <QRadioButton>
+# include <QRegularExpression>
 # include <QTextStream>
 # include <QTimer>
 # include <QStatusBar>
@@ -84,6 +85,7 @@
 #include "MDIView.h"
 #include "NotificationArea.h"
 #include "Selection.h"
+#include "SoFCUnifiedSelection.h"
 #include "TaskOwner.h"
 #include "Thumbnail.h"
 #include "Tree.h"
@@ -337,6 +339,13 @@ struct DocumentP
     // Reference counted view providers that are 3D claimed by other object.
     // These view providers shouldn't appear at secen graph root.
     std::unordered_map<const ViewProvider*, int> _ClaimedViewProviders;
+
+    // View providers whose children are to be regrouped once the walk of a
+    // scene root that was under way when it was asked for is over
+    // (Document::handleChildren3D), and whether the call that does it is
+    // queued
+    std::set<ViewProvider*> _Children3DLater;
+    bool _Children3DScheduled = false;
 
     using Connection = fastsignals::connection;
     // The two blockers below need connections that were made blockable at
@@ -5608,75 +5617,192 @@ static bool undoRedoInEdit(bool redo)
     return vp && vp->undoRedoInEdit(redo);
 }
 
-/// Will UNDO one or more steps
-void Document::undo(int iSteps)
+int Document::takeSteps(bool undo, int iSteps, int skipped)
 {
-    if (undoRedoInEdit(false))
-        return;
-
     Base::FlagToggler<> flag(d->_isTransacting);
 
     Gui::Selection().clearCompleteSelection();
 
+    const auto kind = undo ? App::TransactionGuard::Undo : App::TransactionGuard::Redo;
+    int taken = 0;
     {
         // One guard for the run, let go of around a step that goes through
         // the log (docs/TransactionLog.md sec 30.10): that one recomputes,
         // and the guard defers the touches a recompute works from.
-        std::optional<App::TransactionGuard> guard(std::in_place, App::TransactionGuard::Undo);
+        std::optional<App::TransactionGuard> guard(std::in_place, kind);
 
-        if(!checkTransactionID(true,iSteps))
-            return;
+        // Past a step that was refused (sec 33.11) there is no run of
+        // grouped transactions to ask about: the step taken is one of this
+        // document's, picked by the user.
+        if (!skipped && !checkTransactionID(undo, iSteps))
+            return -1;
 
-        for (int i=0;i<iSteps;i++) {
-            if (getDocument()->stepNeedsLog(true))
+        for (; taken < iSteps; ++taken) {
+            if (getDocument()->stepNeedsLog(undo, skipped))
                 guard.reset();
             else if (!guard)
-                guard.emplace(App::TransactionGuard::Undo);
-            if (!getDocument()->undo())
+                guard.emplace(kind);
+            const bool done = undo ? getDocument()->undoSkipping(skipped)
+                                   : getDocument()->redoSkipping(skipped);
+            if (!done)
                 break;   // nothing left, or refused: the document says why
         }
+    }
+
+    if (!undo) {
+        // Use index for iteration so that we can handle possible changes of _redoObjects while iterating.
+        for (size_t i=0; i < d->_redoObjects.size(); ++i) {
+            if (auto vp = Application::Instance->getViewProvider(d->_redoObjects[i])) {
+                handleChildren3D(vp);
+            }
+        }
+        d->_redoObjects.clear();
+    }
+    return taken;
+}
+
+bool Document::askToSkip(bool undo, int skipped, const std::string& why)
+{
+    // docs/TransactionLog.md sec 33.11: a step that was refused is said,
+    // with the reason, where it only went to the report view and the
+    // command looked as if it did nothing; and the step after it is
+    // offered, where every further undo tried the same one again.
+    const auto names = undo ? getUndoVector() : getRedoVector();
+    auto nameAt = [&names](std::size_t pos) {
+        return pos < names.size()
+            ? QCoreApplication::translate("Command", names[pos].c_str())
+            : QString();
+    };
+    const QString refused = nameAt(static_cast<std::size_t>(skipped));
+    const QString next = nameAt(static_cast<std::size_t>(skipped) + 1);
+
+    // The document says "Length of id 12 was changed since, by row 57;":
+    // the object by its label here.
+    QStringList reasons;
+    static const QRegularExpression byId(QStringLiteral("\\bid (\\d+)\\b"));
+    for (QString part : QString::fromStdString(why).split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        part = part.trimmed();
+        if (part.isEmpty())
+            continue;
+        QString said;
+        int last = 0;
+        auto it = byId.globalMatch(part);
+        while (it.hasNext()) {
+            const auto match = it.next();
+            said += part.mid(last, match.capturedStart() - last);
+            auto obj = getDocument()->getObjectByID(match.captured(1).toLong());
+            said += obj ? QString::fromUtf8(obj->Label.getValue()) : match.captured(0);
+            last = match.capturedEnd();
+        }
+        said += part.mid(last);
+        reasons << said;
+    }
+
+    QMessageBox box(getMainWindow());
+    box.setObjectName(QStringLiteral("undoRefused"));
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(undo ? QObject::tr("Undo") : QObject::tr("Redo"));
+    box.setText((undo ? QObject::tr("'%1' cannot be undone.")
+                      : QObject::tr("'%1' cannot be redone.")).arg(refused));
+    QString detail = reasons.join(QLatin1Char('\n'));
+    QAbstractButton* skip = nullptr;
+    if (next.isEmpty()) {
+        box.addButton(QMessageBox::Ok);
+    }
+    else {
+        detail += QStringLiteral("\n\n")
+            + (undo ? QObject::tr("Skip it and undo '%1' instead? '%2' stays as it is.")
+                    : QObject::tr("Skip it and redo '%1' instead? '%2' stays as it is."))
+                  .arg(next, refused);
+        skip = box.addButton(QObject::tr("Skip this step"), QMessageBox::AcceptRole);
+        box.addButton(QMessageBox::Cancel);
+    }
+    box.setInformativeText(detail);
+    box.exec();
+    return skip && box.clickedButton() == skip;
+}
+
+void Document::undoOrRedo(bool undo, int iSteps, bool ask)
+{
+    // The view provider in edit may take the command as its own: asked
+    // once, before any step of the document's is looked at.
+    if (undoRedoInEdit(!undo))
+        return;
+
+    int skipped = 0;
+    while (iSteps > 0) {
+        const int taken = takeSteps(undo, iSteps, skipped);
+        if (taken < 0)
+            return;
+        iSteps -= taken;
+        if (iSteps <= 0 || !ask)
+            return;
+        // Asked with nothing held: no guard, and the document not said to
+        // be in a transaction while the dialog's loop turns.
+        const std::string why = getDocument()->undoRefusal();
+        if (why.empty() || !askToSkip(undo, skipped, why))
+            return;
+        // The step refused is left, and was one of those asked for.
+        ++skipped;
+        --iSteps;
+        // Nothing asked for is left: the one the user chose to go on to.
+        if (iSteps <= 0)
+            iSteps = 1;
     }
 }
 
-/// Will REDO one or more steps
-void Document::redo(int iSteps)
+/// Will UNDO one or more steps
+void Document::undo(int iSteps, bool ask)
 {
-    if (undoRedoInEdit(true))
-        return;
+    undoOrRedo(true, iSteps, ask);
+}
 
-    Base::FlagToggler<> flag(d->_isTransacting);
-
-    Gui::Selection().clearCompleteSelection();
-
-    {
-        std::optional<App::TransactionGuard> guard(std::in_place, App::TransactionGuard::Redo);
-
-        if(!checkTransactionID(false,iSteps))
-            return;
-
-        for (int i=0;i<iSteps;i++) {
-            if (getDocument()->stepNeedsLog(false))
-                guard.reset();
-            else if (!guard)
-                guard.emplace(App::TransactionGuard::Redo);
-            if (!getDocument()->redo())
-                break;   // nothing left, or refused: the document says why
-        }
-    }
-
-    // Use index for iteration so that we can handle possible changes of _redoObjects while iterating.
-    for (size_t i=0; i < d->_redoObjects.size(); ++i) {
-        if (auto vp = Application::Instance->getViewProvider(d->_redoObjects[i])) {
-            handleChildren3D(vp);
-        }
-    }
-    d->_redoObjects.clear();
+/// Will REDO one or more steps
+void Document::redo(int iSteps, bool ask)
+{
+    undoOrRedo(false, iSteps, ask);
 }
 
 PyObject* Document::getPyObject()
 {
     _pcDocPy->IncRef();
     return _pcDocPy;
+}
+
+void Document::handleChildren3DLater()
+{
+    d->_Children3DScheduled = false;
+    if (d->_Children3DLater.empty())
+        return;
+    if (SoFCUnifiedSelection::boundingBoxWalks() > 0) {
+        // Still inside one: a nested event loop under a walk. Once more.
+        d->_Children3DScheduled = true;
+        std::string name = d->_pcDocument->getName();
+        QTimer::singleShot(0, QCoreApplication::instance(), [name]() {
+            if (auto doc = Application::Instance->getDocument(name.c_str()))
+                doc->handleChildren3DLater();
+        });
+        return;
+    }
+    std::set<ViewProvider*> later;
+    later.swap(d->_Children3DLater);
+    for (ViewProvider *vp : later) {
+        // Gone in between: a view provider deleted takes itself off the
+        // list, this is for whatever else may have ended it
+        bool alive = false;
+        for (auto &v : d->_ViewProviderMap) {
+            if (v.second == vp) {
+                alive = true;
+                break;
+            }
+        }
+        for (auto &v : d->_ViewProviderMapAnnotation) {
+            if (v.second == vp)
+                alive = true;
+        }
+        if (alive)
+            handleChildren3D(vp);
+    }
 }
 
 void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
@@ -5686,6 +5812,33 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
     SoGroup* childGroup =  viewProvider->getChildRoot();
     if(!childGroup)
         return;
+
+    // Not while a scene root is walking through its children. A regrouping
+    // takes the roots of claimed children out of the scene root, which
+    // shortens the list under the walk; the walk then reads past its end
+    // and Coin, which checks for that in a debug build alone, calls a node
+    // that is not there. Seen: a repaint the restore of the view providers
+    // pumped asks for the scene's bounding box; a PartDesign feature's
+    // visual is built on demand inside that walk (SoFCCoordinate3) and
+    // reads SuppressedShape, still parked from the load; serving it
+    // announces the property, and the announcement arrives here
+    // (docs/HandsOnQueue.md entry 79: one load in a few of a file saved by
+    // a build that stores that property). Done as soon as the walk is over.
+    if (deleting) {
+        d->_Children3DLater.erase(viewProvider);
+    }
+    else if (SoFCUnifiedSelection::boundingBoxWalks() > 0) {
+        d->_Children3DLater.insert(viewProvider);
+        if (!d->_Children3DScheduled) {
+            d->_Children3DScheduled = true;
+            std::string name = d->_pcDocument->getName();
+            QTimer::singleShot(0, QCoreApplication::instance(), [name]() {
+                if (auto doc = Application::Instance->getDocument(name.c_str()))
+                    doc->handleChildren3DLater();
+            });
+        }
+        return;
+    }
 
     SoGroup* frontGroup = viewProvider->getFrontRoot();
     SoGroup* backGroup = viewProvider->getFrontRoot();

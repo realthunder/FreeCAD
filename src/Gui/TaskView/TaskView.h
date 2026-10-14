@@ -275,6 +275,9 @@ public:
      * when the stack shows the watchers, or a dialog no view owns.
      */
     void sendShownToView();
+    /// Whether sendShownToView() has something to send: the stack shows a
+    /// dialog, and a view owns it
+    bool canSendShownToView() const;
     /** A key pressed in \a page, wherever the page is.
      *
      * Enter presses the default button of that page's dialog and Escape

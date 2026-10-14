@@ -22,9 +22,13 @@
 
 #include "PreCompiled.h"
 
+#include <QBoxLayout>
 #include <QPropertyAnimation>
+#include <QPushButton>
 #include <QStandardItemModel>
 #include <QTimer>
+
+#include <Gui/TaskView/TaskPanelHost.h>
 
 /*[[[cog
 import DlgSettingsUI
@@ -43,8 +47,8 @@ DlgSettingsUI.define()
 #include <Gui/ViewParams.h>
 #include <Gui/OpenViewParams.h>
 #include <Gui/TreeParams.h>
-#include <Gui/ExprParams.h>
 #include <Gui/OverlayParams.h>
+#include <Gui/ExprParams.h>
 // Auto generated code (Tools/params_utils.py:652)
 #include "Gui/PreferencePages/DlgSettingsUI.h"
 using namespace Gui::Dialog;
@@ -137,17 +141,6 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     TaskPanelInView->setChecked(Gui::ViewParams::defaultTaskPanelInView());
     TaskPanelInView->setEntryName("TaskPanelInView");
     TaskPanelInView->setParamGrpPath("View");
-
-    // Auto generated code (Tools/params_utils.py:486)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:492)
-    layoutViews->addLayout(layoutRow);
-    TaskPanelInViewAll = new Gui::PrefCheckBox(this);
-    layoutRow->addWidget(TaskPanelInViewAll);
-    TaskPanelInViewAll->setChecked(Gui::ViewParams::defaultTaskPanelInViewAll());
-    TaskPanelInViewAll->setEntryName("TaskPanelInViewAll");
-    TaskPanelInViewAll->setParamGrpPath("View");
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -273,6 +266,17 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     ItemBackground->setEntryName("ItemBackground");
     ItemBackground->setParamGrpPath("TreeView");
     ItemBackground->setAllowTransparency(true);
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutTreeview->addLayout(layoutRow);
+    DockOverlayThemeItemColor = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(DockOverlayThemeItemColor);
+    DockOverlayThemeItemColor->setChecked(Gui::OverlayParams::defaultDockOverlayThemeItemColor());
+    DockOverlayThemeItemColor->setEntryName("DockOverlayThemeItemColor");
+    DockOverlayThemeItemColor->setParamGrpPath("View");
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -698,11 +702,29 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
-    DockOverlayCheckNaviCube = new Gui::PrefCheckBox(this);
-    layoutRow->addWidget(DockOverlayCheckNaviCube);
-    DockOverlayCheckNaviCube->setChecked(Gui::OverlayParams::defaultDockOverlayCheckNaviCube());
-    DockOverlayCheckNaviCube->setEntryName("DockOverlayCheckNaviCube");
-    DockOverlayCheckNaviCube->setParamGrpPath("View");
+    DockOverlayMoveNaviCube = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(DockOverlayMoveNaviCube);
+    DockOverlayMoveNaviCube->setChecked(Gui::OverlayParams::defaultDockOverlayMoveNaviCube());
+    DockOverlayMoveNaviCube->setEntryName("DockOverlayMoveNaviCube");
+    DockOverlayMoveNaviCube->setParamGrpPath("View");
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutOverlay->addLayout(layoutRow);
+    labelDockOverlayAlpha = new QLabel(this);
+    layoutRow->addWidget(labelDockOverlayAlpha);
+    DockOverlayAlpha = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(DockOverlayAlpha);
+    DockOverlayAlpha->setValue(Gui::OverlayParams::defaultDockOverlayAlpha());
+    DockOverlayAlpha->setEntryName("DockOverlayAlpha");
+    DockOverlayAlpha->setParamGrpPath("View");
+    // Auto generated code (Tools/params_utils.py:1360)
+    DockOverlayAlpha->setMinimum(0);
+    DockOverlayAlpha->setMaximum(255);
+    DockOverlayAlpha->setSingleStep(5);
+    DockOverlayAlpha->setValue(Gui::OverlayParams::defaultDockOverlayAlpha());
 
     // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
@@ -1014,13 +1036,13 @@ void DlgSettingsUI::saveSettings()
     PerViewEdit->onSave();
     PerViewSelection->onSave();
     TaskPanelInView->onSave();
-    TaskPanelInViewAll->onSave();
     DocumentTarget->onSave();
     DocViewTarget->onSave();
     UtilityTarget->onSave();
     SplitDirection->onSave();
     MinimumCellSize->onSave();
     ItemBackground->onSave();
+    DockOverlayThemeItemColor->onSave();
     ItemBackgroundPadding->onSave();
     ResizableColumn->onSave();
     CheckBoxesSelection->onSave();
@@ -1049,7 +1071,8 @@ void DlgSettingsUI::saveSettings()
     DockOverlayWheelPassThrough->onSave();
     DockOverlayWheelDelay->onSave();
     DockOverlayAlphaRadius->onSave();
-    DockOverlayCheckNaviCube->onSave();
+    DockOverlayMoveNaviCube->onSave();
+    DockOverlayAlpha->onSave();
     DockOverlayHintTriggerSize->onSave();
     DockOverlayHintSize->onSave();
     DockOverlayHintLeftOffset->onSave();
@@ -1078,13 +1101,13 @@ void DlgSettingsUI::loadSettings()
     PerViewEdit->onRestore();
     PerViewSelection->onRestore();
     TaskPanelInView->onRestore();
-    TaskPanelInViewAll->onRestore();
     DocumentTarget->onRestore();
     DocViewTarget->onRestore();
     UtilityTarget->onRestore();
     SplitDirection->onRestore();
     MinimumCellSize->onRestore();
     ItemBackground->onRestore();
+    DockOverlayThemeItemColor->onRestore();
     ItemBackgroundPadding->onRestore();
     ResizableColumn->onRestore();
     CheckBoxesSelection->onRestore();
@@ -1113,7 +1136,8 @@ void DlgSettingsUI::loadSettings()
     DockOverlayWheelPassThrough->onRestore();
     DockOverlayWheelDelay->onRestore();
     DockOverlayAlphaRadius->onRestore();
-    DockOverlayCheckNaviCube->onRestore();
+    DockOverlayMoveNaviCube->onRestore();
+    DockOverlayAlpha->onRestore();
     DockOverlayHintTriggerSize->onRestore();
     DockOverlayHintSize->onRestore();
     DockOverlayHintLeftOffset->onRestore();
@@ -1150,8 +1174,6 @@ void DlgSettingsUI::retranslateUi()
     PerViewSelection->setText(QObject::tr("A selection per view"));
     TaskPanelInView->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docTaskPanelInView()));
     TaskPanelInView->setText(QObject::tr("Task panels in their views"));
-    TaskPanelInViewAll->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docTaskPanelInViewAll()));
-    TaskPanelInViewAll->setText(QObject::tr("... and the panels that are open"));
     DocumentTarget->setToolTip(QApplication::translate("OpenViewParams", Gui::OpenViewParams::docDocumentTarget()));
     labelDocumentTarget->setText(QObject::tr("New documents open in"));
     labelDocumentTarget->setToolTip(DocumentTarget->toolTip());
@@ -1189,6 +1211,8 @@ void DlgSettingsUI::retranslateUi()
     ItemBackground->setToolTip(QApplication::translate("TreeParams", Gui::TreeParams::docItemBackground()));
     labelItemBackground->setText(QObject::tr("Item background color"));
     labelItemBackground->setToolTip(ItemBackground->toolTip());
+    DockOverlayThemeItemColor->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayThemeItemColor()));
+    DockOverlayThemeItemColor->setText(QObject::tr("Item background follows the theme"));
     ItemBackgroundPadding->setToolTip(QApplication::translate("TreeParams", Gui::TreeParams::docItemBackgroundPadding()));
     labelItemBackgroundPadding->setText(QObject::tr("Item background padding"));
     labelItemBackgroundPadding->setToolTip(ItemBackgroundPadding->toolTip());
@@ -1261,8 +1285,11 @@ void DlgSettingsUI::retranslateUi()
     DockOverlayAlphaRadius->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayAlphaRadius()));
     labelDockOverlayAlphaRadius->setText(QObject::tr("Alpha test radius"));
     labelDockOverlayAlphaRadius->setToolTip(DockOverlayAlphaRadius->toolTip());
-    DockOverlayCheckNaviCube->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayCheckNaviCube()));
-    DockOverlayCheckNaviCube->setText(QObject::tr("Check Navigation Cube"));
+    DockOverlayMoveNaviCube->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayMoveNaviCube()));
+    DockOverlayMoveNaviCube->setText(QObject::tr("Navigation cube moves clear of panels"));
+    DockOverlayAlpha->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayAlpha()));
+    labelDockOverlayAlpha->setText(QObject::tr("Overlay background opacity"));
+    labelDockOverlayAlpha->setToolTip(DockOverlayAlpha->toolTip());
     DockOverlayHintTriggerSize->setToolTip(QApplication::translate("OverlayParams", Gui::OverlayParams::docDockOverlayHintTriggerSize()));
     labelDockOverlayHintTriggerSize->setText(QObject::tr("Hint trigger size"));
     labelDockOverlayHintTriggerSize->setToolTip(DockOverlayHintTriggerSize->toolTip());
@@ -1354,6 +1381,43 @@ void DlgSettingsUI::init()
     };
     QObject::connect(UseViewArea, &QCheckBox::toggled, this, splitChoicesEnabled);
     splitChoicesEnabled(UseViewArea->isChecked());
+
+    // "Task panels in their views" is for the panels opened from now on.
+    // The button beside it sends the ones that are open there too, in
+    // every view (docs/HandsOnQueue.md entry 70; it was a second check box,
+    // "... and the panels that are open", a stored setting for what is one
+    // act). It stores the setting first: with "Apply preferences at once"
+    // off the check box has not been written yet, and the views go by what
+    // is stored.
+    applyTaskPanelInView = new QPushButton(this);
+    applyTaskPanelInView->setObjectName(QStringLiteral("applyTaskPanelInView"));
+    applyTaskPanelInView->setText(tr("Apply to live views"));
+    applyTaskPanelInView->setToolTip(
+        tr("Move the task panels that are open to where the setting says, in every view.\n"
+           "A view's own choice of place, made with the button on its panel's title bar,\n"
+           "is given up."));
+    applyTaskPanelInView->setAutoDefault(false);
+    for (QBoxLayout *row : findChildren<QBoxLayout*>()) {
+        if (row->indexOf(TaskPanelInView) < 0)
+            continue;
+        row->addWidget(applyTaskPanelInView);
+        row->addStretch(1);
+        break;
+    }
+    QObject::connect(applyTaskPanelInView, &QPushButton::clicked, this, [this]() {
+        TaskPanelInView->onSave();
+        TaskView::TaskPlacement::applyToAll();
+    });
+
+    // The tree view's own item background colour is used only while "Item
+    // background follows the theme" is off: with that on, the colour cannot
+    // be picked (docs/HandsOnQueue.md entry 87).
+    auto ownColourEnabled = [this](bool followsTheme) {
+        labelItemBackground->setEnabled(!followsTheme);
+        ItemBackground->setEnabled(!followsTheme);
+    };
+    QObject::connect(DockOverlayThemeItemColor, &QCheckBox::toggled, this, ownColourEnabled);
+    ownColourEnabled(DockOverlayThemeItemColor->isChecked());
 
     timer = new QTimer(this);
     timer->setSingleShot(true);

@@ -71,7 +71,10 @@ def set_pref(face):
 
 
 def face(vo):
-    return tuple(round(c, 3) for c in vo.ShapeColor[:3]), vo.Transparency
+    """What the sketch's faces are drawn in: under AutoColor the settings',
+    which the properties are not (docs/TransactionLog.md sec 33.15)"""
+    c = vo.getDrawnColors()["Face"][0]
+    return tuple(round(v, 3) for v in c[:3]), int(round(c[3] * 100))
 
 
 def same(vo, want):
@@ -134,8 +137,9 @@ def run():
         va, vb = a.ViewObject, b.ViewObject
         check("a new sketch's face takes FaceColor", same(va, RED40), face(va))
         st = va.getPropertyStatus("ShapeColor")
-        check("the automatic face colour is not saved", "Transient" in st, st)
-        check("nor its transparency", "Transient" in va.getPropertyStatus("Transparency"))
+        check("the face colour is not for the property editor while it is on", "Hidden" in st, st)
+        check("nor its transparency", "Hidden" in va.getPropertyStatus("Transparency"))
+        own = (tuple(round(c, 3) for c in a.ShapeColor[:3]), a.Transparency)
 
         gdoc = FreeCADGui.getDocument(DOC)
         path = os.path.join(OUT, "auto.FCStd")
@@ -147,12 +151,16 @@ def run():
         check("an existing sketch made before the change follows too", same(d.ViewObject, GREEN20),
               face(d.ViewObject))
         check("and is not a modification of the document", not gdoc.Modified)
+        check("nor of the object, whose face is as it was",
+              (tuple(round(c, 3) for c in a.ShapeColor[:3]), a.Transparency) == own,
+              "%s, was %s" % ((tuple(round(c, 3) for c in a.ShapeColor[:3]), a.Transparency), own))
 
         vb.AutoColor = False
         vb.ShapeColor = ORANGE[0]
         vb.Transparency = ORANGE[1]
-        check("turned off, the face colour is saved again",
-              "Transient" not in vb.getPropertyStatus("ShapeColor"))
+        settle(0.2)
+        check("turned off, the face colour is for the property editor again",
+              "Hidden" not in vb.getPropertyStatus("ShapeColor"))
         set_pref(RED40)
         check("a preference change leaves a face with AutoColor off alone", same(vb, ORANGE),
               face(vb))
@@ -168,13 +176,17 @@ def run():
 
         # Files written before the face joined AutoColor: the face colour was
         # saved. A carries the default, B its own orange; both with white
-        # edges, as AutoColor's own old-file test wants.
+        # edges, as AutoColor's own old-file test wants. At schema 4, where
+        # the colours are recorded in the view file with their saved status
+        # as they were then; at 5 they are names over the object's looks and
+        # are not written there.
         va.AutoColor = False
         vb.AutoColor = False
         va.ShapeColor, va.Transparency = DEFAULT
         for vo in (va, vb):
             vo.LineColor = (1.0, 1.0, 1.0)
             vo.PointColor = (1.0, 1.0, 1.0)
+        doc.SaveSchemaVersion = 4
         doc.save()
         settle(0.3)
         for tag, fn in (("before AutoColor", strip_auto_color),

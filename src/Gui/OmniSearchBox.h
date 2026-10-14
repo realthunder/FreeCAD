@@ -87,10 +87,15 @@ public:
 
     /// Show the mode chooser once the edit has focus (or now, if it has)
     void requestChooser();
+    /// Type \a text, as setInputText() does, once the edit has focus (or now)
+    void requestInput(const QString &text);
 
     bool popupVisible() const;
     void hidePopups();
 
+    /// Whether the activation being told of came by Tab: the text is completed
+    /// and the typing goes on, in this box (docs/HandsOnQueue.md entry 94)
+    bool completingByTab() const { return byTab; }
     /// Rows of the current mode's filtered list, for a lone-match Enter
     int filteredRowCount() const;
     QModelIndex filteredRow(int row) const;
@@ -132,6 +137,7 @@ private:
     void runObjectQuery();
     void resolveObjectQuery();
     void completeObject(const QString &completion);
+    void correctTypedCase();
     void completeMember(const QString &name, bool advance);
     int objectSkip() const;
     void activateObject();
@@ -164,7 +170,9 @@ private:
 
     bool completing = false;
     bool justActivated = false;
-    bool chooserPending = false;
+    bool byTab = false;
+    /// What requestInput() was asked to type and the focus has not come for
+    QString pendingInput;
     App::Property *resolvedProp = nullptr;
     App::SubObjectT resolvedObj;
 };
@@ -187,6 +195,13 @@ public:
 
     /// Show the box, anchored to the main window, ready for a query
     void open();
+    /** Show the box with \a text typed in it, as if by hand: "/ " for the
+     * objects, "/ Box." for the properties of Box. \a from is the tree view
+     * that asked, where one did: the items found are scrolled to and marked
+     * in that one, in the main tree view otherwise (docs/HandsOnQueue.md
+     * entry 78: Ctrl+F in a tree view and in the property view).
+     */
+    void open(const QString &text, TreeWidget *from = nullptr);
     /// Hide the box and undo its transient state (tree highlight, preselection)
     void dismiss();
 
@@ -224,6 +239,8 @@ private:
     QVBoxLayout *panelLayout = nullptr;
     OmniPropertyPanel *propertyPanel = nullptr;
     OmniParamPanel *paramPanel = nullptr;
+    /// The tree view the box was opened from, while it is open
+    QPointer<TreeWidget> launchTree;
     bool menuRunning = false;
 };
 

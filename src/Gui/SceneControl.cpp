@@ -55,6 +55,7 @@
 #include "MirrorViewer.h"
 #include "OmniControl.h"
 #include "OmniSearch.h"
+#include "PropertyGroupName.h"
 #include "SceneContextMenu.h"
 #include "SceneActors.h"
 #include "SceneControl.h"
@@ -231,8 +232,11 @@ QJsonObject describeProperty(const App::PropertyContainer *container,
     d[QLatin1String("name")] = QString::fromStdString(name);
     d[QLatin1String("scope")] = QString::fromUtf8(scope);
     const char *group = container->getPropertyGroup(prop);
+    // The name the group is shown by: its rank is an ending of the declared
+    // name, for the order of a property view
     d[QLatin1String("group")] = group && group[0]
-        ? QString::fromUtf8(group) : QStringLiteral("Base");
+        ? QString::fromStdString(Gui::propertyGroupDisplayName(group))
+        : QStringLiteral("Base");
     const char *docu = container->getPropertyDocumentation(prop);
     if (docu && docu[0])
         d[QLatin1String("doc")] = QString::fromUtf8(docu);

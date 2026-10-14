@@ -631,6 +631,42 @@ Action * StdCmdWindowsMenu::createAction()
 
 namespace Gui {
 
+//===========================================================================
+// Std_WindowBars
+//===========================================================================
+
+/** The main window's own bars -- the custom title bar and what goes into it,
+ * the menu bar, the status bar -- as one entry at the end of the View menu
+ * (docs/HandsOnQueue.md entry 101). They are commands in their own right;
+ * this holds them by name.
+ */
+class StdCmdWindowBars : public GroupCommand
+{
+public:
+    StdCmdWindowBars()
+        :GroupCommand("Std_WindowBars")
+    {
+        sGroup        = "View";
+        sMenuText     = QT_TR_NOOP("Title, menu and status bars");
+        sToolTipText  = QT_TR_NOOP("The main window's own bars: the custom title bar and\n"
+                                   "what it holds, the menu bar and the status bar");
+        sWhatsThis    = "Std_WindowBars";
+        sStatusTip    = sToolTipText;
+        eType         = 0;
+        bCanLog       = false;
+
+        addCommand("Std_ViewTitleBar");
+        addCommand("Std_ViewFoldTitleBarMenu");
+        addCommand("Std_ViewTitleBarToolBars");
+        addCommand();
+        addCommand("Std_ShowMenuBar");
+        addCommand("Std_ViewStatusBar");
+    }
+
+    const char* className() const override
+    { return "StdCmdWindowBars"; }
+};
+
 void CreateWindowStdCommands()
 {
     CommandManager &rcCmdMgr = Application::Instance->commandManager();
@@ -650,6 +686,8 @@ void CreateWindowStdCommands()
     rcCmdMgr.addCommand(new StdCmdTitleBarToolBars());
     rcCmdMgr.addCommand(new StdCmdShowMenuBar());
     rcCmdMgr.addCommand(new StdCmdStatusBar());
+    // after the commands it holds, which it takes by name
+    rcCmdMgr.addCommand(new StdCmdWindowBars());
     rcCmdMgr.addCommand(new StdCmdUserInterface());
 }
 

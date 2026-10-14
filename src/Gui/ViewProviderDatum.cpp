@@ -334,12 +334,17 @@ void ViewProviderDatum::attach(App::DocumentObject* pcObject)
     // Hidden features
     auto hidden = new SoFCPathAnnotation;
     hidden->priority = -1;
+    // Seen through what is in front, and picked through it: an origin
+    // inside its body had no line that could be pointed at
+    // (docs/HandsOnQueue.md entry 99). A plane's face is not: it is picked
+    // late, after everything else (ViewProviderPlane).
+    hidden->pickThrough = TRUE;
     hidden->renderCaching = SoSeparator::OFF;
 
     // Style for hidden lines
     style = new SoDrawStyle ();
     style->lineWidth = 2.0f;
-    style->linePattern.setValue ( 0xF000 ); // (dash-skip-skip-skip)
+    style->linePattern.setValue ( 0xFFF0 ); // (dash-dash-dash-skip)
     hidden->addChild ( style );
 
     // Hidden lines

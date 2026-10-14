@@ -349,7 +349,6 @@ def build():
     VIEW.SetBool("ShowNaviCube", False)
     VIEW.SetBool("UseNavigationAnimations", False)
     VIEW.SetBool("UseViewArea", True)
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", True)
     TASKS.SetBool("TaskPanelAllowConcurrent", True)
     LAST.RemString("Side")
@@ -411,26 +410,39 @@ def the_look_of_an_overlaid_dock():
           lambda: (alpha("a1", ground("a1", "first")) == 0, alpha("a1", ground("a1", "first"))))
     claim("the title bar is drawn, and lets the picture through",
           lambda: (0 < alpha("a1", QtCore.QPoint(40, 6)) < 255, alpha("a1", QtCore.QPoint(40, 6))))
-    claim("a point on the clear ground is the view's, not the panel's",
-          lambda: (is_views("a1", under("a1", ground("a1", "first"))),
-                   cls(under("a1", ground("a1", "first")))))
-    claim("a point on the box is the panel's",
-          lambda: host_of("a1").isAncestorOf(
-              QtWidgets.QApplication.widgetAt(first.edit.mapToGlobal(first.edit.rect().center()))))
+    # What is under a point is the window system's answer: another program's
+    # window over this one there, and the application has no widget at it
+    seen = QtWidgets.QApplication.topLevelAt(
+        host_of("a1").mapToGlobal(ground("a1", "first"))) is not None
+    if seen:
+        claim("a point on the clear ground is the view's, not the panel's",
+              lambda: (is_views("a1", under("a1", ground("a1", "first"))),
+                       cls(under("a1", ground("a1", "first")))))
+        claim("a point on the box is the panel's",
+              lambda: host_of("a1").isAncestorOf(
+                  QtWidgets.QApplication.widgetAt(
+                      first.edit.mapToGlobal(first.edit.rect().center()))))
+    else:
+        note("NOTE not claimed, the window is covered on the screen: which widget is under"
+             " a point of the clear ground and of the box")
 
     def zooms():
         before = camera("a1")
         wheel_at(host_of("a1").mapToGlobal(ground("a1", "first")))
         return camera("a1") != before
 
-    claim("a turn of the wheel on the clear ground zooms the view", zooms)
-
     def scrolls_not():
         before = camera("a1")
         wheel_at(first.label.mapToGlobal(first.label.rect().center()))
         return camera("a1") == before
 
-    claim("and on the box it does not", scrolls_not)
+    if hasattr(ctypes, "windll"):
+        # wheel_at() turns the real pointer's wheel through XTEST
+        note("NOTE not claimed on Windows: a turn of the wheel on the clear ground zooms the"
+             " view, and on the box it does not")
+    else:
+        claim("a turn of the wheel on the clear ground zooms the view", zooms)
+        claim("and on the box it does not", scrolls_not)
     QTest.mouseClick(first.edit, LEFT)
     settle(200)
     QTest.keyClicks(first.edit, "typed")
@@ -453,9 +465,11 @@ def on_any_side():
     claim("to the top, the whole width", side("Top"))
     claim("to the bottom", side("Bottom"))
     claim("and to the left again", side("Left"))
+    seen = QtWidgets.QApplication.topLevelAt(
+        host_of("a1").mapToGlobal(ground("a1", "first"))) is not None
     claim("the ground is clear on the left as it was",
           lambda: alpha("a1", ground("a1", "first")) == 0
-          and is_views("a1", under("a1", ground("a1", "first"))))
+          and (not seen or is_views("a1", under("a1", ground("a1", "first")))))
     check("the dialog was told nothing by any of it", calls("first") == state["told"],
           (state["told"], calls("first")))
 
@@ -582,7 +596,6 @@ def finish():
     if state["done"]:
         return
     state["done"] = True
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", False)
     TASKS.SetBool("TaskPanelAllowConcurrent", False)
     LAST.RemString("Side")

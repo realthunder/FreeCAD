@@ -331,11 +331,14 @@ def build():
     VIEW.SetBool("ShowNaviCube", False)
     VIEW.SetBool("UseNavigationAnimations", False)
     VIEW.SetBool("UseViewArea", True)
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", True)
     TASKS.SetBool("TaskPanelAllowConcurrent", True)
     LAST.RemString("Side")
     LAST.RemString("Mode")
+    # A view with its panel beside it is about 550 across here, and the test
+    # splits it side by side: under the minimum view cell size (300), which
+    # would refuse the split and say so in a report view that then comes up.
+    VIEW.GetGroup("OpenView").SetInt("MinimumCellSize", 200)
 
     for dock in mw().findChildren(QtWidgets.QDockWidget):
         if dock.objectName() in ("Python console", "Report view"):
@@ -629,9 +632,9 @@ def finish():
         return
     state["done"] = True
     VIEW.SetBool("UseViewArea", True)
-    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("TaskPanelInView", False)
     TASKS.SetBool("TaskPanelAllowConcurrent", False)
+    VIEW.GetGroup("OpenView").RemInt("MinimumCellSize")
     LAST.RemString("Side")
     LAST.RemString("Mode")
     try:

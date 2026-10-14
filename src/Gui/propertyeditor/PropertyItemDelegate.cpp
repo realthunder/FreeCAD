@@ -95,6 +95,13 @@ void PropertyItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &
                 brush = value.value<QBrush>();
             painter->fillRect(option.rect, brush);
         }
+        else if (auto editor = qobject_cast<PropertyEditor*>(par); editor && editor->overlayLook()) {
+            // Overlaid: the rows are all of the view that has a ground
+            // (docs/HandsOnQueue.md entry 69)
+            const QBrush brush = editor->overlayRowBackground(index);
+            if (brush.style() != Qt::NoBrush && brush.color().alpha() != 0)
+                painter->fillRect(option.rect, brush);
+        }
 #if QT_VERSION  >= 0x050000
         else if (!(option.features & QStyleOptionViewItem::Alternate)) {
             QVariant value = par->property("itemBackground");

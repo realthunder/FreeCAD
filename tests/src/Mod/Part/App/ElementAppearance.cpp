@@ -224,8 +224,9 @@ TEST_F(PartAppearanceMadeTest, aNewObjectIsGivenALookAndKeepsNoMore)
             EXPECT_EQ(store.getDrawn(kind).getSize(), 1);
             EXPECT_EQ(store.getNumbered(kind).getSize(), 0);
         }
-        EXPECT_STREQ(store.getGroup(), "Appearances");
-        EXPECT_STREQ(obj->MapFaceColor.getGroup(), "Appearances");
+        // "#1" is the group's rank in a property view, not shown there
+        EXPECT_STREQ(store.getGroup(), "Appearances#1");
+        EXPECT_STREQ(obj->MapFaceColor.getGroup(), "Appearances#1");
         // The faces are the material card's, which is the preference's
         EXPECT_EQ(store.getBase(Prop::Face).diffuseColor,
                   obj->getMaterialAppearance().diffuseColor);

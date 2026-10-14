@@ -81,6 +81,8 @@ public:
     Py::Object setEnabledNaviCube(const Py::Tuple& args);
     Py::Object isEnabledNaviCube(const Py::Tuple& args);
     Py::Object setNaviCubeCorner(const Py::Tuple& args);
+    Py::Object getNaviCubeShown(const Py::Tuple& args);
+    Py::Object isCornerCoordSystemShown(const Py::Tuple& args);
 
 private:
     std::list<PyObject*> callbacks;

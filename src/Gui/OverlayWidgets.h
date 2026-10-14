@@ -549,12 +549,46 @@ private:
 };
 
 
-/// Tool button for the title bar of the OverlayTabWidget
+/** Tool button for the title bar of a dock, docked or overlaid, and for the
+ * header of a task panel in its view.
+ *
+ * Its icons are glyphs drawn in black, and a title bar is not always light:
+ * under a dark theme a black close button on a dark bar was all but unseen,
+ * and only the buttons a style sheet happened to name an image for had a
+ * light twin (docs/HandsOnQueue.md entry 73). Under a dark theme the glyph
+ * is drawn light instead -- black goes to the colour, white stays white,
+ * what is between goes between -- and under a light one as the file has it.
+ * A style sheet whose ground is not the theme's, an overlay sheet for one,
+ * says which colour it wants:
+ *
+ *     Gui--OverlayToolButton { qproperty-iconColor: #ffffff; }
+ */
 class OverlayToolButton: public QToolButton
 {
     Q_OBJECT
+    Q_PROPERTY(QColor iconColor READ iconColor WRITE setIconColor) // clazy:exclude=qproperty-without-notify
 public:
     explicit OverlayToolButton(QWidget *parent);
+
+    /// What a style sheet set; invalid for "by the theme"
+    QColor iconColor() const { return _iconColor; }
+    void setIconColor(const QColor &color);
+    /// The colour the glyph is drawn in
+    QColor effectiveIconColor() const;
+
+    /// \a pixmap with its dark parts in \a color: black to the colour,
+    /// white left white, the alpha as it is
+    static QPixmap tinted(const QPixmap &pixmap, const QColor &color);
+
+protected:
+    void initStyleOption(QStyleOptionToolButton *option) const override;
+
+private:
+    QColor _iconColor;
+    mutable QIcon _tinted;
+    mutable qint64 _tintedOf = 0;
+    mutable QRgb _tintedIn = 0;
+    mutable QSize _tintedAt;
 };
 
 /** Class for handling visual hint for bringing back hidden overlay dock widget

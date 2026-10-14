@@ -193,6 +193,7 @@ bool resolveEntry(const VisibilityEntry &entry,
                   std::vector<uint32_t> &key,
                   std::pair<std::string, std::string> &leaf,
                   std::vector<const App::DocumentObject *> &deps,
+                  std::vector<std::pair<std::string, std::string>> &steps,
                   std::vector<MemberKey> &members,
                   bool &seenThrough,
                   bool &ownKey,
@@ -255,10 +256,12 @@ void resolveMembers(const VisibilityEntry &entry,
         }
         MemberKey found;
         std::vector<const App::DocumentObject *> subDeps;
+        // Those of the owner, which is one step from where the member is
+        std::vector<std::pair<std::string, std::string>> subSteps;
         bool nested = false;
         bool nestedOwn = true;
-        if (resolveEntry(sub, found.key, found.leaf, subDeps, members, nested, nestedOwn,
-                         depth + 1)
+        if (resolveEntry(sub, found.key, found.leaf, subDeps, subSteps, members, nested,
+                         nestedOwn, depth + 1)
                 && nestedOwn)
             members.push_back(std::move(found));
         for (const auto *dep : subDeps) {
@@ -280,6 +283,7 @@ bool resolveEntry(const VisibilityEntry &entry,
                   std::vector<uint32_t> &key,
                   std::pair<std::string, std::string> &leaf,
                   std::vector<const App::DocumentObject *> &deps,
+                  std::vector<std::pair<std::string, std::string>> &steps,
                   std::vector<MemberKey> &members,
                   bool &seenThrough,
                   bool &ownKey,
@@ -287,6 +291,7 @@ bool resolveEntry(const VisibilityEntry &entry,
 {
     key.clear();
     deps.clear();
+    steps.clear();
     if (!Application::Instance)
         return false;
     auto doc = App::GetApplication().getDocument(entry.doc.c_str());
@@ -347,6 +352,8 @@ bool resolveEntry(const VisibilityEntry &entry,
     if (key.empty())
         return false;
     leaf = {refs.back().doc, refs.back().obj};
+    for (size_t i = 0; i + 1 < refs.size(); ++i)
+        steps.emplace_back(refs[i].doc, refs[i].obj);
     auto leafDoc = App::GetApplication().getDocument(leaf.first.c_str());
     resolveMembers(entry, leafDoc ? leafDoc->getObject(leaf.second.c_str()) : nullptr,
                    deps, members, seenThrough, ownKey, depth);
@@ -573,8 +580,8 @@ void ViewVisibility::resolveInto(const VisibilityEntry &entry, Resolution &res)
     std::vector<MemberKey> members;
     res.seenThrough = false;
     res.own = true;
-    res.ok = resolveEntry(entry, res.entry.key, res.leaf, res.deps, members, res.seenThrough,
-                          res.own);
+    res.ok = resolveEntry(entry, res.entry.key, res.leaf, res.deps, res.steps, members,
+                          res.seenThrough, res.own);
     res.entry.visibility = entry.visible ? 1 : 0;
     res.members.clear();
     if (!res.ok)
@@ -725,7 +732,19 @@ bool ViewVisibility::commit()
     showsSeenThrough = showing;
     for (const auto *results : {&transientRes, &persistedRes}) {
         for (const auto &res : *results) {
-            if (!res.ok || !res.own)
+            if (!res.ok)
+                continue;
+            if (res.entry.visibility) {
+                // What it is reached through: a body hidden in the document
+                // kept the capture from the feature this view shows in it,
+                // and an edit showed no base feature with its body hidden
+                // (docs/HandsOnQueue.md entry 108). Also where its own key
+                // does not count: what it is seen through is reached the
+                // same way.
+                for (const auto &step : res.steps)
+                    nowShown.insert(step);
+            }
+            if (!res.own)
                 continue;
             if (res.entry.visibility)
                 nowShown.insert(res.leaf);

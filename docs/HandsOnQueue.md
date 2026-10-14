@@ -30,7 +30,58 @@ changes to entry 56; three GUI tests on the staged copy after, 17, 88 and
 56's border change; three GUI tests on the staged copy after, 4, 94 and 17
 PASS, no FAIL), 2026-10-10 09:44 (`72180a4812`, on the reporter's word:
 entries 64, 66's freeze, 61 in its last form with the new rounding setting,
-62 and 63; four GUI tests on the staged copy after, 112 claims, no FAIL).
+62 and 63; four GUI tests on the staged copy after, 112 claims, no FAIL),
+2026-10-12 14:04 (`4474fcb17e`, on the reporter's word, and the FIRST
+stage from LinkVibe -- the copy was PartDesignPort's until then, so it
+gains everything LinkVibe had and PartDesignPort did not, and the merge
+of origin/LinkVibe of that day (`ffb143c047`) on top: entry 47's nine
+fixes, entry 67, entry 58's three fixes and the note in the pattern
+panels, entry 30's one overlay preset, entry 48's budget fix, entry 52's
+frame report, entry 61's check box on the Advanced page; both full
+suites on the merge before it, ctest 951 of 951 and Python 3644 with 2
+failures that were the tests' own; seven GUI tests and two loads of
+`scanner.FCStd` on the staged copy after, no FAIL), 2026-10-12 17:52
+(`22ece75a08`, on the reporter's word: entries 68, 70 to 76 and 77, and
+the archive handles of entry 47; by hand on the staged build, eight GUI
+tests with no FAIL, three with failures and one that did not start,
+none looked into, and entry 73's test not passed; both full suites
+were started on that build after the stage and had not ended when the
+build session stopped; since: ctest 954 of 955, the one a setting's
+text over its length limit, and the Python suite stopped by hand at
+1504 tests with no failure and no result; and what was PUSHED with
+this stage does not compile on another box, see the block of
+2026-10-12 18:57 below; and this copy could END BY ITSELF at the
+Preferences, entry 82, found 2026-10-13 00:56), 2026-10-13 06:52
+(`5a2f7e58c2`, whose code is the pushed `4b52e58423`, on the reporter's
+word "Fine. Push and restage": entries 69, 78, 79, 80, 81 and 82,
+entry 73's white glyphs, entry 53's second fix, entry 47's two
+commits and the corrected tests of 70 and 72; NO full suite on the
+staged binaries -- both passed the night before on `5d63c7152d`, the
+same code but for the generator; on the staged copy after, 06:53 to
+07:05: the preferences in six sessions and three loads of the re-saved
+`scanner.FCStd`, all ended properly, and five GUI tests, 12, 13, 58,
+18 and 44 PASS, no FAIL; no crash log in any of the 14 homes),
+2026-10-13 09:36 (`abca255e23`, whose code is `47ed30316a`, on the
+reporter's word "after freecad build, stage first, then proceed with
+test": the merges of origin/SolidBody and origin/Transaction with
+OcctFix inside, and OCCT brought to `a81d25f148`; LOCAL, not pushed;
+NO suite had run on that code when it was staged and, on the
+reporter's word, NO check by the build session on the staged copy --
+the reporter tests it by hand; since, on the dev build of that code:
+ctest 957 of 957 and the Python suite 3743 tests OK), 2026-10-13
+13:56 (labelled `724e03c074` and "dirty": the dev build of 13:07 made
+from a working tree with UNCOMMITTED changes, on the reporter's word
+"re-stage now": entries 84 and 85 as committed, and UNCOMMITTED
+entries 87 (border, setting), 88 to 97 without 86's wheel fix and
+without the last form of 87's hover bar; no check by the build
+session on the staged copy, by the reporter's word; ctest 957 of 957
+on that build, the Python suite running at the stage), 2026-10-13
+16:55 (labelled `73e3590a9d` and "dirty": the build of 16:48 made
+from UNCOMMITTED code, on the reporter's word "push and then stage. no
+need to test staged copy": the wheel fix of entry 86, the final hover
+bar of 87, and the round -- 83, 91 redone, 96 in the menu, 99, 102,
+103, 104's ghost, 105, 106, 107; no test of the staged copy by the
+build session and none of that code read at the stage).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -60,6 +111,1452 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 07:36: THE REPORTER RULED on entry 108 this morning and gave
+the word for a PUSH and a RESTAGE "after done" -- said to the build
+session, relayed by it (its message stamped 07:36); the note-taker did
+not hear it.** "Entry 108. When visible follow the control in edit panel.
+If preview is on, show on top, else show normal. If hidden, then always
+shiwn on top"; the control is the "Show preview" check box; "After done
+push and restage. Any issues on the notes left"; "Visible checking not
+only apply to the body itself, but to the full editing path". Under the
+entry, with what the build session made of it (a build r16 since 07:33,
+not committed). The reporter's question -- what is left in the notes --
+is answered by the build session from the note-taker's list of the
+entries not closed, sent to it 07:36. Origin is still `5c0b30ce1b`,
+the staged copy still the one of 2026-10-13 16:55, as this is written.
+
+**2026-10-14 00:12: BOTH SUITES GREEN on the build r15, "which is the
+committed code (99 a+c, 109, 113, 111 as ruled)". Nothing pushed, nothing
+staged: origin `5c0b30ce1b`, the staged copy of 2026-10-13 16:55.** From
+the build session (its message stamped 00:13, written here 00:12); its
+log commit `90ab3880a3` SEEN by the note-taker in `git log`, nothing run.
+- "ctest: '100% tests passed out of 957' (s1\ctest36.log, EXIT 0).
+  Python, whole: 'Ran 3755 tests in 859.336s, OK (skipped=52, expected
+  failures=6)' (s1\pytest36.log) -- three more tests than on r9, the
+  binder's new ones. Ran 23:43 to 00:11 in a temporary directory that
+  started empty."
+- "Not covered by the suites, as always here: the GUI tests (not in
+  ctest on this box) -- those I ran by hand per entry, as reported."
+- "No word from the user on either" -- a push, a restage -- "has
+  reached me." None has reached the note-taker.
+- LOCAL and not pushed, the code: `905d023394` and `023552c8fd` (111),
+  `26f0a30de0` (109), `1109842583` (99), `56504486e6` (113).
+- OPEN WITH THE REPORTER at this hour: entry 108's point a (the base on
+  top and see-through with the body hidden -- wanted so, or the same
+  picture as with it shown); whether the clip plane finding under entry
+  108 and the one odd migration recompute of `scanner.FCStd` become
+  entries.
+
+**2026-10-13 23:46: entries 113 and 111, as ruled at 23:04, WORK on the
+build r15 and are COMMITTED, LOCAL -- `56504486e6` (113), `023552c8fd`
+(111). Origin is still `5c0b30ce1b`, the staged copy still the one of
+16:55. Both suites run on r15, not ended.** From the build session (its
+message stamped 23:47, written here 23:46). The commits and their files
+SEEN by the note-taker in `git log`, nothing run.
+- LOCAL and not pushed now, the code: `905d023394` and `023552c8fd`
+  (111), `26f0a30de0` (109), `1109842583` (99), `56504486e6` (113);
+  with them the log `5d3cb157e6` and the queue's commits since
+  `0f08811f11`. "The tree is clean."
+- "SUITES: both started 23:43 on r15, which is the committed code --
+  ctest36.log, pytest36.log. I report them when they end." This is also
+  the first run of the suites on a build with `1109842583`.
+- 113, 111: under their entries.
+- STAGED copy, what it still lacks: everything since 16:55 -- the list
+  of 19:17 below, and 108, 109, 99's picking, 111, 113.
+
+**2026-10-13 23:20: entry 99's picking WORKS and the whole of entry 99 is
+COMMITTED `1109842583`, LOCAL; the reporter's rulings of 23:04 on 113 and
+111 are in the tree and in a build r15, started 23:18. Origin is still
+`5c0b30ce1b`, the staged copy still the one of 16:55.** From the build
+session (its message stamped 23:20, written here 23:20). The commit and
+its files SEEN by the note-taker in `git log`, nothing run.
+- LOCAL and not pushed now: `905d023394` (111, to be changed again by
+  the ruling), `26f0a30de0` (109), `1109842583` (99), and the queue's
+  commits since `0f08811f11`.
+- "ctest on r10: 957 of 957."
+- 99, 113, 111: under their entries.
+- The clip plane finding under entry 108: "cut off by the view's clip
+  planes" is "read off the picture (a plane cut through a box corner
+  gives exactly that three-sided piece), not measured" -- as the
+  note-taker had put it.
+
+**2026-10-13 23:04, the reporter, one message for three entries:** "Entry 113. I see what is wrong, previous commit fotbids link to itself. It should be allowed for hidden scope link. Binder at root means the context is link to itself. Entry 111, gate by auto tree background color setting. Follow tree item background color if enabled, else use its own widget background. Entry 108, what clip plane finding"
+Each part is under its entry, with the note-taker's reading: 113 (a self
+link is to be allowed for a link of hidden scope; a binder at the root
+has itself as its context), 111 (the text's ground by the tree's
+automatic item background setting, else the widget's own background),
+108 (the reporter asks what the clip plane finding is; answered there).
+Written here 23:07.
+
+**2026-10-13 22:06: entries 109 and 111 COMMITTED, LOCAL (`26f0a30de0`,
+`905d023394`); entry 99's picking STILL not working, its cause found;
+BOTH SUITES RUN on the build r9, green. Origin is still `5c0b30ce1b`, the
+staged copy still the one of 16:55.** From the build session (its message
+stamped 22:06, written here 22:06). The two commits and their files
+SEEN by the note-taker in `git log`, nothing run.
+- SUITES: "Python on r9, whole: 'Ran 3752 tests in 923.037s, OK
+  (skipped=52, expected failures=6)' -- the first whole run with the
+  corrected ElementAppearance test. ctest on r9: '100% tests passed out
+  of 957' (second run; the first ran nothing, test discovery timed out
+  right after the build). ctest on r10 is running. r10 and r11 change
+  Gui code only, so the Python suite is not run again."
+- 109: WORKS on r10, committed. Under the entry.
+- 111: the Classic part committed; a SIDE EFFECT under Dark that the
+  build session asks to be put to the reporter. Under the entry.
+- 99 (c): not working on r9 nor r10; a build r11 "builds after ctest on
+  r10, results to come". Under the entry.
+- 108 on the reporter's own file and configuration: the same picture
+  with the body hidden and shown. Under the entry.
+- 104's second defect: not reproduced, the probe inconclusive. Under
+  the entry.
+- "ODD, not looked into: one of three runs of entry 109's probe on r9
+  took another course through the migration recompute of scanner.FCStd
+  (295 objects instead of 394, Thickness 'Invalid face reference',
+  Helix003 and Pocket037 failing, no 'auto change element reference' at
+  all, Fillet011 'Invalid edge link: Edge88'); the next run was the
+  usual one." The note-taker's note: a migration recompute that is not
+  the same from run to run would bear on entries 92 and 105 and on
+  what the reporter sees of that file; NOT an entry, not looked into by
+  anyone -- it becomes one on the reporter's word.
+- TWO POINTS for the reporter out of this message: 111's ground under
+  Dark; and, still, 108's (which the run on their own file may have
+  answered for their configuration).
+
+**2026-10-13 20:17: the build r8 is superseded -- a build r9 runs since
+20:16, with a chain of tests and BOTH FULL SUITES queued behind it.** From
+the build session (its message stamped 20:20, written here 20:17), in
+answer to the note-taker's points of 20:16.
+- r9 carries: "99's pick reworked as a pass of its own, 109's lookup
+  falling back to the kept shape, 111's text ground for a dark text".
+- Behind it: "pick and overlay tests offscreen, entry 109's probe on
+  scanner.FCStd, the real-screen group, then ctest and the whole Python
+  suite (ctest33.log, pytest33.log). The Python suite of 18:20 with the
+  corrected ElementAppearance test has therefore still not run whole;
+  this run is that one."
+- "SUITES ON r8: NOT run."
+- 99 (a), the dashes: "not looked at by itself on r8; the last look was
+  on r5/r7 (three quarters line, a quarter gap), nothing of it changed
+  since."
+- `Binder008` (entry 105): the "No context" line being its own stays by
+  inference -- "one such error, not named"; `Sketch043` and `Pad033`
+  "were not read in that run". A read of the binder's own state is added
+  to the next probe "only if it costs nothing".
+- The pictures' folder `..\dl\handson\2026-10-12\s1` is right as
+  written: the build session's working directory has kept yesterday's
+  name, "everything of today is in it too".
+- 109: under the entry.
+
+**2026-10-13 20:13: PUSHED again, on the reporter's word to the build
+session -- origin/LinkVibe = `5c0b30ce1b` (was `b7480369e7`): entry 108's
+fix and the queue's `0f08811f11`. NOT STAGED; the copy of 16:55 stands.**
+The reporter's word, typed to the build session "at about 19:55": "after
+finish current issue. push then continue" -- relayed by the build session
+(its message stamped 20:14, written here 20:15); the note-taker did not
+hear it. SEEN by the note-taker in git, nothing run: the reflog of
+`origin/LinkVibe` says "update by push" at 2026-10-13 20:13:03; origin and
+the local head were both `5c0b30ce1b`; that commit holds
+`src/Gui/ViewVisibility.cpp`, `.h` and the test.
+- 108: COMMITTED and pushed; ONE POINT for the reporter (with the body
+  hidden the base is on top and see-through, with it shown in place and
+  solid), and a side finding. Under the entry.
+- 111: REPRODUCED on the staged copy -- contrast, not corruption. Under
+  the entry.
+- 105: `Binder008` on the committed rule RUN -- the "No context" error,
+  as expected. Under the entry.
+- STILL uncommitted in the tree: 99 (c) reworked, not built; 109 does
+  not work on the build r8; 111's change for Classic, not built.
+- NOT said in the message: the outcome of r8 for 99 (a), the dashes;
+  whether the two full suites ran on r8.
+
+**2026-10-13 19:24: PUSHED, on the reporter's word to the build session
+"push and continue" -- origin/LinkVibe = `b7480369e7` (was `ed2cb69298`).
+NOT STAGED: "the word was for the push only; the staged copy is still the
+one of 16:55".** The reporter's word reached the note-taker by the build
+session's message (which it stamps 19:25); the note-taker did not hear
+it. Written here 19:26. SEEN by the note-taker, nothing run but git's
+own reads: the reflog of `origin/LinkVibe` says "update by push" at
+2026-10-13 19:24:28, and origin and the local head are both `b7480369e7`.
+- WHAT WENT: the build session's twelve commits of about 19:11 for
+  entries 83, 86, 87, 91, 96, 98, 99 (the default alone), 100 to 107,
+  110, 112, its log `21a6b460b3`, and the queue's commits since
+  `ed2cb69298`, up to `b7480369e7` ("entry 105, Binder008 on the
+  committed rule").
+- THE PUSHED CODE AS TESTED, the build session: "ctest 957 of 957 and
+  the Python suite with the 3 ElementAppearance failures on build r7,
+  the test corrected after and run by itself only (35 OK); the whole
+  Python suite not rerun."
+- STILL UNCOMMITTED AND LOCAL: "entry 99 a + c (the pick not working),
+  108, 109 -- build r8 running, about a third done at 19:22."
+- So for the reporter: nothing they run has changed. The copy staged at
+  16:55 is what they have; what it lacks is listed in the block below.
+
+**2026-10-13 19:17: THE AFTERNOON ROUND IS COMMITTED, LOCAL -- twelve
+commits and the log on top of the queue's `156f45903f`. NOTHING pushed
+(origin is `ed2cb69298`), NOTHING staged since 16:55: the build session
+"is asking the user for both". A fourth build of the afternoon, r8, runs
+since 19:14.** From the build session (its message of 19:17, written here
+19:19). The commits and their files SEEN by the note-taker in `git log`,
+nothing run; three of them read (`00dec0a56d`, `062f56a133`,
+`6e7232e7c2`).
+- THE SUITES, "on the build r7 of 18:20 (the committed code but for one
+  test file)": ctest 957 of 957; Python "Ran 3752 tests in 909.870s,
+  FAILED (failures=3, skipped=52, expected failures=6)" -- "the three
+  are parttests.ElementAppearanceTest cases that expected the object's
+  group to be named 'Appearances'; the expectation corrected to
+  'Appearances#1', that module again on the same build: 35 OK". The
+  note-taker's note: so the three failures are entry 106's own renaming
+  met by an old expectation; the whole Python suite was not run a
+  second time after the correction, the one module was.
+- THE COMMITS, "each whole files" (all of 19:10 to 19:12):
+  `6df0613233` Base -- 107; `8ef425ceae` Gui overlays -- 86 (by what is
+  painted alone), 98 (the text's ground, no outline over a ground --
+  87's change with it), 102, 103 (the button on each overlay's own
+  title bar); `648cf34f83` -- 96 (the menu's icons), 101; `d00ab5ddcf`
+  -- 83; `51075fbda3` -- 91; `650a6dee96` -- 106; `00dec0a56d` -- 105;
+  `038b8b1b1a` -- 104, the ghost; `6d1dc1f9f1` -- 110, both parts;
+  `062f56a133` -- 100; `2a317f254e` -- 112; `6e7232e7c2` -- 99, the
+  default scale alone; `21a6b460b3` the log.
+- SHOWN on r7 since 17:25, each under its entry: 96 (19 of 19 on the
+  real screen), 103 (7 of 7), 110 (7 of 7), 101 (read off the built
+  menu), 104's ghost (5 of 5), 112 (6 of 6). "The neighbours on the
+  real screen all pass (overlay-see-through 62 of 62, the clean run
+  owed since the morning)."
+- NOT WORKING, NOT committed: entry 99 (c), the picking through a face
+  -- after two changes; and 99 (a), the dashes, waits with it.
+- HALF, not committed: 109. REPRODUCED, a fix in r8: 108.
+- NOT STARTED: 111, 113 ("waits for the user's two points"), 104's
+  second defect (the show-through).
+- WHAT THE REPORTER HAS IN HAND is still the copy staged at 16:55. Not
+  in it until a restage: 86's rule without the eye, 98, 87's no
+  outline over a background, 103's button, 99 (c), 96's menu icons as
+  redone, 100, 101, 110's two fixes, 112, and 105 WITHOUT the geometry
+  search (the staged copy still has the search as its fallback). IN it
+  already, from the code then uncommitted: 83, 91, 102, 104's ghost,
+  106, 107, 99's dashes and default.
+
+**2026-10-13 17:25: the first tests of the build STAGED at 16:55. THREE of
+its changes do NOT do what was asked in the copy under test: entry 99's
+picking through a face, entry 103's button on an overlaid Tasks panel,
+and entry 96's tint in the menu is not shown either way. A next build
+runs since 17:19. Nothing committed, pushed or staged since 16:55.** From
+the build session (its message of 17:25, written here 17:25). "The user
+is told all of this."
+- PASS on the staged build (offscreen unless said): 106
+  `property-group-rank.py` 12 of 12; 91 its test 12 of 12, the button
+  23 by 20 in a row 20 high; 83 `view-cell-handles-clear-of-panels.py`
+  19 of 19; 105 `TestShapeBinder` 13 OK and `scanner.FCStd` as under
+  the entry; 107 the root fix shown on the dev build.
+- NOT WORKING in the staged copy -- under their entries: 99 (c), 103;
+  NOT SHOWN: 96's menu tint.
+- Its neighbours run offscreen "by mistake" and failing there -- "by
+  their texts the offscreen platform's ..., not judged; they run on the
+  real screen after r6": navicube-clear-of-panels 5 FAIL,
+  overlay-title-buttons-theme 6 FAIL, selection-on-top-hidden-edges 7
+  FAIL, task-panel-in-view 2 FAIL, task-panel-overlay ABORT,
+  overlay-see-through 3 FAIL. Passing offscreen:
+  overlay-item-outline-and-hover 34, overlay-pass-through 14,
+  toolbar-menu-buttons 11, omni-search-object-typing 16, the tree's
+  tooltip 14, task-panel-clear-of-docks 21, revert-document 12,
+  preferences-tree-item-background 11,
+  overlay-preset-follows-the-theme 45, theme-switch-contrast 39.
+- THE TWO FULL SUITES WERE NOT RUN on the staged build: "I stopped them
+  to build r6."
+- IN THE NEXT BUILD (started 17:19): the three above; entry 86 by the
+  reporter's ruling (what the panel painted decides, the eye not
+  asked); entry 98 with the four answers -- the console and the report
+  view paint the tree's item ground behind each line's text, and the
+  outline effect leaves out its shadow wherever the source is at least
+  as opaque as such a ground, "which is entry 87's change too (a tree
+  item with its background has no outline) and any button's"; entry
+  110, both parts; entry 107's unit test.
+- READ, not started: 108, 109 ("the code for highlighting the preview
+  face of a missing reference EXISTS in
+  `TaskDressUpParameters::getItemElement` -- it looks the reference up
+  in the dress-up's own DressUpShape; why it finds nothing on a failed
+  feature is to be run"), 111, 112 with the setting and the Qt question,
+  104's second defect.
+- The reporter's answers of 17:22 (five entries, the block below)
+  crossed this message; entry 105's "no geometry search" is not yet in
+  what is built.
+
+**2026-10-13 17:22, the reporter, one message for five entries:** "entry 100, what's the color code for the border now? entry 101, make a new group command, say Std_SplitView, group all split view/cell related settings. put after menu item 'Standard views'. entry 105, yes save placement. I think no need geometry search, just compare placement is enough, since they still bind to the same object after all. entry 86, pass through as long as fully transparent, which is what the user would expect. entry 110, I remember see it once before"
+Each part is under its entry, with the note-taker's reading: 100 (the
+border is about #646464 now, by calculation), 101 (a group command
+`Std_SplitView` after "Standard views"), 105 (the saved placements
+alone, no geometry search), 86 (fully transparent passes, always), 110
+(the row under the title bar was seen once before). Written here
+17:24.
+
+**2026-10-13 17:03: A FAULT OF THE NOTE-TAKER'S. The first tool bar row
+under the title bar in the reporter's live session today (entry 110 B)
+was SET OFF BY THE NOTE-TAKER'S OWN SCRIPT of 16:13:11, which called
+`menuBar()` -- not a read. Entry 6's "seen again" is withdrawn. Both parts
+of entry 110 are reproduced by the build session, the causes shown, fixes
+written for the next build.** Under entry 110. For the reporter until the
+fix is staged: any script, addon or console line that calls `menuBar()`
+on the main window puts the tool bars under the title bar; a change to
+the Classic theme and back builds the title bar anew.
+
+**2026-10-13 16:57: STAGED 16:55:17 from UNCOMMITTED, untested code -- the
+whole round of the afternoon. Entry 86: the reporter made the rule exact,
+the build session's plan is DROPPED. Entry 110 (A): cause read.** From the
+build session (its message of 16:57, written here 16:58).
+- THE STAGE: "INSTALL-USER: OK", 16:55:17, "after the build r5 ended
+  clean at 16:48 and the installer had waited seven minutes for the
+  user's staged FreeCAD to be quit". The copy: fcad `73e3590a9d` "dirty
+  True" (the whole round uncommitted), occt `a81d25f148`, coin
+  `d2da5cc93`, `FreeCADGui.dll` of 15:59:40, PDBs.
+- CARRIES, beyond the stage of 13:56: the wheel fix of entry 86
+  (`8d2e4379c8`), the final hover bar of 87, and the round -- 83, 91
+  redone, 96 in the menu, 99 a b c, 102, 103, 104's ghost, 105, 106 in
+  the name-ending form, 107 (the box and the root fix in `PyTools.c`).
+- NOT in it: entry 86's eye-off change, 108, 109, 110.
+- "No test of the staged copy by me, as the user said. The tests on the
+  build tree run now (... the new GUI tests offscreen, the probes, the
+  binder tests, then both suites); none read yet."
+- READ by the note-taker, nothing run:
+  `.conda\user-app\INSTALLED.txt` says installed 16:55:10, fcad
+  `73e3590a9d`, "fcad dirty True"; `FreeCADGui.dll` is dated 15:59:40;
+  origin/LinkVibe is still `ed2cb69298` -- nothing of the round is
+  committed or pushed.
+- FOR THE REPORTER TO TRY on this stage: the wheel through an overlay's
+  clear part (86); the tree's hover bar (87); the view cell's menu and
+  corner handles beside an overlay (83); the PartDesign clear button
+  (91); the close icon in the menu View > Dock window overlays under
+  Dark (96); an origin's dashes, its size and picking an axis through
+  a face (99); the overlay's opacity at 180 (102); the task panel's
+  switch-to-view button (103); a per-view edit with cavity on (104);
+  `scanner.FCStd`'s migration recompute and `Binder008` (105);
+  "Appearances" last in the property view (106); Esc during the
+  recompute of a link replace (107).
+- 86 and 110: under their entries.
+
+**2026-10-13 16:12: PUSHED 15:58 on the reporter's word -- origin/LinkVibe
+= `ed2cb69298`, the commits as they are. A STAGE is ordered and NOT made
+yet: it waits for the build and will be made from UNCOMMITTED, untested
+code. Entry 86's Tasks panel: the cause FOUND.** From the build session
+(its message of 16:12, written here 16:11).
+- The reporter, typed to the build session about 15:56 -- the
+  note-taker did not hear it: "push and then stage. no need to test
+  staged copy. entry 86, eye pushed or not, same, no pass through."
+- THE PUSH, 15:58: origin/LinkVibe `724e03c074` -> `ed2cb69298`, "the
+  local commits as they are (the eight fix commits of the morning with
+  the five that do not compile by themselves, and the queue commits up
+  to yours of 15:5x); the user did not take up the offer to rebuild
+  that stretch of history first". So the push question of 15:25 is
+  answered by the word "push". This queue's commits made since are
+  local again.
+- READ by the note-taker, nothing run: `git rev-parse origin/LinkVibe` =
+  `ed2cb69298`, the reflog has the push at 15:57;
+  `git grep fcad-wt origin/LinkVibe -- src` finds the path only in the
+  generator's comment.
+- ON ORIGIN now: entries 86 (the wheel), 87, 88, 89, 90, 92, 93, 94,
+  95, 96 (the frame; not the menu's tint) and 97, beside 84 and 85.
+  FIVE of those commits do not compile by themselves (`9b2a76c2dd`,
+  `a4beaec622`, `d3e1604e2e`, `3549b0a19f`, `518c2026d0`); the tip
+  does.
+- THE STAGE: "not made yet. It waits for the build ... (step 456 of
+  1317 at 16:09, five jobs, no error so far) and then runs by itself
+  before any test; the installer refuses while the staged FreeCAD
+  runs, so the chain tries every 15 s and its window's title says so."
+  It will be made "from UNCOMMITTED, untested code -- the whole round:
+  83, 91 redone, 96 in the menu, 99 a b c, 102, 103, 104's ghost, 105,
+  106, 107 -- as the user asked. No test of the staged copy by me."
+- FOR THE REPORTER: the stage cannot be made while the staged FreeCAD
+  is running -- it is tried every 15 seconds until that copy is
+  closed.
+- 86: under the entry. 108 and 109: read, not started; 108 "needs a
+  look at what the on-top group does with a hidden parent in the
+  renderer's feed -- next round".
+
+**2026-10-13 15:52: the build of 15:29 FAILED too (a compile error of the
+build session's); ONE build runs since 15:45 with everything of the round
+in it. Entry 104's ghost: cause found. Entry 107: ROOT cause found, wider
+than the abort. Nothing committed, pushed or staged since 14:50.** From
+the build session (its message of 15:52, written here 15:51).
+- The builds: 15:29 "FAILED 15:43 on a compile error of mine in the
+  property view's change for entry 106 (a helper called from a const
+  function); corrected". The one of 15:45: five jobs, step 54 of 1321
+  at 15:50. "The user asked twice about it and was answered."
+- In that build, all uncommitted and none run: entries 83, 99 (c), 105
+  as described at 15:36; 106; 91, 96, 102, 103 of 15:08; and new, 104
+  (the ghost) and 107.
+- 104 and 107: under their entries.
+- The test for 99 (c), `tests/gui/datum-picked-through-a-face.py`, run
+  on the STAGED copy offscreen "to see it fail before the change": at
+  four points of the X axis inside a box the pick is the box's face
+  (Body, Box.Face2), "as the reporter says".
+- Waiting for the reporter: the push question (asked by the build
+  session 15:25); and from the note-taker, entry 105's order of the
+  two ways to judge "not moved", entry 98's points, entry 100's,
+  entry 101's.
+
+**2026-10-13 15:36: the build of 15:06 NEVER COMPILED; one of 15:14 FAILED
+for want of memory; a new one runs since 15:29, about 45 minutes. Nothing
+committed, pushed or staged since 14:50. Entry 106 is in the source in the
+reporter's form; entry 105's rule is designed; entries 83 and 99's picking
+are prepared.** From the build session (its message of 15:36, written here
+15:36).
+- THE BUILDS: 15:06 stopped by the build session in its configure step
+  when the reporter's word of 15:06 on entry 106 arrived -- "so no
+  build ever had the table form"; restarted 15:14 with the name-ending
+  form, FAILED 15:28: "the compiler out of heap space on seven Sketcher
+  files and moc dying, the box short of memory beside the user's two
+  FreeCAD sessions (FreeCADLink 4.4 GB, the staged copy 2.4 GB
+  committed)"; restarted 15:29 with five jobs instead of eight, at step
+  59 of 1450 at 15:35. Two headers put back by a checkout got a new
+  time stamp, "so it is nearly a full compile: about 45 minutes".
+- So what the block of 15:08 below calls "in a build since 15:06" was
+  in the source, in no build; the rows are put right.
+- 106, 105, 99 (c), 83: under their entries.
+- Tests written for this round, NOT run: `overlay-task-title-button.py`
+  (103), `partdesign-reference-clear-button.py` redone (91),
+  `overlay-close-icon-frame.py` extended with the menu icons (96),
+  `property-group-rank.py` (106),
+  `view-cell-handles-clear-of-panels.py` (83).
+- "A picture of a 3D view cannot be taken offscreen ..., so entry 99's
+  before and after pictures need one short run on the real screen; I
+  will keep it to one." -- a window of the build session's will come
+  up on the reporter's screen once.
+- THE PUSH QUESTION, asked of the reporter by the build session at
+  15:25 in its own session, NO ANSWER yet: "push the local commits as
+  they are (five do not compile by themselves, one carries a queue
+  change) or allow the history rebuilt first".
+- The note-taker's note for the reporter: the build is short of memory
+  beside the reporter's two FreeCAD sessions; closing one that is not
+  needed would let it run with more jobs. Not asked by the build
+  session.
+
+**2026-10-13 15:08: a build of the next round started 15:06 -- entries 103
+(cause found), 91 redone, 102, 96 in the menu, 99's dashes and default,
+106. Nothing committed, pushed or staged since 14:50. Entry 106 is built
+ANOTHER WAY than the reporter's word of 15:06, which crossed it.** From
+the build session (its message of 15:08, written here 15:07).
+- In the source and building, all uncommitted: 103, 91, 102, 96 (the
+  menu), 99 (a) and (b), 106 -- each under its entry.
+- Entry 105 MEASURED; the cause, old fork or not, and a mitigation are
+  being investigated on the staged copy while the build runs.
+- NOT started: 83, 98, 100, 101, 104, and 99's picking.
+- THE PUSH QUESTION -- five intermediate commits do not compile; the
+  history put right, or pushed as it is -- "is still to be put to the
+  user by me". NOT ANSWERED.
+- For the reporter to say, entry 106: the rank in the group's name
+  ("#<rank>", said 15:06) or the table that is in the build; and the
+  group's real name is "Appearances".
+
+**2026-10-13 14:50: the morning's fixes are COMMITTED, entry by entry --
+all LOCAL, origin/LinkVibe still `724e03c074`. FIVE of the commits DO NOT
+COMPILE by themselves (a file mis-assembled while staging); the tip is
+right. The build session asks the reporter whether to push so or to have
+the history put right first -- NOT ANSWERED.** From the build session
+(its message of 14:50, written here 14:43).
+- The commits: entry 86, the wheel, `8d2e4379c8`; entries 87 (rim, the
+  bar under the pointer) and 88 (scroll bars) `9b2a76c2dd`; entry 87's
+  setting `a4beaec622`; entries 89 and 90 `d3e1604e2e`; entry 97
+  `3549b0a19f`; entry 92 `518c2026d0`; entries 93, 94, 95 `7f3ef57348`
+  (with the queue's text of entry 104 in it, see the note of 14:40
+  below); entry 96 `cbb01f5de3`. NOT committed: entry 91 (the reporter
+  found it too narrow; to be made as the answer of 14:28 says).
+- THE WART, in the build session's words: "in `9b2a76c2dd`,
+  `a4beaec622`, `d3e1604e2e`, `3549b0a19f` and `518c2026d0` the file
+  `src/Gui/Tree.cpp` is MIS-ASSEMBLED -- I staged part of its changes as
+  a zero-context patch and git placed the inserted blocks at the lines
+  of the finished file, not of the original; those five commits ... do
+  not compile. `7f3ef57348` has the file right (it is the built and
+  tested one, identical to the working tree), and everything after it.
+  The tip is the code of the final build."
+- On the reset of 14:37:45 (the note of 14:40 below): "my fault"; the
+  history STAYS as it is, no rewrite; "no reset or amend below my
+  newest commit from here on while both of us commit". A rebuild of
+  the commits it had prepared "was refused by this session's
+  permission rules, and I do not go round that: nothing was moved."
+- On the FINAL build (14:10, the code at the tip): ctest "100% tests
+  passed out of 957"; `overlay-pass-through.py` 14 of 14 twice and 15
+  of 15 with the reporter's configuration -- the wheel zooms the view
+  over the tree's and the Tasks panel's clear part;
+  `overlay-item-outline-and-hover.py` 34 of 34 twice;
+  `omni-search-object-typing.py` 16 of 16 twice; `revert-document.py`
+  12 of 12; `toolbar-menu-buttons.py` 11 of 11;
+  `overlay-close-icon-frame.py` 4 of 4; the tree's tooltip 14 of 14;
+  ten GUI tests near them with no FAIL but one:
+  `overlay-see-through.py` on the real screen failed its two claims
+  about the FOCUS "while the reporter was working at the screen" (60
+  of 62), and offscreen it passed those and failed two others that
+  need a window larger than that platform's 800 by 800 (57 of 59).
+  "No claim fails in both; a clean run on the screen is owed."
+- On the build of 13:07 (the STAGED code): ctest 957 of 957; Python
+  "Ran 3746 tests in 954.199s, OK (skipped=52, expected failures=6)".
+- The FULL Python suite on the final build: not in the message.
+- THE PUSH: "I am asking the reporter whether to push with the five
+  commits as they are or to let the history be put right first."
+- Entries 98 to 104 and the answers on 83, 91, 99, 103: "received;
+  none started but read".
+The note-taker's notes for the reporter:
+- What the staged copy of 13:56 LACKS of this: the wheel through an
+  overlay (86), the last form of the hover bar (87); and entry 91 is
+  still the too-narrow button.
+- The five commits that do not compile matter to anyone who builds an
+  old commit to find a change (a bisect); the branch's tip builds.
+
+**2026-10-13 14:40, a note on this file's HISTORY, not on its text:** the
+queue's change for entry 104 was committed by the note-taker at 14:37:03
+as `2fc8be7d3f`. At 14:37:45 the build session reset the branch to
+`518c2026d0` to redo two of its own commits (read in the reflog), which
+took `2fc8be7d3f` off the branch; its next commit, `7f3ef57348` ("Gui:
+the omni search on an object ..."), carries the same change of this file
+among its source files. The TEXT is identical (compared by the
+note-taker: no difference between the two versions of this file) and
+nothing is lost; only, one change of the queue now sits in a source
+commit of the build session's. Nothing of it was pushed at that moment
+(origin/LinkVibe `724e03c074`). The note-taker leaves the history as it
+is.
+
+**2026-10-13 13:58: STAGED 13:56:06 and PUSHED 13:57, on the reporter's
+word. The staged copy is built from UNCOMMITTED code: it has entries 84,
+85 and 87 to 97, NOT the wheel fix of entry 86 nor the last form of entry
+87's hover bar. What is PUSHED is what was committed: the merges, 84, 85
+and this queue -- origin/LinkVibe = `724e03c074`.** From the build session
+(its message of 13:58, written here 13:58).
+- The reporter, typed to the build session -- the note-taker did not
+  hear it: 13:53 "re-stage now"; then, while it was at it, "no need to
+  test staged copy. I am doing hands on" and "push also".
+- THE STAGE: `tools\install-user.ps1` ended 13:56:06, "INSTALL-USER:
+  OK". The copy says "fcad 724e03c074" and "fcad dirty True": the
+  binaries are the dev build of 13:07 (`FreeCADGui.dll` 12:51:11),
+  "made from a working tree with UNCOMMITTED changes"; occt
+  `a81d25f148`, coin `d2da5cc93`.
+  - IN it: entries 84 and 85 (committed), and uncommitted 87 (the
+    border; the setting moved to "Tree view"), 88, 89, 90, 91, 92, 93,
+    94, 95, 96, 97.
+  - NOT in it, written after that build: the wheel pass-through fix of
+    entry 86, and the last form of entry 87's hover bar -- "in this
+    copy the bar is as wide as the item but about 246 of 255 opaque,
+    with the outline around it".
+  - "No check of mine on the staged copy, by the reporter's word."
+- THE PUSH, 13:57: origin/LinkVibe `4b52e58423` -> `724e03c074`, 173
+  commits -- the merges of SolidBody (`714003dc33`) and Transaction
+  with OcctFix inside (`5a5b5ff906`), `47ed30316a`, entry 84
+  `a3acdd0947`, entry 85 `1f01bf3f30`, and this queue's commits up to
+  `724e03c074`. NOT pushed, because NOT committed yet: the entries the
+  stage carries beyond 84 and 85.
+- READ by the note-taker, nothing run: `git rev-parse origin/LinkVibe` =
+  `724e03c074`, the reflog has the push at 13:57;
+  `git grep fcad-wt origin/LinkVibe -- src` finds the path only in the
+  generator's comment; `.conda\user-app\INSTALLED.txt` says installed
+  13:56:06, "fcad dirty True"; `FreeCADGui.dll` is dated 12:51:11.
+- The build session's reading of "push also", "marked as mine": it
+  covers the code that was staged with it. So when the suites of the
+  running round are green and the last build's tests are in, it
+  commits entries 87 to 97 and 86 entry by entry and pushes them, "and
+  say so".
+- On the build of 13:07: ctest "100% tests passed out of 957"; the
+  Python suite still running.
+- Seen at the fetch, not acted on: origin/SolidBody moved `062e9725d6`
+  -> `6c916c1cec` and origin/Transaction `5d8f2e488c` -> `2c954a1949`
+  since the merges of this morning.
+- FOR THE REPORTER TO TRY on this stage: the tree's tooltip (84); a
+  change of theme and the task panel's colour (85); the tree items'
+  background with no border, and "Item background follows the theme"
+  in the section "Tree view" (87); the overlay's scroll bars (88); the
+  menu arrows of `Std_SelUp` and `Std_DisplayStyle` (89, 90); the clear
+  button of a PartDesign reference row (91); a recompute of
+  `scanner.FCStd` and Pocket023's profile (92); Ctrl+F in the tree with
+  a selection, Tab, and the case of a typed name (93, 94, 95); the
+  close icon's frame (96); File > Revert on `scanner.FCStd` (97).
+  NOT yet in it: the wheel through an overlay (86).
+
+**2026-10-13 13:51: entry 86 RETESTED by the reporter and REPRODUCED so --
+the click passes, the WHEEL does not; the wheel's cause FOUND, a fix in
+the source. The round's tests so far pass. Nothing committed since 11:33,
+nothing pushed, the staged copy still the one of 09:36.** From the build
+session (its message of 13:51, written here 13:50).
+- 86: under the entry. ONE point waits for the reporter: the eye of the
+  panel that holds the Tasks.
+- The round so far, on the build of 13:07 ("all but the last form of
+  the hover bar and the wheel fix"):
+  - 97: `revert-document.py` 12 of 12 three times; the scanner file
+    reverted without a crash.
+  - 92: the direct question answers (';...Wire2', 'Wire2');
+    `TestSketchWireProfile` 3 of 3; scanner's three profiles `Wire2` /
+    `Wire1` / `Wire2` after the migration recompute.
+  - 89 and 90: `toolbar-menu-buttons.py` 11 of 11.
+  - 91: `partdesign-reference-clear-button.py` passes ("88 wide by 24
+    high on the staged copy").
+  - 93, 94, 95: `omni-search-object-typing.py` 16 of 16 (on the staged
+    copy the path, the case and the focus claims fail; "the focus goes
+    to the value's editor on Tab there").
+  - 96: `overlay-close-icon-frame.py` 4 of 4.
+  - 87's border and 88's scroll bars pass.
+  - ctest done; the Python suite running.
+- 95, a limit to tell the reporter: a further step typed small that
+  brings up no list stays as typed (under the entry).
+- Entries 83 (with the change of 13:33), 99 and 100: received; 83 and
+  99 read in the source, not started.
+
+**2026-10-13 12:43: entry 97 FIXED on a build; entry 92's cause SHOWN -- old
+code in the sketch, NOT this morning's merges; entries 91, 93, 94, 95, 96
+WRITTEN and in a build; entry 86 still not reproduced. Nothing committed
+since 11:33, nothing pushed, the staged copy still the one of 09:36.**
+From the build session (its message of 12:43, written here 12:43).
+- 97: `revert-document.py` 12 of 12, three runs; the scanner file
+  reverted with and without the recompute, no crash.
+- 92: the wire of a sketch is named by its bare number by code of 2018
+  to 2024; a fix in the source.
+- 87, the hover: two of the build session's readings withdrawn by it; a
+  third form building.
+- 91, 93, 94, 95, 96: written, with tests, in the build.
+- Running since 12:41: ONE build with all of it, the checks of 92, the
+  new tests, the tests near them, then both suites -- "so that the
+  suites run once, on the final code".
+- NOT STARTED: entry 83 (waits for which handle), 98 and 99 (wait for
+  the reporter's points).
+- A question of the reporter's that did NOT come through the
+  note-taker: "the reporter's question on TechDraw pages without an
+  eye (answered by me 11:52: yes, with one rule for older files; waits
+  for their word to queue it)" -- the build session's words. No entry
+  yet; it becomes one when the reporter says the word.
+
+**2026-10-13 11:50: entry 97, the crash at Revert, is REPRODUCED on the
+staged copy and its cause shown: EVERY revert of a document with a
+TechDraw page's view open. A fix is in the source, building. All LOCAL.**
+From the build session (its message of 11:50, written here 11:49).
+- Until a stage with the fix: File > Revert on such a document ends the
+  program, every time. `scanner.FCStd` is such a document.
+- The build session's order after this round, "unless the reporter says
+  otherwise": 92 (what first wrote "2"), 94, 95, 93, 91, 96; 86 waits
+  for the reporter's word on the look into the live session.
+- The reporter's answers on entries 93, 94, 95 and 96 are with the
+  build session.
+
+**2026-10-13 11:33: where each entry of the morning stands. COMMITTED:
+entries 84 and 85. In the source, not committed: 87, 88, 89, 90. NOT
+reproduced: 86. Looked at: 92, 97. Not started: 91, 93 to 96. All LOCAL,
+nothing pushed; the staged copy is still the one of 09:36.** From the
+build session (its message of 11:33, written here 11:34).
+- COMMITTED, local: `a3acdd0947` (entry 84, the tree's tooltip; its test
+  14 of 14, twice) and `1f01bf3f30` (entry 85, the task panel's colour
+  after a change of theme; `overlay-see-through.py` 62 of 62). On that
+  build: seven GUI tests near them with no FAIL, ctest "100% tests
+  passed out of 957".
+- 86: NOT REPRODUCED -- offscreen, end to end, the mouse passes; a
+  question of the build session's waits for the reporter (under the
+  entry).
+- 87, 88, 89, 90: code written, a first build tested, a second
+  building.
+- 92: the reference reads the same before and after the recompute by
+  Python; the note-taker's reading of the file was the wrong way round.
+- 97: the stack read; a reproduction on the staged copy is running.
+- WAITING for the reporter, new: the build session's question on entry
+  86 (may it look into the running session, or hand over a script).
+  Still waiting, the points of entries 83, 91, 93, 94, 95, 96 and 97.
+
+**2026-10-13 10:17: BOTH SUITES GREEN on the code staged at 09:36. Entry
+85 REPRODUCED, its cause shown, a fix in the source; entry 84's fix in the
+source. Neither built yet. All LOCAL.** From the build session (its
+message of 10:17, written here 10:17).
+- On the dev build of `47ed30316a` + OCCT `a81d25f148`: ctest "100%
+  tests passed out of 957"; Python "Ran 3743 tests in 1288.480s", "OK
+  (skipped=52, expected failures=6)" -- "slower than 810 s because my
+  probes ran beside it". Four loads and the five omni search tests are
+  finishing.
+- 85: the task panel's ground carries the colour of the theme being
+  LEFT after a theme is applied in a running session; under the entry.
+- 84: the tooltip's cause read, a fix and a new test written; under the
+  entry.
+- Started 10:15: both new tests on the build BEFORE the fixes (expected
+  to fail), the build, both tests and eight near them, the probe with
+  the reporter's configuration again, the full ctest.
+- "No stage, no push without the reporter's word."
+
+**2026-10-13 10:06: on the build of the stage of 09:36 the ctest is 957 of
+957; the Python suite running. Entry 69 on the reporter's configuration is
+cleared up; entries 83 and 84 are new (09:52, 09:56).** From the build
+session (its message of 10:06, written here 10:05).
+- ctest on the dev build, head `47ed30316a` + OCCT `a81d25f148`: "100%
+  tests passed out of 957" -- the two failures of 08:30 are gone. The
+  Python suite is running; no result yet.
+- Entry 69: the reporter's configuration named the overlay sheet of an
+  older Dark theme; applying the theme again puts it right (the
+  reporter's own finding, about 10:04). A one-time migration at
+  start-up is put to the reporter, NOT answered.
+- Entry 84 (the tree view's tooltip): the build session starts reading
+  for it, on the standing word of 2026-10-12 22:45. Entry 83 (the view
+  cell's menu and handle) "waits for its point (a)".
+- All LOCAL since the push of 06:33: origin/LinkVibe is `4b52e58423`.
+
+**2026-10-13 09:38: STAGED 09:36:59 at `abca255e23` (code = `47ed30316a`
+over the merges of SolidBody and Transaction with OcctFix inside), on OCCT
+`a81d25f148`. NOT pushed. No suite had run on this code at the stage; the
+reporter tests the copy by hand.** From the build session (its message of
+09:38, written here 09:37).
+- The stage: `tools\install-user.ps1` ended 09:36:59, "INSTALL-USER: OK";
+  `FreeCADGui.dll` built 09:29:57; occt `a81d25f148`, coin `d2da5cc93`,
+  PDBs in. READ by the note-taker, nothing run:
+  `.conda/user-app/bin/FreeCADGui.dll` is dated 2026-10-13 09:29:57.
+- The builds before it: "BUILD-OCCT: OK 23 steps"; "BUILD-FCAD: OK 387
+  steps, ended 09:35:28".
+- "No check of mine on that copy, by the reporter's word; no suite has
+  run on its code yet."
+- Running on the dev build since 09:37: the full ctest, then the full
+  Python suite, four loads, the five omni search GUI tests. Results to
+  follow.
+- LOCAL, all of it: origin/LinkVibe is still `4b52e58423`; "the OCCT
+  repo is at its own origin's head, nothing to push there. No push
+  asked."
+- WHAT IS NEW in the copy under test against the one of 06:52: the
+  merge of origin/SolidBody (`714003dc33`, 11 commits), the merge of
+  origin/Transaction (`5a5b5ff906`, 103 commits, OcctFix's 78 inside),
+  the shortened text of `Document/MergeConflictSide` (`47ed30316a`),
+  and 37 commits of the OCCT fork, all in its fillet code. Nothing of
+  the hands-on entries is changed between the two stages.
+
+**2026-10-13 09:22: the reporter takes the testing of the staged copy
+THEMSELVES -- the build session runs NO check on the copy that will be
+staged. The OCCT build passed; the FreeCAD build on it is running.** From
+the build session (its second message stamped 09:24, written here
+09:23; by it, the message recorded below as 09:24 "was stamped ahead; it
+was sent about 09:21").
+- The reporter, typed to the build session about 09:22 -- the note-taker
+  did not hear it: "no need to test staged copy. I'll do it hands on.
+  you proceed with test on your build directory".
+- So the plan of the block below is changed before it started: after
+  `tools\install-user.ps1` the build session goes straight to the suites
+  on the dev build. The preferences, the loads and the six GUI tests it
+  had planned ON THE STAGED COPY are dropped.
+- OCCT `a81d25f148` built and installed: "BUILD-OCCT: OK, 23 steps",
+  09:16 to about 09:22.
+- Not staged yet.
+
+**2026-10-13 09:24: the reporter CHANGED THE ORDER -- stage right after the
+FreeCAD build, tests after. A RESTAGE is set up, NOT done yet; the copy it
+brings will have had NO suite run on its code when it is staged.** From
+the build session (its message of 09:24, written here 09:21).
+- The reporter, typed to the build session 09:20 -- the note-taker did
+  not hear it: "after freecad build, stage first, then proceed with
+  test".
+- The build session's reading: "this is the word for a restage of the
+  head with the three merges, `47ed30316a` and the new OCCT, before the
+  suites have run on it."
+- Set up: when the FreeCAD build ends with "BUILD-FCAD: OK", the stage
+  (`tools\install-user.ps1`); then ON THE STAGED COPY the preferences
+  four times, the re-saved scanner file twice and the original once,
+  and six GUI tests (techdraw-page-before-its-view-providers,
+  recovery-dialog-check-all, overlay-see-through,
+  omni-search-from-tree-and-property-view, overlay-title-buttons-theme,
+  task-panel-in-view); then on the dev build the full ctest, the full
+  Python suite, four loads, the five omni search GUI tests.
+- What has run on what, in its words: "the suites of 08:17 to 08:43 were
+  on `5a5b5ff906` with the old OCCT (Python OK, ctest 2 failures now
+  fixed in source)". Nothing has run on the new OCCT.
+- If the reporter's copy is OPEN at the moment of the stage the script
+  refuses ("BUSY"); the build session says so, the tests go on, and the
+  stage is redone on the reporter's word.
+- "No push: not asked."
+- Until the stage is reported done the copy under test is the one of
+  06:52:40 (`5a2f7e58c2`), on the old OCCT, without the merges.
+
+**2026-10-13 09:19: the loads and the 30 GUI tests on the merged build ALL
+PASSED. A new word of the reporter's: "also sync occt" -- the OCCT fork is
+brought up, the build on it under way. All LOCAL: not pushed, NOT in the
+staged copy.** From the build session (its message of 09:19, written here
+09:17).
+- On the dev build of `5a5b5ff906` (before `47ed30316a`), 08:44 to 09:14
+  (`dl\handson\2026-10-12\s1\g-n-*-dev`): "no FAIL, no ABORT, no crash
+  log in any home, every script wrote DONE".
+  - Loads: `scanner-resaved.FCStd` four times, `scanner.FCStd` twice, all
+    EXIT 0; the preferences opened twice in one session, EXIT 0.
+  - GUI tests, the PASS counts: close-during-view-provider-drain 7,
+    display-style-menu 38, navicube-clear-of-panels 16,
+    omni-search-first-bring-up 8,
+    omni-search-from-tree-and-property-view 18,
+    omni-search-highlighted-row 20, omni-search-recent-items 18,
+    omni-search-slash-word 10, overlay-preset-follows-the-theme 45,
+    overlay-see-through 58, overlay-title-buttons-theme 44,
+    recovery-dialog-check-all 13, selection-on-top-hidden-edges 18,
+    sketch-auto-color 33, task-panel-clear-of-docks 21,
+    task-panel-combo 66, task-panel-in-view 89, task-panel-overlay 43,
+    task-panel-owner 34, task-panel-place 59, task-panel-side 61,
+    techdraw-dimension-click-no-recompute 12,
+    techdraw-never-shown-page-exports 10,
+    techdraw-page-backend-hatch 39,
+    techdraw-page-backend-single-draw 17,
+    techdraw-page-backend-switch 11,
+    techdraw-page-before-its-view-providers 12,
+    techdraw-page-items-when-needed 10,
+    techdraw-section-line-click 10, theme-switch-contrast 39.
+- NEW from the reporter, typed to the build session 09:13 -- the
+  note-taker did not hear it: "also sync occt".
+- Done of it: the OCCT fork fast-forwarded `5755a62295` -> `a81d25f148`
+  (origin/LinkVibe-801, 37 commits, "all in TKFillet/ChFi3d plus the
+  tests/fork submodule, now `c8ceb53c1e`"). "Nothing of mine in that
+  repo."
+- The rerun planned at 08:48 (a build and the ctest with `47ed30316a`
+  alone) was STOPPED before its build wrote a line. In its place,
+  started 09:16: build OCCT, build FreeCAD on it (the head with
+  `47ed30316a`), the full ctest, the full Python suite, four loads, the
+  five omni search GUI tests. So the ctest rerun AND a second Python
+  suite both come on the new OCCT -- the "not rerun" of 08:48 no longer
+  holds. Outcomes to follow.
+- The note-taker's note: the staged copy of 06:52 was built on OCCT
+  `5755a62295`; a copy with the new OCCT is one more thing a next stage
+  would bring. No stage is asked.
+
+**2026-10-13 08:48: both suites on the merged head `5a5b5ff906` -- the
+Python suite OK; ctest 2 failures of 957, ONE cause, a setting's text the
+Transaction branch brought, over the length limit; fixed in the source
+`47ed30316a`, NOT built yet, the rerun queued. All LOCAL.** From the build
+session (its message of 08:48, written here 08:47).
+- Python suite, 08:30 to 08:43: "Ran 3743 tests in 809.930s", "OK
+  (skipped=52, expected failures=6)". 3645 before the merges.
+- ctest, 08:17 to 08:30: "99% tests passed, 2 tests failed out of 957"
+  (968 with the disabled ones). The two:
+  `ParamRegistryTest.everySettingIsDocumentedBriefly` and
+  `OmniSearch_Tests_run` (its claim
+  `test_everySettingIsDocumentedBriefly`). "Both say the same:
+  `App::DocumentParams::MergeConflictSide` has 520 characters of
+  description, the limit is 400. The setting came with
+  origin/Transaction's last commit `5d8f2e488c`."
+- The fix, `47ed30316a`: "the description shortened to 391 characters in
+  `src/App/DocumentParams.py`, the meaning kept, `DocumentParams.cpp`/`.h`
+  regenerated." NOT built yet -- the loads and GUI tests of the running
+  chain still use the binaries. After them: a build, the full ctest
+  again, and the five omni search GUI tests.
+- The Python suite is NOT RERUN on `47ed30316a`, by the build session's
+  decision: "the change is a description text".
+- Loads on the merged build so far: the re-saved scanner file three
+  times, "EXIT 0, no crash log".
+- Still to come by name: the rest of the loads, the preferences once,
+  the 30 GUI tests, and the ctest rerun.
+The note-taker's note: the shortened text is the OTHER branch's setting
+(Transaction); the change is made on LinkVibe only, so the long text
+stays on origin/Transaction and comes back as a conflict or a failure
+at a next merge unless it is shortened there too. Not said by the build
+session; told to it by the note-taker.
+[WRONG, WITHDRAWN by the note-taker 2026-10-13 08:51, written 08:48, on the
+build session's correction: after `5a5b5ff906` the merge base with that
+branch is its tip `5d8f2e488c` (READ by the note-taker: `git merge-base
+HEAD origin/Transaction` says so). At a next merge LinkVibe has changed
+those lines and Transaction has not, so the short text is kept with no
+conflict; it would return only if the same description were edited on
+Transaction again. And when Transaction next merges LinkVibe, as it
+did on 2026-10-12 (`13f17a2e81`), it takes the short text. What holds
+of the note: until then the Transaction branch built by itself has the
+long text and fails those two tests. NOTHING for the reporter to
+decide here, in the build session's reading and now the note-taker's.]
+
+**2026-10-13 08:18: the build of the Transaction merge PASSED; both suites
+started on it, no result yet. All LOCAL: not pushed, NOT in the staged
+copy.** From the build session (its message of 08:18, written here
+08:17).
+- Build of `5a5b5ff906` (SolidBody + Transaction, OcctFix inside): 07:31
+  to 08:16, "BUILD-FCAD: OK, 1634 steps, no error line in the log".
+- `git merge origin/OcctFix` run on that head at 08:17: "Already up to
+  date." No third merge commit, no third build.
+- Started 08:17 on the dev build: the full ctest, the full Python suite
+  (its temporary directory starting empty), then four loads of the
+  re-saved scanner file and two of the original, the preferences once,
+  and 30 GUI tests -- "the last days' entries, plus task-panel-side,
+  theme-switch-contrast, sketch-auto-color which the merge changed".
+  Results to follow by name.
+- origin/LinkVibe still `4b52e58423`; the staged copy still the one of
+  06:52:40.
+
+**2026-10-13 07:32: the checks on the copy staged 06:52:40 ALL PASSED.
+SolidBody merged and built; Transaction merged, its build running; OcctFix
+is already in Transaction. The merges are LOCAL: not pushed, NOT in the
+staged copy.** From the build session (its message of 07:32, written here
+07:32).
+- Checks on the STAGED copy, 06:53 to 07:05
+  (`dl\handson\2026-10-12\s1\g-z-*-staged`), "no crash log in any of
+  the 14 homes":
+  - entry 82: the preferences opened twice and closed, six sessions --
+    all six EXIT 0 ("the copy of 17:52 died in 7 of 10"). First opening
+    3.20 s in the first session.
+  - entry 79: three loads of `ctl\scanner-resaved.FCStd` -- all EXIT 0,
+    DONE written, no crash log, no detector log.
+  - entry 53: `techdraw-page-before-its-view-providers.py` 12 PASS, 0
+    FAIL ("9 and 2 on the copy of 17:52").
+  - entry 80: `recovery-dialog-check-all.py` 13 PASS, 0 FAIL.
+  - entry 69: `overlay-see-through.py` 58 PASS, 0 FAIL.
+  - entry 78: `omni-search-from-tree-and-property-view.py` 18 PASS, 0
+    FAIL.
+  - entry 73: `overlay-title-buttons-theme.py` 44 PASS, 0 FAIL.
+- The reporter's three merges of 06:43 (the block of 06:57 below):
+  - origin/SolidBody (`062e9725d6`): merge `714003dc33`, no conflict;
+    built 07:06 to 07:28, "BUILD-FCAD: OK, 782 steps". No test, as the
+    reporter said.
+  - origin/Transaction (`5d8f2e488c`, 103 commits): merge `5a5b5ff906`.
+    Two conflicts, "both sides kept": `docs/Testing.md` and
+    `scripts/sandbox-gui-gate.py` each gained a gate in the same list
+    (`PartGroupView` from SolidBody, `PartDesignTests.TestFilletPanel`
+    from the other side). Its build started 07:31; outcome to follow.
+  - origin/OcctFix (`493032cbaf`): "origin/Transaction CONTAINS it (its
+    history has the merge `513aeb21a2`)", so it is in the head already
+    and a merge of it is a no-op. When the Transaction build passes the
+    build session runs both suites on it -- the reporter's "build and
+    test" -- with no third build.
+  READ by the note-taker, nothing run: `git merge-base --is-ancestor
+  origin/OcctFix origin/Transaction` says yes, and the same for HEAD.
+- The note-taker's note on the third merge: the reporter's sentence asks
+  for a build after Transaction and then a merge of OcctFix with "build
+  and test"; with OcctFix already inside Transaction the two steps fall
+  into one. Not said by the reporter; told to them by the note-taker.
+
+**2026-10-13 06:57: STAGED 06:52:40 at `5a2f7e58c2` (code = the pushed
+`4b52e58423`). The copy under test now HAS the fixes of entries 82 (the
+Preferences), 79 (the crash at a load) and 53 (the TechDraw page), and
+entries 69, 78, 80, 81 and 73's white glyphs. A new word of the
+reporter's: three merges.** From the build session (its message of 06:57,
+written here 06:56).
+- The stage: `tools\install-user.ps1` ended 06:52:40, "INSTALL-USER:
+  OK"; `FreeCADGui.dll` built 06:45:48; occt `5755a62295`, coin
+  `d2da5cc93`, PDBs in. The build before it: "BUILD-FCAD: OK, 418
+  steps". READ by the note-taker, nothing run:
+  `.conda/user-app/bin/FreeCADGui.dll` is dated 2026-10-13 06:45:48.
+- Checks on the staged copy are RUNNING; results by name when they end.
+  So far: the preferences opened and closed twice, both sessions
+  "EXIT 0".
+- NO full suite on the exact staged binaries: the build session dropped
+  the two it had planned after the stage -- "the reporter's 'build and
+  test' at the end covers them, and the dev binaries are wanted for the
+  merge builds"; the code is the one both suites passed on the night
+  before (`5d63c7152d`) plus the generator fix.
+- NEW from the reporter, typed to the build session 06:43 -- the
+  note-taker did not hear it: "After staging, Merge with remote branch
+  SolidBody, build only no test. Onece build pass merge with remote
+  branch Transaction. After build pass merge with OcctFix, build and
+  test."
+- Done of it: origin/SolidBody (`062e9725d6`, 11 commits) merged into
+  LinkVibe, no conflict, merge commit `714003dc33`, LOCAL, not pushed,
+  NOT in the staged copy. Its build starts when the staged checks end.
+  Then origin/Transaction (`5d8f2e488c`, 103 commits; "merges clean on
+  the old head by a trial"), then origin/OcctFix (`493032cbaf`, 78
+  commits; "a trial shows conflicts in the generated PartParams files
+  only"), then both suites.
+- Seen by the build session, not acted on: the OCCT fork's
+  `LinkVibe-801` has 36 new commits (`5755a62295..a81d25f148`,
+  TKFillet). "The reporter asked for fcad's OcctFix branch only; OCCT
+  stays as built unless that merge needs it."
+- "No push and no further stage without the reporter's word."
+- FOR THE REPORTER TO TRY on this stage: Edit > Preferences (entry 82;
+  and with it the hand checks of 70, 71, 72, 75, 76 that pass through
+  the dialog); the overlaid panels' transparency (entry 69, and its
+  point 1: if the transparent mode still looks broken -- which panel,
+  the eye pressed or not, the pointer over it or not); Ctrl+F in the
+  tree and the property view (entry 78); the check box in the header of
+  Document Recovery (entry 80); the title buttons under Dark (entry 73).
+
+**2026-10-13 06:40: THE REPORTER ANSWERED. PUSHED 06:33, origin/LinkVibe =
+`4b52e58423` (was `5de7d97293`); a RESTAGE is under way, NOT done -- the
+copy under test is still `22ece75a08`, with entries 82, 79 and 53's
+defects in it until the stage is reported done.** From the build session
+(its message of 06:40, written here 06:39).
+- The reporter's words, said to the build session -- the note-taker did
+  not hear them. 06:28: "What's the choice of entry  47". After the
+  build session's answer (the three ways, its own = leave it), 06:31:
+  "Fine. Push and restage".
+- Entry 47 part (a): the build session's reading of "Fine" is choice 1,
+  leave it; no code change.
+- The push: 32 commits, `5de7d97293..4b52e58423`, "went through
+  directly". On origin now: entry 82's fix `23e57d647c` and the
+  generator's `49dca0ebbc`, and with them everything that was local
+  since 2026-10-12 17:56 -- entries 69, 73's white glyphs, 78, 79, 80,
+  81, 53's second fix, 47's two commits, the corrected tests; and this
+  queue's commits up to `4b52e58423`.
+- READ by the note-taker, nothing run: `git rev-parse origin/LinkVibe` =
+  `4b52e58423`; this repository's reflog has the push at 06:35;
+  `git grep fcad-wt origin/LinkVibe -- src` finds the path nowhere but
+  in a comment of the generator that tells the story. What was pushed
+  at 17:56 and did not compile elsewhere (the block of 2026-10-12
+  18:57) is put right on origin.
+- The restage, the build session's plan: a rebuild first ("a few sources
+  carry later times than the binaries of 23:58; content is the pushed
+  head"), then `tools\install-user.ps1`, then ON THE STAGED COPY: the
+  preferences opened six times (entry 82), three loads of the re-saved
+  file (entry 79), `techdraw-page-before-its-view-providers` (entry 53),
+  and the tests of entries 80, 69, 78, 73; then both suites on the dev
+  build. It reports when the stage is done and again when the checks
+  are.
+- Still with the reporter, the build session's list: entry 69 point 1,
+  entry 66's proposals, entry 30's four choices, entry 58's proposals.
+
+**2026-10-13 01:00: entry 82's root fixed, `49dca0ebbc` (the generator no
+longer writes the machine's path); the build session STOPS FOR THE NIGHT
+"unless the user says otherwise".** From the build session (01:00, written
+here 01:00). Local head `4701c780da`; origin/LinkVibe still
+`5de7d97293`, the stage still `22ece75a08`. Waiting for the reporter's
+word: the push, a restage, entry 47 part (a) -- and, when they come to
+them, entry 69's point 1 and entry 66's proposals.
+
+**2026-10-13 00:56: THE COPY STAGED AT 17:52 CAN END BY ITSELF WHEN THE
+PREFERENCES ARE OPENED -- heap corruption, seven sessions of ten, no crash
+log. Entry 82. It is fixed by the commit that already waits for the push,
+`23e57d647c`; the copy under test does not have it.** From the build
+session (its message of 00:56, written here 00:57; its log `ce73bb0b0b`).
+Nothing is pushed, nothing staged; "I have no word for a restage and am
+not making one."
+- THE COPY UNDER TEST (`22ece75a08`, staged 2026-10-12 17:52) HAS, AS OF
+  NOW, three defects that are fixed locally:
+  1. entry 82: opening the Preferences can end the program, at once or
+     later;
+  2. entry 79: a file saved with it can die at a later load (it loads on
+     another try);
+  3. entry 53: under Qt's drawing a TechDraw view can come up without
+     its geometry after an open with no recompute.
+- The stage of 14:04 (`4474fcb17e`): not entry 82 (the include came
+  with `22ece75a08`); entry 79 yes; entry 53's regression not known.
+- WAITING for the reporter's word, three things now: the push of
+  `23e57d647c`; a RESTAGE -- not asked of the reporter in so many
+  words, the build session says only that it has no word for one; and
+  entry 47 part (a), a choice of three (the block of 00:19 below).
+- Both full suites on the code of `5d63c7152d`: ctest 955 of 955; the
+  Python suite "Ran 3645 tests in 804.008s, OK (skipped=52, expected
+  failures=6)".
+- Entry 66: the material change of entry 47 takes nothing off the
+  preferences' first opening; the "most of the 1.8 s" of 23:17 is
+  withdrawn by the build session.
+
+**2026-10-13 00:19: TWO things wait for the reporter's word, not one: the
+push of `23e57d647c`, and entry 47 part (a), a choice of three.** The
+note-taker had written that part (a) was "not put as a question" -- WRONG:
+the build session put it at about 21:10 on 2026-10-12 and in its log
+(`81310dbc89`); NOT ANSWERED. The three ways are under entry 47. Also
+from the build session (00:19, written here 00:20): entry 53's thickened
+lines are NOT back in the staged copy, the missing geometry under Qt's
+drawing alone is.
+
+**2026-10-13 00:15: ENTRY 53 HAS REGRESSED IN THE STAGED COPY of 17:52 --
+with TechDraw drawn by Qt, a page of a document opened and not recomputed
+can show a view without its geometry; fixed again `5d63c7152d`. Entry 47:
+two commits more and a correction. ALL LOCAL: nothing pushed, nothing
+staged, and the fix of what was pushed still waits for the reporter's
+word.** From the build session (its message of 00:15, written here
+00:17); origin/LinkVibe is still `5de7d97293`, the stage still
+`22ece75a08`.
+- STILL WAITING for the reporter's word: the push of `23e57d647c` (the
+  block of 2026-10-12 18:57 below).
+- 53: `tests/gui/techdraw-page-before-its-view-providers.py` passed on
+  the build of 2026-10-12 11:21 and fails two claims on the copy staged
+  at 17:52. With the backend's drawing the same test passes there. Fixed
+  `5d63c7152d`; 12 of 12 on the build with it. Whether the stage of
+  14:04 has it is NOT known.
+- 47: `3e64f3e9d6` and `00fa69e485` committed; a correction to the build
+  session's account of 23:17, under the entry.
+- Both full suites are running on the code of `5d63c7152d`; NO result
+  yet.
+- What the staged copy of 17:52 does NOT have, all local: entry 53's
+  second fix, entry 69, entry 73's white glyphs, entries 78, 79, 80,
+  81, the corrected tests, and entry 47's two commits.
+
+**2026-10-12 23:17: entries 79, 80 and 81 COMMITTED; both full suites
+have a result on that build, both green. ALL LOCAL: nothing since the
+stage of 17:52 is staged or pushed, and the fix of what was pushed still
+waits for the reporter's word.** From the build session (its message of
+23:17, written here 23:19); origin/LinkVibe is still `5de7d97293`, the
+stage still `22ece75a08`; its account is `docs/HandsOnLog.md`, "the
+evening of 2026-10-12" (`81310dbc89`).
+- STILL WAITING for the reporter's word: the push of `23e57d647c` (the
+  block of 18:57 below).
+- Committed, local: `9b9a479164` (entry 79, the crash at a load),
+  `53a231cc72` (entry 80), `b3e1247e6d` (entry 81).
+- Tested on `b3e1247e6d`, the build of 22:29: ctest 955 of 955; the
+  Python suite "Ran 3645 tests in 804.529s, OK (skipped=52, expected
+  failures=6)". GUI tests with no FAIL: entry 80's own 13, entry 69's
+  58, entry 78's 18, entry 73's 44, `task-panel-in-view` 89,
+  `task-panel-place` 59, `task-panel-combo` 66,
+  `navicube-clear-of-panels` 16, `selection-on-top-hidden-edges` 18,
+  `close-during-view-provider-drain` 7.
+- The reporter, said to the build session at about 22:45 -- the
+  note-taker did not hear it: "Once done. Continue fix the issues in the
+  notes". The build session goes on with entry 47 on that word: three
+  load-time changes written, in a build, uncommitted, not tested.
+- What the staged copy of 17:52 does NOT have, all local: entry 69,
+  entry 73's white glyphs, entries 78, 79 (so the crash at a load of a
+  file saved today can still happen there), 80, 81, and the corrected
+  tests.
+
+**2026-10-12 22:20: a CORRECTION on entry 79 -- WHICH FILES can crash at
+a load: one saved by a build that has the merge of 2026-10-12, so by the
+stage of 14:04 or of 17:52. "Since 2026-10-03" is WITHDRAWN.** From the
+build session (22:20 and 22:21, written here 22:12).
+- Both staged copies of 2026-10-12 are exposed; the stages before that
+  day are not, by its reading of the code, which no run has shown.
+- A file saved today with either stage can die at a load, one load in a
+  few on this box; it is NOT damaged and loads on another try.
+- No crash has been seen on the staged copy itself; the two occurrences
+  are on the dev builds of the evening.
+- The fix is as at 22:09: written, in a build, not tested, not
+  committed.
+
+**2026-10-12 22:09: entry 79's CAUSE FOUND -- any file saved by a build
+since 2026-10-03 can crash at its next load ["since 2026-10-03" is
+WITHDRAWN, see the block of 22:20 above: a file saved by a build with the
+merge of 2026-10-12]; a fix written, not tested.
+Entry 80 built. A new finding, entry 81: saving into a large folder is
+slow. ALL LOCAL, nothing staged or pushed; the fix of what was pushed
+still waits for the reporter's word.** From the build session (its message
+headed "state at 22:12", received 22:09, written here 22:10);
+origin/LinkVibe is still `5de7d97293`, the stage still `22ece75a08`.
+- STILL WAITING for the reporter's word: the push of `23e57d647c` (the
+  block of 18:57 below).
+- 79: the cause is found and named; the fix is in a build that is
+  running, to be shown by twelve loads of the re-saved file writing no
+  crash log. UNCOMMITTED.
+- 80: written from the reporter's three answers and built; its test not
+  through yet. UNCOMMITTED.
+- 81, new, the number the note-taker's: the backup step of a save asks
+  the file system about every entry of the file's folder; changed to ask
+  only about backups. UNCOMMITTED, not measured for the reporter.
+- The Python suite has NO result yet, stopped twice by the build
+  session; the second time at 21:49, 1647 tests in, no failure -- it
+  crawled for the reason of entry 81. Both suites are to run again in an
+  empty temporary folder after the loads and the GUI tests of the
+  running build: "results not before about 23:30".
+- What the staged copy of 17:52 has of this: entry 79's crash CAN
+  happen there (the note-taker's conclusion from "since the suppression
+  port", not said by the build session in those words -- CONFIRMED by
+  it at 22:20 on other grounds, see the block above); nothing of 69,
+  78, 80, 81 nor the white glyphs of 73.
+
+**2026-10-12 21:03: entries 69 and 78 DONE and committed, entry 73's glyphs
+built and tested; a NEW crash at a load, entry 79, OPEN. ALL LOCAL: nothing
+since the stage of 17:52 is staged or pushed, and the fix of what was
+pushed still waits for the reporter's word.** From the build session (its
+message headed "state at 21:05", received 21:03, written here 21:04);
+origin/LinkVibe is still `5de7d97293`, the stage still `22ece75a08`.
+- STILL WAITING for the reporter's word: the push of `23e57d647c`, the
+  include that keeps the pushed branch from compiling on another box
+  (the block of 18:57 below).
+- Committed since 18:57: `bbe8525de7` (entry 69), `b70dab6401` (entry
+  78), `51380b613c` (three GUI tests that failed on the stage for
+  reasons of the test: `omni-search-first-bring-up`,
+  `task-panel-in-view`, `task-panel-overlay`). Before them, as at 18:57:
+  `846d40819a`, `2d945c8268`, `23e57d647c`, `97e1ee791d`.
+- Built 20:30 and tested: ctest 955 of 955. GUI tests with no FAIL:
+  `overlay-see-through` 58 (entry 69's own, new),
+  `omni-search-from-tree-and-property-view` 18 (entry 78's own, new),
+  `overlay-title-buttons-theme` 44 (entry 73),
+  `selection-on-top-hidden-edges` 18, `task-panel-clear-of-docks` 21,
+  `navicube-clear-of-panels` 16, `overlay-preset-follows-the-theme` 45,
+  `task-panel-place` 59, `task-panel-combo` 66, `display-style-menu` 38,
+  `task-panel-owner` 34, `task-panel-in-view` 89, `task-panel-overlay`
+  43, and four omni search tests. The Python suite on that build is
+  running; NO result yet.
+- 69: DONE but for the reporter's point 1 -- the transparent mode itself
+  was not seen broken; the question to the reporter stands for the next
+  stage.
+- 78: DONE.
+- 47: the half second of an older file's looks is confirmed by a
+  control; the re-saved file opening three seconds sooner is NOT
+  explained.
+- NEW, entry 79, OPEN: one of three loads of the re-saved
+  `scanner.FCStd` crashed at 20:17, in Coin, inside a repaint during the
+  restore of the view providers. Not reproduced since; the cause not
+  found; a detector is queued.
+
+[PUT RIGHT ON ORIGIN 2026-10-13 06:33, `4b52e58423`: the head block of 2026-10-13 06:40
+above. The block below is kept as it was written.]
+
+**2026-10-12 18:57: WHAT WAS PUSHED AT 17:56 DOES NOT COMPILE ON ANOTHER
+BOX; the fix is local, NOT pushed, and waits for the reporter's word.
+Nothing since the stage of 17:52 is staged or pushed.** From the build
+session (its message of 18:57, written here 18:59); origin/LinkVibe is
+still `5de7d97293`, the stage still `22ece75a08`.
+- The push: `22ece75a08` has `#include
+  "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"` in
+  `src/Gui/PreferencePages/DlgSettingsUI.cpp` -- the code generator was
+  run from the build session's second working copy and wrote that path
+  into four generated files, in the other three in comments only. FIXED
+  `23e57d647c`, local, NOT pushed. The build session has told the
+  reporter and asked for the word to push; NO ANSWER YET. Checked by the
+  note-taker, read with git, nothing run: the path is in those four files
+  at origin/LinkVibe (the include at line 53) and in none at the local
+  head. The staged copy is built on this box and is not touched by it.
+- ctest on the staged build (`22ece75a08`): 954 of 955. The one:
+  `testOmniSearch::test_everySettingIsDocumentedBriefly`, the text of
+  `View/TaskPanelInView` at 495 characters where 400 are allowed --
+  entry 70's text. Shortened `97e1ee791d`, local.
+- The Python suite on the staged build was STOPPED by the build session
+  at 18:33, for the quiet loads of entry 47: 1504 tests in, no failure
+  up to there; it has NO result.
+- 73: the Dark glyphs in the stage are a dim grey; drawn white
+  `2d945c8268`, local, NOT built.
+- 72: the two failures of `selection-on-top-hidden-edges.py` were the
+  test's; `846d40819a`, local, 18 of 18.
+- 69: in the main tree now, uncommitted, in a build started 18:44
+  ("about an hour"). A defect found on the staged copy under Dark:
+  docks put into overlays together stay solid, all but the tree view.
+  Whether that is what the reporter meant by "transparent mode ... seems
+  borken" is NOT known.
+- 78: written in the second working copy, not built.
+- 47: the reporter to the build session at about 18:30, the note-taker
+  did not hear it: "The box is quiet now. Resume speed test as you see
+  fit". The second the merge added is NAMED, two parts, neither changed;
+  one NEEDS A DECISION (the looks of an older file taken over at the
+  load).
+- Local and not pushed, the build session's: `846d40819a`, `2d945c8268`,
+  `23e57d647c`, `97e1ee791d`; and this file's commits since `5de7d97293`.
+
+**2026-10-12 18:06: STAGED 17:52:24 at `22ece75a08` and PUSHED 17:56;
+origin/LinkVibe is `5de7d97293`. Entries 68, 70 to 76 and the new 77 are
+in the stage; entry 69 is not. The build session has ended for the day.**
+From the build session (its message of about 17:59); its account is
+`docs/HandsOnLog.md`, "The afternoon of 2026-10-12" (`5de7d97293`).
+- The reporter's words, said to the build session -- the note-taker did
+  not hear them: "stage after you're done with entry 76" (16:23); "push.
+  continue in next session" (before 17:56).
+- The commits: `1c53d547d2` (entry 47, the archive's handles),
+  `93b08fd472` (71), `7970f5b7d6` (74, with the context menu),
+  `d25fa8539c` (77, the Dark borders), `22ece75a08` (68, 70, 72, 73, 75
+  and 76 together: their files interlock, the build session says).
+- The PUSH is a merge, `11070a22ff`, with the one commit the remote had
+  gained (`a98ad48342`, "App: a temporary document comes emptied");
+  that merge is NOT built or tested here. The stage is the commit before
+  it. With the push everything local since `9e1cf7d9f9` is on the
+  remote: the "not pushed" of entries 47 and 67 is changed to say so.
+- NEW, entry 77: the reporter to the build session at 17:20, "check dark
+  theme border color for various widget's. looks like many are style
+  dark color which is invisible" -- done `d25fa8539c`, staged. The
+  number is the note-taker's.
+- Entry 69, point 1, ANSWERED by the reporter to the build session at
+  17:07: "overlay has a setting, 'transparent mode' to control this
+  behavior, but right now it seems borken, fix it". Entry 69 is IN
+  WORK, not in the tree: points 2 to 4 and the two settings are written
+  in a second working copy (`D:\works\sw\fcad-wt`), not built.
+- NOT finished, as the log says:
+  - 73: its test has not passed; the glyphs' look under Dark is for the
+    reporter to judge on the stage.
+  - 72: `selection-on-top-hidden-edges.py` fails two claims since the new
+    defaults, not looked into.
+  - GUI tests with failures on the staged build, none looked into:
+    `display-style-menu.py` 37 of 38, `task-panel-in-view.py` 89 of 90,
+    `task-panel-overlay.py` 42 of 47; `task-panel-owner.py` did not
+    start.
+  - ctest and the Python suite on the staged build were still running
+    when the build session stopped; no result of either is here.
+- The reporter to the build session at 17:33: "when you testing, beware
+  of the preference dialog popup asking revert of not when you exit" --
+  one of its tests had left "Revert changes?" on the reporter's screen
+  from about 17:21 to 17:28; its tests close the dialog without the
+  question now, it says.
+- For the reporter to try on the staged copy: entries 68 and 70 to 77 as
+  reported; and still from the stage of 14:04, TechDraw "Print all" with
+  pages never shown (entry 47) and a delete of a page with undo switched
+  off (entry 67).
+
+**2026-10-12 16:36: entries 68 and 70 to 76 IN WORK -- all in the working
+tree, NOTHING committed, building since 16:32; a question on entry 69 for
+the reporter; the stage is to follow entry 76.** From the build session.
+- The reporter, said to the build session at 16:23, the note-taker did not
+  hear it: "stage after you're done with entry 76". The build session's
+  plan from it: build, tests, then the stage; entry 69 after the stage.
+- QUESTION for the reporter, entry 69 point 1, NOT ANSWERED YET (it
+  was answered at 17:07, see the block of 18:06 above): an
+  overlaid panel under the Dark and Light themes is see-through ALREADY
+  while the pointer is elsewhere; what turns solid grey is the panel that
+  has the pointer or the keyboard focus. Is it asked that (i) the panel
+  stays transparent while hovered or focused too, or (ii) something else
+  that is seen as not transparent now -- which panel, in which state?
+- 68: the cause confirmed, reproduced by a test on the old build.
+- 70: a button "Apply to live views"; `View/TaskPanelInViewAll` removed as
+  a setting -- the build session's choice.
+- 71: reproduced by a test on the old build; fixed in the dialog's key
+  handling.
+- 72: the two defaults changed; no theme, preset or the browser viewer
+  names either.
+- 73: the title buttons take the button's text colour; the "in its view"
+  button only while a view owns the dialog shown.
+- 74: done as answered; the context menu keeps `Std_DrawStyle` alone --
+  the build session's choice, not said by the reporter.
+- 75: `View/CornerCoordSystem` off by default; the cube's axes drawn last
+  with no depth test.
+- 76: the docks leave no room; new `View/DockOverlayMoveNaviCube`, on by
+  default.
+- 47: the archive opened once per entry, about 3.8 s -> 0.2 s of archive
+  reading by the load's own counters; the second lost at the merge NOT
+  attributed.
+- The rows and headings of 68 and 70 to 76 say IN WORK; they turn FIXED
+  with a commit and STAGED with the stage, when the build session says
+  so.
+
+**2026-10-12 14:22: the tree merged with origin/LinkVibe, both suites
+run, and STAGED 14:04:58 at `4474fcb17e`; NOT pushed.** From the build
+session; its account is `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12" at the end, and the paragraph in its head).
+- The reporter's word, said to the build session -- the note-taker did not
+  hear it; as the log has it: "fetch and merge remote LinkVibe. sync all
+  relevant repos and submodules. build and test first, then stage. after
+  then resume fixing issues in the notes".
+- The merge: origin/LinkVibe (`3016b5c0db`; by the log 596 commits past
+  `9e1cf7d9f9`, most of them the Transaction branch) merged as
+  `ffb143c047`, no conflict. OCCT `LinkVibe-801` at `5755a62295`.
+- The suites on the merge: ctest 951 of 951. Python 3644 tests, 2
+  failures, both copy tests of `FileBlobs` and the tests' own fault, fixed
+  `69b103d1de`; `FileBlobs` alone run again, 95 OK. From the log: the full
+  Python suite was NOT run a second time; the two thickness failures
+  carried since 2026-10-04 did not appear.
+- The stage: the FIRST from LinkVibe. The copy under test was
+  PartDesignPort's `72180a4812` until now. After it, on the staged copy
+  (the log): seven GUI tests and two loads of `scanner.FCStd`, no FAIL.
+- STAGED for the first time by it, as the build session lists them:
+  - entry 47's fixes: `24f7c8a2bd`, `93fc6cd58a`, `43fdcb1435`,
+    `ee9583a247`, `d38ac38d7b`, `0049176c22`, `5c45b43220`, `48b9aaa0ba`,
+    `4172eb2018`;
+  - entry 67: `39b548048b`;
+  - entry 58: `1adffbfe7c`, `b4f22e0b60`, `a30fdda2a5`, and the note in
+    the pattern panels `2a45e36492`;
+  - entry 30's one overlay preset: `438216ad93`, `5c021cb111`;
+  - entry 48's budget fix: `31c09e28e7`;
+  - entry 52's frame report: `d79122782b`;
+  - entry 61's rounding setting on the Advanced page: `a343a386b6`.
+- The note-taker's count, not in the message: `ee9583a247` is also entry
+  66's proposal 2, so that is staged too; by git, entry 48's second commit
+  `8a7595512d` (a test script) and entry 52's measurement `00f295f8d7`
+  are inside the staged commit as well. Rows and headings of 30, 47, 48,
+  52, 58, 61, 66 and 67 say STAGED 2026-10-12 14:04 now.
+- NOT pushed: the merge and everything local since `9e1cf7d9f9`. By git
+  at 14:22 the tree is 28 commits ahead of origin/LinkVibe
+  (`3016b5c0db`); of the queue's fixes these are on this box only:
+  `d38ac38d7b`, `0049176c22`, `5c45b43220`, `48b9aaa0ba`, `4172eb2018`
+  (entry 47), `39b548048b` (entry 67), and today's `69b103d1de` and
+  `4474fcb17e`.
+- FOR THE REPORTER to try by hand on the staged copy, two things:
+  1. TechDraw "Print all" with pages never shown since the load (entry
+     47). The new test (`tests/gui/techdraw-never-shown-page-exports.py`,
+     `4474fcb17e`, 10 of 10) covers only the Python exports, and those
+     open the page's view themselves.
+  2. Entry 67: delete a TechDraw page with undo switched off.
+- Entry 47, a new number: after the merge the model is on the screen 6-7
+  s after the open of `scanner.FCStd` where it was 5-6 s on 2026-10-11
+  (no addons, like for like). NOT looked into yet.
+- From the log, not in the message: two more words of the reporter's to
+  the build session during the build, not heard by the note-taker --
+  "duplicate the third party workbench in the staged envrionment, so that
+  when you testing, those object got loaded correctly" and "next time,
+  when you build, show completion percentage in cmd". On the first: a GUI
+  test's own home had no addons, so every load of `scanner.FCStd`
+  measured for entry 47 until now logged 111 `ModuleNotFoundError`
+  (`fasteners`, `OpticsWorkbench`); a copy of the two is linked into each
+  test's home now, 0 such errors. Entry 47 has the numbers.
+
+**2026-10-11 17:55: entry 47 -- the TechDraw pages change DONE
+`48b9aaa0ba`, and `4172eb2018`; local, not pushed, not staged.**
+- A page makes its items when shown, printed or exported, not at the
+  load. The model after the open: every page hidden 7-8 s -> 2-4 s (as
+  the file without TechDraw); the original, five pages shown, 8-12 s ->
+  6-7 s, and 5-6 s with the dimension formatter's change. The open
+  itself unchanged.
+- The original on this box, open asked to model on the screen: 31 to
+  35 s on 2026-10-10, 23 to 25 s this morning, 17 to 18 s now.
+- A first showing of a page after the load: 0.06 to 0.23 s.
+- The new test is NOT run against the old code. NOT tried, a hand check
+  for the reporter once staged: print all pages with pages never shown.
+- NOT done still: the archive reopened per entry, projection groups
+  projecting again, the `LineFormat` file. A new lead, one coarse
+  profile: TechDrawGui registering its four fonts, 2.5 sampled s.
+- Local and waiting for a push: `d38ac38d7b`, `0049176c22`,
+  `39b548048b`, `5c45b43220`, `48b9aaa0ba`, `4172eb2018`.
+  origin/LinkVibe is still `9e1cf7d9f9`; nothing staged.
+
+**2026-10-11 17:00: entry 47 -- what TechDraw's ten seconds are, PROFILED;
+the largest part FIXED `5c45b43220`; local, not pushed, not staged.**
+- Sampled seconds (about 1.3 times plain): included files restored
+  through a staging file 4.8 -- not TechDraw's own, mostly this laptop's
+  file system; page items made and drawn for pages nobody shows 2.6; the
+  archive reopened per deferred entry 1.4; projection groups projecting
+  again 1.0; a default `LineFormat` opening a file 0.5.
+- Hiding every page changes the load by 0.5 s at most.
+- The 4.8 FIXED: an included file is restored out of memory. One to two
+  seconds off the open here; on the original not separable from the
+  scatter by four runs. The wait after the open is unchanged.
+- The other four NOT done; the pages change is next.
+- Local and waiting for a push: `d38ac38d7b`, `0049176c22`,
+  `39b548048b`, `5c45b43220`. origin/LinkVibe is still `9e1cf7d9f9`;
+  nothing staged.
+
+**2026-10-11 13:02: entry 67 FIXED `39b548048b`; local, not pushed, not
+staged.**
+- A TechDraw page removed outside a transaction no longer walks freed
+  views: the crash's own case, the 229 TechDraw objects removed in the
+  GUI with no transaction, runs through (before: access violation).
+- The new test passes on the old code too, so it is not what shows the
+  fix. A delete by hand with undo off: not tried.
+- Local and waiting for a push: the icon fix (`d38ac38d7b`,
+  `0049176c22`) and this one. origin/LinkVibe is still `9e1cf7d9f9`;
+  nothing staged.
+
+**2026-10-11 12:39: entry 47 -- TechDraw's real share MEASURED on a
+proper control: about ten of the file's 21 to 25 s. A new defect, entry
+67.**
+- The file re-saved from the GUI: 20.5 to 23 s from the open to the
+  model; the same without its TechDraw objects: 11.3 to 12.5 s at most.
+  About 5 s of the open and 5 s or more of the wait after it are
+  TechDraw's.
+- Corrected: five of the ten pages ARE on the screen at the load.
+- The TechDraw pages working when first shown: IN WORK at the build
+  session on the reporter's "Then the techdraw one"; nothing of
+  TechDraw's design changed yet.
+- Entry 67, NEW, found by the build session: removing a TechDraw page
+  outside a transaction (a script) crashes. A fix and a test are
+  written, NOT done.
+- 67 entries now. origin/LinkVibe is still `9e1cf7d9f9`; nothing staged.
+
+**2026-10-11 12:24: entry 47 -- a figure WITHDRAWN by the build session:
+"22 s of the 33 are the ten TechDraw pages'" is not supported.**
+- The file it was compared with had been saved from the console and so
+  lacked every view provider record, not TechDraw's alone. TechDraw's
+  real share is being measured, on copies saved from the GUI.
+- The open's long part is most likely the file's 357 colour files (their
+  view providers are built inside the open), not TechDraw; no plain
+  number yet.
+- What stands: the 10 s that `ee9583a247` took off, x16win's numbers,
+  the four fixes pushed at 08:10, the icon fix (local).
+- The reporter, relayed: "Why the icon is missing. Chase that. Then the
+  techdraw one". The icon: never there, by design; answered in the log.
+  The TechDraw pages working when first shown: taken as a go-ahead, NOT
+  started -- the real share is reported to the reporter first.
+- origin/LinkVibe is still `9e1cf7d9f9`; nothing staged.
+
+**2026-10-11 11:50: entry 47 -- the pass of about 1 s after the drain
+FIXED `d38ac38d7b` and `0049176c22`; local, not pushed, not staged.**
+- It was PartDesign looking for add/subtract icons that do not exist, a
+  full search on every ask: the icons of the file's 686 objects took 0.59
+  to 1.03 s, now 0.005 to 0.010 s; the pass 1032 and 869 ms -> 347 and
+  106 ms.
+- The model is first on the screen 9.0 to 9.3 s after the open (was 9.4
+  to 10.1); the open itself 13.2 to 13.4 s, unchanged.
+- origin/LinkVibe is still `9e1cf7d9f9` (checked by the note-taker);
+  nothing staged.
+- With the reporter, NOT ANSWERED YET: the TechDraw pages doing their
+  work when first shown.
+
+**2026-10-11 08:28: entry 47 -- x16win on the same file and the pushed
+head: the wait after the open is the same ten seconds on both boxes.**
+- There the open returns in 8.1 to 8.3 s, here in 13.3 to 15.1 s: this
+  laptop pays 5 to 7 s more at the open only. After the open the model
+  is first there about 10 s later on both.
+- The crash test passes there too, 7 of 7.
+- In work at the build session, NOT done: the pass of about 1 s after
+  the drain (PartDesign looking for icons that do not exist).
+- origin/LinkVibe is still `9e1cf7d9f9`; nothing staged.
+
+**2026-10-11 08:09: PUSHED on the reporter's word ("Push", to the build
+session): origin/LinkVibe = `9e1cf7d9f9`. Nothing staged. x16win's
+numbers are in.**
+- On origin now: entry 47's four fixes of the night (`93fc6cd58a`,
+  `43fdcb1435`, `e7e7454dba`, `ee9583a247` -- the last also entry 66's
+  proposal 2) and this queue up to `77458172b1`.
+- The copy under test is still the one of 2026-10-10 09:44:51
+  (`72180a4812`): NONE of entry 47's fixes is in it.
+- x16win (not company managed; an older, smaller save of the file; built
+  without `ee9583a247`): the open returns in 7.3 to 9.4 s, the model is
+  first there 8 to 11 s after that, whole at 12.0 s. The clipboard and
+  the file system cost next to nothing there, so those costs are this
+  box's; the two drains cost the same on both, so the wait after the
+  open is every box's.
+- With the reporter, NOT ANSWERED YET: whether the TechDraw pages do
+  their work when first shown and not at load.
+
 **2026-10-11 01:55: entry 47 -- 10 s of the TechDraw part of the load
 FIXED `ee9583a247`; local, not pushed, not staged.**
 - One TechDraw function listed the folder of line definitions for every
@@ -68,6 +1565,7 @@ FIXED `ee9583a247`; local, not pushed, not staged.**
 - `scanner.FCStd` from the open to the model: 23 to 24 s (was 32 to 35;
   10 to 11 s without its TechDraw objects). About 13 s of the pages' own
   work at load remain -- the reporter's question, NOT ANSWERED YET.
+  (The 10 to 11 s and the 13 s: WITHDRAWN 2026-10-11 12:24.)
 - Local is ahead of origin/LinkVibe (`a810955c86`) by `93fc6cd58a`,
   `43fdcb1435`, `e7e7454dba`, `ee9583a247` and the documents. Nothing
   staged. x16win: no numbers yet.
@@ -83,6 +1581,7 @@ pushed, not staged.**
 - The wait: without its 229 TechDraw objects (a copy) the file is on the
   screen 10 to 11 s after the open is asked, against 32 to 35 s. So 22 s
   of 33 are the ten pages', none of them on the screen.
+  (WITHDRAWN 2026-10-11 12:24, see the block of that time.)
 - For the reporter, NOT ANSWERED YET, not started: the pages doing their
   work when first shown and not at load -- a change of TechDraw's design.
 - Nothing pushed since `a810955c86`; local is ahead by the crash fix
@@ -545,7 +2044,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | STAGED |
 | 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | STAGED |
 | 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | STAGED if it is entry 6's cause; to confirm |
-| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED |
+| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED 2026-10-06; "SEEN AGAIN" 2026-10-13 is WITHDRAWN by the note-taker: the state read at 16:23 was set off by the note-taker's own script (entry 110, 17:03); whether the reporter saw it at another time is asked |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix STAGED; the rest is entries 14 to 16 |
 | 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | STAGED |
@@ -569,7 +2068,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21). The reporter on the staged copy, 2026-10-09 10:51: entry 56 |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | FIRST TASK DONE as TURNED by the reporter on 2026-10-10 afternoon ("one overlay preset that can auto change its color to match the main theme"): ONE preset "Overlay" `438216ad93` (it replaces the morning's two overlay themes `3d9edca80c`), and `5c021cb111`; pushed 2026-10-10 16:30, not staged. The preset is the layout alone, no colour and no style sheet; an overlay's look is the theme's (Dark, Light and now Classic too name the overlay sheet for see-through panels, the tree's backing and the console's page), so the preset under Dark is Dark's and turns Light's when Light is applied. Kept from the morning: the themes listing each other's keys, Light's own syntax colours, the editor and console fixes. Four of the morning's choices still with the reporter. THE MORNING'S FORM, replaced: "Overlay dark theme" and "Overlay light theme" are themes (Tools > Preset configurations > Themes), the two presets are gone; an overlay theme is its base theme (Dark or Light, every key) plus the presets' LAYOUT; the overlay's LOOK (the outline overlay sheet, the tree items' backing, a console background that is the theme's own page) is in Dark and Light themselves, on the reporter's words to the build session ("color shall follow the Dark/Light theme. port those onverlay part"; "need to modify python editor part to make it more suitable to the theme"); Light, Dark and Classic each list every key another sets; Light has syntax colours of its own; the editor's current line and the console's old text take a changed colour at once. Five choices of the build session's for the reporter. THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK as DECIDED ANEW by the reporter 2026-10-09 09:47: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | FIRST TASK DONE as TURNED by the reporter on 2026-10-10 afternoon ("one overlay preset that can auto change its color to match the main theme"): ONE preset "Overlay" `438216ad93` (it replaces the morning's two overlay themes `3d9edca80c`), and `5c021cb111`; pushed 2026-10-10 16:30, STAGED 2026-10-12 14:04. The preset is the layout alone, no colour and no style sheet; an overlay's look is the theme's (Dark, Light and now Classic too name the overlay sheet for see-through panels, the tree's backing and the console's page), so the preset under Dark is Dark's and turns Light's when Light is applied. Kept from the morning: the themes listing each other's keys, Light's own syntax colours, the editor and console fixes. Four of the morning's choices still with the reporter. THE MORNING'S FORM, replaced: "Overlay dark theme" and "Overlay light theme" are themes (Tools > Preset configurations > Themes), the two presets are gone; an overlay theme is its base theme (Dark or Light, every key) plus the presets' LAYOUT; the overlay's LOOK (the outline overlay sheet, the tree items' backing, a console background that is the theme's own page) is in Dark and Light themselves, on the reporter's words to the build session ("color shall follow the Dark/Light theme. port those onverlay part"; "need to modify python editor part to make it more suitable to the theme"); Light, Dark and Classic each list every key another sets; Light has syntax colours of its own; the editor's current line and the console's old text take a changed colour at once. Five choices of the build session's for the reporter. THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK as DECIDED ANEW by the reporter 2026-10-09 09:47: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | STAGED 2026-10-09 08:40, fixed `47b5e72c79`: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | STAGED 2026-10-09 08:40, fixed `b960092ea5`: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | STAGED 2026-10-09 08:40, fixed `ef4df215b5` (the cycles submodule at its `35a3bd898`): the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Both pushed since (`docs/HandsOnLog.md`) |
@@ -586,26 +2085,73 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | STAGED 2026-10-09 08:40, fixed `813d0250f9`, PUSHED 2026-10-08: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 | 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | STAGED 2026-10-09 08:40, fixed `c7fdcf3220`, PUSHED 2026-10-08, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
 | 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | STAGED 2026-10-09 12:25, fixed `6dacf21b11`: the backend drew the hatch from one picture of the whole face, read one pixel in five at the zoom a page opens at (1.1 lines across a 17 px strip at 0.99 strength, Qt 5.0 at 0.19; now 5.0 at 0.33); a hatch is one tile laid side by side now and every picture of a page has coarser copies. Three more found by the test and fixed with it: a hatch with `HatchRotation` turned the WRONG WAY, every image drawn over all the line work of a page, the tiles showing their seams. 22 PASS and 8 FAIL before, 39 PASS after. Left: a hatch line about a pixel wide is paler than Qt's (`docs/HandsOnLog.md`) |
-| 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | The CRASH FIXED `93fc6cd58a`, LinkVibe, not pushed, not staged (`docs/HandsOnLog.md`, `01a7238b72`), the way the reporter chose about 23:15 ("Defer close"): a close from inside a slice of the document's own view-provider drain goes ahead, and the DELETION of the two documents waits for the event loop's next turn; `tests/gui/close-during-view-provider-drain.py` 5 of 5 in four runs of four (before: dead at the first close). Not covered: a close inside a slice that a save's flush runs, if that caller then runs events; the serve slice. The close BY HAND (`Std_CloseActiveWindow`, what Ctrl+W runs) from inside a slice asked "Do you want to save your changes?" of a document only opened, and held the session: FIXED `43fdcb1435`, not pushed, not staged (`373f0ed5bd`) -- the document is not marked modified while its view providers are being built; 7 of 7 in three runs of three; a real click by a person still not tried. The WAIT, chased on the reporter's word ("Chase load toming further"): MEASURED, it is the TechDraw pages' -- without the file's 229 TechDraw objects (a copy) the model is there 10 to 11 s after the open is asked, against 32 to 35 s, so 22 s of 33 are the ten pages', none of them on the screen. Of that, 10 s FIXED `ee9583a247`, not pushed, not staged (`201e32ae37`): one TechDraw function listed the folder of line definitions and asked about every file in it for EVERY EDGE a page draws (12.6 s of file system calls, dear on this box, whose file watcher answers each); the list is kept now. `scanner.FCStd` from the open to the model: 23 to 24 s (was 32 to 35), so about 13 s of the pages' own work at load remain. Tried, no gain, dropped: a look-first map for a view provider finding its page view. For the reporter, NOT ANSWERED YET, not started: the pages doing their work when first shown and not at load, a change of TechDraw's design. x16win, a laptop that is not company managed, is asked to try the load, no numbers yet. MEASURED on both branches 2026-10-10; a first part of the wait FIXED `24f7c8a2bd`, pushed 2026-10-10 23:20 (origin/LinkVibe), not staged (`docs/HandsOnLog.md`, `0a12ff66b7`): `Std_Paste` and `Material_Paste` asked the clipboard in `isActive()` on every pass over the commands -- 13 passes, 10.8 s during one load in the build session's sessions; now the model is first on the screen 14 to 18 s after the open returns and complete at 16 to 22 s (3 sessions). CAVEAT: those sessions are REFUSED the clipboard, which is where the cost came from; whether the reporter's own FreeCAD is refused is not known, and if copy and paste of objects work there, most of that 10 s was never in their wait. The reporter about 22:10: "what events current in a slice. 2 yes" -- read by the build session as: work on the wait, YES; whether "2" was way 2 for the crash, the note-taker's question, is settled by the later word: the deferral for the crash AND the wait chased. The crash as FOUND on both before the fix: way 1 would have needed the repaint given another place. Left of the wait, not started: nothing drawn until the view-provider drain is through (about 14 s), 5 s of unnamed queued calls, TechDraw's views 6.1 s of the GUI thread for pages not on the screen, one 0.85 s pass over the commands. As measured before the fix: it is EVERY first open, the load not being over: after the open returns the view of `scanner.FCStd` is empty for 35 to 40 s on PartDesignPort (`2a45e36492`) and for 20 to 23 s on LinkVibe (`85250d4cc0`; complete at 25 s in 7 sessions of 7), so LinkVibe's load fixes (`fc74256a24`, `3c7c8bdcbf`, `806ab94621`) take 15 to 20 s off and the empty stretch stays. What LinkVibe's 20 s are made of (`b257109420`): the view-provider drain 7.35 s in 17 slices, Part's visual drain 2.68 s in 14, the pre-mesh on the worker threads 0.66 s -- so NOT the meshing on other threads; the other 10 to 15 s go by between the 31 slices, a third to a half of a second per turn of the event loop, and what a turn does for that long is not measured. A CLOSE from a script timer inside the load crashed 5 of 6 on PartDesignPort and 1 of 12 on LinkVibe, both from `Gui::Document::runDeferredRestoreSlice`: the progress bar runs events inside a restore slice and the close deletes the document under it. Not tried: the reporter's own close (tab button, Ctrl+W) during the load. The ways: (1) a slice runs no events -- the build session's choice; (2) the close defers to the slice, as `3c7c8bdcbf` does for Part's visual drain. Before: seen once, not followed up; not seen in 16 opens of `scanner.FCStd` by the build session on 2026-10-10 |
-| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | Both FIXED, not staged: `31c09e28e7` (pushed 16:30) and `8a7595512d` (pushed 2026-10-10 23:20 with LinkVibe), the second the TEST's own fault: `element-color-hide.py` took view 1 for "the other view" (`gdoc.activeView()` after `Std_ViewCreate` answers view 1 again in a run's second document); with the views told apart there is no leak, 624 of 624. The "REAL defect" named further on in this cell is WITHDRAWN. A proposal only: after `Std_ViewCreate` the active view and the keyboard focus can disagree. The first (`per-view-shown-eviction.py`: on Direct3D a stated GPU budget was held against everything the process holds; it is held against the geometry uploaded now, as the setting's text says; 5 of 5). As reported at 14:14 and WITHDRAWN at 16:57: the other, `element-color-hide.py`, is a REAL defect, reproduced and narrowed, NOT fixed: one view's own hide of a path takes the object out of the OTHER view too -- its pick and what it draws -- when the hiding view is traversed first; in both link modes. Before that: read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
+| 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | PART (a) ANSWERED 2026-10-13 06:31, said to the build session after its three ways and its own choice: "Fine. Push and restage" -- read by it as choice 1, LEAVE IT, no code change. Before: part (a) WAITED FOR THE REPORTER'S CHOICE of three -- leave it, one pass when all view providers are restored, or the pass per object made cheaper; put by the build session 2026-10-12 about 21:10 and in its log `81310dbc89`, NOT ANSWERED (the note-taker's "not put as a question" of 23:17 and 00:15 is WITHDRAWN). 2026-10-13 00:15: the three load-time changes COMMITTED in two, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52: `3e64f3e9d6` (the material library: the restore 6.46 s -> 6.17 to 6.25 s on the original file, three loads each way) and `00fa69e485` (a section view and a hatch read their pattern file when first drawn: NO gain by the clock); a CORRECTION by the build session: 1.6 sampled s of the gap between the restore and the end of the open are the measuring script answering the recompute question, in every load measured since 2026-10-10 -- the open times compare like for like and stand; on the last build the open is 6.7 to 6.9 s (the re-saved file, six loads) and 9.9 to 10.2 s (the original, three). 2026-10-12 23:17: the re-saved file's sooner open EXPLAINED (a document in the merge's form does not read its 1400 shape and property files while it opens, 3.38 s -> 0.13 s; they are blobs served afterwards, so the model is no sooner); three more load-time changes IN WORK, uncommitted, in a build, not tested: the material library asked for its own directory once a material (0.4 to 1.6 s of a session's first document), a section view and a hatch read their pattern file at every restore. 21:03: part (a) CONFIRMED by a control -- the file saved again by this build has the view providers' "finish" at 1.69 and 1.70 s where the original has 2.09 to 2.12 s; NOT explained: the re-saved file opens in 7.0 to 7.1 s where the original takes 10.1 to 10.6 s, the model no sooner after the open (about 15 s against about 18 s from the open asked to the model); a CRASH on one of three loads of the re-saved file is entry 79. The second the merge of 2026-10-12 added is NAMED 18:57, two parts, NEITHER changed: (a) about half a second in `PartGui::ViewProviderPartExt::finishAppearance`, the looks of an older file taken over at the load, only for a file not yet saved by the new version -- it NEEDS A DECISION, being the other branch's design; (b) 0.4 to 1.0 sampled s in `App::FileBlobManager::materialize`, included files written to disk when first asked for by a path. The archive's handles FIXED `1c53d547d2`, STAGED 2026-10-12 17:52, pushed 17:56: the archive opened once per entry (a handle pool in the reader), the archive reading of `scanner.FCStd` about 3.8 s -> 0.2 s by the load's own counters; the second lost at the merge NOT attributed (the transaction log ruled out by an A/B). ALL NINE FIXES STAGED 2026-10-12 14:04 at `4474fcb17e`, the first stage to have any of them; five of them pushed only 2026-10-12 17:56 (`d38ac38d7b`, `0049176c22`, `5c45b43220`, `48b9aaa0ba`, `4172eb2018`). For the reporter to try by hand on the staged copy: TechDraw "Print all" with pages never shown since the load (a new test, `4474fcb17e`, covers the Python exports only, and those open the page's view themselves). NEW 2026-10-12: after the merge of origin/LinkVibe the model is on the screen 6-7 s after the open where it was 5-6 s on 2026-10-11 (no addons, like for like), NOT looked into. The CRASH FIXED `93fc6cd58a`, LinkVibe, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 (`docs/HandsOnLog.md`, `01a7238b72`), the way the reporter chose about 23:15 ("Defer close"): a close from inside a slice of the document's own view-provider drain goes ahead, and the DELETION of the two documents waits for the event loop's next turn; `tests/gui/close-during-view-provider-drain.py` 5 of 5 in four runs of four (before: dead at the first close). Not covered: a close inside a slice that a save's flush runs, if that caller then runs events; the serve slice. The close BY HAND (`Std_CloseActiveWindow`, what Ctrl+W runs) from inside a slice asked "Do you want to save your changes?" of a document only opened, and held the session: FIXED `43fdcb1435`, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 (`373f0ed5bd`) -- the document is not marked modified while its view providers are being built; 7 of 7 in three runs of three; a real click by a person still not tried. The WAIT, chased on the reporter's word ("Chase load toming further"): the figure "22 s of 33 are the ten TechDraw pages'" is WITHDRAWN by the build session 2026-10-11 12:24 -- the copy "without TechDraw" had been saved from the console and so lacked EVERY view provider record, not TechDraw's alone; TechDraw's real share MEASURED 2026-10-11 12:39 on copies saved from the GUI (`138b94bde1`): about TEN of this file's 21 to 25 s -- about 5 s of the open and 5 s or more of the wait after it (re-saved: 20.5 to 23 s from the open to the model; re-saved without its TechDraw objects: 11.3 to 12.5 s at most); so "TechDraw is about half" holds, the comparison it stood on did not. Also corrected: five of the ten pages ARE on the screen at the load (saved visible), halving the 3D view. The file's 357 colour-file view providers are built inside the open (9.5 s of it by the profile, no plain number). What TechDraw's ten seconds ARE, profiled 2026-10-11 17:00 (`fc189a3463`; sampled seconds, about 1.3 times plain): included files restored through a staging file 4.8 (not TechDraw's own -- any document with included files; mostly this laptop's file system), FIXED `5c45b43220`, pushed 2026-10-12 17:56, STAGED 2026-10-12 14:04 (one to two seconds off the open here; on the original not separable from the scatter by four runs; the wait after the open unchanged); page items made and drawn at the load for pages nobody shows 2.6, DONE 2026-10-11 17:55 `48b9aaa0ba` (below); the archive opened and closed once per deferred entry 1.4; projection group items projecting again at the restore 1.0; a default `LineFormat` opening a file 0.5 -- these three NOT done. Hiding every page changed the load by 0.5 s at most before `48b9aaa0ba`. What stands: 10 s FIXED `ee9583a247`, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 (`201e32ae37`): one TechDraw function listed the folder of line definitions and asked about every file in it for EVERY EDGE a page draws (12.6 s of file system calls, dear on this box, whose file watcher answers each); the list is kept now. `scanner.FCStd` from the open to the model: 23 to 24 s (was 32 to 35); the "about 13 s of the pages' own work left" is withdrawn with the figure. Tried, no gain, dropped: a look-first map for a view provider finding its page view. The reporter 2026-10-11: "Why the icon is missing. Chase that. Then the techdraw one" -- the first ANSWERED (it was never there, by the 2021 design; `58e4eaaa81`); the second taken by the build session as the go-ahead for the TechDraw pages doing their work when first shown; it stands on a measured number now and is DONE 2026-10-11 17:55 `48b9aaa0ba` + `4172eb2018`, pushed 2026-10-12 17:56, STAGED 2026-10-12 14:04 (`docs/HandsOnLog.md`, `0a1ffcbb41`): a page makes its Qt items when it is shown, printed or exported, not at the load -- the model's first pixels after the open, every page hidden: 7-8 s -> 2-4 s (as the file without TechDraw); the original, five of ten pages shown: 8-12 s -> 6-7 s, and 5-6 s with the dimension formatter's regular expressions made once (`4172eb2018`); the open itself unchanged; a first showing of a page after the load 0.06 to 0.23 s. The original on this box, open asked to model on the screen: 31 to 35 s on 2026-10-10, 23 to 25 s the morning of 2026-10-11, 17 to 18 s now. The new test (`tests/gui/techdraw-page-items-when-needed.py`, 10 of 10) NOT run against the old code. NOT tried, a hand check for the reporter: printing all pages (`TechDraw_PrintAll`) with pages never shown. A new lead, one coarse profile only: TechDrawGui registering its four fonts at import, 2.5 sampled s, being probed. A crash found on the way is entry 67. x16win, a laptop that is not company managed, has tried the load (2026-10-11; an older and smaller save of the file, built at `a810955c86` without `ee9583a247`): the open returns in 7.3 to 9.4 s, the model is first there 8 to 11 s after that and whole at 12.0 s; a clipboard question takes 0.1 to 0.2 ms and TechDraw's results 0.25 s of the GUI thread, while the two drains cost the same as here (5.89 and 2.67 s) -- so the clipboard's and the file system's cost are THIS box's, and the wait after the open is every box's. Measured again on `9e1cf7d9f9` and on the SAME file as here (2026-10-11 08:28): the open returns in 8.1 to 8.3 s there against 13.3 to 15.1 s here, and the model is first there about 10 s after that on BOTH boxes -- this laptop pays 5 to 7 s more at the open only; `ee9583a247` changes nothing measurable there; the crash test 7 of 7 there. The pass of about 1 s after the drain FIXED `d38ac38d7b` and `0049176c22`, pushed 2026-10-12 17:56, STAGED 2026-10-12 14:04 (`064d7e0f2d`): PartDesign looked for add/subtract icons that do not exist, a full search on every ask -- the icons of the 686 objects 0.59 to 1.03 s -> 0.005 to 0.010 s, the pass 1032 and 869 ms -> 347 and 106 ms, the model first on the screen 9.0 to 9.3 s after the open (was 9.4 to 10.1); not measured: the same search while working on such a document. MEASURED on both branches 2026-10-10; a first part of the wait FIXED `24f7c8a2bd`, pushed 2026-10-10 23:20 (origin/LinkVibe), STAGED 2026-10-12 14:04 (`docs/HandsOnLog.md`, `0a12ff66b7`): `Std_Paste` and `Material_Paste` asked the clipboard in `isActive()` on every pass over the commands -- 13 passes, 10.8 s during one load in the build session's sessions; now the model is first on the screen 14 to 18 s after the open returns and complete at 16 to 22 s (3 sessions). CAVEAT: those sessions are REFUSED the clipboard, which is where the cost came from; whether the reporter's own FreeCAD is refused is not known, and if copy and paste of objects work there, most of that 10 s was never in their wait. The reporter about 22:10: "what events current in a slice. 2 yes" -- read by the build session as: work on the wait, YES; whether "2" was way 2 for the crash, the note-taker's question, is settled by the later word: the deferral for the crash AND the wait chased. The crash as FOUND on both before the fix: way 1 would have needed the repaint given another place. Left of the wait, not started: nothing drawn until the view-provider drain is through (about 14 s), 5 s of unnamed queued calls, TechDraw's views 6.1 s of the GUI thread for pages not on the screen, one 0.85 s pass over the commands. As measured before the fix: it is EVERY first open, the load not being over: after the open returns the view of `scanner.FCStd` is empty for 35 to 40 s on PartDesignPort (`2a45e36492`) and for 20 to 23 s on LinkVibe (`85250d4cc0`; complete at 25 s in 7 sessions of 7), so LinkVibe's load fixes (`fc74256a24`, `3c7c8bdcbf`, `806ab94621`) take 15 to 20 s off and the empty stretch stays. What LinkVibe's 20 s are made of (`b257109420`): the view-provider drain 7.35 s in 17 slices, Part's visual drain 2.68 s in 14, the pre-mesh on the worker threads 0.66 s -- so NOT the meshing on other threads; the other 10 to 15 s go by between the 31 slices, a third to a half of a second per turn of the event loop, and what a turn does for that long is not measured. A CLOSE from a script timer inside the load crashed 5 of 6 on PartDesignPort and 1 of 12 on LinkVibe, both from `Gui::Document::runDeferredRestoreSlice`: the progress bar runs events inside a restore slice and the close deletes the document under it. Not tried: the reporter's own close (tab button, Ctrl+W) during the load. The ways: (1) a slice runs no events -- the build session's choice; (2) the close defers to the slice, as `3c7c8bdcbf` does for Part's visual drain. Before: seen once, not followed up; not seen in 16 opens of `scanner.FCStd` by the build session on 2026-10-10 |
+| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | Both FIXED, STAGED 2026-10-12 14:04: `31c09e28e7` (pushed 16:30) and `8a7595512d` (pushed 2026-10-10 23:20 with LinkVibe), the second the TEST's own fault: `element-color-hide.py` took view 1 for "the other view" (`gdoc.activeView()` after `Std_ViewCreate` answers view 1 again in a run's second document); with the views told apart there is no leak, 624 of 624. The "REAL defect" named further on in this cell is WITHDRAWN. A proposal only: after `Std_ViewCreate` the active view and the keyboard focus can disagree. The first (`per-view-shown-eviction.py`: on Direct3D a stated GPU budget was held against everything the process holds; it is held against the geometry uploaded now, as the setting's text says; 5 of 5). As reported at 14:14 and WITHDRAWN at 16:57: the other, `element-color-hide.py`, is a REAL defect, reproduced and narrowed, NOT fixed: one view's own hide of a path takes the object out of the OTHER view too -- its pick and what it draws -- when the hiding view is traversed first; in both link modes. Before that: read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | STAGED 2026-10-09 12:25, fixed `664d57f39b`: it needs a MAXIMIZED window and then happens every time -- the toolbar manager took the workbench toolbar out of the title bar itself (a move that hides it) and only then asked whether it was visible; it asks before the move now. `tests/gui/preferences-reset-all.py`, the reset driven through the dialog: 5 PASS and 4 FAIL on the staged copy, 9 PASS on the dev build (`docs/HandsOnLog.md`) |
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | STAGED 2026-10-09 12:25, fixed `4cb1ee6ad1` (a) and `69a2028e23` (b). (a) as decided: `Default` is the engine on the platform's backend, `Legacy` is Coin; the type is a list on the Render engine page (`Default`, `Legacy`, the backends this build has) and is kept; the render cache setting is not looked at while the engine draws and not rewritten; nothing is written at startup; 13 PASS. (b) the copy that replaces a Coin-drawn view on an anti-aliasing change takes the old view's cell; 11 PASS and 7 FAIL on the staged copy, 18 PASS now (`docs/HandsOnLog.md`) |
 | 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | (b) STAGED 2026-10-09 12:25, fixed `d157abf559` for the desktop: MSAA 4x (`View/AntiAliasing` 3) is the default for both render types; a sphere's limb, rows blended 0.0% without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. (a) confirmed expected. The BROWSER viewer does not follow: WebGL2 does not create a multisampled RGBA16F scene target. With the reporter: an 8 or 10 bit target there (true MSAA, at a price in the colour pipeline), the engine's idle accumulation (a still picture only), or a post-process pass (does not exist yet); the build session recommends measuring the first, no code needed (`docs/HandsOnLog.md`) |
-| 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | MEASURED `00f295f8d7`, pushed 2026-10-10 16:30, not staged; nothing dropped: the lines' computed coverage is what gets a fractional width right, MSAA or not -- within 0.09 px of the width asked without MSAA and 0.13 px with MSAA 4x, against 0.75 and 0.26 px as plain quads. Its cost is under what the benchmark resolves. One finding for the reporter, not changed: with MSAA 4x a line is up to 0.13 px LIGHTER than asked. Found on the way and fixed, `d79122782b`: on Direct3D every `View/Render/DebugTiming` report was of an empty frame. The reporter's rule, 2026-10-09 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
-| 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | STAGED 2026-10-09 12:25, fixed `c820c3aea1`: not the recompute -- the page comes back with the window layout and is drawn while the progressive load is still building the view providers of its views; without one the Qt page draws nothing of a view and the backend draws it by fallback widths (0.6 mm), and the view provider's own request to draw was dropped because the document was still flagged as restoring; it asks again a turn later. On the reporter's file the page as loaded is now the page after a recompute, in both renderers. 4 claims fail on the copy staged 08:40, 12 PASS now (`docs/HandsOnLog.md`) |
+| 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | MEASURED `00f295f8d7`, pushed 2026-10-10 16:30, STAGED 2026-10-12 14:04; nothing dropped: the lines' computed coverage is what gets a fractional width right, MSAA or not -- within 0.09 px of the width asked without MSAA and 0.13 px with MSAA 4x, against 0.75 and 0.26 px as plain quads. Its cost is under what the benchmark resolves. One finding for the reporter, not changed: with MSAA 4x a line is up to 0.13 px LIGHTER than asked. Found on the way and fixed, `d79122782b`, STAGED 2026-10-12 14:04: on Direct3D every `View/Render/DebugTiming` report was of an empty frame. The reporter's rule, 2026-10-09 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
+| 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | REGRESSED IN THE COPY STAGED 2026-10-12 17:52 (`22ece75a08`), with the page drawn by Qt: found by the entry's own test, run there by the build session 2026-10-12 about 23:45 -- two claims fail, a view without its geometry until something repaints it; FIXED AGAIN `5d63c7152d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: its test 12 PASS, 0 FAIL (9 and 2 on the copy of 17:52)] (2026-10-13 00:15), 12 of 12 on the build with it: the repaint asked for "a turn later" could come inside the restore, it is asked again until the document is no longer restoring. The thickened lines are NOT back, by this test (00:19). NOT known: whether the stage of 14:04 has it, which change moved the timing, what brings the geometry back by hand (not tried; a recompute or "Redraw page" expected by the build session, not shown). Before: STAGED 2026-10-09 12:25, fixed `c820c3aea1`: not the recompute -- the page comes back with the window layout and is drawn while the progressive load is still building the view providers of its views; without one the Qt page draws nothing of a view and the backend draws it by fallback widths (0.6 mm), and the view provider's own request to draw was dropped because the document was still flagged as restoring; it asks again a turn later. On the reporter's file the page as loaded is now the page after a recompute, in both renderers. 4 claims fail on the copy staged 08:40, 12 PASS now (`docs/HandsOnLog.md`) |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | STAGED 2026-10-09 15:11, fixed `8bb8bd10fa`: a fully selected object drew every edge at full colour, front or behind -- a rule copied from the old Coin renderer, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected BY ITSELF still shows through at full colour. Cost: nothing in the engine; Coin (`Legacy`) 2.18 -> 2.54 ms a frame on 100 heavy spheres all selected. 16 PASS and 2 FAIL on the staged copy, 18 PASS now. For the reporter: whether `Legacy` keeps the change (`docs/HandsOnLog.md`) |
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | STAGED 2026-10-09 15:11, fixed `739120f1c7`: a warning or an error shown to the user is the status bar's own temporary message, which hides every non-permanent widget -- the preselection label that held the progress bar in place; a bar that came up with a message showing sat at x 2 of 1920 instead of 1441. It is a permanent widget now, first of the right-hand group. 4 PASS and 2 FAIL on the staged copy, 6 PASS now (`docs/HandsOnLog.md`) |
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | STAGED 2026-10-09 15:11, fixed `f5a651b723`, all eleven points (a) to (k); five choices for the reporter: Esc, any other button, or the window losing the front or the mouse give a drag up, a border's too; one look for the overlay's and the cells' frames -- the theme's accent at 0.3, a white border, a thin dark line; a join's cell that goes has a red stop sign and no dim; a border pushed more than 12 px past a cell's minimum closes it, a corner only creates and its refusal is an ERROR; handles on the accent colour and off a scroll bar; a page's or sheet's cell splits with a 3D view of its document. 19 PASS and 26 FAIL on the staged copy, 82 PASS now (`docs/HandsOnLog.md`). CHANGED AGAIN on the reporter's words to the build session, DONE `dbff5c6378`, STAGED 2026-10-09 16:42 (the desktop's), desktop and browser both: a refused corner drag shows NO frame, only the forbidden cursor, with the error said at each turn from the splitting cursor to the forbidden one; the cell that goes (a join's, a border's) is framed RED and crossed out, the stop sign is gone; the active cell has a subtle border in the frames' accent. 81 PASS and 7 FAIL on the staged copy, 88 PASS now. Three choices left with the reporter. ONE MORE, DONE `b4004d2635`, STAGED 2026-10-09 17:36: a dragged border takes room from the cell next to it and from no other -- at that cell's minimum the drag closes it instead of pushing the next border along; 91 PASS and 3 FAIL on the copy staged 16:42, 94 PASS now |
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | FIXED `a50e708959`, PUSHED 2026-10-09 16:41; not in the staged copy (the browser viewer is not part of it); three choices for the reporter: the browser's split view shows a drag as frames and carries it out at the release, with the desktop's cancel (Escape, another button, a second finger, the window losing the front), a minimum cell size of 300, a border that closes a cell pushed 12 px past the minimum, the stop sign and the frame look. 7 PASS and 22 FAIL on the old bundle, 36 PASS now, in headless Chrome. Not run: a touch screen, Safari (`docs/HandsOnLog.md`). The view cell changes of `dbff5c6378` (entry 56, points (l) to (n)) are in the browser's too |
-| 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | AUDITED; three FIXED, pushed 16:30, not staged: `1adffbfe7c` (the origin's point had no icon file: "Cannot find icon: Std_Point"), `b4f22e0b60` (one dimension's tolerance warned of 56 times a recompute, once now) and `a30fdda2a5` (the pattern limit cut a FILE's own count, `PolarPattern003`'s 1024 -> 1000; the reporter: "yes it is 1024"; a restored count is kept now). The WARNING the reporter asked for on entering edit is DONE `2a45e36492`, pushed 2026-10-10 23:20 with LinkVibe, not staged: a pattern over `Mod/Part/MaximumPatternOccurrences` shows a note under its count box in both pattern panels (PartDesign's and the link array's) -- the count, the limit, that it can be lowered and not raised, the setting by title and parameter path, that it is on no preference page, that the search box finds it, and that a change counts from the next start. Open for the reporter, neither done: a row for the setting on a preference page; reading it at each use instead of once a session. The rest is in `docs/HandsOnLog.md` as a table with a proposal each, nothing changed: 90 "hasher mismatch" from the optics addon's rays, 45 "auto change element reference", `SectionView003` said three times over, a sketch whose first solver fails without being named, three TechDraw view providers writing into the document while attached, and `PolarPattern003` cut from 1024 to 1000 occurrences (answered and fixed since, as the head of this cell says). Before the audit: a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
+| 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | AUDITED; three FIXED, pushed 16:30, STAGED 2026-10-12 14:04: `1adffbfe7c` (the origin's point had no icon file: "Cannot find icon: Std_Point"), `b4f22e0b60` (one dimension's tolerance warned of 56 times a recompute, once now) and `a30fdda2a5` (the pattern limit cut a FILE's own count, `PolarPattern003`'s 1024 -> 1000; the reporter: "yes it is 1024"; a restored count is kept now). The WARNING the reporter asked for on entering edit is DONE `2a45e36492`, pushed 2026-10-10 23:20 with LinkVibe, STAGED 2026-10-12 14:04: a pattern over `Mod/Part/MaximumPatternOccurrences` shows a note under its count box in both pattern panels (PartDesign's and the link array's) -- the count, the limit, that it can be lowered and not raised, the setting by title and parameter path, that it is on no preference page, that the search box finds it, and that a change counts from the next start. Open for the reporter, neither done: a row for the setting on a preference page; reading it at each use instead of once a session. The rest is in `docs/HandsOnLog.md` as a table with a proposal each, nothing changed: 90 "hasher mismatch" from the optics addon's rays, 45 "auto change element reference", `SectionView003` said three times over, a sketch whose first solver fails without being named, three TechDraw view providers writing into the document while attached, and `PolarPattern003` cut from 1024 to 1000 occurrences (answered and fixed since, as the head of this cell says). Before the audit: a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | STAGED 2026-10-09 15:11, fixed `e9ac624959`, as decided: "Reset all" puts `Mod/Start/Migration2024Complete` back when it was set; the migration is untouched. A profile already switched off this way (the reporter's) STAYS off until Preferences > Start or `Mod/Start/ShowOnStartup` switches it on. 10 PASS and 2 FAIL on the staged copy, 12 PASS now (`docs/HandsOnLog.md`) |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | STAGED 2026-10-09 16:42, fixed `d6f640f4ee`: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
-| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | STAGED 2026-10-10 09:44, in its third form. REVERSED by a new request of the reporter's about 22:25 ("support fractional line width, but make sure the highlight shows the same width"), done `2649caa38f`; then the dashes with the widths and a rounding setting, done `721fdcf39b`: the backend draws every line of a page at the width asked for, fractions included (0.35 mm is 0.35; Qt's page has 0.3), dimension lines, section lines and leaders too; the highlight of an edge is as wide as the edge, and the edge under it is left out of the drawing while it is lit (7.00 px selected for a 7.00 px line, no ink of another colour beside it). `techdraw-page-backend-line-widths.py` 19 PASS. The DASHES, decided by the reporter ("Do the new dash"): counted in the width the line is drawn at -- a 0.35 mm hidden line has six dashes where the Qt page has seven; a line of whole tenths has Qt's dashes exactly. A new setting asked by the reporter, `Mod/TechDraw/General/PageRendererVgRoundLineWidth`, OFF by default: on, a width is rounded DOWN to a whole tenth of a millimetre as the Qt page draws it and the dashes are Qt's too; it reaches an open page at once; in the omni search, on no preference page. `techdraw-page-backend-dashes.py` 30 PASS, `techdraw-page-backend-line-widths.py` 30 PASS. The setting's four points ANSWERED by the reporter about 10:10 ("1,2,3 yes. 4 expose to techdraw preference page"): off by default, rounded down, one switch -- confirmed; and it goes on a preference page: DONE `a343a386b6`, pushed 2026-10-10 11:18, NOT staged -- a check box "Round Line Widths (Backend Renderer)" on TechDraw's Advanced page; `techdraw-page-backend-line-widths.py` 33 PASS. BEFORE the reversal, superseded: FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
+| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | STAGED 2026-10-10 09:44, in its third form. REVERSED by a new request of the reporter's about 22:25 ("support fractional line width, but make sure the highlight shows the same width"), done `2649caa38f`; then the dashes with the widths and a rounding setting, done `721fdcf39b`: the backend draws every line of a page at the width asked for, fractions included (0.35 mm is 0.35; Qt's page has 0.3), dimension lines, section lines and leaders too; the highlight of an edge is as wide as the edge, and the edge under it is left out of the drawing while it is lit (7.00 px selected for a 7.00 px line, no ink of another colour beside it). `techdraw-page-backend-line-widths.py` 19 PASS. The DASHES, decided by the reporter ("Do the new dash"): counted in the width the line is drawn at -- a 0.35 mm hidden line has six dashes where the Qt page has seven; a line of whole tenths has Qt's dashes exactly. A new setting asked by the reporter, `Mod/TechDraw/General/PageRendererVgRoundLineWidth`, OFF by default: on, a width is rounded DOWN to a whole tenth of a millimetre as the Qt page draws it and the dashes are Qt's too; it reaches an open page at once; in the omni search, on no preference page. `techdraw-page-backend-dashes.py` 30 PASS, `techdraw-page-backend-line-widths.py` 30 PASS. The setting's four points ANSWERED by the reporter about 10:10 ("1,2,3 yes. 4 expose to techdraw preference page"): off by default, rounded down, one switch -- confirmed; and it goes on a preference page: DONE `a343a386b6`, pushed 2026-10-10 11:18, STAGED 2026-10-12 14:04 -- a check box "Round Line Widths (Backend Renderer)" on TechDraw's Advanced page; `techdraw-page-backend-line-widths.py` 33 PASS. BEFORE the reversal, superseded: FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | DONE `9d354a8c44` and, the order turned as the reporter said, `f5dc9027e7`; STAGED 2026-10-10 09:44: the recent items are listed BEFORE the three modes and the box comes up on the first of them, so Return on a box just brought up repeats the last item; `omni-search-recent-items.py` 18 PASS. Points 1 to 4 still with the reporter. As first built: the box comes up with the items last confirmed in it below the three modes -- a command run from the box, a parameter or a property whose editor was opened, an object selected -- ten at most, the newest first, each once; gone as soon as more is typed; a picked row is carried out again. `tests/gui/omni-search-recent-items.py` 17 PASS, and the store in `OmniSearch_Tests_run`. The four points "not said" and a fifth were decided by the build session, each easy to turn: for the reporter (`docs/HandsOnLog.md`). The fifth DECIDED by the reporter about 22:15, the other way: the recent items come BEFORE the three modes -- done, as the head of this cell says; the other four not answered |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | DONE `b20c825573` and, the reporter's three changes of 22:15, `8fed56f3df`; STAGED 2026-10-10 09:44: the tool button wears the split cube (the reporter's pick of the three, "for now"); "All views" and the setting `View/SyncLightSettings` are gone and "Apply all" is a button that copies the active view's lights to every other open 3D view once; "Direction" raises Coin's light dragger in the view, drawn over the model, its arrow orange (the build session's choice). `display-style-menu.py` 34 PASS. For the reporter to TRY: the handle by hand, and the menu as a popup. As first built, with the icon and the way the light's direction is set left open: the Display style menu has the style as ONE combo box with icons (the active view's), the anti-aliasing as another (applies at once), and a Lights section in place of the Light Sources preference page, which is gone -- headlight, fill light, ambient light, a switch, a colour and an intensity each; a change is stored in the active view's properties (`Light_*`), or in every open 3D view's with "All views" ticked (the remembered setting `View/SyncLightSettings`, for all the light settings); "Save as default" writes the view's lights into the preferences; "Direction" is a toggle (the button or Escape). `tests/gui/display-style-menu.py` 24 PASS; fifteen other GUI tests around it, no FAIL. OPEN in it, by the reporter's words of the evening: (a) the ICON -- the three offered were turned down, two directions offered after a search, not answered; (b) the light's DIRECTION by the Coin light manipulator, as the shadow light has it -- next session. Three things for the reporter to TRY by hand (`docs/HandsOnLog.md`). The reporter about 22:15 (all three done since, as the head of this cell says): one of the build session's three icons goes on the tool button "for now" (WHICH did not reach it -- no picture came; asked); the check box "All views" becomes a BUTTON "Apply all"; the light handle with the manipulator. The request as answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59) |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | STAGED 2026-10-10 09:44, fixed `66ccd277b9`: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, fixed `dfdfc04c5c`, staged with it: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
-| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, not pushed, not staged; by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
+| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | 2026-10-13 00:56: the material change `3e64f3e9d6` takes NOTHING off the first opening (2.20 s on the staged copy, 2.23 and 1.99 s with it) -- the build session's "most of the 1.8 s" of 23:17 is WITHDRAWN by it; and opening the preferences on the copy staged 2026-10-12 17:52 can end the program, entry 82. MEASURED before anything was changed; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). Proposal 2 (TechDraw's list of line standards kept) is DONE `ee9583a247` under entry 47, 2026-10-11, pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04 with entry 47's fixes (the note-taker's count; the build session named the commit under 47); by the code it serves this dialog's line style icons too, the opening NOT measured again. Proposals 1 and 3 as they were. The timing check was QUEUED by the reporter 17:52 |
+| 67 | 2026-10-11 | removing a TechDraw page OUTSIDE a transaction crashes the program (found by the build session on entry 47: a script's `doc.removeObject` over the TechDraw objects of a copy of `scanner.FCStd`; not reported by the reporter) | FIXED `39b548048b`, STAGED 2026-10-12 14:04, pushed 2026-10-12 17:56; for the reporter to try by hand on the staged copy: a delete with undo switched off (`docs/HandsOnLog.md`, `ded8b1139a`): the page and the view collection collect their views by name and look each up again before removing it; the crash's own case (the 229 TechDraw objects removed in the GUI with no transaction) runs through, no exception, no warning. The new test `TDTest/DrawPageRemoveTest.py` (2 cases) passes on the old code too, so it is not what shows the fix. As FOUND (`138b94bde1`): access violation in `TechDraw::DrawPage::unsetupObject` (`DrawPage.cpp` 435) under `App::Document::removeObject` -- the loop goes by pointers to the page's views taken before it starts, a part view removes its dimensions and balloons as it goes, and outside a transaction a removed object is deleted at once. Deleting a page by hand runs inside a transaction and is safe; a script is not; a delete with undo off is not tried |
+| 68 | 2026-10-12 | a task panel shown in its view, with the tree view as an overlay on the same side: the panel stands beside the tree, as expected -- until the mouse hovers a tree item, when the panel moves UNDER the tree view. The reporter's answers 15:03: the left side; the panel comes back; the left overlay holds the tree view and the property view, and the mouse over ANY part of it moves the panel; no auto hide, no mouse-through; on the copy staged 2026-10-12 14:04 | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; FIXED `22ece75a08`; its test `task-panel-clear-of-docks.py` 21 claims, no FAIL, on the staged build. As it stood in work at 16:36: the cause CONFIRMED and reproduced by a test on the old build (the note-taker's guess held); the fix, `OverlayManager::occupied()` no longer skips a dock that is not see-through at the moment. OPEN; a reading of the code by the note-taker under the entry, nothing run -- the answers fit it |
+| 69 | 2026-10-12 | a change request: a panel moved to overlay mode gets a transparent background; the tree view's default item background is the current theme's 3D view background colour (the darker one of a gradient) at alpha 150; the property view the same -- empty area transparent, the alternate item background kept (alpha 150), the other items as the tree's; the task panel's background at alpha 150 too, as an overlay and in its view. ANSWERED 15:21: in overlay mode only; a new setting to follow the theme's colour by itself, on by default; of a gradient the FIRST colour (this replaces "the darker one"); the task panel in the theme's own panel colour; a row's background on the rows only, the part with no item wholly transparent; the overlay alpha a setting; done as Qt properties a style sheet can override | THE REPORTER 2026-10-13 09:54, on the copy staged 09:36: "why I am not getting it with my current configuration" -- READ by the note-taker, nothing run: their configuration names the overlay sheet `Dark_overlay.qss`, the change was made and tested with the sheets used when none is named (`Dark-Outline.qss`, `Light-Outline.qss`); `Dark_overlay.qss` states a solid task panel ground of its own, which wins by the change's own rule; MEASURED by the build session 10:06 on a copy of that configuration: the items ARE backed under `Dark_overlay.qss`, but that sheet leaves panel grounds SOLID that the Outline sheets clear (the Task View's overlay 98% solid, 100% clear under `Dark-Outline.qss`). The reporter about 10:04: switching the theme through Tools > preset configurations puts it right, "the residue stylesheet needs re-apply of the theme pack" -- the Dark theme named `Dark_overlay.qss` until entry 30 (2026-10-10) and a configuration themed before keeps the old name. A one-time migration at start-up PUT to the reporter by the build session, NOT ANSWERED, not started; the note-taker's points b and the colour NOT ANSWERED. DONE `bbe8525de7` but for the reporter's point 1, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `overlay-see-through.py` 58 PASS, 0 FAIL] (21:03): after the fix no dock is solid when docks are put into overlays together; its own test `overlay-see-through.py` 58 claims, no FAIL. Point 1 as before: the transparent mode itself NOT seen broken by the build session -- if it still is on the next stage, which panel, the eye pressed or not, the pointer over it or not. Before, 18:57: in the main tree, uncommitted, in a build started 18:44. A DEFECT found and reproduced by the build session on the staged copy under Dark: of the docks put into overlays together all but the tree view stay SOLID until the pointer has been in the overlay and out again, or the eye is pressed; a fix is written, in that build. The transparent mode itself it could NOT see broken; whether that defect is what the reporter meant is NOT known. Before, 17:58: points 2 to 4 and the two settings written in a second working copy, not built. Point 1 ANSWERED by the reporter 17:07, said to the build session: "overlay has a setting, 'transparent mode' to control this behavior, but right now it seems borken, fix it" -- so the overlay's transparent mode does not keep a hovered panel see-through, to be found and fixed; not looked into yet. The five points answered 15:21, two of the answers read by the note-taker and marked so under the entry |
+| 70 | 2026-10-12 | the UI preference page: the label of the setting "Apply the setting above to every view at once" is wrong; make it a BUTTON, labelled something like "apply to live views". ANSWERED 15:35: the label seen is '...and the panels that are open', "ellipsed strangely"; the button first commits the relevant settings (for when auto apply is off) and then applies to the views | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`. SINCE 18:57: ctest found the text of `View/TaskPanelInView` over the 400 characters a setting may have (495); shortened `97e1ee791d`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52. As it stood in work at 16:36: the check box gone and `View/TaskPanelInViewAll` removed as a setting (the build session's choice); a button "Apply to live views" beside "Task panels in their views" stores the setting and applies. OPEN; both points answered 15:35 |
+| 71 | 2026-10-12 | the preferences dialog: Enter pressed in an edit box of a page dismisses the whole dialog; it shall commit that one setting only. ANSWERED 15:29: the key commits only when the "apply now" option is on and otherwise does nothing; every kind of box; Enter on the OK button still closes | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; FIXED `93b08fd472`; `preferences-enter-in-an-edit-box.py` 12 claims, no FAIL; the box stores a tenth of a second after the key, and only with "Apply preferences at once" on. As it stood in work at 16:36: reproduced by a test on the old build (Return in the author field closed the dialog); the fix in `DlgPreferencesImp::keyPressEvent`. OPEN; the three points answered 15:29, the first CONFIRMED by the reporter 15:33; the "search box" of point b was the note-taker's mistake, there is none |
+| 72 | 2026-10-12 | a change request: the default of 'SelectionLinkThicken' to 1 and the default of 'SelectionPointScale' to 1.5 | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `selection-on-top-hidden-edges.py` failed two claims since the new defaults -- LOOKED INTO 18:57: the test's fault, not the drawing; the test corrected `846d40819a`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52, 18 of 18. As it stood in work at 16:36: the two defaults changed (1.0 and 1.5); no theme, preset or the browser viewer names either, so points a and b have nothing to decide. OPEN; the first name is `SelectionLineThicken`, CONFIRMED by the reporter 15:43; two points of the note-taker's not answered |
+| 73 | 2026-10-12 | the close button and the "toggle panel in view" button are not dark/light theme aware; the toggle button shows when there is no task panel owned by a view, and should be hidden then; and the overlay title buttons to be checked and made dark/light aware too. ANSWERED 15:49: the close button is that of the panels docked to the main window; the task panel can hold several pages, some owned by no view (PartDesign's task watchers), and with no view-owned page among them the toggle button is not shown | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; its test has NOT passed (the first measure was wrong, the new one never ran); the glyphs' look under Dark is for the reporter to judge on the stage. SINCE 18:57: the rewritten test ran on the staged build, 43 of 44 -- the Dark glyphs ARE a dim grey in the stage of 17:52; drawn in WHITE now, `2d945c8268`, local, NOT built, NOT staged. 21:03: BUILT and tested, `overlay-title-buttons-theme.py` 44 of 44, the glyphs 66 to 104 of 255 lighter than a dark title bar (54 to 82 before); pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `overlay-title-buttons-theme.py` 44 PASS, 0 FAIL]. As it stood in work at 16:36: the title buttons draw their glyph in the button's own text colour (a property `iconColor` a sheet can override); the "in its view" button shown only while the Tasks tab shows a dialog a view owns. OPEN; both points answered 15:49; under which theme the buttons are hard to see, not said |
+| 74 | 2026-10-12 | `Std_DrawStyle`: the combo box added to its menu overlaps the draw style selection; asked: `Std_DrawStyle` back to the list of draw styles alone, and a NEW command ("Std_DsiplayStyle", read as `Std_DisplayStyle`) for the customized menu without the draw style combo, beside `Std_DrawStyle` in the toolbar (after entry 63). ANSWERED 16:04: the name is `Std_DisplayStyle`; `Std_DrawStyle` takes its old icon back and the new command the split cube; the new command to the RIGHT of `Std_DrawStyle`, in the View menu too; the overlap is not looked into for its own sake | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `7970f5b7d6`; `Std_DisplayStyle` is in the view's context menu too, as the reporter said at 16:41. As it stood in work at 16:36: done as answered; the view's context menu keeps `Std_DrawStyle` alone (the build session's choice, not said by the reporter) -- OVERRULED by the reporter 16:41: `Std_DisplayStyle` goes into the context menu too. OPEN; the four points answered 16:04; the context menu not named in the answer |
+| 75 | 2026-10-12 | a change request: `ShowAxisCross` off by default; and the axis cross of the navigation cube drawn on top of the cube, so it is seen clearly. ANSWERED 16:07: the setting meant is `CornerCoordSystem`, off by default; the cube's axes drawn over the cube, staying where they are | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-axes-over-the-cube.py` 8 claims, no FAIL. As it stood in work at 16:36: `View/CornerCoordSystem` off by default, in the preference pack template too; the cube's axes drawn last with no depth test, in both drawing paths. OPEN; points a and b answered 16:07; point c answered 16:13: the change of the default is enough; nothing left unanswered |
+| 76 | 2026-10-12 | a panel in overlay mode docked at the navigation cube's side leaves room for the cube ALWAYS; it should do so only when the panel would really cover the cube -- over a TechDraw page, for one, it should leave none. TURNED by the reporter 16:18, "maybe change the other way": an overlay panel leaves NO room at all; the navigation cube watches the overlay panels, a task panel in its view among them, and moves out of their way; a new setting for that, on by default; the old leave-room setting removed | STAGED 2026-10-12 17:52 at `22ece75a08`, pushed 17:56; DONE `22ece75a08`; `navicube-clear-of-panels.py` 16 claims, no FAIL. As it stood in work at 16:36: the docks leave no room, `DockOverlayCheckNaviCube` removed; new `View/DockOverlayMoveNaviCube`, on by default; the cube slides along its edge clear of overlaid docks and of a task panel over its view, and back. OPEN; the request turned 16:18; the two points of before fall away; the three new ones answered 16:20: the cube slides along its edge in the same corner; with the setting off a panel simply covers it; it moves for a momentary panel too and comes back; nothing left unanswered |
+| 77 | 2026-10-12 | the Dark theme: the border colour of many widgets is a dark colour that cannot be seen (said by the reporter to the build session at 17:20; the number given by the note-taker after) | DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed 17:56: the Dark set's general border colour was black on grounds all but black, and takes the check boxes' grey; which widgets the reporter saw is not said -- for the reporter to look on the stage (`docs/HandsOnLog.md`, `5de7d97293`) |
+| 78 | 2026-10-12 | a change request: retire the tree view's present function to search for an object; hook Ctrl+F to the omni search with "/" and a space typed in; in the property view hook Ctrl+F to the omni search with "/prop" and a space. ANSWERED 18:29: NO new mode -- from the property view the omni search opens with text already typed that leads to the current object, document or view and ends with a dot, so the list shows all its properties; Ctrl+F applies in the tree view and the property view ONLY; the tree's "Search..." menu item is kept and opens the omni search; opened from the tree view it scrolls the tree by itself as before and sets and clears the item's background as before | DONE `b70dab6401`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `omni-search-from-tree-and-property-view.py` 18 PASS, 0 FAIL] (21:03): its own test `omni-search-from-tree-and-property-view.py` 18 claims, no FAIL; found by it and fixed with it: opened on a lone dot (several objects selected) the omni search selected the first object in place of them all with the tree's "sync view" on. Before, 18:57: written in a second working copy, not built; the build session's choices on the three smaller points are under the entry, one of them (g) against the note-taker's reading. The four points answered 18:29 |
+| 79 | 2026-10-12 | a CRASH at the load of `scanner.FCStd` saved again by this version: one of three loads died, an access violation in Coin (`SoAction::traverse` reading 0) -- a repaint of the 3D view comes in while the view providers are restored and the scene root's list of children gets shorter under its walk (found by the build session on entry 47; not reported by the reporter) | FIXED `9b9a479164`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: three loads of the re-saved file, all ended properly, no crash log, no detector log] (23:17): on the build before the fix the detector fired on the first load of the re-saved file; with it, twelve loads of that file and two of the original wrote no crash log, the picture the same to the pixel; the detector stays in. NOT shown: that the staged copy crashes -- it has the same code. FOUND 22:09, the cause named: a repaint during the restore builds a PartDesign feature's visual on demand, which reads the `SuppressedShape` still parked from the load; serving it announces a change, and the answer to that regroups the view provider's children and takes roots out of the scene root under the walk. WHICH FILES, CORRECTED by the build session 22:20 (its "every file saved since the suppression port, 2026-10-03" is WITHDRAWN): a file SAVED BY A BUILD THAT HAS THE MERGE of 2026-10-12 (`ffb143c047`) -- so by the stage of 14:04 or of 17:52, both EXPOSED -- at any later load, one load in a few on this box; the stages before 2026-10-12 are not exposed by its reading of the code, which no run has shown; the file is not damaged; no crash seen on the staged copy itself. The fix: a regrouping asked for during such a walk waits until the walk is over. Before, 21:03, FOUND in part: the stack and a dump are kept; WHO takes roots out of the scene root inside that walk is not found; NOT reproduced since (seven loads under the debugger, none); a detector is written, its build and sixteen loads queued behind the Python suite |
+| 80 | 2026-10-12 | a change request: in the file recovery prompt dialog, a check box in the first column to toggle "select all". ANSWERED 21:40: in the HEADER of the first column; a half state when only some rows are checked, a click then checks all; the rows with warnings are checked with the rest | DONE `53a231cc72`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 [ON THE STAGED COPY, 07:32: `recovery-dialog-check-all.py` 13 PASS, 0 FAIL] (23:17): its own test `recovery-dialog-check-all.py` 13 claims, no FAIL; "Start Recovery" cannot be pressed with nothing ticked. As built: the box is the header's icon beside "Document Name", ticked, empty or half; a click on the header's text still sorts. The three points answered 21:40, nothing left unanswered |
+| 81 | 2026-10-12 | saving a document is slow in a folder with many entries: the backup step lists the whole folder of the file at every save and asks the file system about EVERY entry (found by the build session, whose test runs took half a minute a save in a temporary folder of 3400 entries; not reported by the reporter) | FIXED `b3e1247e6d`, PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 (23:17): with it the Python suite ran its 3645 tests in thirteen minutes in an empty temporary folder, where the run before had done 1647 in an hour (the two differ in the folder too). The change: it asks only the entries whose name is a backup's. NOT measured for the reporter's own saves |
+| 82 | 2026-10-13 | THE COPY STAGED 2026-10-12 17:52 CAN END BY ITSELF WHEN THE PREFERENCES ARE OPENED: heap corruption (0xC0000374), while the dialog is built, after its first close, or at the session's end; no crash log (found by the build session, measured: seven sessions of ten on the staged copy, none of ten on its build of the night; not reported by the reporter) | FIXED ALREADY by `23e57d647c` (2026-10-12 18:18), PUSHED 2026-10-13 06:33, STAGED 2026-10-13 06:52 -- the copy under test HAS THE FIX now; ON THE STAGED COPY, 07:32: the preferences opened twice and closed in six sessions, all six ended properly (exit 0), where the copy of 17:52 died in 7 of 10; found 00:56: the cause is the include of the second working copy that `22ece75a08` carries -- the preference page "UI" is allocated by the size of one version of its class and constructed by the code of another, three pointers longer, 24 bytes written past the block each time the preferences are built; READ in the sources, not shown under a debugger. The stage of 14:04 does not have it. Its ROOT fixed too, `49dca0ebbc` (01:00, pushed 06:33): the generator wrote the machine's path into what it generated when reached through a path with forward slashes on Windows; it makes the path absolute and normal first now and refuses a module not below a `src/` directory. The reporter's word for the push and a restage GIVEN 2026-10-13 06:31; the restage DONE 06:52 |
+| 83 | 2026-10-13 | a view cell's menu and handle should know where the overlay panels are and slide out from under them so they stay within reach, as the navigation cube does (a change request). ANSWERED 13:29: the cell's MENU button and its TWO CORNER handles, each checked by itself; moved only if the cell has area not covered by an overlay panel -- fully covered, or less than 40 left in a dimension, it stays [CHANGED by the reporter 13:33: not 40 pixels but TWICE THE SIZE OF THE HANDLE; and when they slide the handles must not overlap one another]; clear of the same things as the cube, slid as the cube is; NO setting, always; every cell | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `view-cell-handles-clear-of-panels.py` 19 of 19 (in the source 15:52). Prepared as a script 15:36. The five points answered 13:29; two smaller points left, not blocking. COMMITTED `d00ab5ddcf` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted |
+| 84 | 2026-10-13 | a tree view item's tooltip comes after a delay, which is fine -- but when the delay is up it is shown even if the pointer is no longer over the item; it should be shown only if the pointer is still over that item | FIXED `a3acdd0947`, PUSHED 2026-10-13 13:57, STAGED 2026-10-13 13:56 (fixed 11:33): its test `tree-tooltip-only-over-its-item.py` 14 of 14, twice, offscreen. As written 10:17; the cause READ by the build session, to be shown by a new test before the build -- when the delay is up the tree asks for the item at the pointer, and gets one for a point BESIDE the view where a column is wider than the view and under any widget lying over the tree; leaving the tree stopped nothing. The fix: the item the delay was started for is remembered and the tip shown only if the pointer is still in the tree's viewport, nothing over it, on that same item. The note-taker's three points not needed for it, by the build session |
+| 85 | 2026-10-13 | the task panel's background "seems to be reverted" under the Dark and the Light theme. MADE PRECISE 10:12: the panel's base is transparent as expected and the alpha 150 of the single guest widgets is fine -- their COLOUR is wrong: Dark has what looks like Light's and Light what looks like Dark's, "just swap" | REPRODUCED 2026-10-13 10:17 by the build session on a copy of the reporter's configuration; FIXED `1f01bf3f30`, PUSHED 2026-10-13 13:57, STAGED 2026-10-13 13:56 (fixed 11:33), `overlay-see-through.py` 62 of 62 and with a copy of the reporter's configuration the ground is the applied theme's at once: after a theme is applied in a running session with the docks overlaid the task panel's ground has the colour of the theme being LEFT, at the right alpha -- (44,44,44,150) under Light, (250,250,250,150) under Dark -- until the overlay's sheet is made again or the next start; the sheet was made before the new theme's parameters were in force. In `bbe8525de7`, so in both stages of 2026-10-13. Point a answered 10:12 |
+| 86 | 2026-10-13 | the mouse no longer passes through the transparent area of an overlay panel. ANSWERED 10:21: on ANY overlay panel; NOTHING passes -- click, drag or wheel; just noticed, since when not known | OPEN; the three points answered 10:21, nothing left unanswered; the cause NOT found by reading, and NOT found by the build session at 10:38: the clear parts read alpha 0 to the test's own picture, no commit of 2026-10-12 nor the merges touch the mouse's path; the pass-through is gated on the panel's EYE (transparent mode), which the reporter's configuration has off for the right overlay; end-to-end runs wait for a build. The point put to the reporter ANSWERED 10:42: the eye IS pressed, a 3D view IS the active view, the settings for mouse and wheel pass-through are all on -- so none of the three gates explains it; nothing left unanswered. NOT REPRODUCED by the build session (11:33): end to end on the offscreen platform the move and the click DO pass over the clear part with the eye on -- on the dev build and on the staged copy, with a copy of the reporter's configuration too; so it is something of the live session on the real screen. ONE question of the build session's for the reporter, NOT ANSWERED: may it look into the running session through its MCP console with one read-only script, or shall it hand over the script. 12:43: still NOT reproduced. THE REPORTER RETESTED about 13:38 on the staged copy: the tree view, Python console and report view DO click through but NOT wheel through; the task panel, no click and no wheel. REPRODUCED so by the build session (13:51): THE WHEEL's cause FOUND -- a wheel event falls through into the handling of a context menu event and is read as one (lines of 2022); a fix in the source, NOT built. The Tasks panel's "no click" NOT reproduced with its eye on; the reporter's configuration has that panel's eye OFF. ONE point for the reporter: is the eye of the panel that holds the Tasks pressed, and is a task panel shown in it then. THE WHEEL's fix STAGED 2026-10-13 16:55. THE REPORTER 16:44, made exact: ONLY A FULLY TRANSPARENT background passes, the eye pushed or not; a guest panel's ground at 150 does NOT pass -- so the build session's plan of 16:12 is DROPPED, and its "by design, nothing passes with the eye off" WITHDRAWN by it (measured on the real screen: the eye-off Tasks overlay paints nothing over 89% of its area). The change written, in NO build. THE TASKS PANEL's cause FOUND (16:12): since entry 69 a task panel has a ground everywhere (alpha 150), and the pass rule passes only where the alpha is 0 -- so over a panel in edit nothing passes; NOT changed yet, a plan of the build session's ANSWERED by the reporter 16:13: the plan -- yes; and for the eye, "I want pass through based on transparent background". The reporter about 15:56: "eye pushed or not, same, no pass through". The wheel's fix COMMITTED `8d2e4379c8`, PUSHED 2026-10-13 15:58, NOT in the stage of 13:56 (14:50): on the final build the wheel zooms the view over the tree's and the Tasks panel's clear part, `overlay-pass-through.py` 14 of 14 twice and 15 of 15 with the reporter's configuration. THE EYE-OFF POINT ANSWERED 17:22: "pass through as long as fully transparent, which is what the user would expect" -- with the pointer in the panel too. THE RULE (what is painted decides, the eye not asked) COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); `overlay-see-through.py` 62 of 62 on the real screen |
+| 87 | 2026-10-13 | the tree view under the Dark theme: (1) an item's background has a darker border, not wanted; (2) the pointer over an item draws a selection-like highlight, and moved over a run of items it leaves a trail of vanishing item borders -- a residue of the hover highlight, the reporter thinks; and a QUESTION: which setting makes the item background follow the theme, and why is it not in the UI preference page's tree view section. ANSWERED 10:36: (a) move "Item background follows the theme" below or beside the tree item colour, and DISABLE the colour selection while it is on; (b) the border under Dark only, Light is all right; (c) the trail is not wanted, the hover highlight may stay but NOT over the whole row -- drawn like the item background and the selection highlight; (d) the trail was there already on 2026-10-12 | OPEN, the four points answered 10:36; the question ANSWERED by the note-taker from the source (it is in the page's Overlay section); a reading of the source, nothing run, the causes NOT found by the note-taker. MEASURED by the build session 10:38: the border is the overlay's OUTLINE EFFECT -- the Outline sheets switch it on and it lays a blurred dark copy of everything painted under the picture, the item backing included: a dark rim, and the backing reads (98,98,98) at alpha 232 on the screen, not the (124,124,124) at 150 the tree paints; so entry 69's backing has never looked as asked under the Outline sheets. COMMITTED `9b2a76c2dd` and `a4beaec622`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted; the final hover bar STAGED 2026-10-13 16:55; DECIDED 17:04 under entry 98: no outline on the text and icon of an item that has a background -- a change to what is built, NOT started -- the border and the setting; the hover's bar in an EARLIER form (as wide as the item but about 246 of 255 opaque, with the outline round it). FIXED IN THE SOURCE (11:33): the border measured gone on a first build -- the item's background on the screen is (124,124,124,150) under Dark and (196,196,196,150) under Light, no rim; the setting moved into the section "Tree view" and greys the colour out while on; the hover's first way did nothing, a second is building (the tree draws the bar itself, as wide as the item's background, at the overlay's opacity). 12:43: two readings of the build session's on the hover WITHDRAWN by it; a third form is building. The hover is `FreeCAD.qss`'s bar over the whole row, solid; a trail NOT reproduced. Two smaller points left, not blocking. NO OUTLINE where an item has its background (decided 17:04 under entry 98): COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55) |
+| 88 | 2026-10-13 | a dock overlay in transparent mode: the scroll bar styled with a transparent background, its handle at the common background alpha (said as "the command background alpha value") (a change request). ANSWERED 10:51: the alpha is "Overlay background opacity" (`View/DockOverlayAlpha`); ALL scroll bars inside an overlaid panel; the handle in the theme's own colours at that alpha in every state; the track's border and its two ends clear too | COMMITTED `9b2a76c2dd`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, measured on a first build (11:33): nothing of the tree's scroll bar more opaque than 150, the handle at 150, the rest clear, Dark and Light. The four points answered 10:51; one side effect not said: a clear track passes clicks through |
+| 89 | 2026-10-13 | the toolbar icon of `Std_DisplayStyle` seems to have a triangle laid over it, inside. ANSWERED 10:59: it looks like the menu's expansion arrow, but a lot SMALLER than the normal one; the other buttons are normal; under both themes | COMMITTED `d3e1604e2e`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, its test PASS on a first build (11:33): the button did not use the common helper and opened its menu in a mode in which Qt draws a small mark on the icon; it is a menu button like the others now, 44 wide where it was 32. The three points answered 10:59: the button's menu mark, not the icon's drawing; read, nothing run; near it entry 90, the same kind of mark on `Std_SelUp` |
+| 90 | 2026-10-13 | the toolbar button of `Std_SelUp`: its expansion indicator (the mark that it opens a menu) lies over the icon, unlike the other buttons'. ANSWERED 11:02: wanted as the others have it, the mark beside the icon; every other button with an expansion indicator looks right, this one alone does not | COMMITTED `d3e1604e2e`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED IN THE SOURCE, its test PASS on a first build (11:33): the common helper was called BEFORE the action was added and took the tool bar's last button, the one of the action before -- in a run of menu buttons each was set up by the next and the last by none (`Std_SelUp`; Edit's Redo too); all twelve callers set up their own button now. The points answered 11:02 (point a by entry 89's answer of 10:59); the cause NOT found by reading |
+| 91 | 2026-10-13 | the PartDesign pocket's edit panel: the button "Temporary clear link references for new selection" is stretched, and should not be; the same widget layout is used in dozens of PartDesign edit panels, so it is to be put right for all of them | REDONE STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: its test 12 of 12 under Dark and Light; with a copy of the reporter's configuration the clear button is 23 by 20, the caption 92 by 20 (in the source 15:08): as high as the row (the caption button's height), the width from the glyph's proportions. THE REPORTER ON THE STAGE OF 13:56 (14:20): a REGRESSION -- the button is now TOO SMALL in width. NOT FINISHED. HOW WIDE, answered 14:28: the width fitted by the ICON's aspect ratio, from the ROW's height. STAGED 2026-10-13 13:56 FROM UNCOMMITTED CODE, NOT committed, NOT pushed. WRITTEN, with a test (12:43): the note-taker's candidate was it -- the theme's least width of 80 for every push button; this one, an icon with no caption, is told it has none, in `LinkSubWidget`, so in every panel that uses the row. The three points not needed for it. Before, a reading of the source by the note-taker, nothing run: one widget class makes that row for all the panels, and the theme's sheet gives every push button a least width of 80 px -- a candidate, not shown; three points under the entry, NOT ANSWERED. The redone width COMMITTED `51075fbda3` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted |
+| 92 | 2026-10-13 | `scanner.FCStd` opened and recomputed for the migration: `Pocket023.Profile` has changed to `Sketch047.2` -- its indexed face or wire reference is lost. ANSWERED 11:19: the property view and the edit panel BOTH show it; `Pad039` and `Pad040` show the same; what it read before was not noticed, on which copies not sure | The fix COMMITTED `518c2026d0`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. THE CAUSE SHOWN (12:43) -- OLD code, not this morning's merges nor the OCCT sync: a sketch asked for the name of its wire drops the kind "Wire" and keeps the number (`SketchObject::checkSubName`, lines of 2018 to 2024; the released build has them too). A fix in the source; with a first form of it, after the migration recompute the three read `Wire2`, `Wire1`, `Wire2`; NOT committed. LOOKED AT by the build session (11:33): NOT a change by the recompute as far as Python reads it -- the three profiles read ['1'], ['2'], ['2'] right after opening and the same after the recompute, the three shapes unchanged and valid. The link's VALUE is `Wire2`; "2" is the old-style name kept beside it, which names no element, and the property view and the panel show the old-style name. NOT found: where "2" was first written (the file had it on 2026-10-06), why the recompute does not put it right; a regression of this morning or not is NOT known. OPEN, the four points answered 11:19; READ by the note-taker in two copies of the file, nothing run: the file itself stores that reference as the name "2" with the indexed name `Wire2` beside it [THE WRONG WAY ROUND, corrected by the build session 11:33], and `Pad039` and `Pad040` have references of the same form; the cause NOT found |
+| 93 | 2026-10-13 | Ctrl+F in the tree view with a selection: the omni search opens with the object's name already typed -- of the selected item nearest to the pointer (a change request, on top of entry 78). ANSWERED about 11:34: the text is "/ ", the name and a DOT; the internal name; the path from the top; WHICH item -- the tree's last selection if it is in view, else the last selection that is in view, else the current item, else the last selection (this replaces "nearest from mouse") | COMMITTED `7f3ef57348`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43). The four points answered about 11:34, nothing left unanswered |
+| 94 | 2026-10-13 | the omni search: Tab to complete while a property is being resolved takes the focus from the edit box, and nothing can be typed any more. MADE PRECISE 11:35: it is AFTER the Tab has completed and resolved a PROPERTY; the search box is still there; the reporter's guess, the widget built for that property takes the focus; the same opened by Ctrl+F from the tree view and from the property view | COMMITTED `7f3ef57348`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43): Tab completes and the focus stays in the box; Return hands it to the value's editor, as before. Answered in part 11:35; a reading of the source by the note-taker, nothing run, the cause NOT found; an example of the text not given, not blocking |
+| 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | COMMITTED `7f3ef57348`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43); a LIMIT (13:51): a FURTHER step typed small ("/ Crate.placement.") brings up no list and stays as typed. The three points answered 11:38, nothing left unanswered |
+| 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE MENU'S ICON STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE MENU'S TINT NOT SHOWN either way on that build (17:25): its test fails offscreen, where the colour scheme does not change; changed again for the next build (in the source 15:08): the four `Std_DockOverlayToggle<Side>` commands get the glyph tinted white under a dark theme. THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. COMMITTED `cbb01f5de3`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said. THE MENU'S ICONS: COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); shown on the build r7 on the real screen 19 of 19, with the reporter's configuration too -- by the build session the copy staged 16:55 "may well" have had them working, its failing run was offscreen |
+| 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | COMMITTED `3549b0a19f`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED ON A BUILD (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
+| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); ANSWERED 17:04: the backing behind the TEXT only; in the SAME BACKGROUND THE TREE'S ITEMS USE (not the widget's own, as the note-taker had read it); these two panels only; and the text's outline dropped wherever there is a background -- in the TREE too, a change to entry 87 as built. Nothing left unanswered. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55) (the text's ground, no outline over a ground; `overlay-text-ground.py` with it). A CHANGE TO ANSWER b BY ENTRY 111's FIX (22:06, `905d023394`, local): under DARK the console's and the report view's ground is now dark (40), NOT the tree items' grey -- ONE POINT for the reporter under entry 111. ANSWER b MADE PRECISE 23:04 under entry 111: the tree items' background while the automatic item background setting is on, the widget's own background while it is off. By `023552c8fd` (2026-10-13 23:46, local): the ground is the tree items' with the item background setting on, the panel's own with it off |
+| 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | The dashes (0xFFF0) and the scale's default (200) STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE PICKING DOES NOT WORK on that build (17:25): the test fails, the face is still picked -- the cause found, changed for the next build (in the source 15:08); the PICKING in the source, in the build of 15:45 (15:52); its test shows the defect on the staged copy -- at four points of the X axis inside a box the pick is the box's face. The reporter's configuration as copied 14:52 stores `DatumScale` 300 -- set by the reporter since. The four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default. 19:17: (b) the default scale 200 ALONE is COMMITTED `6e7232e7c2`, PUSHED 2026-10-13 19:24; (c) THE PICKING STILL DOES NOT WORK after two changes, offscreen and on the real screen -- the build r8 carries a trace to find out why; (a) the dashes are in the same file as (c) and wait with it, NOT committed (they are in the staged copy of 16:55). 20:15: (c) REWORKED after the trace (the scene pass never used the rule; now a pass of its own whenever a single pick ends on a face) -- in the tree, NOT built, not committed. (a) the dashes: last looked at on the builds r5/r7 (three quarters line, a quarter gap), not by itself since; (c) in the build r9 (20:17). (c) STILL NOT WORKING on the builds r9 and r10 (22:06); the cause found in two parts (the kept pick paths start below the camera; applied one by one a ray pick keeps only the last path's hits); a build r11 applies them in one traversal, results to come. Not committed. (c) WORKS on the build r14 (23:20): `datum-picked-through-a-face.py` 3 of 3 on the real screen -- the X axis picked through a box, and a datum plane by its face; (a) the dashes and (c) COMMITTED `1109842583`, LOCAL, not pushed, not staged. The whole entry is committed now |
+| 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. THE REPORTER ASKS (17:22) what the border's colour is now -- answered by the note-taker from the theme file, by calculation: about #646464 (a grey of 100) on panels of about #2C2C2C (44); the note-taker's guess of step 4 would be about #323232 (50), too near the panels to be seen. How much darker is still the reporter's to say. DECIDED 17:32: the border is #4B4B4B. Which borders and the check boxes: not said, taken as the general border colour, the check boxes as they are. COMMITTED `062f56a133` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `GeneralBorderColor` "#4B4B4B" in `Dark.yaml`, the check boxes and radio buttons as they were |
+| 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. ANSWERED in part 17:22: a NEW GROUP COMMAND, "say Std_SplitView", holding everything of the split view and its cells, placed AFTER the menu item "Standard views"; the second group (from `Std_ViewTitleBar` to the end) not spoken of in the answer. ANSWERED 17:32: `Std_ViewCreate` stays where it is; the title bar items go into a NEW GROUP COMMAND of the build session's naming, at the END of the View menu. Nothing left unanswered. COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `Std_SplitView` ("Split view") after "Standard views", `Std_WindowBars` ("Title, menu and status bars") the last entry, Create new view where it was |
+| 102 | 2026-10-13 | the default of `DockOverlayAlpha` ("Overlay background opacity") changed to 180 (a change request; 150 since entry 69) | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:08); the reporter's configuration stores no value, so they get it. Nothing to ask; one note of the note-taker's on configurations that have the value written. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted |
+| 103 | 2026-10-13 | the button on the task panel that switches the panel into the view is no longer visible, even while editing -- tried with the edit of a Pad (said as "new default", taken for "new defect") ANSWERED 14:38: not seen in ANY case; with the Tasks panel in an OVERLAY; last seen for certain on 2026-10-12 BEFORE the request to show and hide it by itself (entry 73), this morning not sure | THE CAUSE FOUND and reproduced with a copy of the reporter's configuration, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE BUTTON IS STILL NOT THERE on that build (17:25): the cause of 15:08 was WRONG for an overlaid Tasks panel -- an overlay's title bar never carried the button; added for the next build (in the source 15:08): the Tasks dock's title bar is made at start-up before the task view is in its dock, so it is a plain dock's bar for good and the button does not exist; the bar is now replaced by a task one when the task view is found in a dock. The three points answered 14:38; by them the suspect is entry 73's own rule, staged 2026-10-12 17:52 -- not shown. The button on each overlay's own title bar: COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); 7 of 7 with the reporter's configuration on the build r7 |
+| 104 | 2026-10-13 | the cavity effect: (1) in per-view edit it still shows for an object that is hidden in that view; (2) the cavity of an object lying underneath a normally visible one sometimes shows through it when zoomed. ANSWERED 14:50: (2) only when zoomed OUT -- the reporter's guess, depth precision; (1) the object is hidden by the EDIT, in the edit's view only (still there in the other views); `scanner.FCStd`, editing `Pad033` with its body visible -- with the body HIDDEN the cavity ghost is gone and the edit's preview stays, as expected; the same split or not; since when not known | (1) THE GHOST: the cause FOUND by reading, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed (in the source 15:52) -- what a view hides of its own accord stayed in the depth and normal prepass the cavity pass reads; it is left out now. (2) THE SHOW-THROUGH: NOT found, needs pictures on the real screen. The four points answered 14:50; a reading of the source by the note-taker, nothing run, the causes NOT found; nothing left unanswered. THE GHOST: COMMITTED `038b8b1b1a` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted, 5 of 5 on the build r7; the show-through (2) NOT STARTED. THE SHOW-THROUGH (2): NOT REPRODUCED by a probe of the build session's (22:06), and the probe inconclusive -- the Cavity setting changed no pixel of its pictures. Nothing found |
+| 105 | 2026-10-13 | `scanner.FCStd` loaded and recomputed for the migration: `Sketch043` is broken SILENTLY, no error is shown; before the migration it is all right. ANSWERED 14:56: yes, it is the sketch's outside edge from `Binder017`; its SHAPE is changed, to be seen by comparing; ASKED FOR: find the cause, whether it is a bug of the old fork, and whether there is a mitigation; `Pad033` still ends in its error, and that error is because of this | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `TestShapeBinder` 13 OK; on `scanner.FCStd` the migration recompute ends with `Binder008` in the error "No context ...", `Sketch043`, `Pad033` and `Binder017` keeping their shapes -- built with the geometry search as fallback, which the reporter ruled out at 17:22 (in the source 15:52); designed 15:36; "does not move" judged FIRST by the placements the binder keeps of its last update and by the geometry search only where it keeps none -- the build session's choice, NOT the reporter's word, to be told to them. AN IDEA of the reporter's for the migration (15:18): a binder that recomputes with an EMPTY context tries every top-level path to itself, resolves its shape under each, and takes as its context the SHORTEST path that does NOT MOVE the shape. ANSWERED 15:28: OFF HOLD, to be built; "not moved" judged against the shape in the file by a GEOMETRY SEARCH; if no path leaves it unmoved the binder is in ERROR, "No context, please double click the binder in the desired context to refresh"; of equal paths the first that `getParents()` returns. Nothing left unanswered. It had been ON HOLD by the reporter's word of 15:09: "leave it for now. keep the previous ruling" -- entry 17's decision stands, the investigation is not wanted now. MEASURED by the build session (15:08): after opening the sketch has 4 wires, after the recompute 5; its solver clean, its state Up-to-date; `Binder017` moves about 3.2 mm in x; `Pad033` goes invalid and keeps its old shape. The cause, old fork or not, a mitigation: being investigated. The four points answered 14:56 -- an INVESTIGATION is asked, not a fix yet; READ by the note-taker in the file and in this queue, nothing run: the sketch hangs on `Pad018` `Face3` and takes outside edges from `Pad029` and `Binder017`, and entry 17 (2026-10-07) has it CHANGING at a recompute as decided then -- the reporter says it is that (the edge from `Binder017`). THE ORDER ANSWERED 17:22: yes, by the saved placements -- and NO geometry search at all, "just compare placement is enough". COMMITTED `00dec0a56d` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has the EARLIER form, with the geometry search: the kept placements alone, no geometry search; a binder with NOTHING kept takes the first path, as a new binder does (the build session's choice on the point left to it). `Binder008` on the committed rule (19:21, the build session): it HAS a kept matrix in the file (`Cache_Body004`), so it is compared and should end in the "No context" error as at 17:25 -- EXPECTED, NOT RUN on the committed form. RUN (20:15, the build session, on the build r8 with the committed binder source): `scanner.FCStd` recomputed, the log has the "No context ..." error once and `Fillet011`'s "Invalid edge link: ?Edge93" as before -- the log line does not name the object. `Sketch043`, `Pad033` and `Binder017` Valid after the migration recompute on the build r15 (2026-10-13 23:46, the probe of entry 113) |
+| 106 | 2026-10-13 | an object's property group "Appearance" renamed "Object Appearance", so that it is not the first group in the property view; and a QUESTION: is there a way to order the property groups -- "maybe propose one" (a change request). DECIDED by the reporter 14:59: NO rename; a RANK number for a property group, 0 by default; the groups sorted by rank, then name; "Appearance" given rank 1, so it comes last. HOW, said 15:06: the rank is ENCODED IN THE GROUP'S NAME as an ending "#<rank>", and the ending is stripped before the name is shown; and (15:07) a group of ONE name given different ranks uses the LARGEST | STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED on that build 17:25: `property-group-rank.py` 12 of 12, in the reporter's form (in the source 15:52): an ending "#<number>" read off a group's name, the property view ordering by rank then shown name, one group per shown name at the largest rank; "Appearances#1" declared in three places; the table form never reached a build. DECIDED 15:11: THE NAME-ENDING FORM, "Appearances#1" -- the table that is in the build of 15:06 is NOT the form; to be redone; TechDraw's group "Appearance" is NOT to be changed (15:15). BUILT ANOTHER WAY than the reporter's word of 15:06 (15:08, the two crossed): a table of group names and ranks with calls to read and set it, and the name ranked 1 is "Appearances" -- the object's group is so called in the source. Which form stays: answered, the name ending. The three points answered 14:59; the question ANSWERED by the note-taker from the source: none, the groups stand in the order of their names; the reporter gave the ordering, no proposal needed any more; the first of the two smaller points settled by this, the second with it (the rank is per declared name). COMMITTED `650a6dee96` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted; three cases of the Python suite expected the group named "Appearances" and failed -- corrected to "Appearances#1" with it |
+| 107 | 2026-10-13 | a recompute cancelled with Esc: the error box that comes up (titled "Replace link failed") shows the abort as raw program text, not as words a person can read (a screenshot). ANSWERED 15:43: it is to say "Recompute cancelled"; a link WAS being replaced, and the replacement is KEPT when the recompute is cancelled; no sweep of other places -- "just abort exception handling" | THE ROOT CAUSE FOUND and shown on the staged copy, a fix STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- TESTED 17:25: the root fix shown on the dev build -- a failing script feature's status reads its plain message (in the source 15:52): since Python 3.12 the program no longer found its own error record in an exception that came back through Python, so the record's TEXT became the message and the error lost its class -- every such error, not the abort alone; put right at the root, and the link command as answered (the replacement kept, a box "Recompute cancelled"). The three points answered 15:43; a reading of the source by the note-taker, nothing run: the box shows the exception's own text as it came back through Python; one thing the answer changes, under the entry. COMMITTED `6df0613233` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24; the staged copy of 16:55 has it already, from the code then uncommitted, with a unit test in `src/Mod/Test/Document.py` |
+| 108 | 2026-10-13 | a feature edited by a double click while its body is INVISIBLE: the feature of the history step before the edited one is not shown on top; the old fork shows it on top whatever the body's visibility. ANSWERED 16:03: the previous step is NOT SHOWN AT ALL; with the body visible it is on top as in the old fork; "edit view only". PUT RIGHT by the reporter 16:06: it is the BASE FEATURE of the edited one, not necessarily the step before it; and the rule is simply -- THE SAME whether the body is visible or not; the reason (16:07): what is shown on top is shown regardless of ordinary visibility | OPEN; the three points answered 16:03; one reading of c under the entry. REPRODUCED 19:17 by the build session on a small model (a pad and a pocket, the pocket in edit); the cause found (a body hidden in the document stops the scene's capture at its switch); a fix in the build r8, NOT committed. COMMITTED `5c0b30ce1b`, PUSHED 2026-10-13 20:13, NOT staged; `edit-shows-base-with-body-hidden.py` 5 of 5 on the build r8. WITH THE BODY HIDDEN the base is drawn ON TOP, see-through; with it shown, in place and solid -- the two pictures are NOT the same, taken by the build session as what was asked: ONE POINT for the reporter under the entry. A side finding there too (a selected feature of a hidden body cut off by the clip planes). ON THE REPORTER'S FILE (22:06, the build session): `scanner.FCStd` with a copy of their configuration, the feature "Draft" (`Body008`, base `Pad036`) in edit -- the picture with the body hidden is THE SAME as with it shown, 0.0000 of the pixels differ. THE REPORTER ASKS 23:04 what the clip plane finding is -- answered by the note-taker from the build session's words and its picture; whether it becomes an entry is still the reporter's to say. RULED by the reporter 2026-10-14 (said to the build session, relayed 07:36): with everything on the edit's path VISIBLE the panel's "Show preview" check box decides -- on top when the preview is on, in its place when off; with anything on the path HIDDEN always on top; the whole editing path counts, not the body alone. In the build r16, NOT committed; a push and a RESTAGE asked for after it. Point a of 2026-10-13 20:15 answered by this |
+| 109 | 2026-10-13 | a dress-up feature that fails because a reference's name has moved: in its edit panel the hover highlight of the MISSING edges' preview shapes is broken (a defect the old fork has too). TURNED by the reporter 16:02 into a REQUEST: a hover normally highlights the referenced edge in the base feature; when that reference is MISSING, highlight the PREVIEW FILLET FACE in its place | OPEN, a change request; the three points of 16:00 overtaken; two smaller ones under the entry. HALF DONE 19:17, NOT committed: shown on `scanner.FCStd`'s `Fillet011` -- the feature has no DressUpShape, which is where the panel looked; the lookup falls back to the shape the feature keeps; the second half (a list filled anew gives a missing reference no mapped name) in the build r8. DOES NOT WORK on the build r8 (20:15): "the hover on a missing reference sets no preselection at all", being looked at; not committed. WHY, found on paper (20:17): in the edit the feature HAS a dress-up shape, of the references that are left, so the fallback to the kept shape never applied; changed to "when the dress-up shape has no face for the reference" -- in the build r9, not shown yet. WORKS on the build r10 (22:06), COMMITTED `26f0a30de0`, LOCAL, not pushed, not staged: on `scanner.FCStd`'s `Fillet011` the two missing references preselect the preview's faces ("Fillet011.;AddSub;Face4" and "...Face3"); shown offscreen by the preselection's name, NOT pictured that the face is drawn lit |
+| 110 | 2026-10-13 | a regression: the margin before the tool bar docked in the customized title bar is SOMETIMES bigger; and a few minutes later, in the same session, completely gone -- "which does not look good either" | (B) IN THE REPORTER'S LIVE SESSION TODAY WAS SET OFF BY THE NOTE-TAKER'S OWN SCRIPT (found 17:03): the first look of 16:13:11 called `menuBar()` on the main window, which makes a menu bar and pushes the kit's spacer out -- the tool bar rows slid under the title bar a moment later. The note-taker's "read-only, nothing changed" was WRONG. (A) is the reporter's own finding, before any look. BOTH REPRODUCED by the build session on the real screen, the causes shown, fixes written for the next build: (A) the menu reveal button's width flips between its own 50 and the sheet's 88; (B) ANY `menuBar()` call does it, the window's guard against it no longer works. (A)'s CAUSE READ in the source by the build session (16:57), nothing run: the menu reveal button pins itself to 50 pixels and the sheets' least width of 80 for a push button writes over that whenever the button is polished again -- 88 with its margins; the logo is painted at the button's left, so only what follows it moves. (B) not looked into. THE REPORTER 16:29: the margin IS "the space between the menu reveal button and the docked toolbar" -- the HORIZONTAL one, so the note-taker's withdrawal of 16:24 was itself wrong; TWO things are in this entry: (A) that space, sometimes bigger, sometimes gone -- by widget geometry unchanged in every reading, NOT explained; (B) the first tool bar row under the title bar, caught 16:23 -- the regression of ENTRY 6, confirmed by the reporter 16:30. The reporter's thought (16:32): (A) is a PRECURSOR of (B) -- one thing in two stages. TRIED by the reporter (16:38): restore and maximize -- no help; Light to Dark -- no help; to Classic, which takes the customized title bar away, and back to Light -- RECOVERED. The reporter remembers the earlier margin problem as Qt saving its widgets' state while in a bad state. BOTH recovered together, the margin and the tool bar row (16:39). Written 16:24, wrong on which margin: CAUGHT IN THE LIVE SESSION 16:23, on the reporter's word: the margin is the one at the TOP -- the room the main window keeps for the title bar; it is GONE: the first row of tool bars stands at y 0, UNDER the title bar, where at 16:13 it stood at y 35 below it. The reporter had only switched to another application and back and hovered to reveal the menu bar. The reporter: a regression of an earlier entry (entry 6 of 2026-10-06, by the note-taker's reading). The note-taker's first reading (the logo's width) was of the WRONG margin and is withdrawn. Before: OPEN; the reporter's LIVE session of the staged copy looked into by the note-taker on the reporter's word, three read-only scripts, nothing changed: what stands before the tool bar is the logo button, 88 pixels wide for a 16-pixel icon; the state called "bigger" was NOT caught; one point under the entry, NOT ANSWERED: which earlier entry. THE REPORTER 17:22 on the point of 17:03: "I remember see it once before" -- the row under the title bar WAS seen once before the note-taker's script; when is not said. BOTH PARTS COMMITTED `6d1dc1f9f1` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); `title-bar-keeps-its-room.py` 7 of 7 on the real screen with the reporter's configuration |
+| 111 | 2026-10-13 | the Python console or the report view overlaid on a TechDraw page drawn by the bgfx renderer: after a change of theme the text in the overlay is SCRAMBLED over the page -- in the same overlay the half that lies over a 3D view is right (a screenshot; said as "new defect and request"). MORE from the reporter 17:10: under LIGHT it is fine; under CLASSIC it is scrambled too, over the 3D view AND over the page; "it seems that the scramble is related to text outline drawing" | OPEN; ANSWERED 17:11: the "request" IS entry 112; before the change of theme the text is right; a page drawn by Qt and the other panels not checked, guessed not related; the eye taken to be beside the point. Nothing waits for the reporter. NOT STARTED (19:17); the build session's note: the outline is gone over a ground since `8ef425ceae`, "which may change what the user sees there". REPRODUCED 20:15 by the build session on the staged copy of 16:55: it is CONTRAST, not corruption -- under Dark light text on the page's light ground, only the outline's dark pieces seen; under Classic BLACK text on the dark overlay sheet. Entries 98 and 112 make Dark readable on the dev build; a change for Classic in the tree, not built. THE CLASSIC PART COMMITTED `905d023394` (22:06), LOCAL, not pushed, not staged: the console's black text stands on a light ground (232). A SIDE EFFECT under DARK: the console's ground is dark (40) now, not the tree items' -- ONE POINT for the reporter under the entry. THE POINT ANSWERED 23:04: gated by the tree's automatic item background setting -- the tree items' background when it is on, the widget's own background when it is off. The legibility rule of `905d023394` is replaced by this (the note-taker's reading). Not started. AS RULED, in the tree and in the build r15 (23:20), not committed: the setting ON, the tree items' ground; OFF, the view's own background at the overlay's opacity (the console's editor background where one is set, else the palette's base colour). AS RULED: COMMITTED `023552c8fd` (2026-10-13 23:46), LOCAL, not pushed, not staged; `overlay-text-ground.py` offscreen 20 pass, 4 fail as before the change; NOT shown on the real screen. With the setting ON Classic's black text is on the dark item ground again -- "what the ruling makes of it" |
+| 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11). ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; the smaller point answered 17:17: A SETTING gates it, by default the same as the 3D view; and the Qt-drawn page too IF it is easy -- to be looked at by the build session. COMMITTED `2a317f254e` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): the setting `Colors/BackgroundAs3DView` (on by default), the Qt-drawn page too (one rule for both); 6 of 6; NO check box in TechDraw's preference page yet |
+| 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003` |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -750,7 +2296,23 @@ re-docking the workbench bar does anything about it was not established, so
 this is closed only if the reporter no longer sees it after the stage that
 has entry 6's fix.
 
-## 6. Maximized with the custom title bar: sometimes no margin at the top -- STAGED
+## 6. Maximized with the custom title bar: sometimes no margin at the top -- STAGED 2026-10-06; "seen again 2026-10-13" withdrawn, see entry 110
+
+**2026-10-13 17:03: the block below is WITHDRAWN by the note-taker.** The state
+read in the reporter's live session at 16:23:29 was set off by the
+note-taker's own script of 16:13:11, which called `menuBar()` on the
+main window (entry 110, the block of 17:03). It does not show this entry
+back. Whether the reporter has seen the row under the title bar at
+another time is asked under entry 110.
+
+**2026-10-13: SEEN AGAIN on the copy staged 13:56 -- entry 110, thing (B).**
+The reporter, 16:23: "this is actually a regression that I mentioned in
+previous entry"; asked which, 16:30: "yes, entry 6". Read in the
+reporter's live session by the note-taker at 16:23:29, on the
+reporter's word: a maximized window (1920 by 1040), the title bar at y
+0, 35 high, and the first row of tool bars at y 0 under it, where it
+had stood at y 35 ten minutes before; the main window's contents
+margins all 0. The account is under entry 110.
 
 **Reported (2026-10-06):** "when maximized, sometimes, with the customized
 toolbar, it leaves no margin at top. sometimes it is fine."
@@ -2938,7 +4500,7 @@ What is asked now:
   and the border still has to be wide enough to grab and to right-click (its
   menu closes a neighbouring view).
 
-## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DONE as turned by the reporter 2026-10-10: ONE overlay preset, its colours the theme's, `438216ad93` and `5c021cb111`, not staged (the morning's two overlay themes `3d9edca80c` are gone); four choices for the reporter (see `docs/HandsOnLog.md`)
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DONE as turned by the reporter 2026-10-10: ONE overlay preset, its colours the theme's, `438216ad93` and `5c021cb111`, STAGED 2026-10-12 14:04 (the morning's two overlay themes `3d9edca80c` are gone); four choices for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 09:47, the reporter changed their mind on the first task; THIS
 is the one to do, and it replaces the answer of 09:38 below:** "regarding
@@ -3256,6 +4818,13 @@ ANSWERED YET (the build session's count, four):**
    `Dark_overlay.qss` and `Light_overlay.qss`;
 5. the six unbundled packs are untouched.
 (Choice 4, the 3D background, is the theme's -- "as asked".)
+
+**2026-10-12 14:22, from the build session: the first task is STAGED --
+2026-10-12 14:04:58 at `4474fcb17e`.** The one overlay preset
+(`438216ad93`) and the editor colours (`5c021cb111`) are in the copy under
+test for the first time. Nothing else of this entry changed: the four
+choices are still with the reporter. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12"); the head of this file has the whole of the message.
 
 ## 31. Report view: "Go to end" on by default (a change request) -- STAGED 2026-10-09, fixed `47b5e72c79` (see `docs/HandsOnLog.md`)
 
@@ -4534,7 +6103,7 @@ The pictures: `..\dl\handson\2026-10-08\q2\g-e36m1-dev\qt-z1.0.png` against
 `backend-z1.0.png` (and the same pair at `z2.5` and `z6.0`).
 Not said yet by the reporter: whether and when it is to be worked on.
 
-## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches 2026-10-10: the view is empty after EVERY first open; the crash on a close inside the load FIXED `93fc6cd58a`, the deletion deferred, not pushed, not staged; a first part of the wait FIXED `24f7c8a2bd`, pushed, not staged (the clipboard asked on every pass over the commands; 14 to 18 s now where it was 20 to 23, with a caveat); the close by hand asked to save, FIXED `43fdcb1435`, not staged; the rest of the wait MEASURED: 22 s of 33 are the ten TechDraw pages', 10 s of them FIXED `ee9583a247`, not staged (the line standards folder listed for every edge), about 13 s left, a question for the reporter; x16win asked to try the load (see `docs/HandsOnLog.md`)
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- MEASURED on both branches 2026-10-10: the view is empty after EVERY first open; the crash on a close inside the load FIXED `93fc6cd58a`, the deletion deferred, pushed 2026-10-11, STAGED 2026-10-12 14:04; a first part of the wait FIXED `24f7c8a2bd`, pushed, STAGED 2026-10-12 14:04 (the clipboard asked on every pass over the commands; 14 to 18 s now where it was 20 to 23, with a caveat); the close by hand asked to save, FIXED `43fdcb1435`, STAGED 2026-10-12 14:04; the rest of the wait: "22 s of 33 are the TechDraw pages'" WITHDRAWN 2026-10-11 12:24 (the file it was compared with was wrong), TechDraw's real share MEASURED on a proper control: about ten of the file's 21 to 25 s; the 10 s FIXED `ee9583a247` (the line standards folder listed for every edge) stand; what the ten seconds are PROFILED, the largest part (included files restored through a staging file, not TechDraw's own) FIXED `5c45b43220`, pushed 2026-10-12 17:56, STAGED 2026-10-12 14:04; the pages working when first shown DONE `48b9aaa0ba` + `4172eb2018`, pushed 2026-10-12 17:56, STAGED 2026-10-12 14:04 (17 to 18 s from the open asked to the model now, where it was 31 to 35; printing all pages with pages never shown not tried); all pushed 2026-10-11 08:10, STAGED 2026-10-12 14:04; x16win's numbers in, on the same file too: the clipboard's and the file system's cost are this box's (5 to 7 s at the open), the ten seconds after the open every box's; the pass after the drain (icons that do not exist) FIXED `d38ac38d7b` and `0049176c22`, pushed 2026-10-12 17:56, STAGED 2026-10-12 14:04; after the merge of 2026-10-12 the model is 6-7 s after the open where it was 5-6 s, NAMED 2026-10-12 18:57: two parts, neither changed, one needs a decision, that one confirmed by a control 21:03 and PUT TO THE REPORTER as a choice of three (log `81310dbc89`), ANSWERED 2026-10-13 06:31 "Fine", read as choice 1, leave it; a crash at a load of the re-saved file is entry 79; three more load-time changes COMMITTED 2026-10-13 `3e64f3e9d6` and `00fa69e485`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52 (about a quarter of a second off the restore by the first, nothing by the clock from the second); the archive opened once per entry FIXED `1c53d547d2`, STAGED 2026-10-12 17:52, pushed; "Print all" with pages never shown for the reporter to try (see `docs/HandsOnLog.md`)
 
 **2026-10-09 08:33, seen by the build session on entry 28** and given a
 number here (its log, entry 28, `961d2dcd83`, local). Not reported by the
@@ -4841,6 +6410,7 @@ short:
     them: 13.9 and 17.2 s);
   - from the open to the model: 10 to 11 s against 32 to 35 s.
 - So 22 s of 33 are the ten pages', none of which is on the screen.
+  (WITHDRAWN 2026-10-11 12:24, see the block of that time.)
 - Not named yet: ten queued calls of 2.1 s before the drain's last turn;
   one pass over the commands of about 1 s after the drain (not the
   clipboard).
@@ -4866,7 +6436,8 @@ account is in `docs/HandsOnLog.md` (`201e32ae37`); in short:
   - the model is first on the screen 9.8 to 10.7 s after that (was 13.9,
     17.2);
   - from the open to the model: 23 to 24 s (was 32 to 35).
-- Without the TechDraw objects it is 10 to 11 s, so about 13 s of the
+- WITHDRAWN 2026-10-11 12:24 (see the block of that time); as it was
+  written: without the TechDraw objects it is 10 to 11 s, so about 13 s of the
   pages' own work at load REMAIN. That is still the reporter's question
   of 01:22 (the pages working when first shown): NOT ANSWERED YET, not
   started.
@@ -4885,7 +6456,542 @@ account is in `docs/HandsOnLog.md` (`201e32ae37`); in short:
 66, "cache TechDraw's list of line standards"; a pointer is under that
 entry.)
 
-## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- both FIXED, not staged: `31c09e28e7`, and `8a7595512d`, which is the TEST's -- the "real defect" of 14:14 is WITHDRAWN; the third no defect (see `docs/HandsOnLog.md`)
+**2026-10-11 08:09, from the build session: PUSHED on the reporter's
+word, and x16win's numbers are in.** The reporter, about 08:05, said to
+the build session and relayed by it (the note-taker did not hear it):
+"Push"
+- origin/LinkVibe = `9e1cf7d9f9` (checked by the note-taker). Pushed
+  with it: `93fc6cd58a` (the close inside a slice), `43fdcb1435` (the
+  close by hand asking to save), `e7e7454dba` (the slow turns named),
+  `ee9583a247` (TechDraw's line standards folder), this queue up to
+  `77458172b1`, and a new `9e1cf7d9f9`: `scripts/load-first-picture.py`
+  also counts pixels by comparing its frames.
+- NOT staged: the copy under test is still the one of 2026-10-10
+  09:44:51 (`72180a4812`). The build session's log commit `ef004f4359`
+  is local, after the push.
+
+**x16win's load** (the account is in `docs/HandsOnLog.md`, `ef004f4359`).
+The conditions, to be kept with the numbers:
+- a box that is not company managed (a ROG Flow X16, Windows 11);
+- built at `a810955c86`: WITH the clipboard change, WITHOUT
+  `ee9583a247`;
+- NOT the same file: an older and smaller save of `scanner.FCStd`, 615
+  objects and 8 pages (here 686 and 10);
+- four loads, each under cdb.
+The numbers, against this box at the same commit:
+- the open returns in 7.3 to 9.4 s (here 17.6, 18.6 s);
+- the model is first on the screen 8 to 11 s after that, and whole at
+  12.0 s in all four (here 13.9, 17.2 s to the first);
+- one question to the clipboard: 0.1 to 0.2 ms (here 170 ms, and
+  refused); a pass over the commands 0.007 s (the same as here now);
+- the view provider drain 5.89 s in 44 slices, Part's visual drain
+  2.67 s, the pre-mesh 0.69 s -- the same as here (7.35, 2.68, 0.66 s);
+- TechDraw's results taken on the GUI thread: 0.25 s (here 6.1 s).
+What the build session takes from it:
+- The clipboard's cost and the file system's cost are THIS box's.
+- The two drains' own 8.6 s of work are every box's, so the wait after
+  the open is real on an unwatched box too.
+- `ee9583a247` should gain little there -- NOT measured: x16win is asked
+  to measure again on `9e1cf7d9f9` (the delivery of that message is not
+  confirmed).
+- Not tried there: copy and paste of objects. Whether the reporter's own
+  FreeCAD on this laptop is refused the clipboard is still not known.
+- The open itself there, 7.3 to 9.4 s, is not broken down.
+
+**Also from the log, on how far one load can be trusted:** this morning
+the day's FIRST load here opened in 18.3 s on the build that gave 13.3
+to 13.6 s last night; the next three 14.1 to 15.1 s. A first load of the
+day is 4 to 5 s dearer. The before and after of `ee9583a247` were three
+loads each within fifteen minutes, so they stand; one load alone proves
+nothing.
+
+**Still the reporter's to decide -- NOT ANSWERED YET:** whether the
+TechDraw pages do their work when first shown and not at load.
+
+**2026-10-11 08:28, from the build session: x16win measured AGAIN, on the
+pushed head `9e1cf7d9f9` and now on the SAME file as here.** The reporter
+had the file fetched to that box (the same SHA-256, 6,119,171 bytes). The
+account is in `docs/HandsOnLog.md` (`eb4ed24517`, local, not pushed); in
+short:
+- Three plain loads there: the open returns in 8.3, 8.1 and 8.1 s; the
+  model is first on the screen about 10 s after that, whole by 14.0 s.
+- Here, on `ee9583a247`: the open returns in 13.3 to 15.1 s; the model is
+  first there 9.4 to 10.7 s after that, whole at 12 to 13 s.
+- So with the same file the wait AFTER the open is the same ten seconds
+  on both boxes; this laptop pays 5 to 7 s more at the OPEN only.
+- `ee9583a247` (TechDraw's folder listing) changes nothing measurable
+  there, as expected: its older file opened in 7.1 s at the new head
+  against 7.3 to 9.4 s before.
+- `tests/gui/close-during-view-provider-drain.py` there, under cdb: 7 of
+  7.
+- Its traced load: the view provider drain 7.36 s in 56 slices, Part's
+  visual drain 2.74 s, the pre-mesh 0.77 s. And ONE dispatch of 692 ms
+  right after the drain -- the "one pass of about 1 s after the drain"
+  left unnamed at 01:22 is on that box too.
+
+**IN WORK at the build session, NOT done, nothing fixed:** that pass of
+0.7 to 1.2 s is the tree's items being made, and by last night's profile
+most of it is PartDesign looking for add/subtract icons that do not
+exist (a pad's "additive" icon, a pocket's "subtractive" one) -- a full
+search every time. A two-file change is building with a before and
+after measure; the result is owed.
+
+**Still the reporter's -- NOT ANSWERED YET:** the TechDraw pages doing
+their work when first shown and not at load.
+
+**2026-10-11 11:50, from the build session: the "one pass of about 1 s
+after the drain" is named and FIXED `d38ac38d7b` (Gui) and `0049176c22`
+(PartDesign); local, NOT pushed, not staged.** The account is in
+`docs/HandsOnLog.md` (`064d7e0f2d`); in short:
+- What the pass was: the tree making the new document's items (a
+  command's `isActive()` asks the tree for its selection, which runs the
+  tree's pending update).
+- Most of it: PartDesign building an icon name for the feature's kind --
+  `PartDesign_AdditivePad`, `PartDesign_SubtractivePocket` -- for which
+  there is no artwork (only the unusual combinations have their own). A
+  name not found was searched for again in every icon path and under
+  every image format, twice, on every ask.
+- Now the names not found are remembered, and the icon factory no longer
+  repeats a silent lookup that failed.
+- Measured on `scanner.FCStd` here, before -> after:
+  - the icon of all 686 objects: 0.59 to 1.03 s -> 0.005 to 0.010 s, no
+    null icon either way;
+  - the dispatch after the drain, two traced loads each: 1032 and
+    869 ms -> 347 and 106 ms;
+  - the model first on the screen after the open, three plain loads: 9.4
+    to 10.1 s -> 9.0 to 9.3 s;
+  - the open itself: 13.2 to 13.4 s, unchanged by this.
+- Four GUI tests on it, 80 checks, none failed.
+- NOT measured: what the same search cost on each status update of a
+  tree item while WORKING on such a document (it ran there too). Not
+  measured on x16win, which has the same pass at 692 ms.
+
+**Still the reporter's -- NOT ANSWERED YET:** the TechDraw pages doing
+their work when first shown and not at load.
+
+**2026-10-11 12:24, a CORRECTION from the build session: its figure "22 s
+of the 33 are the ten TechDraw pages'" is WITHDRAWN; a proper measure is
+running.** Withdrawn with it: "10 to 11 s without the TechDraw objects"
+and "about 13 s of the pages' own work left". The blocks of 01:22 and
+01:55 above are kept as they were written and marked.
+- Why: the copy "without TechDraw" (`q2\notd\scanner-notd.FCStd`) was
+  saved by `FreeCADCmd`, and a console save writes no `GuiDocument.xml`.
+  So that file lacks EVERY view provider record, not TechDraw's alone,
+  and its 3.9 s open and 6 to 7 s wait compared two things at once.
+  Found by the build session today, reading the archive as it started
+  on the TechDraw work.
+- What the original file has: 357 of its 677 view provider records name
+  a colour file (`DiffuseColor`, `LineColorArray`, `PointColorArray`,
+  `MappedColors`, `OverrideColorList`, `MaterialList`) -- every Part,
+  PartDesign, Link and Sketch object, and not one of the 229 TechDraw
+  records.
+- A record that names a file cannot be parked for the drain
+  (`Gui::Document::RestoreDocFile`), so those 357 view providers are
+  made, their shapes read and their visuals built INSIDE the open.
+- In last night's profile that is 9.5 s of the open, against 2.2 s with
+  a TechDraw frame on the stack. So the open's long part is "most
+  likely" the file's colour files, not TechDraw. NOT measured yet as a
+  plain number.
+- What still STANDS, by the build session: the 10 s that `ee9583a247`
+  took off (three loads before and after, the same file); x16win's
+  numbers; the drains' table by class from the trace (TechDraw's
+  dimensions, pages and sections about 4.5 s of logged steps in the
+  drain).
+
+**2026-10-11, the reporter, after the report of the icon fix; said to the
+build session and relayed by it verbatim (the note-taker did not hear
+it):** "Why the icon is missing. Chase that. Then the techdraw one"
+- "Why the icon is missing": ANSWERED in the log (`58e4eaaa81`). It was
+  never there, and was not meant to be: by the 2021 design (`d0e314ea97`,
+  `2a66c17138`) the plain icon is the feature's natural kind -- a pad
+  additive, a pocket subtractive -- and only the other kinds have
+  artwork. Nothing shows a wrong icon. What was wrong is what the miss
+  cost, fixed `d38ac38d7b` and `0049176c22` (local, not pushed, not
+  staged).
+- "Then the techdraw one": taken by the build session as the GO-AHEAD
+  for the TechDraw pages doing their work when first shown. So the
+  question of 01:22 is ANSWERED in that reading -- but the answer was
+  given on the withdrawn figure.
+- NOT started as a change, for that reason. Running now: the file
+  re-saved from the GUI with and without its TechDraw objects, and plain
+  loads of the original and of both, to get TechDraw's real share first.
+  The build session reports that to the reporter BEFORE it changes
+  TechDraw's design.
+
+**2026-10-11 12:39, from the build session: TechDraw's real share is
+MEASURED, with a control that is one -- about TEN of this file's 21 to
+25 seconds.** The account is in `docs/HandsOnLog.md` (`138b94bde1`,
+local, not pushed); in short:
+- The control, made in the GUI this time: a copy of `scanner.FCStd`
+  opened and saved as it is when its load was over
+  (`q2\ctl\scanner-resaved.FCStd`: 686 objects, 686 view provider
+  records, the same 357 naming a colour file); then its 229 TechDraw
+  objects removed and saved again (`q2\ctl\scanner-resaved-notd.FCStd`:
+  457 objects and records). The reporter's file is untouched.
+- Plain loads on this box, two rounds of the three files:
+  - the original: the open returns in 14.8, 13.7 s; the model first on
+    the screen 10.4, 9.1 s after; 23 to 25 s in all;
+  - re-saved: 13.8, 12.4 s; 9.1, 8.1 s (part of it, the rest a second
+    later); 20.5 to 23 s;
+  - re-saved without TechDraw: 8.4, 7.3 s; the model there by 4.1,
+    4.0 s (already in the first frame compared); 11.3 to 12.5 s at
+    most.
+- So the TechDraw objects are about 5 s of the open and 5 s or more of
+  the wait after it.
+- Against the withdrawn figure: that is the same size as 22 of 33 less
+  the ten that `ee9583a247` took. In the build session's words, the
+  conclusion "TechDraw is about half" holds; the comparison it stood on
+  did not.
+- ALSO CORRECTED: "none of the ten pages is on the screen" (01:22) was
+  wrong. Five are saved visible (`Page001`, `002`, `003`, `008`, `009`)
+  and open as views at the load, halving the 3D view.
+
+**The reporter's "Then the techdraw one" stands on a measured number
+now, and the build session goes on with it: IN WORK.** Next a profile of
+where TechDraw's ten seconds go, then the change. Nothing of TechDraw's
+design is changed yet.
+(The note-taker's count: at 12:24 it said it would report the real share
+to the reporter before changing TechDraw's design; whether it was put to
+the reporter is not said in this message. The reporter has it from the
+note-taker at 12:39.)
+(2026-10-11 12:41, the build session on that count: the real share WAS
+put to the reporter in its session, about 12:35, before any change to
+TechDraw. Its words to them: "Measured with proper controls: the TechDraw
+objects cost about 5 s of the open and 5 s of the wait after it, roughly
+ten of this file's 21 to 25 seconds. So TechDraw is still about half, and
+your go-ahead stands on a real number now." The reporter has NOT answered
+it. Nothing of TechDraw's design is changed; the build session is at the
+profile.)
+
+**A new defect found on the way -- a crash on removing a TechDraw page
+outside a transaction -- is entry 67.**
+
+**2026-10-11 17:00, from the build session: what TechDraw's ten seconds
+ARE is profiled, and the largest part of them is FIXED `5c45b43220`;
+local, not pushed, not staged.** The account is in `docs/HandsOnLog.md`
+(`fc189a3463`, local); in short:
+- A page being on the screen is not it: the re-saved file with all its
+  pages hidden opens in 12.2, 12.5 s against 13.9, 12.4 s with five
+  shown, the model first on the screen 7.2, 7.1 s after against 7.3,
+  8.1 s. Hiding every page changes the load by 0.5 s at most; a document
+  that shows no page pays the ten seconds.
+- Two loads sampled (pages hidden, and no TechDraw); the sampled load is
+  about 1.3 times slower than a plain one. What the TechDraw objects
+  add, in SAMPLED seconds:
+  - 4.8: included files restored through a staging file
+    (`App::PropertyFileIncluded::RestoreDocFile` -- ten templates, ten
+    images, the hatch patterns: each written to a staging file, read
+    back to be hashed, then renamed or deleted). Not TechDraw's own: any
+    document with included files pays it. Mostly this laptop's file
+    system (x16win opens this file in 8.2 s, this box in 13);
+  - 2.6: the pages' items made and drawn at the load, for pages nobody
+    shows (dimensions, section faces and their hatch, frames and
+    captions, preferences read at each);
+  - 1.4: the archive opened and closed once per deferred entry
+    (`serveDeferredFiles`);
+  - 1.0: projection group items projecting again at the restore
+    (`DrawProjGroupItem::onDocumentRestored`);
+  - 0.5: a default `LineFormat` opening a file (the line standard).
+- FIXED `5c45b43220` ("App: an included file is restored out of memory,
+  not through a staging file"): `RestoreDocFile` reads the entry into
+  memory and hands it to `adoptBytes`; over 16 MB it is staged as
+  before. Sampled again: `RestoreDocFile` 4.83 -> 0.00 s.
+- Plain loads after it, the open: 12.2, 12.5 -> 10.2, 10.6, 11.5 s with
+  the pages hidden; 13.7, 14.8 -> 11.7, 12.5, 12.9, 15.7 s on the
+  original. One to two seconds off the open; ON THE ORIGINAL NOT
+  SEPARABLE FROM THE SCATTER by these four runs (one outlier, and the
+  control without TechDraw moved by 0.7 s on its own) -- the build
+  session's own words: the profile is the evidence that the work is
+  gone. The wait after the open is unchanged.
+- Its test (`FileBlobs.py`,
+  `testSchemaFourRestoreKeepsOneFileAndStagesNone`) passes on the old
+  code too: the old code was slow, not wrong.
+- App's C++ tests 32 of 32; the Python suite 3414 with the two known
+  thickness failures.
+- NOT done: the pages' own work at the load (the 2.6), the archive
+  reopened per entry (1.4), the projection group projecting again (1.0),
+  the `LineFormat` file (0.5). (The note-taker's sum: 5.5 sampled
+  seconds still there.) The pages change is next, and by the log is
+  worth about two plain seconds on any box.
+- The log's table row for 47 now says the 22 s figure was withdrawn.
+
+**2026-10-11 17:55, from the build session: the pages change is DONE --
+`48b9aaa0ba` and `4172eb2018`; local, not pushed, not staged.** This is
+the reporter's "Then the techdraw one". The account is in
+`docs/HandsOnLog.md` (`0a1ffcbb41`, and its row `b0412309f9`); in short:
+- `48b9aaa0ba` ("TD: a page makes its items when something needs them,
+  not at the load"): a page makes its Qt items when it is shown, printed
+  or exported (`QGSPage::populate`; `addView` and `fixOrphans` make
+  nothing before it).
+- Plain loads, three each, the model's first pixels after the open (a
+  picture each second, so each figure is a bracket):
+  - re-saved, every page hidden: 7-8 s -> 2-3, 3-4, 3-4 s (the same
+    file without TechDraw: 3-4 s);
+  - the original, five of its ten pages shown: 8-9, 9-10, 9-10, 11-12 s
+    -> 6-7, 6-7, 6-7 s (whole at 7-8);
+  - the open itself unchanged.
+- So with no page shown TechDraw costs the wait after the open nothing
+  any more. By the log the profile's "2.6 sampled seconds" for this
+  part was short of it: four plain seconds (the 17:00 block's "about
+  two plain seconds" was the forecast).
+- The first showing of a page after the load: 0.06 to 0.23 s each,
+  1.3 s for all ten. The pictures are byte for byte those of the same
+  pages shown at the load -- four of five compared; the fifth was
+  pictured in a narrower cell.
+- From the log, not in the message: in the control with five pages
+  shown the count of touched objects went from 223 to 224 at the first
+  showing -- which object, and whether the showing did it, NOT looked
+  into.
+- `4172eb2018` ("TD: the dimension formatter's regular expressions are
+  made once"): `DimensionFormatter` made five or more
+  `QRegularExpression` objects per call; static now. The original, three
+  loads: the model 5-6 s after the open, the open 11.2 to 11.5 s.
+- Where the original stands on this box, from the open asked to the
+  model on the screen: 31 to 35 s on 2026-10-10, 23 to 25 s this
+  morning, 17 to 18 s now.
+- Tests: `tests/gui/techdraw-page-items-when-needed.py`, new, 10 of 10
+  -- NOT run against the old code; the 14 TechDraw GUI tests 231 checks
+  of 231; TechDraw's Python tests 9 of 9.
+- NOT tried, a hand check FOR THE REPORTER: printing all pages
+  (`TechDraw_PrintAll`) with pages that were never shown -- the
+  `populate()` in `PagePrinter::renderPage` is for it; it needs the
+  print dialog. (The note-taker's count: the change is not in the copy
+  under test, so this check waits for a stage.)
+- NOT done still: the archive reopened per deferred entry, projection
+  group items projecting again at the restore, the default
+  `LineFormat`'s file.
+- A new lead, from ONE coarse profile only: TechDrawGui's import
+  registering its four fonts (`QFontDatabase::addApplicationFont`), 2.5
+  sampled seconds; being probed, nothing concluded.
+
+**2026-10-12 14:22, from the build session: all nine fixes are STAGED --
+2026-10-12 14:04:58 at `4474fcb17e`; and a new number after the merge.**
+The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12"); in short:
+- In the copy under test for the first time: `24f7c8a2bd` (the clipboard
+  asked on every pass), `93fc6cd58a` (the close inside the load),
+  `43fdcb1435` (the false save prompt), `ee9583a247` (the line standards
+  folder), `d38ac38d7b` and `0049176c22` (icons that do not exist),
+  `5c45b43220` (included files out of memory), `48b9aaa0ba` (a page makes
+  its items when needed), `4172eb2018` (the dimension formatter). The
+  last five are NOT pushed.
+- FOR THE REPORTER to try by hand on the staged copy: TechDraw "Print
+  all" with pages never shown since the load. A test was written for the
+  export of a page nothing has shown
+  (`tests/gui/techdraw-never-shown-page-exports.py`, `4474fcb17e`): a
+  page saved hidden and reopened, exported to a PDF and to an SVG before
+  anything shows it -- the PDF the size of the one made on the screen
+  (6117 bytes both), the SVG the same 8 paths and text; 10 of 10 on the
+  dev tree and on the staged copy. It does NOT cover "Print all": the
+  Python exports bring the page's view up themselves and always did,
+  while `TechDraw_PrintAll` prints from the scene with no view and has no
+  way in from Python. By the build session's reading
+  `PagePrinter::renderPage` populates the scene first; not run.
+- A NEW NUMBER: after the merge of origin/LinkVibe the model is on the
+  screen 6-7 s after the open where it was 5-6 s on 2026-10-11, like for
+  like (no addons). NOT looked into; the log's first suspect, not shown:
+  what the remote added to a restore. The log's table, the box quiet (the
+  open, then the model's first pixels after it):
+
+  | | the open, s | the model, s after the open |
+  |---|---|---|
+  | 2026-10-11, `4172eb2018`, no addons | 11.2, 11.4, 11.5 | 5-6, 5-6, 5-6 |
+  | 2026-10-12, dev tree, no addons | 13.4, 10.5, 10.3 | 6-7, 6-7, 6-7 |
+  | 2026-10-12, dev tree, with the addons | 14.8, 12.6 | 8-9, 6-7 |
+  | 2026-10-12, the staged copy, with the addons | 11.3, 11.5 | 7-8, 6-7 |
+
+- From the log, not in the message -- it bears on every number of this
+  entry: a GUI test runs on an application data directory of its own,
+  with no `Mod`, so EVERY load of `scanner.FCStd` measured here so far
+  logged 111 `ModuleNotFoundError` (`FastenersCmd`, `OpticalObject`,
+  `Ray`) and showed a document the reporter never sees. The reporter,
+  said to the build session during the build, not heard by the
+  note-taker: "duplicate the third party workbench in the staged
+  envrionment, so that when you testing, those object got loaded
+  correctly". Now `fasteners` 0.5.51 and `OpticsWorkbench` 1.2.2 are
+  mirrored (the reporter's own directory only read) and linked into each
+  test's home: 0 such errors. With the addons the model is whole 10 to
+  12 s after the open, as without them.
+- NOT done still, as on 2026-10-11: the archive reopened per deferred
+  entry, projection groups projecting again, the default `LineFormat`'s
+  file, the fonts lead.
+
+**2026-10-12 16:36, from the build session: one of the three parts left is
+IN WORK, not committed.**
+- "The archive reopened per deferred entry" (1.4 sampled s in the
+  profile of 2026-10-11): the archive is opened once now, a pool of
+  handles in the reader. By the load's own counters the archive reading
+  of `scanner.FCStd` goes from about 3.8 s to 0.2 s on this box. No load
+  time from the open to the model is in the message.
+- The second lost at the merge of 2026-10-12 is NOT attributed; the
+  transaction log is ruled out by an A/B.
+
+**2026-10-12 18:06: the archive's handles FIXED `1c53d547d2`, STAGED
+17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- `ZipFileReader::openEntry` opened the archive anew for each of the
+  1652 entries, 1.2 ms an open on this box. With a pool of handles, by
+  the load's own log, reading the archive goes from about 3.8 s to
+  0.2 s. Still no load time from the open to the model in what reached
+  the note-taker.
+- The second the merge of the morning put on the wait is NOT attributed;
+  the transaction log is ruled out (five loads each way).
+- With the push of 17:56 the five fixes that were local (`d38ac38d7b`,
+  `0049176c22`, `5c45b43220`, `48b9aaa0ba`, `4172eb2018`) are on the
+  remote; checked by the note-taker against origin/LinkVibe.
+
+**2026-10-12 18:57: the second the merge added is NAMED; neither part is
+changed, one needs a decision.** From the build session's message of 18:57, written here 18:59.
+- The reporter, said to the build session at about 18:30 -- the
+  note-taker did not hear it: "The box is quiet now. Resume speed test as
+  you see fit".
+- Measured 18:34 to 18:43 on the dev build of `22ece75a08`, no addons,
+  five loads: the open 11.8, 11.5, 8.3, 8.8 and 10.1 s; the model's first
+  pixels 6 to 7 s after it in three of the five, 7 to 8.4 s and 8 to 9 s
+  in the other two -- where 2026-10-11 had 5 to 6 s.
+- From two sampled profiles and the load's own log (the view providers'
+  "finish" 1.58 s before the merge, 2.10 s now):
+  - (a) about half a second in
+    `PartGui::ViewProviderPartExt::finishAppearance`: the looks of an
+    OLDER file taken over at the load -- per object, the list of
+    everything that depends on it. Only for a file not yet saved by the
+    new version; a control with a re-saved file is still to run.
+  - (b) 0.4 to 1.0 sampled s in `App::FileBlobManager::materialize`:
+    included files written to disk when first asked for by a path -- a
+    page's template and image when the page is shown, a section's hatch
+    pattern at the open. File creation, which is dear on this box.
+- NEITHER is changed. (a) "needs a decision, it is the other branch's
+  design" -- the build session's words; the decision is not yet put as a
+  question with its choices.
+
+**2026-10-12 21:03: part (a) of the lost second CONFIRMED by a control; a
+difference at the open NOT explained; a crash, entry 79.** From the build session's message headed "state at 21:05", received 21:03,
+written here 21:04.
+- The control: `scanner.FCStd` saved again by this build has the view
+  providers' "finish" at 1.69 and 1.70 s where the original has 2.09 to
+  2.12 s -- the 0.4 s of an older file's looks taken over at the load.
+- Beside it, NOT explained: the re-saved file OPENS in 7.0 to 7.1 s
+  where the original takes 10.1 to 10.6 s; the model is on the screen
+  no sooner after the open (7 to 9 s). From the open asked to the model:
+  about 15 s against about 18 s.
+- One of three loads of that re-saved file CRASHED at 20:17: entry 79.
+- Still not put as a question with its choices: the decision part (a)
+  needs. [Put a few minutes after this was written: said to the
+  reporter by the build session at about 21:10, and in its log; see
+  the block of 2026-10-13 00:19 below.]
+
+**2026-10-12 23:17: the sooner open of the re-saved file EXPLAINED; three
+more load-time changes IN WORK, uncommitted, not tested.** From the build session's message of 23:17, written here 23:19.
+- The open point of 21:03, from the load's own log: the re-saved file
+  opens three seconds sooner because a document in the merge's form does
+  not read its 1400 shape and property files while it opens (files
+  3.38 s -> 0.13 s). They are blobs served afterwards -- which is why
+  the model is on the screen no sooner.
+- The reporter, said to the build session at about 22:45 -- the
+  note-taker did not hear it: "Once done. Continue fix the issues in the
+  notes". The build session goes on with this entry on that word.
+- Written and in a build now, uncommitted, not tested:
+  - the material library asked the file system for its own directory
+    once a MATERIAL: 0.4 to 1.6 s of the first document of a session,
+    "and most of the 1.8 s of entry 66's first opening of the
+    preferences" [the part on entry 66 WITHDRAWN by the build session
+    2026-10-13 00:56: measured, nothing off that opening];
+  - a section view and a hatch read their pattern file at every restore,
+    drawn or not; now when first drawn. (Two changes; with the one above,
+    the three.)
+- Still not put as a question with its choices: the decision part (a)
+  of the lost second needs (the block of 18:57).
+  [WITHDRAWN by the note-taker 2026-10-13 00:19: it IS put, see the block of 00:19 below]
+
+**2026-10-13 00:15: the three load-time changes COMMITTED in two commits,
+local, NOT pushed, NOT staged; and a CORRECTION by the build session to
+its account of 23:17.** From the build session's message of 2026-10-13 00:15, written here 00:17.
+- `3e64f3e9d6` (`src/Mod/Material/App/Library.cpp`): the material library
+  asked the file system for its own directory once a material. MEASURED:
+  the restore's total 6.46 s -> 6.17 to 6.25 s on the original
+  `scanner.FCStd`, three loads each way.
+- `00fa69e485` (`DrawViewSection`, `DrawGeomHatch`): a section view and
+  a hatch read their pattern file when first drawn, not at every
+  restore. "NO gain shown by the clock; it saves a file written and
+  parsed for each section view of a page never shown."
+- The CORRECTION, its words: "I put the 3 s between the restore and the
+  end of the open down to TechDraw answering 'the document is restored'.
+  By the clock the section change took nothing off it, and a sampled
+  profile shows 1.6 sampled seconds of the open are the recompute
+  question waiting for my script to answer it. That gap holds a wait
+  that is the measuring script's, in every load measured since
+  2026-10-10. The open times themselves compare like for like and
+  stand." The note-taker looked: the sentence it withdraws was NOT
+  written into this queue at 23:17, so nothing here rests on it.
+- Loads on the last build: the re-saved file, six -- the open 6.7 to
+  6.9 s, the model whole at the 8 s picture in all six. The original,
+  three -- the open 9.9 to 10.2 s.
+- The repaint a view asks for at a load is entry 53's, `5d63c7152d`: it
+  regressed in the stage of 17:52; the build session's guess for what
+  moved the timing is this entry's `1c53d547d2`, not looked for.
+- Still not put as a question with its choices: the decision part (a)
+  of the lost second needs (the block of 2026-10-12 18:57).
+  [WITHDRAWN by the note-taker 2026-10-13 00:19: it IS put, see the block of 00:19 below]
+
+The note-taker's reading of the correction: every "open" time of this
+entry measured since 2026-10-10 holds a wait of the script's for the
+recompute question (1.6 sampled s in the one profile), so a time read
+ALONE is that much longer than the work; a difference between two of
+them stands. Not said by the build session in those words.
+
+**2026-10-13 00:19: part (a) IS PUT TO THE REPORTER as a choice of three --
+NOT ANSWERED. The note-taker's "still not put as a question" (the blocks
+of 23:17 and 00:15) was WRONG and is withdrawn.** From the build session's message of 2026-10-13 00:19, written here 00:20. The
+note-taker read the question where the build session points: its log,
+`docs/HandsOnLog.md`, "Entry 47, part (a): the question for the
+reporter", committed `81310dbc89` (2026-10-12 23:17).
+- What it is about, from the log: "Reading a file that was last saved
+  before the looks were moved to the object costs about 0.4 s here, once
+  a load, until the file is saved again."
+- The three ways, the log's words:
+  1. "Leave it. The cost goes with the first save by the new version".
+     (The log adds that this save takes three seconds off the open by
+     itself, "not explained" -- explained since, the block of 23:17.)
+  2. "One pass when all view providers are restored, in place of the
+     pass each one makes for everything that depends on its object. It
+     needs a signal for 'the view providers of this document are all
+     done', which the progressive restore does not give yet; the looks'
+     code is the other branch's, so it is that branch's change or agreed
+     with it."
+  3. "Keep the pass per object and make it cheaper: ask for the
+     dependency list of the dependents already taken over only, and skip
+     it where there are none. About half of it, by my estimate, not
+     measured."
+- The build session's own choice: "1, and 2 if files of before the
+  change stay in use for long."
+- By its message, it also said the question to the reporter in its
+  session "at about 21:10; no answer" -- the note-taker did not hear
+  it.
+- On the correction of 00:15, its word: the note-taker's reading "is
+  mine too: an open time read alone holds the script's wait, a
+  difference between two stands".
+NOT ANSWERED YET by the reporter: 1, 2 or 3.
+
+**2026-10-13 06:31, the reporter ANSWERS part (a), said to the build
+session -- the note-taker did not hear it.** From the build session's message of 2026-10-13 06:40, written here 06:39.
+- 06:28, the reporter: "What's the choice of entry  47"
+- The build session answered with the three ways and its own choice,
+  leave it (the block of 00:19 above has them).
+- 06:31, the reporter: "Fine. Push and restage"
+- The build session's reading of "Fine": part (a) = choice 1, LEAVE IT;
+  no code change. The cost, about 0.4 s a load of a file last saved
+  before the change, goes with the file's first save by the new version.
+The note-taker's note: "Fine" names no number; it follows the build
+session's "mine = leave it", and the reading rests on that. Nothing is
+left unanswered on part (a) unless the reporter says the word meant
+something else.
+- The two commits of 00:15 and all of this entry's earlier local work
+  are PUSHED 06:33 (origin/LinkVibe = `4b52e58423`); NOT staged yet, a
+  restage is under way.
+
+## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- both FIXED, STAGED 2026-10-12 14:04: `31c09e28e7`, and `8a7595512d`, which is the TEST's -- the "real defect" of 14:14 is WITHDRAWN; the third no defect (see `docs/HandsOnLog.md`)
 
 **2026-10-10 16:57, from the build session: the second test FIXED
 `8a7595512d` -- and it was the TEST; the "real defect" of 14:14 below is
@@ -4944,6 +7050,13 @@ copy staged 2026-10-07 as on today's tree. Not looked into.
 - `per-view-shown-eviction.py`: 1 claim fails;
 - `navicube-per-view.py`: passes 11 claims, then never ends.
 Not said yet by the reporter: whether and when they are to be looked at.
+
+**2026-10-12 14:22, from the build session: the budget fix `31c09e28e7`
+is STAGED -- 2026-10-12 14:04:58 at `4474fcb17e`.** The note-taker's
+count, by git: the second commit, `8a7595512d`, the test's own fix, is
+inside the staged commit too. The proposal (active view and keyboard
+focus after `Std_ViewCreate`) is as it was. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12"); the head of this file has the whole of the message.
 
 ## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- STAGED 2026-10-09 12:25, fixed `664d57f39b` (see `docs/HandsOnLog.md`)
 
@@ -5437,7 +7550,7 @@ serve, mobile) take the same default. Nothing of (b) is left with the
 reporter. The same message asks for a benchmark of the line shader: entry
 52.
 
-## 52. Is the line shader still needed, and what does it cost: a benchmark asked -- MEASURED `00f295f8d7`, not staged: it is what gets a fractional width right, its cost under what the benchmark resolves, nothing dropped; one finding for the reporter (see `docs/HandsOnLog.md`)
+## 52. Is the line shader still needed, and what does it cost: a benchmark asked -- MEASURED `00f295f8d7`, STAGED 2026-10-12 14:04 with the frame report fix `d79122782b`: it is what gets a fractional width right, its cost under what the benchmark resolves, nothing dropped; one finding for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 10:17, the reporter, when asked what difference in frame time
 would be enough to drop it:** "not sure about the cost tradeoff part. but if
@@ -5523,7 +7636,76 @@ MSAA 4x (the default) a line is up to 0.13 px LIGHTER than asked (2.5 px
 lying flat weighs 2.37). Half a pixel more quad on each side would close
 it, at the cost of those fragments on every line.
 
-## 53. `scanner.FCStd` opened without the recompute: on the TechDraw page geometry is missing (Qt's drawing) and lines are thickened (both renderers) -- STAGED 2026-10-09 12:25, fixed `c820c3aea1` (see `docs/HandsOnLog.md`)
+**2026-10-12 14:22, from the build session: the frame report fix
+`d79122782b` is STAGED -- 2026-10-12 14:04:58 at `4474fcb17e`.** The
+measurement itself (`00f295f8d7`) changed nothing in the program. The
+finding for the reporter (a line up to 0.13 px lighter under MSAA 4x) is
+as it was. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12"); the head of this file has the whole of the message.
+
+## 53. `scanner.FCStd` opened without the recompute: on the TechDraw page geometry is missing (Qt's drawing) and lines are thickened (both renderers) -- REGRESSED in the copy staged 2026-10-12 17:52 (Qt's drawing, the geometry missing), fixed again `5d63c7152d` 2026-10-13, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; before: STAGED 2026-10-09 12:25, fixed `c820c3aea1` (see `docs/HandsOnLog.md`)
+
+**2026-10-13 07:32: on the STAGED copy of 06:52 the entry's test passes: 12
+PASS, 0 FAIL** ("9 and 2 on the copy of 17:52"). From the build session's message of 2026-10-13 07:32, written here 07:32.
+
+**2026-10-13 06:57: the second fix `5d63c7152d` is STAGED 06:52:40
+(`5a2f7e58c2`).** From the build session's message of 2026-10-13 06:57, written here 06:56. The entry's test on the staged copy is among
+the checks still running; no result yet.
+
+**2026-10-13 00:19, the build session answers the note-taker's two points of
+00:15 (the block below); nothing new was run.** From the build session's message of 2026-10-13 00:19, written here 00:20. "From the test's
+own lines on the staged copy".
+- The SECOND symptom, the thickened lines: NOT back, by this test. On
+  the staged copy the backend's drawing as loaded reads "runs of ink
+  along the row, in pixels: [2, 2]", and the claim "its lines are as
+  wide as the view provider says | [2, 2] px wide; 1.8 px asked, the
+  fallback draws 6" PASSES. Qt's drawing as loaded: "[]", no ink at all;
+  after the repaint "[2, 2]", the right width. "So what is back is the
+  first symptom alone, and under Qt's drawing alone."
+- Its limit, in its words: "The test has one view on one page; a page
+  of scanner.FCStd on the staged copy I have not looked at."
+- What repaints it by hand: "NOT tried by hand, so I cannot name the
+  user's action." In the test it is the script calling the view's
+  `requestPaint()`. Its expectation, "not shown": a recompute, or
+  TechDraw's "Redraw page", would do it, as a recompute did in the first
+  report of this entry.
+
+**2026-10-13 00:15, the build session: REGRESSED IN THE STAGED COPY of
+2026-10-12 17:52 (`22ece75a08`); FIXED AGAIN `5d63c7152d`, local, NOT
+pushed, NOT staged.** From the build session's message of 2026-10-13 00:15, written here 00:17. Found by the entry's own test, not reported
+by the reporter.
+- The test, `tests/gui/techdraw-page-before-its-view-providers.py`:
+  passed on the build of 2026-10-12 11:21; on the copy staged at 17:52,
+  run there by the build session at "23:4x", it fails two claims. The one
+  it quotes: "Qt: the view's outline is drawn as loaded | 0 runs of ink
+  where the box has two upright edges".
+- What that is on the staged copy, in its words: "with TechDraw drawn by
+  Qt, a page of a document opened and not recomputed can show a view
+  without its geometry until something repaints it -- the entry's first
+  symptom". With the backend's drawing the same test passes there.
+- The cause: the repaint a view asks for "a turn of the event loop
+  later" when its view provider arrives (the fix of `c820c3aea1`) can
+  come from the progress bar's own pump, INSIDE the restore's slice,
+  while the document is still being restored -- and a page item draws
+  nothing then.
+- The fix: the repaint is asked again until the document is no longer
+  restoring (`src/Mod/TechDraw/Gui/ViewProviderDrawingView.cpp`, `.h`).
+  12 of 12 on the build with it.
+- NOT looked for by it: which change of that afternoon moved the timing.
+  Its guess: the archive read on pooled handles, `1c53d547d2` (entry
+  47's, staged 17:52).
+- NOT known: whether the stage of 14:04 (`4474fcb17e`) has it.
+
+The note-taker's notes:
+- For the reporter on the staged copy: a TechDraw page, drawn by Qt,
+  that comes up with a view's geometry missing after an open without
+  the recompute is THIS, back again. It is not said what "something
+  repaints it" is by hand -- which action brings the geometry back.
+- NOT said: whether the entry's SECOND symptom, the thickened lines in
+  both renderers, is back too. The message names the first only, and
+  quotes one of the two failing claims.
+- Not asked of the reporter; if a page has looked like this since the
+  stage of 17:52, the time and the page are worth a line here.
 
 **2026-10-09 12:25, STAGED** (and pushed 12:24, origin/PartDesignPort =
 `cc4c34356f`): in the copy under test, for the reporter to confirm. The build session corrects one number: the entry's test has 12
@@ -6085,7 +8267,7 @@ desktop's setting carried over to the browser or a value of the viewer's
 own; and whether touch (a finger has no Esc and no second button) gets a
 way to cancel of its own.
 
-## 58. Audit the warnings of opening and recomputing `scanner.FCStd`, and fix what can be fixed (a task, for later) -- AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60` and `a30fdda2a5` (the pattern limit cut a file's own count), and the note in the pattern panels `2a45e36492`, not staged; two points on the limit and the rest's proposals for the reporter (see `docs/HandsOnLog.md`)
+## 58. Audit the warnings of opening and recomputing `scanner.FCStd`, and fix what can be fixed (a task, for later) -- AUDITED; three FIXED `1adffbfe7c`, `b4f22e0b60` and `a30fdda2a5` (the pattern limit cut a file's own count), and the note in the pattern panels `2a45e36492`, STAGED 2026-10-12 14:04; two points on the limit and the rest's proposals for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 11:37, the reporter:** "new task, can do it later. audit for all
 warning when opening and recomputing the scanner document. fix when
@@ -6238,6 +8420,13 @@ session's message does not say what moved it up. Recorded as it came.)
   general page);
 - reading the setting at each use instead of once a session, so that
   raising it works at once.
+
+**2026-10-12 14:22, from the build session: STAGED -- 2026-10-12
+14:04:58 at `4474fcb17e`:** the three fixes (`1adffbfe7c`, `b4f22e0b60`,
+`a30fdda2a5`) and the note in the pattern panels (`2a45e36492`). The two
+points on the limit and the proposals for the other kinds of warning are
+still with the reporter. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12"); the head of this file has the whole of the message.
 
 ## 59. The Start page no longer opens at startup: the Start module's migration ran again after "Reset all" -- STAGED 2026-10-09 15:11, fixed `e9ac624959` (see `docs/HandsOnLog.md`)
 
@@ -6417,7 +8606,7 @@ Not said yet by the reporter: how the view was deleted (a join by a corner
 drag, "Close view" in the cell menu, the border's menu); whether the black
 view was a 3D view each time; and how often.
 
-## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- STAGED 2026-10-10 09:44: the decision REVERSED by the reporter, fractional widths and the highlight as wide as its line `2649caa38f`, the dashes with the widths and a rounding setting `721fdcf39b`; the setting on TechDraw's Advanced preference page DONE `a343a386b6`, NOT staged (see `docs/HandsOnLog.md`)
+## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- STAGED 2026-10-10 09:44: the decision REVERSED by the reporter, fractional widths and the highlight as wide as its line `2649caa38f`, the dashes with the widths and a rounding setting `721fdcf39b`; the setting on TechDraw's Advanced preference page DONE `a343a386b6`, STAGED 2026-10-12 14:04 (see `docs/HandsOnLog.md`)
 
 **2026-10-09 14:26, reported:** "New defect. Techdraw bgfx rendering seems to
 render all dashed line slightly thicker than qt, which is not that big of
@@ -6598,6 +8787,12 @@ this was asked, so the copy under test (`72180a4812`) and origin
   FAIL (seven tests, 119 claims).
 Nothing of the setting is left with the reporter. In the staged copy the
 setting is reached by the omni search only, until the next stage.
+
+**2026-10-12 14:22, from the build session: the check box is STAGED --
+2026-10-12 14:04:58 at `4474fcb17e`.** "Round Line Widths (Backend
+Renderer)" on TechDraw's Advanced page (`a343a386b6`) is in the copy
+under test; with it everything of this entry is staged. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12"); the head of this file has the whole of the message.
 
 ## 62. Omni search: the last 10 confirmed items on the list when it first pops up (a new feature) -- STAGED 2026-10-10 09:44, done `9d354a8c44`, and the recent items BEFORE the three modes `f5dc9027e7`; four choices of the build session's still with the reporter (see `docs/HandsOnLog.md`)
 
@@ -7123,7 +9318,7 @@ which document); whether the whole picture is turned -- background and all
 -- or the object alone against a right-way-up view; and whether it is
 mirrored top to bottom or left to right on the screen.
 
-## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- MEASURED; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`; the first opening and a reset under a theme not changed, three proposals and one question for the reporter -- proposal 2 DONE `ee9583a247` under entry 47, not staged, the opening not measured again (see `docs/HandsOnLog.md`)
+## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- MEASURED; the freeze STAGED 2026-10-10 09:44, fixed `6073d32437`; the first opening and a reset under a theme not changed, three proposals and one question for the reporter -- proposal 2 DONE `ee9583a247` under entry 47, STAGED 2026-10-12 14:04, the opening measured again 2026-10-13: the material change of entry 47 takes nothing off it; the copy staged 2026-10-12 17:52 can die at this dialog, entry 82 (see `docs/HandsOnLog.md`)
 
 **2026-10-09 19:58, from the build session: MEASURED before anything was
 changed, and the freeze FIXED `6073d32437`; local, not pushed, not staged.**
@@ -7254,6 +9449,6332 @@ dialog's opening NOT measured again.**
 - Proposals 1 and 3 are as they were: with the reporter, NOT ANSWERED
   YET, not started.
 
+**2026-10-11 08:09: proposal 2's `ee9583a247` is PUSHED** (the
+reporter's "Push" of about 08:05, origin/LinkVibe = `9e1cf7d9f9`); not
+staged. The dialog's opening is still NOT measured again.
+
+**2026-10-12 14:22: proposal 2's `ee9583a247` is STAGED** -- 2026-10-12
+14:04:58 at `4474fcb17e`, among entry 47's fixes. The note-taker's count:
+the build session named the commit under entry 47 and not this entry.
+The dialog's first opening is still NOT measured again; proposals 1 and 3
+and the question are as they were.
+
+**2026-10-12 23:17, a pointer from entry 47:** by the build session, a
+change in work under entry 47 -- the material library asking the file
+system for its own directory once a material -- is "most of the 1.8 s"
+of this entry's first opening of the preferences [WITHDRAWN by the
+build session 2026-10-13 00:56: measured, nothing off it; the block below].
+Written, in a build,
+uncommitted, not tested; the opening is NOT measured again. (From the build session's message of 23:17, written here 23:19)
+
+**2026-10-13 00:15, the pointer from entry 47 again:** the change is
+COMMITTED, `3e64f3e9d6`, local, not staged. What is measured with it is
+a load (entry 47); this entry's first opening of the preferences is NOT
+measured again. (From the build session's message of 2026-10-13 00:15, written here 00:17)
+
+**2026-10-13 00:56, the first opening MEASURED AGAIN -- the material change
+takes nothing off it; and the staged copy can die at this dialog.**
+From the build session's message of 2026-10-13 00:56, written here 00:57.
+- "Entry 66 (a): the material change takes nothing off the preferences'
+  first opening (2.20 s staged, 2.23 and 1.99 s now), so the 1.8 s that
+  entry put down to the Material module is not what `3e64f3e9d6`
+  stopped."
+- So the pointer of 2026-10-12 23:17 above -- "most of the 1.8 s" -- is
+  WITHDRAWN by the build session; the first opening is as it was.
+- Opening the Preferences on the copy staged 2026-10-12 17:52 can end
+  the program: entry 82.
+
+**2026-10-13 07:32, a number from the stage of 06:52:** in the first of
+the six sessions that opened the preferences on the freshly staged copy
+(entry 82's check) the first opening took 3.20 s. (From the build session's message of 2026-10-13 07:32, written here 07:32) The
+note-taker's caution: that is the first start of a copy installed
+minutes before; the 2.20 s of 00:56 was on a copy long installed. The
+two are not said to be comparable by the build session.
+
+## 67. Removing a TechDraw page outside a transaction crashes -- FIXED `39b548048b`, STAGED 2026-10-12 14:04, pushed 2026-10-12 17:56; a delete by hand with undo off for the reporter to try (see `docs/HandsOnLog.md`)
+
+**2026-10-11 12:39, found by the build session on entry 47** and given a
+number here. Not reported by the reporter; the build session asked the
+note-taker to place it. Its account is in `docs/HandsOnLog.md`, under
+"47." ("A crash found on the way", `138b94bde1`); in short:
+- How it was met: the first run of the script that made entry 47's
+  control file did `doc.removeObject` on the 229 TechDraw objects with no
+  transaction open, and the session died.
+- Where: access violation in `TechDraw::DrawPage::unsetupObject`
+  (`DrawPage.cpp` 435) under `App::Document::removeObject`.
+- Why: the function walks the page's list of views by pointers taken
+  before its loop. A part view removes its dimensions and balloons as it
+  goes; those are in the page's list too; and outside a transaction a
+  removed object is deleted at once -- so the loop comes to a freed
+  pointer.
+- Who meets it: deleting a page BY HAND runs inside a transaction and is
+  safe. A script is not. A delete with undo off would not be either --
+  NOT tried.
+- Evidence: `..\dl\handson\2026-10-10\q2\crash-drawpage` (the folder
+  as the build session names it, `q2\crash-drawpage`).
+- State: a fix (by name instead of by pointer, in `DrawPage` and in
+  `DrawViewCollection`, which has the same loop) and a test
+  (`TDTest/DrawPageRemoveTest.py`) are WRITTEN and being built and run.
+  NOT done; the result is owed.
+
+**2026-10-11 13:02, from the build session: FIXED `39b548048b`; local,
+not pushed, not staged.** The account is in `docs/HandsOnLog.md`
+(`ded8b1139a`); in short:
+- The change: `DrawPage::unsetupObject` and
+  `DrawViewCollection::unsetupObject` collect their views by NAME and
+  look each up again before removing it.
+- The test: `TDTest/DrawPageRemoveTest.py`, 2 cases (a page of one view,
+  twelve dimensions and four balloons removed with no transaction; the
+  view alone before its page). TechDraw's Python tests 9 of 9.
+- "Say it as it is", in the build session's words: the test PASSES ON
+  THE OLD CODE TOO -- in the console the freed pointer threw instead of
+  crashing -- so the test is NOT what shows the fix.
+- What shows it: the page's warning "DP::unsetupObject - Page - error
+  while deleting children" is in the test's log before the change and
+  not after; and the crash's own case run again on the new build -- the
+  229 TechDraw objects removed in the GUI with no transaction: 686 ->
+  457 objects, no exception, no warning (before: access violation).
+- Three TechDraw GUI tests on the build: 34 checks, none failed.
+- A delete by hand with undo switched off: NOT tried.
+
+**2026-10-12 14:22, from the build session: STAGED -- 2026-10-12
+14:04:58 at `4474fcb17e`; not pushed.** FOR THE REPORTER to try by hand
+on the staged copy: delete a TechDraw page with undo switched off. The account is in `docs/HandsOnLog.md` (`c65e3a2a86`, "The sync of
+2026-10-12"); the head of this file has the whole of the message.
+
+## 68. A task panel in its view moves under the overlay panel on its side (tree view and property view) while the mouse is over that panel -- FIXED `22ece75a08`, STAGED 2026-10-12 17:52, pushed
+
+**2026-10-12 14:55, the reporter:** "new defect. when showing editing task
+panel in view and tree view is overlay mode on the same side, the editing
+task panel is aware of the tree view panel and show beside it as expected.
+however, when mouse hover in tree view item, the task panel moves under the
+tree view"
+
+The note-taker's reading of the report:
+- The setting: task panels shown in their views (`View/TaskPanelInView`,
+  "Task panels in their views"), the panel placed "Over the view"; the
+  tree view docked as an overlay on the side the panel is on.
+- Right: with the mouse elsewhere the panel stands clear of the tree, to
+  its inner side.
+- Wrong: the mouse over an item of the tree, and the panel moves to where
+  the tree is, under it.
+- NOT said, to ask if it matters: which side; whether the panel comes back
+  when the mouse leaves the tree; whether it is an item only or anywhere
+  on the tree panel; which workbench's task panel (any, by the wording);
+  whether the tree's overlay is in an auto-hide or mouse-through mode. The
+  copy is the one staged 2026-10-12 14:04 (`4474fcb17e`) if the reporter
+  restarted after it -- not asked.
+
+Pointers, the note-taker's, READ in the source, nothing run -- a guess at
+the cause, to be checked by the build session before it is believed:
+- The panel takes its room from `roomIn()`
+  (`src/Gui/TaskView/TaskPanelHost.cpp`, about line 100), which cuts out
+  of the view every rectangle `OverlayManager::occupied()` answers, and it
+  lays itself out again at every `OverlayManager::layoutChanged`.
+- `OverlayManager::occupied()` (`src/Gui/OverlayManager.cpp`, about line
+  2105) SKIPS an overlay whose `isOverlaid()` is false.
+- The overlay under the mouse, the one with the focus and the one being
+  revealed are taken out of overlay mode while that lasts
+  (`setOverlayMode(false)`, `OverlayManager.cpp` about lines 687 to 704),
+  which is what makes a hovered tree opaque and able to take the mouse;
+  the others are put back with `setOverlayMode(true)`.
+- So, if the reading holds: the moment the tree is hovered it stops
+  counting as occupying its strip, the next layout pass tells the task
+  panel, and the panel takes the whole width -- under the tree. It would
+  then come back when the mouse leaves. A dock that is shown and laid
+  over the view takes its room whether it is see-through at the moment
+  or not; `occupied()` asks the wrong question of it.
+- Why "an item" and not the panel's empty part: not explained by this
+  reading (with mouse-through on, the empty part of an overlay may not
+  count as under the mouse) -- a second guess, weaker than the first.
+
+**2026-10-12 15:03, the reporter answers the five points left open:**
+"left side. yes it comes back. there are two views in the left overlay
+panel, tree view and property view. task panel moves when mouse over any
+part on the left overlay panel. tree view is not auto hide or mouse
+through. yes latest stage"
+
+The note-taker's reading:
+- Side: LEFT. The left overlay holds TWO views, the tree view and the
+  property view.
+- The panel COMES BACK when the mouse leaves.
+- It is not "a tree item": the mouse over ANY part of the left overlay
+  panel moves the task panel. This corrects the first report's wording
+  and the heading's.
+- The overlay is neither auto-hidden nor mouse-through.
+- Seen on the latest stage: 2026-10-12 14:04, `4474fcb17e`.
+- Against the guess above, still nothing run: the answers FIT it -- any
+  part of the hovered panel, and back again when the mouse leaves, is
+  what a panel taken out of overlay mode while under the mouse, and so
+  left out of `occupied()`, would give. The weaker second guess ("why an
+  item and not the empty part") is dropped: there is no such difference.
+  That it fits is not proof; the build session's to show.
+
+Evidence: `..\dl\handson\2026-10-12\entry68\mcp_console.log`, the
+reporter's report log copied 14:56 (its last line is of 14:28; nothing in
+its tail names this).
+
+**2026-10-12 16:36, from the build session: the cause CONFIRMED; a fix IN
+WORK.** From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- Reproduced by the entry's test on the OLD build: the task panel went to
+  x=324, under the tree, while the left dock had the focus, and came back.
+  So the note-taker's reading of 14:56 held -- and it is the focus as
+  well as the pointer that does it.
+- The fix: `OverlayManager::occupied()` no longer skips a dock that is not
+  see-through at the moment.
+
+**2026-10-12 18:06: FIXED `22ece75a08`, STAGED 17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- Reproduced by its test on the build before: with the left dock in use
+  the panel went to x 324, under the tree at 320 to 581, and came back.
+- `OverlayManager::occupied()` skipped a dock that is not see-through at
+  the moment, which the one with the pointer or the focus is.
+- On the staged build: `task-panel-clear-of-docks.py`, 21 claims, no
+  FAIL.
+- For the reporter to confirm on the staged copy.
+
+## 69. Overlay panels: a transparent background, item backgrounds in the theme's 3D view colour at alpha 150, the task panel at alpha 150 (a change request) -- the reporter does NOT get it on the copy staged 2026-10-13 09:36 with their configuration (it names the sheet `Dark_overlay.qss`), CLEARED UP 10:06: an overlay sheet named by an older theme, the theme applied again puts it right; a migration at start-up put to the reporter, not answered; DONE `bbe8525de7` but for point 1, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; the five points answered 15:21; point 1 answered 17:07: the overlay's transparent mode is broken, to be fixed; a defect of the see-through look found 18:57, whether it is the one meant NOT known
+
+**2026-10-12 15:12, the reporter:** "new request, when the panel is moved to
+overlay mode change its background to transparent. change default tree view
+item background (150 alpha) that is the same as the current theme 3d view
+background color (the darker one if it's gradient). Same for property view,
+transparent background for empty area, keep the alternate item background
+(150 alpha), and same (non-alternate) item background as tree view. Also 150
+alpha for task panel background, both overlay and in view mode"
+
+The note-taker's reading, point by point:
+1. A panel put into overlay mode: its background becomes transparent.
+2. The tree view: the DEFAULT item background is the colour of the current
+   theme's 3D view background at alpha 150 (of 255); where that background
+   is a gradient, the darker of its colours.
+3. The property view: the empty area transparent; the alternate rows keep
+   their alternate background, at alpha 150; the other rows get the same
+   item background as the tree view's.
+4. The task panel: its background at alpha 150, both as an overlay and
+   when it is shown in its view.
+
+NOT said -- the note-taker's count of what a build would have to decide,
+to confirm with the reporter:
+a. "default tree view item background": a value that FOLLOWS the theme
+   (and a change of the 3D view's background colour) by itself, or one
+   each theme writes when it is applied? And only while the tree is an
+   overlay, or docked too?
+b. The gradient: the 3D view has two colours and an optional middle one;
+   "the darker one" of all that are in use?
+c. The task panel's COLOUR at alpha 150: the theme's own panel colour, or
+   the same 3D view colour as the items?
+d. The alternate rows of the property view: their present colour at alpha
+   150, or a shade of the new item colour?
+e. Does a value the user has set for the item background stay as it is
+   (the request says "default")?
+
+**2026-10-12 15:21, the reporter answers the five points:** "a, only
+overlay mode, add a setting to auto follow theme color, default true. b,
+the first color. c, theme's own panel colour. d, background of the item,
+complete transparent for no item part. e make the overlay alpha a setting.
+implement it as qt property that can be override by stylesheet"
+
+The note-taker's reading, by letter:
+- a. The item background applies in OVERLAY mode only; a docked tree or
+  property view is as it is today. A NEW SETTING: follow the theme's
+  colour automatically, ON by default.
+- b. Of a gradient: the FIRST colour. This REPLACES "the darker one if
+  it's gradient" of the request. By the settings' own titles that is
+  `View/BackgroundColor2`, "Background gradient, first colour" -- the top
+  of a linear gradient, the centre of a radial one (read in
+  `src/Gui/ViewParams.py`, nothing run); with a plain background,
+  `View/BackgroundColor`.
+- c. The task panel at alpha 150: the THEME'S OWN panel colour.
+- d. "background of the item, complete transparent for no item part" --
+  the note-taker's reading, NOT the reporter's words: a row's background,
+  the alternate one too, is drawn on the rows that hold an item only, and
+  whatever part of the view has no item is wholly transparent. WHICH
+  colour the alternate rows get -- their present one at alpha 150, as the
+  request's "keep the alternate item background (150 alpha)" says, or a
+  shade of the new item colour -- is not said again; the request's own
+  words are taken to stand.
+- e. The overlay alpha (the 150) becomes a SETTING. The point as it was
+  asked -- does a value the user set for the item background stay -- is
+  not answered in words; the note-taker's reading: with the new "follow
+  the theme" setting off, the user's own colour is what is used. To
+  confirm if the build needs it.
+- "implement it as qt property that can be override by stylesheet": the
+  note-taker reads "it" as these values -- the item background and the
+  alpha at least -- exposed as Qt properties of the widgets, so that a
+  style sheet (`qproperty-...`) can set them and so override the
+  setting. Whether "it" is the alpha alone, or every value of this entry,
+  is the build session's to ask if it matters.
+
+Where it touches, READ in the source, nothing run:
+- The tree's item background is a setting already:
+  `TreeParams` `ItemBackground` (a colour, default 0 = none) and
+  `ItemBackgroundPadding` (`src/Gui/TreeParams.py`, about line 137).
+- The 3D view's background: `View` `Simple`, `Gradient`,
+  `RadialGradient`, `BackgroundColor`, `BackgroundColor2` to `4`
+  (`src/Gui/ViewParams.py`, about lines 878 to 902).
+- The overlay style sheets carry the alternate row colour today, a fixed
+  one each: `src/Gui/Stylesheets/overlay/Dark.qss` and `Dark-Outline.qss`
+  `rgba(50,50,50,120)`, `Light.qss` `rgba(250,250,250,120)`.
+- The task panel shown in its view takes the overlay look from
+  `OverlayTabWidget::applyOverlayLook` (`src/Gui/TaskView/TaskPanelHost.cpp`).
+- Entry 30 is next to this: its one "Overlay" preset is the layout alone
+  and an overlay's look is the theme's (Dark, Light, Classic name the
+  overlay sheet); what this entry asks changes that look, and the four
+  choices of entry 30 still with the reporter are about the same sheets.
+
+**2026-10-12 16:36, a QUESTION from the build session on point 1, put to the
+reporter, NOT ANSWERED YET.** Point 1 is "when the panel is moved to
+overlay mode change its background to transparent". Read in the source and
+seen in pictures by the build session: an overlaid panel under the Dark
+and Light themes (overlay sheets `Dark-Outline.qss`, `Light-Outline.qss`)
+is ALREADY see-through while the pointer is elsewhere. What turns solid
+grey is the panel that has the pointer or the keyboard focus; it stays
+see-through there only with the eye button ("transparent") pressed. So
+which is asked:
+- (i) the panel stays transparent also while hovered or focused, the item
+  backgrounds being all that backs the text in both states; or
+- (ii) something else that is seen as not transparent now -- and then
+  which panel, in which state.
+The build session goes on with points 2 to 4 and the two settings
+meanwhile and leaves the hovered state as it is until this is answered.
+By its plan entry 69 comes after the stage that follows entry 76.
+
+**2026-10-12 17:07, the reporter answers the question on point 1 -- said
+to the build session, the note-taker did not hear it; as the build
+session's message of about 17:59 and its log have it:** "overlay has a
+setting, 'transparent mode' to control this behavior, but right now it
+seems borken, fix it"
+
+The build session's reading, from its message: point 1 is that the dock's
+transparent mode does not keep a hovered panel see-through -- to be found
+and fixed. Not looked into yet; a probe is written.
+
+The note-taker's reading, written 18:06:
+- So of the two ways of the question it is neither (i) as a new rule nor
+  a new look: the setting that decides it is there already, and the
+  DEFECT is that it does not work now.
+- Which setting "transparent mode" is, is not named by its key; the
+  build session's note of 16:36 names the title's eye button
+  ("transparent"). NOT said: in which state the reporter sees it broken
+  -- with the mode on a panel still turns solid, or another way.
+
+State, from the build session: entry 69 is IN WORK, NOT in the tree and
+NOT in the stage of 17:52. Points 2 to 4 and the two settings are
+written in a second working copy (`D:\works\sw\fcad-wt`), not built.
+
+**2026-10-12 18:57: in the main tree, uncommitted, in a build; a DEFECT of
+the see-through look found -- whether it is the one the reporter meant is
+NOT known.** From the build session's message of 18:57, written here 18:59.
+- The work of the second working copy is in the main tree now,
+  uncommitted, in the build started 18:44 ("about an hour").
+- FOUND and reproduced on the STAGED copy, Dark theme: of the docks put
+  into overlays together, all but the tree view stay SOLID -- the
+  property view, the selection view, the transaction log -- until the
+  pointer has been in the overlay and out again, or the eye is pressed.
+  The see-through look was given only to the widgets an overlay held at
+  the moment its mode was set. A fix is written
+  (`OverlayTabWidget::addWidget`), in the build.
+- The transparent mode ITSELF the build session could NOT see broken:
+  with the eye on, a dock with the focus keeps its see-through look, on
+  a first session and after a restart, under Dark and Light.
+- So whether the defect above is what the reporter meant at 17:07 is NOT
+  known. The build session's QUESTION for the reporter, for the case
+  that it is still wrong on the next stage: which panel, the eye pressed
+  or not, the pointer over it or not.
+
+**2026-10-12 21:03: DONE `bbe8525de7` but for the reporter's point 1;
+local, NOT pushed, NOT staged.** From the build session's message headed "state at 21:05", received 21:03,
+written here 21:04.
+- After the fix no dock is solid when docks are put into overlays
+  together (its restart probe, Dark, on the build of 20:30).
+- Its own test, new: `overlay-see-through.py`, 58 claims, no FAIL;
+  `overlay-preset-follows-the-theme.py` 45, no FAIL. In the test the
+  property view's alternate rows were counted by position, wrong where
+  rows differ in height; counted by row now.
+- Point 1 as before: the build session could NOT see the transparent
+  mode itself broken. Its QUESTION for the reporter stands, for the case
+  that it is still wrong on the next stage: which panel, the eye pressed
+  or not, the pointer over it or not.
+- Read from the commit by the note-taker, nothing run: `bbe8525de7`,
+  "Gui: an overlaid panel is see-through at once, its items backed in
+  the 3D view's colour", 17 files. What of points 2 to 4 and of the two
+  settings is in it, and under which names, is not in the message; the
+  build session's log is the place for it.
+
+**2026-10-13 09:54, the reporter, a question on the copy staged 09:36:**
+"question, how does the overlay opacity fix done. why I am not getting it
+with my current configuration in staged copy"
+
+How it was done, from the commit `bbe8525de7` (its message, read by the
+note-taker):
+- Two new settings, `View/DockOverlayThemeItemColor` (on) and
+  `View/DockOverlayAlpha` (150), on the preference page with the other
+  overlay settings.
+- An item of an OVERLAID tree view and a row of an overlaid property
+  view are painted by the program with the 3D view's background colour
+  (the first colour of a gradient) at that opacity; what has no item is
+  left clear. `TreeWidget` and `PropertyEditor` have the properties
+  `overlayItemBackground` and `overlayAlpha` for a style sheet.
+- A task panel's ground is a RULE the program writes from the settings
+  (the theme's `DialogBackgroundColor` at that opacity) and puts IN
+  FRONT of the overlay style sheet -- "so a sheet that states its own
+  still wins". The two rules `Dark-Outline.qss` and `Light-Outline.qss`
+  carried for it were taken out.
+- A defect fixed on the way: docks put into overlays together stayed
+  solid, all but the first.
+
+READ by the note-taker in the reporter's configuration
+(`%APPDATA%\FreeCAD\user.cfg`, dated 2026-10-13 09:47), nothing run and
+nothing changed:
+- `MainWindow`: `Theme` "Dark", `ColorScheme` "Dark", `StyleSheet`
+  "FreeCAD.qss", **`OverlayActiveStyleSheet` "Dark_overlay.qss"**.
+- `View`: neither `DockOverlayThemeItemColor` nor `DockOverlayAlpha` is
+  there, so both are at their defaults, on and 150.
+  `DockOverlayAutoView` 1.
+- The 3D view's background: `RadialGradient` 1, `BackgroundColor2` a
+  grey of 124, `BackgroundColor3` a grey of 60. The tree view's own
+  `ItemBackground`: a grey of 74 at alpha 150.
+- `OverlayLeft` and `OverlayTop` have `Transparent` 1, `OverlayRight` 0.
+
+The note-taker's reading of why, from the source, NOT shown by a run:
+1. THE SHEET. With no overlay sheet named, the program takes
+   `Dark-Outline.qss` or `Light-Outline.qss`; the change was made on
+   those two, and its test `tests/gui/overlay-see-through.py` names no
+   sheet, so it ran on those two. The reporter's configuration names
+   `Dark_overlay.qss`, which the commit did not touch (last changed
+   2023). That sheet states
+   `QSint--ActionGroup QFrame[class="content"] { background-color: #444444; }`
+   -- a solid ground for the task panel, and by the change's own rule
+   the sheet's wins over the settings'. So the task panel at alpha 150
+   is NOT to be had with this sheet. The same selector is stated once
+   in each of the other four sheets of that family
+   (`Darker_overlay.qss`, `Dark-Modern_overlay.qss`,
+   `Light_overlay.qss`, `Light-Modern_overlay.qss`) -- counted by the
+   note-taker, their colours not read.
+2. NOT determined by reading: what the ground of a tree view or a
+   property view is under `Dark_overlay.qss`; whether the items' backing
+   is seen there.
+3. THE COLOUR, where it does work: with the follow-the-theme setting on
+   and a radial gradient, the code takes `BackgroundColor2` -- in this
+   configuration the LIGHTER of the two (124 against 60), where the
+   tree's own stored item background is a grey of 74. The reporter's
+   first sentence said "the darker one if it's gradient"; the answer b
+   of 2026-10-12 15:21 said "the first color". In this configuration the
+   two are not the same colour.
+4. The items are backed only while the panel is in its see-through
+   state; `OverlayRight` has its transparent mode off, so with the
+   pointer in it that panel is solid as before.
+
+NOT ANSWERED YET, for the reporter:
+a. WHAT is seen, and on which panel: a task panel that is solid; a tree
+   or property view whose empty part is not clear; items with no
+   backing; or the backing in a colour not expected?
+b. Should the five `*_overlay.qss` sheets follow the two settings as the
+   two Outline sheets do (their own task panel colour taken out)? The
+   note-taker's guess: yes. Until then a try by hand: the overlay style
+   sheet in the Preferences set to no sheet of its own (the key
+   `MainWindow/OverlayActiveStyleSheet` empty), which gives the Outline
+   sheet.
+The colour point 3 is for the reporter to say too: the first colour as
+answered, or the darker as first written.
+
+**2026-10-13 about 10:04, the reporter found the way out; and the build
+session MEASURED the reporter's configuration.** From the build session's message of 2026-10-13 10:06, written here 10:05.
+- The reporter, typed to the build session about 10:04 -- the note-taker
+  did not hear it: "I just switch the theme through tool -> preset
+  configurations, and it back to normal. even if switching back the
+  previous theme also work. so the residue stylesheet needs re-apply of
+  the theme pack".
+- MEASURED by the build session 09:57 to 10:03 on the dev build (the
+  code of the stage of 09:36) with a COPY of the reporter's `user.cfg`
+  as the seed; "their real file not touched":
+  - The settings as the note-taker read them above.
+  - Under `Dark_overlay.qss`: a tree item is backed by (124,124,124) at
+    alpha 150, the tree below its items is clear; the property rows are
+    (49,49,49,150) and (124,124,124,150) in turn -- "so the item backing
+    of `bbe8525de7` IS there under that sheet".
+  - But OverlayRight (the Task View alone, its eye off) painted by
+    itself is 98% SOLID, (25,25,25,255); OverlayLeft (tree and property
+    view, eye on) is 47% solid, 3% part, 50% clear: "the property
+    view's rows lie on a solid ground of that sheet".
+  - `OverlayActiveStyleSheet` set to `Dark-Outline.qss` in the same
+    session: OverlayRight 100% clear; OverlayLeft 7% solid, 40% part,
+    52% clear. Set back: as before.
+- Its conclusion: the note-taker's reading 1 above "stands and is wider
+  than the task panel: `Dark_overlay.qss` leaves grounds solid that the
+  Outline sheets clear". The note-taker's point 2 ("not determined") is
+  answered by the measurement: the items ARE backed under that sheet.
+- WHY the reporter's configuration named that sheet: "Dark.cfg named
+  `Dark_overlay.qss` until entry 30 (2026-10-10; its comment says so); a
+  theme is written when it is applied, so a configuration themed before
+  that keeps the old name until the theme is applied again -- which is
+  what the reporter did."
+- A correction of the build session's by itself: at 09:56 it told the
+  reporter the see-through look "comes from the overlay stylesheet"
+  before measuring; "measured, the item backing does not depend on the
+  sheet, the panel grounds do".
+- PUT to the reporter by the build session, NOT ANSWERED, not started: a
+  one-time migration at start-up -- a configuration with the theme Dark
+  or Light and the overlay sheet that theme USED to name is given the
+  one it names now.
+- NOT ANSWERED still, the note-taker's: point b (should the five
+  `*_overlay.qss` sheets follow the two settings), and the colour (the
+  first colour of the gradient as answered -- the lighter, 124, in this
+  configuration -- or the darker as first written). Point a (what is
+  seen) is overtaken by the reporter's own finding.
+
+## 70. The UI preference page: "Apply the setting above to every view at once" has a wrong label and should be a button -- DONE `22ece75a08`, STAGED 2026-10-12 17:52, pushed, both points answered 2026-10-12 15:35
+
+**2026-10-12 15:25, the reporter:** "new defect. the UI preference page, the
+setting label is wrong for 'Apply the setting above to every view at once'.
+make it a button instead, with label some thing like 'apply to live views'"
+
+The note-taker's reading:
+- On the UI page of the preferences, the row under "Task panels in their
+  views" is shown as a check box with a label that is wrong. The
+  reporter names the row by its tool tip's first words.
+- Asked: a BUTTON in its place, labelled something like "Apply to live
+  views" -- an action done once when pressed, not a state kept.
+
+Which row it is, READ in the source, nothing run:
+- `View/TaskPanelInViewAll`, a boolean, off by default
+  (`src/Gui/ViewParams.py`, about line 388). Its TITLE -- the label the
+  page shows -- is "... and the panels that are open"; its tool tip is
+  "Apply the setting above to every view at once: the panels that are
+  open move, and a view's own choice of place is given up."
+- It follows `View/TaskPanelInView` ("Task panels in their views") in
+  the page's list (`src/Gui/PreferencePages/DlgSettingsUI.py`, line 55).
+- So the label reads as the tail of the row above and says nothing by
+  itself; that is the note-taker's guess at what "wrong" means, NOT the
+  reporter's words.
+
+NOT said, the note-taker's count:
+a. What the reporter SEES as the label: "... and the panels that are
+   open", or something else (cut off, or another row's text)? If it is
+   something else there is a second defect here.
+b. As a button it holds no state: does the stored setting go away, the
+   press acting on the views open at that moment and nothing more? And
+   does the press act at once, or when the dialog's OK or Apply is
+   pressed? ("apply to live views" reads as: at once.)
+
+Near it: entry 63 has a button "Apply all" for the display settings of a
+view; the same word for the same kind of act may be wanted. Not asked.
+
+**2026-10-12 15:35, the reporter answers the two points:** "entry 70, the
+label is ellipsed strangely as '...and the panels that are open'. button
+shall commit relevant settings (in case auto apply is not on) and then
+apply to views"
+
+The note-taker's reading:
+- a. What is seen is '...and the panels that are open'. That IS the
+  setting's title as it is written in the source ("... and the panels
+  that are open", with the three dots in it on purpose, to read on from
+  the row above) -- so nothing is cut off by the page and there is no
+  second defect; the title itself is what reads wrongly. (Read in
+  `src/Gui/ViewParams.py`, nothing run.)
+- b. The button, when pressed: FIRST commits the relevant settings --
+  needed when auto apply ("Apply preferences at once",
+  `General/AutoApplyPreference`, entry 71) is off, since the value in
+  the row above is then not stored yet -- and THEN applies to the views.
+  So it acts at once, on the press.
+- The note-taker's count, not said: "relevant settings" is read as the
+  row above, "Task panels in their views" (`View/TaskPanelInView`),
+  and whatever else the press goes by; and a button keeps no state, so
+  the stored boolean `View/TaskPanelInViewAll` would have no use left --
+  whether it is removed is the build session's to say.
+
+**2026-10-12 16:36, from the build session: IN WORK.** From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- The check box is gone, and `View/TaskPanelInViewAll` is REMOVED as a
+  setting -- the build session's choice, which the entry had left to it.
+- A button "Apply to live views" beside "Task panels in their views":
+  it stores the setting and applies it to the views.
+- The same from Python: `Control.applyPlaceToViews()`.
+
+**2026-10-12 18:06: DONE `22ece75a08`, STAGED 17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- As reported in work at 16:36: the check box and its setting are gone
+  (the build session's choice); "Apply to live views" beside "Task
+  panels in their views" stores that setting and moves the open panels;
+  `Control.applyPlaceToViews()`.
+- For the reporter to confirm on the staged copy.
+
+**2026-10-12 18:57: a test found the setting's text too long; shortened
+`97e1ee791d`, local, not staged.** From the build session's message of 18:57, written here 18:59.
+- ctest on the staged build, 954 of 955; the one,
+  `testOmniSearch::test_everySettingIsDocumentedBriefly`: "over 400
+  characters: Gui::ViewParams::TaskPanelInView (495)".
+- The text is shortened; nothing of what the setting does is changed, by
+  the commit's title ("the text of View/TaskPanelInView is under 400
+  characters again").
+
+## 71. The preferences dialog: Enter in an edit box dismisses the dialog instead of committing that setting -- FIXED `93b08fd472`, STAGED 2026-10-12 17:52, pushed, the three points answered 2026-10-12 15:29
+
+**2026-10-12 15:26, the reporter** (sent right after entry 70, while that
+one was being written down): "New defect, also press enter in an edit box
+in preference page shall only commit that setting instead of dismiss the
+preference dialog"
+
+The note-taker's reading:
+- Today: with the cursor in an edit box of a preference page, Enter
+  closes the preferences dialog (as OK would).
+- Asked: Enter commits the value of THAT box and the dialog stays open.
+- "also": said in one breath with entry 70, which is about the UI page;
+  the note-taker takes this one to be about every page, not that page
+  alone.
+
+READ in the source, nothing run -- a guess at the cause:
+- `src/Gui/DlgPreferencesImp.cpp` has no handling of the Enter key of
+  its own, so the key takes Qt's usual way in a dialog: it presses the
+  dialog's default button, which is OK.
+
+NOT said, the note-taker's count:
+a. "commit that setting": the value taken by the box (as on leaving it),
+   to be SAVED when OK or Apply is pressed as now -- or written to the
+   settings at once, on the key? The two differ when the dialog is then
+   cancelled.
+b. Which boxes: text fields and number boxes (spin boxes, quantity
+   boxes) alike, and the search box of the dialog?
+c. Does anything in the dialog still close it on Enter -- the key with
+   the focus on the OK button itself, as is usual?
+
+**2026-10-12 15:29, the reporter answers the three points:** "a, commit
+only apply now option is on, always do nothing. b. yes, and what is the
+dialog search box? c, yes"
+
+The note-taker's reading, by letter:
+- a. Enter in an edit box COMMITS the value only when the "apply now"
+  option is on; with the option off the key does nothing. In neither
+  case does it close the dialog. This is a READING of "commit only apply
+  now option is on, always do nothing" and not the reporter's words;
+  "always do nothing" may also be meant as "and never anything else".
+  The option, read in the source, nothing run: `General/AutoApplyPreference`,
+  "Apply preferences at once", ON by default (`src/Gui/GeneralParams.py`,
+  about line 72: "Apply each change made in the Preferences dialog as it
+  is made, without Apply or OK. When off a change is stored when Apply or
+  OK is pressed."); its check box is on the General page
+  (`DlgSettingsGeneral.ui`).
+- b. Yes: text fields and number boxes alike.
+- b, the reporter's question back, "what is the dialog search box?": the
+  note-taker's MISTAKE. The preferences dialog of this program has NO
+  search box -- its form (`src/Gui/DlgPreferences.ui`) holds the list of
+  pages, Reset, the header, the pages and the button box, nothing more.
+  The note-taker wrote the point from memory of another FreeCAD's
+  dialog and had not looked. The words "and the search box of the
+  dialog" in point b above are WITHDRAWN. Settings are searched from the
+  omni search here, which is not part of this entry.
+- c. Yes: Enter with the focus on the OK button still closes the dialog.
+
+**2026-10-12 15:33, the reporter, on point a:** "a, I mean commit only
+'auto apply' option is on, else do nothing."
+
+So the reading above HOLDS and is the reporter's own now: Enter in an edit
+box commits the value when the auto apply option ("Apply preferences at
+once", `General/AutoApplyPreference`) is on, and does nothing when it is
+off; the dialog is not closed by it either way. Nothing of this entry is
+left unanswered.
+
+**2026-10-12 16:36, from the build session: IN WORK.** From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- Reproduced by the entry's test on the OLD build: Return in the author
+  field closed the dialog.
+- The fix is in `DlgPreferencesImp::keyPressEvent`.
+
+**2026-10-12 18:06: FIXED `93b08fd472`, STAGED 17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- The dialog keeps Return from an edit box. The box stores at once only
+  with "Apply preferences at once" on, a tenth of a second after the
+  key.
+- On the staged build: `preferences-enter-in-an-edit-box.py`, 12 claims,
+  no FAIL.
+- For the reporter to confirm on the staged copy.
+
+## 72. New defaults: the selected line's width multiplier 1, the selected point's size multiplier 1.5 (a change request) -- DONE `22ece75a08`, STAGED 2026-10-12 17:52, pushed
+
+**2026-10-12 15:36, the reporter** (sent while entry 70's answers were
+being written down): "New request. change default 'SelectionLinkThicken'
+to 1, and default 'SelectionPointScale' to 1.5"
+
+The note-taker's reading, with the settings READ in the source
+(`src/Gui/ViewParams.py`, about lines 278 to 290), nothing run:
+- 'SelectionLinkThicken': no setting of that name exists. The one meant
+  is taken to be `View/SelectionLineThicken` ("Line width multiplier",
+  the factor a selected line is widened by), default 1.5 today -- to
+  become 1, which is: a selected line is no wider than it was. "Link"
+  for "Line" is the note-taker's reading of a slip, NOT confirmed.
+- `View/SelectionPointScale` ("Point size multiplier", the factor a
+  selected point is enlarged by; at zero the line's factor is used),
+  default 2.5 today -- to become 1.5.
+- Beside them, not named by the reporter and so not asked to change:
+  `SelectionLineMaxWidth` (4.0) and `SelectionPointMaxSize` (6.0), the
+  limits the two factors work under.
+
+**2026-10-12 15:43, the reporter, on the name:** "yes SelectionLineThicken"
+
+So the setting is `View/SelectionLineThicken`, default 1.5 -> 1; the
+slip is settled. Points a and b below are still NOT ANSWERED.
+
+NOT said, the note-taker's count:
+a. A changed default reaches only who has not set the value: the
+   reporter's own configuration, and a theme or preset that writes one of
+   the two, keep what they have. Is a theme to be changed with it? (Not
+   looked up whether any theme writes them.)
+b. The browser viewer, if it carries defaults of its own for the two.
+
+**2026-10-12 16:36, from the build session: IN WORK.** From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- The two defaults are changed: `SelectionLineThicken` 1.0,
+  `SelectionPointScale` 1.5.
+- Points a and b: no theme, no preset and not the browser viewer names
+  either setting, so there is nothing for the reporter to decide there.
+
+**2026-10-12 18:06: DONE `22ece75a08`, STAGED 17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- The defaults are 1.0 and 1.5.
+- NOT finished: `selection-on-top-hidden-edges.py` then fails two claims
+  of the highlight colour on the visible edges; NOT looked into, "most
+  likely the thinner line the default now gives" (the build session's
+  guess).
+
+**2026-10-12 18:57: the two failing claims were the TEST's, not the
+drawing; `846d40819a`, local.** From the build session's message of 18:57, written here 18:59.
+- A two pixel line, half of it behind the face beside an outline edge,
+  smoothed by the render engine: the test asked every visible edge to be
+  as strong as the strongest.
+- `selection-on-top-hidden-edges.py` 18 of 18 now, and the hidden edges'
+  claims run under the render engine too, 0.44 to 0.48.
+- Nothing of the two defaults is changed by it.
+
+## 73. The close button, the "toggle panel in view" button and the overlay title buttons do not follow a dark or light theme; the toggle button shows with no view-owned task panel -- DONE `22ece75a08`, STAGED 2026-10-12 17:52, pushed; the Dark glyphs a dim grey in that stage, drawn white `2d945c8268`, its test 44 of 44, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52, both points answered 2026-10-12 15:49
+
+**2026-10-12 15:44, the reporter:** "new defect, the close button and toggle
+panel in view button should be dark/light theme aware. also, when there is
+no view owned task panel, the toggle button show be hidden"
+
+**2026-10-12 15:45, the reporter adds** (sent while the note above was being
+written down): "also check overlay title buttons, make them dark/light aware
+too"
+
+The note-taker's reading, three things:
+1. The close button and the button that toggles a task panel into its
+   view are drawn the same under a dark and a light theme, so under one
+   of the two they are hard to see; they shall follow the theme.
+2. The toggle button is shown when no task panel is owned by a view; it
+   shall be hidden then.
+3. The title buttons of an overlay panel: to be CHECKED for the same, and
+   made to follow a dark or light theme too.
+
+NOT said, the note-taker's count:
+a. WHERE the two buttons of point 1 are: on the title bar of the Tasks
+   panel while it is docked (not an overlay) -- the note-taker's guess,
+   since point 3 names the overlay's title buttons as another place -- or
+   on the header of a task panel shown in its view? And under which
+   theme they are the hard ones to see.
+b. Point 2, "no view owned task panel": hidden when no task panel is open
+   at all, or when the panel that is open belongs to no view (a panel
+   not tied to a view)? Both, by the note-taker's reading.
+
+**2026-10-12 15:49, the reporter answers the two points:** "a, the close
+button in panels docked to main window. b, there can be multiple page in
+task panel, some are not owned by any view (e.g. PartDesign task
+watchers). if no view owned panels there, then no show in view toggle
+button"
+
+The note-taker's reading:
+- a. The close button is the one on the title bar of a panel DOCKED to
+  the main window -- every such panel, not the Tasks panel alone. The
+  note-taker's guess of the place was right as far as "docked, not an
+  overlay". By the source read above the toggle button sits on the title
+  bar of the dock that holds the Tasks panel; that it is the same title
+  bar the reporter means for it is the note-taker's reading, not said.
+- b. The task panel can hold SEVERAL pages at once, and some are owned
+  by no view -- the reporter's example: PartDesign's task watchers. The
+  rule asked: the toggle button is shown only while at least one page
+  there is owned by a view; with none, no button. So a task panel that
+  is open but holds watcher pages only shows no toggle button.
+- Still not said: under WHICH theme the buttons are the hard ones to see.
+  It does not change what is asked -- they follow the theme either way.
+
+READ in the source, nothing run:
+- The button "Show this task panel in its view" is `_actTaskHost` of the
+  overlay manager (`src/Gui/OverlayManager.cpp`, about lines 498 to 530,
+  1074): it is put in front of the Overlay, Float and Close buttons on
+  the title bar of the dock that holds the Tasks panel (`_taskActions`).
+  Nothing in what was read hides it when there is no panel to send.
+- The icons are set in code from ONE file each, whatever the theme:
+  `qss:overlay/close.svg`, `float.svg`, `overlay.svg`, `taskhost.svg`
+  (`refreshIcons()`, about line 526); the header of a panel in its view
+  takes `qss:overlay/mode.svg` and `taskhost.svg`
+  (`src/Gui/TaskView/TaskPanelHost.cpp`, about lines 650 and 664).
+- `src/Gui/Stylesheets/overlay` has light twins for some icons
+  (`close_light`, `close_lighter`, `float_light`, `mode_light`,
+  `overlay_light`, `taskshow_light`, `transparent_light`) and NONE for
+  `taskhost`, `autohide`, `edithide`, `editshow`; `Dark.qss` and
+  `Darker.qss` name `overlay/close_light.svg` for one close button.
+  Which button takes which, and by which rule, was not followed
+  through.
+- Entries 69 (the overlay's look) and 30 (the overlay preset, its look
+  the theme's) are about the same panels.
+
+**2026-10-12 16:36, from the build session: IN WORK.** From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- Seen in pictures BEFORE the fix, which answers "under which theme":
+  under Dark the close and panel buttons of a docked title were dark on
+  dark, and so were the eye, the gear and the close of an overlaid title.
+- The fix: the title buttons draw their glyph in the button's own text
+  colour; a property `iconColor` lets a style sheet override it.
+- The "in its view" button is shown only while the Tasks tab shows a
+  dialog a view owns.
+
+**2026-10-12 18:06: DONE `22ece75a08`, STAGED 17:52 -- its test has NOT
+passed.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- The title buttons' glyphs are drawn light under a dark theme, and an
+  overlay sheet states its own colour (`qproperty-iconColor`). The first
+  rule, the button's own palette colour, gave a dim grey and was
+  replaced.
+- The "in its view" button shows only while the Tasks tab shows a dialog
+  a view owns.
+- NOT finished: the test (`overlay-title-buttons-theme.py`) has not
+  passed -- its first measure took a button's edge for its ground, and
+  the measure written since has not run.
+- For the reporter to JUDGE on the staged copy: the look of the glyphs
+  under Dark.
+
+**2026-10-12 18:57: the Dark glyphs in the stage of 17:52 are a DIM GREY;
+drawn white now, `2d945c8268`, local, NOT built, NOT staged.** From the build session's message of 18:57, written here 18:59.
+- The rewritten test ran on the staged build: 43 of 44.
+- The cause: the icon files are black at half opacity, so the colour
+  given (#d0d0d0) ended 54 to 71 of 255 over a dark bar, where under
+  Light the glyphs are 59 to 120 darker than their bar.
+- They are drawn in WHITE under a dark theme now. Not built yet, so no
+  picture and no test result of it.
+- For the reporter: the title buttons seen on the staged copy under Dark
+  are the dim ones; the white ones come with the next stage.
+
+**2026-10-12 21:03: the white glyphs BUILT and tested; local, NOT staged.**
+From the build session's message headed "state at 21:05", received 21:03,
+written here 21:04.
+- `overlay-title-buttons-theme.py` 44 of 44 on the build of 20:30.
+- The glyphs are 66 to 104 of 255 lighter than a dark title bar now,
+  where they were 54 to 82.
+- The staged copy still has the dim ones.
+
+## 74. `Std_DrawStyle`: its new combo box overlaps the draw style selection; the command back to the plain list, the customized menu to a new command beside it -- DONE `7970f5b7d6`, STAGED 2026-10-12 17:52, pushed, the four points answered 2026-10-12 16:04
+
+**2026-10-12 15:58, the reporter:** "New defect/request, the Std_DrawStyle
+command, the newly added combo box overlaps with draw style selection. I
+want to restore the Std_DrawStyle command back to only show the draw style
+list selection without any customized menu items. Add a new
+Std_DsiplayStyle command to show the customized menu (remove the draw style
+combo), put it beside the Std_DrawStyle in the toolbar"
+
+The note-taker's reading:
+- The DEFECT: in the menu of `Std_DrawStyle` as entry 63 made it, the
+  combo box added there lies over the list of draw styles.
+- The REQUEST, in place of mending the menu:
+  1. `Std_DrawStyle` goes BACK to what it was: the list of draw styles to
+     pick from, with none of the customized items.
+  2. A NEW command carries the customized menu of entry 63 (the display
+     style, the anti-aliasing, the lights and the rest), WITHOUT the draw
+     style combo, which the plain command beside it makes needless.
+  3. The new command stands beside `Std_DrawStyle` in the toolbar.
+- The name: the reporter wrote "Std_DsiplayStyle"; read as
+  `Std_DisplayStyle`, a slip of two letters. NOT confirmed.
+
+This turns part of entry 63, which was the reporter's own request of
+2026-10-09 (by that entry's heading: a new icon for `Std_DrawStyle`, and
+its menu takes the display style, the anti-aliasing and the lights),
+STAGED 2026-10-10 09:44. What entry 63 built is kept and moved; it is not
+undone.
+
+NOT said, the note-taker's count:
+a. The name: `Std_DisplayStyle`?
+b. The ICONS: entry 63 gave `Std_DrawStyle` a new icon, the split cube
+   "for now". Does `Std_DrawStyle` take its old icon back (the icon of
+   the style in use), and the new command the split cube?
+c. Which side of `Std_DrawStyle` in the toolbar, and in the View menu
+   and the view's context menu too, where `Std_DrawStyle` also stands?
+d. The first sentence's overlap: is it still to be looked into for its
+   own sake (it may be in the new command's menu too, whatever drew the
+   combo over its neighbours), or does it go with the combo?
+
+**2026-10-12 16:04, the reporter answers the four points:** "entry 74. a,
+Std_DisplayStyle. b, yes. c, Std_DisplayStyle on the right side of
+Std_DrawStyle, yes view menu too. d, no"
+
+The note-taker's reading, by letter:
+- a. The new command is `Std_DisplayStyle`. The slip is settled.
+- b. Yes: `Std_DrawStyle` takes its OLD icon back (the icon of the style
+  in use), and `Std_DisplayStyle` takes the split cube of entry 63.
+- c. `Std_DisplayStyle` stands to the RIGHT of `Std_DrawStyle` in the
+  toolbar, and it goes into the View menu too. The view's CONTEXT menu,
+  the third place the question named, is not in the answer -- the
+  note-taker's count: not said, neither yes nor no.
+- d. No: the overlap is not looked into for its own sake; it goes with
+  the combo box.
+
+READ in the source, nothing run:
+- `StdCmdDrawStyle` is in `src/Gui/CommandView.cpp` (about line 785); no
+  command named `Std_DisplayStyle` exists today.
+- `Std_DrawStyle` is placed in three lists of `src/Gui/Workbench.cpp`
+  (about lines 650, 742 and 884): a context menu, the View menu and the
+  View toolbar.
+- Entry 63's points still with the reporter (the orange arrow, what
+  "Apply all" brings, the icon's two directions) are about the menu that
+  moves; they move with it.
+
+**2026-10-12 16:36, from the build session: IN WORK, done as answered.**
+From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- `Std_DrawStyle`: the plain list, with the icon of the style in use.
+- `Std_DisplayStyle`: the anti-aliasing, the shading and the lights; to
+  the right of `Std_DrawStyle` in the tool bar and after it in the View
+  menu.
+- The view's CONTEXT menu keeps `Std_DrawStyle` alone -- the build
+  session's choice; the reporter's answer did not name that menu. For
+  the reporter to say if it is wanted otherwise.
+
+**2026-10-12 16:41, the reporter, on the context menu:** "entry 74, put the
+std_displaystyle in context menu also"
+
+So the build session's choice is overruled: `Std_DisplayStyle` goes into
+the view's context menu too, with `Std_DrawStyle`. The point the answer
+of 16:04 left unsaid is settled; nothing of this entry is left
+unanswered.
+
+**2026-10-12 18:06: DONE `7970f5b7d6`, STAGED 17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- `Std_DrawStyle`: the plain list, its button the active style's icon.
+- `Std_DisplayStyle` (anti-aliasing, shading, lights; the split cube):
+  right of it in the tool bar, after it in the View menu AND in the
+  view's context menu, as the reporter said at 16:41.
+- On the staged build: `display-style-menu.py` 37 of 38 (a press on the
+  light handle selected the box; it passed one run earlier), not looked
+  into.
+- For the reporter to confirm on the staged copy.
+
+## 75. The corner coordinate system (`CornerCoordSystem`; first named `ShowAxisCross`) off by default; the navigation cube's axis cross drawn over the cube (a change request) -- DONE `22ece75a08`, STAGED 2026-10-12 17:52, pushed, all three points answered 2026-10-12 16:13; a and b 16:07
+
+**2026-10-12 16:01, the reporter:** "new request, make ShowAxisCross default
+false. Make axis cross in navicube show on top of the cube so it can be
+seen clearly"
+
+The note-taker's reading:
+1. The default of `ShowAxisCross` becomes false.
+2. The axes drawn with the navigation cube are drawn ON TOP of the cube --
+   not hidden by its faces -- so that they are seen clearly.
+
+READ in the source, nothing run -- and the first point does not fit what
+was read:
+- `View/ShowAxisCross` ("Show axis cross": the axis cross at the origin
+  of the 3D views) has the default FALSE already (`src/Gui/ViewParams.py`,
+  about line 841), and the one place read that asks for it falls back to
+  that default (`src/Gui/CommandDoc.cpp`, about line 703).
+- The setting next to it that IS on by default: `View/CornerCoordSystem`
+  ("Show coordinate system in the corner": the small coordinate system
+  in the corner of every 3D view), default TRUE (about line 835).
+- The cube's own axes: `NaviCube/ShowCS` ("Show coordinate system on the
+  cube": the X, Y and Z axes at a corner of the navigation cube), default
+  TRUE (`src/Gui/NaviCubeParams.py`, about line 58).
+- The preference pack template for the view
+  (`src/Gui/PreferencePackTemplates/View.cfg`) writes
+  `CornerCoordSystem` 1 and `ShowAxisCross` 0.
+- The reporter's own configuration (`%APPDATA%\FreeCAD\user.cfg`, as
+  saved 15:41, only read): `CornerCoordSystem` 1, `ShowAxisCross` 0. So
+  no axis cross at the origin is switched on there; what the reporter
+  sees beside the cube is the corner's coordinate system.
+
+NOT said, the note-taker's count:
+a. WHICH setting is to be off by default. The note-taker's guess, NOT the
+   reporter's words: the one in the corner, `CornerCoordSystem` -- with
+   the cube's axes made clear by point 2 the corner's become a second
+   copy of the same thing. Or is an axis cross at the origin seen in the
+   reporter's views although the default is off -- then something sets
+   it (a theme, a preset, the reporter's own configuration) and that is
+   another matter.
+b. "on top of the cube": the axes drawn over the cube's faces wherever
+   they pass behind them (never hidden), where they are now -- or the
+   axes MOVED, to stand above the cube?
+c. A changed default reaches only who has not set the value; a theme or
+   preset that writes it keeps its own.
+
+**2026-10-12 16:07, the reporter answers:** "entry 75. a, CornerCoordSystem
+off by default. b drawn over, stay where they are. c what do you mean"
+
+The note-taker's reading:
+- a. The setting to be off by default is `View/CornerCoordSystem`, the
+  small coordinate system in the corner of every 3D view. `ShowAxisCross`
+  of the first message is NOT changed (it is off already). The heading
+  and the row say so now.
+- b. The cube's axes are drawn OVER the cube's faces, never hidden by
+  them, and stay where they are.
+- c. The reporter asks what the point meant. As the note-taker put it
+  back to them: a default is what a setting is while nothing has stored
+  a value for it. The reporter's own configuration HAS a value stored,
+  `CornerCoordSystem` 1 (`%APPDATA%\FreeCAD\user.cfg`, only read), so
+  after the default is changed the corner's coordinate system stays ON
+  in the reporter's copy until it is switched off by hand or the
+  settings are reset. Of the bundled themes and presets NONE writes the
+  setting (searched `src/Gui/PreferencePacks`, nothing run); only the
+  template for packs a user saves lists it
+  (`src/Gui/PreferencePackTemplates/View.cfg`, value 1). So the point
+  comes down to one question, NOT ANSWERED YET: is the change of the
+  default enough, the reporter switching their own off by hand -- or is
+  something wanted that turns it off for a configuration that has it
+  stored as on?
+
+**2026-10-12 16:13, the reporter, on point c:** "change default is enough"
+
+So: the default of `View/CornerCoordSystem` changes and nothing more -- no
+migration, nothing that turns it off in a configuration that has it stored
+as on; the reporter switches their own off by hand. Nothing of this entry
+is left unanswered.
+
+**2026-10-12 16:36, from the build session: IN WORK.** From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- `View/CornerCoordSystem` is off by default, and in the preference pack
+  template too.
+- The cube's axes are drawn last with no depth test, in both drawing
+  paths.
+
+**2026-10-12 18:06: DONE `22ece75a08`, STAGED 17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- `View/CornerCoordSystem` off by default; a profile that stores it
+  keeps it.
+- The cube's axes drawn last, no depth test, both drawing paths: 59, 43
+  and 72 pixels of red, green and blue over the cube in isometric, none
+  with the axes off. `navicube-axes-over-the-cube.py`, 8 claims, no
+  FAIL.
+- For the reporter to confirm on the staged copy.
+
+## 76. An overlay panel at the navigation cube's side leaves room for the cube even where it covers no cube -- DONE `22ece75a08`, STAGED 2026-10-12 17:52, pushed; turned by the reporter 2026-10-12 16:18: no room left by a panel, the cube moves out of the way; its three points answered 16:20
+
+**2026-10-12 16:15, the reporter:** "new defect, any panel in overlay mode
+that is docked at the side of navicube leaves space for the navicube. this
+should only be on if the cube is actually blocked by the panel. For
+example, if now the panel is overlaying a techdraw page, then it should not
+leave any space"
+
+The note-taker's reading:
+- Today: an overlay panel on the side of the window where the navigation
+  cube's corner is, is cut short (or set in) by the size of the cube,
+  whatever lies under it.
+- Asked: the room is left ONLY when the panel would cover a cube that is
+  really there. The reporter's example: the panel lies over a TechDraw
+  page, which has no cube -- no room left.
+
+READ in the source, nothing run -- a guess at the cause:
+- `src/Gui/OverlayManager.cpp`, about lines 725 to 761: with
+  `DockOverlayCheckNaviCube` on ("Check Navigation Cube", on by default)
+  the corner to keep clear is first taken from the PREFERENCE
+  (`CornerNaviCube`); it is corrected -- to "none", or to that view's own
+  corner -- only when the active window IS a 3D view. With a TechDraw
+  page (or a spreadsheet) as the active window nothing corrects it, and
+  the room is left for a cube that is not there. That fits the
+  reporter's example.
+- The same lines go by the ACTIVE view alone: with several view cells
+  side by side, the room is left by the active view's cube and its
+  corner, and not by whether the panel lies over the cell whose cube it
+  would cover. So "actually blocked" asks for more than the fix of the
+  example: the cube's own rectangle on the screen against the panel's.
+
+NOT said, the note-taker's count:
+a. With view cells: a panel on the right, a 3D view in the left cell and
+   a TechDraw page in the right one -- no room, since the cube it could
+   cover is not under it? (That is what "actually blocked" says; asked
+   only because it is the dearer case to build.)
+b. When the answer changes while working -- another tab or cell made
+   active, a cell resized -- the panel changes its length at that
+   moment: wanted so?
+
+**2026-10-12 16:18, the reporter turns the request:** "Maybe change the other
+way. Do not leave space on overlay panel at all. Let navicube monitor any
+overlay panel (including in view panel) to move out of the way. Add a
+setting to enable that behavior, default true. remove the old panel leave
+space setting"
+
+The note-taker's reading:
+- The first form of this entry -- a panel leaves room only where it would
+  really cover a cube -- is REPLACED. The reporter's "Maybe" is kept as
+  said: put as a thought, with nothing after it that takes it back; the
+  note-taker takes it as the request now.
+- An overlay panel leaves NO room for the cube, ever.
+- The navigation cube watches the overlay panels -- the docks laid over
+  the view, and a task panel shown in its view too -- and MOVES out of
+  their way.
+- A NEW setting switches that behaviour, ON by default.
+- The OLD setting is removed: by the source, `DockOverlayCheckNaviCube`
+  ("Check Navigation Cube": "Leave space for Navigation Cube in dock
+  overlay", `src/Gui/OverlayParams.py`, about line 130), and with it the
+  room-leaving lines of `src/Gui/OverlayManager.cpp` read above. Read,
+  nothing run.
+- Points a and b above were about a panel changing its length; they FALL
+  AWAY with the first form.
+
+NOT said, the note-taker's count:
+c. WHERE the cube moves to: slid along its edge to just clear of the
+   panel, in the same corner -- the note-taker's guess -- or to another
+   corner?
+d. With the new setting OFF: the cube stays where it is and a panel
+   simply covers it?
+e. A panel that is there only for a moment -- an overlay that shows on
+   hover or hides itself, a see-through one the mouse passes through:
+   does the cube move for those too, and come back when they go?
+
+**2026-10-12 16:20, the reporter answers the three points:** "c, slide along
+the edge, same corner. d, yes. e, yes"
+
+The note-taker's reading:
+- c. The cube SLIDES along its edge until it is clear of the panel and
+  stays in the same corner.
+- d. Yes: with the new setting off the cube stays where it is and a
+  panel simply covers it.
+- e. Yes: the cube moves for a panel that is there only for a moment
+  too -- shown on hover, hiding itself, see-through -- and comes back
+  when the panel goes.
+Nothing of this entry is left unanswered.
+
+Near it: entry 68 is the same kind of thing from the other side (a task
+panel in its view keeping clear of an overlay), and entry 75 changes how
+the cube's axes are drawn.
+
+**2026-10-12 16:36, from the build session: IN WORK.** From the build session, 16:36; nothing of it is committed, the tree was
+building since 16:32, and no result of a test on the NEW build is in the
+message.
+- The docks leave no room; `DockOverlayCheckNaviCube` is removed.
+- The new setting: `View/DockOverlayMoveNaviCube`, on by default.
+- The cube slides along its edge clear of overlaid docks and of a task
+  panel over its view, and back.
+
+**2026-10-12 18:06: DONE `22ece75a08`, STAGED 17:52.** From the build session's message of about 17:59 and its log
+(`docs/HandsOnLog.md`, "The afternoon of 2026-10-12", `5de7d97293`);
+written here 18:06. STAGED 2026-10-12 17:52:24 at `22ece75a08`, PUSHED
+17:56.
+- As reported in work at 16:36: the docks leave no room,
+  `DockOverlayCheckNaviCube` is gone; `View/DockOverlayMoveNaviCube`, on
+  by default; the cube slides along its edge clear of docks and of a
+  task panel over its view, and back.
+- On the staged build: `navicube-clear-of-panels.py`, 16 claims, no
+  FAIL.
+- For the reporter to confirm on the staged copy.
+
+## 77. The Dark theme: the borders of many widgets are a dark colour that cannot be seen -- DONE `d25fa8539c`, STAGED 2026-10-12 17:52, pushed; for the reporter to look on the stage
+
+**2026-10-12 17:20, the reporter -- said to the build session, the
+note-taker did not hear it; as the build session's message of about 17:59
+and its log have it:** "check dark theme border color for various
+widget's. looks like many are style dark color which is invisible"
+
+The number is given by the note-taker, %(now)s; the build session did the
+work without one ("Dark borders" in its log).
+
+From the build session (`docs/HandsOnLog.md`, "The afternoon of
+2026-10-12", `5de7d97293`): DONE `d25fa8539c`, STAGED 2026-10-12 17:52:24
+at `22ece75a08`, pushed 17:56.
+- The Dark set's general border colour (`GeneralBorderColor`) was black
+  on grounds all but black; it takes the check boxes' grey.
+- One file is changed, `src/Gui/Stylesheets/parameters/Dark.yaml` (read
+  from the commit by the note-taker, nothing run).
+- Pictures: `..\dl\handson\2026-10-12\s1`, `g-darkborders-staged`.
+
+NOT said, the note-taker's count:
+a. Which widgets the reporter saw. The fix changes the one general
+   colour, so a widget that takes its border from it follows; one with
+   a border colour of its own would not. For the reporter to look on
+   the staged copy and name what is still not seen.
+b. The Light theme is not named.
+
+## 78. Retire the tree view's object search; Ctrl+F opens the omni search with "/ ", and in the property view with the current object's name and a dot (first said as "/prop ") (a change request) -- DONE `b70dab6401`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; the four points answered 2026-10-12 18:29
+
+**2026-10-12 18:01, the reporter** (sent while the stage of 17:52 was being
+written into this file): "new request, retire current tree view search
+object function. hook the ctrl+f shortcut to omni search / followed by
+space. also hook ctrl+f in property view to omni search /prop followed by
+space."
+
+The note-taker's reading:
+- The tree view's own search for an object is RETIRED: what Ctrl+F does
+  in the tree today.
+- Ctrl+F opens the omni search with "/ " -- a slash and a space --
+  already typed in. By the source that is the omni search's OBJECT mode.
+- In the property view Ctrl+F opens the omni search with "/prop " typed
+  in.
+
+READ in the source, nothing run:
+- The tree's search: `TreeWidget::keyPressEvent` (`src/Gui/Tree.cpp`,
+  about line 2451) takes the Find key (`QKeySequence::Find`, Ctrl+F) and
+  calls `onSearchObjects`; that shows `TreePanel`'s `searchBox`, a line
+  edit under the tree with the placeholder "Search" (about lines 5167 to
+  5240). The same from the tree's context menu, "Search..." (about lines
+  1204 and 1646). While typing, the item found gets a yellow background
+  (`itemSearch`, about line 1588); Return selects it.
+- The omni search: command `Std_OmniSearch`, shortcut "/"
+  (`src/Gui/CommandStd.cpp`, about line 1030). Its modes
+  (`OmniSearch::modePrefix`, `src/Gui/OmniSearch.cpp`, about line 62):
+  "/ " for "Documents, objects, sub-objects and properties", "/cmd " for
+  commands, "/param " for the application parameters.
+- There is NO "/prop" mode today: the keywords are "cmd" and "param"
+  alone (`OmniSearch::modeKeywords`). So "/prop " either asks for a NEW
+  mode or is typed into the object mode as a name beginning with "prop".
+- The property view takes no Ctrl+F today (no Find key in
+  `src/Gui/PropertyView.cpp` or `src/Gui/propertyeditor/PropertyEditor.cpp`).
+  The one other taker of the Find key in `src/Gui` is the text editor
+  (`TextEdit.cpp`).
+
+NOT said, the note-taker's count:
+a. "/prop": a NEW mode of the omni search -- and then searching what:
+   the properties of the object the property view shows (the note-taker's
+   guess), of every selected object, of any object? Or is something that
+   exists meant?
+b. WHERE Ctrl+F is hooked for "/ ": in the tree view alone, where the
+   key works today -- the note-taker's reading -- or in the whole main
+   window, as "/" is? The text editor has a Ctrl+F of its own.
+c. The "Search..." item of the tree's context menu: removed with the
+   function, or kept and opening the omni search too?
+d. What the old search did in the tree -- the found item marked while
+   typing, scrolled to, selected on Return: is the omni search as it is
+   today enough, or is anything of that to be kept?
+
+Near it: entry 62 (the omni search: the recent items before the three
+modes).
+
+**2026-10-12 18:29, the reporter answers the four points:** "Entry 78, a, no
+new mode, just launch omni search with pre typed text leads to the current
+object/document/view, ending with dot, so the list shows all the
+properties.  B, only applies to tree and property view. C, keep, trigger
+omni search. D, when launched by tree view, yes, auto scroll like before,
+set and clear item background as before."
+
+The note-taker's reading:
+- a. NO new mode. Ctrl+F in the property view opens the omni search with
+  text ALREADY TYPED: what leads to the thing the property view is
+  showing -- an object, a document or a view -- and a dot at its end, so
+  that the list under the box is all the properties of that thing. The
+  "/prop " of the first message is replaced by this; whether the typed
+  text begins with "/ " (the object mode's prefix) is not said and is the
+  builder's to choose so that it works.
+- b. Ctrl+F is hooked in the TREE VIEW and in the PROPERTY VIEW only --
+  not in the whole main window.
+- c. The "Search..." item of the tree's context menu is KEPT, and opens
+  the omni search.
+- d. When the omni search is opened FROM THE TREE VIEW (the key or the
+  menu item), the tree behaves as with the old search: it scrolls to the
+  item found by itself, and the item's background is set while it is the
+  one found and cleared after, as before. So of the old function it is
+  the search BOX under the tree that is retired, not what the tree shows
+  while searching.
+
+READ in the source, nothing run: the omni search resolves properties of
+an object, of a view provider, of a document and of a 3D view already --
+`src/Gui/OmniControl.cpp`, about lines 460 to 545, names the scopes
+"object", "view", "document" and "view3d". So a text that leads to each
+of the three should exist; what it is for each is not read here.
+
+NOT said, the note-taker's count -- smaller, none holds the work:
+e. The property view showing SEVERAL selected objects: the text leads to
+   which -- the first, the last selected, or nothing typed?
+f. Opened from the tree view, RETURN on a row: the old search selected
+   the item in the tree. Taken as: whatever the omni search does on
+   Return today, and the tree's mark cleared. Say if the old selection is
+   wanted.
+g. Opened another way (the "/" key, the tool bar): the tree is NOT
+   scrolled and marked -- the note-taker's reading of "when launched by
+   tree view".
+
+**2026-10-12 18:57, from the build session: IN WORK -- written in its
+second working copy, NOT built, not in the main tree.** From the build session's message of 18:57, written here 18:59.
+- Ctrl+F and "Search..." in a tree view open the omni search with "/ "
+  typed; the box scrolls and marks in the tree view it was opened from.
+  The tree panel's own search box is removed.
+- Ctrl+F in the property view types: for ONE selected object "/ Box." on
+  the Data tab and "/ Box.ViewObject." on the View tab; for SEVERAL
+  "/ ." and "/ .ViewObject."; with NOTHING selected "/ Doc#." and
+  "/ Doc#.ActiveView.". ("Box" and "Doc" standing for the names.)
+- Its choices on the note-taker's three points:
+  - e. Several objects: the leading dot -- the properties they share.
+  - f. Return: what the omni search does today.
+  - g. The tree is scrolled and marked HOWEVER the box was opened, "as
+    it already was -- only WHICH tree view is new". That is against the
+    note-taker's reading of "when launched by tree view" (only then);
+    by the build session the omni search did so before this entry. For
+    the reporter to say if it is wanted only when opened from the tree.
+
+**2026-10-12 21:03: DONE `b70dab6401`; local, NOT pushed, NOT staged.** From the build session's message headed "state at 21:05", received 21:03,
+written here 21:04.
+- Its own test, new: `omni-search-from-tree-and-property-view.py`, 18
+  claims, no FAIL; four other omni search tests with no FAIL.
+- Found by that test and fixed with it: the omni search opened on a
+  lone dot (several objects selected) looked the dot up in the tree and,
+  with the tree's "sync view" on, selected the first object in place of
+  them all.
+- Point g is as the build session chose at 18:57 (the tree scrolled and
+  marked however the box is opened); the reporter has not said
+  otherwise.
+
+## 79. A crash at the load of `scanner.FCStd` saved again by this version: the scene root's children change under a repaint -- FIXED `9b9a479164` 2026-10-12, NOT staged; the cause FOUND 22:09; which files CORRECTED 22:20: a file saved by a build with the merge of 2026-10-12, so by either stage of that day ("since 2026-10-03" withdrawn); FIXED `9b9a479164`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52
+
+**2026-10-12 21:03, from the build session** (its message headed "state at
+21:05"; found by it on entry 47, NOT reported by the reporter; the number
+is the note-taker's, written here 21:04):
+- One of three loads of `scanner.FCStd` as SAVED AGAIN by this build
+  died at 20:17: an access violation in Coin, `SoAction::traverse`
+  reading 0.
+- The stack and a dump are kept:
+  `..\dl\handson\2026-10-12\s1\g-j-resaved-2-dev\home\crash.log` and
+  `crash.dmp` (the folder as the build session names its evidence; the
+  note-taker has not opened them).
+- What the stack says: the restore of the view providers pumps events
+  between two objects (`Gui::Document::runDeferredRestoreSlice`, phase
+  one); a repaint of the 3D view comes in and computes the scene's
+  bounding box for its clipping planes; while it walks the scene root's
+  161 children the list gets SHORTER under it, and it reads past the end
+  at the 160th.
+- NOT found: WHO takes roots out of the scene root inside that walk --
+  it is not on the stack.
+- NOT reproduced since: seven loads under the debugger, none.
+- The build session's judgement: not from this evening's changes as far
+  as it can tell (the code on that path is older); and a file saved by
+  the new version is what every user file becomes.
+- Next, its plan: a detector is written -- it logs, with a call stack, a
+  root added to or taken out of a scene root during such a walk; its
+  build and sixteen loads are queued behind the Python suite.
+
+The note-taker's notes:
+- Near it: entry 47's crash on a close inside a restore slice (FIXED
+  `93fc6cd58a`) came from the same place, events run inside
+  `runDeferredRestoreSlice`; this one needs no close.
+- NOT known: whether it can happen with the ORIGINAL file, or with any
+  other; one crash in ten loads of one file is all there is.
+- Nothing is asked of the reporter here. If the staged copy dies at a
+  load, the time and the file are worth a note under this entry.
+
+**2026-10-12 22:09: the CAUSE IS FOUND; a fix is written, uncommitted, in a
+build that is running -- NOT tested yet.** From the build session's message headed "state at 22:12", received 22:09,
+written here 22:10.
+- How it was found: a detector built in -- it logs who takes a view
+  provider's root out of a scene root while a scene root walks its
+  children for a bounding box. It named the culprit on the FIRST load of
+  the re-saved file, 22:03.
+- The chain:
+  1. a repaint pumped by the restore asks for the scene's bounding box;
+  2. inside that walk the visual of a PartDesign feature is built on
+     demand (`SoFCCoordinate3::getBoundingBox` ->
+     `PartDesignGui::ViewProvider::updateVisual`) and reads
+     `SuppressedShape`, still parked from the load;
+  3. serving a parked shape sets the property and announces it;
+  4. `Gui::Document::slotChangedObject` answers by regrouping the view
+     provider's children (`handleChildren3D`), which takes the roots of
+     claimed children out of the scene root -- under the walk.
+- [WITHDRAWN by the build session 22:20, see the correction below; kept
+  as it was written:] Why the ORIGINAL `scanner.FCStd` never showed
+  it: a file saved before `SuppressedShape` was stored has nothing
+  parked there.
+- [WITHDRAWN 22:20, the same:] So: EVERY file saved by a build since the
+  suppression port (2026-10-03) can do it at its next load -- "one
+  load in a few here". This answers the note-taker's "NOT known"
+  above: the original file no, any file saved since, yes.
+- The fix: a regrouping asked for during such a walk is put on a list
+  and done by a queued call when the walk is over. To be shown by twelve
+  loads of the re-saved file writing no crash log.
+
+The note-taker's note: the staged copy of 17:52 is a build since
+2026-10-03, so by the above a file the reporter has saved with it, or
+with the stages before it since that date, can die at a load -- with a
+PartDesign feature in it, as far as the chain says. That conclusion is
+the note-taker's, not a sentence of the build session's. If it happens:
+the time and the file, under this entry.
+
+**2026-10-12 22:20, a CORRECTION from the build session: WHICH FILES are
+exposed.** From its messages of 22:20 and 22:21, written here 22:12. Its
+own words on the two sentences marked above: "WRONG in my message ... I
+had not looked in the files. I have now".
+- READ by it in three files: the original `scanner.FCStd` (saved
+  2026-10-06), the copy a build of 2026-10-11 saved, and the copy
+  tonight's build saved ALL carry `SuppressedShape` for their 126
+  PartDesign features. The first two name a FILE for it
+  (`file="Pad.SuppressedShape.brp"`); tonight's names a BLOB
+  (`hash="d483..."`), the form the merge of this morning brought
+  (`ffb143c047`, first staged 14:04).
+- Its READING of the code, "not shown by a run": a shape that names a
+  file is served by the restore's own slices before a view provider
+  exists; one that names a blob stays parked until something asks for
+  it, and the first to ask can be the visual built inside a scene walk
+  -- the chain that crashed.
+- So the exposure as it has it now: a file SAVED BY A BUILD THAT HAS THE
+  MERGE, at any later load, one load in a few here (1 of 3 at 20:17; the
+  detector fired on the first of the next).
+- The staged copies: YES, the stage of 17:52 (`22ece75a08`) is exposed,
+  and so is the stage of 14:04 (`4474fcb17e`) -- both have the merge.
+  The stages BEFORE 2026-10-12 are NOT exposed by this reading: they
+  save the file form.
+- For the reporter: a file saved on 2026-10-12 with either stage can die
+  at a load. It is NOT damaged -- the crash is in the display's restore;
+  the file loads when the timing falls the other way, and with the fix.
+- NOT shown: a crash on the staged copy itself. The TWO occurrences --
+  the crash of 20:17 and the detector's report of 22:03 -- are both on
+  tonight's dev builds (its 22:20 said "four"; corrected by it at 22:21).
+
+The note-taker's note of 22:10 just above said "the stages before it since
+that date" too: that part is WITHDRAWN with the build session's sentence;
+what holds of it is the staged copies of 2026-10-12, 14:04 and 17:52.
+
+**2026-10-12 23:17: FIXED `9b9a479164`; local, NOT pushed, NOT staged.** From the build session's message of 23:17, written here 23:19.
+- The fix as said at 22:09: a regrouping of children asked for inside a
+  walk of the scene is done after it. The detector stays in.
+- How it was shown: on the build before the fix the detector fired on
+  the first load of the re-saved file; on the build with it, twelve
+  loads of that file and two of the original wrote no crash log, the
+  detector's or a crash's, and the picture is the same to the pixel.
+- NOT shown: that the staged copy crashes -- the two occurrences were on
+  the dev builds of the evening; "it has the same code".
+- So until the next stage the staged copies of 2026-10-12 stay as the
+  correction of 22:20 has them: a file saved with one of them can die at
+  a load and loads on another try.
+
+**2026-10-13 06:57: STAGED 06:52:40 (`5a2f7e58c2`).** From the build session's message of 2026-10-13 06:57, written here 06:56.
+- The copy under test has the fix `9b9a479164`. Three loads of the
+  re-saved file on the staged copy are among the checks still running;
+  no result yet.
+- A file saved with the stages of 2026-10-12 is not damaged and needs
+  nothing done to it.
+
+**2026-10-13 07:32: on the STAGED copy of 06:52, three loads of the
+re-saved file, no crash.** From the build session's message of 2026-10-13 07:32, written here 07:32. "three loads of
+ctl\scanner-resaved.FCStd (z-resaved-1..3): all EXIT 0, DONE written, no
+crash log, no detector log."
+
+## 80. The file recovery dialog: a check box in the first column that selects all or none (a change request) -- DONE `53a231cc72`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; the three points answered 2026-10-12 21:40
+
+**2026-10-12 21:37, the reporter:** "new request, in file recovery prompt
+dialog, add check box in first column to toggle select all"
+
+The note-taker's reading:
+- The dialog is "Document Recovery", the one that comes up at the start
+  after a session that did not end cleanly and lists the documents that
+  can be recovered.
+- Each listed document has a check box in the first column already. Asked
+  for: ONE more check box in that column -- in the column's HEADER, the
+  note-taker's guess -- that checks every document, or unchecks them all,
+  in one click.
+
+READ in the source, nothing run:
+- `src/Gui/DocumentRecovery.ui`: a `QTreeWidget` with the three columns
+  "Document Name", "Status" and "Modified"; the buttons "Start Recovery"
+  and "Cleanup..." act on the CHECKED documents (the text over the list
+  says so).
+- `src/Gui/DocumentRecovery.cpp`: each row is made user-checkable (about
+  line 287) and starts CHECKED unless it carries warnings, then unchecked
+  (about line 304); what is recovered is the rows that are checked (about
+  line 353); a row loses its check box once it is recovered (about line
+  529).
+- There is nothing today that checks or unchecks all rows at once.
+
+NOT said, the note-taker's count:
+a. WHERE the check box sits: in the header of the first column, beside
+   "Document Name" -- the guess above -- or as a row of its own at the
+   top of the list?
+b. With only SOME rows checked: the box shows a half state, and a click
+   on it then checks all -- the usual way, taken so unless said
+   otherwise.
+c. "Check all" and the rows with WARNINGS, which start unchecked on
+   purpose: checked with the rest -- the note-taker's reading of
+   "select all" -- or left out? And a row already recovered has no check
+   box and is not touched.
+
+**2026-10-12 21:40, the reporter answers the three points:** "a yes. b yes. c
+yes"
+
+The note-taker's reading:
+- a. Point a held two places; "yes" is taken for the one put as the
+  guess: the check box sits in the HEADER of the first column, beside
+  "Document Name". Not a row of its own.
+- b. Yes: with only some rows checked the box shows a half state, and a
+  click on it then checks all.
+- c. Yes: "check all" checks the rows with warnings too. A row already
+  recovered has no check box and is not touched.
+Nothing of this entry is left unanswered.
+
+**2026-10-12 22:09, from the build session: IN WORK -- written from the
+three answers, built, uncommitted; its test not through yet.** From the build session's message headed "state at 22:12", received 22:09,
+written here 22:10.
+- A check box in the HEADER of the first column of Document Recovery,
+  drawn as the header's icon: ticked with every row ticked, empty with
+  none, half with some.
+- A click ticks every row that has a check box, the ones with a warning
+  too; or unticks them all when all are ticked.
+- A click on the header's TEXT still sorts.
+- A recovered row has no box and is not touched.
+- Its first picture: the box half ticked beside "Document Name", over
+  two ticked rows and one with a warning.
+- The test (`tests/gui/recovery-dialog-check-all.py`, new) stopped at
+  its fourth claim -- "my test's fault", fixed, not run through yet.
+
+**2026-10-12 23:17: DONE `53a231cc72`; local, NOT pushed, NOT staged.** From the build session's message of 23:17, written here 23:19.
+- As built: the box is the header's icon beside "Document Name";
+  ticked, empty or half; a click ticks every row that has a check box,
+  the ones with a warning too, or unticks all when all are ticked; a
+  click on the header's text sorts and ticks nothing.
+- Beside what was asked: "Start Recovery" cannot be pressed with nothing
+  ticked.
+- Its test stages three leftover documents itself: 13 claims, no FAIL.
+
+## 81. Saving a document is slow in a folder with many entries: the backup step asks the file system about every entry -- FIXED `b3e1247e6d`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; not measured for the reporter
+
+**2026-10-12 22:09, from the build session** (its message headed "state at
+22:12"; found by it while its Python suite crawled, NOT reported by the
+reporter; the number is the note-taker's, written here 22:10):
+- Seen: the Python suite took half a minute a SAVE. It was stopped at
+  21:49, 1647 tests in, no failure.
+- The cause: `App::Document`'s backup step lists the whole directory of
+  the file at every save and asks the file system about EVERY entry
+  (`isFile`). The temporary directory the build session's runs share had
+  grown to 3400 entries, and on this box each such question is slow.
+- Changed: it asks only the entries whose name is a backup's
+  (`src/App/Document.cpp`). UNCOMMITTED, in the build that is running;
+  no result of a test or a timing on it yet.
+- The build session's words on what it means for the reporter: "This is
+  the user's cost too when saving into a large folder on this box -- not
+  measured there."
+
+The note-taker's notes:
+- Near it: entry 47's 10 s (`ee9583a247`), the same kind of thing -- a
+  folder listed and every file asked about, dear on this box whose file
+  system answers each question slowly.
+- NOT known: what a save costs the reporter in their own folders, and
+  from how many entries on it is felt. If saving has felt slow in a
+  folder with many files, that is worth a line here.
+
+**2026-10-12 23:17: FIXED `b3e1247e6d`; local, NOT pushed, NOT staged.** From the build session's message of 23:17, written here 23:19.
+- The backup step asks the file system about the backups alone.
+- What is measured is the build session's suite: the Python suite, 3645
+  tests in 804.5 s (thirteen minutes) in an EMPTY temporary directory
+  with this change, where the run before had done 1647 tests in an hour.
+  The note-taker's caution: the two runs differ in the folder as well
+  as in the change, so the number is not the change's alone.
+- NOT measured for the reporter's own saves. "A save into a folder of
+  thousands of entries on this box is where it would show" -- the build
+  session.
+
+## 82. The copy staged 2026-10-12 17:52 could end by itself when the Preferences are opened: heap corruption, the include of a second working copy -- FIXED already by `23e57d647c`, pushed 2026-10-13 06:33, STAGED 2026-10-13 06:52; found 2026-10-13 00:56; its root, the generator, fixed `49dca0ebbc`, pushed
+
+**2026-10-13 00:56, from the build session** (found and measured by it, NOT
+reported by the reporter; the number is the note-taker's; From the build session's message of 2026-10-13 00:56, written here 00:57). Its
+heading: "THE COPY STAGED AT 17:52 DIES WHEN THE PREFERENCES ARE OPENED".
+- MEASURED: sessions that open Edit > Preferences twice and close it, a
+  fresh profile, no document; "eight on each build turn about, plus two
+  before". The staged copy (`22ece75a08`) ended with 0xC0000374, heap
+  corruption, in SEVEN OF TEN -- "while the dialog was being built,
+  after its first close, or at the session's end with the work done".
+  Its build of the night: NONE of ten.
+- No crash log comes of it: "Windows ends a process on heap corruption
+  without one."
+- THE CAUSE, "read in the sources and not shown under a debugger": the
+  include reported at 18:57, which "did more than 'does not compile on
+  another box'". `22ece75a08` has
+  `#include "D:/works/sw/fcad-wt/src/Gui/PreferencePages/DlgSettingsUI.h"`
+  in `DlgSettingsUI.cpp`. From 16:41 to 18:48 that file in the build
+  session's second working copy was entry 69's, "with three members
+  more"; the staged `FreeCADGui.dll` was built at 17:35. The file that
+  MAKES the preference page (`resource.cpp`) includes the main tree's
+  header. "So the page is allocated by the size of one class and
+  constructed by the code of another, three pointers longer: 24 bytes
+  written past the end of the block, every time the preferences are
+  built."
+- The fix is `23e57d647c` (2026-10-12 18:18), "in every build of mine
+  since 20:00, NOT in the copy under test".
+- The stage of 14:04 "has none of the include's effect (the include came
+  with `22ece75a08`)".
+- Nothing pushed, nothing staged: "I have no word for a restage and am
+  not making one."
+
+READ by the note-taker in the repository, nothing run:
+- `git grep fcad-wt 22ece75a08 -- src`: the include is line 53 of
+  `src/Gui/PreferencePages/DlgSettingsUI.cpp` in the staged commit; none
+  at HEAD.
+- `src/Gui/resource.cpp` line 49 in the staged commit:
+  `#include "PreferencePages/DlgSettingsUI.h"` -- the main tree's.
+- `.conda/user-app/bin/FreeCADGui.dll` is dated 2026-10-12 17:35.
+- NOT read: what the header in the second working copy held at 17:35;
+  that is the build session's account.
+
+The note-taker's notes, none of it said by the build session:
+- With a document open, a program that ends like this takes the unsaved
+  work with it. The measured sessions had no document.
+- The hand checks of entries 70 and 71 are IN the Preferences dialog,
+  and those of 72, 75 and 76 pass through it to see a setting: on the
+  copy staged at 17:52 they all run into this.
+- A guess, NOT said by the reporter: the Document Recovery dialog of
+  entry 80 (reported 2026-10-12 21:37) is shown at a start after the
+  program did not end properly; a death of this kind, or of entry 79's,
+  would bring it up.
+- origin/LinkVibe (`5de7d97293`) carries the same include: on another
+  box it does not compile; on a box that HAS that path it would build
+  into this.
+- NOT known: whether the reporter has seen the staged copy end by
+  itself since 17:52 -- at the Preferences, later, or at exit. If so:
+  the time, and what was open, under this entry.
+- NOT ASKED of the reporter in so many words: a restage of a build with
+  the three local fixes (this, 79, 53).
+
+**2026-10-13 01:00: the ROOT is fixed too, `49dca0ebbc`, local, NOT pushed,
+NOT staged -- why the machine's path got into the generated files.**
+From the build session's message of 2026-10-13 01:00, written here 01:00.
+- The generator (`src/Tools/params_utils.py`) "split its module's file
+  name at 'src' + the system's separator; reached through a path written
+  with forward slashes on Windows it did not split, and the whole path
+  went into what it generated."
+- Changed: "It makes the path absolute and normal first now and refuses
+  a module that is not below a src/ directory."
+- Checked by it: "regenerating five files with such paths: unchanged."
+- Its summary: "`23e57d647c` takes the path out of the four files and
+  `49dca0ebbc` keeps it from coming back."
+- It is the generator, "Python, not in any binary": nothing of it is to
+  be seen in a staged copy.
+- The build session's state: local head `4701c780da` (its log); both
+  suites green on `5d63c7152d`, after which only the generator and its
+  log were committed. "I stop here for the night unless the user says
+  otherwise."
+- What waits for the reporter's word, in its words: "the push, a
+  restage, entry 47 part (a); and entry 69's point 1 and entry 66's
+  proposals when they come to them."
+
+**2026-10-13 06:40: the fix is PUSHED (06:33, origin/LinkVibe =
+`4b52e58423`); the reporter gave the word for a restage at 06:31 --
+UNDER WAY, NOT DONE.** From the build session's message of 2026-10-13 06:40, written here 06:39.
+- The reporter, said to the build session at 06:31 -- the note-taker
+  did not hear it: "Fine. Push and restage".
+- `23e57d647c` and `49dca0ebbc` are on origin now.
+- Until the stage is reported done the copy under test is the one of
+  2026-10-12 17:52 and can still end by itself at the Preferences.
+- Planned by the build session on the STAGED copy after the stage: the
+  preferences opened six times.
+
+**2026-10-13 06:57: STAGED 06:52:40 (`5a2f7e58c2`, code = `4b52e58423`) --
+the copy under test has the fix.** From the build session's message of 2026-10-13 06:57, written here 06:56.
+- On the staged copy so far: "the preferences opened and closed twice,
+  both sessions EXIT 0". The planned six openings are part of the checks
+  still running.
+- The copy of 2026-10-12 17:52 that could end by itself is replaced.
+- NOT known still: whether the reporter saw that copy end by itself
+  between 17:52 and this stage.
+
+**2026-10-13 07:32: SHOWN ON THE STAGED COPY of 06:52 -- six sessions, none
+ended by itself.** From the build session's message of 2026-10-13 07:32, written here 07:32.
+- "the preferences opened twice and closed, six sessions (z-pref-1..6):
+  all six EXIT 0 (the copy of 17:52 died in 7 of 10)."
+- No crash log in any of the homes.
+- For the reporter to confirm by hand: Edit > Preferences on the staged
+  copy.
+
+## 83. A view cell's menu and handle should slide out from under an overlay panel, as the navigation cube does (a change request) -- OPEN, the five points answered 2026-10-13 13:29: the menu button and the two corner handles, each by itself, only where twice the handle's size of the cell is left clear (first said as 40), and never overlapping one another; always, no setting; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `d00ab5ddcf` 2026-10-13, pushed 19:24
+
+**2026-10-13 09:52, the reporter:** "new request, view cell menu and handle
+should be aware of overlay panel position and slide out to make accessible
+just like navicube"
+
+The note-taker's reading, not the reporter's words:
+- "view cell menu": the small menu button in the top-left corner of each
+  cell of a split view, which opens the cell's menu (cell management and
+  what the cell shows).
+- "just like navicube": entry 76 as it was built -- the cube slides
+  along the edge of the view it is on, to just past an overlaid dock or
+  a task panel shown over the view, and comes back when the panel goes.
+- So: when an overlaid panel lies over the place of a cell's menu button
+  or of its handle, the button and the handle move to where they can be
+  reached, and back afterwards.
+- Which copy this was seen on is not said; the copy under test at this
+  hour is the stage of 09:36 (`abca255e23`).
+
+NOT said, lettered for an answer:
+a. WHICH "handle". The source has three things one could call so: (1)
+   the two corner zones of a cell, drawn as grips, that are dragged to
+   split or join cells; (2) the border between two cells, which is
+   dragged to resize; (3) the menu button itself, which the source calls
+   a grip. The note-taker's guess: (1), the corner grips, with the menu
+   button -- a border between cells has nowhere to slide to.
+b. Out of the way of WHAT: the same as the cube -- every overlaid dock,
+   and a task panel shown over the view? The guess: yes, the same.
+c. WHERE to: along the edge it is on to just past the panel, staying in
+   its own corner's half, as the cube does? The guess: yes.
+d. The SETTING: governed by the cube's one ("Navigation cube moves clear
+   of panels", `View/DockOverlayMoveNaviCube`, on by default), or a
+   setting of its own? Not said.
+e. WHICH cells: the cube exists in a 3D view only; the menu button is on
+   every cell, a TechDraw page or a spreadsheet too. Every cell? The
+   guess: yes.
+A smaller point, not put as blocking: the cube and a cell's button or
+grip may be pushed to the same place by the same panel (a narrow cell);
+which gives way is not said.
+
+Pointers, READ in the source by the note-taker, nothing run:
+- `src/Gui/ViewArea.cpp`: `ViewAreaMenuButton` ("A small grip in the
+  cell's top-left corner opening the cell management + content menu.
+  Subtle until hovered", 16 px); `ViewAreaZone`, the corner action
+  zones; `ViewAreaSplitterHandle`, the border between cells
+  (`HandleWidth = 3` in `ViewArea.h`). `ViewAreaSplitter::showCellMenu`
+  opens the menu. The design is `docs/SplitViews.md` sec 5.4/5.5.
+- The cube's way, entry 76: `NaviCubeImplementation::placeClear` in
+  `src/Gui/NaviCube.cpp` asks `OverlayManager::instance()->covered(widget)`
+  for the region laid over the view and slides the cube past it; off
+  when `OverlayParams::getDockOverlayMoveNaviCube()` is off.
+  `OverlayManager::covered` (`src/Gui/OverlayManager.h`) is the one
+  question both could ask.
+- Near it: entry 68 (a task panel in the view kept beside an overlaid
+  tree view) and entry 76.
+
+**2026-10-13 13:29, the reporter answers the five points:** "entry 83. a,
+only view cell menu and two corner handle. only if there are actually
+areas not blocked by overlay panel. If they are fully covered or less than
+40 in dimension, don't bother. check separately for each handle/menu. b,
+yes. c, yes. d, no, always. e, yes."
+
+The note-taker's reading:
+- a. WHAT moves: the cell's menu button and its TWO CORNER handles (the
+  grips that split and join cells). Not the border between cells.
+- A CONDITION, new with the answer: one of them is moved only if the
+  cell has area that is NOT covered by an overlay panel. If the cell is
+  fully covered, or what is left clear is less than 40 in a dimension
+  (pixels, by the note-taker's reading; in width or in height), it is
+  left where it is -- "don't bother".
+- "check separately for each handle/menu": each of the three is looked
+  at by itself -- one may be under a panel and move while the others
+  stay.
+- b. Yes: clear of the same things as the cube -- overlaid docks, and a
+  task panel shown over the view.
+- c. Yes: slid along its edge to just past the panel, as the cube is.
+- d. No setting: it is always so; the cube's setting does not govern
+  it.
+- e. Yes: every cell, whatever it shows.
+
+Two smaller points, NOT put as blocking:
+- "less than 40 in dimension": taken as -- the clear part of the cell is
+  narrower OR lower than 40 pixels. Whether it is measured along the
+  edge the thing slides on only is not said.
+- The cube and a button pushed to the same place by the same panel
+  (named at 09:52): still not said which gives way.
+
+**2026-10-13 13:33, the reporter changes the limit:** "change that 40
+pixels to twice the size of the handle. in short, when they slide, there
+shouldn't be overlap among handles"
+
+The note-taker's reading:
+- The limit of 13:29 -- "less than 40 in dimension, don't bother" -- is
+  no fixed number any more: a handle (or the menu button) is moved only
+  if the clear part of the cell is at least TWICE THAT HANDLE'S SIZE.
+  This settles the first of the two smaller points above ("40" is
+  confirmed to have been pixels, and is replaced).
+- The reason, in the reporter's words, is also a rule of its own: when
+  they slide, the handles must NOT OVERLAP one another. By the
+  note-taker's reading the menu button counts among them -- no two of
+  the three may come to lie on each other.
+- By the source the sizes are: the menu button 16 pixels
+  (`ViewAreaMenuButton::Size`), the corner zones 14 pixels
+  (`ViewAreaZone::Size` in `src/Gui/ViewArea.h`); read, nothing run.
+  So the limit comes to about 32 and 28 pixels.
+NOT said: what is done when two of them WOULD overlap although each has
+its twice-the-size of room -- one stays, or both are placed side by
+side. The note-taker's guess: side by side along the edge, each in its
+own corner's half, as the cube keeps to its half. Not put as blocking.
+The cube and a button meeting at one place: still not said.
+
+**2026-10-13 15:36, the build session: PREPARED as a script, not applied,
+in no build.** From the build session's message of 2026-10-13 15:36, written here 15:36. "`ViewAreaCell::placeChrome` slides the menu button
+and each corner handle to just past what `OverlayManager::covered()`
+reports, along an edge it is on, each by itself, only if the clear part of
+the cell is at least two of it wide and high, never one over another; on
+`OverlayManager::coverChanged`; no setting, every cell." Its test,
+`view-cell-handles-clear-of-panels.py`, written, not run.
+
+## 84. A tree view item's tooltip is shown when its delay is up even if the pointer has left the item -- FIXED `a3acdd0947`, pushed 2026-10-13 13:57, STAGED 2026-10-13 13:56; the cause read by the build session
+
+**2026-10-13 09:56, the reporter:** "new defect, tree view item tooltip has a
+delay, which is acceptable, but when the time is up, only show the tooltip
+if the mouse is still over the item."
+
+The note-taker's reading, not the reporter's words:
+- The delay stays. Seen: the pointer rests on an item, moves away before
+  the tooltip is up, and the tooltip of that item comes all the same.
+- Wanted: when the delay ends, the tooltip is shown only if the pointer
+  is still over the item the delay was started for; otherwise nothing.
+- Which copy is not said; the copy under test at this hour is the stage
+  of 09:36 (`abca255e23`).
+
+NOT said, lettered for an answer:
+a. WHERE the pointer is when the stale tooltip comes: on another item of
+   the tree, on the empty part of the tree, or outside the tree (the 3D
+   view, another panel)?
+b. With the pointer moved to ANOTHER item before the time is up: no
+   tooltip at all, or the delay starts again for the new item and its
+   own tooltip comes? The note-taker's guess: the second.
+c. Is the tree view overlaid or docked when it happens, or both?
+
+Pointers, READ in the source by the note-taker, nothing run; the cause
+is NOT found by reading:
+- `src/Gui/Tree.cpp`: a move of the pointer over an item starts
+  `toolTipTimer` at 300 ms (`TreeWidget::mouseMoveEvent`, two places);
+  `TreeWidget::onToolTipTimer` then looks up the item under the pointer
+  as it is at that moment
+  (`itemHitTest(viewport()->mapFromGlobal(QCursor::pos()))`) and shows
+  that item's text, or hides the tooltip when there is none. It does not
+  remember WHICH item the delay was started for.
+- `src/Gui/Widgets.cpp`: `ToolTip::showText` does not show at once
+  either -- it starts a second timer of 80 ms (`tooltipTimer`), and
+  `ToolTip::onShowTimer` shows the text at the place handed over, with
+  no second look at where the pointer is. So between the two timers the
+  pointer can leave and the tooltip still comes; whether that is what
+  the reporter sees is a guess.
+- A leave of the tree stops the timer and hides the tooltip at some
+  places (`Tree.cpp` near lines 1828 and 4776); which paths do not is
+  not followed.
+
+**2026-10-13 10:17, the build session: IN WORK -- the cause read, a fix in
+the source, NOT built, NOT tested.** From the build session's message of 2026-10-13 10:17, written here 10:17.
+- The cause, "read in `src/Gui/Tree.cpp`, to be shown by the test before
+  the build": the 300 ms timer is started by a move over an item; when
+  it is up `onToolTipTimer` asks `itemAt()` at `QCursor::pos()`, "which
+  still names an item for a point BESIDE the view where a column is
+  wider than the view (the usual case in a narrow overlay) and under any
+  widget lying over the tree"; `TreeWidget::leaveEvent` stopped nothing;
+  and `ToolTip::showText` stops the hide timer a Leave had started, "so
+  the tip stays".
+- The fix: the item the delay was started for is remembered; when the
+  delay is up the tip is shown only if the pointer is inside the tree's
+  viewport, no other widget is under it, and the item there is that same
+  item; leaving the tree stops the delay. "A drag keeps its own tips as
+  they were."
+- One change beside it, "to keep a feature the rule would have ended":
+  a document's row starts a delay of its own for its file-name tip (it
+  had one only when the delay had been started on an object's row).
+- The note-taker's points: a and c "not needed for the fix"; b -- the
+  pointer on another item -- "the delay again for that item, as it
+  was".
+- New test `tests/gui/tree-tooltip-only-over-its-item.py`: it "runs ONLY
+  with QT_QPA_PLATFORM=offscreen (it moves the pointer; on a real screen
+  that is the reporter's)".
+The note-taker's note: point b is decided by the build session as it
+was before, which is also the note-taker's guess; the reporter has not
+said it. Nothing of this entry waits for the reporter.
+
+**2026-10-13 10:38, the new test shows the defect on the build before the
+fix.** From the build session's message of 2026-10-13 10:38, written here 10:37. "gone to beside the tree before the delay is up" and "a
+widget come to lie over the item" both showed the tip 'Bracket / Internal
+name: Box'. The run's other failures were a command's tip that stays up
+on the offscreen platform and that the test counted; "since taken out of
+the count".
+
+**2026-10-13 11:33: FIXED `a3acdd0947`; local, NOT pushed, NOT staged.**
+From the build session's message of 2026-10-13 11:33, written here 11:34. Its test `tree-tooltip-only-over-its-item.py`: 14 of 14, twice,
+offscreen.
+
+## 85. The task panel's guest widgets are backed in the wrong colour under the Dark and the Light theme, as if the two were swapped (first said as "background seems to be reverted") -- REPRODUCED 2026-10-13 10:17, the colour of the theme being left; FIXED `1f01bf3f30`, pushed 2026-10-13 13:57, STAGED 2026-10-13 13:56
+
+**2026-10-13 10:07, the reporter:** "new defect, the task panel background seems
+to be reverted for dark and light theme"
+
+The note-taker's reading, not the reporter's words:
+- Seen on the copy staged 09:36 (`abca255e23`), a few minutes after the
+  reporter applied the themes again through Tools > preset
+  configurations (entry 69, about 10:04) -- under Dark and under Light
+  both.
+- "reverted": the task panel's ground is not what entry 69 made it (the
+  theme's own panel colour at alpha 150, in an overlaid Tasks tab and in
+  a panel shown in its view) but as it was at some earlier time. WHICH
+  earlier look is not said.
+
+NOT said, lettered for an answer:
+a. Reverted TO WHAT: a solid ground where it was see-through; or a
+   colour of an earlier day -- and which, if it can be named (a grey,
+   the theme's panel colour, the sheet's own)?
+b. WHERE: the Tasks tab in an overlay; a task panel shown in its view;
+   the Tasks panel docked in the main window; or all of them?
+c. SINCE WHEN: only since the theme was applied again at about 10:04, or
+   already on this stage before that (when the overlay sheet named was
+   still `Dark_overlay.qss`), or already on the stage of 06:52?
+
+Pointers, READ by the note-taker, nothing run; the cause is NOT found:
+- Where the ground comes from since entry 69 (`bbe8525de7`):
+  `OverlayStyleSheet::fromSettings` in `src/Gui/OverlayManager.cpp`
+  writes `QSint--ActionGroup QFrame[class="content"]` with the theme's
+  `DialogBackgroundColor` at `View/DockOverlayAlpha` and puts it IN
+  FRONT of the overlay sheet; a sheet that states the same selector
+  wins. `Dark-Outline.qss` and `Light-Outline.qss` state it no more
+  (only in a comment); the five `*_overlay.qss` sheets and
+  `overlay/Dark.qss`, `overlay/Light.qss`, `overlay/SplitDark.qss` do.
+- The themes: `PreferencePacks/Dark/Dark.cfg` names `Dark-Outline.qss`
+  and `Light/Light.cfg` names `Light-Outline.qss` for the overlay sheet.
+  The main sheet `FreeCAD.qss` states the same selector with
+  `@DialogBackgroundColor`, solid -- for a panel that is not overlaid
+  that is the rule in force.
+- What the merges of this morning changed in the style sheets, the
+  overlay code and the task view (`4b52e58423..47ed30316a`): one rule
+  in `FreeCAD.qss`, for the Linux title bar's buttons. Nothing on the
+  task panel. So by the reading the merges are not it; not shown.
+- The reporter's `user.cfg` on disk is still the one of 09:47 (it is
+  written when the program ends), so what the running session has after
+  the themes were applied again cannot be read from it.
+- Near it: entry 69 (the same ground), entry 30 (the overlay preset in
+  the theme packs), entry 77 (the Dark borders).
+
+**2026-10-13 10:12, the reporter makes it precise:** "to be precise, the
+panel's base widget background is transparent as expected. what I mean the
+individual guest widget's background, which has the 150 alpha which is
+fine, but the color is wrong. by the look of it, just swap the color under
+dark and light feels right"
+
+The note-taker's reading, not the reporter's words:
+- NOT wrong: the ground of the panel itself -- clear, as expected; and
+  the opacity of what is in it -- alpha 150, fine.
+- WRONG: the COLOUR behind each single "guest widget" -- the note-taker
+  takes these for the boxes a task panel is made of, one to a task (the
+  content frame of each group). Under Dark it looks like the colour
+  meant for Light, under Light like the one meant for Dark: swapping
+  the two would look right.
+- So point a is answered: not "solid", not an earlier day's grey -- the
+  other theme's colour at the right opacity. "Reverted" of 10:07 is
+  withdrawn by this as a description.
+
+NOT ANSWERED still:
+b. WHERE: the Tasks tab in an overlay, a task panel shown in its view,
+   or both. ("The panel's base widget ... transparent" fits either.)
+c. SINCE WHEN: only since the themes were applied again at about 10:04,
+   or before.
+d. New, and it would settle the cause: after the program is ended and
+   started again under one theme, is the colour right?
+
+A guess at the cause, the note-taker's, READ in the source, nothing run:
+- The colour is not in a style sheet. `OverlayStyleSheet::fromSettings`
+  (`src/Gui/OverlayManager.cpp`) asks the style parameters for the
+  theme's `DialogBackgroundColor` at the moment the overlay's sheet is
+  put together, and writes it into the rule for
+  `QSint--ActionGroup QFrame[class="content"]`.
+- That sheet is put together again when one of three keys is written
+  (`StyleSheet`, `OverlayActiveStyleSheet`, `ColorScheme`,
+  `OverlayStyleSheet::OnChange`). If a theme pack writes those keys
+  BEFORE the style parameters of the new theme are in force, the colour
+  asked for is still the theme's that is being left: Dark then carries
+  Light's panel colour and Light Dark's -- the swap the reporter sees,
+  and only after a change of theme in a running session. A fresh start
+  would be right.
+- That would also be why the build session's test did not show it if it
+  starts each theme in a session of its own. NOT checked.
+- `DialogBackgroundColor` is "@PrimaryColorLighten3" in both
+  `Stylesheets/parameters/Dark.yaml` and `Light.yaml`; the two differ
+  through `PrimaryColor`.
+
+**2026-10-13 10:17, the build session: REPRODUCED, the cause shown by a
+run; a fix in the source, NOT built, NOT tested.** From the build session's message of 2026-10-13 10:17, written here 10:17.
+- The run, 10:11 to 10:13, with a COPY of the reporter's configuration:
+  themes applied through the Themes menu of `Std_CmdPresets` with the
+  docks overlaid as that configuration has them, a task panel shown in
+  OverlayRight each time. The ground of its content frame (r,g,b,a):
+  - as configured (Dark, `Dark_overlay.qss`): (68,68,68,255) -- solid,
+    that sheet's own #444444;
+  - Dark applied: (44,44,44,150); the same after the overlay sheet is
+    made anew;
+  - then Light applied: (44,44,44,150) -- DARK's colour; after the sheet
+    is made anew: (250,250,250,150);
+  - then Dark applied: (250,250,250,150) -- LIGHT's colour; made anew:
+    (44,44,44,150).
+- "So: the colour of the theme being LEFT, at the right alpha, until the
+  sheet is made again (or the next start)." The cause as the note-taker
+  guessed it: `OverlayStyleSheet::OnChange` makes the sheet when
+  `StyleSheet` / `OverlayActiveStyleSheet` / `ColorScheme` are written;
+  `Application::setStyleSheet` reloads the theme's parameters later.
+- Why entry 69's test did not see it:
+  `tests/gui/overlay-see-through.py` "applies each theme with the docks
+  docked and overlays them afterwards".
+- The note-taker's open points, answered "from the run, not from the
+  reporter": (b) shown for the overlaid Tasks tab; a panel in its view
+  takes the same rule, not measured. (c) it is in `bbe8525de7`, first
+  staged 2026-10-13 06:52 -- so in both stages of that day. (d) right
+  after a restart, "by the code (the sheet is made once the theme is in
+  force) -- not run".
+- The fix, in the source, NOT built: `MainWindow`'s handling of
+  `QEvent::StyleChange`, "which arrives when the application's sheet has
+  been set with the theme's parameters in force", has the overlay's
+  sheet made again (`OverlayManager::refresh(nullptr, true)`). The test
+  gains a step: docks overlaid, Dark applied, then Light -- the panel's
+  ground is the applied theme's.
+The note-taker's note for the reporter: until a stage with the fix, a
+restart of the program after a change of theme should give the right
+colour -- by the build session's reading of the code, not run.
+
+**2026-10-13 10:38, the new claims FAIL on the build before the fix, as
+measured.** From the build session's message of 2026-10-13 10:38, written here 10:37. With Dark applied while the docks are overlaid the
+ground is (250,250,250,150); with Light, (44,44,44,150). One older claim
+of the same test, "Dark: the focus is in the tree again", failed in that
+run -- "another FreeCAD of mine was started on the screen during it and
+took the focus; not a regression until a clean run says so".
+
+**2026-10-13 11:33: FIXED `1f01bf3f30`; local, NOT pushed, NOT staged.**
+From the build session's message of 2026-10-13 11:33, written here 11:34. `overlay-see-through.py` 62 of 62; "with a copy of the reporter's
+configuration the panel's ground is the applied theme's right away, Dark,
+Light, Dark".
+
+## 86. The mouse no longer passes through the transparent area of an overlay panel -- OPEN, the three points answered 2026-10-13 10:21: any panel, nothing passes, since when not known; NOT found by the build session 2026-10-13 10:38, the eye is pressed, a 3D view active and the pass-through settings on (answered 10:42); NOT REPRODUCED by the build session 11:33, its question to the reporter not answered; RETESTED by the reporter 13:38 -- click passes, the wheel does not; the wheel's cause found 13:51, a fix in the source; the Tasks panel's eye to be said; the wheel's fix COMMITTED `8d2e4379c8`, pushed 2026-10-13 15:58, not staged; the Tasks panel's cause found 16:12 (entry 69's ground), the plan accepted 16:13 and DROPPED 16:57 on the reporter's word of 16:44 (only a fully transparent background passes, the eye pushed or not); the wheel's fix STAGED 2026-10-13 16:55; the pass to go by the transparent background, not changed yet; the rule by what is painted COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24
+
+**2026-10-13 10:17, the reporter:** "new defect, overlay transparent area mouse
+pass through no longer works"
+
+The note-taker's reading, not the reporter's words:
+- Over the part of an overlaid panel where nothing is drawn, a click, a
+  drag or the wheel used to go to the 3D view under it; now the panel
+  takes it.
+- "no longer": it worked before -- on which copy last is not said. The
+  copy under test is the stage of 09:36 (`abca255e23`); the reporter
+  applied the themes again at about 10:04 (entry 69), which changed the
+  overlay's style sheet from `Dark_overlay.qss` to the Outline sheet.
+
+NOT said, lettered for an answer:
+a. WHICH panel and which part of it: the tree view below its last item,
+   the property view below its rows, the space beside an item's text,
+   a task panel's clear ground -- or every overlaid panel?
+b. WHAT does not pass: the click (nothing is picked in the 3D view), a
+   drag (the view does not turn), the wheel (no zoom), or all?
+c. SINCE WHEN: before the themes were applied again at about 10:04, or
+   only since; and was it still right on the stage of 06:52, or on the
+   one of 2026-10-12 17:52?
+
+Pointers, READ by the note-taker, nothing run; the cause is NOT found:
+- The pass-through is decided by a look at the panel's own picture:
+  `OverlayTabWidget::testAlpha` (`src/Gui/OverlayWidgets.cpp`) grabs the
+  panel's contents and reads the alpha under the pointer and around it
+  (`View/DockOverlayAlphaRadius`); the event passes only where EVERY
+  pixel there has alpha 0. `OverlayManager.cpp` near lines 1932 to 1971
+  asks it, under `View/DockOverlayAutoMouseThrough`.
+- In the reporter's configuration as last written (09:47):
+  `DockOverlayAutoMouseThrough` 1, `DockOverlayWheelPassThrough` 1,
+  `DockOverlayAlphaRadius` 2, `DockOverlayAutoView` 1.
+- What changed lately in what such a panel paints, each a candidate and
+  none shown: entry 69 (`bbe8525de7`, first staged 06:52) backs the
+  items of a tree view and the rows of a property view at alpha 150 and
+  has the overlay mode set again after a dock is added; the Outline
+  sheet states `qproperty-itemBackground: rgba(0, 0, 0, 0.01)` for the
+  property view -- an alpha that is not 0 -- and a ground for
+  `QTreeView`; entries 68 and 76 (`22ece75a08`, staged 2026-10-12
+  17:52) changed how overlays answer the pointer.
+- The build session's measurement of 10:03 (entry 69) has the left
+  overlay "52% clear" under the Outline sheet when painted by itself:
+  so clear pixels are there, by that picture.
+
+**2026-10-13 10:21, the reporter answers the three points:** "entry 86,
+a. any overlay panels, b none pass through, c just notice, not sure start
+from when"
+
+The note-taker's reading:
+- a. Every overlaid panel, not one of them and not one part.
+- b. Nothing passes: not the click, not a drag, not the wheel.
+- c. Just noticed; from when it is so the reporter cannot say. So it is
+  NOT known whether the copy of 06:52, or that of 2026-10-12 17:52, had
+  it, nor whether applying the themes again at about 10:04 has to do
+  with it.
+Nothing of this entry is left unanswered by the reporter. What a run
+would have to tell, the note-taker's: on which commit the pass-through
+last worked.
+
+**2026-10-13 10:38, the build session: NOT found yet.** From the build session's message of 2026-10-13 10:38, written here 10:37.
+- Shown so far: the clear parts read alpha 0 to `testAlpha`'s own grab
+  under Dark-Outline (OverlayLeft 96% alpha 0, OverlayRight 91%).
+- Read by it: no commit of 2026-10-12 and nothing in the merges touches
+  `OverlayManager`'s mouse path (the diffs of `22ece75a08~1..bbe8525de7`
+  and `4b52e58423..HEAD`).
+- The pass-through is gated on the panel's EYE
+  (`OverlayTabWidget::isTransparent`: the eye checked, and with
+  `DockOverlayAutoView` an active view that can pan). The reporter's
+  configuration has the eye ON for OverlayLeft and OverlayTop, OFF for
+  OverlayRight.
+- Its first end-to-end run had the eye off, "so it says nothing". Four
+  offscreen end-to-end runs wait for the build: eye off and on, the
+  test's configuration and a copy of the reporter's.
+- ONE point for the reporter, asked by the build session through the
+  note-taker: is the eye of the panel PRESSED where it does not pass?
+The note-taker's note: `DockOverlayAutoView` is 1 in the reporter's
+configuration, so by the above the pass-through is also off whenever
+the active view is one that cannot pan -- a TechDraw page or a
+spreadsheet in front. Whether a 3D view was the active view when it was
+seen is a second thing worth saying.
+
+**2026-10-13 10:42, the reporter answers the point on the eye:** "entry 86,
+eye is pressed, 3d view is active. there are settings for dock overlay
+mouse and wheel passthrough. and they are all enabled"
+
+The note-taker's reading:
+- The eye (the panel's transparent mode) IS pressed on the panel where
+  the mouse does not pass.
+- A 3D view IS the active view.
+- The settings for the pass-through of the mouse and of the wheel are
+  all on -- as the note-taker read them in the configuration written
+  09:47 (`DockOverlayAutoMouseThrough` 1, `DockOverlayWheelPassThrough`
+  1).
+- So none of the three gates the build session named at 10:38 explains
+  it: with all three open nothing passes, on any overlaid panel.
+Nothing is left unanswered by the reporter. NOT known still: on which
+copy it last worked.
+
+**2026-10-13 10:43, the reporter, a hint at where to look:** "I remember the
+passthrough logic checks the widget background color and only passthrough
+if it's completly transparent. maybe the checking got problem"
+
+The note-taker's reading, and what the source says, READ, nothing run:
+- The reporter's memory is right in substance: the event passes only
+  where the panel is completely transparent. What is checked is not a
+  background colour as a setting but the PICTURE of the panel:
+  `OverlayTabWidget::testAlpha` (`src/Gui/OverlayWidgets.cpp`) grabs the
+  panel's splitter once, keeps the picture until the next repaint, and
+  answers 0 only if the pixel under the pointer and every pixel within
+  `View/DockOverlayAlphaRadius` (2 in the reporter's configuration; four
+  times that for the wheel) has alpha 0.
+- By the build session's measurement of 10:38 that picture DOES read
+  alpha 0 on the clear parts under the Outline sheet (96% of the left
+  overlay, 91% of the right). So by that run the check itself answers
+  "clear" -- on a run that is not the reporter's session.
+- What stands around the check, each a place where it "got problem"
+  without the picture being wrong -- candidates, none shown:
+  1. BEFORE it: `OverlayManager.cpp` near line 1945 walks up from the
+     widget under the pointer and asks `testAlpha` only when it arrives
+     at an `OverlayTabWidget`; it stops early at any widget on the way
+     whose window type is not a plain widget. A widget that now lies
+     between -- or over -- would keep the question from being asked.
+  2. THE PICTURE'S AGE: it is thrown away in the panel's own
+     `paintEvent`; a picture grabbed while the panel was solid (the
+     pointer in it) and not renewed would answer "not clear" for good.
+     Entry 69 (`bbe8525de7`) changed when the see-through mode is set.
+  3. THE OUTLINE EFFECT of entry 87: if the grab holds the effect's
+     dark copy, then around every item there are pixels whose alpha is
+     not 0; that would block near items, not on wide clear ground.
+  4. AFTER it: the answer is used only when
+     `DockOverlayAutoMouseThrough` is on (it is) and the pointer has
+     not moved since (`_lastPos`).
+Relayed to the build session as the reporter's hint; not an answer that
+was asked for.
+
+**2026-10-13 11:33, the build session: NOT REPRODUCED.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- End to end on the offscreen platform ("the pointer is the platform's";
+  two plates under the whole view): with the eye ON a move over the
+  clear part of the tree's overlay preselects the plate under it and a
+  click selects it; the same beside a row's text.
+- PASS on the dev build AND on the staged copy of 09:36; with the
+  test's configuration, with a copy of the reporter's as it is, and
+  with Dark applied again through the menu. "The 3D view is seen to be
+  sent the moves and the press (an event filter on it)."
+- With the eye OFF nothing passes: "by design".
+- "So the cause is something of the live session on the real screen
+  that these runs have not got."
+- A QUESTION of the build session's, put to the reporter by it at
+  10:55, NOT ANSWERED: may it look into the reporter's RUNNING session
+  through its MCP console with ONE read-only script (what is under the
+  pointer, the overlay's state, what the alpha check reads) -- or shall
+  it give the reporter the script to run.
+
+**2026-10-13 12:43, the build session: one more piece, still NOT
+reproduced.** From the build session's message of 2026-10-13 12:43, written here 12:43. "With the pointer on the CLEAR part of a row (right
+of the item's text) the overlay hands the move to the 3D view and the tree
+does not hear of it -- pass-through as designed", PASS again on the build
+of 12:24 with a copy of the reporter's configuration.
+
+**2026-10-13 about 13:38, the reporter RETESTED; and 13:51, the build
+session REPRODUCED it so, the wheel's cause FOUND, a fix in the source.**
+From the build session's message of 2026-10-13 13:51, written here 13:50.
+- The reporter, typed to the build session about 13:38 -- the note-taker
+  did not hear it: "entry 86. retested with staged copy, tree
+  view/python console/report view can click through, but not wheel
+  through. task panel, no click or wheel through".
+- So the entry is narrower than its answers of 10:21 ("none pass
+  through"): the click DOES pass on three panels; the WHEEL does not;
+  the task panel passes neither.
+- Reproduced by a new test, `tests/gui/overlay-pass-through.py`
+  (offscreen), on the STAGED copy of 09:36 with a copy of the
+  reporter's configuration, Dark applied again: over the tree's clear
+  part a move preselects the plate under it and a click selects it,
+  PASS; the wheel there does not zoom, FAIL. Over the Tasks panel's
+  clear part, "ITS EYE TURNED ON by the test": move PASS, click PASS,
+  wheel FAIL.
+- THE WHEEL, the cause: in `OverlayManager::eventFilter`, "case
+  QEvent::Wheel:" falls through into "case QEvent::ContextMenu:",
+  "which casts the event to QContextMenuEvent and returns unless its
+  reason() is Mouse. For a wheel event that reads whatever a
+  QWheelEvent holds at that place." The lines are of 2022-11-24: "it
+  passed for as long as that happened to read 0, which it does not on
+  the Qt this copy runs on."
+- The fix, in the source, NOT built: the reason is asked of a context
+  menu event alone. It goes into the build after the suites that are
+  running.
+- THE TASKS PANEL, "no click": NOT reproduced with its eye on -- move
+  and click pass there on the staged copy. The reporter's configuration
+  as written 09:47 has `OverlayRight` `Transparent` 0, the eye OFF, and
+  with the eye off nothing is passed, "by design". "Since entry 69 such
+  a panel LOOKS see-through all the same while the pointer is away,
+  which may be why it is expected to pass."
+- ONE point for the reporter, from the build session: is the eye of the
+  panel that holds the Tasks PRESSED; and if it is, is a task panel
+  shown in it at that moment -- "its boxes have a ground since entry
+  69, alpha 150, and are not clear".
+- Two things of its own harness, withdrawn by it: a first run that had
+  enlarged the window beyond the offscreen platform's 800 by 800 screen
+  showed "nothing passes over the Tasks panel" for that reason alone.
+The note-taker's notes:
+- The reporter's answer of 10:42 ("eye is pressed") was given for "the
+  panel where the mouse does not pass" without naming it; with the
+  retest it is the Tasks panel that is in question, and the
+  configuration read at 09:47 had that panel's eye off. The file is
+  written when the program ends, so what the running session has is
+  the reporter's to say.
+- The wheel's cause being of 2022 answers "since when" for the wheel:
+  not a change of these days in the code, a change of what a newer Qt
+  holds at that place.
+
+**2026-10-13 about 15:56, the reporter on the eye; and 16:12, the build
+session: the TASKS PANEL's cause FOUND, not changed yet.** From the build session's message of 2026-10-13 16:12, written here 16:11.
+- The reporter, typed to the build session about 15:56 -- the
+  note-taker did not hear it: "entry 86, eye pushed or not, same, no
+  pass through." -- the answer to the point of 13:51 (is the eye of the
+  panel that holds the Tasks pressed): with the eye pressed or not,
+  nothing passes over the Tasks panel.
+- Shown on the staged copy, offscreen, with a copy of the reporter's
+  configuration: "With the eye ON and nothing in the panel a move and
+  a click pass (80% of the overlay paints nothing). With a feature in
+  edit only 25% of it paints nothing, and at spots of the panel's own
+  GROUND -- painted (44,44,44) at alpha 150, under a plain label or a
+  page widget, no control -- a move preselects nothing and a click
+  selects nothing."
+- THE CAUSE: "That ground is entry 69's: before it a task panel in a
+  see-through overlay painted nothing between its controls and the
+  pass rule (`OverlayTabWidget::testAlpha`: passes only where the alpha
+  is 0) let everything through there; since entry 69 the panel has a
+  ground everywhere, so nothing passes over a panel in edit."
+- With the eye OFF the overlay is solid and nothing passes, "by design
+  -- that part of 'eye pushed or not, same' stands as designed unless
+  the user says otherwise".
+- The wheel never passes on the staged copy of 13:56 (the fall-through
+  fixed in `8d2e4379c8`, in the next stage).
+- NOT changed yet. The build session's PLAN for the next round, "marked
+  as mine, to be told to the user": "the ground counts as nothing for
+  the pass rule where what is under the pointer is no control (a
+  button, an edit, a list, a scroll bar, a box's header) -- so a click
+  or a move on the panel's ground goes to the view, as before entry
+  69; the wheel there goes to the view only if the panel has nothing
+  to scroll."
+The note-taker's notes for the reporter:
+- So the Tasks panel's "no click" is a consequence of the reporter's
+  own request of entry 69 (a ground at alpha 150 for the task panel):
+  a painted ground, however see-through, is not "nothing" to the pass
+  rule. The same holds for the item backgrounds of the tree (clicks on
+  a backed item do not pass, by design) and for entry 98's text
+  backing when it comes.
+- Two things to say: whether the plan is right (a click on the panel's
+  ground, where there is no control, goes to the 3D view); and whether
+  with the eye OFF anything should pass at all -- today nothing does,
+  by design.
+
+**2026-10-13 16:13, the reporter answers the two things of 16:12:** "entry
+86. 1, yes. 2, I want pass through based on transparent background"
+
+The note-taker's reading:
+- 1. YES to the build session's plan: the task panel's ground counts as
+  nothing for the pass rule where what is under the pointer is no
+  control -- a click or a move there goes to the 3D view, as before
+  entry 69; the wheel there goes to the view only if the panel has
+  nothing to scroll.
+- 2. On the eye: the pass-through is to be decided by the BACKGROUND
+  being transparent -- where the panel shows the view through, the
+  mouse passes -- and not by whether the eye is pressed. So "eye pushed
+  or not, same" is meant as it reads: a panel that LOOKS see-through
+  passes, with the eye off too. That changes what the build session
+  called "by design" at 16:12 (with the eye off nothing passes).
+NOT said, one point: with the eye OFF a panel turns SOLID while the
+pointer is in it (entry 69's own behaviour, so that it can be read and
+used). If the pass goes by the transparent look, the pointer arriving
+over such a panel would pass through where it was see-through and the
+panel could never be entered to be used -- or it turns solid first and
+then nothing is transparent to pass through. Which of the two is
+wanted with the eye off is not said; the note-taker's guess: the eye
+stays the switch for "this panel lets the mouse through", and what
+changes is only the ground of entry 69 under it. To be said by the
+reporter.
+
+**2026-10-13 16:44, the reporter makes the rule EXACT; and 16:57, the build
+session: its plan DROPPED, its "by design" WITHDRAWN, a change written.**
+From the build session's message of 2026-10-13 16:57, written here 16:58.
+- The reporter, typed to the build session 16:44 -- the note-taker did
+  not hear it: "regarding entry 69. what I mean the the task panel base
+  widget background, which now is always fully transparent (at least to
+  my eye) wehther the eye button is pushed or not. The guest panel
+  background is always there with 150 transparency, hence my ruling of
+  mouse pass through on full transparent background. can't you read qt
+  widget backstore or something to determine this, which is already in
+  the overlay widget code"
+- The build session's reading, "told to the user": ONLY A FULLY
+  TRANSPARENT background passes, the eye pushed or not; "a guest
+  panel's ground at 150 does NOT pass, it is the panel's".
+- So its plan of 16:12 (the ground counting as nothing where no control
+  is under the pointer), to which the reporter's "1, yes" of 16:13 was
+  relayed, is DROPPED "unless they say they want that too -- I told
+  them so".
+- What stands in the way today, read by it in the source:
+  `OverlayTabWidget::testAlpha` answers "outside" for a panel with the
+  mode off and the pointer in it, and the filter's last test asks the
+  mode again (`isTransparent()`); "with both gone the decision is what
+  the panel painted and nothing else". The change is written and kept
+  as a script, NOT in the tree, for the next build -- so NOT in the
+  stage of 16:55.
+- MEASURED on the real screen with the new build, a copy of the
+  reporter's configuration, the pointer not moved (16:51): the Tasks
+  overlay with the eye OFF and the pointer outside it paints nothing
+  over 89% of its area, alpha 0 -- "the same figures as with the eye
+  on (89% at 0, 6% at 180, 3% at 255). So the user is right that it is
+  see-through either way."
+- WITHDRAWN by the build session: "My offscreen runs showed the eye-off
+  overlay solid all over (alpha 255), pointer away or in: the offscreen
+  platform does not show this state as the screen does, and my 'by
+  design, nothing passes with the eye off' of 16:12 rested on it".
+- NOT measured: "what the overlay paints with the eye off while the
+  pointer is IN it, on the real screen; that needs the user's pointer."
+The note-taker's notes:
+- The note-taker's reading of 16:13 of "2, I want pass through based on
+  transparent background" stands and is made exact by the reporter's
+  own words here: FULLY transparent, the eye playing no part.
+- The note-taker's point of 16:13 (a panel that turns solid under the
+  pointer with the eye off) is the thing "not measured" above.
+- "1, yes" of 16:13 was given to the plan as the note-taker put it; by
+  16:44 the reporter's ruling is narrower than that plan. The two do
+  not agree; the later word is taken to rule, as the build session
+  takes it.
+
+**2026-10-13 17:22, the reporter on the eye-off point:** "entry 86, pass
+through as long as fully transparent, which is what the user would expect."
+
+The note-taker's reading: one rule, no exception for the eye or for
+where the pointer is -- wherever the overlay is FULLY transparent the
+mouse passes, with the eye off and with the pointer inside the panel
+too. The reason given: it is what a user expects from what is seen. The
+note-taker's point of 16:13 (a panel that turns solid under the pointer
+with the eye off) is answered by it: what is solid does not pass, what
+is fully transparent does; no more is asked. Nothing of this entry
+waits for the reporter.
+
+## 87. Tree view under Dark: an item's background has a darker border; a hover draws a highlight and leaves a trail of item borders; and where the follow-the-theme setting is -- the border MEASURED 2026-10-13 10:38, the overlay's outline effect under the backing, COMMITTED `9b2a76c2dd` and `a4beaec622`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted (border, setting; the hover in an earlier form); OPEN, the four points answered 2026-10-13 10:36: the setting moves to the tree view section and disables the colour; the border Dark only; the hover highlight as wide as the item, no trail; no outline over an item's background COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24
+
+**2026-10-13 10:28, the reporter:** "new defects, dark theme tree item background
+has a darker border, which is unwanted. in addition, mouse hovering draw
+some selection highlight, and if I move mouse over a range of item, I see
+a trail of vanishing item borders, probably residue of hover highlight.
+question, what's the setting for auto tree item background item. why it
+is not exposed in UI preference dialog, tree view section"
+
+The note-taker's reading, not the reporter's words -- three things:
+1. A DEFECT: under the Dark theme the backing of a tree item (entry
+   69's, by the note-taker's reading: the overlaid tree view) is drawn
+   with a darker border around it. No border is wanted.
+2. A DEFECT: the pointer over an item draws something like a selection
+   highlight; and moved over a run of items it leaves, for a moment,
+   the borders of the items it has left -- a trail that fades. The
+   reporter's own guess: what is left of the hover highlight.
+3. A QUESTION, answered below; and in it, by the note-taker's reading,
+   a wish: that the setting be found in the tree view section.
+
+The QUESTION answered, READ in the source by the note-taker, nothing run:
+- The setting is `View/DockOverlayThemeItemColor`, shown as "Item
+  background follows the theme", on by default (entry 69, `bbe8525de7`).
+  With it goes `View/DockOverlayAlpha`, "Overlay background opacity",
+  150.
+- It IS on the UI preference page -- but in the section "Overlay",
+  after "Navigation cube moves clear of panels", not in the section
+  "Tree view" (`src/Gui/PreferencePages/DlgSettingsUI.py`,
+  `ParamGroup`). Why: it was made as an overlay setting, because it
+  acts only on an overlaid panel and on the property view as well as on
+  the tree view.
+- The section "Tree view" has "Item background color"
+  (`TreeView/ItemBackground`, "Only effective in overlay"). That colour
+  is used only when "Item background follows the theme" is OFF.
+
+NOT said, lettered for an answer:
+a. THE SETTING'S PLACE: move "Item background follows the theme" (and
+   the opacity with it?) into the section "Tree view", beside "Item
+   background color"; or leave it under "Overlay" and say so beside the
+   colour? The note-taker's guess: move the first, since the one turns
+   the other off.
+b. THE BORDER: on the overlaid tree view only, or the docked one too;
+   under Dark only, or under Light as well with another colour; and on
+   the rows of the property view too?
+c. THE HOVER: is the highlight under the pointer itself not wanted in
+   an overlaid tree, or is it wanted and only the trail the defect?
+d. SINCE WHEN: only since the themes were applied again at about 10:04
+   (entry 69), or before on today's stages?
+
+Pointers, READ by the note-taker, nothing run; the causes are NOT found:
+- The backing is painted in `src/Gui/Tree.cpp` (the item delegate, near
+  line 1005): a filled rectangle, cut to the width of the item's text
+  when the second column is hidden (`TreeView/HideColumn`, 1 in the
+  reporter's configuration) and then widened by 5 pixels; it is a fill,
+  no pen. So a border would come from elsewhere -- the style drawing
+  the item over it, by a guess.
+- The hover: the main sheet of the theme, `Stylesheets/FreeCAD.qss`,
+  states `QTreeView::item:!selected:hover { background-color:
+  @AccentHoverColor; }`. `overlay/Dark-Outline.qss` states nothing for
+  an item under the pointer. A trail would fit rows repainted in part
+  only when the pointer leaves them, the backing being narrower than
+  the row -- a guess.
+- Near it: entry 69 (the backing), entry 85 (the task panel's colour
+  after a change of theme), entry 77 (the Dark borders,
+  `GeneralBorderColor` in `Stylesheets/parameters/Dark.yaml`,
+  `d25fa8539c`) -- whether entry 77's lighter border colour is what now
+  shows around an item is NOT looked into.
+
+**2026-10-13 10:36, the reporter answers the four points:** "a yes, move
+below or beside tree item color selection. should actually disable tree
+item color selection if enabled. b, yes only dark theme, light them behave
+all correct. c the trail is unwanted. the hover highlight is ok to have,
+but do not draw it for the whole row. draw it like item background and
+selection highlight. d, trailing effect already there yesterday"
+
+The note-taker's reading:
+- a. MOVE "Item background follows the theme" into the section "Tree
+  view" of the UI preference page, below or beside "Item background
+  color". And more than was asked: while it is ON, the colour selection
+  is DISABLED (greyed), since the colour is not used then.
+- b. The darker border is under the DARK theme only; under Light all of
+  it is right.
+- c. The trail is NOT wanted. The highlight under the pointer may stay,
+  but not across the whole row: as wide as the item's background and
+  its selection highlight are drawn -- the item's icon and text, by the
+  note-taker's reading of how those two are cut today.
+- d. The trail was there already "yesterday", 2026-10-12. So it is not
+  of the themes applied again this morning, nor of this morning's
+  merges. WHICH copy of yesterday is not said (the stages of 14:04 and
+  17:52, and before them the one of 2026-10-10).
+
+Two smaller points left, NOT put as blocking:
+- The opacity ("Overlay background opacity"): the answer names the one
+  setting; whether the opacity moves with it is not said. The
+  note-taker's guess: it stays under "Overlay", it acts on the task
+  panel too.
+- The border: "only dark theme" answers the theme; whether a docked
+  tree view shows it too, and the property view's rows, is not said.
+  Since when the border is there is not said either -- d speaks of the
+  trail.
+
+**2026-10-13 10:38, the build session: the BORDER is MEASURED -- the
+overlay's outline effect; the hover measured, a trail not reproduced.**
+From the build session's message of 2026-10-13 10:38, written here 10:37. Its message crossed the reporter's answers of 10:36 above.
+- The run, 10:34, on the STAGED copy of 09:36, offscreen, with a COPY of
+  the reporter's configuration, Dark applied through the Themes menu.
+- (1) THE BORDER. The tree's overlay painted as the screen has it, along
+  the middle line of a row: the pixel just left of the backing is
+  (50,50,50) at alpha 170; the backing itself reads (98,98,98) at alpha
+  232 -- "NOT the (124,124,124) at 150 the tree paints".
+  - The cause: the Outline sheets switch on the overlay's outline effect
+    (`Gui--OverlayTabWidget` `qproperty-enableEffect` 1, `effectColor`
+    rgba(50,50,50,200), width 1, blur 2). `OverlayGraphicsEffect::draw`
+    "lays a blurred dark copy of EVERYTHING painted under the picture,
+    to outline text over the 3D view; it outlines the new backing too: a
+    dark rim one pixel and a blur wide, and the dark under the whole
+    backing, which makes it darker and far less see-through than 150.
+    Arithmetic agrees: 124 at 150 over 50 at 200 gives 98 at 232."
+  - "So entry 69's backing has never looked as asked under Dark-Outline
+    / Light-Outline; the test did not see it because the effect sits on
+    the overlay's splitter, above the tree."
+  - The fix PLANNED, "NOT written yet": the effect takes for its outline
+    only what is painted more opaque than the backing's opacity -- text
+    and icons keep their outline, a see-through fill gets none.
+- (2) THE HOVER. With the pointer on a row the WHOLE row is (61,72,90)
+  at 255, solid -- `FreeCAD.qss`'s
+  `QTreeView::item:!selected:hover`, as the note-taker read; the Outline
+  sheets say nothing for it. The rows above and below differ by about
+  345 pixels each while it is there: the effect's halo of that bar.
+  - A trail left behind was NOT reproduced by this run ("it paints the
+    overlay whole each time"). Its reading, "not shown": the bar's halo
+    reaches into the neighbours, a row that is left is repainted alone,
+    and the neighbours keep the halo's rim until the overlay's delayed
+    repaint.
+  - Its proposal, written BEFORE the reporter's answer c reached it: no
+    hover bar at all in an overlaid tree, "or a bar without halo". The
+    reporter's answer c (10:36) decides: the highlight stays, as wide as
+    the item, no trail.
+- (3) The note-taker's answer on the setting "stands".
+
+The note-taker's notes:
+- The measurement says Light-Outline too has the effect under the
+  backing; the reporter's answer b says Light "behave all correct". The
+  two are not at odds -- a dark rim on a light ground may read as a
+  fine line there -- but which it is has not been looked at.
+- Entry 69's "alpha 150" is therefore not what is seen on the screen
+  under the Outline sheets (232 measured under Dark): a defect of entry
+  69's result, to be mended with this entry's fix.
+
+**2026-10-13 11:33, the build session: the border and the setting FIXED IN
+THE SOURCE, a first build measured; the hover's second way building. NOT
+committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- (1) THE BORDER: "the outline effect takes only what is more opaque
+  than the item backgrounds for its outline". On the screen the item's
+  background is (124,124,124,150) under Dark and (196,196,196,150)
+  under Light, "its first and last pixel the same, no rim" (before:
+  (98,98,98,232) with a rim of (50,50,50)). Under Light it was off too,
+  (196,196,196,191) with a faint rim -- "not what the reporter saw as
+  wrong, but not 150".
+- (2) THE HOVER: the first try, a style sheet rule, "did NOTHING: the
+  bar over the whole row is drawn by the widget style, not by a sheet".
+  The second way, building: an overlaid tree keeps the view from
+  knowing the row under the pointer and draws the bar itself, as wide
+  as the item's background, in the theme's `AccentHoverColor` at
+  `View/DockOverlayAlpha`. "At that opacity the outline effect does not
+  outline it, so nothing of it reaches the rows beside it -- which is
+  what the trail was, in my reading."
+- (3) THE SETTING: "Item background follows the theme" moved into the
+  section "Tree view", the row after "Item background color"; while it
+  is on the colour and its label are greyed out.
+
+**2026-10-13 12:43, the build session on the hover: two of its readings
+WITHDRAWN, a third form building.** From the build session's message of 2026-10-13 12:43, written here 12:43.
+- WITHDRAWN (a), "no style sheet rule takes the bar away": "that run had
+  the overlay's eye off, where a panel turns SOLID while the pointer is
+  in it -- what I measured as a bar over three rows was the tree's
+  solid ground, not a hover bar."
+- WITHDRAWN (b), keeping the hover events from the view: "not enough:
+  Qt notes the row under the pointer on a plain mouse move too."
+- Measured with the eye ON (the reporter's left overlay): the real bar
+  is (61,72,90) at 255 from the row's left end to its right.
+- The third form, in the build: the row is taken back from the view
+  after each move, and the tree draws its own bar. With the reporter's
+  configuration on the build of 12:24: "the old whole-row bar is gone
+  and the rows beside it are untouched; my own bar not shown yet".
+
+**2026-10-13 14:13, a pointer from entry 98:** the reporter's note there --
+"like tree item background, turn of text outline when having text
+background" -- reads as if the text of a backed tree item were to have NO
+outline. As built (the block of 11:33 above) the text and the icons keep
+it. Put to the reporter as entry 98's point d; NOT answered.
+
+**2026-10-13 17:04, DECIDED by the reporter under entry 98 (its answer d):**
+"tree item with background does not show outline anyway, so drop it too
+if has background". So the text and the icon of a tree item that has its
+background are to be drawn WITHOUT the overlay's outline -- a change to
+this entry as built (the block of 11:33: "text and icons keep their
+outline"). Items with no background keep it.
+
+## 88. A dock overlay in transparent mode: the scroll bar's background transparent, its handle at the overlay's alpha (a change request) -- COMMITTED `9b2a76c2dd`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; the four points answered 2026-10-13 10:51: the overlay's opacity setting, all scroll bars, the theme's colours, borders and ends clear
+
+**2026-10-13 10:45, the reporter:** "new request, when dock overlay in transparent
+mode, style the scroll bar to have transparent background and the make the
+scroll handle respect the command background alpha value"
+
+The note-taker's reading, not the reporter's words:
+- While an overlaid panel is in its transparent mode, a scroll bar in it
+  has NO ground of its own -- the 3D view shows through its track -- and
+  its handle is drawn see-through at an alpha taken from a setting.
+- "the command background alpha value": taken for "the COMMON background
+  alpha value", that is `View/DockOverlayAlpha`, "Overlay background
+  opacity", 150 -- the one entry 69 made for the item backing and the
+  task panel's ground. A guess; point a.
+
+NOT said, lettered for an answer:
+a. THE ALPHA: is it "Overlay background opacity"
+   (`View/DockOverlayAlpha`, 150) that the handle follows? The guess:
+   yes.
+b. WHICH scroll bars: every one inside an overlaid panel -- the tree
+   view's, the property view's, a task panel's, the report view's and
+   the Python console's when those are overlaid -- upright and level
+   both? The guess: all of them.
+c. THE HANDLE'S COLOUR: the theme's own handle colour at that alpha; and
+   under the pointer or pressed -- the theme's hover colour at the same
+   alpha, or solid then so it can be seen to be held? The guess: the
+   theme's colours, the same alpha in every state.
+d. WHAT ELSE of a scroll bar: the theme draws a border along the track
+   and a 14-pixel end at each side of it (the place of the arrows).
+   Clear too, with the track? The guess: yes, only the handle is left
+   to see.
+A smaller point, not put as blocking: "in transparent mode" is taken to
+mean whenever the panel is shown see-through -- as the item backing of
+entry 69 is -- not only while the eye is pressed with the pointer in the
+panel.
+
+Pointers, READ by the note-taker, nothing run:
+- The theme's sheet, `src/Gui/Stylesheets/FreeCAD.qss` near lines 676
+  to 724: `QScrollBar:horizontal` / `:vertical` with
+  `background-color: @ScrollbarBackgroundColor` and borders of
+  `@GeneralBorderColor` (14 px at the two ends); the handle a gradient
+  from `@ButtonTopBackgroundColor`, `@GeneralBackgroundHoverColor`
+  under the pointer.
+- The overlay sheets `overlay/Dark-Outline.qss` and
+  `overlay/Light-Outline.qss` state NOTHING for `QScrollBar`: an
+  overlaid panel's scroll bars are the theme's, solid.
+- A rule made from the settings exists since entry 69:
+  `OverlayStyleSheet::fromSettings` in `src/Gui/OverlayManager.cpp`
+  writes the task panel's ground at `View/DockOverlayAlpha` and puts it
+  in front of the overlay sheet -- the same place could carry the
+  scroll bar's rules. Its colour has to be asked for AFTER the theme's
+  parameters are in force (entry 85).
+- Settings that already touch these scroll bars: `TreeView/HideScrollBar`
+  ("Hide tree view scroll bar in dock overlay", 1 in the reporter's
+  configuration) and `View/DockOverlayHidePropertyViewScrollBar` (0
+  there) -- so in the reporter's own session the tree view's bar is
+  hidden and the property view's is shown.
+- Near it: entry 69 (the opacity), entry 87 (the outline effect lays a
+  dark copy under whatever an overlay paints -- a see-through handle
+  would get it too unless the planned fix leaves it out), entry 86 (the
+  pass-through passes only where the picture is fully clear: a clear
+  track would then pass clicks to the 3D view, which may or may not be
+  wanted -- not said).
+
+**2026-10-13 10:51, the reporter answers the four points:** "entry 88, a
+yes. b all. c yes. d yes"
+
+The note-taker's reading:
+- a. Yes: the handle follows "Overlay background opacity"
+  (`View/DockOverlayAlpha`, 150).
+- b. All: every scroll bar inside an overlaid panel, upright and level.
+- c. Yes: the theme's own handle colours at that alpha, the same alpha
+  under the pointer and pressed.
+- d. Yes: the track's border and the two 14-pixel ends are clear too;
+  only the handle is left to see.
+NOT said, the side effect the note-taker named with the points: a track
+that is fully clear passes clicks and the wheel to the 3D view by the
+rule of entry 86 (once that works again), so a click beside the handle
+would no longer page the panel. Wanted or not is not said; not put as
+blocking.
+
+**2026-10-13 11:33, the build session: FIXED IN THE SOURCE, measured on a
+first build; NOT committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- Measured: nothing of the tree's scroll bar more opaque than 150, the
+  handle at 150, the rest clear, under Dark and under Light.
+- How: rules made from the settings, in front of the overlay sheet --
+  track, borders, the two ends and the arrows clear; the handle in the
+  theme's `ButtonTop`/`BottomBackgroundColor` at `View/DockOverlayAlpha`;
+  hovered and pressed `GeneralBackgroundHoverColor` at the same.
+- "Your note stands: a clear track passes a click to the 3D view where
+  pass-through works."
+
+## 89. The toolbar icon of Std_DisplayStyle seems to have a triangle laid over it -- COMMITTED `d3e1604e2e`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; answered 2026-10-13 10:59: the menu's expansion arrow, much smaller than normal, on the icon; both themes
+
+**2026-10-13 10:54, the reporter:** "new defect, Std_DisplayStyle toolbar icon
+seem to have some triangle overlaid inside"
+
+The note-taker's reading, not the reporter's words:
+- The button of `Std_DisplayStyle` in the toolbar (entry 74, beside
+  `Std_DrawStyle`) shows a triangle inside its icon that does not look
+  as if it belonged there.
+- Which copy is not said; the copy under test is the stage of 09:36
+  (`abca255e23`). The command is in the stages since 2026-10-12 17:52.
+
+NOT said, lettered for an answer:
+a. WHICH triangle: a SMALL one pointing down, at the button's right
+   edge or lower right corner; or a LARGER, lighter one in the upper
+   left of the cube? (The two candidates below.)
+b. Does `Std_DrawStyle` beside it show the same mark, or only this
+   button?
+c. Under both themes; and is it there in the View menu and the context
+   menu too, where the same icon is shown, or on the toolbar only?
+
+Pointers, READ by the note-taker, nothing run -- two things it could be:
+1. THE MENU MARK. The button opens a menu at a click
+   (`src/Gui/DisplayOptions.cpp`: `action()->setMenu(_menu)`,
+   `button->setPopupMode(QToolButton::InstantPopup)`). Qt draws a small
+   arrow on such a button; `Stylesheets/FreeCAD.qss` near line 1365
+   places it (`QToolButton::menu-indicator { subcontrol-position: right
+   center; }`), over the icon when the button is no wider than the
+   icon. The same sheet takes that arrow away for another kind of
+   button (`Gui--SplitButton QToolButton::menu-indicator { image:
+   none; }`), not for this one.
+2. THE ICON'S OWN DRAWING. `src/Gui/Icons/Std_DisplayStyle.svg` (new in
+   `7970f5b7d6`, entry 74) is a cube whose left half is filled and
+   whose right half is lines only. Its filled half is made of three
+   shapes, and one of them IS a triangle -- the left half of the cube's
+   top face, in a lighter colour (#34e0e2 on #16c8ca), with a pale line
+   along its lower edge. At a toolbar's size that lighter triangle may
+   read as something laid over the cube.
+Which of the two the reporter sees decides what is to be changed: the
+button's mark, or the picture.
+
+**2026-10-13 10:59, the reporter answers the three points:** "entry 89. a,
+looks like so, but a lot smaller than normal expansion arrow. b, others
+are normal. c, yes both theme"
+
+The note-taker's reading:
+- a. It is the first candidate: the small mark of a button that opens a
+  menu, drawn on the icon -- and "a lot smaller than normal expansion
+  arrow". So not the lighter triangle of the icon's own drawing; the
+  picture stays as it is.
+- b. The other buttons, `Std_DrawStyle` among them, are normal.
+- c. Under both themes. Whether the mark shows in the View menu and the
+  context menu too is not said; a menu entry has no such mark, so
+  nothing is expected there.
+- With entry 90 (`Std_SelUp`, said at 10:56 in between): two buttons
+  whose menu mark sits on the icon. By the source the two are made in
+  different ways -- this one sets `QToolButton::InstantPopup` itself,
+  `Std_SelUp` goes through the common helper -- so one defect or two is
+  for the build session to find. Entry 90's point a (is it the same
+  mark) is as good as answered by a. here; the reporter has not said it
+  in so many words.
+What is wanted is not said in so many words either. The note-taker's
+reading of "others are normal": the mark as the other menu buttons have
+it -- beside the icon, at its normal size.
+
+**2026-10-13 11:33, the build session: FIXED IN THE SOURCE, its test PASS
+on a first build; NOT committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- The cause here, a second one beside entry 90's: `Std_DisplayStyle`
+  "did not use the helper and opened its menu instantly, a mode in
+  which Qt draws a small mark on the icon".
+- Changed: "it is a menu button like the others now, and a click on the
+  button itself still opens the menu."
+- The new test `tests/gui/toolbar-menu-buttons.py` (entry 90):
+  `Std_DisplayStyle` is 44 wide like `Std_SelBack`; it was 32.
+
+## 90. The toolbar button of Std_SelUp: its expansion indicator lies over the icon, unlike the others' -- COMMITTED `d3e1604e2e`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; answered 2026-10-13 11:02: wanted as the other menu buttons, the mark beside the icon
+
+**2026-10-13 10:56, the reporter:** "new defect, Std_SelUp toolbar icon expansion
+indicator overlaps with the icon, unlike others"
+
+The note-taker's reading, not the reporter's words:
+- `Std_SelUp` (go up in the selection's hierarchy) has a button that
+  opens a menu. The small mark that says so -- "expansion indicator" --
+  is drawn ON the icon there. On the other buttons that open a menu it
+  is drawn clear of the icon.
+- Said two minutes after entry 89 (a triangle over the icon of
+  `Std_DisplayStyle`); the two may be one thing -- point a.
+
+NOT said, lettered for an answer:
+a. Is the triangle of entry 89 on `Std_DisplayStyle` the SAME mark as
+   this one -- the menu's indicator on the icon -- so that the two
+   entries are one defect on two buttons? If yes, entry 89's point a is
+   answered by it.
+b. "unlike others": on the others the mark stands BESIDE the icon, in a
+   narrow strip of its own that opens the menu while the icon itself
+   acts at a click? And is that what is wanted for `Std_SelUp` -- or no
+   mark at all?
+c. Which buttons are right, to compare: `Std_DrawStyle`, undo and redo,
+   the views? And the theme it is seen under.
+
+Pointers, READ by the note-taker, nothing run; the cause is NOT found:
+- `src/Gui/Action.cpp`: the helper `setupMenuToolButton` gives a tool
+  button the mode `QToolButton::MenuButtonPopup` (the mark in a strip
+  of its own beside the icon) and the name
+  `qt_toolbutton_menubutton`. It takes the LAST tool button the
+  toolbar has at that moment.
+- `SelUpAction::addTo` (the same file, near line 2473) calls that helper
+  and adds its own action AFTER it. Several other actions there do the
+  two in the same order (undo, redo, and more), so the order alone does
+  not single out `Std_SelUp`; why its button ends up without the strip
+  is not followed.
+- A button left in Qt's default mode with a menu gets a small arrow in
+  its corner, over the icon; `Stylesheets/FreeCAD.qss` near line 1365
+  places such a mark (`QToolButton::menu-indicator
+  { subcontrol-position: right center; }`).
+- `Std_DisplayStyle` (entry 89) sets `QToolButton::InstantPopup` by its
+  own code (`src/Gui/DisplayOptions.cpp`) -- a third mode, which also
+  draws the mark inside the button.
+
+**2026-10-13 11:02, the reporter answers points b and c:** "b, yes. c,
+yes, it seems every other with expansion indicator look right, except this
+one"
+
+The note-taker's reading:
+- b. Yes: wanted is what the other menu buttons have -- the mark beside
+  the icon, in its own strip, at its normal size.
+- c. Yes: every other button with an expansion indicator looks right;
+  this one alone does not. ("This one" is `Std_SelUp`; the button of
+  entry 89, `Std_DisplayStyle`, was said separately, with a mark "a lot
+  smaller than normal".)
+- Point a -- is entry 89's triangle the same kind of mark -- is taken as
+  answered by entry 89's answer of 10:59 ("looks like so").
+Nothing of this entry is left unanswered.
+
+**2026-10-13 11:33, the build session: the CAUSE found, FIXED IN THE SOURCE,
+its test PASS on a first build; NOT committed.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- The cause -- what the note-taker saw in the order of the two calls and
+  put aside because other actions had it too: `Action.cpp`'s
+  `setupMenuToolButton` "was called BEFORE the action was added and took
+  the tool bar's last button -- the button of the action added before.
+  In a run of menu buttons each was named by the next, the last by none:
+  `Std_SelUp` (and Edit/Redo, which no one reported)."
+- Changed: "All twelve callers now name the button of their own action
+  after adding it."
+- New test `tests/gui/toolbar-menu-buttons.py`: every tool bar button
+  with a menu is a menu button with the name, none without a menu has
+  it; `Std_SelUp` and `Std_DisplayStyle` 44 wide like `Std_SelBack`.
+
+## 91. PartDesign edit panels: the button that clears the link references is stretched -- on the stage of 13:56 the button is TOO SMALL in width (the reporter 14:20), to be fitted by the icon's aspect ratio from the row's height (14:28); STAGED 2026-10-13 13:56 from uncommitted code, not committed; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the redone width COMMITTED `51075fbda3` 2026-10-13, pushed 19:24
+
+**2026-10-13 11:05, the reporter:** "new defect, part design pocket edit panel,
+but button to 'temporary clear link references for new selection' got
+streched. it shouldn't. this widget layout is reused in dozons of
+partdesign editing panels. so should fix for all of them."
+
+The note-taker's reading, not the reporter's words:
+- In the panel that edits a Pocket, the small button at the end of a
+  reference row -- its tooltip "Temporary clear link references for new
+  selection", an icon and no text -- is drawn stretched. It should keep
+  its small size.
+- The row is one layout used by many PartDesign panels; the fix is to
+  be made where they all get it, not in the Pocket's panel alone.
+- "got streched": it was right before. Since when is not said. The copy
+  under test is the stage of 09:36 (`abca255e23`), with the merges of
+  this morning in it.
+
+NOT said, lettered for an answer:
+a. Stretched HOW: WIDER -- as wide as a button with text -- or TALLER,
+   to the height of the table beside it?
+b. SINCE WHEN: only on today's stage of 09:36 (after the merges), since
+   the themes were applied again at about 10:04, or before?
+c. Under both themes; and with the panel shown where -- docked,
+   overlaid, in its view -- or the same in all?
+
+Pointers, READ by the note-taker, nothing run:
+- The row is the class `LinkSubWidget` in
+  `src/Mod/PartDesign/Gui/TaskSketchBasedParameters.cpp` (constructor
+  near line 395): a level layout with the titled button at the left
+  (`button`, checkable), the table of references (`LinkSubTable`), and
+  `clearButton` at the right -- a `QPushButton` with the icon
+  "edit-cleartext" and that tooltip, added with `Qt::AlignTop`. NO size
+  is set on it: no fixed width, no size policy. Ten files of
+  `src/Mod/PartDesign/Gui` name the class, so one change there reaches
+  all the panels the reporter means.
+- A candidate for the width, NOT shown: the theme's sheet
+  `Stylesheets/FreeCAD.qss` (near line 1187) gives EVERY `QPushButton`
+  `padding: 3px 12px` and `min-width: 80px`. Its rule for a push
+  button directly inside a task panel's box (near line 1581) takes the
+  padding back to 2 px but says nothing of the least width. An
+  icon-only button with no size of its own would be 80 pixels wide by
+  that.
+- That sheet came with `40fc82b6db` (2026-08-22, "adopt upstream's
+  parameterized stylesheet for the Light and Dark themes") -- so by the
+  reading it is not new this morning; which does not fit "got
+  stretched" unless the reporter's panels were under another sheet
+  until the themes were applied again today (entry 69). A guess.
+- Other icon-only push buttons in task panels would be wide the same
+  way if the candidate is right -- not looked for.
+
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "The theme's sheet gives every push button
+a least width of 80; this one, an icon and no caption, is told it has none
+-- in `LinkSubWidget`, so every panel that uses the row." The note-taker's
+candidate of 11:05 was it; the three points put to the reporter are not
+needed for the fix.
+
+**2026-10-13 14:20, the reporter on the stage of 13:56:** "regression, the
+'Temporary clear links...' button width in partdesign edit panel is too
+small now"
+
+The note-taker's reading:
+- The fix in the stage took the stretch away and went too far: the
+  button is now narrower than it should be. The reporter calls it a
+  regression -- of the fix.
+- By the build session's numbers the button was 88 wide by 24 high on
+  the stage of 09:36 (stretched), and the fix told it that it has NO
+  least width (its message of 12:43); how wide it comes out now is not
+  in a message. With no least width a push button is as wide as its
+  icon and the sheet's padding of 2 pixels.
+
+NOT said, one point for the reporter:
+a. HOW WIDE: square -- as wide as it is high (24 by 24 by the numbers
+   above), like a tool button; or as wide as the titled button's
+   height; or a little wider than high? The note-taker's guess: square,
+   as high as the row's other button.
+
+Pointers, the note-taker's: `LinkSubWidget` in
+`src/Mod/PartDesign/Gui/TaskSketchBasedParameters.cpp` (the `clearButton`),
+and the test `tests/gui/partdesign-reference-clear-button.py`, which
+passes on the build that is too narrow -- so the test's claim is on the
+button NOT being stretched and has no lower bound for its width.
+
+**2026-10-13 14:28, the reporter answers how wide:** "fit the width by its
+icon aspect ratio based on row height"
+
+The note-taker's reading:
+- The button's HEIGHT is the row's height; its WIDTH is that height
+  times the aspect ratio of its icon. The icon "edit-cleartext" being
+  as wide as it is high, the button comes out SQUARE at the row's
+  height -- and would follow if the icon were another shape.
+- "row height": the height of the row the button stands in -- the
+  height of the titled button beside it, by the note-taker's reading,
+  not the height of the table of references, which grows with its
+  lines.
+Nothing of this is left unanswered.
+
+**2026-10-13 15:08, the build session: REDONE, in the build, NOT
+committed.** From the build session's message of 2026-10-13 15:08, written here 15:07. "The clear button as high as the row = the caption
+button's height, its glyph cut to what is drawn and scaled to that height,
+the width from the glyph's proportions; measured before with the user's
+config: caption 92x20, the first form 26x22 with a 16 px icon."
+
+## 92. scanner.FCStd after the migration recompute: Pocket023.Profile reads Sketch047.2, the indexed wire reference lost -- the cause SHOWN 2026-10-13 12:43, old code in the sketch, the fix COMMITTED `518c2026d0`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; looked at 2026-10-13 11:33: the old-style name "2" is in the file and names nothing, the shapes unchanged, the cause not found; OPEN, answered 2026-10-13 11:19: in the property view and the edit panel both, Pad039 and Pad040 the same
+
+**2026-10-13 11:10, the reporter:** "new defect, when open scanner file and after
+migration recompute. Pocket023.Profile changed to Sketch047.2, i.e. it's
+indexed face or wire reference is lost for some reason"
+
+The note-taker's reading, not the reporter's words:
+- `scanner.FCStd` is opened; the program asks for the recompute a
+  change of the element version calls for (the "migration recompute");
+  after it the profile reference of `Pocket023` reads `Sketch047.2`.
+- "lost": where the reference named an indexed element of the sketch --
+  a face or a wire with its number, `Wire2` by the file -- it now names
+  only "2".
+- Which copy is not said; the copy under test is the stage of 09:36
+  (`abca255e23`): this morning's merges and the OCCT fork brought up
+  to `a81d25f148`.
+
+READ by the note-taker in two copies of the file, nothing run, the
+files not changed (`Document.xml` read out of the archive in memory):
+- The ORIGINAL, `..\dl\handson\2026-10-06\scanner.FCStd` (dated
+  2026-10-06 09:17), stores it so:
+  `<Property name="Profile" type="App::PropertyLinkSub">`
+  `<LinkSub value="Sketch047" count="1">`
+  `<Sub value="2" shadowed="Wire2"/>`.
+  So the name kept in the file is "2", and `Wire2` -- the indexed name
+  -- stands beside it as its second form. `Sketch047.2` is therefore
+  what the file SAYS; what is missing after the recompute is the
+  indexed form that used to be found for it.
+  [THE WRONG WAY ROUND -- corrected by the build session 2026-10-13 11:33, see
+  the block of that time below: `shadowed=` holds the link's value,
+  `Wire2`; `value=` holds the OLD-STYLE name kept beside it, "2".
+  What the note-taker told the reporter at 11:17 on this is withdrawn.]
+- The copy a build of 2026-10-12 saved
+  (`..\dl\handson\2026-10-12\s1\ctl\scanner-resaved.FCStd`) stores
+  the same: `<Sub value="2" shadowed="Wire2"/>`.
+- THREE features of the file have a profile of this form, of 97
+  `Profile` properties in the original: `Pad039` -> `Sketch046`,
+  "1" / `Wire1`; `Pad040` -> `Sketch046`, "2" / `Wire2`; `Pocket023` ->
+  `Sketch047`, "2" / `Wire2`. All three name a WIRE of a sketch by a
+  bare number.
+
+NOT said, lettered for an answer:
+a. WHERE it is read: the Pocket's edit panel (the profile's table), the
+   property view, or Python?
+b. What it read BEFORE the recompute, or on an earlier copy:
+   `Sketch047.Wire2`? And is the Pocket itself wrong afterwards -- an
+   error mark, another shape -- or only what the reference reads?
+c. `Pad039` and `Pad040` (on `Sketch046`): do they show the same after
+   the recompute?
+d. On which copies: the stage of 09:36 only, or the one of 06:52 or of
+   2026-10-12 too? (The stage of 09:36 is the first with the OCCT fork
+   at `a81d25f148` and the merges of SolidBody and Transaction.)
+
+Pointers, the note-taker's, nothing run; the cause is NOT found:
+- The reference is an `App::PropertyLinkSub` with a kept name and its
+  "shadowed" indexed name; after a recompute the indexed name is looked
+  up again from the kept one on the sketch's new shape. A wire of a
+  sketch is not an element the shape's map names the way faces, edges
+  and vertexes are, which may be why its kept name is a bare number --
+  and why a lookup that works for a face fails for it. A guess.
+- The file was last written by a program that calls itself
+  "2025.1020RUnknown" (`ProgramVersion` in the original).
+- Near it: entry 53 and entry 28 (the same file, the recompute question
+  at opening); this morning's merge of origin/Transaction with OcctFix
+  inside (`5a5b5ff906`) and the OCCT sync -- whether either changed how
+  such a reference is looked up is NOT looked into.
+- Both suites are green on the staged code; no test of theirs is known
+  to the note-taker to cover a pocket on a sketch's wire by number.
+
+**2026-10-13 11:19, the reporter answers the four points:** "entry 92. a,
+both property view and edit panel shows this. b, didn't notice. c, yes. d,
+not sure"
+
+The note-taker's reading:
+- a. The property view and the Pocket's edit panel both read
+  `Sketch047.2`.
+- b. Not noticed: what the reference read before the recompute, and
+  whether the Pocket itself is wrong afterwards, the reporter cannot
+  say.
+- c. Yes: `Pad039` and `Pad040` (on `Sketch046`) show the same. So it
+  is all three features of the file whose profile is a sketch's wire
+  by number -- the kind of reference, not this Pocket.
+- d. Not sure on which copies. So whether this morning's merges or the
+  OCCT sync brought it is NOT known from the reporter.
+Left for a run, the note-taker's: what the three references read on a
+build of before this morning's merges (the stage of 06:52's code) and
+whether the three features still build the same shape.
+
+**2026-10-13 11:33, the build session LOOKED: by Python the reference is
+NOT changed by the recompute; and the note-taker's reading of the file was
+the wrong way round.** From the build session's message of 2026-10-13 11:33, written here 11:34.
+- Run: FreeCADCmd of the staged copy on
+  `..\2026-10-06\scanner.FCStd`. `Pad039`, `Pad040` and `Pocket023` read
+  Profile ('Sketch046',['1']), ('Sketch046',['2']), ('Sketch047',['2'])
+  "right AFTER OPENING, before any recompute", and the same after
+  `doc.recompute(None, True)`; volume and face count of all three
+  unchanged by the recompute, the shapes valid.
+- THE FILE, corrected: "by `PropertyLinkSub::Save`, `value=` is the
+  OLD-STYLE name kept beside the link (shadow.second) and `shadowed=` is
+  the value itself -- so the link's value is 'Wire2' and the old-style
+  name stored with it is '2', which is no name of an element
+  (`Sketch047.getSubObject('2')` is null, 'Wire2' a wire of 4 edges).
+  The property view and the panel show the old-style name where there
+  is one."
+- What DOES change with the recompute: the sketch's element map has a
+  name for `Wire2` after opening ('#140;Wire#1e5f2;:H:b,W', map size 16)
+  and none after the recompute (size 15).
+- NOT found yet: where "2" was first written (the file had it on
+  2026-10-06), and why the recompute does not put the old-style name
+  right.
+- A regression of this morning or not: "NOT known, no older binaries
+  here to ask."
+The note-taker's notes:
+- The reporter's sentence said the profile "changed to Sketch047.2" at
+  the recompute; by this run Python reads ['2'] before it too. What the
+  property view SHOWED before the recompute is the reporter's answer b,
+  "didn't notice". So "changed" is not confirmed and not refuted for
+  what is shown.
+- What is wrong, by this: a bare "2" shown where `Wire2` is meant; the
+  features build as before.
+
+**2026-10-13 12:43, the build session: THE CAUSE SHOWN -- old code, NOT
+this morning's merges or the OCCT sync; a fix in the source, NOT
+committed.** From the build session's message of 2026-10-13 12:43, written here 12:43.
+- Asked directly (`DocumentObject.resolveSubElement`), a sketch names
+  its wire by the wire's mapped name as ('', '2') on the staged copy --
+  "where it should say (';...Wire2', 'Wire2')".
+- Why: `SketchObject::checkSubName` builds an indexed name from a list
+  of kinds it knows (Edge, Vertex, its own); "Wire" is not among them,
+  "the kind is dropped and the NUMBER kept". The lines are of 2018 to
+  2024 by `git blame`; "the user's released build has them too, and
+  the file had '2' on 2026-10-06".
+- So: "'changed at the recompute' is not what happened as far as I can
+  show: the three profiles read '2', '1', '2' right after opening,
+  before any recompute, on every build I have."
+- The fix, in the source: the sketch lets its shape answer for the
+  kinds it does not name itself. With a first form of it on the build
+  of 12:24, `scanner.FCStd` after the migration recompute reads
+  `Pocket023.Profile` (Sketch047, ['Wire2']), `Pad039` ['Wire1'],
+  `Pad040` ['Wire2'] -- "before the fix they stayed '2', '1', '2'".
+  Right after opening, before the recompute, they still read as the
+  file has them.
+- That first form answered ('', '') to the direct question; a second
+  form is in the build running now.
+- New unit test `PartDesignTests/TestSketchWireProfile.py`: on the
+  staged copy "'2' != 'Wire2'".
+The note-taker's note: with the fix a file that has "2" is put right by
+a recompute, not at opening -- by the build session's run; whether that
+is enough for the reporter (the display right after opening still reads
+"2") is not asked yet.
+
+## 93. Ctrl+F in the tree view with a selection: the omni search opens with the object's name typed (a change request) -- COMMITTED `7f3ef57348`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; the four points answered 2026-10-13 about 11:34: "/ ", the path from the top by internal names, a dot; the last selection in view first
+
+**2026-10-13 11:12, the reporter:** "new request, when Ctrl+F and tree view has
+any selection (use the nearest selected item from mouse), launch omni
+search with the object name pre typed"
+
+The note-taker's reading, not the reporter's words:
+- Entry 78 made Ctrl+F in the tree view open the omni search with "/"
+  and a space typed (its object search), and Ctrl+F in the property
+  view open it with the current object's name and a dot (its
+  properties).
+- Now, in the TREE view: when something is selected there, the omni
+  search opens with the NAME of an object already typed. With several
+  items selected: the selected item nearest to the pointer. With
+  nothing selected: as entry 78 has it.
+
+NOT said, lettered for an answer:
+a. THE TEXT typed: "/ " and then the name, so that it stays the object
+   search of entry 78; or the name alone? And with a DOT after it, as
+   the property view's Ctrl+F does (the list then shows the object's
+   properties), or without (the list shows what matches the name)?
+b. WHICH name: the object's internal name (`Pocket023`) or its label?
+   The note-taker's guess: the internal name -- it is what the omni
+   search's paths are made of.
+c. "nearest ... from mouse": nearest by rows in the tree to where the
+   pointer is; and with the pointer OUTSIDE the tree view (the shortcut
+   pressed from the keyboard): the tree's current item, or the first of
+   the selection?
+d. An item selected inside a container or under a link: the object's
+   own name, or the path that leads to it from the top (`Body.Pad`)?
+A smaller point, not put as blocking: the typed name is taken to be
+selected text, so that typing at once replaces it.
+
+Pointers, the note-taker's, from entry 78 as it was built, nothing run:
+- Entry 78 is `b70dab6401` (staged 2026-10-13 06:52); its test is
+  `tests/gui/omni-search-from-tree-and-property-view.py`. From the
+  property view the text typed "leads to the current object, document
+  or view and ends with a dot"; opened on a lone dot with several
+  objects selected the list is of the properties they share.
+- The tree's own choice of ONE item under the pointer exists already
+  for its tooltip (`TreeWidget`'s hit test at `QCursor::pos()`, entry
+  84); "nearest selected" is new.
+
+**2026-10-13 about 11:34, the reporter answers the four points** (written here
+11:35; it came while the note-taker was writing the block of 11:33):
+"entry 93, a '/ ' then the name and dot. b, internal name. c, tree's last
+selection if it is in view, or else the last selection in view, or else
+the current item, or else the last selection. d, path from the top"
+
+The note-taker's reading:
+- a. The text typed is "/ ", then the name, then a DOT -- so the omni
+  search opens in the object search of entry 78 with the object
+  resolved and its properties listed, as from the property view.
+- b. The INTERNAL name.
+- d. The PATH from the top for an item inside a container or under a
+  link (`Body.Pad.`), each step by its internal name.
+- c. WHICH item, an order of four -- and it replaces the first
+  sentence's "nearest selected item from mouse":
+  1. the tree's LAST selection (the item selected most lately), if it
+     is IN VIEW (shown in the tree's visible part);
+  2. else the last selection that IS in view (the most lately selected
+     of the selected items that are visible);
+  3. else the tree's CURRENT item;
+  4. else the last selection, in view or not.
+  The pointer plays no part any more, by this reading.
+Nothing of this entry is left unanswered. A smaller point the
+note-taker had named, still not said: whether the typed text is
+selected so that typing replaces it. With a dot at its end, meant to be
+typed on from, the note-taker's guess is now: NOT selected, the caret
+after the dot.
+
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "Ctrl+F in the tree with a selection: '/ '
++ path from the top by internal names + '.', the order of four as the
+reporter gave it."
+
+## 94. The omni search: Tab to complete a property takes the focus from the edit box -- COMMITTED `7f3ef57348`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; made precise 2026-10-13 11:35: after a property is resolved, the box still there; the widget built for the property suspected
+
+**2026-10-13 11:14, the reporter:** "new defect, when use Tab to complete in omni
+search resolving a property, the edit box lost its focus and cannot type
+anymore."
+
+The note-taker's reading, not the reporter's words:
+- In the omni search, with text that names an object and goes on to one
+  of its properties, Tab is pressed to complete from the list. After it
+  the edit box no longer has the focus: keys typed do not arrive in it.
+- Which copy is not said; the copy under test is the stage of 09:36
+  (`abca255e23`).
+
+NOT said, lettered for an answer:
+a. AN EXAMPLE of the text at the moment Tab is pressed, and what is in
+   the box afterwards: is the text completed and only the focus gone,
+   or is nothing completed either?
+b. AT WHICH step: completing the object's name, the property's name
+   after the dot, or a value after the property?
+c. WHERE the focus goes, if it can be seen: is the omni search still
+   open; does a click into the box bring typing back?
+d. HOW it was opened: Ctrl+F from the tree view or the property view
+   (entry 78), or the omni search's own box; and did Tab work there on
+   an earlier copy?
+
+Pointers, READ by the note-taker, nothing run; the cause is NOT found:
+- `src/Gui/OmniSearchBox.cpp`, `OmniSearchEdit::eventFilter` (near line
+  1423): while a completer's popup is up, a plain Tab on the popup is
+  taken for "pick the current row" (`chooseCurrentRow()`) -- and
+  swallowed only if that answers yes. If it answers no, or if the popup
+  the key arrives at is not the one counted as active, the Tab goes on
+  to Qt, whose own meaning for Tab is "focus to the next widget". That
+  would be this defect; a guess.
+- The comment there says the completers forward keys to the edit's
+  `event()` past any filter on the edit, which is why the popups are
+  filtered: a completer (or a popup) made for the property step that
+  does not carry this filter would let Tab through the same way.
+- Near it: entry 78 (`b70dab6401`), which opens the omni search from
+  the property view with the object's name and a dot typed -- the very
+  place where properties are resolved; and entry 93.
+
+**2026-10-13 11:35, the reporter makes it precise:** "entry 94, after it
+completes and resolved a property. the search box is still there. I geust
+it is because of the widget built for the property causing the lost of
+focus. my last test is ctrl+f from tree view and proeprty view, same lost
+focus behavior. I don't think that's a factor"
+
+The note-taker's reading:
+- b. The step: the Tab completes the text and RESOLVES A PROPERTY --
+  the focus is lost after that, not at the object's name.
+- c. The search box is still there afterwards; only typing into it is
+  gone. Whether a click into it brings typing back is not said.
+- The reporter's own guess at the cause: once a property is resolved
+  the omni search builds a WIDGET for it (its editor), and that widget
+  takes the focus from the edit box.
+- d. Tried with the omni search opened by Ctrl+F from the tree view and
+  from the property view: the same both ways; how it is opened is "not
+  a factor" in the reporter's view.
+- a. An example of the text is not given; not needed any more by the
+  above.
+The note-taker's guess of 11:14 (a Tab that falls through to Qt's
+"focus to the next widget") is put behind the reporter's: both end with
+the focus on another widget, the reporter's names which. NOT looked
+into: where the omni search makes the editor of a resolved property and
+whether it gives the focus back.
+
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "Tab completes and the focus stays in the
+box; Return hands it to the value's editor, as before."
+
+## 95. The omni search: a name typed in small letters is not corrected to the object found when a dot resolves it -- COMMITTED `7f3ef57348`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; the three points answered 2026-10-13 11:38: at the dot, whenever the property list is shown, every step
+
+**2026-10-13 11:15, the reporter:** "new defect, omni search, when type object
+name in small case and find one match with captial start letter, press
+dot will resolve its property bot still leave the typed object name small
+case. should auto correct object name to the resolved object"
+
+The note-taker's reading, not the reporter's words:
+- Typed: an object's name all in small letters, say `pocket023`. The
+  list finds ONE object, whose name is written with a capital,
+  `Pocket023`. A dot is typed: the properties of that object are
+  listed -- so the name is resolved -- but the box still reads
+  `pocket023.`.
+- Wanted: at that moment the typed name is replaced by the name as the
+  object has it, `Pocket023.`.
+
+NOT said, lettered for an answer:
+a. WHEN: at the dot only; or as soon as the typed text has exactly one
+   match; and at Tab and Return as well? The note-taker's guess: at the
+   dot, and wherever else the name is taken as resolved.
+b. THE STEPS AFTER the object: a property or a sub-object typed in small
+   letters and resolved by the next dot (`pocket023.placement.` ->
+   `Pocket023.Placement.`) -- corrected the same way? The guess: yes,
+   every step.
+c. MORE THAN ONE object differing by capitals only (`Box` and `box`):
+   the text as typed wins and nothing is corrected? The guess: yes.
+
+Pointers, the note-taker's, nothing run and the source not followed for
+this one:
+- The omni search's box is `src/Gui/OmniSearchBox.cpp`; the resolving
+  of a typed path is in `src/Gui/OmniSearch.cpp`.
+- Near it: entry 78 (the object's name and a dot typed for the property
+  view's Ctrl+F), entry 93 (the name typed from the tree's selection)
+  and entry 94 (Tab while a property is resolved) -- all in the same
+  step of the same box, and likely to be worked on together.
+
+**2026-10-13 11:38, the reporter answers the three points:** "entry 95. a,
+at the dot if the property list is shown, which means it already resolved
+to some object. b, yes. c, as long as property list is shown, correct to
+the resolved object"
+
+The note-taker's reading:
+- a. WHEN: at the DOT, on one condition -- the property list is shown.
+  A shown list means the text before the dot has resolved to an object;
+  that is the moment the typed name is replaced by the object's own.
+  (Not at Tab or Return as such: the rule is the list being shown.)
+- b. Yes: the steps after the object are corrected the same way.
+- c. Several objects differing by capitals only: NOT "the text as typed
+  wins", as the note-taker had guessed -- as long as the property list
+  is shown, the text is corrected to the object the list is OF.
+  Whichever object the omni search resolved to gives the name.
+Nothing of this entry is left unanswered.
+
+**2026-10-13 12:43, the build session: WRITTEN, in the build, with a
+test; NOT committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "At a dot, with the list shown, the typed
+names take the case of what they resolved to, at each step."
+
+**2026-10-13 13:51, a LIMIT of what is built, from the build session, "to
+tell the reporter":** From the build session's message of 2026-10-13 13:51, written here 13:50. "The names are corrected wherever the list
+comes up; the completer brings none up for a FURTHER step typed small
+('/ Crate.placement.'), so that stays as typed -- changing that is in the
+expression completer." So the reporter's answer b ("yes", every later
+step) is built for the steps where a list is shown, which is also the
+condition the reporter set in answer a; a later step typed small that
+brings up no list is not corrected.
+
+## 96. The close icon of an overlay panel gets a border, so it does not look like a missing icon (a change request) -- on the stage of 13:56 fine on the title bar, INVISIBLE in the menu View > Dock window overlays under Dark (the reporter 14:09); COMMITTED `cbb01f5de3`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted; answered 2026-10-13 11:40: a square line frame, wherever that X is shown, the menu too; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the menu's icons COMMITTED `648cf34f83` 2026-10-13, pushed 19:24
+
+**2026-10-13 11:17, the reporter:** "new request, add a border to the close icon
+for overlay pannel, so it does not look like a icon not found defect"
+
+The note-taker's reading, not the reporter's words:
+- The close button in the title bar of an overlaid panel shows a bare
+  X. A bare X is also what a place looks like where an icon could not
+  be found; so it reads as a defect.
+- Wanted: a border drawn with the X -- the X in a frame -- so that it
+  reads as a button to close.
+
+NOT said, lettered for an answer:
+a. THE BORDER'S SHAPE: a square frame around the X, a rounded one, or a
+   circle? And a line only, or a filled ground under the X?
+b. WHICH buttons: the close button alone, or every button of an
+   overlay's title bar (float, the mode, auto hide, the task panel's
+   own) framed the same way, so that they look of one kind? The
+   note-taker's guess: the close button alone, as said.
+c. WHERE ELSE the same X is shown: the close button of a task panel
+   shown in its view and of a panel docked in the main window (entry
+   73 made those follow the theme) -- framed too, or the overlay's
+   only?
+
+Pointers, READ by the note-taker, nothing run:
+- The icon is `src/Gui/Stylesheets/overlay/close.svg`: 12 by 12, ONE
+  path, the two strokes of an X with round ends, and nothing else.
+  Beside it `close_light.svg`, `close_lighter.svg`, `close_red.svg`.
+  The title buttons are drawn from these files in the colour the
+  overlay sheet states (`Gui--OverlayToolButton` `qproperty-iconColor`,
+  white under the Outline sheets since entry 73, `2d945c8268`).
+- A border could be drawn into the picture (a frame in the file, tinted
+  with the X) or stated by the sheet for the button
+  (`Gui--OverlayToolButton` has `border: none` in
+  `overlay/Dark-Outline.qss`); the reporter says "to the close icon".
+- Near it: entry 73 (the title buttons made dark/light aware), entry 87
+  (the overlay's outline effect lays a dark copy under what is
+  painted -- a thin frame would get it too).
+
+**2026-10-13 11:40, the reporter answers the three points:** "entry 96. a,
+square line only. b, yes. c yes, also the same icon is used in the menu.
+that too"
+
+The note-taker's reading:
+- a. A SQUARE frame, a LINE only -- no filled ground under the X.
+- b. "yes" to a point that held two choices (the close button alone, or
+  every title button framed the same). The note-taker takes it for the
+  choice put as the guess: the CLOSE button alone. To be said by the
+  reporter if all the title buttons were meant.
+- c. Yes: the same X is framed on a task panel shown in its view and on
+  a panel docked in the main window too. And MORE than was asked: "the
+  same icon is used in the menu. that too" -- wherever a menu shows
+  that close icon, it is framed as well. WHICH menu is not said; the
+  note-taker's reading: every place the icon is shown, so the frame
+  belongs in the picture itself and not in one button's style.
+
+**2026-10-13 12:43, the build session: WRITTEN, in the build; NOT
+committed.** From the build session's message of 2026-10-13 12:43, written here 12:43. "A square frame, a line, in `overlay/close.svg`
+itself, the cross smaller inside it -- so the title bar, a task panel in
+its view and the menu commands that use the picture all get it." The
+reporter's "b, yes" is thereby built as the close icon alone, as the
+note-taker took it.
+
+**2026-10-13 14:09, the reporter on the stage of 13:56:** "entry 96, the
+close icon looks fine on overlay title bar. but when viewing in menu,
+Views -> Dock window overlays, in dark theme, hence invisible. light theme
+looks fine"
+
+The note-taker's reading:
+- CONFIRMED by hand: the framed close icon on an overlay's title bar.
+- A DEFECT that is left: in the menu View > Dock window overlays the
+  same icon stands before some of the commands. Under the DARK theme it
+  is drawn dark on the menu's dark ground and cannot be seen. Under
+  Light it is fine.
+
+NOT said, not put as blocking:
+- Whether the X in that menu was invisible under Dark BEFORE this stage
+  too, the frame only making it noticed -- or is new with the frame.
+- Whether the other icons of that menu (the ones that are not the
+  close icon) can be seen under Dark.
+
+Pointers, READ by the note-taker, nothing run:
+- `src/Gui/CommandView.cpp`: four commands of that menu
+  (`Std_DockOverlayToggleLeft`, `...Right` and the two after them, near
+  lines 5256 to 5331) have `sPixmap = "qss:overlay/close.svg"` -- the
+  picture as it is in the file.
+- The file is drawn in black (at half opacity, by the comment in
+  `overlay/Dark-Outline.qss`: "the files are black at half opacity, so
+  white"). On the TITLE BAR the button tints it through
+  `Gui--OverlayToolButton` `qproperty-iconColor` (white under the
+  Outline sheets since entry 73, `2d945c8268`) -- which is why it is
+  fine there. A MENU takes the picture untinted: black on the Dark
+  theme's menu.
+- So what is missing is a tint for the theme where the picture is used
+  as a command's icon -- the same kind of thing entry 73 did for the
+  title buttons and the docked panels' buttons.
+
+**2026-10-13 15:08, the build session: the MENU's icon in the source, in
+the build, NOT committed.** From the build session's message of 2026-10-13 15:08, written here 15:07. "The four Std_DockOverlayToggle<Side>
+commands get the glyph tinted white under a dark theme, as a title button
+paints it."
+
+**2026-10-13 17:25, the build session: the MENU's tint NOT SHOWN either
+way on the build staged 16:55.** From the build session's message of 2026-10-13 17:25, written here 17:25. `overlay-close-icon-frame.py`
+"FAILED its Dark claims (the four icons black) -- but OFFSCREEN, where the
+colour scheme does not change (`Application::isDarkTheme()` goes by Qt's
+scheme); the title buttons' own theme test fails the same way there and
+passed on the real screen in the morning. So NOT SHOWN either way for the
+staged copy; possibly it works on the user's screen." In the next build
+the icon is set again when the scheme itself changes ("a theme sets its
+sheet first, its scheme after"), and the test runs on the real screen.
+For the reporter: the menu View > Dock window overlays under Dark on the
+stage of 16:55 is worth a look -- it may or may not show the icons.
+
+**2026-10-13 19:17, the build session: the menu's icons SHOWN on the build
+r7 and COMMITTED `648cf34f83`, local.** From the build session's message of 2026-10-13 19:17, written here 19:19. "96 on the real screen 19
+of 19, also with the user's configuration (so it may well have worked in
+the copy staged at 16:55; my failing run was offscreen)". The icon is set
+again when the colour scheme itself changes (the change announced 17:25).
+Not pushed; the staged copy is still the build of 16:55, where the menu
+under Dark was not shown either way.
+
+## 97. A crash: File > Revert on the loaded scanner document -- REPRODUCED 2026-10-13 11:50 on the staged copy, every revert with a TechDraw page's view open; the fix COMMITTED `3549b0a19f`, pushed 2026-10-13 15:58; staged 2026-10-13 13:56 from the code then uncommitted
+
+**2026-10-13 11:20, the reporter:** "new crash, check cdb and possibly dump, the
+crash happen when I click menu File -> Revert to rever the loaded scanner
+document"
+
+READ by the note-taker in the debugger's log, nothing run, the debugger
+and the dump not touched:
+- The session: the reporter's copy under cdb (`tools\fcad-user-cdb.cmd`),
+  the stage of 09:36 (`abca255e23`; `.conda\user-app\INSTALLED.txt`),
+  up for 1 h 36 min at the crash.
+- The log `D:\works\sw\tools\dbg\cdb_fcad_user.log`: "Access violation
+  - code c0000005 (first chance)" at 11:18:43, "Attempt to read from
+  address 0000024988d6a010", in
+  `FreeCADApp!` `anonymous namespace'::describe+0xa5`
+  (`src\App\TransactionLog.cpp` @ 151). A dump was written,
+  `D:\works\sw\tools\dbg\dumps\fcad_user_av_e0b0_2026-10-13_11-18-52-623_0344.dmp`
+  (6.7 MB), then the second chance. The program's own short log,
+  `%APPDATA%\FreeCAD\crash-2026_10_13-11_19_00_588.log`, has the same
+  address: "native exception 0xc0000005 at ... (FreeCADApp.dll+0x71a515),
+  reading 0x24988d6a010".
+- The stack, from the crash outwards:
+  1. `anonymous namespace'::describe` (`TransactionLog.cpp` @ 151)
+  2. `App::TransactionLog::onCommit` (`TransactionLog.cpp` @ 3143)
+  3. `App::Document::_commitTransaction` (`Document.cpp` @ 1913)
+  4. `App::Application::commitImplicitTransactions`
+     (`AutoTransaction.cpp` @ 176) -- called as a QUEUED call
+     (`QMetaCallEvent::placeMetaCall`)
+  5. ... Qt's sending of posted events ...
+  6. `pumpEvents` <- `Gui::SequencerBar::setValue` <-
+     `Base::SequencerLauncher::next` -- the progress bar
+  7. `App::Document::readObjects` <- `App::Document::Restore` <-
+     `App::Document::restore` <- `App::DocumentPy::restore`
+  8. Python <- `Gui::Command::_doCommand` <-
+     `StdCmdRevert::activated` (`CommandDoc.cpp` @ 966)
+- Kept, outside the repository: the whole debugger log and the short
+  crash log copied to `..\dl\handson\2026-10-13\entry97` (the log is
+  written over at the next start under the debugger); the dump stays
+  where the debugger wrote it.
+
+The note-taker's reading of the stack, from the source, NOT shown by a
+run:
+- Revert reads the document in again (`Document::restore`), which first
+  removes every object it has. While it reads the objects, each step of
+  the progress bar lets posted events run.
+- One of them is a queued `commitImplicitTransactions`: an implicit
+  transaction was still open on the document. Its commit goes through
+  the transaction log, which walks the transaction's objects and asks
+  each for its type (`describe`: `c.container->getTypeId()`, line 151)
+  -- and one of those objects is of the document as it was BEFORE the
+  revert, deleted by now. The read of freed memory is the crash.
+- So the two things that meet: a transaction left open (or queued to be
+  committed) when Revert starts, and events let in during the restore.
+- Not new this morning by the history: the implicit transactions
+  (`44a585781b`, 2026-09-22) and the transaction log are in the stages
+  of 2026-10-12 17:52 and 2026-10-13 06:52 too. Whether the same crash
+  could happen there is NOT known.
+- The same family as entry 79 (a repaint let in by the restore's
+  progress bar took scene roots away under a walk) and entry 47's
+  crash on a close inside the load: something let in by the progress
+  bar's pump meets a document half restored.
+
+NOT said, lettered for an answer:
+a. What had been done to the document before Revert: the migration
+   recompute (entry 92), an edit panel opened or closed (a Pocket's,
+   entries 91 and 92), a value changed in the property view?
+b. Once, or does it crash at every Revert of that document?
+
+**2026-10-13 11:33, the build session: the stack read; a reproduction on
+the staged copy is running.** From the build session's message of 2026-10-13 11:33, written here 11:34. Its reading of the cause, "from
+`Document.cpp`, not shown yet": `Document::restore(XMLReader&)` calls
+`clearUndos()` and THEN signals the deletion and deletes the objects, and
+only after that sets Restoring; "a write made in between (by whoever
+hears the deletion) opens an implicit transaction that holds the objects
+about to be deleted; its queued commit runs from the progress bar's pump
+and `TransactionLog::onCommit` asks a dead object for its type."
+
+**2026-10-13 11:50, the build session: REPRODUCED, the cause SHOWN; a fix
+in the source, NOT built yet.** From the build session's message of 2026-10-13 11:50, written here 11:49.
+- Reproduced on the STAGED copy of 09:36, offscreen, with
+  `..\2026-10-06\scanner.FCStd`: opened, `Std_Revert`, Yes -> "EXIT
+  -1073741819 with the reporter's stack".
+- The note-taker's two points, answered "from a run, not from the
+  reporter": with the migration recompute first AND without it --
+  "nothing has to be done to the document before, and it is every
+  revert, not once".
+- THE WRITER, shown by observers that write down every change from the
+  moment Yes is pressed: "OPEN TRANSACTION scanner '<implicit>'", then
+  `Page003.Visibility`, `Group._GroupTouched`, `Group.HiddenChildren`,
+  the view provider's `Visibility`, `Page003.ViewObject` -- "and only
+  then the document's deletion".
+- So: the teardown closes the TechDraw page's view, which HIDES THE
+  PAGE -- "a write to the page and to the group it is in, outside any
+  command, so with the transaction log on an implicit transaction of
+  its own; the two objects are deleted a moment later; the commit,
+  queued, reads them". The note-taker's reading of 11:23 "was right in
+  its substance; the family is `Document::~Document`'s, which already
+  keeps this out of the log with `d->closing`".
+- A document of three boxes reverts without a crash on that copy; with
+  a TechDraw page in a group and the page's view open it crashes at the
+  first revert. That document is the new test,
+  `tests/gui/revert-document.py`.
+- The fix, in the source, NOT built: while
+  `Document::restore(XMLReader&)` and `Document::clearDocument()`
+  signal the deletion and delete the objects, the document wants no
+  transaction (a flag `d->clearing` asked by
+  `Document::transactionsWanted()`). Three small changes in
+  `src/App/Document.cpp`, one member in
+  `src/App/private/DocumentP.h`.
+- Waiting for the build: the revert test twice, the scanner file
+  reverted twice with and without the recompute, the tests of entries
+  87 to 90 again (the hover drawn the second way), the tests near
+  them, then BOTH suites.
+The note-taker's note for the reporter: until a stage with the fix,
+File > Revert on a document whose TechDraw page is open ends the
+program -- every time, on this stage and by the history on the stages
+of 2026-10-12 17:52 and 2026-10-13 06:52 as well (those not run).
+
+**2026-10-13 12:43, the build session: FIXED on a build, NOT committed
+yet.** From the build session's message of 2026-10-13 12:43, written here 12:43. `tests/gui/revert-document.py` 12 of 12, three runs (the
+document with a page in a group, its view open, reverted twice; "on the
+staged copy it crashes at the first revert"); the scanner file reverted
+with and without the migration recompute: no crash, no crash log.
+
+## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, not started; the text's outline off where it has a background (added 2026-10-13 14:13); the four points answered 17:04: the text only, the tree items' background, these two, no outline where there is a background; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged
+
+**2026-10-13 12:11, the reporter:** "new request, when in overlay transparent
+mode, add text background (same color for their widget background) for
+python console and report view with same overlay background alpha."
+
+The note-taker's reading, not the reporter's words:
+- While an overlaid panel is see-through, the text of the Python
+  console and of the report view stands directly on the 3D view and is
+  hard to read. Wanted: a backing behind the TEXT, as entry 69 gave the
+  tree view's items one.
+- The colour: "same color for their widget background" -- the
+  background colour each of the two widgets has when it is not
+  see-through (the console's own, the report view's own, as the theme
+  or the settings give them).
+- The opacity: "same overlay background alpha" --
+  `View/DockOverlayAlpha`, "Overlay background opacity", 150.
+
+NOT said, lettered for an answer:
+a. HOW FAR the backing reaches: behind each line as wide as its text
+   only (as the tree's item backing is cut to the item); the whole
+   width of every line that has text; or the whole text area? The
+   note-taker's guess: as wide as the text, the empty part clear.
+b. THE COLOUR, to be sure: the widget's own background (so a console
+   with a dark ground gets dark backing whatever the 3D view's colour
+   is) -- NOT the 3D view's background colour that the tree's items
+   follow by entry 69? And is the tree's setting "Item background
+   follows the theme" to have no say here?
+c. ONLY these two, or every overlaid panel that shows running text (the
+   selection view, the transaction log, the text of a task panel)? The
+   guess: these two, as said.
+A smaller point, not put as blocking: the pass-through of entry 86
+passes only where the picture is fully clear, so the backed text would
+take clicks and the clear rest would pass them -- as in the tree view.
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- The two widgets are text editors (`Gui::PythonConsole`,
+  `Gui::DockWnd::ReportOutput`), not item views: there is no item to
+  back, so the backing would be painted per line of text or set as the
+  text's own background format.
+- Near it: entry 69 (the opacity setting and the item backing), entry
+  87 (the overlay's outline effect, now leaving out what is no more
+  opaque than the backing -- a text backing at the same opacity would
+  fall under the same rule), entry 88 (the scroll bars of these same
+  panels), entry 30 (the Python console's background in the theme
+  packs).
+
+**2026-10-13 about 14:12, the reporter asks:** "is python console/report view
+text background request in staged copy" -- answered by the note-taker: NO;
+the entry is not started and waits for its three points; the stage of
+13:56 carries entries 84, 85 and 87 to 97.
+
+**2026-10-13 14:13, the reporter adds:** "note that like tree item background,
+turn of text outline when having text background"
+
+The note-taker's reading:
+- "turn of" is taken for "turn OFF": where the text of the Python
+  console or of the report view stands on its new background, the
+  overlay's OUTLINE of that text (the dark copy laid under whatever an
+  overlay paints, entry 87) is not drawn. The background does the
+  outline's work.
+- "like tree item background": the same is meant to hold for the tree
+  view -- an item that has its background needs no outline round its
+  text.
+
+A point this raises on ENTRY 87, NOT answered:
+- As the build session wrote entry 87's fix (its message of 11:33) the
+  outline effect leaves out what is no more opaque than the item
+  background -- "text and icons keep their outline, a see-through fill
+  gets none". So in the stage of 13:56 the TEXT of a backed tree item
+  still HAS its outline. The reporter's sentence reads as if it had
+  none, or should have none.
+- d. For the reporter: in the tree view, should the text and the icon
+  of an item that has a background be drawn WITHOUT the outline too --
+  so that this note is a change to entry 87 as built -- or is the tree
+  right as it looks on the stage of 13:56 and the note is about the
+  console and the report view only?
+
+**2026-10-13 17:04, the reporter answers the four points:** "entry 98. a,
+just its text. I thought text drawing or font setting can achieve the
+effect by just normal text rendering. b, same background used by the tree
+item. c, yes. d, really, but tree item with background does not show
+outline anyway, so drop it too if has background."
+
+The note-taker's reading:
+- a. The backing is behind the TEXT ONLY -- as wide as each line's
+  text. And a hint at how: the reporter expects that the ordinary
+  drawing of text can do it -- a background set on the text itself (its
+  character format), no painting of the note-taker's kind needed.
+- b. THE COLOUR: the SAME BACKGROUND THE TREE'S ITEMS USE -- so the
+  colour of entry 69's item backing (the 3D view's background colour
+  by the theme, or the tree's own item colour, as "Item background
+  follows the theme" says) at the overlay's opacity. NOT the console's
+  or the report view's own widget background, which is how the
+  note-taker had read "same color for their widget background" at
+  12:11; that reading is put right by this answer, and the setting
+  DOES have its say here.
+- c. Yes: these two panels only.
+- d. "really": the reporter had not known the tree keeps the outline on
+  the text of a backed item. The rule, for both: where there is a
+  background, the outline is DROPPED -- "tree item with background does
+  not show outline anyway". So in the tree the text and the icon of an
+  item that has its background are drawn WITHOUT the outline too. That
+  is a change to entry 87 as built and staged (the outline effect
+  leaving out the see-through fill but keeping text and icons); noted
+  under entry 87.
+Nothing of this entry is left unanswered.
+
+## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- the dashes and the default in a build 2026-10-13 15:08, the picking not started; the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the default scale COMMITTED `6e7232e7c2` 2026-10-13, pushed 19:24; the picking STILL NOT WORKING 19:17, the dashes wait with it; the picking still not working on the builds r9 and r10 (22:06), its cause found, a build r11 to come; the picking WORKS on the build r14, the dashes and the picking COMMITTED `1109842583` 2026-10-13, local
+
+**2026-10-13 12:19, the reporter:** "new defect, the App::origin plane and axis
+when blocked, shows a dash line/border, but the dash is too sparse, barely
+reconizable. make it a bit more dense. and how is origin size controlled
+now? it's current size is too small, coupled with sparse dash made it so
+much worse. also change the picking strategy to prioritize on axis and
+plan border picking. actually there is special handling to lower picking
+priority for original plane. but with this samll size of origin, they are
+all blocked by object, hence non-pickable practically. so make the axis
+and border picking normal would be enought, because they are in on-top
+show group"
+
+The note-taker's reading, not the reporter's words -- three things:
+1. A DEFECT, the dashes: where an origin's axis or the border of one of
+   its planes lies behind an object, it is drawn dashed; the dashes are
+   so far apart that the line can barely be made out. Wanted: "a bit
+   more dense".
+2. A QUESTION, answered below, with a complaint in it: the origin is
+   too small as it is drawn now.
+3. A CHANGE of picking: the axes and the planes' BORDERS are to be
+   picked like any other geometry. The reporter's reasoning: there is a
+   special lowering of the pick priority for the origin's planes; with
+   the origin this small everything of it lies behind the object, so
+   nothing of it can be picked in practice; the axes and borders are
+   drawn in the group shown on top, so normal priority for those two is
+   enough. (The plane's FACE is not named: by the note-taker's reading
+   it keeps its lowered priority.)
+
+The QUESTION answered, READ in the source and in the reporter's
+configuration by the note-taker, nothing run:
+- The size is a setting since the datum sizing was made to follow
+  upstream: `View/DatumScreenSize`, "Constant datum size on screen",
+  ON by default -- origins, coordinate systems and datum elements are
+  drawn at a constant size ON SCREEN, whatever the model's size and the
+  zoom. With it OFF an origin is sized to the objects of its body or
+  part (the fork's older way).
+- The on-screen size is tuned by three more of the same group
+  (`src/Gui/ViewParams.py`): `DatumScale`, "Datum scale", in percent,
+  100; `DatumPlaneSize` 62, a plane's size before the scale;
+  `DatumLineSize` 70, an axis's length before the scale. And
+  `DatumTemporaryScaleFactor` 2: how much the planes grow while a
+  reference is picked from them.
+- The reporter's configuration has all of them at these defaults
+  (`DatumScreenSize` 1, `DatumScale` 100). So "too small" is the
+  default; "Datum scale" at 150 or 200 makes the whole origin that much
+  larger. Whether these are shown on a preference page was not looked
+  for; the omni search finds settings by name.
+
+NOT said, lettered for an answer:
+a. THE DASHES: how dense -- about half line and half gap? Today a
+   quarter is line and three quarters gap (the pattern 0xF000,
+   "dash-skip-skip-skip").
+b. THE SIZE: is a larger DEFAULT wanted ("Datum scale" 150? 200?), or
+   is knowing the setting enough?
+c. THE PICKING: the axes and the borders at normal priority -- also
+   their HIDDEN, dashed parts, so that an axis behind a face is picked
+   THROUGH the face in front of it? (That is what "shown on top" would
+   mean for picking.) And the plane's face keeps its lowered priority?
+d. WHICH things: the origin of a body and of a part only, or a local
+   coordinate system and the datum planes and lines as well -- the same
+   drawing code serves them all?
+
+Pointers, READ in the source by the note-taker, nothing run:
+- The dashes: `src/Gui/ViewProviderDatum.cpp` near line 335 -- the
+  hidden features are drawn in an `SoFCPathAnnotation` (priority -1)
+  with a line width of 2 and `linePattern` 0xF000.
+- The picking: `src/Gui/ViewProviderPlane.cpp` puts the plane's face in
+  an `SoFCLatePickGroup` (near line 79) -- the lowering the reporter
+  speaks of -- and gives the plane and `ViewProviderLine.cpp` the axis
+  a pick style by bounding box.
+- The size: `ViewProviderDatum::updateDatumSize`
+  (`ViewProviderDatum.cpp` near line 201), which reads the settings
+  above.
+- Near it: entry 54 (a selection shown on top and what lies behind a
+  face), the reporter's word of 2026-09-28 that asked for upstream's
+  constant on-screen size as the default.
+
+**2026-10-13 13:23, the reporter answers the four points:** "entry 99. a,
+quarter gap, three quarters line. b, scale 200. c, yes for both questions.
+d, same for all"
+
+The note-taker's reading:
+- a. The dashes: three quarters LINE, a quarter GAP -- the reverse of
+  today's a quarter line (as a 16-bit pattern, 0xFFF0 for today's
+  0xF000).
+- b. "scale 200": the DEFAULT of "Datum scale" (`View/DatumScale`)
+  becomes 200 where it is 100.
+- c. Yes to both: the hidden, dashed parts of the axes and of the
+  planes' borders are picked THROUGH a face in front of them; and the
+  plane's FACE keeps its lowered priority.
+- d. The same for all: the origins of bodies and parts, the local
+  coordinate systems, the datum planes and lines.
+Nothing of this entry is left unanswered.
+
+The note-taker's caution on b, not said by the reporter: the reporter's
+own configuration has `DatumScale` written out at 100.000 (read at
+12:19), and a value that is written wins over a changed default. So on
+the reporter's own copy a new default of 200 changes NOTHING until that
+key is removed or set by hand -- unless the change also carries those
+who still have the old default over (as entry 72's did for its two
+values; how that was done is in its commit). Not asked of the reporter;
+for the build session to decide or to ask.
+
+**2026-10-13 15:08, the build session: (a) and (b) in the source, in the
+build, NOT committed; (c), the picking, NOT started.** From the build session's message of 2026-10-13 15:08, written here 15:07.
+- (a) the dashes 0xFFF0; (b) the default of `DatumScale` 200.
+- "The user's config as copied 14:52 stores DatumScale 300, not 100, so
+  they set it themselves since." So the note-taker's caution of 13:23
+  (the configuration has 100 written) is overtaken: the reporter has
+  set the scale by hand, and the new default changes nothing for them
+  either way.
+
+**2026-10-13 15:36, the build session: (c), the PICKING, prepared as a
+script, not applied.** From the build session's message of 2026-10-13 15:36, written here 15:36. "A datum's hidden dashed part
+(`SoFCPathAnnotation` of `ViewProviderDatum`) marks its edges and vertices
+as picked through what is in front; such a hit takes the pick from a face
+wherever the face is, a face does not take it back, between it and another
+edge or vertex the nearer wins; the plane's face stays a late pick." The
+before and after pictures need one short run on the real screen.
+
+**2026-10-13 17:25, the build session: (c), the PICKING, does NOT work on
+the build staged 16:55 -- the cause FOUND, changed for the next build.**
+From the build session's message of 2026-10-13 17:25, written here 17:25.
+- `datum-picked-through-a-face.py` FAILED: "the face is still picked".
+- The cause: "the pick asks the PRESELECTED object first, by itself,
+  and a hit there ends it; with a solid under the pointer that is the
+  solid's face every time and the scene, the datum's dashed lines in
+  it, is never asked. (With the box hidden the axis is picked where the
+  test points: the geometry of the test is right.)"
+- In the next build: "the nodes marked pick-through are kept by path,
+  as the late-pick ones are, and asked after that first pass whenever
+  it ended on a face."
+So on the stage of 16:55 the dashes (a) and the scale's default (b) are
+in; picking an axis or a border through a face is not.
+
+**2026-10-13 19:17, the build session: (c), the PICKING, STILL does not
+work -- after two changes; (b) alone is committed.** From the build session's message of 2026-10-13 19:17, written here 19:19.
+- "NOT WORKING, not committed: entry 99 (c). The pick still ends on the
+  face in front, offscreen and on the real screen (tried there with
+  pointer events sent to the scene, the user's pointer not touched),
+  after two changes of mine. r8 carries a trace to find out why."
+- "99 (a), the dashes, is in the same file as (c) and waits with it."
+- COMMITTED `6e7232e7c2`, local: "99, the default scale 200 alone" --
+  read by the note-taker: `DatumScale` 100.0 -> 200.0 in
+  `src/Gui/ViewParams.py` and its generated `.cpp`.
+The note-taker's notes: the cause given at 17:25 (the preselected
+object asked first) was then not the whole of it, or its change did not
+take -- not said which. The dashes (a) ARE in the copy staged at 16:55,
+from the code then uncommitted; they are not committed. The reporter's
+configuration has `DatumScale` 300 written by hand, so the new default
+changes nothing for them.
+
+**2026-10-13 20:15, the build session: (c) reworked after the trace, NOT
+built.** From the build session's message, which it stamps 20:14; written here 20:15. "entry 99 (c) reworked after the trace (the scene pass
+never used my rule; now a pass of its own whenever a single pick ends on a
+face) -- not built". Uncommitted, in the tree. The dashes (a) are not
+spoken of.
+
+**2026-10-13 22:06, the build session: (c) NOT working on the builds r9
+nor r10 -- the cause, in two parts, found; a build r11 to come.** From the build session's message, which it stamps 22:06; written here 22:06.
+- "(1) the paths the render cache manager keeps for a pick of its own
+  start at the scene root, BELOW the camera, so a pick along them had
+  no view to cast a ray in -- this also means that under the renderer a
+  datum plane could never be picked by its face (the 'late pick'; shown
+  on r9: box hidden, pointer inside a plane, nothing picked)".
+- "(2) put behind the view's path and applied one by one (r10), a ray
+  pick forgets its hits at the start of each traversal, so only the
+  last path's were left. r11 applies them in one traversal; it builds
+  after ctest on r10, results to come."
+- "Offscreen has no render engine, so the datum test is a real-screen
+  test now, its pointer moves sent as scene events (no real pointer
+  moved)."
+The note-taker's notes: (1) names a SECOND defect, older than this
+entry -- under the renderer a datum plane cannot be picked by its face
+at all; whether the reporter has met it is not said, and it is not an
+entry of its own. This is the third cause given for (c) today (17:25
+the preselected object asked first; 20:15 the scene pass never using
+the rule; now the paths and the traversal). Not committed.
+
+**2026-10-13 23:20, the build session: (c) WORKS on the build r14;
+COMMITTED `1109842583` with the dashes (a), local, not pushed, not
+staged.** From the build session's message, which it stamps 23:20; written here 23:20.
+- "build r14, real screen, pointer not moved (moves sent as scene
+  events): tests/gui/datum-picked-through-a-face.py 3 of 3 -- the X
+  axis picked through a box that encloses the origin
+  ('Body.Origin.X_Axis.' at 12, 20, 28, 36 pixels from the origin), the
+  box's face beside the lines, and with the box hidden a plane of the
+  origin picked by its face ('Body.Origin.XZ_Plane.'). The build before
+  gave the box's face, the box's face and nothing."
+- "Ten pick neighbours on r14, none failing (pick-edge-in-face 24,
+  sketch-face-on-solid-pick 91, selection-per-view 26,
+  selection-on-top-hidden-edges 18, per-view-visibility-pick-cull 4,
+  reopen-claimed-child-pick 9, view-selection-point 4,
+  box-selection-gate 6, sketch-datum-label-pick 12,
+  sketch-constraint-external-pick 20)."
+- "THE CAUSE, the fourth reading and the one a trace showed (r13): at
+  the pick the table of paths was EMPTY. Each kept path had a sensor
+  that took it out at any change of the scene before it -- a
+  preselection highlight is one -- and only a new capture of that node
+  put it back. Behind that were the two I reported at 22:06 (the paths
+  start below the camera; applied one by one only the last path's hits
+  are left)."
+- "All three hold for the LATE pick too, which is older than the entry:
+  under the renderer a datum plane could not be picked by its face; it
+  can now."
+SEEN in the commit: `src/Gui/Inventor/SoFCRenderCacheManager.cpp`, `.h`,
+`src/Gui/SoFCUnifiedSelection.cpp`, `.h`, `src/Gui/ViewProviderDatum.cpp`
+and the test. The note-taker's notes: here the test WAS seen failing
+before the fix ("the build before gave ..."). The two full suites on a
+build with this commit are not spoken of (ctest of r10 is of the build
+before it). With this, a, b and c of the entry are all committed; d
+("same for all") is how they were built. Not in the staged copy: the
+copy of 16:55 has the dashes and the default, not the picking.
+
+## 100. The Dark theme's borders a bit more subtle: a darker grey (a change request) -- OPEN, three points not answered; DECIDED 2026-10-13 17:32: #4B4B4B; COMMITTED `062f56a133` 2026-10-13, pushed 19:24, not staged
+
+**2026-10-13 13:40, the reporter:** "new request, make the dark theme border a
+bit more subtle, i.e. darker gray"
+
+The note-taker's reading, not the reporter's words:
+- Entry 77 (2026-10-12, `d25fa8539c`) took the Dark theme's borders
+  from black, which could not be seen on the theme's dark grounds, to
+  the grey of the check boxes. That grey now stands out too much.
+- Wanted: the borders in a DARKER grey -- still to be seen, less
+  loud.
+
+NOT said, lettered for an answer:
+a. HOW MUCH darker: one of the theme's own steps down, or a value? The
+   theme's greys, lightened from its ground #191919 (a grey of 25):
+   step 3 is the panels' colour, step 4 the next, step 5 the borders
+   now. The note-taker's guess: step 4.
+b. WHICH borders: every border that follows the general border colour
+   -- fields, buttons, panels, the scroll bars' edges -- or some of
+   them only? And the check boxes and radio buttons, which entry 77
+   left at the same grey: do they stay lighter so that an empty box can
+   be made out, or go darker with the rest?
+c. Under Dark only (the Light theme is not named).
+
+Pointers, READ by the note-taker, nothing run:
+- `src/Gui/Stylesheets/parameters/Dark.yaml`: `GeneralBorderColor` is
+  "@PrimaryColorLighten5", and so is `CheckBoxBorderColor` (with
+  `RadioButtonBorderColor` after it); `ButtonBorderColor` and
+  `ButtonBorderHooverColor` follow `GeneralBorderColor`.
+  `PrimaryColor` is "#191919"; `PrimaryColorLighten3` is
+  "lighten(@PrimaryColor,80)" (the panels, `DialogBackgroundColor`),
+  `PrimaryColorLighten4` "lighten(@PrimaryColor,100)",
+  `PrimaryColorLighten5` "lighten(@PrimaryColor,300)".
+- The file's own comment on why the general border left black: "Lighter
+  than the grounds it is drawn on, not darker" -- so a darker grey has
+  to stay lighter than the panels' step 3 to be seen on them; step 4 is
+  the one step between.
+- Near it: entry 77; entry 88 (the scroll bars' borders in an overlay,
+  now clear); entry 96 (the frame of the close icon).
+
+**2026-10-13 17:22, the reporter asks:** "entry 100, what's the color code
+for the border now?"
+
+ANSWERED by the note-taker from the theme's file, by CALCULATION,
+nothing run and nothing measured on a screen:
+- `src/Gui/Stylesheets/parameters/Dark.yaml`: `PrimaryColor` is
+  "#191919", a grey of 25. `GeneralBorderColor` is
+  "@PrimaryColorLighten5" = "lighten(@PrimaryColor,300)". The function
+  (`src/Gui/StyleParameters/Parser.cpp`) is Qt's `lighter` with 100
+  added to the number: the brightness is multiplied by 4.
+- So the border is about a grey of 100: **#646464**.
+- For comparison, the same way: the panels' ground
+  (`DialogBackgroundColor`, step 3, +80) about 45, #2D2D2D -- the build
+  session MEASURED it as (44,44,44), #2C2C2C, so a calculated value may
+  be one off; step 4 (+100) about 50, #323232; the base #191919.
+- What follows for the note-taker's guess of 13:40 ("step 4"): a
+  border of 50 on a panel of 44 could hardly be seen -- that guess was
+  too dark and is withdrawn. Something between the two is what "a bit
+  more subtle" asks for: a grey of 70 is #464646 (lighten 180), of 75
+  #4B4B4B (lighten 200), of 80 #505050 (lighten 220).
+NOT ANSWERED still: how much darker (a value); which borders, and the
+check boxes; Dark only.
+
+**2026-10-13 17:32, the reporter decides the colour:** "entry 100, use
+#4B4B4B."
+
+The note-taker's reading:
+- The Dark theme's border becomes #4B4B4B -- a grey of 75, where it is
+  about #646464 (100) now and the panels are #2C2C2C (44). In the
+  theme's own terms that is "lighten(@PrimaryColor,200)" of #191919,
+  or the value written out.
+- NOT said, taken so and not put as blocking: WHICH borders -- the
+  general border colour (`GeneralBorderColor` in
+  `Stylesheets/parameters/Dark.yaml`, which the buttons' borders
+  follow); the check boxes and radio buttons (`CheckBoxBorderColor`,
+  the same grey of 100 since entry 77) are left as they are, so that an
+  empty box can still be made out; the Dark theme only.
+
+**2026-10-13 19:17, the build session: COMMITTED `062f56a133`, local.**
+From the build session's message of 2026-10-13 19:17, written here 19:19. READ in the commit by the note-taker, nothing run:
+`GeneralBorderColor: "#4B4B4B"` in
+`src/Gui/Stylesheets/parameters/Dark.yaml`, where it was
+"@PrimaryColorLighten5"; its comment says "The check boxes and the radio
+buttons keep the lighter one: an empty box has to be made out" -- as the
+note-taker had taken the unanswered points at 17:32. No test or picture
+of it is named in the message. Not pushed, not staged.
+
+## 101. The View menu: the view cell operations grouped, and the items from Std_ViewTitleBar to the end grouped (a change request) -- OPEN, three points not answered; the first group answered 2026-10-13 17:22: a group command Std_SplitView after "Standard views"; the second group answered 17:32: a group command at the end of the menu, Std_ViewCreate left in place; COMMITTED `648cf34f83` 2026-10-13, pushed 19:24, not staged
+
+**2026-10-13 14:18, the reporter:** "new request, group view cell operations in
+View menu. also group item Std_ViewTitleBar until the end in View menu."
+
+The note-taker's reading, not the reporter's words:
+- The View menu is long. Two runs of its entries are to be put into
+  groups: (1) the operations on view cells; (2) everything from "title
+  bar" (`Std_ViewTitleBar`) to the last entry.
+- "group": taken for a SUBMENU with a name of its own -- not only a
+  separator line above and below. Point a.
+
+What the two runs are today, READ by the note-taker in
+`src/Gui/Workbench.cpp` (the View menu, near line 740), nothing run:
+- The menu BEGINS with: `Std_ViewCreate`, `Std_ViewSplitRight`,
+  `Std_ViewSplitDown`, `Std_ViewSplitClose`, `Std_ViewSplitMaximize`,
+  `Std_ViewCellShowObject`, then `Std_OrthographicCamera`,
+  `Std_PerspectiveCamera`, `Std_MainFullscreen`, and a separator. The
+  view cell operations by their names: the four `Std_ViewSplit...` and
+  `Std_ViewCellShowObject`; `Std_ViewCreate` (a new view) stands with
+  them.
+- The menu ENDS with, after a separator: `Std_ToggleTransparency`,
+  `Std_LinkSelectActions`, `Std_TreeViewActions`, then
+  `Std_ViewTitleBar`, `Std_ViewFoldTitleBarMenu`,
+  `Std_ViewTitleBarToolBars`, `Std_ShowMenuBar`, `Std_ViewStatusBar`.
+  So "Std_ViewTitleBar until the end" is five entries: the title bar,
+  folding the menu into it, tool bars in it, the menu bar, the status
+  bar.
+
+NOT said, lettered for an answer:
+a. A SUBMENU each, with a name -- and which names? The note-taker's
+   guesses: "View cells" (or "Split view") for the first, "Window" or
+   "Title bar and bars" for the second. Or separators only?
+b. THE FIRST GROUP's members: the four split commands and "show object
+   in cell" -- and `Std_ViewCreate` with them, or left at the top of
+   the menu by itself?
+c. WHERE the two groups stand in the menu: each where its entries are
+   today (the first at the very top, the second at the very end)?
+A smaller point, not put as blocking: the same commands in a context
+menu or on a tool bar stay as they are; only the View menu is named.
+
+**2026-10-13 17:22, the reporter answers for the first group:** "entry 101,
+make a new group command, say Std_SplitView, group all split view/cell
+related settings. put after menu item 'Standard views'."
+
+The note-taker's reading:
+- The first group is a NEW GROUP COMMAND -- one menu entry that opens a
+  list, as "Standard views" is -- named, for instance, `Std_SplitView`.
+- In it: everything of the split view and its cells -- by the menu as
+  it is today, the four `Std_ViewSplit...` commands and
+  `Std_ViewCellShowObject`; "settings" is read as the commands and
+  switches that belong to the split view.
+- Its place: AFTER the menu item "Standard views" in the View menu --
+  not at the top, where those entries stand today.
+NOT said: whether `Std_ViewCreate` (a new view) goes into the group or
+stays where it is; and the SECOND group of the request (from
+`Std_ViewTitleBar` to the end): a submenu of its own, a group command
+like this one, and its name. Not put as blocking for the first.
+
+**2026-10-13 17:32, the reporter answers the two things left:** "entry
+101, leave the create view at its original place, group view title bar in
+an new group command with you namce choice, place it at the end of view
+menu."
+
+The note-taker's reading:
+- `Std_ViewCreate` STAYS at its original place in the View menu; it
+  does not go into `Std_SplitView`.
+- The SECOND group -- the title bar's items, from `Std_ViewTitleBar` to
+  the end (`Std_ViewTitleBar`, `Std_ViewFoldTitleBarMenu`,
+  `Std_ViewTitleBarToolBars`, `Std_ShowMenuBar`, `Std_ViewStatusBar`,
+  by the menu as read at 14:18) -- becomes a NEW GROUP COMMAND too. Its
+  name is left to the build session ("with you namce choice").
+- Its place: at the END of the View menu.
+The whole of the entry as it now stands: (1) a group command
+`Std_SplitView` with the split view's and the cells' commands, after
+"Standard views"; (2) a group command of the build session's naming
+with the title bar's items, at the end of the menu; `Std_ViewCreate`
+where it is. Nothing is left unanswered.
+A smaller point, the note-taker's, not blocking: whether the menu bar's
+and the status bar's switches (`Std_ShowMenuBar`, `Std_ViewStatusBar`)
+count among "view title bar" -- the reporter's first sentence of 14:18
+said "Std_ViewTitleBar until the end", which takes them in.
+
+**2026-10-13 19:17, the build session: BUILT, read off the built menu,
+COMMITTED `648cf34f83`, local.** From the build session's message of 2026-10-13 19:17, written here 19:19.
+- "101 Std_SplitView after 'Standard views' and Std_WindowBars 'Title,
+  menu and status bars' at the end, Create new view where it was".
+- "101 read off the built menu (entries 5 'Standard views', 6 'Split
+  view' with split right, split down, close, maximize, separator, show
+  object in cell; 37, the last, 'Title, menu and status bars')".
+The note-taker's notes: the second group's name, left to the build
+session by the reporter, is `Std_WindowBars`, shown as "Title, menu and
+status bars" -- so the menu bar's and the status bar's switches are in
+it, as the reporter's first sentence of 14:18 had them. Not pushed, not
+staged.
+
+## 102. The default of DockOverlayAlpha changed to 180 (a change request) -- in the source 2026-10-13 15:08, in a build, not committed; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24
+
+**2026-10-13 14:31, the reporter:** "new request, change default DockOverlayAlpha
+to 180"
+
+The note-taker's reading, not the reporter's words:
+- `View/DockOverlayAlpha`, shown as "Overlay background opacity", has
+  the default 150 since entry 69 (`bbe8525de7`). Its default becomes
+  180: the item backgrounds of an overlaid tree view and property view,
+  a task panel's ground, and what follows that setting since -- the
+  scroll bar's handle (entry 88), the hover bar (entry 87), the text
+  backing of entry 98 -- are that much less see-through.
+- Nothing is left to ask.
+
+Notes, the note-taker's, READ, nothing run:
+- The setting is defined in `src/Gui/OverlayParams.py` (`ParamInt`
+  `DockOverlayAlpha`); the generated `OverlayParams.cpp`/`.h` and the
+  preference page follow from it. Tests that claim an alpha of 150
+  (`tests/gui/overlay-see-through.py` and the newer ones of entries 87
+  and 88) read 150 as a number in places.
+- The reporter's configuration as last written (14:01) does NOT have
+  this key, so the reporter's own copy follows the default and will
+  show 180. A configuration that has 150 written keeps 150.
+- The overlay's outline effect of entry 87 leaves out what is "no more
+  opaque than the item backgrounds": that limit moves with the
+  setting.
+
+**2026-10-13 15:08, the build session: in the source, in the build, NOT
+committed.** From the build session's message of 2026-10-13 15:08, written here 15:07. "DockOverlayAlpha default 180; the user's config
+stores no value, so they get it."
+
+## 103. The task panel's button that switches the panel into the view is no longer visible, even while editing -- the cause FOUND 2026-10-13 15:08 (the title bar made before the task view is in its dock), a fix in a build; answered 2026-10-13 14:38: never seen since entry 73's rule, the panel in an overlay; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the button on the overlay's title bar COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged
+
+**2026-10-13 14:32, the reporter:** "new default, the switch panel to view button
+on task panel no longer visible, even in editing. I tested edit pad"
+
+The note-taker's reading, not the reporter's words:
+- "new default" is taken for "new DEFECT".
+- The Tasks panel has, beside its close button, a button that moves the
+  task panel into its view and back (entry 73's "toggle panel in view"
+  button). It is not to be seen any more -- not even while a feature is
+  being edited; tried with the edit of a PartDesign Pad.
+- Entry 73's answer b (2026-10-12 15:49) asked for that button to be
+  hidden when NO page of the task panel is owned by a view. While a Pad
+  is edited its panel should be one that IS owned by a view -- so by
+  that rule the button belongs there. Hidden then = a defect of that
+  rule, or of something newer.
+- Which copy: the stage of 13:56 by the hour. "no longer": it was seen
+  on an earlier one.
+
+NOT said, lettered for an answer:
+a. GONE or UNSEEN: is there no button at all (no gap for it, nothing
+   under the pointer), or is its place there and answers a click but
+   shows no picture? (Entry 96 found a picture of the same family
+   drawn dark on dark in a menu under Dark.) And under which theme.
+b. WHERE the Tasks panel is when it happens: docked in the main window,
+   in an overlay, or both?
+c. ON WHICH copy it was last seen: the stage of 09:36 this morning, or
+   earlier; and is the setting "task panel in view" on or off
+   (`View/TaskPanelInView`; 0 in the configuration as last written)?
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- Entry 73 (`22ece75a08`, then the white glyphs `2d945c8268`) made the
+  button and its rule; the files are in `src/Gui/TaskView`
+  (`TaskPanelHost.cpp` among them) and the pictures
+  `overlay/taskshow.svg`, `overlay/taskhost.svg`.
+- Changed since in that neighbourhood, each a candidate and none shown:
+  this morning's merges of SolidBody and Transaction; entry 85
+  (`1f01bf3f30`, the overlay's sheet made again at a style change);
+  the uncommitted work of entries 87 to 97 in the stage of 13:56 (the
+  title buttons' pictures of entry 96, the menu buttons of 89 and 90
+  in `Action.cpp`).
+
+**2026-10-13 14:38, the reporter answers the three points:** "entry 103, a,
+seems so, as I haven't seen the button in any case. b, overlay. c,
+definitely yesterday before I request the auto show/hide of that button,
+not sure about this morning"
+
+The note-taker's reading:
+- a. The button is not seen in ANY case -- whatever is edited, it does
+  not come. ("seems so" answers the first half of the point: gone
+  rather than there and unseen; the reporter has not tried a click on
+  its place, as far as said. The theme is not said.)
+- b. With the Tasks panel in an OVERLAY.
+- c. Seen for certain on 2026-10-12 BEFORE the request that it show and
+  hide by itself -- that request is entry 73, 15:44, staged 17:52 the
+  same day. Whether it was there this morning the reporter cannot say.
+- So by the answers the button may not have been shown ONCE since
+  entry 73's rule came in: the rule that hides it "when no page of the
+  task panel is owned by a view" would be hiding it always -- at least
+  for a Tasks panel in an overlay. The note-taker's conclusion from the
+  answers, NOT shown by a run; entry 73's test
+  (`overlay-title-buttons-theme.py`, 44 of 44) passes all the same.
+- A thing to hold beside it: `View/TaskPanelInView` is 0 in the
+  reporter's configuration, and in a PartDesign edit the panel may not
+  be "owned by a view" in the rule's sense unless the edit is per view
+  (`View/PerViewEdit`). Not looked into.
+
+**2026-10-13 15:08, the build session: THE CAUSE FOUND, reproduced with a
+copy of the reporter's configuration; a fix in the source, in the build,
+NOT committed.** From the build session's message of 2026-10-13 15:08, written here 15:07.
+- The cause: "the Tasks dock's title bar is made at start-up before the
+  task view is in its dock, so it is a plain dock's bar for good and
+  the button does not exist".
+- The fix: "the bar is replaced by a task one when the task view is
+  found in a dock".
+The note-taker's note: so it is not entry 73's rule hiding the button,
+as the note-taker concluded at 14:38 -- the button was never made. That
+conclusion is withdrawn. Why the reporter saw the button before entry
+73 and not after is not in the message.
+
+**2026-10-13 17:25, the build session: the test FAILED on the build
+staged 16:55; its cause of 15:08 was WRONG for the reporter's case.**
+From the build session's message of 2026-10-13 17:25, written here 17:25.
+- "Read in the source and in `docs/TaskPanelPerView.md` (14.6, 'What it
+  does not do'): the button has only ever been on the title bar of a
+  DOCKED Tasks dock; an overlaid dock's own title bar is replaced by an
+  invisible widget, the overlay's bar is shared by the docks in it and
+  never carried the button ('For M4'). What entry 73 changed is its
+  showing while docked."
+- "So with the Tasks overlaid there never was one; where the user saw
+  it 'yesterday' must have been a docked Tasks panel (entry 73's answer
+  a: 'panels docked to main window')."
+- In the next build: "each overlay's title bar has the button, shown
+  while the Tasks are in that overlay and show a panel that has a
+  view." Its dock-title-bar change of the staged build stays in
+  ("harmless, and right for a dock restored docked").
+The note-taker's note: so the entry is in truth a REQUEST the reporter
+took for a defect -- the button on an OVERLAID Tasks panel, which it
+never had. The reporter's answer c of 14:38 ("definitely yesterday
+before I request the auto show/hide") would then have been with the
+panel docked; not said by the reporter. On the stage of 16:55 the
+button is still not there for an overlaid panel.
+
+**2026-10-13 19:17, the build session: the button on each overlay's own
+title bar SHOWN on the build r7, COMMITTED `8ef425ceae`, local.** From the build session's message of 2026-10-13 19:17, written here 19:19.
+"103 7 of 7 with the user's configuration (the button shown with a Pad in
+edit, pressing it puts the panel into the view)"; the test is
+`tests/gui/overlay-task-title-button.py`, in the commit. Not pushed; the
+staged copy of 16:55 does not have it.
+
+## 104. The cavity effect shows for an object hidden in a per-view edit, and shows through a visible object when zoomed -- the ghost's cause found 2026-10-13 15:52, a fix in a build; the show-through not found; the four points answered 2026-10-13 14:50: zoomed out only; the object the edit hides in its view; the ghost goes when the body is hidden; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the ghost COMMITTED `038b8b1b1a` 2026-10-13, pushed 19:24; the show-through not started
+
+**2026-10-13 14:36, the reporter:** "new defect, when in per view edit, cavity
+effect still shows for per view hidden object. also for normal visible
+normal underneath object cavity sometimes show through when zoomed."
+
+The note-taker's reading, not the reporter's words -- two defects:
+1. During an edit that is per view, an object hidden in THAT view only
+   is no longer drawn there -- but the dark creases the cavity effect
+   draws for it are still seen, as a ghost of its edges.
+2. Without any hiding: where one object lies under (behind) another
+   that is shown, the cavity creases of the one underneath sometimes
+   show THROUGH the one in front. "when zoomed": at some zooms, not at
+   all.
+- "cavity effect": the renderer's cavity shading
+  (`RenderParams` `Cavity`, "Cavity shading", on by default) -- the
+  darkening of creases and ridges in screen space.
+
+NOT said, lettered for an answer:
+a. For (2): zoomed IN or OUT when it shows; and does it flicker while
+   the view moves or stay once it is there?
+b. For (1): hidden HOW -- by the edit itself (the other bodies an edit
+   puts away in its view), or by hand in that view? And is the ghost
+   seen only in the view of the edit, or in the other views too?
+c. ON WHAT: `scanner.FCStd` or another model; which draw style (Shaded,
+   with edges); and a split view with several cells, or one view?
+d. SINCE WHEN, if it can be said: the stage of 13:56 only, or earlier.
+
+Pointers, READ by the note-taker, nothing run; the causes are NOT found:
+- The effect is a pass over the whole picture:
+  `src/Gui/Renderer/bgfx/shaders/fs_fc_cavity.sc` -- "one fullscreen
+  multiply over the finished opaque scene" that reads the "prepass
+  NORMAL field" and darkens where the normals of neighbouring pixels
+  turn. It does not know objects; it knows what the prepass wrote.
+- So for (1) a guess: an object hidden per view is left out of the
+  COLOUR pass of that view but still written into the normal prepass
+  the cavity pass reads -- its creases are then darkened onto whatever
+  is seen there. Entry 48 was of the same neighbourhood (a per-view
+  hide; its "leak" turned out to be the test's).
+- For (2) a guess: the prepass's normals and the picture's depth
+  disagree at some zooms (the two at different sizes, or the nearer
+  surface not winning in the prepass), so the creases of what is
+  behind are read. `RenderParams` has `CavityRadius` ("in pixels ...
+  resolution-relative"), `CavityValley`, `CavityRidge`.
+- The cavity code on the application's side:
+  `src/Gui/Renderer/BGFXViewEffects.cpp`, `BGFXFrame.cpp`,
+  `BGFXScene.cpp`; the feed from Coin in
+  `src/Gui/Inventor/SoFCRenderer.cpp`.
+
+**2026-10-13 14:50, the reporter answers the four points:** "entry 104, a,
+show through only when zoomed out, so I guess it is a depth precision
+problem. b, by edit only in edit view. the object in other view is still
+there. c, scanner, editing Pad033 (I don't think that matters) with its
+body visible. Note if hide the body, the cavity ghost is gone, but the
+editing preview is still visible (which is expected). same with split
+view or not. d, not sure"
+
+The note-taker's reading:
+- a. Defect (2), the show-through: only when zoomed OUT. The reporter's
+  own guess at the cause: the precision of the depth.
+- b. Defect (1): the object is hidden BY THE EDIT, and in the edit's
+  view only; in the other views it is still shown, as it should be.
+  The ghost is in the edit's view.
+- c. On `scanner.FCStd`, while `Pad033` is edited (which feature it is,
+  the reporter does not think matters), with its BODY VISIBLE. A
+  finding of the reporter's that narrows it: when the body is hidden
+  the cavity ghost is GONE, while the edit's preview is still shown --
+  which is as expected. So the ghost comes from the body's own drawing
+  that the edit puts away in its view (the feature's solid behind the
+  preview, by the note-taker's reading), not from the preview.
+- The same in a split view and in one view.
+- d. Since when: not known.
+Nothing of this entry is left unanswered.
+
+The note-taker's note on the two guesses of 14:36, from the answers:
+- For (1): fits -- what the edit hides in its view is no longer drawn
+  in colour there, but still reaches what the cavity pass reads;
+  hiding the whole body takes it out of both.
+- For (2): "zoomed out" fits depth precision as the reporter says --
+  two surfaces close together fall onto the same depth value when the
+  model is small on the screen -- or equally the cavity pass comparing
+  neighbours a pixel apart that are then far apart on the model
+  (`CavityRadius` is in pixels). Not told apart by reading.
+
+**2026-10-13 15:52, the build session: (1) the GHOST -- cause FOUND by
+reading, a fix in the source, in the build of 15:45, not run; (2) the
+SHOW-THROUGH -- NOT found.** From the build session's message of 2026-10-13 15:52, written here 15:51.
+- (1) The cause: `src/Gui/Renderer/BGFXFrame.cpp` "keeps a draw that is
+  'hidden' in the depth and normal prepass on purpose -- that is meant
+  for a draw whose SELECTION is drawn in its place -- and its test for
+  hidden (`isHidden`) also answers yes for what the view hides of its
+  own accord (`view->visibilityHides`: the view's ObjectVisibilities,
+  which is how a per-view edit puts away what it edits). So that object
+  stayed in the prepass the cavity pass (and the ambient occlusion)
+  reads." -- the note-taker's guess of 14:36.
+- "And the prepass is cached under a key that did not hold what the
+  view hides, so with the camera still nothing changed. Hiding the
+  whole body changes the draw list, hence the reporter's finding that
+  the ghost goes then."
+- Changed: "what the view hides is left out of the prepass, and out of
+  the key." A test written, `tests/gui/cavity-not-for-view-hidden.py`
+  -- it "needs the real screen: pictures".
+- SEEN AND NOT CHANGED: "the same block still lets such a draw cast its
+  shadow, against the comment on visibilityHides ('neither renders nor
+  casts'); not reported, left."
+- (2) NOT found: "the prepass holds one surface a pixel, so reading
+  alone does not show how an object underneath gets through; it needs
+  pictures of scanner.FCStd at several zooms on the real screen." One
+  guess, "marked as a guess: two surfaces of the same colour a hair
+  apart, which fight for the depth unseen in the colour and seen in
+  the normals."
+The note-taker's notes for the reporter:
+- A thing seen and left: an object an edit hides in its view may still
+  cast its SHADOW there. Not reported by the reporter; say if it is to
+  be an entry.
+- The build session will need the real screen for pictures: for this
+  entry's test and for the show-through at several zooms.
+
+**2026-10-13 19:17, the build session: the GHOST's fix SHOWN on the
+build r7 and COMMITTED `038b8b1b1a`, local; the show-through NOT
+started.** From the build session's message of 2026-10-13 19:17, written here 19:19. "104's ghost: a block hidden in the view only gives
+the picture of the block hidden in the document, 0 pixels apart, and
+shown again in the view with the camera still the first picture (5 of 5;
+no build without the change left to score it against)". The test is
+`tests/gui/cavity-not-for-view-hidden.py`. The note-taker's note: "no
+build without the change left" -- the test was not seen FAILING before
+the fix, by the build session's own word. The second defect, the
+show-through when zoomed out, is among its "NOT STARTED"; the shadow a
+view-hidden object still casts is not spoken of.
+
+**2026-10-13 22:06, the build session: the SECOND defect (the creases
+showing through when zoomed out) NOT REPRODUCED -- and its probe
+inconclusive.** From the build session's message, which it stamps 22:06; written here 22:06. "a probe with a grooved block under a cover,
+seven zooms, both cameras, three gaps -- NOT reproduced, and the probe is
+inconclusive besides: switching the Cavity setting changed no pixel of
+its pictures. Nothing found." The note-taker's note: a probe whose
+pictures do not change with the Cavity setting did not draw the effect at
+all, so it says nothing either way; as at 15:52, pictures from the
+reporter's real screen (the model, the zoom) are what would move it.
+
+## 105. scanner.FCStd after the migration recompute: Sketch043 is broken silently, no error shown -- an idea for the migration 2026-10-13 15:18 (a binder with no context takes the shortest path that does not move its shape), OFF HOLD and to be built (answered 15:28); it had been on hold 15:09 by the reporter, entry 17's ruling kept; answered 2026-10-13 14:56: the outside edge from Binder017; asked for -- the cause, whether a bug of the old fork, a mitigation; STAGED 2026-10-13 16:55 from uncommitted code, not tested; "not moved" by the saved placements alone, no geometry search (17:22); COMMITTED `00dec0a56d` 2026-10-13, pushed 19:24
+
+**2026-10-13 14:45, the reporter:** "new defect, after loading scanner document
+and recompute for migration, Sketch043 silently broken, no error is shown.
+before migration it is okay"
+
+The note-taker's reading, not the reporter's words:
+- `scanner.FCStd` is opened and the recompute the element version
+  change asks for is done. Before it `Sketch043` is right; after it
+  the sketch is wrong -- and nothing says so: no error mark, no line in
+  the report view.
+- TWO things may be meant, and both are recorded: that the sketch
+  BREAKS; and that it breaks WITHOUT A WORD.
+- Which copy is not said; by the hour, the stage of 13:56.
+
+What the file and this queue say of that sketch, READ by the
+note-taker, nothing run, the file not changed:
+- In the original (`..\dl\handson\2026-10-06\scanner.FCStd`)
+  `Sketch043` is attached to `Pad018`, `Face3`, and has three outside
+  edges: `Pad029` `Edge28`, `Pad029` `Edge32`, and `Binder017` `Edge1`.
+  It is the profile of `Pad033`.
+- ENTRY 17 (2026-10-06) is about this very sketch: "`Sketch043`,
+  `Sketch055`: 'Missing external geometry reference'". Its fix
+  (`3c8cd63032`) found the references into `Binder017` again -- "Pad033
+  then loses its profile because Sketch043 really changes". The
+  reporter DECIDED on 2026-10-07 14:34: "the binder moving with the
+  group is as designed (the file's sketch is stale)"; `Binder017` is a
+  binder of `Binder008`, which takes its context at the first recompute
+  and comes out 53 mm from where the file has it. This queue wrote
+  then: "`Sketch043` changing, `Pad033` losing its region -- is the
+  model's, to be redone in the file, not a defect."
+- Since then every recompute of the file noted here ended with the
+  known error "Failed to recompute scanner#Pad033: Sub shape not found:
+  scanner#Sketch043.?InternalFace2" (entries 28 and 53).
+- NEW in the stage of 13:56 and near it: entry 92's change to how a
+  sketch answers for the names of its sub-shapes (`518c2026d0`) -- so
+  that a wire by number is found. Whether it also changes what
+  `Pad033` is told about `Sketch043`, and so whether an error that
+  used to be shown is silent now, is NOT looked into.
+
+NOT said, lettered for an answer:
+a. Is this the SAME thing as entry 17's -- the sketch following
+   `Binder017` to where the binder now comes out -- or something else
+   that is new?
+b. BROKEN HOW, as seen: an outside edge moved or gone, the sketch's own
+   lines out of shape, constraints no longer solved, the sketch on
+   another plane?
+c. WHAT is wanted: that the sketch not break at this recompute; or that
+   a break like this be SAID -- an error mark on the sketch, a line in
+   the report view -- which is what "silently" asks for?
+d. Does `Pad033` still end in an error after the recompute on this
+   stage, as it did, or is it silent too now?
+
+**2026-10-13 14:56, the reporter answers the four points:** "entry 105, a,
+yes, it has an external geometry from binder017. b, shape is changed, just
+compare it. c, find out the cause, see if this is bug from old fork, is
+there any mitigation. d, yes, and the error is because of it"
+
+The note-taker's reading:
+- a. Yes: it is about the sketch's outside edge taken from `Binder017`
+  -- entry 17's ground.
+- b. What is broken is the sketch's SHAPE: it is another shape after
+  the migration recompute than before. "just compare it" -- the two
+  are to be compared by whoever looks, the reporter does not describe
+  the difference.
+- c. What is ASKED, three things, an investigation and not yet a fix:
+  1. find out the CAUSE of the change;
+  2. see whether it is a BUG OF THE OLD FORK -- of the program that
+     wrote the file -- rather than of today's;
+  3. whether there is a MITIGATION.
+- d. Yes: `Pad033` still ends in its error after the recompute, and
+  that error is BECAUSE the sketch changed. So "silently" is about the
+  sketch itself showing no error; the error appears one step later, on
+  the pad.
+
+What this does to entry 17's decision, the note-taker's note:
+- On 2026-10-07 14:34 the reporter decided that the binder moving with
+  its group is as designed and "the file's sketch is stale"; this queue
+  wrote the consequence down as "the model's, to be redone in the
+  file, not a defect". The reporter now asks to look again: for the
+  cause, for whose bug it is, for a way round. That reopens the
+  QUESTION, not the decision -- the decision stands until the reporter
+  says otherwise.
+- What entry 17's log has, to start from (its account is in
+  `docs/HandsOnLog.md`, 2026-10-07): `Binder017` is a binder of
+  `Binder008`; `Binder008` is a `Relative` binder that has NO context
+  recorded in the file and takes `LinkGroup001` at its first recompute,
+  coming out 53 mm from where the file has it. Whether the old fork
+  should have recorded that context when it wrote the file is, by the
+  note-taker's reading, exactly the reporter's point 2.
+
+**2026-10-13 15:08, the build session MEASURED it; the investigation the
+reporter asked for is running.** From the build session's message of 2026-10-13 15:08, written here 15:07. Measured 14:45 on the build of
+14:10, FreeCADCmd, `scanner.FCStd` -- written before the reporter's
+answers of 14:56 reached it:
+- After opening `Sketch043` has 4 wires, its bounding box from x
+  -12.961; after `recompute(None, True)` 5 wires, from x -12.943; its
+  solver clean (1 degree of freedom, no conflict), its state
+  Up-to-date.
+- `Pad033` goes Touched and Invalid with "Sub shape not found:
+  scanner#Sketch043.?InternalFace2" and KEEPS ITS OLD SHAPE.
+- `Binder017`'s bounding box moves in x from -7.272..7.7 to
+  -10.508..4.464.
+- `Fillet011` is also in error ("Invalid edge link: ?Edge93").
+- "The cause, old-fork bug or not, and a mitigation: being investigated
+  now on the staged copy while the build runs."
+The note-taker's note: the binder moves about 3.2 mm in x by these
+numbers, where entry 17's log of 2026-10-07 spoke of `Binder008` coming
+out 53 mm from where the file has it -- two different objects and
+perhaps two different measures; not reconciled here.
+
+**2026-10-13 15:09, the reporter puts it ON HOLD:** "entry 105. leave it for
+now. keep the previous ruling"
+
+The note-taker's reading:
+- "leave it for now": the investigation asked for at 14:56 (the cause,
+  whether a bug of the old fork, a mitigation) is NOT wanted now. The
+  entry is on hold, not closed.
+- "keep the previous ruling": the decision of 2026-10-07 14:34 under
+  entry 17 stands as it was -- the binder moving with its group is as
+  designed, the file's sketch is stale; `Sketch043` changing and
+  `Pad033` losing its region is the model's, not a defect.
+- What the build session measured at 15:08 stays in the entry for when
+  it is taken up again.
+Nothing waits for the reporter here.
+
+**2026-10-13 15:18, the reporter, an idea:** "entry 105, I have an idea for
+migration. when binder recomputes, if it has empty context, iterate all
+top level path to itself and resolve shape, choose the context to be the
+shortest path that does not move the shape."
+
+The note-taker's reading:
+- It is about the binder behind this entry (`Binder008`, which
+  `Binder017` follows): a binder whose file records NO context takes
+  one at its first recompute, and the one it takes today puts its shape
+  somewhere else than the file has it (entry 17).
+- The idea, a rule for that moment only -- a binder recomputing with an
+  EMPTY context:
+  1. go through ALL the paths that lead from a top-level object down to
+     the binder itself;
+  2. under each, resolve the binder's shape;
+  3. take as the context the SHORTEST of the paths under which the
+     shape does NOT MOVE -- stays where it was.
+- So an old file's binder keeps its shape where the file has it, and
+  what hangs on it (`Binder017`, `Sketch043`, `Pad033`) does not
+  change at the migration recompute. That would be the "mitigation"
+  asked for at 14:56 -- the reporter's own.
+- It keeps to the reporter's rule of 2026-10-07 quoted under entry 17:
+  a context is assigned only "if the old recorded one does not exist,
+  or empty".
+
+NOT said, lettered for an answer:
+a. Is the entry OFF HOLD with this -- is the rule to be BUILT now -- or
+   is the idea to be kept with the entry "for now" (15:09)?
+b. "does not move the shape": compared with WHAT -- the shape the
+   binder has in the file before the recompute; and how near counts as
+   not moved (the same placement; the same bounding box within a
+   tolerance)?
+c. If NO path leaves the shape unmoved: what then -- the shortest path
+   all the same (as today), or the context left empty and the binder
+   marked?
+d. Two paths of the same length that both leave it unmoved: the first
+   found, or a rule?
+
+Pointers, the note-taker's, from entry 17 as it stands in this queue;
+nothing run and the source not opened for this:
+- Entry 17's log (`docs/HandsOnLog.md`, 2026-10-07): a `Relative`
+  binder has to have a context, and its `update()` gives one to a
+  binder that has none; `Binder008` takes `LinkGroup001`.
+- On hold with entry 17 since 2026-10-07: the change request that the
+  import and the binder command RECORD the context they know; and a
+  defect found then -- a recorded context whose path is gone is neither
+  used nor replaced. Both are neighbours of this idea.
+- The build session's measurement of 15:08 above gives what "moved"
+  looks like here: `Binder017`'s bounding box about 3.2 mm off in x
+  after the recompute.
+
+**2026-10-13 15:18, the reporter, a pointer for the idea:** "app::document
+has api to iterate top level path"
+
+The note-taker's reading: step 1 of the idea -- going through all the
+top-level paths to the binder -- needs no new code; the document
+already has a call for it.
+
+READ by the note-taker in the headers, nothing run, a short search:
+- What the search found by that description is on the OBJECT:
+  `App::DocumentObject::getParents()` (`src/App/DocumentObject.h`, near
+  line 508) -- "Obtain top parents and subnames of this object using
+  its InList ... return all top parents", a list of pairs of a top
+  parent and the path of sub-object names from it down to the object.
+  That is the list the idea walks.
+- On `App::Document` itself the search found
+  `getRootObjects()` and `getRootObjectsIgnoreLinks()` (near line 1530
+  of `src/App/Document.h`) -- the top-level objects, not paths. A call
+  of the document that lists PATHS was not found in the header by the
+  words "top level"; the reporter may mean one of these, or one the
+  short search missed. For the build session to pick.
+
+**2026-10-13 15:28, the reporter answers the four points -- the entry is OFF
+HOLD:** "entry 105. a, yes, off hold. b, yes, use geometry search. c, mark
+binder error as 'No context, please double click the binder in the desired
+context to refresh'. d, the first one returned by getParents()"
+
+The note-taker's reading:
+- a. OFF HOLD: the rule is to be built. The hold of 15:09 is lifted by
+  the reporter, nineteen minutes after it was set.
+- b. "Not moved" is judged against the shape the binder has in the
+  file, and by a GEOMETRY SEARCH -- the shape resolved under a path is
+  looked for by its geometry in the shape kept, rather than by names or
+  by a bounding box. (Which search of the program is meant is the
+  build session's to pick; the note-taker takes it for the search by
+  geometry the element naming already uses to find a moved element.)
+- c. If NO path leaves the shape unmoved, no context is taken and the
+  binder is put in ERROR with this text: "No context, please double
+  click the binder in the desired context to refresh".
+- d. Of paths of the same length that both leave it unmoved: the FIRST
+  that `getParents()` returns. That also names the call of the
+  reporter's pointer of 15:18 -- `App::DocumentObject::getParents()`,
+  as the note-taker had found.
+Nothing of the idea is left unanswered.
+
+What follows for entry 17, the note-taker's note:
+- The ruling the reporter kept at 15:09 ("the binder moving with the
+  group is as designed") is about a binder that TAKES a context and
+  moves by it. This rule changes WHICH context a binder with none
+  takes: one that does not move it. So the ruling is not withdrawn; an
+  old file simply no longer meets it at the migration recompute, if a
+  path that keeps the shape exists.
+- The text of c tells the user to double-click the binder "in the
+  desired context": that the double click sets the context from where
+  it is done is assumed by the text; whether it does so today is not
+  looked into (the change request on hold with entry 17 was that the
+  binder command RECORD the context it knows).
+
+**2026-10-13 15:36, the build session: the rule DESIGNED and written as a
+script to apply after the build -- in no build yet.** From the build session's message of 2026-10-13 15:36, written here 15:36.
+- Where: `SubShapeBinder::update()`, "where a Relative binder with an
+  EMPTY context took `getParents()`'s first".
+- A binder that has NO shape yet still takes the first (a new binder).
+- A binder that HAS a shape takes the shortest path -- fewest steps,
+  `getParents()`'s order among equals -- under which its shape does not
+  move.
+- With no such path it takes no context, keeps its shape and is in
+  error with the reporter's text, "No context, please double click the
+  binder in the desired context to refresh" ("thrown at a recompute,
+  set as the object's error outside one").
+- "DOES NOT MOVE", THE BUILD SESSION'S CHOICE, "to be told to the
+  user": FIRST by the matrices the binder keeps of how each support was
+  placed at its last update (its `Cache_<support>` properties, saved in
+  the file -- `Binder008` has `Cache_Body004` = identity): "a path that
+  gives the same matrices leaves the shape where it is; this does not
+  depend on the support still having the geometry it had, which the
+  migration recompute may change". ONLY where a binder has no such
+  record, by the GEOMETRY SEARCH the reporter named: up to 16 faces
+  (edges, vertices) of what would be bound are searched in the binder's
+  shape (`TopoShape::searchSubShape`), unmoved if most are found.
+- What it means for `scanner.FCStd`, in its words: "if Binder008's only
+  path is through LinkGroup001, which is 53 mm off: Binder008 ends the
+  migration recompute in that error, where it is, and what stands on it
+  is not carried off; the user gives it a context by a double click."
+- Four cases added to `TestShapeBinder.py` in the same script.
+The note-taker's notes:
+- The reporter's answer b of 15:28 was "use geometry search". What is
+  designed uses the kept placements first and the geometry search as
+  the fallback. That is a change to the reporter's word, made by the
+  build session and marked by it as to be told; the note-taker has
+  told the reporter. NOT ANSWERED: whether that order is accepted.
+- By its account `scanner.FCStd` would then show `Binder008` in ERROR
+  after the migration recompute until it is double-clicked in a
+  context -- the sketch and the pad would keep their shapes. Whether
+  an error there is what the reporter wants for this file has not been
+  said; it follows from answer c.
+
+**2026-10-13 17:22, the reporter on how "not moved" is judged:** "entry
+105, yes save placement. I think no need geometry search, just compare
+placement is enough, since they still bind to the same object after all."
+
+The note-taker's reading:
+- YES to the build session's first way: "not moved" is judged by the
+  placements the binder keeps of its last update.
+- And NO geometry search at all: comparing the placements is enough --
+  the binder is still bound to the same object. The reporter's own
+  answer b of 15:28 ("use geometry search") is replaced by this.
+NOT said, left to the build session: a binder with a shape but WITHOUT
+such a kept placement (the case the geometry search was to cover in the
+design of 15:36) -- by this answer there is nothing to compare; whether
+it then counts as "no path found" (the error text) or takes the first
+path as a new binder does. Not put as blocking.
+
+**2026-10-13 17:25, the build session: TESTED on the build staged 16:55
+-- as designed at 15:36, with the geometry search as the fallback.**
+From the build session's message of 2026-10-13 17:25, written here 17:25. `TestShapeBinder` 13 OK with the four new cases; on
+`scanner.FCStd` (FreeCADCmd) "the migration recompute ends with Binder008
+in error 'No context, please double click the binder in the desired
+context to refresh' and Fillet011 as before; Sketch043 is what it was (4
+wires, the same box), Pad033 and Binder017 keep their shapes -- they and
+what else stands on Binder008 are left touched, not recomputed."
+
+The note-taker's notes:
+- This is the outcome the build session foretold at 15:36: `Binder008`
+  has no path that keeps its shape, so it ends in the error and waits
+  for a double click; `Sketch043` and `Pad033` no longer change at the
+  migration recompute -- what entry 105 was about.
+- The reporter's word of 17:22 above (the saved placements alone, NO
+  geometry search) crossed this: the staged build still has the search
+  as its fallback for a binder with no kept placement.
+- For the reporter on the stage of 16:55: after the migration recompute
+  of `scanner.FCStd`, `Binder008` shows the error and is to be
+  double-clicked "in the desired context".
+
+**2026-10-13 19:17, the build session: COMMITTED `00dec0a56d`, local --
+"the kept placement alone, no geometry search; with nothing kept the
+first path as a new binder".** From the build session's message of 2026-10-13 19:17, written here 19:19.
+
+READ in the commit by the note-taker, nothing run
+(`src/Mod/Part/App/SubShapeBinder.cpp`):
+- A `Relative` binder with an empty context and a shape
+  (`findUnmovedContext`) goes through its top-level paths, the shortest
+  first, and takes the first under which the matrices it keeps of its
+  supports (its `Cache_<support>` properties) stay what they are.
+- With NO such property kept -- nothing to compare -- it takes the
+  FIRST path, as a binder without a shape does. This is the build
+  session's choice on the point the reporter's word of 17:22 left open.
+- With kept matrices and NO path that keeps them: no context, and the
+  error "No context, please double click the binder in the desired
+  context to refresh" -- thrown at a recompute, set as the object's
+  error text outside one.
+- The error is raised anew at EVERY update while the context is empty:
+  as committed, a binder cannot keep an empty context for good. That is
+  entry 113's point b.
+NOT said by the build session, asked of it by the note-taker 19:19:
+what `Binder008` of `scanner.FCStd` ends as on THIS code -- at 17:25,
+with the geometry search still in, it ended in the error; whether it has
+kept matrices to compare, and so still ends there and not on the first
+path (`LinkGroup001`, the 53 mm), is not in the message.
+
+**2026-10-13 19:21, the build session answers the note-taker's question on
+`Binder008`: EXPECTED to end in the error still -- NOT RUN on the
+committed form.** From its message, which it stamps 19:23; received and
+written here 19:21 by this box's clock.
+- "it HAS a kept matrix in the file -- read from scanner.FCStd's
+  Document.xml at 15:3x: the property Cache_Body004, the identity matrix
+  (and Context empty, Relative true, Placement z 4.7 with a 3.5 degree
+  turn). So the committed rule compares and does not fall to the first
+  path: its one path, LinkGroup001, gives another matrix, and it should
+  end in the 'No context' error as at 17:25."
+- "SHOULD, not shown: the run of 17:25 was on the build with the
+  geometry search still in, and I have not run scanner.FCStd on the
+  committed form. I run it as soon as the build r8 ends (its binder
+  source is the committed one) and tell you the result; until then
+  please keep it as 'expected, not run'."
+- Its addition to what the copy staged at 16:55 holds: "it also has
+  entry 96's first form (the tint set only when icons are refreshed),
+  which was never shown either way on a screen, and entry 103's first
+  form (the docked title bar put right), which does nothing for an
+  overlaid Tasks panel."
+- The note-taker's four readings of 19:17 (the Python suite not run
+  whole after the correction; 104's test never seen failing; 108's "on
+  top" the build session's reading; a binder cannot keep an empty
+  context for good under the committed rule) confirmed by it: "right as
+  you put them".
+
+**2026-10-13 20:15, the build session: `Binder008` on the committed rule
+RUN -- the "No context" error, as expected.** From the build session's message, which it stamps 20:14; written here 20:15. "run on build r8
+(binder source = 00dec0a56d) as part of entry 109's probe, scanner.FCStd
+recomputed: the log has 'SubShapeBinder.cpp(322): No context, please
+double click the binder in the desired context to refresh' and Fillet011
+'Invalid edge link: ?Edge93' as before. So: expected and now RUN. (The log
+line does not name the object; one such error in the run.)" The
+note-taker's note: that the one error is `Binder008`'s is by inference --
+one such line, and `Binder008` the binder expected to give it; what
+`Sketch043` and `Pad033` came out as in this run is not said.
+
+## 106. Property groups get a rank and are sorted by rank then name, "Appearance" last; the rank written into the group's name as an ending "#<rank>" (first said as a rename to "Object Appearance") (a change request) -- OPEN, decided by the reporter 2026-10-13 14:59; the form decided 15:11, "Appearances#1"; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `650a6dee96` 2026-10-13, pushed 19:24
+
+**2026-10-13 14:52, the reporter:** "new request, name 'Appearance' property group
+name in object to 'Object Appearance' so that it does not show as the
+first group in property view. is there any property group ordering
+function, maybe propose one."
+
+The note-taker's reading, not the reporter's words:
+- An object now has a group of properties named "Appearance" (its
+  looks, kept with the object since the merge of 2026-10-12). In the
+  property view that group comes FIRST, before "Base". Wanted: the
+  group is named "Object Appearance", which puts it further down.
+- A question: is there anything that ORDERS the groups? And if not, a
+  proposal for one is asked.
+
+The QUESTION answered, READ in the source by the note-taker, nothing run:
+- There is NO ordering function. The property view keeps its groups in
+  a map keyed by the group's name
+  (`std::map<QString, GroupInfo> groupItems` in
+  `src/Gui/propertyeditor/PropertyModel.h`), and a new group is put at
+  the row its name has in that map
+  (`PropertyModel::getGroupInfo`, `PropertyModel.cpp` near line 265).
+  So the groups stand in the order of their NAMES, capitals before
+  small letters -- "Appearance" before "Base". A property with no
+  group goes under "Base".
+- That is why a rename works as the reporter says: "Object Appearance"
+  comes after "Base" (and before "Object Style").
+- WHERE the object's group "Appearance" is declared the note-taker did
+  NOT find by a short search of `src/App` (only
+  `ShaderObject.cpp` names a group so); it is for the build session to
+  point at.
+
+A proposal is asked of the build session. To start it, three ways the
+note-taker can see, marked as the note-taker's:
+1. A fixed list of the names that come first, in order ("Base", then
+   the ones named), the rest by name after them.
+2. A number of rank a group can be given where its properties are
+   declared; the view orders by rank, then by name.
+3. Leave the order by name and only pin "Base" to the top.
+
+NOT said, lettered for an answer:
+a. THE RENAME at once, by itself, before any ordering is made -- or
+   wait for the ordering and keep the name "Appearance"?
+b. Files and scripts: the group's name is kept with a property in some
+   cases, and a script may ask for it. Is a plain rename enough, the
+   old name not kept anywhere?
+c. For an ordering, WHICH groups the reporter wants first and in what
+   order -- so that a proposal can be tried against it?
+
+**2026-10-13 14:59, the reporter answers the three points:** "entry 106. a,
+no need to rename. b, static property group name is not saved to file. c,
+add a ranking number for property group, default 0. sort group by rank +
+name. set Appearance to 1 so it appear last."
+
+The note-taker's reading:
+- a. NO rename: the group stays "Appearance". The first sentence of
+  14:52 is withdrawn by this; the entry is the ordering now.
+- b. A fact from the reporter: the group name of a STATIC property is
+  not saved to the file -- so a rename would not have touched files.
+  (No longer needed for this entry.)
+- c. THE ORDERING, decided -- the second of the three ways the
+  note-taker had listed, made exact:
+  - a property group has a RANK, a number, 0 by default;
+  - the property view sorts the groups by rank first, then by name;
+  - "Appearance" gets rank 1, so that with everything else at 0 it
+    comes LAST.
+No proposal is needed from the build session any more.
+
+Two smaller points, left to the build session, NOT put as blocking:
+- WHERE a rank is given: beside the group's name where the properties
+  are declared, or in one table of group names and ranks; and whether
+  a script can give a rank to a group of properties it adds.
+- WHICH "Appearance": the object's group of that name. A view
+  provider's or a workbench's group with the same NAME (TechDraw has
+  one) would come last with it if the rank goes by the name -- wanted
+  or not is not said.
+
+**2026-10-13 15:06, the reporter says HOW the rank is given:** "let's encode
+the rank into group name with ending postfix #<rank>. strip the postfix
+before display it in qt"
+
+The note-taker's reading:
+- No new place for the rank: it is written INTO THE GROUP'S NAME, as
+  an ending "#" and the number -- "Appearance#1". A name with no such
+  ending has rank 0.
+- The property view (Qt) STRIPS that ending before it shows the name:
+  the reader sees "Appearance".
+- This settles the first smaller point of 14:59 (where a rank is
+  given: at the declaration, in the name) and with it that a script
+  can give one -- it names the group of a property it adds. The second
+  smaller point goes with it too: the rank belongs to whoever writes
+  the name, so TechDraw's own "Appearance" is not moved unless it is
+  written with the ending.
+
+NOT said, left to the build session, not put as blocking:
+- Two declarations of ONE shown name with different ranks
+  ("Appearance" and "Appearance#1" on the same object): one group or
+  two in the view? The note-taker's guess: two, since they sort apart.
+- Other readers of a group's name beside the property view -- the omni
+  search's property lists, the expression completer, a script's
+  `getGroupOfProperty` -- see the name WITH the ending unless they
+  strip it too. The reporter names Qt's display only.
+- The reporter's b of 14:59 (a static property's group name is not
+  saved to the file) keeps the ending out of files for static
+  properties; a property added by a script has its group saved, ending
+  and all.
+
+**2026-10-13 15:08, the build session: BUILT -- but ANOTHER WAY than the
+reporter's word of 15:06, which crossed it.** From the build session's message of 2026-10-13 15:08, written here 15:07.
+- As built: `App::PropertyContainer::getGroupRank` / `setGroupRank` by
+  group name; `App.getPropertyGroupRank` / `setPropertyGroupRank` for
+  scripts; the property view sorts by rank, then name.
+- Its choices on the note-taker's two smaller points, "marked as mine":
+  ONE TABLE of names and ranks ("by name, so any class or script
+  declaring in that group follows"); and the name ranked 1 is
+  "APPEARANCES" -- "that is what the object's group is called in the
+  source (`App/Link.cpp`, `App/Part.cpp`, `Gui/AppearanceNames.cpp`);
+  'Appearance' singular (TechDraw, `ShaderObject.Scope`) is left at 0.
+  If the user means those too it is one line."
+- THE CROSSING: at 15:06 the reporter said the rank is to be encoded in
+  the group's NAME as an ending "#<rank>", stripped before it is shown
+  (the block above). That is not a table and not these calls. The
+  note-taker sent the reporter's word to the build session at 15:09.
+  Which form stays is the reporter's to say.
+- The group's real name: the reporter and the note-taker wrote
+  "Appearance"; the object's group is "Appearances". By the reporter's
+  form it would be declared "Appearances#1".
+
+**2026-10-13 15:07, the reporter adds a rule:** "group with the same name
+having different rank will use the largest rank"
+
+The note-taker's reading:
+- This answers the first thing the note-taker had listed as not said at
+  15:06: declarations of ONE shown name with different ranks
+  ("Appearances" and "Appearances#1" on the same object) are ONE group
+  in the view, and it stands at the LARGEST of the ranks given. Not two
+  groups, as the note-taker had guessed.
+- It reads as said for the form of 15:06 -- the rank in the name. In
+  the form the build session has in its build of 15:06 (one table of
+  names and ranks) a name has one rank only and the case does not
+  arise. So this is one more sign of which form the reporter has in
+  mind; it is still theirs to say in so many words.
+
+**2026-10-13 15:11, the reporter decides the form and asks:** "entry 106,
+use the name ending form, Appearances#1. what TechDraw property, object or
+its view provider"
+
+The note-taker's reading:
+- DECIDED: the NAME-ENDING form -- the rank in the group's name,
+  stripped for display; the object's group is declared "Appearances#1".
+  The table of names and ranks with its calls, as the build session
+  has it in the build of 15:06, is not the form and is to be redone.
+- A question, on the build session's remark that TechDraw has a group
+  named "Appearance": which property, and on the object or on its view
+  provider?
+
+The QUESTION answered, READ in the source by the note-taker, nothing run:
+- On the OBJECT, not on a view provider. Two TechDraw classes of the
+  application side declare a group named "Appearance" (singular):
+  - `src/Mod/TechDraw/App/DrawViewDetail.cpp` (line 91): the detail
+    view's `ShowMatting` and `ShowHighlight`;
+  - `src/Mod/TechDraw/App/DrawViewSection.cpp` (line 147): the section
+    view's `SectionLineStretch`.
+  No file of `src/Mod/TechDraw` other than these two names such a
+  group, so no TechDraw view provider does.
+- Besides TechDraw, `src/App/ShaderObject.cpp` puts its `Scope` in a
+  group "Appearance" -- an object too.
+- The group this entry is about is another NAME, "Appearances"
+  (plural): declared in `src/App/Link.cpp` (`ElementAppearance`,
+  `OverrideMaterial`, `ShapeAppearance`, in three places) and
+  `src/App/Part.cpp`. So TechDraw's and the shader's "Appearance" are
+  not touched by "Appearances#1".
+
+A thing the name-ending form meets, READ, for the build session:
+`src/Gui/AppearanceNames.cpp` (line 53) recognises the object's looks
+by comparing a property's group with the text "Appearances"
+(`std::strcmp(group, "Appearances") == 0`). A group declared
+"Appearances#1" no longer equals that text -- that reader, and any
+other that compares a group's name, has to strip the ending as the
+property view does.
+
+**2026-10-13 15:15, the reporter:** "do not change TechDraw group name."
+
+The note-taker's reading: the group "Appearance" of TechDraw's detail
+and section views stays as it is declared -- no ending, rank 0. Only
+the object's "Appearances" becomes "Appearances#1". (The shader
+object's "Appearance" is not named by the reporter; it is not the group
+this entry is about and is left alone too, by the note-taker's
+reading.)
+
+**2026-10-13 15:36, the build session: IN THE SOURCE in the reporter's
+form; no build has it yet (the first with it failed for memory, the next
+is running).** From the build session's message of 2026-10-13 15:36, written here 15:36.
+- "No table, no new call." `Gui/PropertyGroupName.h` (new) reads an
+  ending "#<number>" ("a minus sign allowed") off a group's name.
+- The property view (`PropertyModel`) orders the groups by rank, then
+  by the SHOWN name; shows the name without the ending; and holds ONE
+  group per shown name at the largest rank given -- "a group listed at
+  a smaller rank is moved down when a property declares a larger one".
+- The object's group is declared "Appearances#1" in three places:
+  `Part::Feature` (`Mod/Part/App/PartFeature.cpp`), `App::Part`
+  (`App/Part.cpp`), the links (`App/Link.py` -> `Link.cpp`).
+- TechDraw's and the shader object's "Appearance" untouched, "as the
+  user said 15:15".
+- Readers that compared or showed the name strip the ending too:
+  `Gui/AppearanceNames.cpp` (the note-taker's point of 15:13), the
+  scene control's property list for a client (`SceneControl.cpp`), and
+  the property item's "<group>_<name>" prefix rule.
+- NOT stripped, "raw on purpose": the "Rename property group" dialog
+  ("the user edits the real name, rank and all") and Python's
+  `getGroupOfProperty`.
+- The test `tests/gui/property-group-rank.py`: written, not run.
+The block of 15:08 above (the table with its calls) is of a form that
+never reached a build and is not in the source any more.
+
+**2026-10-13 19:17, the build session: COMMITTED `650a6dee96`, local;
+three cases of the Python suite met the new name.** From the build session's message of 2026-10-13 19:17, written here 19:19. The suite
+on the build r7: "FAILED (failures=3 ...)" -- "the three are
+parttests.ElementAppearanceTest cases that expected the object's group
+to be named 'Appearances'; the expectation corrected to 'Appearances#1',
+that module again on the same build: 35 OK". The note-taker's note: a
+script of the reporter's or of an addon that reads a property's group
+name will meet the same -- the name as stored now ends in "#1"; only
+what Qt shows is stripped (the reporter's decision of 15:06). Not put as
+a question.
+
+## 107. A recompute cancelled with Esc: the error box shows the abort as raw program text -- the root cause FOUND 2026-10-13 15:52 (errors coming back through Python lost their message and class), a fix in a build; answered 2026-10-13 15:43: "Recompute cancelled", the replacement kept, the abort handled as an abort; STAGED 2026-10-13 16:55 from uncommitted code, not tested; COMMITTED `6df0613233` 2026-10-13, pushed 19:24
+
+**2026-10-13 15:38, the reporter, with a screenshot:** "new defect, when
+recompute, I press esc to cancel the recompute, the error message pop up
+explaining the abortion is not human readable. See screenshot."
+
+The screenshot, as the note-taker reads it (kept outside the repository,
+`..\dl\handson\2026-10-13\entry107\replace-link-failed.png`): a box
+with the red error mark, titled "Replace link failed", one button "OK",
+and this text:
+"{'sclassname': 'class Base::AbortException', 'sErrMsg': 'Aborted
+operation', 'sfile': '', 'iline': 0, 'sfunction': '', 'swhat': 'Aborted
+operation', 'btranslatable': False, 'breported': False}"
+
+The note-taker's reading, not the reporter's words:
+- A recompute was running; the reporter pressed Esc to cancel it; the
+  program then raised an error box whose text is the abort written out
+  as a program's record -- field names, quotes and braces.
+- The box's title says the recompute was part of a "Replace link"
+  operation; the reporter's sentence speaks of a recompute only.
+- Which copy: by the hour, the stage of 13:56.
+
+NOT said, lettered for an answer:
+a. WHAT should appear after a cancel by Esc: NOTHING at all (the user
+   cancelled, it is no failure), a line in the status bar or the report
+   view, or a box that says in plain words "Recompute cancelled"? The
+   note-taker's guess: no error box.
+b. The OPERATION: was a link being replaced (or unlinked) when the
+   recompute ran, as the title says -- and is the replacement expected
+   to be taken back when the recompute is cancelled, or kept?
+c. ELSEWHERE: only this place, or should every place that shows an
+   error after an Esc be looked through for the same raw text?
+
+Pointers, READ in the source by the note-taker, nothing run:
+- The box is raised in `src/Gui/CommandLink.cpp` near line 677: after
+  the replacement it calls `Command::updateActive()` (the recompute);
+  any `Base::Exception` is caught, the transaction closed as aborted
+  (`committer.close(true)`), and a critical message box is shown with
+  the title "Replace link failed" (or "Unlink failed") and the text
+  `e.what()`.
+- The recompute runs through Python; an abort raised in the program
+  comes back from Python as an exception whose text is the record the
+  screenshot shows -- so `e.what()` is that record, not the two words
+  "Aborted operation" inside it.
+- `src/Gui/Command.cpp` near line 667 has a place that catches
+  `Base::AbortException` by itself, apart from other errors: the way an
+  abort is meant to be told from a failure. This catch does not.
+- Near it: entry 97 and entry 79 (things that happen while a long
+  operation lets events in).
+
+**2026-10-13 15:43, the reporter answers the three points:** "a, Recompute
+cancelled. b, yes. kept. c, no just abort exception handling"
+
+The note-taker's reading:
+- a. What appears after the cancel says "Recompute cancelled" -- the
+  third of the three choices put: plain words in place of the record.
+  (Whether as the box that comes up now, with another title than
+  "Replace link failed", or as a line, is not said; the note-taker
+  takes it for the box, since that was the choice named.)
+- b. Yes, a link was being replaced. And the replacement is KEPT when
+  the recompute is cancelled.
+- c. No sweep of every place that shows an error after Esc: "just
+  abort exception handling" -- the abort is to be handled AS an abort
+  where it arrives here, told from a failure.
+
+One thing the answer b changes, READ in the source, nothing run: today
+this place closes its transaction as ABORTED when anything is caught
+(`committer.close(true)` in `src/Gui/CommandLink.cpp` near line 679),
+which takes the replacement back. "Kept" means a cancelled recompute
+must not go that way: the replacement stays, the recompute is what
+stops. A real failure of the replacement keeps today's way, by the
+note-taker's reading.
+
+**2026-10-13 15:52, the build session: the ROOT CAUSE FOUND and shown on
+the staged copy; a fix in the source, in the build of 15:45, not tested.**
+From the build session's message of 2026-10-13 15:52, written here 15:51.
+- "It is not the link command's alone: since Python 3.12 an exception
+  is kept as its instance, and the dictionary our catch macro
+  (`PY_CATCH`, `Base/PyObjectBase.h`) hands to Python as the
+  exception's value is that instance's one argument; `src/Base/PyTools.c`
+  (`PP_Fetch_Error_Text`) still looked for the dictionary as the value
+  itself, no longer found it, and the exception came back to C++ with
+  the dictionary's TEXT as its message and as no class of ours."
+- Shown: a script feature whose `execute()` fails in a C++ call of that
+  kind (`Box.evalExpression("1 +")`) ends the recompute with the status
+  "{'sclassname': 'class Base::ParserError', 'sErrMsg': 'syntax error,
+  unexpected end of input', ...}" where it should read "syntax error,
+  unexpected end of input". "The Esc case is the same thing with
+  `Base::AbortException`."
+- Changed, two things:
+  1. `PyTools.c` finds the dictionary in the instance's argument again,
+     "so every such error reads as its message and comes back as its
+     own class -- wider than the abort, but it is the cause, not a
+     sweep of places; if the user wants it narrower it is one block to
+     take out";
+  2. `src/Gui/CommandLink.cpp`, as the reporter answered: a cancelled
+     recompute after a replace or an unlink KEEPS the replacement (the
+     transaction is committed, not aborted) and shows a box titled
+     "Replace link" / "Unlink" with the text "Recompute cancelled"; a
+     real failure keeps today's way.
+The note-taker's note on the reporter's answer c ("no just abort
+exception handling"): change 1 is wider than the abort -- EVERY error
+that comes back through Python reads as its message again and keeps its
+class. The build session says so itself and offers to narrow it. By the
+note-taker's reading it is the handling of the exception at its root
+and not a sweep of the places that show errors, which is what c ruled
+out; whether the reporter wants it so is theirs to say. A side of it
+worth knowing: error texts shown since Python 3.12 came in -- in the
+report view, in a feature's status -- have been such records, and will
+read as plain messages again.
+
+**2026-10-13 19:17, the build session: COMMITTED `6df0613233`, local.**
+From the build session's message of 2026-10-13 19:17, written here 19:19. "107: the dictionary found again in PyTools.c; 'Recompute
+cancelled', the replacement kept; a unit test in Mod/Test/Document.py".
+SEEN in the commit: `src/Base/PyTools.c`, `src/Gui/CommandLink.cpp`,
+`src/Mod/Test/Document.py`. The root fix is as wide as it was shown at
+15:52 (every error of ours that crosses Python comes back as its
+message); whether to narrow it to the abort alone is still the
+reporter's, not asked for by them.
+
+## 108. Editing a feature of an invisible body: its base feature is not shown on top as it is when the body is visible, and as the old fork shows it -- OPEN, answered 2026-10-13 16:03: not shown at all when the body is hidden; right when it is visible; REPRODUCED 2026-10-13 19:17, a fix in a build, not committed; COMMITTED `5c0b30ce1b`, pushed 2026-10-13 20:13, not staged; one point for the reporter (the base on top and see-through with the body hidden, in place and solid with it shown); RULED 2026-10-14: visible -- by the "Show preview" check box (on top if on, normal if off); hidden anywhere on the editing path -- always on top; in a build, not committed
+
+**2026-10-13 15:58, the reporter:** "new defect, when double click to edit a
+feature with invisible body, the feature (previous history step of the
+editing one) is not shown on top. old fork has it show on top regardless
+of body visibility"
+
+The note-taker's reading, not the reporter's words:
+- A PartDesign feature is opened for editing by a double click while
+  the BODY it belongs to is hidden.
+- While a feature is edited, the solid as it stands just BEFORE that
+  feature -- the previous step of the history -- is what the edit is
+  shown against. In the old fork that solid is shown ON TOP during the
+  edit whether the body is visible or not. Here, with the body
+  invisible, it is not.
+- Which copy: by the hour, the stage of 13:56.
+
+NOT said, lettered for an answer:
+a. "not shown on top": not shown AT ALL (it stays hidden with the
+   body), or shown but not on top, so that other objects cover it?
+b. With the body VISIBLE, is the previous step shown on top here as in
+   the old fork -- so that the defect is about the hidden body only?
+c. Per-view edit is on in the reporter's configuration
+   (`View/PerViewEdit` 1): is it the same in every view, or in the
+   edit's view only; and is the edit's own preview shown as expected?
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- Entry 104 is the same scene from another side: during a per-view
+  edit of `Pad033` the body's own drawing is put away in the edit's
+  view, and the reporter found there that hiding the body leaves the
+  edit's preview visible, "which is expected".
+- "Shown on top" during an edit is the on-top group the view keeps for
+  what is being edited and selected (entry 54 was about that group);
+  PartDesign's edit asks for it in `src/Mod/PartDesign/Gui` (the view
+  provider's edit and the task panels). Which part of it looks at the
+  body's visibility is not looked into.
+- The PartDesign edit was reworked to be per view in the first days of
+  October (the handoffs of 2026-10-05 and 2026-10-06): a place where
+  the fork's behaviour may have changed.
+
+**2026-10-13 16:03, the reporter answers the three points:** "entry 108. a,
+not shown at all. b, yes. c, edit view only"
+
+The note-taker's reading:
+- a. With the body hidden the previous step is NOT SHOWN AT ALL during
+  the edit -- it stays hidden with the body.
+- b. Yes: with the body VISIBLE it is shown on top, as in the old fork.
+  So the defect is the hidden body's case alone.
+- c. "edit view only": the note-taker takes it for WHERE the previous
+  step belongs -- it is to be shown on top in the view of the edit, not
+  in the other views (the edit being per view). The second half of the
+  point, whether the edit's own preview shows as expected, is not
+  answered in so many words; entry 104's answer of 14:50 has it shown
+  with the body hidden.
+So what is wanted, by the answers: when a feature is opened for editing
+and its body is hidden, the solid of the step before it is shown, on
+top, in the edit's view -- as it is when the body is visible -- and the
+body stays hidden otherwise.
+
+**2026-10-13 16:06, the reporter puts the note-taker's wording right:** "not
+necessary step before it, should be the base feature. just make it the
+same regardless of body visible or not"
+
+The note-taker's reading:
+- What is shown on top during the edit is the BASE FEATURE of the
+  edited feature -- the feature it is built on -- which is not
+  necessarily the step before it in the history. The note-taker's "the
+  step before it" in the row, the heading and the blocks above took
+  the reporter's own first words ("previous history step of the
+  editing one") too literally; read "the base feature" there.
+- THE RULE, one line: whatever the edit shows with the body VISIBLE, it
+  shows the same with the body HIDDEN. No other change is asked.
+
+**2026-10-13 16:07, the reporter gives the reason:** "because show on top
+is supposed to be shown regardless of normal visibility"
+
+The note-taker's reading: this is the PRINCIPLE behind the rule of
+16:06, and it is wider than this one case -- what is put into the
+"show on top" group is shown whether or not it is visible in the
+ordinary way. The base feature of an edit is in that group; the body
+being hidden is ordinary visibility and must not take it away. So the
+defect is not that the edit forgets the base feature when the body is
+hidden, but that the on-top showing follows the ordinary visibility
+here. Whether other things shown on top are hidden the same way by an
+invisible parent is NOT said and not looked into; the principle would
+cover them.
+
+**2026-10-13 19:17, the build session: REPRODUCED on a small model, the
+cause found, a fix in the build r8 -- NOT committed.** From the build session's message of 2026-10-13 19:17, written here 19:19.
+- "REPRODUCED on a small model (a pad and a pocket; the pocket in
+  edit): with the body shown the base, the pad, is drawn solid in the
+  feature's place; with the body hidden only the translucent preview."
+- "Cause: what a view shows of its own accord is drawn only if the
+  scene's capture gets to it, and a body hidden in the document stops
+  the capture at its switch."
+- "In r8: the containers a shown occurrence is reached through count as
+  shown for the capture; what else they hold stays hidden."
+- "On scanner.FCStd Pad033 has NO base feature (it is its body's first
+  solid), so there an edit with the body hidden and with it shown look
+  the same -- 0.8% of the pixels apart; the user's configuration has
+  Mod/Part/EditOnTop off, so 'on top' in their words is the base drawn
+  in the feature's place, by my reading."
+The note-taker's notes: the last is the build session's READING of the
+reporter's "shown on top", not the reporter's word -- to be confirmed
+when the reporter tries it. Which feature of which body the reporter
+edited at 15:58 was never said; `Pad033` is the build session's example.
+
+**2026-10-13 20:15, the build session: FIXED, COMMITTED `5c0b30ce1b`,
+PUSHED 20:13, not staged -- and the picture with the body hidden is NOT
+the picture with it shown.** From the build session's message, which it stamps 20:14; written here 20:15.
+- The cause: "a view's own 'shown' marked only the leaf's switch; the
+  scene capture stops at a body hidden in the document, so nothing
+  inside it was captured. The fix counts the containers a shown
+  occurrence is reached through as shown for the capture
+  (ViewVisibility)."
+- WHAT THE REPORTER THEN SEES: "with the body hidden: the base feature
+  drawn ON TOP, see-through, far edges showing -- because
+  PartDesignGui's Monitor (old fork code, Utils.cpp about line 900)
+  puts the base in the view's on-top group whenever a container on the
+  path is hidden; with the body shown and Mod/Part/EditOnTop off it is
+  drawn in place, solid. So the two pictures are NOT the same".
+- ITS READING, in its own words: "I read the user's 'show on top is
+  supposed to be shown regardless of normal visibility' as wanting
+  exactly this on-top display, and their 'just make it the same
+  regardless of body visible or not' as 'the base feature in both
+  cases'. That is my reading -- a point for the user if they meant the
+  same picture."
+- The test: "tests/gui/edit-shows-base-with-body-hidden.py 5 of 5 on
+  build r8 (real screen, pictures by the renderer); twelve per-view
+  neighbour tests pass on r8 (edit-hide 25, edit-per-view 25,
+  pd-edit-shown-per-view 13, pd-preview-per-view 38,
+  per-view-visibility 45, per-view-clip-cache 15, element-color-hide
+  624, tempovis-per-view 16, per-view-shown-eviction 5,
+  per-view-resolve-selective 19, selection-per-view 26,
+  sketch-edit-hide 25). Not scored against a build without the fix
+  (none kept). Not tried on scanner.FCStd: my probe picked no feature
+  (a probe fault)."
+
+ONE POINT for the reporter, the note-taker's wording:
+a. With the body HIDDEN, the base feature is now drawn on top and
+   see-through (its far edges showing); with the body SHOWN it is drawn
+   in its place, solid. The reporter's words were "just make it the same
+   regardless of body visible or not" (16:06) and "show on top is
+   supposed to be shown regardless of normal visibility" (16:07). Is the
+   see-through on-top drawing with the body hidden what is wanted, or
+   the SAME picture as with the body shown?
+
+A SIDE FINDING of the build session's, NOT an entry -- it becomes one on
+the reporter's word: "seen on the staged copy of 16:55 too, so not from
+today's change: with a body hidden, selecting one of its features (tree
+or script, Body + 'Pad.') shows it on top but CUT OFF by the view's clip
+planes -- only the corner nearest the camera is drawn. Pictures:
+..\dl\handson\2026-10-12\s1\g-e108g-staged\b-selected-Pad_.png. Not
+fixed; perhaps an entry of its own." (The path as the build session
+wrote it, the folder of 2026-10-12; not opened by the note-taker.)
+
+**2026-10-13 22:06, the build session: tried on the reporter's file with
+a copy of their configuration -- the SAME picture with the body hidden
+and shown.** From the build session's message, which it stamps 22:06; written here 22:06. "scanner.FCStd with a copy of their configuration,
+the feature 'Draft' (Body008, base Pad036) in edit: with the body hidden
+the picture is the same as with it shown (0.0000 of the pixels differ),
+preview and base there."
+The note-taker's notes: on the small model at 20:15 the two pictures
+were NOT the same (the base on top and see-through with the body
+hidden). Why they are the same here is not said -- the reporter's
+configuration, or this model. If it is the configuration, the point a
+of 20:15 does not arise for the reporter as they run it; it stays put,
+marked as possibly answered by this. On the dev build; the staged copy
+of 16:55 does not have the fix.
+
+**2026-10-13 22:08, the build session on why the small model's two
+pictures differ and the reporter's file's do not: "not known".** From its
+message stamped 22:09, written here 22:08. "One guess, mine, not
+checked: Body008 sits inside Part011 under Part010, and the probe hides
+the body by its own Visibility while the occurrence is reached through
+those parents; and the feature there is a Draft, a dress-up, where the
+small model's was a pocket. Leave it as 'not said'." So the point a of
+20:15 stands as put; whether it arises for the reporter is not known.
+
+**2026-10-13 23:04, the reporter asks:** "Entry 108, what clip plane
+finding"
+
+ANSWERED by the note-taker from the build session's words of 20:14 and
+its pictures, opened now (`..\dl\handson\2026-10-12\s1\g-e108g-staged`,
+`result.txt`, `a-body-hidden.png`, `b-selected-Pad_.png`); nothing run:
+- It is a SIDE FINDING of the build session's while it worked on this
+  entry, not something the reporter said: on the copy STAGED at 16:55,
+  a small model (a body with a pad and a pocket), the BODY HIDDEN,
+  nothing in edit. With nothing selected the view is empty, as it
+  should be (`a-body-hidden.png`).
+- One of the body's features is then SELECTED (by script: the body with
+  the sub name "Pad."; the build session says the tree does the same).
+  A selected object of a hidden container is drawn on top. What is
+  drawn is NOT the pad: only a small three-sided piece -- three faces
+  meeting at one corner, about 260 pixels wide in a view of 1500, the
+  corner nearest the camera (`b-selected-Pad_.png`). The rest of the
+  solid is missing.
+- The build session's reading: the on-top drawing is "CUT OFF by the
+  view's clip planes" -- the near and far planes of the camera, which,
+  by the note-taker's reading, are set from what the view holds, and a
+  view whose only body is hidden holds nothing to set them by. That
+  cause is its reading from the picture; NOT shown by a measurement.
+- "seen on the staged copy of 16:55 too, so not from today's change";
+  "Not fixed; perhaps an entry of its own."
+NOT said by the reporter: whether this becomes an entry. Not opened by
+the note-taker: `b-selected-Pocket_.png`, `b-selected-Pad_Face6.png`.
+
+**2026-10-14, the reporter RULES -- words typed to the build session
+"this morning", relayed by it (its message stamped 07:36, written here
+07:36); the note-taker did not hear them. In its order:**
+1. "Entry 108. When visible follow the control in edit panel. If preview
+   is on, show on top, else show normal. If hidden, then always shiwn on
+   top"
+2. To the build session's question WHICH control in the edit panel
+   decides -- "the 'Show on top' check box (what the code did) or the
+   'Show preview' check box" -- the reporter chose, in the build
+   session's rendering: "Show preview" checkbox.
+3. "After done push and restage. Any issues on the notes left"
+4. "Visible checking not only apply to the body itself, but to the full
+   editing path"
+
+The note-taker's reading, not the reporter's words:
+- With everything on the path of the edit VISIBLE, the edit panel's
+  "Show preview" check box decides: preview on -- shown on top; preview
+  off -- shown as normal, in its place.
+- With something HIDDEN -- the body, or anything else on the path the
+  edit is reached through (4) -- always shown on top.
+- This answers point a of 2026-10-13 20:15: the on-top drawing with the
+  body hidden IS wanted; and the picture with the body shown is not
+  always the same one -- it goes by the preview's check box.
+- (3) is the reporter's word for a PUSH and a RESTAGE once this entry is
+  done, and a question -- what is left in the notes -- which the build
+  session answers from the note-taker's list (sent to it 07:36).
+
+WHAT THE BUILD SESSION MADE OF IT, in its words, "in build r16 now
+(started 07:33), not committed yet":
+- "what is on top in the view of an edit = the preview is on, OR
+  anything on the path of the edit down to its body is hidden (the top
+  object, or an element of any container on the way -- the whole path,
+  as (4) says; the code already walked it, now in one place). With
+  everything shown and the preview off the feature is drawn in its
+  place."
+- "The panel's 'Show on top' check box is REMOVED and Part/EditOnTop is
+  no longer read -- my consequence of (2), not the user's words: under
+  that rule the box decides nothing."
+- "The test is rewritten as
+  tests/gui/edit-on-top-by-preview-and-path.py (a body in a part;
+  preview on with all shown, body hidden, part hidden -- the same
+  picture; preview off shown and hidden) and the old
+  tests/gui/edit-shows-base-with-body-hidden.py is deleted."
+- "AFTER the tests of r16: commit, then PUSH and RESTAGE on (3) -- the
+  user's word for both, given. I do not test the staged copy (their
+  standing word)."
+The note-taker's notes: the REMOVAL of the "Show on top" check box and
+of the setting `Part/EditOnTop` is the build session's consequence,
+marked so by it -- the reporter did not ask for it; the reporter's
+configuration has `EditOnTop` off (the build session, 2026-10-13
+19:17), so nothing they see changes by its going. "The whole path
+... down to its body" and the reporter's "full editing path" are read
+as the same thing. Not said by the reporter: whether the clip plane
+finding above becomes an entry.
+
+## 109. A dress-up feature with a missing reference: a hover in the edit panel highlights the preview fillet face in place of the missing edge (a change request; first said as a defect) -- OPEN, said 2026-10-13 16:02; half done 2026-10-13 19:17, not committed; does not work on the build r8 (20:15), being looked at; WORKS on the build r10, COMMITTED `26f0a30de0` 2026-10-13, local; not pictured
+
+**2026-10-13 16:00, the reporter:** "defect (from old fork), when a dress up
+feature fails because of reference name moved, those missing edge preview
+shape hover (in edit panel) highlight is broken"
+
+The note-taker's reading, not the reporter's words:
+- A dress-up feature (a fillet, a chamfer, a draft, a thickness) is in
+  error because one of the edges or faces it refers to is no longer
+  found under its name -- the name has moved.
+- Its edit panel still lists those references and shows the MISSING
+  ones as preview shapes in the view, so that they can be seen and
+  replaced. Hovering one -- in the panel -- should highlight its shape.
+  That highlight is broken.
+- "from old fork": the old fork has the same defect; it is not new
+  with this branch.
+- `scanner.FCStd` has such a feature: `Fillet011`, in error after the
+  migration recompute with "Invalid edge link: ?Edge93" (the build
+  session's measurement of 15:08 under entry 105; entry 17).
+
+NOT said, lettered for an answer:
+a. BROKEN HOW: nothing lights up; the wrong edge lights up; the
+   highlight comes and does not go; or the preview shape itself goes
+   away under the pointer?
+b. WHICH way round: the pointer over a row of the panel's list, the
+   shape in the view to light up -- or the pointer over the preview
+   shape in the view, the row to be marked -- or both?
+c. The references that are NOT missing: do they highlight as they
+   should in the same panel, so that only the missing ones are wrong?
+   And on which feature it was seen (`Fillet011`?).
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- The dress-up panels are in `src/Mod/PartDesign/Gui`
+  (`TaskDressUpParameters.cpp` and the fillet, chamfer, draft and
+  thickness panels on it); a missing reference is one whose name comes
+  back with a "?" before it.
+- Near it: entry 84 (a hover in a list that is answered a moment
+  later), entry 17 (`Fillet011`).
+
+**2026-10-13 16:02, the reporter turns it into a request:** "about dress up
+hover highlight, it's more of a feature request, because normal highlight
+shows the reference edge in base feature. when the reference is missing, I
+want to highlight the preview fillet face instead"
+
+The note-taker's reading:
+- Not a defect after all, a REQUEST. How it is today: a hover over a
+  reference in the dress-up's edit panel highlights the referenced EDGE
+  on the BASE feature. When the reference is missing there is no such
+  edge to highlight -- which is what looked broken.
+- Wanted: for a missing reference, the hover highlights the PREVIEW
+  FILLET FACE instead -- the face the panel's preview shows for that
+  reference.
+- The three points of 16:00 are overtaken: (a) nothing lights up,
+  because the edge is not there; (b) it is the pointer over the
+  panel's row, the shape in the view to light up; (c) the references
+  that are found highlight as they should.
+
+Two smaller points, NOT put as blocking:
+- "preview fillet face" names the fillet. For the other dress-ups -- a
+  chamfer's face, a draft's or a thickness's -- the same by the
+  note-taker's reading: the preview's face for that reference.
+- A missing reference for which the preview has NO face either (the
+  preview could not be made for it): nothing to highlight, as today.
+
+**2026-10-13 19:17, the build session: HALF, not committed.** From the build session's message of 2026-10-13 19:17, written here 19:19.
+- "Shown on scanner.FCStd's Fillet011 after the migration recompute
+  (Base reads Edge89, ?Edge93, ?Edge89, Edge88): the feature has NO
+  DressUpShape, which is where the panel looked a missing reference up;
+  the shape it keeps has 63 faces whose history still names the missing
+  edges (Face3 traces to the mapped name of the file's Edge88)."
+- "The lookup falls back to that shape (in r7's tree, uncommitted); and
+  a list filled anew gave a missing reference no mapped name to look up
+  -- the second half, in r8."
+So why the existing code (`TaskDressUpParameters::getItemElement`) found
+nothing on a failed feature is answered: a failed dress-up has no
+DressUpShape to look in.
+
+**2026-10-13 20:15, the build session: DOES NOT WORK on the build r8.**
+From the build session's message, which it stamps 20:14; written here 20:15. "entry 109 does not work on r8 (the hover on a missing reference
+sets no preselection at all), being looked at." Uncommitted, in the tree.
+
+**2026-10-13 20:17, the build session: WHY it did not work on r8, found "on
+paper"; changed for the build r9, not shown yet.** From its message
+stamped 20:20, written here 20:17.
+- "on r8 the hover on a missing reference set NO preselection (before:
+  the missing edge's name on the base, which lights nothing)."
+- "Found why on paper: the kept shape does hold the faces of the two
+  missing edges (Face28 from the edge that was Edge93, Face26 from
+  Edge89, read headless), but in the edit the feature has a dress-up
+  shape of the references that are left, so my 'use the kept shape when
+  there is none' never applied."
+- "Changed to 'when the dress-up shape has no face for the reference';
+  in r9, not shown yet."
+The note-taker's note: this corrects the finding of 19:17 ("the feature
+has NO DressUpShape") for the case that matters -- while the feature is
+in EDIT it has one, made of the references left.
+
+**2026-10-13 22:06, the build session: WORKS on the build r10; COMMITTED
+`26f0a30de0`, local, not pushed, not staged.** From the build session's message, which it stamps 22:06; written here 22:06.
+- "shown offscreen on scanner.FCStd, Fillet011 in edit after the
+  migration recompute, the pointer on each item of the panel: the two
+  missing references now preselect 'Fillet011.;AddSub;Face4' and
+  'Fillet011.;AddSub;Face3' -- the preview's fillet faces of those
+  edges; the two found ones as before ('Pocket042.Edge89', 'Edge88').
+  Before: 'Pocket042.?Edge93', a name of nothing."
+- "NOT pictured: that the face is drawn lit."
+- "Cause: the old fork's own look-up for this hover traces a preview
+  face's name back to the reference; the trace expands hashed names by
+  the shape's own hasher, the preview has a hasher of its own, and one
+  step back the names are the document's -- it stopped there for every
+  reference."
+SEEN in the commit: `src/Mod/PartDesign/Gui/TaskDressUpParameters.cpp`
+and `Utils.cpp`; no test file in it. The note-taker's notes: the cause
+given here is another than those of 19:17 (no DressUpShape) and 20:17
+(a dress-up shape of the references left) -- whether those two changes
+are still in the commit is not said. Shown by the NAME the hover
+preselects, offscreen; that the fillet's face lights up on a screen is
+the reporter's to see after a restage.
+
+**2026-10-13 22:08, the build session on what `26f0a30de0` holds -- three
+things; the middle "cause" of 20:17 was a WRONG reading.** From its
+message stamped 22:09, written here 22:08.
+- "(a) Utils.cpp -- a reference list filled anew keeps the mapped name
+  of a missing reference with its item (the afternoon's change; needed:
+  without it the look-up is never entered)."
+- "(b) TaskDressUpParameters.cpp -- the look-up traces a face's name
+  back by itself, by the shape's own hasher and then the document's;
+  that is the fix that works, it finds the face in the PREVIEW shape
+  (DressUpShape), which is what the user asked to be lit."
+- "(c) the same file -- where the preview shape has no face for the
+  reference (or is null) the shape the feature keeps is looked in with
+  the same trace; that is the first 'cause' turned into a second
+  resort, kept, never reached in the run on scanner.FCStd."
+- "The middle 'cause' (a dress-up shape of the references left) was a
+  wrong reading and nothing of it is left: the preview does hold the
+  faces of the missing edges."
+- No test in the tree: "the evidence is the probe s1\e109p.py on
+  scanner.FCStd, which cannot go into the tree (the user's file, their
+  addons)."
+The note-taker's note: so the block of 20:17 above, and the
+note-taker's own note under it, are put right by this -- in the edit
+the preview shape DOES hold the faces of the missing edges.
+
+## 110. In the customized title bar (A) the space between the menu reveal button and the docked tool bar is sometimes bigger and sometimes gone, and (B) the first tool bar row came to stand under the title bar (B in the live session was set off by the note-taker's own script, 17:03; whether it is entry 6 again is NOT shown by today) -- OPEN, CAUGHT in the live session 2026-10-13 16:23; both parts COMMITTED `6d1dc1f9f1` 2026-10-13, pushed 19:24, not staged
+
+**2026-10-13 16:11, the reporter:** "regression, sometimes the margin before the
+toolbar docked in customized title bar gets bigger. check my current live
+session of the staged copy"
+
+**2026-10-13 16:14, the reporter, while the note-taker was looking:** "the
+marging is completely gone now, which does not look good either"
+
+The note-taker's reading, not the reporter's words:
+- The title bar made by the program carries a tool bar. The space
+  between what stands at the bar's left end and that tool bar is not
+  steady: sometimes bigger than it should be, and at 16:14 none at all.
+  Neither looks right; a small, steady margin is wanted.
+- "regression": it was right on an earlier copy.
+
+LOOKED INTO in the reporter's LIVE session, on the reporter's word
+("check my current live session") -- the staged copy of 13:56, process
+111300, through its console, by THREE READ-ONLY scripts of the
+note-taker's (they read widgets' places and sizes and print them;
+nothing set, shown, hidden or moved; kept in the session's scratch
+folder). [WRONG, found 2026-10-13 17:03: the first of them called `menuBar()`,
+which MAKES a menu bar in the window -- see the block of that time
+below.] Readings at 16:13:11, 16:13:59 and 16:14:16, all three THE
+SAME:
+- The main window is 1920 wide; the title bar is the top 35 pixels.
+- At its left end a widget 92 pixels wide holds ONE thing: a push
+  button named `titleBarLogo`, 88 pixels wide and 35 high, with an
+  icon of 16 by 16 and no text; 2 pixels of margin left and right of
+  it.
+- Directly after it, at x 92 with no gap, the area `MenuBarLeftArea`,
+  743 wide, holding the tool bar "Workbench" at its own x 0. The
+  area's layout has no margins.
+- So in these readings there is NO margin between the logo's button
+  and the tool bar -- the state the reporter calls "completely gone"
+  at 16:14 -- and the logo's button is 88 pixels wide for a 16-pixel
+  icon, which shows as empty space on both sides of the logo.
+- The state the reporter calls "bigger" was NOT caught: the three
+  readings are alike, and the first was two minutes after the report.
+
+A candidate, the note-taker's, NOT shown: the logo is a PUSH BUTTON
+with no size of its own, and the theme's sheet gives every push button
+a least width of 80 pixels and padding (`Stylesheets/FreeCAD.qss`,
+`QPushButton`, `min-width: 80px`) -- the very rule that stretched the
+clear button of entry 91, and 88 is what it gives. A session, or a
+moment, in which that rule does not reach the button would show it at
+its icon's width, and the space before the tool bar would be another:
+the unsteadiness. Since the themes were applied again this morning
+(entry 69) the reporter's session may be under that rule where it was
+not before -- which would be the "regression". A guess.
+
+NOT said, lettered for an answer:
+a. WHICH space: the empty room around the logo at the far left (the
+   88-pixel button), or a gap between the logo and the first button of
+   the tool bar?
+b. WHEN it changes: after a change of workbench, of theme, of the
+   window's size, after a tool bar is moved -- or with no doing of the
+   reporter's?
+c. HOW BIG is right: the logo with a few pixels around it, the tool
+   bar following at once?
+
+**2026-10-13 16:22, the reporter:** "entry 110. check live state now,
+currently my eye ball check finds no margin, AND the first normal toolbar
+row is stacked underneath what the customized title bar's place. the
+toolbar current docked in the customized title bar is stacked on top"
+
+**2026-10-13 16:23, the reporter:** "BTW, I didn't do anything except switch to
+other application and switch back to check. and mouse hover to reveal the
+menu bar. not clicking anything"
+
+**2026-10-13 16:23, the reporter:** "this is actually a regression that I
+mentioned in previous entry"
+
+THE NOTE-TAKER'S FIRST READING WAS OF THE WRONG MARGIN and is withdrawn:
+the "margin" is not the room around the logo at the left (the points a,
+b, c above and the candidate about the logo's width fall with it) but
+the room AT THE TOP that the main window keeps free for the title bar.
+"No margin" is the tool bars sliding up under the title bar.
+
+CAUGHT in the LIVE session, the reporter's word again ("check live state
+now") -- process 111300, the staged copy of 13:56, one read-only script
+of the note-taker's, 16:23:29 (kept in
+`..\dl\handson\2026-10-13\entry110\titlebar_look4.py`; an earlier
+one of 16:22:45 stopped on a widget that had been made anew since the
+looks of 16:13 -- a sign the title bar's widgets were rebuilt in
+between; nothing of the application was changed by either) [WRONG
+for the look of 16:13:11, found 2026-10-13 17:03: it changed the window, and
+the rebuild seen here is its doing -- the block of that time below]:
+
+| | 16:13:11 | 16:23:29 |
+|---|---|---|
+| the title bar (a child of the main window) | y 0, 35 high | y 0, 35 high |
+| the tool bar "Workbench" inside it | y 0 | y 0 |
+| the first row of tool bars (File, Edit, View, Structure) | y 35 | y 0 |
+| the second row (Part Design ..., Measure) | y 72 | y 37 |
+| the views' area | y 109, 900 high | y 74, 935 high |
+
+- At 16:23 the main window's contents margins read (0, 0, 0, 0): no
+  room is kept at the top. (They were not read at 16:13.)
+- So the FIRST ROW OF TOOL BARS lies in the same 35 pixels as the title
+  bar, the title bar drawn over it -- what the reporter sees: "the
+  first normal toolbar row is stacked underneath", the title bar's own
+  tool bar "stacked on top".
+- The window is 1920 by 1040 in both readings: maximized.
+- BETWEEN the two readings the reporter did, by the word of 16:23, only
+  this: switched to another application and back; and hovered to
+  reveal the menu bar. No click.
+- The state "bigger" -- more room at the top than the title bar needs
+  -- is still NOT caught.
+
+"A regression that I mentioned in previous entry": the note-taker takes
+it for ENTRY 6 of 2026-10-06, "when maximized, sometimes, with the
+customized toolbar, it leaves no margin at top. sometimes it is fine"
+(STAGED then; its "sometimes" was found to be the title bar switched
+while the window is maximized). To be confirmed by the reporter -- the
+one point NOT ANSWERED; entry 5 of the same day (the menu not unfolding
+on hover with the workbench bar docked in the title bar) is its
+neighbour and "FIXED if it is entry 6's cause".
+
+Candidates, the note-taker's, from the two readings, NOT shown:
+- The room at the top is taken away when the menu bar is REVEALED by a
+  hover (or hidden again after it), or when the window is activated
+  again after another application was in front -- the two things the
+  reporter did.
+- The title bar's widgets were rebuilt between 16:13 and 16:22 (the
+  first script of 16:22 met a deleted widget): a rebuild that does not
+  set the top room again would give exactly this.
+
+**2026-10-13 16:29, the reporter says which margin:** "it is the space
+between the menu reveal button and the docked toolbar"
+
+The note-taker's reading -- and a second correction of the note-taker's
+own:
+- The margin of this entry is the HORIZONTAL space in the title bar,
+  between the button that reveals the menu (the logo at the left, by
+  the note-taker's reading: `titleBarLogo`) and the tool bar docked
+  beside it. That is what the note-taker read at 16:13 -- and then
+  WRONGLY withdrew at 16:24 for the room at the top. The withdrawal is
+  withdrawn; the block of 16:13 stands as a reading of the right place,
+  its point a is answered by this sentence.
+- So the entry holds TWO things:
+  (A) THE SPACE between the menu reveal button and the docked tool
+      bar: "sometimes bigger" (16:11), "completely gone" (16:14), "no
+      margin" (16:22).
+  (B) THE FIRST ROW OF TOOL BARS UNDER THE TITLE BAR (16:22, said with
+      "AND"), caught at 16:23 in the table above. Whether (B) is the
+      "regression that I mentioned in previous entry" (entry 6, the
+      room at the top) or (A) is, is NOT said.
+
+What the readings say of (A), put together -- NOT explained:
+- In every reading (16:13:11, 16:13:59, 16:14:16, 16:23:29) the
+  widgets stand the same: the logo's button from x 2 to x 90 (88 wide,
+  its hint and its least width both 88, a 16-pixel icon), the area of
+  the docked tool bar from x 92. The gap between the two WIDGETS is 2
+  pixels each time.
+- So what the eye takes for the space is not a gap between widgets:
+  it is the empty part of the 88-pixel button around its small icon
+  (36 pixels to each side if the icon is drawn in the middle), and
+  whatever the tool bar keeps free at its own left end. Neither was
+  read. If the icon is drawn at the button's left, in its middle or at
+  its right at different moments -- or the tool bar's first button
+  moves inside the tool bar -- the space would change with no widget
+  moving.
+- Not read yet, for a next look ON THE REPORTER'S WORD at a moment the
+  space looks wrong: where the logo's icon is drawn inside its button;
+  the place of the first button inside the docked tool bar; the
+  button's style state (hovered, the menu revealed).
+
+NOT ANSWERED, two points:
+a. Which of the two, (A) or (B), is the regression "mentioned in
+   previous entry" -- and which entry?
+b. For (A): what is right -- the logo close to the tool bar with a few
+   pixels between, the same at all times?
+
+**2026-10-13 16:30, the reporter:** "yes, entry 6"
+
+The note-taker's reading: the regression "mentioned in previous entry"
+IS entry 6 of 2026-10-06 -- "when maximized, sometimes, with the
+customized toolbar, it leaves no margin at top". That is thing (B) of
+this entry: the room at the top gone, the first row of tool bars under
+the title bar, caught at 16:23 on a maximized window. Point a of 16:29
+is answered. Left: point b, what is right for (A), the space between
+the menu reveal button and the docked tool bar; and (A) is not
+explained.
+
+What entry 6 had found then, for whoever takes (B) up (its section,
+2026-10-06): its "sometimes" was the title bar SWITCHED while the
+window is maximized -- by a theme, a preference pack or
+`Std_ViewTitleBar`. Today the reporter applied the themes again at
+about 10:04 (entry 69) in this very session's morning; the session
+caught at 16:23 was started later (it is the stage of 13:56), and what
+it did before 16:13 is not known. In it the title bar's widgets were
+made anew between 16:13 and 16:22 while the reporter only switched
+applications and hovered the menu.
+
+**2026-10-13 16:32, the reporter, a thought on how the two hang together:**
+"I am thinking the margin thing is a precursor of what follows, i.e. the
+first row toolbar stack under thing"
+
+The note-taker's reading:
+- (A), the space between the menu reveal button and the docked tool
+  bar going wrong, comes FIRST; (B), the first tool bar row sliding
+  under the title bar, FOLLOWS it. One thing in two stages, by the
+  reporter's thought -- not two defects.
+- The order of the reports fits: "bigger" at 16:11, "completely gone"
+  at 16:14, the row under the title bar at 16:22, all in one session,
+  the reporter doing nothing but switching applications and hovering
+  the menu.
+- What the readings add to it, the note-taker's: at 16:13, with (A)
+  already reported, the tool bar rows still stood right (y 35) -- so
+  (A) was there BEFORE (B), as the reporter thinks; and between 16:13
+  and 16:22 the title bar's widgets were made anew. A title bar being
+  laid out again and again -- each time a little differently, until
+  the room at the top is lost -- would show as both.
+A thought of the reporter's, recorded as that; not shown, and nothing
+is asked by it.
+
+**2026-10-13 16:33, the reporter, what moves:** "the logo and the menu
+reveal button does not seem to move, only the docked toolbar moved further
+and sometimes closer"
+
+The note-taker's reading:
+- For (A): the left end of the title bar -- the logo and the button
+  that reveals the menu -- STAYS where it is. What moves is the DOCKED
+  TOOL BAR: at times further from them, at times closer.
+- "the logo and the menu reveal button": said as two things. The
+  readings found ONE widget at the left, the push button
+  `titleBarLogo`; whether the menu reveal button is that same button
+  or a second thing beside it that the scripts did not list (a widget
+  of no width stood at x 90 in the reading of 16:13) is not settled.
+- Against the readings: in all four the tool bar's AREA
+  (`MenuBarLeftArea`) began at x 92 and the tool bar "Workbench" at
+  that area's x 0 -- the same place each time. So either the tool bar
+  was at its usual place at each of those moments and the moves fell
+  between them, or what moves is INSIDE the tool bar (where its first
+  button is drawn), which was not read.
+- So of the two things the note-taker named at 16:29 as not read, the
+  reporter's eye rules out the first (the logo's icon moving) and
+  points at the second: the tool bar and what is in it.
+For a next look on the reporter's word, at a moment the tool bar
+stands further off: the x of `MenuBarLeftArea`, of the tool bar in it,
+and of the tool bar's first button; and the tool bar's own layout
+margins.
+
+**2026-10-13 16:34, the reporter, a try announced:** "I'll do a restore and
+maximize toggle, see if it recovers"
+
+The note-taker's reading: with the first tool bar row under the title
+bar (B), the reporter takes the window out of maximized and puts it back,
+to see whether the room at the top comes back. The outcome is the
+reporter's to say; no look into the live session is made for it unless
+asked. (Entry 6's finding of 2026-10-06 had the title bar's switch on a
+MAXIMIZED window as the case that goes wrong, and the window right when
+maximized after the title bar is on.)
+
+**2026-10-13 16:38, the reporter, what was tried and what recovered it:**
+"no help. I then tried switch from light theme to dark. no help. then
+switch to classic, which made customized title bar go away. then switch
+back to light theme, then it recovered. I remember last time the margin
+problem is related to qt saving its widget state while in some bad state"
+
+The note-taker's reading, the tries in their order, all in the one live
+session of the stage of 13:56:
+1. Restore and maximize (announced 16:34): NO help.
+2. Theme Light -> Dark: NO help.
+3. Theme -> Classic: the customized title bar goes away (Classic has
+   none).
+4. Theme -> Light again: RECOVERED -- the title bar is back and the
+   tool bars stand right.
+So what put it right is the title bar being taken away WHOLE and made
+again; a change of theme that keeps the title bar (2) does not, and
+the window's own state change (1) does not.
+
+And a memory of the reporter's, as a lead: "last time the margin
+problem is related to qt saving its widget state while in some bad
+state". The note-taker's reading: the earlier case -- entry 6, or the
+one beside it -- came from the window's layout state (the places of
+tool bars and docks that Qt writes out and reads back) being SAVED at
+a moment the layout was wrong, and read back later.
+- What the queue has on that, READ by the note-taker: entry 6's section
+  of 2026-10-06 puts its "sometimes" down to the title bar switched
+  while the window is maximized, and shows Qt's geometry of the window
+  off by 8 and by 16 pixels after such switches; it does not speak of
+  saved state in the lines read. The build session's log of that day
+  (`docs/HandsOnLog.md`) is where its fix is told; not read for this.
+- It fits what was caught at 16:23 in one way: the title bar's widgets
+  had been made ANEW between 16:13 and 16:22 -- a rebuild is a moment
+  at which a layout is saved or restored.
+
+NOT said: whether the reporter saw the space (A) right again too after
+step 4, or only the tool bar row (B).
+
+**2026-10-13 16:39, the reporter:** "both recovered, margin and toolbar row"
+
+The note-taker's reading: after the title bar was taken away (Classic)
+and made again (Light), BOTH things of this entry were right again --
+(A) the space between the menu reveal button and the docked tool bar,
+and (B) the first row of tool bars below the title bar. That the two
+go wrong together and come right together supports the reporter's
+thought of 16:32 that they are one thing. Nothing is left unanswered
+by the reporter; what is right for (A) is answered by it too: as it is
+after the recovery.
+
+**2026-10-13 16:57, the build session: (A)'s cause READ in the source,
+nothing run; (B) not looked into.** From the build session's message of 2026-10-13 16:57, written here 16:58. "The menu reveal button
+(`TitleBarMenuButton`, `MainWindow.cpp`) pins itself to 50 px wide and
+re-pins only on a StyleChange event; every sheet gives a push button
+min-width 80, which the style writes over the pinned size whenever the
+button is polished again; with the sheet's 4 + 4 margins that is the 88
+you read. The logo and the bars are painted at a fixed place at the
+button's left, so only what follows it moves -- the user's 'only the
+docked toolbar moved further and sometimes closer'."
+
+The note-taker's note: this is the candidate the note-taker wrote down
+at 16:15 (the sheets' least width of 80 for a push button reaching the
+logo's button at some moments and not at others), now with its
+mechanism: 50 pixels when the button's own pin holds, 88 when the sheet
+has written over it. So in the readings of 16:13 to 16:23 the button
+was in its WIDE state -- the "bigger" margin -- each time, and the
+state the reporter called "completely gone" at 16:14 and "no margin"
+at 16:22 was not what those readings showed for (A); what they showed
+at 16:23 was (B). Not reconciled further; the stage of 16:55 does not
+have a change for this entry.
+
+**2026-10-13 17:03: (B) IN THE REPORTER'S LIVE SESSION WAS SET OFF BY THE
+NOTE-TAKER'S OWN SCRIPT. Both parts REPRODUCED by the build session, the
+causes shown, fixes written.** From the build session's message of 2026-10-13 17:03, written here 17:03.
+
+THE NOTE-TAKER'S FAULT, found on the build session's question ("did any
+of the scripts you ran in the user's live session at 16:13 to 16:14 call
+mainWindow.menuBar()"):
+- YES. The first script, `titlebar_look.py` (kept in
+  `..\dl\handson\2026-10-13\entry110`), has at its line 71
+  `mb = mw.menuBar() ...`. On a `QMainWindow` that call is not a
+  question: where the window has no menu bar it MAKES one and puts it
+  in the window's menu place. The script ran to its end once, at
+  16:13:11, and its last line printed what it had made: "menu bar
+  visible False x0 y0 w100 h30 parent QMainWindow" -- an empty menu bar
+  of Qt's default size.
+- It was started a second time at 16:22:45 and stopped at its line 50,
+  before line 71: no second call. The other three scripts make nothing
+  (no `menuBar()`, no `statusBar()`, no show, hide or event
+  processing).
+- So the note-taker's words above -- "read-only", "nothing set, shown,
+  hidden or moved", "nothing of the application was changed" -- were
+  WRONG for that script, and are marked where they stand. The same was
+  said to the reporter at 16:17 and 16:26, and is taken back.
+- THE TIMES, read again with this: the rows at y 35 / 72 and the views'
+  area at y 109 were read at 16:13:11 BEFORE line 71 ran, in the same
+  script; the reporter's "the marging is completely gone now" came at
+  16:14, a minute AFTER the call; the reading of 16:23:29 (rows at y 0
+  and 37, the views' area at y 74, contents margins 0) is the state the
+  call left behind. The "title bar's widgets made anew" between the
+  looks was that call's doing.
+- What stands and what falls:
+  - (A), the space before the docked tool bar, "sometimes bigger" --
+    the reporter's report of 16:11, BEFORE any look. Stands.
+  - (B), the first tool bar row under the title bar, in today's live
+    session: MADE by the note-taker's script. The reporter's time
+    trying to recover it (restore and maximize, the themes) was spent
+    on a state the note-taker had caused.
+  - "yes, entry 6" (16:30), "a precursor" (16:32) and "both recovered"
+    (16:39) were said of that state. Whether entry 6 is back BY ITSELF
+    is NOT shown by today; its "seen again" is withdrawn in its row and
+    heading.
+  - The defect behind (B) is real all the same, by the build session's
+    run below: ANY `menuBar()` call -- a script, an addon, a line in
+    the console -- does this to the window.
+
+THE BUILD SESSION'S REPRODUCTION, on the real screen with the new build
+and a copy of the reporter's configuration, the pointer not moved
+(16:59):
+- (A): "at the start the menu reveal button (`titleBarLogo`) is 50 wide
+  and the 'Workbench' tool bar begins at x 54; after the button is
+  polished again with no style-change event ... it is 88 wide (least
+  width 88, greatest 50) and the tool bar begins at x 92. So it is the
+  button's width flipping between its own 50 and the sheet's 80 + 4 +
+  4, by which had the last word; the logo is painted at the button's
+  left and does not move."
+- (B): "a plain `QMainWindow.menuBar()` from Python does it, every
+  time. Before: menu widget a QWidget 1920 x 35 (the kit's spacer),
+  rows at y 35 and 72, the MDI area at y 109. Right after
+  `mw.menuBar()`: the menu widget is an empty QMenuBar. One and a half
+  seconds later: the menu widget is a QWidget again but the rows are at
+  y 0 and 37 and the MDI area at y 74 -- your figures of 16:23 exactly.
+  Five seconds later: the menu widget is None."
+- The cause of (B): the window has a guard for exactly this
+  (`d64805c1a1`, 2026-08-29: "a menuBar() call must not shove the
+  toolbars under the title bar") that puts the spacer back when
+  something else takes the menu place. "But `QMainWindow::setMenuBar()`
+  does not merely put the old menu widget aside: it hides it, takes it
+  out of the window and schedules it for deletion. The guard put THAT
+  spacer back -- hidden, so it reserved nothing, and gone a moment
+  later." Its guess: since the Qt of the environment's September
+  upgrade; entry 6's fix of 2026-10-06 "was another path, the title bar
+  switched while maximized".
+- The fixes, "written as a script for the next build, not in the tree":
+  the guard makes a NEW spacer, and puts an empty slot right as well;
+  the button gives itself a rule of its own that takes the sheet's
+  least width off it, and pins its size at every polish, show and
+  re-parenting, not only at a style change.
+- The reporter's lead ("Qt saving its widget state while in some bad
+  state") is not followed: "the above needs no saved state". The
+  recovery fits: "Classic takes the custom title bar down and Light
+  builds it again with a new spacer."
+
+ONE point for the reporter, NOT ANSWERED: was the first tool bar row
+under the title bar seen BEFORE 16:13 today, or on another day since
+entry 6 was staged (2026-10-06)? If not, entry 6 is not back; what is
+left of (B) is the `menuBar()` defect the build session has a fix for.
+
+**2026-10-13 17:22, the reporter on the point of 17:03:** "entry 110, I
+remember see it once before"
+
+The note-taker's reading: the first tool bar row under the title bar
+WAS seen once before -- before the note-taker's script of 16:13 today.
+WHEN is not said: earlier today, or on another day since 2026-10-06.
+So (B) does happen without the note-taker's doing: by entry 6's old
+path, or by something else in a session calling `menuBar()` (the build
+session's finding of 17:03 -- any such call does it). Entry 6's "seen
+again" stays withdrawn for TODAY's reading; that it has been seen once
+more since its fix is now the reporter's word.
+
+**2026-10-13 19:17, the build session: BOTH PARTS SHOWN on the build r7
+and COMMITTED `6d1dc1f9f1`, local.** From the build session's message of 2026-10-13 19:17, written here 19:19. "110 7 of 7 with the user's
+configuration on the real screen (the button 50 wide through a re-polish;
+after mainWindow.menuBar() the rows and the view where they were, at once
+and 3 s later)". The test is `tests/gui/title-bar-keeps-its-room.py`; the
+files `src/Gui/MainWindow.cpp` and the title bar kit's
+`CustomTitleBarWindow.cpp`. Not pushed; the staged copy of 16:55 does not
+have it -- there a call of `menuBar()` by anything still moves the first
+tool bar row, and the menu reveal button can still change its width.
+
+## 111. An overlaid Python console or report view over a TechDraw page drawn by bgfx: the text is scrambled after a change of theme -- OPEN, four points not answered; by theme: Dark over the page, Classic everywhere, Light fine; the text outline suspected (the reporter 17:10); REPRODUCED 2026-10-13 20:15: contrast, not corruption; 98 and 112 cure Dark, a change for Classic not built; the Classic part COMMITTED `905d023394` 2026-10-13, local; one point for the reporter (the console's ground under Dark is dark, not the tree items'); the ground ANSWERED 2026-10-13 23:04: by the tree's automatic item background setting, else the widget's own background; as ruled in the build r15 (23:20), not committed; as ruled COMMITTED `023552c8fd` 2026-10-13, local; not shown on the real screen
+
+**2026-10-13 17:06, the reporter, with a screenshot:** "new defect and request.
+for python console and report view if overlaid on top of a techdraw page
+with bgfx renderer, after theme switching the text in the overlay (python
+console of report view) is  scrambled. see screenshot, and notice how half
+of python console overlaid on 3d view is normal, and the other half on
+techdraw is scrambled."
+
+The screenshot, as the note-taker reads it (kept outside the repository,
+`..\dl\handson\2026-10-13\entry111\console-text-scrambled-over-techdraw.png`):
+an overlaid Python console lying across two view cells. Its left part,
+over a darker ground (the 3D view), shows its first lines clean -- "Type
+'help', 'copyright' ...", the ">>>" prompts. From about a third of its
+width on, where the ground is lighter (the TechDraw page's cell), the
+same lines are broken: the letters cut into pieces and doubled, the
+greens of the comments and the white of the commands smeared, to the
+right end of the panel. Above it a corner of a TechDraw page with a
+dimension; below it a scroll bar.
+
+The note-taker's reading, not the reporter's words:
+- A DEFECT: an overlaid text panel -- the Python console, or the report
+  view -- that lies over a TechDraw page drawn by the bgfx renderer
+  shows its text scrambled after the theme has been changed. Over a 3D
+  view the same panel, in the same moment, is right; the break follows
+  the border between the two cells.
+- "and request": the sentence names no request. Point a.
+- Which copy: by the hour, the stage of 16:55.
+
+NOT said, lettered for an answer:
+a. THE REQUEST: what is asked beside the defect being mended?
+b. ONLY after a change of theme -- is the text over the page right
+   before it; and does it come right again by itself, after a resize,
+   a scroll, a move of the pointer into the panel?
+c. With the page drawn by Qt (not by the renderer) is it right? And the
+   tree view or the task panel overlaid over the same page -- scrambled
+   too, or only the two text panels?
+d. Is the eye of that overlay pressed, and is the panel see-through at
+   that moment?
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- What an overlaid panel shows is painted through the overlay's own
+  effect (entry 87: a blurred copy laid under what is painted) on a
+  see-through ground, over whatever the view below has drawn. A view
+  cell drawn by the bgfx renderer and one drawn by Qt hand the overlay
+  a different kind of ground; a change of theme makes the overlay's
+  style sheet anew and the panels repaint (entry 85) -- the two things
+  the reporter's sentence joins.
+- Near it: entry 98 (a background behind this very text, asked today
+  and not built yet), entry 87, entry 53 (a TechDraw page and its
+  repaint), the memory of earlier days that a TechDraw page drawn by
+  the backend is one picture and by Qt another.
+
+**2026-10-13 17:10, the reporter, more on it:** "strangely, switching to
+light theme is fine, but classic also scrambled, both 3d view and techdraw
+are scrambled. It seems that the scramble is related to text outline
+drawing"
+
+The note-taker's reading -- the scramble by theme, as the reporter has
+it so far:
+| the theme switched to | over the 3D view | over the TechDraw page |
+|---|---|---|
+| (the screenshot of 17:06; Dark, by the note-taker's reading of its colours) | right | scrambled |
+| Light | right | right |
+| Classic | scrambled | scrambled |
+- So it is not the TechDraw page alone: under Classic the overlaid text
+  is scrambled over a 3D view as well. And not every theme: Light is
+  fine.
+- The reporter's own lead: the scramble has to do with the drawing of
+  the TEXT'S OUTLINE -- the overlay's effect that lays a copy of what
+  is painted under it (entry 87).
+- READ by the note-taker in the theme packs, nothing run: the Dark
+  theme AND the Classic theme both name the overlay sheet
+  `Dark-Outline.qss`; the Light theme names `Light-Outline.qss`. So
+  the scramble goes with `Dark-Outline.qss` (seen under Dark and under
+  Classic) and not with `Light-Outline.qss` -- the two sheets set the
+  outline effect differently (its colour and strength). Why under Dark
+  it shows over the page only and under Classic everywhere is not
+  explained by that.
+- Point b of 17:06 is answered in part: it is tied to the theme
+  switched TO. Points a, c, d stay open; and whether it comes right by
+  itself is not said.
+- Entry 98's answer d of 17:04 (no outline where the text has a
+  background) would take the outline away under this very text once
+  entry 98 is built -- which may hide this defect rather than mend it.
+
+**2026-10-13 17:11, the reporter answers the four points:** "entry 111. a,
+yes. b, before theme change is ok. c, didn't check, but guess not directly
+related. d, I think irrlevent"
+
+The note-taker's reading:
+- a. Yes: the "request" announced with this entry IS entry 112 -- the
+  TechDraw page's background the same as the 3D view's (so the
+  note-taker put the question to the reporter at 17:10).
+- b. Before the change of theme the text is right; the scramble comes
+  with the change. Whether it comes right again by itself is still not
+  said.
+- c. Not checked: a page drawn by Qt, and the tree or the task panel
+  over the page. The reporter's guess: not directly related.
+- d. The eye: irrelevant, in the reporter's view.
+Nothing of this entry waits for the reporter.
+
+**2026-10-13 20:15, the build session: REPRODUCED on the staged copy of
+16:55 -- CONTRAST, not corruption.** From the build session's message, which it stamps 20:14; written here 20:15.
+- How: "what the overlay paints, laid over a plain light ground; the
+  screen is locked so no screen grab".
+- DARK: "the console's light text with its dark outline on a light
+  ground looks exactly like the user's screenshot -- it is contrast,
+  not corruption: light text on the light ground of the TechDraw page,
+  only the outline's dark pieces visible. Light is fine because its
+  text is dark."
+- CLASSIC: "the text is BLACK (the Editor colours of a white docked
+  console) while Classic names the overlay sheet Dark-Outline.qss, so
+  it is dark on the dark 3D view: 'scrambled' everywhere."
+- WHAT CURES IT: "On the dev build entry 98's ground behind the text
+  and entry 112's page ground make Dark readable; for Classic I have a
+  change in the tree, not built yet: the text's ground turns light when
+  the text is dark and too near the items' ground."
+- Pictures: "in s1\g-e111d-staged and s1\g-r8-e111d-dev
+  (*-on-light.png, *-on-dark.png)" -- not opened by the note-taker.
+The note-taker's notes: this fits the reporter's own lead of 17:10
+("related to text outline drawing") and their answer b ("before theme
+change is ok" -- before it the theme was Light, dark text). Entries 98
+and 112 are pushed and NOT in the staged copy, so on the copy of 16:55
+the reporter still sees it as reported. NOT shown: that nothing else is
+wrong once the contrast is put right -- the reporter's own look after a
+restage decides.
+
+**2026-10-13 22:06, the build session: the CLASSIC part COMMITTED
+`905d023394`, local -- with a SIDE EFFECT under Dark it asks to have put
+to the reporter.** From the build session's message, which it stamps 22:06; written here 22:06.
+- "Classic: the console's black text stands on a light ground now (232
+  at the overlay's opacity); Light keeps the items' ground."
+- "A SIDE EFFECT the user should rule on: under DARK the console's
+  ground turned dark (40) too, not the tree items' (125,125,125) -- the
+  comments' green (106,153,85) has the same lightness as that grey to a
+  few levels, so by the rule 'too near to read' the Dark theme's own
+  item ground fails for this text. It departs from the user's 'same
+  background used by the tree item' (entry 98 b) in their own theme;
+  kept for legibility, said in the commit message. Please put it to the
+  user as a point."
+SEEN in the commit: `src/Gui/OverlayManager.cpp`, `.h`, `ReportView.cpp`,
+`TextEdit.cpp`, `tests/gui/overlay-text-ground.py`.
+
+ONE POINT for the reporter, the note-taker's wording:
+a. Under DARK the ground behind the text of an overlaid Python console
+   and report view is now a DARK one (a grey of 40), not the tree
+   items' grey (125) the reporter asked for at 17:04 (entry 98, b:
+   "same background used by the tree item") -- because the comments'
+   green reads badly on that grey. Keep the dark ground for these two
+   panels under Dark, or have the tree items' ground as asked (and the
+   green as it then is)?
+
+**2026-10-13 23:04, the reporter answers the point of 22:06:** "Entry 111,
+gate by auto tree background color setting. Follow tree item background
+color if enabled, else use its own widget background."
+
+The note-taker's reading, not the reporter's words:
+- The ground behind the text of an overlaid Python console and report
+  view goes by ONE SETTING, the tree's automatic item background --
+  read as "Item background follows the theme"
+  (`DockOverlayThemeItemColor`, `src/Gui/OverlayParams.py`, on by
+  default; the setting entry 87 placed beside the tree's item colour).
+- ON: the ground is the tree items' background colour -- as answer b of
+  entry 98 had it.
+- OFF: the ground is the widget's OWN background -- the console's, the
+  report view's -- not the tree's own item colour (`ItemBackground`).
+- So the rule of `905d023394` (a ground chosen by how near the text's
+  colour is to it: dark 40 under Dark, light 232 under Classic) is
+  REPLACED by the setting; by the note-taker's reading -- "gate by" is
+  the reporter's word, that the legibility rule goes is not said in so
+  many words.
+NOT said, left to the build session, not put as blocking:
+a. What "its own widget background" is for a panel that is transparent
+   in an overlay: taken as the background colour the widget has when
+   docked (the editor's), behind the text only, at the overlay's
+   opacity as the tree's item ground is.
+b. CLASSIC, where this entry began: with the setting ON the black text
+   of Classic stands on the tree items' ground of that theme. Whether
+   that reads is NOT shown; if it does not, the reporter's way out by
+   this answer is the setting OFF. To be shown by the build session
+   under Classic, Dark and Light, both ways.
+
+**2026-10-13 23:20, the build session: the ruling of 23:04 in the tree
+and in the build r15 -- not committed.** From the build session's message, which it stamps 23:20; written here 23:20. "replacing the
+legibility rule of 905d023394: with View/DockOverlayThemeItemColor ('Item
+background follows the theme') ON the text's ground is the tree items'
+(as entry 98 had it); OFF it is the view's OWN background at the
+overlay's opacity -- for the console its Editor/Background colour where
+one is set, otherwise (and for the report view) the base colour of the
+application's palette, which is my reading of 'its own widget background'
+for a panel a style sheet has made transparent. Your reading of the two
+cases matches mine." So the note-taker's point a (what the widget's own
+background is) is answered by the build session's choice; b (Classic's
+black text on the items' ground with the setting on) is not spoken of.
+
+**2026-10-13 23:46, the build session: the ruling BUILT and COMMITTED
+`023552c8fd`, local -- shown offscreen only.** From the build session's message, which it stamps 23:47; written here 23:46.
+- "tests/gui/overlay-text-ground.py offscreen, 20 pass: the setting ON
+  -- both panels on the tree items' ground (51,51,101) at 180; OFF --
+  both on white (the palette's base, and the console's own there) at
+  180. Four claims fail as they did before the change (a stretch below
+  the last line that a 28 pixel wide panel does not have)."
+- "The rule of 905d023394 is taken out again by 023552c8fd."
+- "NOT shown on the real screen (it is locked): how Classic and Dark
+  look with the setting off; with it ON Classic's black text is on the
+  dark item ground again, which is what the ruling makes of it."
+The note-taker's notes: so under CLASSIC with the setting on (its
+default) this entry's first complaint -- the text not readable there --
+is back as it was reported; by the ruling the way out is the setting
+OFF, where the ground is the panel's own. Whether that is acceptable
+for Classic is the reporter's to see, not asked as a point. The four
+failing claims are said to be the test's own (a panel too narrow for
+what it asks), from before the change; not looked at by the note-taker.
+
+## 112. The background of a TechDraw page's view the same as the 3D view's (a change request) -- OPEN, answered 2026-10-13 17:12: around the sheet, the gradient too, the bgfx renderer's pages (the Qt-drawn ones too if easy), behind a setting that is on by default; COMMITTED `2a317f254e` 2026-10-13, pushed 19:24, not staged; no check box in the preference page yet
+
+**2026-10-13 17:08, the reporter:** "new request, techdraw page background same
+as 3d view"
+
+The note-taker's reading, not the reporter's words:
+- The ground of the view a TechDraw page is shown in -- what lies
+  around and behind the sheet -- is to look like the 3D view's
+  background: the same colours as the theme and the settings give the
+  3D view.
+- Said a minute after entry 111 ("new defect and request", with no
+  request in it): this may be that request. Entry 111's screenshot
+  shows the two grounds side by side, the page's cell lighter than the
+  3D view's. Point d.
+
+NOT said, lettered for an answer:
+a. WHICH part: the view's ground AROUND the sheet only; the paper of
+   the page itself stays as it is (white, or the page's own colour)?
+   The note-taker's guess: around the sheet only.
+b. THE GRADIENT too -- the reporter's 3D view has a radial gradient of
+   two greys -- or the one plain colour of it (and then which, the
+   first as in entry 69)?
+c. In BOTH ways a page is drawn -- by Qt and by the renderer -- and
+   following the 3D view's setting whenever it or the theme changes;
+   or a setting of TechDraw's own that takes the 3D view's colours as
+   its default?
+d. Is this the "request" of entry 111?
+
+Pointers, the note-taker's, nothing run and the source not followed:
+- The 3D view's background is `View/BackgroundColor` to
+  `BackgroundColor4` with `Gradient` / `RadialGradient` /
+  `UseBackgroundColorMid` (the reporter's configuration: a radial
+  gradient, `BackgroundColor2` a grey of 124, `BackgroundColor3` of
+  60); entry 69's item backing reads the same group through
+  `OverlayManager::overlayItemBackground`.
+- TechDraw's page view is in `src/Mod/TechDraw/Gui` (`QGVPage`,
+  `MDIViewPage`, and the renderer's page drawing); it has a background
+  colour of its own in TechDraw's preferences.
+- Near it: entry 111 (overlaid text over a page), entry 98 (the text's
+  background in the tree items' colour, which is the 3D view's) --
+  with one ground under both kinds of view the overlays would read the
+  same over either.
+
+**2026-10-13 17:11: point d ANSWERED** by the reporter's answer a under
+entry 111 ("a, yes"): this IS the request announced with entry 111.
+Points a, b, c of this entry are still not answered.
+
+**2026-10-13 17:12, the reporter answers the three points left:** "entry
+112. a, yes. b, yes. c, only bgfx renderer"
+
+The note-taker's reading:
+- a. Yes: the ground AROUND the sheet only; the paper of the page stays
+  as it is.
+- b. Yes: the GRADIENT too -- the page view's ground is drawn as the 3D
+  view's background is, gradient and all, not one plain colour.
+- c. For a page drawn by the BGFX RENDERER only. A page drawn by Qt
+  keeps the ground it has.
+One smaller point, NOT put as blocking: the second half of point c --
+whether the ground simply FOLLOWS the 3D view's setting (and the theme)
+at all times, or TechDraw gets a setting of its own for it -- is not
+answered in so many words; "same as 3d view" is taken as: it follows,
+no setting.
+
+**2026-10-13 17:17, the reporter on the point left, and one thing more:**
+"yes, add a setting to gate techdraw background default same as 3d view.
+Check if you can do it in qt renderer as well. do it if easy."
+
+The note-taker's reading:
+- A SETTING after all: one switch that says "the TechDraw page view's
+  background is the same as the 3D view's", ON by default. With it off
+  the page view keeps the ground it has today (TechDraw's own
+  background colour). So the note-taker's "it follows, no setting" of
+  17:12 is put right: it follows WHILE the setting is on.
+- The answer c of 17:12 ("only bgfx renderer") is widened by a
+  condition: the build session is to CHECK whether the same can be
+  done for a page drawn by Qt, and to do it IF IT IS EASY. If it is not
+  easy, the bgfx renderer's pages alone, as answered.
+- "you" is the build session; the check is its to make and to report.
+Left to the build session, not put as blocking: the setting's name and
+where it is shown (TechDraw's preferences, by the note-taker's guess);
+and what "easy" comes to -- to be said back to the reporter with the
+outcome either way.
+
+**2026-10-13 19:17, the build session: BUILT, 6 of 6, COMMITTED
+`2a317f254e`, local -- the Qt-drawn page too; no check box yet.** From the build session's message of 2026-10-13 19:17, written here 19:19.
+- "tests/gui/techdraw-page-ground-as-3d-view.py 6 of 6 -- top row the
+  gradient's first colour, bottom row its second, the plain colour with
+  the gradient off, TechDraw's own colour with Colors/BackgroundAs3DView
+  off, and it applies at once".
+- "Qt paints that ground whichever way the page is drawn, so the
+  Qt-drawn page has it too (the user's 'do it if easy': it was one rule
+  for both)."
+- "No check box in TechDraw's preference page yet."
+READ in the commit by the note-taker, nothing run: the setting is
+`BackgroundAs3DView` under TechDraw's `Colors`, a switch, ON by default,
+titled "Page view background as the 3D view's"; off, the page view has
+its own colour (`Colors/Background`). The note-taker's note: until a
+check box is there, the setting is reached by the parameter editor (or
+the settings search, if it lists the key -- not shown).
+
+## 113. A double click on Binder008 under Lens003: "self linking" in the report view -- OPEN, the live session read; two points not answered; ANSWERED 2026-10-13 23:04: a self link allowed for a hidden-scope link, a binder at the root has itself as its context; as ruled in the build r15 (23:20), not committed; WORKS on the build r15, COMMITTED `56504486e6` 2026-10-13, local; the real double click under Lens003 not tried
+
+**2026-10-13 17:40, the reporter:** "new defect, check live session. when double
+click Binder008 in tree view grouped under Lens003, I got error in report
+view saying '<Exception> PropertyLinks.cpp(4693): self linking'"
+
+The note-taker's reading, not the reporter's words:
+- On the stage of 16:55, after the migration recompute, `Binder008` is
+  in the error entry 105 gave it: "No context, please double click the
+  binder in the desired context to refresh". The reporter does that --
+  a double click on the binder where the tree shows it under `Lens003`
+  -- and gets an error line in place of a context.
+
+READ in the reporter's LIVE session, on the reporter's word ("check live
+session") -- process 103640, the staged copy of 16:55. This time every
+call was checked before it ran: the console's last lines (the server's
+own log), and ONE script that only reads properties and the selection
+(`..\dl\handson\2026-10-13\entry113\binder_look.py`; no property
+set, nothing selected, no recompute, no widget made), 17:41:46:
+- The report view's lines, by the console's log: "<Exception>
+  PropertyLinks.cpp(4693): self linking" at 17:00:19, 17:00:32,
+  17:39:07 and 17:39:13.
+- `Binder008`: a `PartDesign::SubShapeBinder`, label
+  "Binder008(Prism001)"; `Relative` True; `Context` None; `Support`
+  `Body004`; state Touched and Invalid; its status text "No context,
+  please double click the binder in the desired context to refresh".
+- Who names it (its InList): `Binder013`, `Binder014`, `Lens003`,
+  `Binder017`, `Binder018`, `Link032`, `Link044`, `LinkGroup001` ...
+- Its top-level PATHS (`Parents`): ONE -- (`LinkGroup001`,
+  "Binder008.").
+- `Lens003` is a `Part::FeaturePython` (a script-made feature), named
+  by four beams; it shows the binder as its child in the tree but
+  gives NO path to it.
+- The selection at that moment, unresolved: (`Binder008`, no sub
+  names) -- the binder ITSELF, with no parent before it.
+
+READ in the source, nothing run -- why that selection gives the error:
+- `ViewProviderSubShapeBinder::doubleClicked`
+  (`src/Mod/Part/Gui/ViewProviderSubShapeBinder.cpp`) calls
+  `updatePlacement(true)`. For a `Relative` binder that takes the ONE
+  selected thing, checks that it leads to the binder, and uses its
+  top object and path as the context:
+  `self->Context.setValue(parent, parentSub)`.
+- With the selection being the binder itself, "it leads to the binder"
+  is true (an empty path from the binder is the binder), so `parent`
+  is the binder -- and `PropertyXLink::setValue`
+  (`src/App/PropertyLinks.cpp` line 4693) refuses a link to its own
+  owner: "self linking".
+- So: a double click on the binder where the tree shows it under an
+  object that gives no path to it (`Lens003`) -- or at the top level --
+  tries to make the binder its own context. Under `LinkGroup001`, its
+  one real path, the selection would carry that group; that is the
+  context that puts the shape 53 mm off (entry 17).
+- This is old code meeting entry 105's new error text: the text sends
+  the user to a double click, and for this binder the only place where
+  the double click means something is the one the rule had rejected.
+
+NOT said, lettered for an answer:
+a. WHAT SHOULD THE DOUBLE CLICK DO when the binder is selected with no
+   parent (under `Lens003`, or at the top level): take "NO context" as
+   the choice made -- the binder then stays where its shape is, in the
+   document's own coordinates, and the error goes; or say in plain
+   words that this place gives no context, and do nothing?
+b. For `Binder008` in this file: is "no context" (where the file has
+   its shape) the place the reporter WANTS it -- so that a binder
+   should be able to keep an EMPTY context for good, without the error
+   of entry 105 coming back at the next recompute?
+
+**2026-10-13 23:04, the reporter answers:** "Entry 113. I see what is
+wrong, previous commit fotbids link to itself. It should be allowed for
+hidden scope link. Binder at root means the context is link to itself."
+
+The note-taker's reading, not the reporter's words:
+- The cause, as the reporter sees it: a commit made a link property
+  refuse a link to its own object. That refusal is wrong for a link of
+  HIDDEN scope, and is to be lifted for it.
+- A binder at the root -- with no parent over it -- has ITSELF as its
+  context: `Context` links to the binder. So the double click that set
+  the binder as its own context was doing the right thing; what was
+  wrong is that the property refused it.
+- This answers point a: with no parent in the selection, the double
+  click sets the binder as its own context. And, by the note-taker's
+  reading, point b's mechanism: "no context" is WRITTEN as a context
+  that is the binder itself, which is not empty -- so entry 105's rule
+  for an EMPTY context does not run again and the binder keeps its
+  place for good. That `Binder008` in this file is wanted there is not
+  said in so many words; the double click under `Lens003` was the
+  reporter's own.
+
+READ in the source by the note-taker, nothing run -- pointers, and one
+thing that does not fit:
+- `Context` is a link of hidden scope:
+  `Context.setScope(App::LinkScope::Hidden)`
+  (`src/Mod/Part/App/SubShapeBinder.cpp` line 136).
+- The refusal met at 17:40 is in `PropertyXLink::setValue`
+  (`src/App/PropertyLinks.cpp` line 4692, `if(lValue == owner)`). By
+  `git blame` the test is of 2017 (`689f60a1dd`); `b3694d32b67`
+  (2026-08-12) only changed how it throws. The old fork's branches as
+  this clone has them carry the same test in that function
+  (`origin/LinkDaily` line 3781, `origin/LinkStage3` 3528,
+  `origin/LinkMerge` 3868).
+- What IS recent: `8fa9aae04c` (2026-08-18, "App: every link property
+  refuses a self link, not just PropertyXLink") added the refusal to
+  `PropertyLink::setValue` (line 1012) and `05caeb7c39` (the same day)
+  to the link lists (line 1311); its comment says "Restore() nullifies
+  a stored self link before it gets here, so an old document still
+  loads".
+- So WHICH commit the reporter means is NOT found by the note-taker:
+  the refusal in the property the binder's `Context` is made of reads
+  as old, in the old fork too. Left to the build session to find --
+  how the old fork came to a self context for a binder at the root, if
+  not through this function.
+- `ViewProviderSubShapeBinder::updatePlacement` asks the selection only
+  when the binder HAS parents (`relative && self->getParents().size()`);
+  with none it sets an empty context. `Binder008` has one
+  (`LinkGroup001`), so the selection is asked, and under `Lens003` that
+  is the binder itself.
+
+NOT said, lettered; none put as blocking by the note-taker:
+a. For WHICH link properties the self link is allowed: the hidden-scope
+   test for all of them, or `PropertyXLink` alone.
+b. LOADING: "Restore() nullifies a stored self link" -- a context that
+   is the binder itself, once saved, would come back empty at the next
+   load and meet entry 105's rule again. By the reporter's rule it must
+   be kept for a hidden-scope link; the note-taker's inference, not the
+   reporter's word.
+c. Entry 105's rule for a binder that an old file brings with an EMPTY
+   context and no path that keeps its shape (`Binder008` after the
+   migration recompute): still the error and the double click, or
+   itself as its context without asking. As it stands the error's text
+   sends the reporter to the double click, which will now work at the
+   root or under `Lens003`.
+
+**2026-10-13 23:20, the build session: the ruling of 23:04 in the tree
+and in the build r15 -- "NOT built yet when written", not committed.**
+From the build session's message, which it stamps 23:20; written here 23:20.
+- "PropertyXLink::setValue lets a link of HIDDEN scope name its owner
+  (any other self link is refused as before); SubShapeBinder::update
+  takes 'context is the binder itself' as the root of the document and
+  does not climb to a container; three unit tests in
+  PartDesignTests/TestShapeBinder.py."
+- ITS CHOICES on the three points the reporter did not speak of, "for
+  the record": "(a) PropertyXLink only -- the type of the binder's
+  Context and the refusal the user met; PropertyLink and the link lists
+  keep the refusal of 2026-08-18 with its nullifying at restore; (b) a
+  stored self context is read back (a test asks it); (c) entry 105's
+  rule is unchanged: an old file's binder with no context and no
+  unmoved path still errors and asks for the double click -- which now
+  works where it is listed by itself."
+- ON "which previous commit": "I did not find one either; the same
+  refusal is in origin/LinkDaily, and there the same double click would
+  have thrown the same way."
+- "A probe on scanner.FCStd (Binder008 selected by itself, double
+  clicked) runs behind the build."
+The note-taker's note: so neither session found the commit the reporter
+spoke of; the ruling itself (a self link allowed for a hidden-scope
+link) is built as said. If the reporter remembers the old fork taking
+this double click without an error, that is not what its code as this
+clone has it reads -- left as it is, not put as a question.
+
+**2026-10-13 23:46, the build session: WORKS on the build r15; COMMITTED
+`56504486e6`, local, not pushed, not staged.** From the build session's message, which it stamps 23:47; written here 23:46.
+- "(1) PartDesignTests.TestShapeBinder: 'Ran 17 tests in 4.973s, OK' --
+  three of them new: a binder in a moved container given itself as
+  context is valid, its shape where it was, and stays so over a
+  recompute; the self context is saved and read back; a visible link to
+  itself (an App::Link's) is still refused."
+- "(2) scanner.FCStd after its migration recompute, offscreen
+  (s1\e113b.py): Binder008 -- held in LinkGroup001, in error 'No
+  context, please double click the binder in the desired context to
+  refresh' -- selected by itself (selection ('Binder008', ())) and
+  double clicked: no 'self linking'; state Valid, Context Binder008
+  itself, Placement as it was (0, 0, 4.7; 3.5 deg about Y), the centre
+  of its shape 0.000000 mm from where it was as opened; the same after
+  one more recompute. Sketch043, Pad033 and Binder017 Valid; Fillet011
+  still in its own error (entry 109's missing edge)."
+- "NOT tried: the user's own way in, a double click on the item under
+  Lens003 in the tree with a real pointer -- the probe selects the
+  binder by script and calls the view provider's doubleClicked."
+SEEN in the commit: `src/App/PropertyLinks.cpp`,
+`src/Mod/Part/App/SubShapeBinder.cpp`, `TestShapeBinder.py`. The
+note-taker's notes: the selection the probe makes, (`Binder008`, no sub
+names), is the one read in the reporter's live session at 17:41 under
+`Lens003`, so the case is the reporter's; the click itself is theirs to
+try after a restage. And this run also shows entry 105 on the committed
+code by name: `Binder008` in the error after the migration recompute,
+`Sketch043` and `Pad033` Valid.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -7261,4 +15782,7 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 66)
+entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
+entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
+and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
+it)

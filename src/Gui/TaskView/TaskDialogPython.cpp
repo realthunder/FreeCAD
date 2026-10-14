@@ -44,6 +44,7 @@
 #include <Gui/PythonWrapper.h>
 
 #include "TaskDialogPython.h"
+#include "TaskPanelHost.h"
 #include "TaskView.h"
 
 
@@ -211,6 +212,12 @@ void ControlPy::init_type()
     add_varargs_method("showModelView",&ControlPy::showModelView,
                         "show the Model panel\n"
                         "showModelView()");
+    add_varargs_method("applyPlaceToViews",&ControlPy::applyPlaceToViews,
+                        "applyPlaceToViews()\n"
+                        "Every view follows the preference View/TaskPanelInView from now: the\n"
+                        "task panels that are open move to where it says, and a view's own\n"
+                        "choice of place is given up. What \"Apply to live views\" on the\n"
+                        "preference page does.");
 }
 
 ControlPy::ControlPy() = default;
@@ -354,6 +361,14 @@ Py::Object ControlPy::showModelView(const Py::Tuple& args)
     if (!PyArg_ParseTuple(args.ptr(), ""))
         throw Py::Exception();
     Gui::Control().showModelView();
+    return Py::None();
+}
+
+Py::Object ControlPy::applyPlaceToViews(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    TaskPlacement::applyToAll();
     return Py::None();
 }
 

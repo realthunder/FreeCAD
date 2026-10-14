@@ -68,6 +68,17 @@ public:
     static void toggleHeader(bool);
     static bool isHeaderHidden();
 
+    /** The omni search's text that leads to what this view shows, ending in
+     * the dot that lists its properties (docs/HandsOnQueue.md entry 78):
+     * "/ Box." for the one object selected and "/ Box.ViewObject." for its
+     * view provider, "/ ." and "/ .ViewObject." for several, and with
+     * nothing selected "/ Doc#." for the document and "/ Doc#.ActiveView."
+     * for its view.  viewEditor: for the View tab.
+     */
+    QString omniSearchText(bool viewEditor) const;
+    /// Open the omni search with that text typed: Ctrl+F in either tab
+    void openOmniSearch(bool viewEditor);
+
 public Q_SLOTS:
     /// Stores a preference for the last tab selected
     void tabChanged(int index);

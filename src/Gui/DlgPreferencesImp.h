@@ -158,6 +158,7 @@ protected:
     void changeEvent(QEvent *e) override;
     void showEvent(QShowEvent*) override;
     void closeEvent(QCloseEvent *) override;
+    void keyPressEvent(QKeyEvent *) override;
     bool eventFilter(QObject *, QEvent *) override;
 
 

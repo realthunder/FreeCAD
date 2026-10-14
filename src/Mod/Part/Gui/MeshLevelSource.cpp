@@ -367,6 +367,9 @@ struct GuiWorkItem {
     uint64_t gen = 0;
     /// The document it works on, for a climb body (LoadHold).
     std::string doc;
+    /// A climb body that gives its object its FIRST picture (the shape
+    /// was drawn as a box, RefineJob::first): never held back by a load.
+    bool first = false;
 };
 std::deque<GuiWorkItem> s_guiWork;
 bool s_landingScheduled = false;
@@ -529,8 +532,9 @@ void pumpLandings()
     std::size_t heldGui = 0;
     while (heldGui < s_guiWork.size() && (!ranGui || !spent())) {
         // A climb's body is a refinement too (a finer rung still
-        // resident, activated with a rebuild).
-        if (!s_guiWork[heldGui].descent
+        // resident, activated with a rebuild) -- unless what it rebuilds
+        // was a box until now.
+        if (!s_guiWork[heldGui].descent && !s_guiWork[heldGui].first
             && hold.holds(s_guiWork[heldGui].doc)) {
             ++heldGui;
             continue;
@@ -574,7 +578,8 @@ void pumpLandings()
     for (const auto &item : s_landingQueue)
         (item.held(hold) ? waiting : runnable) = true;
     for (const auto &item : s_guiWork)
-        (!item.descent && hold.holds(item.doc) ? waiting : runnable) = true;
+        (!item.descent && !item.first && hold.holds(item.doc)
+             ? waiting : runnable) = true;
     if (runnable)
         scheduleLandingPump();
     if (waiting)
@@ -1201,7 +1206,7 @@ void PartGui::cancelMeshLevelWork(const void *tag)
 }
 
 void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
-                                bool descent, std::string doc)
+                                bool descent, std::string doc, bool first)
 {
     if (!body)
         return;
@@ -1210,7 +1215,8 @@ void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
         gen = Render::MeshSourceRegistry::currentDescentGeneration();
         Render::MeshSourceRegistry::instance().noteDescentQueued(gen);
     }
-    s_guiWork.push_back({tag, std::move(body), descent, gen, std::move(doc)});
+    s_guiWork.push_back({tag, std::move(body), descent, gen, std::move(doc),
+                         first});
     scheduleLandingPump();
 }
 
@@ -1330,7 +1336,7 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                             return;
                         apply(st->shape);
                     },
-                    /*descent*/ false, st->doc);
+                    /*descent*/ false, st->doc, /*first*/ st->standIn);
                 return;
             }
             queueExactRefine(primary, st, apply, /*descent*/ false,

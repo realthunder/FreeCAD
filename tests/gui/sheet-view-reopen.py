@@ -197,12 +197,14 @@ def named_and_saved():
           state["layout"])
     FreeCAD.closeDocument(DOC)
     settle(600)
-    # A view in a cell is taken out of it and deleted LATER, which is when
-    # control is back in the loop the close was called from. A wait in a
-    # loop of its own (settle) is never that, however long: ask for the
-    # deletes this step left, as its return would. One that nobody asked to
-    # delete stays, and fails the check.
-    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+
+@step
+def nothing_left_of_it():
+    # A step later: the view leaves its cell with a deferred delete of its
+    # own (ViewArea::removeView), and Qt runs that when control is back in
+    # the loop the close was called from -- not in settle()'s loop, which
+    # is inside it
     check("nothing of it is left when the document is closed",
           not all_widgets(SHEET, hidden=True), len(all_widgets(SHEET, hidden=True)))
 

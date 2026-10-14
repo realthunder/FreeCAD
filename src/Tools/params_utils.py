@@ -61,7 +61,7 @@ def trace_comment():
 
 
 def get_module_path(module):
-    return path.dirname(module.__file__.split(f"src{path.sep}")[-1]).replace(path.sep, "/")
+    return module_dir_below_src(module.__file__)  # at the end of this file, and why it is there
 
 
 def declare_begin(module, header=True):
@@ -1489,3 +1489,32 @@ def c_string(txt):
         else:
             out.extend("\\%03o" % byte for byte in ch.encode("utf-8"))
     return '"' + "".join(out) + '"'
+
+
+def module_dir_below_src(filename):
+    """The directory of a parameter module below src/, with forward slashes:
+    "Gui", "Gui/PreferencePages", "Mod/Part/App".
+
+    It goes into the generated files -- into comments, and into the #include
+    of a preference page's own header. Whatever separators the module's path
+    came with: it was split at "src" + the system's separator, so a module
+    reached through a path written with forward slashes on Windows was not
+    split at all, and the generated file named the directory of the machine
+    it was made on (22ece75a08: an #include of D:/works/sw/fcad-wt/...,
+    which compiled on that machine alone, and there against another version
+    of the header). A module that is not below a src/ directory has no such
+    name, and nothing is generated for it.
+
+    At the end of the file, and get_module_path() left at two lines: every
+    generated file carries the line numbers of this one in its "Auto
+    generated code (Tools/params_utils.py:NN)" comments, so a line added
+    above the generating functions rewrites all of them at their next
+    regeneration.
+    """
+    name = path.normpath(path.abspath(filename)).replace(path.sep, "/")
+    if "/src/" not in name:
+        raise RuntimeError(
+            f"{name} is not below a src/ directory: the files generated from it "
+            "would name a path of this machine"
+        )
+    return path.dirname(name.split("/src/")[-1])

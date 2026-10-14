@@ -7,6 +7,7 @@
 #include "gtest/gtest.h"
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <set>
@@ -1940,6 +1941,200 @@ TEST_F(TransactionLogTest, selectiveUndoRefusesWhatChangedSince)
     EXPECT_STRNE(a->String.getValue(), "x");
     EXPECT_EQ(a->ExecCount.getValue(), execs);
     EXPECT_TRUE(a->isTouched());
+}
+
+TEST_F(TransactionLogTest, severalRowsUndoneAreOneStep)
+{
+    // docs/TransactionLog.md sec 33.13: several rows undone at once are one
+    // transaction, taken back newest first; what the rows of the set did is
+    // not held against one another, what any other row did is; and if one
+    // is refused none is undone.
+    doc()->openTransaction("create");
+    auto a = make("A");
+    doc()->commitTransaction();
+    auto lastSeq = [&]() {
+        const auto rows = log().store().transactions();
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            if (it->kind != "recompute")
+                return it->seq;
+        }
+        return int64_t(0);
+    };
+    auto step = [&](const char* name, const std::function<void()>& write) {
+        doc()->openTransaction(name);
+        write();
+        doc()->commitTransaction();
+        return lastSeq();
+    };
+
+    const int64_t intSeq = step("int", [&]() { a->Integer.setValue(1); });
+    const int64_t floatSeq = step("float", [&]() { a->Float.setValue(2.5); });
+    const int64_t againSeq = step("int again", [&]() { a->Integer.setValue(2); });
+
+    // The older of two rows on one property is refused alone, and goes
+    // back with the newer one: that one is undone first.
+    EXPECT_FALSE(doc()->undoLogged(intSeq));
+    size_t rows = log().store().transactions().size();
+    ASSERT_TRUE(doc()->undoLogged(std::vector<int64_t> {intSeq, againSeq}));
+    EXPECT_EQ(a->Integer.getValue(), 4711);
+    EXPECT_DOUBLE_EQ(a->Float.getValue(), 2.5);
+    // One row, which names what it undid and no one row it inverts.
+    EXPECT_EQ(log().store().transactions().size(), rows + 1);
+    auto row = log().store().transactions().back();
+    EXPECT_EQ(row.kind, "undo");
+    EXPECT_EQ(row.inverts, 0);
+    EXPECT_EQ(row.name, "Undo int, int again");
+    EXPECT_EQ(doc()->getAvailableUndoNames().front(), "Undo int, int again");
+    // And one step: a single undo brings both back.
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(a->Integer.getValue(), 2);
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(a->Integer.getValue(), 4711);
+
+    // A row between two of the set that is not of it is in the way of the
+    // older one: neither is undone, and nothing is written.
+    const int64_t f1 = step("f1", [&]() { a->Float.setValue(3.5); });
+    step("f2", [&]() { a->Float.setValue(4.5); });
+    const int64_t f3 = step("f3", [&]() { a->Float.setValue(5.5); });
+    rows = log().store().transactions().size();
+    auto undos = doc()->getAvailableUndoNames();
+    EXPECT_FALSE(doc()->undoLogged(std::vector<int64_t> {f3, f1}));
+    EXPECT_DOUBLE_EQ(a->Float.getValue(), 5.5);
+    EXPECT_EQ(log().store().transactions().size(), rows);
+    EXPECT_EQ(doc()->getAvailableUndoNames(), undos);
+    EXPECT_NE(doc()->undoRefusal().find("Float"), std::string::npos) << doc()->undoRefusal();
+    // The newer one alone is fine, as before.
+    ASSERT_TRUE(doc()->undoLogged(std::vector<int64_t> {f3}));
+    EXPECT_DOUBLE_EQ(a->Float.getValue(), 4.5);
+    EXPECT_EQ(log().store().transactions().back().inverts, f3);
+
+    // An object made and edited since is unmade with its edit, where the
+    // row that made it is refused alone.
+    doc()->openTransaction("make B");
+    auto b = make("B");
+    doc()->commitTransaction();
+    const int64_t makeSeq = lastSeq();
+    const int64_t editSeq = step("edit B", [&]() { b->Integer.setValue(9); });
+    EXPECT_FALSE(doc()->undoLogged(makeSeq));
+    ASSERT_TRUE(doc()->undoLogged(std::vector<int64_t> {makeSeq, editSeq}));
+    EXPECT_FALSE(doc()->getObject("B"));
+    ASSERT_TRUE(doc()->undo());
+    b = static_cast<App::FeatureTest*>(doc()->getObject("B"));
+    ASSERT_TRUE(b);
+    EXPECT_EQ(b->Integer.getValue(), 9);
+
+    // Made and removed, both undone: the removal first, which needs the
+    // object gone, then the making, which needs it there.
+    doc()->openTransaction("make C");
+    make("C");
+    doc()->commitTransaction();
+    const int64_t makeC = lastSeq();
+    const int64_t removeC = step("remove C", [&]() { doc()->removeObject("C"); });
+    ASSERT_TRUE(doc()->undoLogged(std::vector<int64_t> {makeC, removeC}));
+    EXPECT_FALSE(doc()->getObject("C"));
+
+    // The row that made D, with D removed since by a row that is not of
+    // the set: refused by the log alone, before the newer row of the set is
+    // taken back, and the redo steps stay.
+    doc()->openTransaction("make D");
+    make("D");
+    doc()->commitTransaction();
+    const int64_t makeD = lastSeq();
+    step("remove D", [&]() { doc()->removeObject("D"); });
+    const int64_t lateSeq = step("int late", [&]() { a->Integer.setValue(7); });
+    step("string", [&]() { a->String.setValue("s"); });
+    ASSERT_TRUE(doc()->undo());
+    ASSERT_EQ(doc()->getAvailableRedos(), 1);
+    rows = log().store().transactions().size();
+    undos = doc()->getAvailableUndoNames();
+    EXPECT_FALSE(doc()->undoLogged(std::vector<int64_t> {makeD, lateSeq}));
+    EXPECT_NE(doc()->undoRefusal().find("was changed since"), std::string::npos)
+        << doc()->undoRefusal();
+    EXPECT_EQ(a->Integer.getValue(), 7);
+    EXPECT_EQ(log().store().transactions().size(), rows);
+    EXPECT_EQ(doc()->getAvailableUndoNames(), undos);
+    EXPECT_EQ(doc()->getAvailableRedos(), 1);
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+}
+
+TEST_F(TransactionLogTest, severalRowsRefusedLateArePutBack)
+{
+    // Sec 33.13: what only the document can say against a row is asked once
+    // the newer rows of the set are taken back. A view provider's change
+    // whose object was removed since is such a row -- the removal wrote
+    // nothing under the view property's name, so the log alone has nothing
+    // against it. Refused there, the newer rows are put back: nothing moved,
+    // no row, and the redo steps as they were.
+    std::map<const App::DocumentObject*, TxnLogFakeView*> views;
+    App::Document::setViewResolver([&views](const App::DocumentObject* obj) {
+        auto it = views.find(obj);
+        return it == views.end() ? nullptr : static_cast<App::PropertyContainer*>(it->second);
+    });
+    const bool viewTxn = App::DocumentParams::getViewObjectTransaction();
+    App::DocumentParams::setViewObjectTransaction(true);
+    struct Reset
+    {
+        bool viewTxn;
+        ~Reset()
+        {
+            App::Document::setViewResolver({});
+            App::DocumentParams::setViewObjectTransaction(viewTxn);
+        }
+    } reset {viewTxn};
+
+    doc()->openTransaction("create");
+    auto a = make("A");
+    auto v = make("V");
+    doc()->commitTransaction();
+    TxnLogFakeView view;
+    view.owner = v;
+    views[v] = &view;
+    auto lastSeq = [&]() {
+        const auto rows = log().store().transactions();
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            if (it->kind != "recompute")
+                return it->seq;
+        }
+        return int64_t(0);
+    };
+
+    doc()->openTransaction("shade");
+    view.Shade.setValue(5);
+    doc()->commitTransaction();
+    const int64_t shadeSeq = lastSeq();
+    doc()->openTransaction("remove V");
+    views.erase(v);
+    doc()->removeObject("V");
+    doc()->commitTransaction();
+    doc()->openTransaction("int late");
+    a->Integer.setValue(7);
+    doc()->commitTransaction();
+    const int64_t lateSeq = lastSeq();
+    doc()->openTransaction("string");
+    a->String.setValue("s");
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->undo());
+    ASSERT_EQ(doc()->getAvailableRedos(), 1);
+
+    const auto rows = log().store().transactions().size();
+    const auto undos = doc()->getAvailableUndoNames();
+    int aborted = 0;
+    auto conn = doc()->signalAbortTransaction.connect([&aborted](const App::Document&) {
+        ++aborted;
+    });
+    EXPECT_FALSE(doc()->undoLogged(std::vector<int64_t> {shadeSeq, lateSeq}));
+    conn.disconnect();
+    EXPECT_NE(doc()->undoRefusal().find("is gone"), std::string::npos) << doc()->undoRefusal();
+    // The newer row was taken back, and put back
+    EXPECT_EQ(aborted, 1);
+    EXPECT_EQ(a->Integer.getValue(), 7);
+    EXPECT_EQ(log().store().transactions().size(), rows);
+    EXPECT_EQ(doc()->getAvailableUndoNames(), undos);
+    EXPECT_EQ(doc()->getAvailableRedos(), 1);
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    // And alone it goes, as before
+    ASSERT_TRUE(doc()->undoLogged(lateSeq));
+    EXPECT_NE(a->Integer.getValue(), 7);
 }
 
 TEST_F(TransactionLogTest, coldUndoReachesViewProviders)

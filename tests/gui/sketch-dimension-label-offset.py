@@ -110,6 +110,17 @@ def probe():
         FreeCADGui.Selection.addSelection(sk, "Edge1")
         FreeCADGui.runCommand("Sketcher_Dimension")
         settle(0.3)
+        # The offset is a share of the view, read here after the tool has
+        # used it: wait for the view to stand still first. On a loaded box
+        # the fit's animation and the edit's layout were still moving it
+        # two seconds in, and the two readings were of two views.
+        last = None
+        for _ in range(50):
+            now = view_offset(view)
+            if last is not None and abs(now - last) < 1e-6:
+                break
+            last = now
+            settle(0.2)
         height = 6.0
         move(view, (5.0, height - 0.5))
         move(view, (5.0, height))

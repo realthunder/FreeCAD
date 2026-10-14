@@ -260,7 +260,19 @@ public:
 
   void setHatchImage(const void *dataptr, int nc, int width, int height);
 
-  void doLatePick(SoRayPickAction *action) const;
+  /// Apply \a action to the nodes that are picked late, after everything
+  /// else (SoFCLatePickGroup). \a below is the view's path down to the
+  /// parent of the scene root this manager captures: the paths kept here
+  /// start at that root, and the camera a ray is cast by is traversed before
+  /// it, so each is applied behind \a below. Without one they are applied as
+  /// they are, which finds nothing unless the root holds a camera itself.
+  void doLatePick(SoRayPickAction *action, SoPath *below = nullptr) const;
+
+  /// Apply \a action to the nodes whose edges and vertices are picked
+  /// through what is in front of them (SoFCPathAnnotation::pickThrough), and
+  /// to those alone. For a single pick that has ended on a face. \a below
+  /// as for doLatePick().
+  void doThroughPick(SoRayPickAction *action, SoPath *below = nullptr) const;
 
   const char *getRenderStatistics() const;
 

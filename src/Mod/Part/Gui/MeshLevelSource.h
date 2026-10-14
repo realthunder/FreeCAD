@@ -224,8 +224,13 @@ void cancelMeshLevelWork(const void *tag);
 /// document a climb body works on: a load holds such a body back by
 /// document (docs/DocumentLoad.md sec 18.15), and one that names none
 /// waits for every load.
+/// \a first says the body gives its object its first picture -- the shape
+/// was drawn as a box, and a finer rung it shares with a shape meshed
+/// before is still resident -- which a load does not hold back
+/// (docs/DocumentLoad.md sec 18.11).
 void queueLevelGuiWork(const void *tag, std::function<void()> body,
-                       bool descent = true, std::string doc = {});
+                       bool descent = true, std::string doc = {},
+                       bool first = false);
 
 /// Whether the load of the document named \a doc still has visuals to
 /// build: its queue of parked visuals is not empty. Defined with that
