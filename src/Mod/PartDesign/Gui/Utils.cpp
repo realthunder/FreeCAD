@@ -1456,12 +1456,11 @@ public:
                     continue;
                 if (element.size()) {
                     if (subs.size() == 1 && subs.front().empty()) {
-                        for (auto it=sobjs.begin(); it!=sobjs.end();) {
-                            if (it->getSubObject() == sobj) {
-                                sobjs.erase(it);
-                                break;
-                            }
-                        }
+                        subs.clear();
+                        auto it = std::find_if(sobjs.begin(), sobjs.end(),
+                            [sobj](const App::SubObjectT &s) { return s.getSubObject() == sobj; });
+                        if (it != sobjs.end())
+                            sobjs.erase(it);
                     }
                 } else if (subs.size() > 0)
                     continue;

@@ -204,6 +204,52 @@ class PartDesignGuiTestCases(unittest.TestCase):
         self.assertEqual(len(self.BodySource.Group), 0, "Source body feature count is wrong")
         self.assertEqual(len(self.BodyTarget.Group), 2, "Target body feature count is wrong")
 
+    def testProfileButtonTakesAWholeObjectThenAnElementOfIt(self):
+        """The Profile button of a pad's panel with the selection: a face of a
+        box outside the body, a sketch whole, an edge of that sketch. The edge
+        replaces the whole sketch; dropping the whole sketch never moved past
+        the face before it, and the button never returned."""
+        from PySide import QtWidgets
+
+        box = self.Doc.addObject("Part::Box", "Box")
+        box.Placement.Base = App.Vector(20, 0, 0)
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        pts = [App.Vector(0, 0, 0), App.Vector(10, 0, 0), App.Vector(10, 10, 0), App.Vector(0, 10, 0)]
+        for i in range(4):
+            sketch.addGeometry(Part.LineSegment(pts[i], pts[(i + 1) % 4]))
+        pad = body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Length = 5
+        self.Doc.recompute()
+
+        def pump():
+            for _ in range(40):
+                QApplication.processEvents()
+
+        Gui.getDocument(self.Doc.Name).setEdit(pad.Name)
+        pump()
+        try:
+            buttons = [w for w in Gui.getMainWindow().findChildren(QtWidgets.QPushButton)
+                       if w.isVisible() and w.text() == "Profile"]
+            self.assertEqual(len(buttons), 1)
+            self.assertFalse(buttons[0].isChecked())
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(self.Doc.Name, box.Name, "Face6")
+            Gui.Selection.addSelection(self.Doc.Name, body.Name, "Sketch.")
+            Gui.Selection.addSelection(self.Doc.Name, body.Name, "Sketch.Edge1")
+            buttons[0].click()
+            pump()
+            # the box is outside the body: a binder of the face and the edge
+            binder = pad.Profile[0]
+            self.assertTrue(binder.isDerivedFrom("PartDesign::SubShapeBinder"))
+            self.assertEqual([(o.Name, list(s)) for o, s in binder.Support],
+                             [(box.Name, ["Face6"]), (sketch.Name, ["Edge1"])])
+        finally:
+            Gui.Selection.clearSelection()
+            Gui.Control.closeDialog()
+            pump()
+
     def tearDown(self):
         FreeCAD.closeDocument("SketchGuiTest")
 
