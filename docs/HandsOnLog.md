@@ -7041,8 +7041,9 @@ on the way, among them `getPathValue` returning nothing exactly when it found
 a value.
 
 **Tests.** `fillet-radius-typed-in-view` 18, `fillet-edge-handles-in-view` 15,
-`fillet-point-position-in-view` 6, `fillet-groups-in-view` 11 (offscreen and
-on the screen, pictures looked at); `TestFillet` 21 with 6 new
+`fillet-point-position-in-view` 6, `fillet-groups-in-view` 10 (offscreen and
+on the screen, pictures looked at; the groups test's final colour reader --
+asking the container for its dragger -- ran offscreen only); `TestFillet` 21 with 6 new
 `TestFilletGroups`. The neighbours: pattern labels 12, sketch label pick 12,
 label scale 9, `sketch-arc-labels` 11 on the screen (its log needed UTF-8,
 `9451ff9f31`; its pixel claims fail offscreen only).
