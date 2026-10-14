@@ -139,6 +139,35 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 13:30, the build session CONFIRMS the note-taker's reading of
+13:26 (entry 117's document, 6.4) -- and finds it wider; it fixes it on
+its own judgement, not an entry.** From its message stamped 13:45, written
+here 13:30.
+- "(1) As you said: in PropertyFilletSegments::connectLinkProperty the
+  per-point p1 and p2 are both built from `path`, so each point's rename
+  is a path into itself, and the extra ++i skips every second point."
+- "(2) Worse, the whole map is BACKWARDS, in Segments and in
+  PropertyChamferEdges::connectLinkProperty (about 1139) alike:
+  signalUpdateElementReference(old, new) is stored as
+  referenceUpdates[new] = old, the loop's `sub` is the new name and `key`
+  the old, and `path` is built from sub, `pathNew` from key -- renames
+  new -> old, while renameExpressions takes old -> new
+  (PropertyExpressionEngine.cpp 1431). So an expression on a fillet's
+  per-edge segment or a chamfer's per-edge size is never moved to the
+  edge's new name. The corners' code (about 710) has it the right way."
+- "I am fixing it on my own judgement since it is a plain bug in the
+  fork's code: test TestDressUpNamesFollow (TestFillet.py, a pad with a
+  cut lowered, as testNamesFollowTopology) and the fix are written, not
+  yet built (r25 is building)."
+- "Seen on the way, not touched: PropertyFilletSegments::getPyObject
+  returns entries without their edge names while setPyObject wants
+  (edge, points); PropertyChamferEdges::setPyObject refuses 4 or more
+  items but then reads items 3 and 4."
+The note-taker's note: what the reporter would meet -- an expression
+bound to one edge's own fillet radius or chamfer size stays on the old
+edge name after a change upstream renames that edge. No entry unless the
+reporter says; the fix will show under the build session's commit.
+
 **2026-10-14 11:55: STAGED again, on the reporter's word to the build
 session at 11:30, "after entry 98 built, restage" -- NOT pushed (origin
 `7d5698c950`).** From the build session (its message stamped 12:05,
