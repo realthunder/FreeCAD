@@ -28,7 +28,9 @@
 #include <QItemDelegate>
 
 #include <App/ObjectIdentifier.h>
+#include <Base/Matrix.h>
 #include <Gui/Inventor/Draggers/Gizmo.h>
+#include <Mod/Part/App/PropertyDressUp.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "TaskDressUpParameters.h"
@@ -40,6 +42,7 @@ namespace PartDesign {
 class Fillet;
 }
 
+class QMenu;
 class Ui_TaskFilletParameters;
 
 namespace Gui {
@@ -126,23 +129,62 @@ private:
     std::unique_ptr<Ui_TaskFilletParameters> ui;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
-    /// The default radius's one arrow (docs/OnViewValueEditing.md 3.3), in
-    /// whichever of the two faces beside the first edge is turned more toward
-    /// the camera
-    Gui::LinearGizmo* radiusGizmo = nullptr;
-    struct RadiusPlacement {
+    void setupGizmos(ViewProviderDressUp* vp);
+    void setGizmoPositions();
+    /// Show the values in the view the feature is edited in, once it has one
+    void attachOnViewValues();
+
+    /** @name The radii in the view (docs/OnViewValueEditing.md 3.3)
+     * One arrow on every edge, in whichever of its two faces is turned more
+     * toward the camera. An edge that takes the default radius has one, a
+     * handle of the default's value; a customised edge one per point of its
+     * own, each a value of its own. Each arrow's root button opens the edge's
+     * menu: its mode (default, one radius, two radii) and Remove.
+     */
+    //@{
+    /// The default radius's value in the set
+    static constexpr int DefaultValue = 0;
+    /// Arrows at most; edges past them have none
+    static constexpr int MaxEdgeHandles = 64;
+    /// edgeMode() of an edge whose points are none of the three modes
+    static constexpr int VaryingMode = 3;
+    struct HandlePlacement {
         Base::Vector3d position;
         Base::Vector3d dir;
     };
-    RadiusPlacement radiusPlacements[2];
-    bool radiusPlaced = false;
-    int radiusFace = 0;
-    void setupGizmos(ViewProviderDressUp* vp);
-    void setGizmoPositions();
-    /// Put the radius arrow in the face turned more toward the camera
-    void placeRadiusGizmo(bool force = false);
-    /// Show the values in the view the feature is edited in, once it has one
-    void attachOnViewValues();
+    struct EdgeHandle {
+        std::string edge;
+        /// The point of the edge's segments it drives; -1, the default radius
+        int point = -1;
+        Gui::LinearGizmo* gizmo = nullptr;
+        /// Hidden, bound to the point's radius; none for the default's
+        Gui::QuantitySpinBox* box = nullptr;
+        /// In each of the edge's two faces
+        HandlePlacement placements[2];
+        int face = 0;
+        bool placed = false;
+    };
+    std::vector<EdgeHandle> edgeHandles;
+    /// What edgeHandles were made for: edges and their numbers of points
+    std::string edgeHandleLayout;
+    /// The fillet's edges by name, every edge of the base with UseAllEdges
+    std::vector<std::string> getFilletEdges() const;
+    /// Make the arrows when the edges or their points changed; place them
+    void updateEdgeHandles();
+    void clearEdgeHandles();
+    /// Put each arrow in the face turned more toward the camera
+    void placeEdgeHandles(bool force);
+    /// From the gizmos' frame to the world's
+    Base::Matrix4D gizmoToWorld() const;
+    EdgeHandle* findEdgeHandle(const Gui::LinearGizmo* gizmo);
+    void fillEdgeMenu(QMenu& menu, Gui::LinearGizmo* gizmo);
+    /// 0 default radius, 1 one radius, 2 two radii, VaryingMode otherwise
+    static int edgeMode(const Part::PropertyFilletSegments::Segments& segments);
+    void setEdgeMode(const std::string& edge, int mode, double radius);
+    void setEdgePointRadius(const std::string& edge, int point, double radius);
+    /// Take the edge out of the fillet, as the panel's removal does
+    void removeEdge(const std::string& edge);
+    //@}
 
     /// One handle per fillet of the current corner, at most this many
     static constexpr int CornerGizmoCount = 6;

@@ -28,10 +28,22 @@
 #include <numbers>
 #include <QApplication>
 
+#include <QTimer>
+#include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoRenderManager.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
+#include <Inventor/nodes/SoBaseColor.h>
+#include <Inventor/nodes/SoEventCallback.h>
+#include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoPickStyle.h>
+#include <Inventor/nodes/SoScale.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSphere.h>
+#include <Inventor/nodes/SoSwitch.h>
+#include <Inventor/nodes/SoTransform.h>
+#include <Inventor/nodes/SoTranslation.h>
 #include <algorithm>
 
 #include <App/Application.h>
@@ -151,6 +163,18 @@ LinearGizmo::LinearGizmo(QuantitySpinBox* property)
     this->property = property;
 }
 
+LinearGizmo::~LinearGizmo()
+{
+    QuantitySpinBox::disconnect(quantityChangedConnection);
+    QuantitySpinBox::disconnect(formulaDialogConnection);
+    if (rootButton) {
+        rootButton->unref();
+    }
+    if (rootButtonColor) {
+        rootButtonColor->unref();
+    }
+}
+
 SoInteractionKit* LinearGizmo::initDragger()
 {
     draggerContainer = new SoLinearDraggerContainer;
@@ -187,6 +211,10 @@ SoInteractionKit* LinearGizmo::initDragger()
 
     setProperty(property);
 
+    if (rootButtonCallback) {
+        buildRootButton();
+    }
+
     return draggerContainer;
 }
 
@@ -194,6 +222,106 @@ void LinearGizmo::uninitDragger()
 {
     dragger = nullptr;
     draggerContainer = nullptr;
+    if (rootButton) {
+        rootButton->unref();
+        rootButton = nullptr;
+    }
+    if (rootButtonColor) {
+        rootButtonColor->unref();
+        rootButtonColor = nullptr;
+    }
+}
+
+void LinearGizmo::setRootButton(ButtonCallback callback)
+{
+    rootButtonCallback = std::move(callback);
+    if (rootButtonCallback && draggerContainer && !rootButton) {
+        buildRootButton();
+    }
+}
+
+SoNode* LinearGizmo::getExtraNode()
+{
+    return rootButton;
+}
+
+void LinearGizmo::buildRootButton()
+{
+    // At the root of the arrow, in the container's frame and the dragger's
+    // screen size, a little behind the root so that the arrow's own base
+    // stays the arrow's
+    rootButton = new SoSwitch;
+    rootButton->ref();
+    auto sep = new SoSeparator;
+    rootButton->addChild(sep);
+    auto transform = new SoTransform;
+    transform->translation.connectFrom(&draggerContainer->translation);
+    transform->rotation.connectFrom(&draggerContainer->rotation);
+    sep->addChild(transform);
+    auto scale = new SoScale;
+    scale->scaleFactor.connectFrom(&dragger->geometryScale);
+    sep->addChild(scale);
+    auto offset = new SoTranslation;
+    offset->translation.setValue(0, -0.9F, 0);
+    sep->addChild(offset);
+    auto lightModel = new SoLightModel;
+    lightModel->model = SoLightModel::BASE_COLOR;
+    sep->addChild(lightModel);
+    rootButtonColor = new SoBaseColor;
+    rootButtonColor->ref();
+    sep->addChild(rootButtonColor);
+    auto events = new SoEventCallback;
+    events->addEventCallback(SoMouseButtonEvent::getClassTypeId(), rootButtonEvent, this);
+    sep->addChild(events);
+    auto sphere = new SoSphere;
+    sphere->radius = 0.6F;
+    sep->addChild(sphere);
+    rootButton->whichChild = (visible && !property->hasExpression()) ? 0 : SO_SWITCH_NONE;
+    updateColorTheme();
+}
+
+void LinearGizmo::rootButtonEvent(void* data, SoEventCallback* cb)
+{
+    auto self = static_cast<LinearGizmo*>(data);
+    if (!self->rootButton || !self->rootButtonCallback) {
+        return;
+    }
+    const auto* event = static_cast<const SoMouseButtonEvent*>(cb->getEvent());
+    if (event->getButton() != SoMouseButtonEvent::BUTTON1) {
+        return;
+    }
+    const SoPickedPoint* picked = cb->getPickedPoint();
+    const bool over = picked && picked->getPath()->containsNode(self->rootButton);
+    if (SoMouseButtonEvent::isButtonPressEvent(event, SoMouseButtonEvent::BUTTON1)) {
+        self->rootButtonPressed = over;
+        if (over) {
+            cb->setHandled();
+        }
+        return;
+    }
+    if (SoMouseButtonEvent::isButtonReleaseEvent(event, SoMouseButtonEvent::BUTTON1)) {
+        const bool pressed = self->rootButtonPressed;
+        self->rootButtonPressed = false;
+        if (pressed) {
+            cb->setHandled();
+            if (over) {
+                // After the event: the menu runs a loop of its own, and what
+                // it does may take this handle away
+                auto callback = self->rootButtonCallback;
+                QTimer::singleShot(0, [callback]() {
+                    callback();
+                });
+            }
+        }
+    }
+}
+
+void LinearGizmo::setColor(const std::optional<Base::Color>& color)
+{
+    ownColor = color;
+    if (dragger) {
+        updateColorTheme();
+    }
 }
 
 void LinearGizmo::updateColorTheme()
@@ -202,9 +330,17 @@ void LinearGizmo::updateColorTheme()
     Base::Color baseColor = styleParameterManager->resolve(StyleParameters::LinearGizmoBaseColor);
     Base::Color activeColor = styleParameterManager->resolve(StyleParameters::LinearGizmoActiveColor);
 
+    // a handle of its own colour (a customised edge's) keeps it
+    if (ownColor) {
+        baseColor = *ownColor;
+    }
     // the active handle wears the colour of one being dragged
     dragger->color = (highlighted ? activeColor : baseColor).asValue<SbColor>();
     dragger->activeColor = activeColor.asValue<SbColor>();
+    // the root button is the colour of its handle
+    if (rootButtonColor) {
+        rootButtonColor->rgb = (highlighted ? activeColor : baseColor).asValue<SbColor>();
+    }
 
     auto baseGeom = SO_GET_PART(dragger, "baseGeom", SoArrowBase);
     if (!baseGeom) {
@@ -333,6 +469,9 @@ void LinearGizmo::setVisibility(bool visible)
 {
     this->visible = visible;
     getDraggerContainer()->visible = visible && !property->hasExpression();
+    if (rootButton) {
+        rootButton->whichChild = (visible && !property->hasExpression()) ? 0 : SO_SWITCH_NONE;
+    }
 }
 
 void LinearGizmo::draggingStarted()
@@ -809,8 +948,15 @@ GizmoContainer::~GizmoContainer()
 void GizmoContainer::initGizmos()
 {
     auto geometry = SO_GET_ANY_PART(this, "geometry", SoSeparator);
+    gizmoNodes.clear();
     for (auto gizmo : gizmos) {
-        geometry->addChild(gizmo->initDragger());
+        SoNode* dragger = gizmo->initDragger();
+        geometry->addChild(dragger);
+        SoNode* extra = gizmo->getExtraNode();
+        if (extra) {
+            geometry->addChild(extra);
+        }
+        gizmoNodes.emplace_back(dragger, extra);
     }
 }
 
@@ -821,6 +967,51 @@ void GizmoContainer::uninitGizmos()
         delete gizmo;
     }
     gizmos.clear();
+    gizmoNodes.clear();
+}
+
+void GizmoContainer::appendGizmo(Gizmo* gizmo)
+{
+    if (!gizmo || std::ranges::find(gizmos, gizmo) != gizmos.end()) {
+        return;
+    }
+    gizmos.push_back(gizmo);
+    auto geometry = SO_GET_ANY_PART(this, "geometry", SoSeparator);
+    SoNode* dragger = gizmo->initDragger();
+    geometry->addChild(dragger);
+    SoNode* extra = gizmo->getExtraNode();
+    if (extra) {
+        geometry->addChild(extra);
+    }
+    gizmoNodes.emplace_back(dragger, extra);
+    // its size and turn, as the others have them
+    calculateScaleAndOrientation();
+}
+
+void GizmoContainer::removeGizmo(Gizmo* gizmo)
+{
+    auto it = std::ranges::find(gizmos, gizmo);
+    if (it == gizmos.end()) {
+        return;
+    }
+    const auto index = std::distance(gizmos.begin(), it);
+    auto geometry = SO_GET_ANY_PART(this, "geometry", SoSeparator);
+    if (index < static_cast<decltype(index)>(gizmoNodes.size())) {
+        auto [dragger, extra] = gizmoNodes[index];
+        for (SoNode* node : {dragger, extra}) {
+            if (!node) {
+                continue;
+            }
+            int child = geometry->findChild(node);
+            if (child >= 0) {
+                geometry->removeChild(child);
+            }
+        }
+        gizmoNodes.erase(gizmoNodes.begin() + index);
+    }
+    gizmos.erase(it);
+    gizmo->uninitDragger();
+    delete gizmo;
 }
 
 void GizmoContainer::addGizmos(std::initializer_list<Gui::Gizmo*> gizmos)

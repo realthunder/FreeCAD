@@ -25,8 +25,6 @@
 
 #ifndef _PreComp_
 # include <QAction>
-# include <QTimer>
-# include <Precision.hxx>
 # include <BRepAdaptor_Curve.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
 # include <BRepLProp_SLProps.hxx>
@@ -40,6 +38,14 @@
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
+
+#include <QActionGroup>
+#include <QMenu>
+#include <QTimer>
+#include <BRepGProp.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
+#include <GProp_GProps.hxx>
+#include <Precision.hxx>
 
 #include "ui_TaskFilletParameters.h"
 #include "TaskFilletParameters.h"
@@ -213,15 +219,19 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     refresh();
     ui->filletRadius->selectAll();
 
-    // The default radius in the view: its label always at the top middle,
-    // its arrow the handle that takes typing once active
-    // (docs/OnViewValueEditing.md 3.1 to 3.3)
+    // The radii in the view (docs/OnViewValueEditing.md 3.1 to 3.3): the
+    // default's label always at the top middle, an arrow on every edge --
+    // an edge that takes the default drives it, a customised one its own
+    // radius, whose label shows beside the arrow while it is active
     onViewValues = std::make_unique<Gui::OnViewValueSet>();
-    setupGizmos(DressUpView);
     onViewValues->addValue(ui->filletRadius, tr("Radius"),
-                           Gui::OnViewValueSet::Place::TopMiddle, radiusGizmo);
+                           Gui::OnViewValueSet::Place::TopMiddle);
+    onViewValues->setMenu(DefaultValue, [this](QMenu& menu, Gui::LinearGizmo* handle) {
+        fillEdgeMenu(menu, handle);
+    });
+    setupGizmos(DressUpView);
     connect(onViewValues.get(), &Gui::OnViewValueSet::cameraChanged, this, [this]() {
-        placeRadiusGizmo();
+        placeEdgeHandles(false);
     });
     attachOnViewValues();
     // The view is told of the edit after the panel is made
@@ -239,40 +249,60 @@ void TaskFilletParameters::attachOnViewValues()
     if (auto view = vp->getEditViewer()) {
         if (view != onViewValues->getView()) {
             onViewValues->attach(view);
-            placeRadiusGizmo(true);
+            placeEdgeHandles(true);
         }
     }
     onViewValues->refresh();
 }
 
-void TaskFilletParameters::placeRadiusGizmo(bool force)
+Base::Matrix4D TaskFilletParameters::gizmoToWorld() const
 {
-    if (!radiusGizmo || !radiusPlaced) {
-        return;
-    }
-    int face = radiusFace;
+    // The gizmos' frame is the editing transform less the feature's
+    // placement (ViewProviderDragger::setEditViewer)
     auto vp = getDressUpView();
-    Gui::ViewerContext* view = onViewValues ? onViewValues->getView() : nullptr;
     auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
-    if (view && fillet) {
-        // The view's direction where the arrows are: the gizmos' frame is the
-        // editing transform less the feature's placement (ViewProviderDragger)
-        Base::Matrix4D mat = vp->getDocument()->getEditingTransform();
-        Base::Matrix4D placement = fillet->Placement.getValue().toMatrix();
-        placement.inverse();
-        mat *= placement;
-        mat.inverse();
+    if (!fillet) {
+        return {};
+    }
+    Base::Matrix4D mat = vp->getDocument()->getEditingTransform();
+    Base::Matrix4D placement = fillet->Placement.getValue().toMatrix();
+    placement.inverse();
+    mat *= placement;
+    return mat;
+}
+
+void TaskFilletParameters::placeEdgeHandles(bool force)
+{
+    Gui::ViewerContext* view = onViewValues ? onViewValues->getView() : nullptr;
+    const Base::Matrix4D toWorld = gizmoToWorld();
+    Base::Vector3d dir;
+    if (view) {
+        // The view's direction where the arrows are
+        Base::Matrix4D toGizmo = toWorld;
+        toGizmo.inverse();
         const SbVec3f v = view->getViewDirection();
-        Base::Vector3d dir = mat * Base::Vector3d(v[0], v[1], v[2]) - mat * Base::Vector3d();
+        dir = toGizmo * Base::Vector3d(v[0], v[1], v[2]) - toGizmo * Base::Vector3d();
         if (dir.Length() > Precision::Confusion()) {
             dir.Normalize();
+        }
+        else {
+            dir = Base::Vector3d();
+        }
+    }
+    bool moved = false;
+    for (auto& handle : edgeHandles) {
+        if (!handle.placed) {
+            continue;
+        }
+        int face = handle.face;
+        if (dir.Length() > 0.5) {
             // An arrow in the face turned toward the camera lies flat on the
             // screen; the other one points into it. A little either way of
             // even does not move it, so that it does not flicker.
             constexpr double hysteresis = 0.05;
             double along[2];
             for (int i = 0; i < 2; ++i) {
-                Base::Vector3d d = radiusPlacements[i].dir;
+                Base::Vector3d d = handle.placements[i].dir;
                 d.Normalize();
                 along[i] = std::fabs(d * dir);
             }
@@ -280,16 +310,406 @@ void TaskFilletParameters::placeRadiusGizmo(bool force)
                 face = 1 - face;
             }
         }
+        if (face == handle.face && !force) {
+            continue;
+        }
+        handle.face = face;
+        handle.gizmo->Gizmo::setDraggerPlacement(handle.placements[face].position,
+                                                 handle.placements[face].dir);
+        if (onViewValues) {
+            onViewValues->setHandleAnchor(handle.gizmo,
+                                          toWorld * handle.placements[face].position);
+        }
+        moved = true;
     }
-    if (face == radiusFace && !force) {
-        return;
-    }
-    radiusFace = face;
-    radiusGizmo->Gizmo::setDraggerPlacement(radiusPlacements[face].position,
-                                            radiusPlacements[face].dir);
-    if (gizmoContainer) {
+    if (moved && gizmoContainer) {
         gizmoContainer->calculateScaleAndOrientation();
     }
+}
+
+namespace {
+/// An arrow on an edge at \a fraction of its length, lying in \a face and
+/// pointing into it (GizmoHelper's getDraggerPlacementFromEdgeAndFace, at a
+/// point other than the middle)
+bool edgeHandlePlacement(Part::TopoShape& edge, TopoDS_Face& face, double fraction,
+                         Base::Vector3d& position, Base::Vector3d& dir)
+{
+    const TopoDS_Edge& tdsEdge = TopoDS::Edge(edge.getShape());
+    BRepAdaptor_Curve curve(tdsEdge);
+    double u = curve.FirstParameter();
+    const double length = GCPnts_AbscissaPoint::Length(curve);
+    if (length > Precision::Confusion()) {
+        GCPnts_AbscissaPoint abscissa(curve, fraction * length, curve.FirstParameter());
+        if (abscissa.IsDone()) {
+            u = abscissa.Parameter();
+        }
+    }
+    gp_Pnt pos;
+    gp_Vec derivative;
+    curve.D1(u, pos, derivative);
+    if (derivative.Magnitude() < gp::Resolution()) {
+        return false;
+    }
+    Base::Vector3d tangent(derivative.X(), derivative.Y(), derivative.Z());
+    tangent.Normalize();
+    if (tdsEdge.Orientation() == TopAbs_REVERSED) {
+        tangent = -tangent;
+    }
+    position = Base::Vector3d(pos.X(), pos.Y(), pos.Z());
+
+    auto props = getFaceNormalFromPointNearEdge(edge, u, face);
+    if (props.state == PointOnFaceNearEdgeProps::State::Undefined) {
+        return false;
+    }
+    dir = props.normal.Cross(tangent);
+    if (dir.Length() < Precision::Confusion()) {
+        return false;
+    }
+    dir.Normalize();
+    if (dir.Dot(props.position - position) < 0) {
+        dir = -dir;
+    }
+    if (props.state == PointOnFaceNearEdgeProps::State::OutsideFace) {
+        dir = -dir;
+    }
+    return true;
+}
+
+/// The colour of a customised edge's handles. Step 3 of the design gives
+/// each group its own.
+const Base::Color& customisedColor()
+{
+    static const Base::Color color(0.95F, 0.55F, 0.10F);
+    return color;
+}
+} // namespace
+
+std::vector<std::string> TaskFilletParameters::getFilletEdges() const
+{
+    std::vector<std::string> names;
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet) {
+        return names;
+    }
+    if (fillet->UseAllEdges.getValue()) {
+        Part::TopoShape baseShape = fillet->getBaseShape(true);
+        const int count = baseShape.countSubShapes(TopAbs_EDGE);
+        for (int i = 1; i <= count; ++i) {
+            names.push_back("Edge" + std::to_string(i));
+        }
+        return names;
+    }
+    for (const auto& sub : fillet->Base.getSubValues(false)) {
+        if (boost::starts_with(sub, "Edge")
+                && std::find(names.begin(), names.end(), sub) == names.end()) {
+            names.push_back(sub);
+        }
+    }
+    return names;
+}
+
+void TaskFilletParameters::clearEdgeHandles()
+{
+    if (onViewValues) {
+        onViewValues->truncate(DefaultValue + 1);
+        // the default's own arrows go too, the value stays
+        onViewValues->clearHandles(DefaultValue);
+    }
+    for (auto& handle : edgeHandles) {
+        if (gizmoContainer) {
+            gizmoContainer->removeGizmo(handle.gizmo);
+        }
+        if (handle.box) {
+            handle.box->deleteLater();
+        }
+    }
+    edgeHandles.clear();
+    edgeHandleLayout.clear();
+}
+
+void TaskFilletParameters::updateEdgeHandles()
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!gizmoContainer || !onViewValues || !fillet) {
+        return;
+    }
+    // What the handles are made for: the edges and how many points each has.
+    // While it stays, they are only placed again -- a drag recomputes on
+    // every move, and its handle must live through it.
+    std::vector<std::string> edges = getFilletEdges();
+    std::string layout;
+    int total = 0;
+    std::vector<std::string> shown;
+    for (const auto& edge : edges) {
+        const int points = std::max<int>(1, fillet->Segments.getValue(edge).size());
+        if (total + points > MaxEdgeHandles) {
+            break;
+        }
+        total += points;
+        shown.push_back(edge);
+        layout += edge + ":" + std::to_string(fillet->Segments.getValue(edge).size()) + ";";
+    }
+    if (layout != edgeHandleLayout) {
+        clearEdgeHandles();
+        edgeHandleLayout = layout;
+        for (const auto& edge : shown) {
+            const auto& segments = fillet->Segments.getValue(edge);
+            if (segments.empty()) {
+                // drives the default radius
+                EdgeHandle handle;
+                handle.edge = edge;
+                handle.gizmo = new Gui::LinearGizmo(ui->filletRadius);
+                onViewValues->addHandle(DefaultValue, handle.gizmo);
+                gizmoContainer->appendGizmo(handle.gizmo);
+                edgeHandles.push_back(handle);
+                continue;
+            }
+            for (int point = 0; point < static_cast<int>(segments.size()); ++point) {
+                EdgeHandle handle;
+                handle.edge = edge;
+                handle.point = point;
+                auto box = new Gui::QuantitySpinBox(this);
+                box->hide();
+                box->setUnit(Base::Unit::Length);
+                box->setMinimum(0.0);
+                box->setMaximum(INT_MAX);
+                App::ObjectIdentifier path(fillet->Segments);
+                path << App::ObjectIdentifier::SimpleComponent(edge)
+                     << App::ObjectIdentifier::ArrayComponent(point)
+                     << App::ObjectIdentifier::SimpleComponent("Radius");
+                box->bind(path);
+                box->setValue(segments[point].radius);
+                handle.box = box;
+                handle.gizmo = new Gui::LinearGizmo(box);
+                handle.gizmo->setColor(customisedColor());
+                // "R", or which of its points: "R1", "R2" ...
+                QString title = segments.size() == 1
+                    ? tr("R") : tr("R%1").arg(point + 1);
+                const int value = onViewValues->addValue(
+                    box, title, Gui::OnViewValueSet::Place::AtHandle, handle.gizmo);
+                onViewValues->setMenu(value, [this](QMenu& menu, Gui::LinearGizmo* gizmo) {
+                    fillEdgeMenu(menu, gizmo);
+                });
+                gizmoContainer->appendGizmo(handle.gizmo);
+                connect(box, qOverload<double>(&Gui::QuantitySpinBox::valueChanged), this,
+                        [this, edge, point](double radius) {
+                            setEdgePointRadius(edge, point, radius);
+                        });
+                edgeHandles.push_back(handle);
+            }
+        }
+    }
+
+    // Placed: each point at its place along the edge, each arrow in both
+    // faces to choose from
+    Part::TopoShape baseShape = fillet->getBaseShape(true);
+    for (auto& handle : edgeHandles) {
+        handle.placed = false;
+        const auto& segments = fillet->Segments.getValue(handle.edge);
+        double fraction = 0.5;
+        if (handle.point >= 0 && segments.size() > 1
+                && handle.point < static_cast<int>(segments.size())) {
+            const auto& segment = segments[handle.point];
+            fraction = segment.param;
+            if (segment.length > 0.0) {
+                Part::TopoShape edge = baseShape.getSubTopoShape(handle.edge.c_str(), true);
+                GProp_GProps props;
+                BRepGProp::LinearProperties(edge.getShape(), props);
+                fraction = props.Mass() > segment.length ? segment.length / props.Mass() : 1.0;
+            }
+            // Ends drawn a little inside: the arrows of edges meeting at a
+            // corner would stand on one another
+            fraction = std::clamp(fraction, 0.1, 0.9);
+        }
+        if (handle.box) {
+            QSignalBlocker blocker(handle.box);
+            if (handle.point < static_cast<int>(segments.size())) {
+                handle.box->setValue(segments[handle.point].radius);
+            }
+        }
+        try {
+            Part::TopoShape edge = baseShape.getSubTopoShape(handle.edge.c_str(), true);
+            if (edge.isNull()) {
+                handle.gizmo->setVisibility(false);
+                continue;
+            }
+            auto [face1, face2] = getAdjacentFacesFromEdge(edge, baseShape);
+            if (!edgeHandlePlacement(edge, face1, fraction, handle.placements[0].position,
+                                     handle.placements[0].dir)
+                || !edgeHandlePlacement(edge, face2, fraction, handle.placements[1].position,
+                                        handle.placements[1].dir)) {
+                handle.gizmo->setVisibility(false);
+                continue;
+            }
+        }
+        catch (Standard_Failure&) {
+            handle.gizmo->setVisibility(false);
+            continue;
+        }
+        catch (Base::Exception&) {
+            handle.gizmo->setVisibility(false);
+            continue;
+        }
+        // The dragger length won't be equal to the radius if the two faces
+        // are not orthogonal so this correction is needed
+        double angle = handle.placements[0].dir.GetAngle(handle.placements[1].dir);
+        handle.gizmo->setMultFactor(1 / std::tan(angle / 2));
+        handle.gizmo->setVisibility(true);
+        handle.placed = true;
+    }
+    placeEdgeHandles(true);
+}
+
+void TaskFilletParameters::setEdgePointRadius(const std::string& edge, int point, double radius)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet) {
+        return;
+    }
+    Part::PropertyFilletSegments::Segments segments = fillet->Segments.getValue(edge);
+    if (point < 0 || point >= static_cast<int>(segments.size())
+            || segments[point].radius == radius) {
+        return;
+    }
+    segments[point].radius = radius;
+    setupTransaction();
+    fillet->Segments.setValue(edge, std::move(segments));
+    refresh();
+    recompute();
+}
+
+TaskFilletParameters::EdgeHandle* TaskFilletParameters::findEdgeHandle(const Gui::LinearGizmo* gizmo)
+{
+    for (auto& handle : edgeHandles) {
+        if (handle.gizmo == gizmo) {
+            return &handle;
+        }
+    }
+    return nullptr;
+}
+
+void TaskFilletParameters::fillEdgeMenu(QMenu& menu, Gui::LinearGizmo* gizmo)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    EdgeHandle* handle = findEdgeHandle(gizmo);
+    if (!fillet || !handle) {
+        return;
+    }
+    const std::string edge = handle->edge;
+    const auto& segments = fillet->Segments.getValue(edge);
+    // The radius the edge has where the handle is, to start a new mode from
+    double radius = fillet->Radius.getValue();
+    if (handle->point >= 0 && handle->point < static_cast<int>(segments.size())) {
+        radius = segments[handle->point].radius;
+    }
+    const int mode = edgeMode(segments);
+
+    menu.addSection(QString::fromStdString(edge));
+    auto group = new QActionGroup(&menu);
+    group->setExclusive(true);
+    const char* titles[] = {
+        QT_TR_NOOP("Default radius"),
+        QT_TR_NOOP("One radius"),
+        QT_TR_NOOP("Two radii"),
+    };
+    for (int i = 0; i < 3; ++i) {
+        QAction* action = menu.addAction(tr(titles[i]));
+        action->setCheckable(true);
+        action->setChecked(mode == i);
+        group->addAction(action);
+        // After the menu: the change takes this handle away
+        connect(action, &QAction::triggered, this, [this, edge, i, radius]() {
+            QTimer::singleShot(0, this, [this, edge, i, radius]() {
+                setEdgeMode(edge, i, radius);
+            });
+        });
+    }
+    if (mode == VaryingMode) {
+        QAction* action = menu.addAction(tr("Varying (set in the panel)"));
+        action->setCheckable(true);
+        action->setChecked(true);
+        action->setEnabled(false);
+    }
+    menu.addSeparator();
+    QAction* remove = menu.addAction(tr("Remove"));
+    // every edge is filleted then; the panel's check box says so
+    remove->setEnabled(!fillet->UseAllEdges.getValue());
+    connect(remove, &QAction::triggered, this, [this, edge]() {
+        QTimer::singleShot(0, this, [this, edge]() {
+            removeEdge(edge);
+        });
+    });
+}
+
+int TaskFilletParameters::edgeMode(const Part::PropertyFilletSegments::Segments& segments)
+{
+    if (segments.empty()) {
+        return 0;
+    }
+    if (segments.size() == 1 && segments[0].param == 0.0 && segments[0].length <= 0.0) {
+        return 1;
+    }
+    if (segments.size() == 2 && segments[0].param == 0.0 && segments[1].param == 1.0
+            && segments[0].length <= 0.0 && segments[1].length <= 0.0) {
+        return 2;
+    }
+    return VaryingMode;
+}
+
+void TaskFilletParameters::setEdgeMode(const std::string& edge, int mode, double radius)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || edgeMode(fillet->Segments.getValue(edge)) == mode) {
+        return;
+    }
+    setupTransaction();
+    switch (mode) {
+        case 0:
+            fillet->Segments.removeValue(edge);
+            break;
+        case 1:
+            fillet->Segments.setValue(edge, Part::PropertyFilletSegments::Segments{{0.0, radius}});
+            break;
+        case 2:
+            fillet->Segments.setValue(
+                edge, Part::PropertyFilletSegments::Segments{{0.0, radius}, {1.0, radius}});
+            break;
+        default:
+            return;
+    }
+    refresh();
+    recompute();
+}
+
+void TaskFilletParameters::removeEdge(const std::string& edge)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || fillet->UseAllEdges.getValue()) {
+        return;
+    }
+    QTreeWidgetItem* item = nullptr;
+    for (int i = 0; i < ui->treeWidgetReferences->topLevelItemCount(); ++i) {
+        auto top = ui->treeWidgetReferences->topLevelItem(i);
+        if (!getCornerItem(top) && getGeometryItemText(top).constData() == edge) {
+            item = top;
+            break;
+        }
+    }
+    if (!item) {
+        return;
+    }
+    // The panel's own removal, of this row alone
+    setupTransaction();
+    fillet->Segments.removeValue(edge);
+    ui->treeWidgetReferences->clearSelection();
+    item->setSelected(true);
+    onRefDeleted();
 }
 
 void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
@@ -297,8 +717,6 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
     if (!GizmoContainer::isEnabled()) {
         return;
     }
-
-    radiusGizmo = new Gui::LinearGizmo(ui->filletRadius);
 
     // The handles of the current corner, one per fillet, each driving a
     // hidden spin box. The container takes a fixed list, so there is a pool.
@@ -349,8 +767,7 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
     }
     static_assert(CornerGizmoCount == 6 && CornerFaceGizmoCount == 4,
                   "the container below lists every corner gizmo");
-    gizmoContainer = GizmoContainer::create({radiusGizmo,
-                                             cornerGizmos[0].gizmo, cornerGizmos[1].gizmo,
+    gizmoContainer = GizmoContainer::create({cornerGizmos[0].gizmo, cornerGizmos[1].gizmo,
                                              cornerGizmos[2].gizmo, cornerGizmos[3].gizmo,
                                              cornerGizmos[4].gizmo, cornerGizmos[5].gizmo,
                                              faceGizmos[0].gizmo, faceGizmos[1].gizmo,
@@ -372,33 +789,10 @@ void TaskFilletParameters::setGizmoPositions()
         gizmoContainer->visible = false;
         return;
     }
-    Part::TopoShape baseShape = fillet->getBaseShape(true);
-    std::vector<Part::TopoShape> shapes = fillet->getContinuousEdges(baseShape);
-
-    if (shapes.size() == 0) {
-        gizmoContainer->visible = false;
-        return;
-    }
     gizmoContainer->visible = true;
 
-    // Attach the arrow to the first edge
-    Part::TopoShape edge = shapes[0];
-    auto [face1, face2] = getAdjacentFacesFromEdge(edge, baseShape);
-
-    DraggerPlacementProps props1 = getDraggerPlacementFromEdgeAndFace(edge, face1);
-    DraggerPlacementProps props2 = getDraggerPlacementFromEdgeAndFace(edge, face2);
-    radiusPlacements[0] = {props1.position, props1.dir};
-    radiusPlacements[1] = {props2.position, props2.dir};
-    radiusPlaced = true;
-
-    // The dragger length won't be equal to the radius if the two faces
-    // are not orthogonal so this correction is needed
-    double angle = props1.dir.GetAngle(props2.dir);
-    double correction = 1 / std::tan(angle / 2);
-
-    radiusGizmo->setMultFactor(correction);
-    // one arrow, in the face turned more toward the camera
-    placeRadiusGizmo(true);
+    // An arrow on every edge, in the face turned more toward the camera
+    updateEdgeHandles();
 
     setCornerGizmoPositions();
 }

@@ -26,6 +26,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <QtCore/Qt>
@@ -36,15 +37,20 @@
 #include <Inventor/SbVec3f.h>
 #include <QMetaObject>
 
+#include <Base/Color.h>
 #include <Base/Placement.h>
 #include <Gui/DocumentObserver.h>
 #include <Gui/InputHint.h>
 
 #include <FCGlobal.h>
 
+class SoBaseColor;
 class SoDragger;
 class SoCamera;
+class SoEventCallback;
 class SoInteractionKit;
+class SoNode;
+class SoSwitch;
 
 namespace Gui
 {
@@ -75,6 +81,12 @@ public:
 
     virtual void setGeometryScale(float scale) = 0;
     virtual void orientAlongCamera([[maybe_unused]] SoCamera* camera) {};
+    /// Geometry of the gizmo beside its dragger, put in the container after
+    /// it -- a handle's root button. Made by initDragger().
+    virtual SoNode* getExtraNode()
+    {
+        return nullptr;
+    }
     bool isDelayedUpdateEnabled();
 
     double getMultFactor();
@@ -106,7 +118,8 @@ public:
     using ReleaseCallback = std::function<void(bool dragged)>;
 
     LinearGizmo(QuantitySpinBox* property);
-    ~LinearGizmo() override = default;
+    /// Lets go of its spin box: a box may outlive a gizmo taken out early
+    ~LinearGizmo() override;
 
     SoInteractionKit* initDragger() override;
     void uninitDragger() override;
@@ -139,9 +152,30 @@ public:
      */
     void setFocusBoxOnRelease(bool focus);
 
+    /** @name The root button (docs/OnViewValueEditing.md 3.3)
+     * A small knob at the root of the arrow; a click on it, apart from the
+     * arrow, calls \a callback -- which opens the handle's menu.
+     */
+    //@{
+    using ButtonCallback = std::function<void()>;
+    void setRootButton(ButtonCallback callback);
+    SoNode* getExtraNode() override;
+    //@}
+
+    /// The handle's own colour, and its root button's; none for the theme's
+    void setColor(const std::optional<Base::Color>& color);
+
 private:
+    void buildRootButton();
+    static void rootButtonEvent(void* data, SoEventCallback* cb);
+
     SoLinearDragger* dragger = nullptr;
     SoLinearDraggerContainer* draggerContainer = nullptr;
+    ButtonCallback rootButtonCallback;
+    SoSwitch* rootButton = nullptr;
+    SoBaseColor* rootButtonColor = nullptr;
+    bool rootButtonPressed = false;
+    std::optional<Base::Color> ownColor;
     QMetaObject::Connection quantityChangedConnection;
     QMetaObject::Connection formulaDialogConnection;
     LinearDraggerStyle draggerStyle = LinearDraggerStyle::Arrow;
@@ -270,6 +304,13 @@ public:
     }
     // This should be called only once after construction
     void addGizmos(std::initializer_list<Gui::Gizmo*> gizmos);
+    /** Add one more gizmo after addGizmos(): made, scaled and shown at once.
+     * The container owns it. For handles whose number follows the feature
+     * -- one per edge of a fillet (docs/OnViewValueEditing.md 3.1).
+     */
+    void appendGizmo(Gui::Gizmo* gizmo);
+    /// Take out and delete a gizmo of this container
+    void removeGizmo(Gui::Gizmo* gizmo);
     void attachViewer(Gui::ViewerContext* viewer, Base::Placement& origin);
     void setUpAutoScale(SoCamera* cameraIn);
     void calculateScaleAndOrientation();
@@ -292,6 +333,8 @@ public:
 
 private:
     std::vector<Gizmo*> gizmos;
+    /// What each gizmo put in the geometry: its dragger, then its extra node
+    std::vector<std::pair<SoNode*, SoNode*>> gizmoNodes;
     SoFieldSensor cameraSensor;
     SoFieldSensor cameraPositionSensor;
     WeakPtrT<ViewProviderDragger> viewProvider;

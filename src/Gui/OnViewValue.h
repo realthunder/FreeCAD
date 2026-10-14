@@ -22,6 +22,7 @@
 #ifndef GUI_ONVIEWVALUE_H
 #define GUI_ONVIEWVALUE_H
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -30,9 +31,11 @@
 #include <QString>
 #include <fastsignals/signal.h>
 
+#include <Base/Vector3D.h>
 #include <FCGlobal.h>
 
 class QKeyEvent;
+class QMenu;
 class QWidget;
 class SoNodeSensor;
 
@@ -57,11 +60,15 @@ class ViewerContext;
  *   - Enter opens its label with the value selected;
  *   - Tab and Shift+Tab move to the next and the previous value;
  *   - Escape leaves no value active.
+ *   - Space opens the active handle's menu, as its root button does.
  * In the open label Enter commits (the box gets the value, and with it the
  * property), Escape restores, Ctrl+Enter commits and accepts the edit.
  *
- * A label is always shown at the top middle of the view: a feature's default
- * value, which stands for no single place.
+ * A value may have several handles -- a fillet's default radius has one on
+ * every edge that takes it; making one active highlights them all. A label is
+ * either always shown at the top middle of the view (a feature's default
+ * value, which stands for no single place) or shown beside its active handle
+ * only. A handle added here gets a root button, which opens the value's menu.
  */
 class GuiExport OnViewValueSet: public QObject
 {
@@ -72,19 +79,45 @@ public:
     {
         /// always shown, at the top middle of the view
         TopMiddle,
-        // AtHandle -- shown beside its handle while the handle is active --
-        // comes with the fillet's per-edge values (the design's step 2)
+        /// shown beside its handle while that one is active
+        AtHandle,
     };
+
+    /// Fills the menu of a handle of a value
+    using MenuProvider = std::function<void(QMenu& menu, LinearGizmo* handle)>;
 
     explicit OnViewValueSet(QObject* parent = nullptr);
     ~OnViewValueSet() override;
 
     /** Add a value; returns its index, which is also its place in the Tab
-     * order. \a title leads the label's text ("Radius 2 mm").
+     * order. \a title leads the label's text ("Radius 2 mm"). A handle is
+     * to be added before its container makes it (GizmoContainer::
+     * appendGizmo): its root button is set up here.
      */
     int addValue(QuantitySpinBox* box, const QString& title, Place place,
                  LinearGizmo* handle = nullptr);
+    /// One more handle of the value at \a index
+    void addHandle(int index, LinearGizmo* handle);
+    /// Let go of the handles of the value at \a index, which the caller
+    /// deletes after; the value stays
+    void clearHandles(int index);
+    /// Where a handle stands, in world coordinates: its label goes beside it
+    void setHandleAnchor(LinearGizmo* handle, const Base::Vector3d& world);
+    /// What the menu of the value at \a index offers
+    void setMenu(int index, MenuProvider provider);
+    /** Keep the first \a count values, drop the rest -- with their labels,
+     * and with the hold on their handles, which the caller deletes after.
+     */
+    void truncate(int count);
     int count() const;
+    /// The value \a handle belongs to, or -1
+    int valueOf(const LinearGizmo* handle) const;
+
+    /// Open the menu of \a handle, of the active handle when null; at the
+    /// pointer, or at the handle
+    void openMenu(LinearGizmo* handle = nullptr, bool atPointer = false);
+    /// The handle made active last, if its value is still the active one
+    LinearGizmo* getActiveHandle() const;
 
     /// Show the values in \a view; null takes them out of the view it had.
     void attach(ViewerContext* view);
@@ -93,8 +126,9 @@ public:
     /// Restate every label from its box -- after a recompute, say.
     void refresh();
 
-    /// Make the value at \a index the active one; -1 for none.
-    void setActive(int index);
+    /// Make the value at \a index the active one; -1 for none. \a handle,
+    /// one of its handles, is the one its label goes beside.
+    void setActive(int index, LinearGizmo* handle = nullptr);
     int getActive() const;
 
     /** Open the label of the value at \a index for typing. \a first, a key
@@ -106,6 +140,8 @@ public:
 
     /// Where the default value's label is put: this far below the view's top.
     static constexpr int TopMargin = 28;
+    /// Where a handle's label is put: this far right of and above the handle
+    static constexpr int HandleOffset = 24;
 
 Q_SIGNALS:
     /// The view's camera moved: a handle that depends on it may move too.
@@ -121,7 +157,10 @@ private:
     void makeLabels();
     void dropLabels();
     void placeLabels();
+    void showLabels();
     void updateLabel(int index);
+    void highlight();
+    void setupHandle(int index, LinearGizmo* handle);
     void onCamera();
     void onLabelClicked(EditableDatumLabel* label);
     void commit(int index, double value);
@@ -139,6 +178,7 @@ private:
     /// on some releases (Escape leaves the edit, ViewProvider::eventCallback)
     std::vector<int> takenKeys;
     int active = -1;
+    LinearGizmo* activeHandle = nullptr;
     int typing = -1;
 };
 

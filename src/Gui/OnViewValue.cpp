@@ -21,15 +21,15 @@
 
 #include "PreCompiled.h"
 
-#ifndef _PreComp_
 #include <algorithm>
 #include <QApplication>
+#include <QCursor>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QTimer>
 #include <QWidget>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/sensors/SoNodeSensor.h>
-#endif
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -55,7 +55,11 @@ struct OnViewValueSet::Entry
     QPointer<QuantitySpinBox> box;
     QString title;
     Place place = Place::TopMiddle;
-    LinearGizmo* handle = nullptr;
+    std::vector<LinearGizmo*> handles;
+    /// Where each handle stands, in world coordinates; by the handle's place
+    std::vector<Base::Vector3d> anchors;
+    MenuProvider menu;
+    QMetaObject::Connection boxConnection;
     std::unique_ptr<EditableDatumLabel> label;
 };
 
@@ -87,6 +91,14 @@ bool startsNumber(const QKeyEvent* event)
     return c.isDigit() || c == QLatin1Char('-') || c == QLatin1Char('+')
         || c == QLatin1Char('.') || c == QLatin1Char(',');
 }
+
+/// The camera's turn as a placement's rotation: a plane facing the camera
+Base::Rotation facingCamera(SoCamera* camera)
+{
+    float q0 {}, q1 {}, q2 {}, q3 {};
+    camera->orientation.getValue().getValue(q0, q1, q2, q3);
+    return {q0, q1, q2, q3};
+}
 }  // namespace
 
 OnViewValueSet::OnViewValueSet(QObject* parent)
@@ -96,13 +108,24 @@ OnViewValueSet::OnViewValueSet(QObject* parent)
 OnViewValueSet::~OnViewValueSet()
 {
     attach(nullptr);
-    // The handles outlive the set where their owner declares them first
-    for (auto& entry : entries) {
-        if (entry->handle) {
-            entry->handle->setReleaseCallback(nullptr);
-            entry->handle->setFocusBoxOnRelease(true);
+    truncate(0);
+}
+
+void OnViewValueSet::setupHandle(int index, LinearGizmo* handle)
+{
+    // The view keeps the focus: a value is typed at the handle, not in the
+    // panel's box
+    handle->setFocusBoxOnRelease(false);
+    handle->setReleaseCallback([this, index, handle](bool) {
+        setActive(index, handle);
+    });
+    handle->setRootButton([self = QPointer<OnViewValueSet>(this), index, handle]() {
+        if (!self || index >= self->count()) {
+            return;
         }
-    }
+        self->setActive(index, handle);
+        self->openMenu(handle, true);
+    });
 }
 
 int OnViewValueSet::addValue(QuantitySpinBox* box, const QString& title, Place place,
@@ -112,22 +135,17 @@ int OnViewValueSet::addValue(QuantitySpinBox* box, const QString& title, Place p
     entry->box = box;
     entry->title = title;
     entry->place = place;
-    entry->handle = handle;
     const int index = static_cast<int>(entries.size());
-    if (handle) {
-        // The view keeps the focus: a value is typed at the handle, not in
-        // the panel's box
-        handle->setFocusBoxOnRelease(false);
-        handle->setReleaseCallback([this, index](bool) {
-            setActive(index);
-        });
-    }
-    entries.push_back(std::move(entry));
     // The label follows the box, whoever changes it: the panel, a drag, a
     // value typed here
-    connect(box, qOverload<double>(&QuantitySpinBox::valueChanged), this, [this, index]() {
-        updateLabel(index);
-    });
+    entry->boxConnection =
+        connect(box, qOverload<double>(&QuantitySpinBox::valueChanged), this, [this, index]() {
+            updateLabel(index);
+        });
+    entries.push_back(std::move(entry));
+    if (handle) {
+        addHandle(index, handle);
+    }
     if (view) {
         makeLabels();
         placeLabels();
@@ -135,9 +153,93 @@ int OnViewValueSet::addValue(QuantitySpinBox* box, const QString& title, Place p
     return index;
 }
 
+void OnViewValueSet::addHandle(int index, LinearGizmo* handle)
+{
+    if (index < 0 || index >= count() || !handle) {
+        return;
+    }
+    auto& entry = entries[index];
+    entry->handles.push_back(handle);
+    entry->anchors.emplace_back();
+    setupHandle(index, handle);
+    handle->setHighlighted(index == active);
+}
+
+void OnViewValueSet::clearHandles(int index)
+{
+    if (index < 0 || index >= count()) {
+        return;
+    }
+    auto& entry = entries[index];
+    for (LinearGizmo* handle : entry->handles) {
+        if (handle == activeHandle) {
+            activeHandle = nullptr;
+        }
+        handle->setReleaseCallback(nullptr);
+        handle->setRootButton(nullptr);
+        handle->setFocusBoxOnRelease(true);
+    }
+    entry->handles.clear();
+    entry->anchors.clear();
+}
+
+void OnViewValueSet::setHandleAnchor(LinearGizmo* handle, const Base::Vector3d& world)
+{
+    for (auto& entry : entries) {
+        for (std::size_t i = 0; i < entry->handles.size(); ++i) {
+            if (entry->handles[i] == handle) {
+                entry->anchors[i] = world;
+                if (handle == activeHandle) {
+                    placeLabels();
+                }
+                return;
+            }
+        }
+    }
+}
+
+void OnViewValueSet::setMenu(int index, MenuProvider provider)
+{
+    if (index >= 0 && index < count()) {
+        entries[index]->menu = std::move(provider);
+    }
+}
+
+void OnViewValueSet::truncate(int keep)
+{
+    keep = std::max(0, keep);
+    if (keep >= count()) {
+        return;
+    }
+    if (typing >= keep) {
+        endTyping(false);
+    }
+    if (active >= keep) {
+        setActive(-1);
+    }
+    while (count() > keep) {
+        disconnect(entries.back()->boxConnection);
+        // The handles stay with their owner, who deletes them next; what the
+        // set gave them goes
+        clearHandles(count() - 1);
+        entries.pop_back();
+    }
+}
+
 int OnViewValueSet::count() const
 {
     return static_cast<int>(entries.size());
+}
+
+int OnViewValueSet::valueOf(const LinearGizmo* handle) const
+{
+    for (int i = 0; i < count(); ++i) {
+        const auto& handles = entries[i]->handles;
+        if (std::find(handles.begin(), handles.end(), handle) != handles.end()) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 ViewerContext* OnViewValueSet::getView() const
@@ -212,18 +314,36 @@ void OnViewValueSet::makeLabels()
         label->setPoints(SbVec3f(0, 0, 0), SbVec3f(0, 0, 0));
         label->setPickable(true);
         connect(label.get(), &EditableDatumLabel::clicked, this, &OnViewValueSet::onLabelClicked);
-        label->activate();
         entry->label = std::move(label);
     }
     for (int i = 0; i < count(); ++i) {
         updateLabel(i);
     }
+    showLabels();
 }
 
 void OnViewValueSet::dropLabels()
 {
     for (auto& entry : entries) {
         entry->label.reset();
+    }
+}
+
+void OnViewValueSet::showLabels()
+{
+    // The top middle ones always, a handle's while its value is active
+    for (int i = 0; i < count(); ++i) {
+        auto& label = entries[i]->label;
+        if (!label) {
+            continue;
+        }
+        const bool shown = entries[i]->place == Place::TopMiddle || i == active;
+        if (shown && !label->isActive()) {
+            label->activate();
+        }
+        else if (!shown && label->isActive()) {
+            label->deactivate();
+        }
     }
 }
 
@@ -239,20 +359,36 @@ void OnViewValueSet::placeLabels()
     const SbVec2s size = view->getViewportRegion().getViewportSizePixels();
     const double ratio = std::max(1.0, view->devicePixelRatio());
     // Facing the camera, so that the text is upright on the screen
-    const SbRotation orientation = camera->orientation.getValue();
-    float q0 {}, q1 {}, q2 {}, q3 {};
-    orientation.getValue(q0, q1, q2, q3);
-    const Base::Rotation rotation(q0, q1, q2, q3);
+    const Base::Rotation rotation = facingCamera(camera);
 
     int row = 0;
-    for (auto& entry : entries) {
-        if (!entry->label || entry->place != Place::TopMiddle) {
+    for (int i = 0; i < count(); ++i) {
+        auto& entry = entries[i];
+        if (!entry->label) {
             continue;
         }
-        // One under the other, from the top middle down
-        const int y = size[1] - int((TopMargin + row * TopMargin) * ratio);
-        ++row;
-        const SbVec3f p = view->getPointOnFocalPlane(SbVec2s(short(size[0] / 2), short(y)));
+        SbVec2s pixel;
+        if (entry->place == Place::TopMiddle) {
+            // One under the other, from the top middle down
+            pixel = SbVec2s(short(size[0] / 2), short(size[1] - int((TopMargin + row * TopMargin) * ratio)));
+            ++row;
+        }
+        else {
+            // Beside the active handle, up and to the right of it
+            if (i != active || entry->handles.empty()) {
+                continue;
+            }
+            std::size_t h = 0;
+            auto it = std::find(entry->handles.begin(), entry->handles.end(), activeHandle);
+            if (it != entry->handles.end()) {
+                h = std::distance(entry->handles.begin(), it);
+            }
+            const Base::Vector3d& anchor = entry->anchors[h];
+            const SbVec2s at = view->getPointOnViewport(SbVec3f(float(anchor.x), float(anchor.y), float(anchor.z)));
+            const int offset = int(HandleOffset * ratio);
+            pixel = SbVec2s(short(at[0] + offset), short(at[1] + offset));
+        }
+        const SbVec3f p = view->getPointOnFocalPlane(pixel);
         entry->label->setPlacement(Base::Placement(Base::Vector3d(p[0], p[1], p[2]), rotation));
         entry->label->setPoints(SbVec3f(0, 0, 0), SbVec3f(0, 0, 0));
     }
@@ -290,15 +426,24 @@ void OnViewValueSet::updateLabel(int index)
     entry->label->label->string = text.toUtf8().constData();
 }
 
+void OnViewValueSet::highlight()
+{
+    // Every handle of the active value: a default drives all its edges
+    for (int i = 0; i < count(); ++i) {
+        for (LinearGizmo* handle : entries[i]->handles) {
+            handle->setHighlighted(i == active);
+        }
+    }
+}
+
 void OnViewValueSet::refresh()
 {
+    highlight();
     for (int i = 0; i < count(); ++i) {
-        auto& entry = entries[i];
-        if (entry->handle) {
-            entry->handle->setHighlighted(i == active);
-        }
         updateLabel(i);
     }
+    showLabels();
+    placeLabels();
 }
 
 void OnViewValueSet::onCamera()
@@ -307,7 +452,7 @@ void OnViewValueSet::onCamera()
     Q_EMIT cameraChanged();
 }
 
-void OnViewValueSet::setActive(int index)
+void OnViewValueSet::setActive(int index, LinearGizmo* handle)
 {
     if (index < -1 || index >= count()) {
         index = -1;
@@ -321,11 +466,19 @@ void OnViewValueSet::setActive(int index)
     }
     const bool changed = index != active;
     active = index;
-    for (int i = 0; i < count(); ++i) {
-        if (entries[i]->handle) {
-            entries[i]->handle->setHighlighted(i == active);
+    activeHandle = nullptr;
+    if (active >= 0) {
+        const auto& handles = entries[active]->handles;
+        if (handle && std::find(handles.begin(), handles.end(), handle) != handles.end()) {
+            activeHandle = handle;
+        }
+        else if (!handles.empty()) {
+            activeHandle = handles.front();
         }
     }
+    highlight();
+    showLabels();
+    placeLabels();
     if (active >= 0) {
         focusView();
     }
@@ -339,9 +492,44 @@ int OnViewValueSet::getActive() const
     return active;
 }
 
+LinearGizmo* OnViewValueSet::getActiveHandle() const
+{
+    return active >= 0 ? activeHandle : nullptr;
+}
+
 int OnViewValueSet::getTyping() const
 {
     return typing;
+}
+
+void OnViewValueSet::openMenu(LinearGizmo* handle, bool atPointer)
+{
+    if (!handle) {
+        handle = getActiveHandle();
+    }
+    const int index = handle ? valueOf(handle) : active;
+    if (index < 0 || !entries[index]->menu) {
+        return;
+    }
+    QMenu menu(keyWidget);
+    entries[index]->menu(menu, handle);
+    if (menu.isEmpty()) {
+        return;
+    }
+    // Opened by a click, where the pointer is; by a key, at the handle
+    QPoint where = QCursor::pos();
+    if (!atPointer && handle && view && keyWidget) {
+        const auto& entry = entries[index];
+        auto it = std::find(entry->handles.begin(), entry->handles.end(), handle);
+        if (it != entry->handles.end()) {
+            const Base::Vector3d& anchor = entry->anchors[std::distance(entry->handles.begin(), it)];
+            const SbVec2s at = view->getPointOnViewport(
+                SbVec3f(float(anchor.x), float(anchor.y), float(anchor.z)));
+            where = keyWidget->mapToGlobal(view->toQPoint(at));
+        }
+    }
+    menu.exec(where);
+    focusView();
 }
 
 bool OnViewValueSet::startTyping(int index, QKeyEvent* first)
@@ -437,7 +625,9 @@ void OnViewValueSet::commit(int index, double value)
         // The box's owner writes the property from here, as from the panel
         box->setValue(value);
     }
-    updateLabel(index);
+    if (index < count()) {
+        updateLabel(index);
+    }
     focusView();
 }
 
@@ -531,6 +721,17 @@ bool OnViewValueSet::takeKey(QKeyEvent* event, bool overrideOnly)
     if ((key == Qt::Key_Return || key == Qt::Key_Enter) && plain) {
         if (!overrideOnly) {
             startTyping(active);
+        }
+        return true;
+    }
+    // Space: the menu of the active handle, as its root button opens it.
+    // Otherwise Space keeps its own meaning (toggling visibility).
+    if (key == Qt::Key_Space && plain && entries[active]->menu) {
+        if (!overrideOnly) {
+            // after the key: the menu runs a loop of its own
+            QTimer::singleShot(0, this, [this]() {
+                openMenu();
+            });
         }
         return true;
     }
