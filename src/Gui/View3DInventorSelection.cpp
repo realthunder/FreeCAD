@@ -29,13 +29,17 @@
 # include <Inventor/SoPath.h>
 #endif
 
+#include <Inventor/actions/SoGetBoundingBoxAction.h>
+
 #include <App/Document.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <Base/Console.h>
+#include <Base/Tools.h>
 #include "Application.h"
 #include "Document.h"
 #include "SoFCUnifiedSelection.h"
 #include "View3DInventorSelection.h"
+#include "View3DInventorViewer.h"
 #include "ViewParams.h"
 #include "ViewProviderDocumentObject.h"
 #include "Inventor/SoFCDisplayMode.h"
@@ -283,8 +287,74 @@ bool View3DInventorSelection::hasOnTopObject() const
     return !objectsOnTopSel.empty();
 }
 
+void View3DInventorSelection::extendByOnTop(SoGetBoundingBoxAction *action)
+{
+    if (!action || onTopBoundsBusy)
+        return;
+    // With the render manager (render cache mode 3) a selection does not
+    // come into the groups below: checkGroupOnTop() leaves it to the
+    // manager, which draws it on top whenever "show selection on top" is on.
+    // So the view's selection is asked for here as well.
+    std::vector<App::SubObjectT> selected;
+    if (selectionRoot->getRenderManager() && ViewParams::getShowSelectionOnTop()) {
+        SelectionSingleton *own = owner ? owner->selectionInstance() : nullptr;
+        SelectionSingleton &sel = own ? *own : Selection();
+        for (const auto &s : sel.getCompleteSelection(ResolveMode::NoResolve)) {
+            if (s.pObject)
+                selected.emplace_back(s.pObject, s.SubName ? s.SubName : "");
+        }
+    }
+    std::string key;
+    auto addKey = [&key](const App::SubObjectT &objT) {
+        key += objT.getSubObjectFullName();
+        key += '\n';
+    };
+    for (const auto &objT : objectsOnTop)
+        addKey(objT);
+    for (const auto &v : objectsOnTopSel)
+        addKey(v.first);
+    for (const auto &v : objectsOnTopPreSel)
+        addKey(v.first);
+    for (const auto &objT : selected)
+        addKey(objT);
+    if (key.empty())
+        return;
+    if (onTopBoundsStale || key != onTopBoundsKey) {
+        // (a view provider's box is taken by an action of its own, which
+        // must not come back here)
+        Base::StateLocker guard(onTopBoundsBusy);
+        onTopBoundsStale = false;
+        onTopBoundsKey = key;
+        onTopBounds = Base::BoundBox3d();
+        auto addBox = [this](const App::SubObjectT &objT) {
+            auto obj = objT.getObject();
+            auto vp = obj ? Application::Instance->getViewProvider(obj) : nullptr;
+            if (!vp)
+                return;
+            const Base::BoundBox3d box =
+                vp->getBoundingBox(objT.getSubName().c_str(), nullptr, true, owner);
+            if (box.IsValid())
+                onTopBounds.Add(box);
+        };
+        for (const auto &objT : objectsOnTop)
+            addBox(objT);
+        for (const auto &v : objectsOnTopSel)
+            addBox(v.first);
+        for (const auto &v : objectsOnTopPreSel)
+            addBox(v.first);
+        for (const auto &objT : selected)
+            addBox(objT);
+    }
+    if (onTopBounds.IsValid())
+        action->extendBy(SbBox3f(float(onTopBounds.MinX), float(onTopBounds.MinY),
+                                 float(onTopBounds.MinZ), float(onTopBounds.MaxX),
+                                 float(onTopBounds.MaxY), float(onTopBounds.MaxZ)));
+}
+
 void View3DInventorSelection::refreshGroupOnTop()
 {
+    // the document changed: what is on top may have moved
+    onTopBoundsStale = true;
     std::vector<App::SubObjectT> objs;
     for (const auto &v : objectsOnTopPreSel) {
         if (!v.first.getSubObject())
