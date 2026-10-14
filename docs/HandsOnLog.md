@@ -6825,3 +6825,105 @@ reporter: entry 108's see-through base with the body hidden (wanted so,
 or the same picture as with it shown); whether the clipped on-top
 display of a hidden body's feature and the odd migration run become
 entries. Not found: entry 104's creases showing through.
+
+## 2026-10-14, late morning and afternoon: entries 109, 115, 98, 116, 119; a fix of the dress-ups' renames -- STAGED 10:36 and 11:55; nothing pushed since `7d5698c950`
+
+**Staged twice on the reporter's word, not pushed.** 10:36 on "after build
+r21, restage" (a dirty tree, = `bd5f1c358d`: 114's crash fix, 112's check
+box, 109, 115's redraw, 98's ground and outline). 11:55 on "after entry 98
+built, restage", from build r23: installer head `260a43578f` (the
+note-taker's), code `04e05bbd38`, "dirty" from GUI test scripts only; occt
+`a81d25f148`, coin `d2da5cc93`. The first try at 11:53 stopped in the
+installer's own "is the copy running" check -- a null process path, most
+likely a test's FreeCAD exiting while the list was read -- before copying
+anything; the rerun went through. Not tested by me on the staged copy, as
+the reporter asked.
+
+**Entry 116, the audit: the six fixes `fbeac04f4c`, finding 5 `adf1a2f6a5`.**
+Assembly's edit connections (released before an edit re-enters, before
+unsetEdit()'s early return, in the destructor; the double-click timer by
+the object), Mesh's fill-hole connection, Gui::Document's
+connectPinsReleased, the DAG view's icon connections, Part's attacher
+timer with a context. Finding 5 on "116, yes fix finding 5" (by the
+note-taker): the selection's decimals connection was a function static
+holding the first instance; one per instance now. On r22: ctest 957/957,
+Python 3755 OK; `pd-gui-defects`' one failure ("an LCS on a vertex leaves
+the vertex to pick") is the same on the copy staged at 10:36 -- not the
+audit's.
+
+**Entry 115's themes `3f12b16dfa`** ("accept the theme colours"): Light
+and Dark on a simple colour, Light's the old radial centre #C3C3C3.
+
+**Entry 98 as asked 11:08 `04e05bbd38`** (and "agree with your average
+color proposal"). The radial ground is the gradient averaged over what
+the overlay covers of the 3D view it covers most of (8 by 8 points, the
+geometry of SoFCBackgroundGradient: centre colour 2, middle 4 on an oval
+0.3 sqrt2 by sqrt1/2, rim 3 on a circle of sqrt2), kept while the places
+and colours stay; its code went in with `f83174eb42`, which took the whole
+file. With "Item background follows the theme" off, the tree's item
+colour backs the console, the report view and the selection view too (a
+delegate for the selection view and its pick list); with no colour set
+the text views keep their own ground -- MY rule for a case the request
+did not cover. The two settings are on Display > Colors, group
+"Overlay"; a group "Display Style" there duplicates the display styles
+page's colours (hidden line face/line/background with their override
+boxes, the shadow's light and ground). Measured on r23 offscreen: radial
+ground (133,133,164), the computed average (the rim is (171,171,193));
+the selection view follows linear, radial and one colour; the item colour
+backs both text views. The tooltip first ran to 428 characters and failed
+OmniSearch's 400 (`f0113275f2`, 309 now).
+
+**Entry 119 (my "117" in `f83174eb42`'s message, given its number by the
+note-taker), a view cell's border released over a see-through panel.**
+The overlay passed on a release whose press it had not passed on; the
+border never saw it. `f83174eb42`: a release goes where its press went.
+Then the reporter's "Will a split drag handle got notified it lost
+tracking? ... Same for other handle dragging": it was not -- Qt sends no
+event when a press's implicit grab ends, and the drags listened for
+UngrabMouse, which only an explicit grab sends. `721b639bca`: the view
+cells' border, their corner zone and the in-view task panel's title drag
+end at the left button's release for whichever widget, taken from their
+own application filter (asked before every one installed earlier), and
+give up at a mouse event that finds the button up. The overlay's own
+drags did so already. `tests/gui/overlay-release-goes-with-its-press.py`
+drives the mouse through the main window's QWindow (QTest's widget
+events leave the application's idea of the buttons alone, and the drags'
+new check ended the test's own drag): 11 of 11 on r25; on the copy staged
+11:55 the release part passes and the "release never comes" part fails,
+as it lacks `721b639bca`; on the copy staged at 10:36 the release itself
+failed (frames left, the cells unchanged).
+
+**Two older defects found by the tests of r23.** Display > 3D View still
+checked "Show coordinate system in the corner" by default in its .ui, while
+the setting defaults to off since `22ece75a08` (entry 75): a fresh
+profile's first OK wrote it on (`1ac972b406`). The render-cache claim of
+`preferences-ok-reapplies-nothing` fails offscreen and passes on the
+screen, as on 2026-10-10. Three screen tests I had run offscreen by
+mistake pass on the screen on r25: `overlay-see-through` 62,
+`task-panel-in-view` 89, `task-panel-overlay` 43.
+
+**A fix on my own judgement, not an entry: the dress-ups' renames
+`49ab88378a`.** The note-taker, reading for entry 117's design, saw the
+per-point renames of `PropertyFilletSegments` built from one path, every
+second point skipped. Wider: in it and in `PropertyChamferEdges` the whole
+rename map ran new -> old (`referenceUpdates[new] = old`, `sub` the new
+name, `key` the old) where renameExpressions() takes old -> new, so an
+expression on a per-edge segment or chamfer size stayed on the old edge
+name. `TestDressUpNamesFollow` (a pad with a cut lowered): on r25, before
+the fix, both tests fail -- `.ChamferInfo.Edge12.Size` left for `Edge19`.
+Seen and not touched: `PropertyFilletSegments::getPyObject` returns no
+edge names while its setter wants them; `PropertyChamferEdges::setPyObject`
+refuses four items or more but reads the fourth and fifth.
+On r26, the fix built: `TestDressUpNamesFollow` OK (2 tests), and the whole
+Python suite "Ran 3757 tests ... OK (skipped=81, expected failures=6)" --
+29 more skipped than on r24, all "no sandbox guest in this build": that
+chain did not set `FCX_PYODIDE` (the earlier ones set it for ctest and the
+Python run inherited it), not the code.
+
+**Where the afternoon left things.** Origin `LinkVibe` = `7d5698c950`.
+Staged 11:55 = code `04e05bbd38`. LOCAL since the stage, not staged:
+`721b639bca` (119, drags end themselves), `adf1a2f6a5` (116 finding 5),
+`ac2040cc94` and `e050b0467d` (tests), `f0113275f2` (98's tooltip under
+400), `1ac972b406` (the corner coordinate system's box), `49ab88378a` (the
+dress-ups' renames). Entry 117's design (`docs/OnViewValueEditing.md`, the
+note-taker's) is agreed by the reporter and not asked to be built.
