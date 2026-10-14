@@ -147,6 +147,30 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 18:38: FIVE COMMITS, LOCAL (not pushed, not staged; origin
+`2e22aeba96`) -- entries 124, 125, 127, 128, 130's warning and 132's
+crash.** From the build session (its message stamped 19:05, written here
+18:38). The commits SEEN by the note-taker in `git log`, nothing run.
+- `e6bea25bcd` -- 124: the on-top clipping, fixed (way 2, with the view's
+  selection taken in, since under the render manager a selection never
+  enters the on-top groups).
+- `7402a52754` -- 125: floats in the omni search without trailing zeros,
+  a unit kept; the first form's bug (a Length written to 0) never left the
+  tree.
+- `d9c3193856` -- 127: print the selected pages; and 132: the crash's
+  cause -- a TechDraw page view asked for "Undo"/"Redo" with no document,
+  guarded; why it had none not found.
+- `ce40352c52` -- 128: the 14 icons drawn again.
+- `de22312a07` -- 130: the property view's warning.
+- "The two omni search failures of r28c (property rows not listed;
+  picking a property row) fail the same on the 15:22 stage: older, not
+  today's." The note-taker's note: two omni search TEST failures, older
+  than today's work, not looked into -- whether they are defects the
+  reporter would see is not said; not entered.
+- NEXT, the build session's: a build r30, then scanner's 10 pages printed
+  to the native "Microsoft Print to PDF" on it (129). 131 (the exit
+  crash) not started.
+
 **2026-10-14 18:29, from the build session (its message stamped 18:45):
 entry 129 answered by the reporter to it -- "Print All Pages" to the PDF
 printer, every page rasterized; the PDF EXPORT of scanner's pages is
@@ -2615,15 +2639,15 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 121 | 2026-10-14 | the report view's background in an overlay that is NOT transparent differs from its background when not overlaid; the Python console's is the same in both | OPEN; a candidate read by the note-taker, not shown: the overlay style sheet gives every text box a ground of its own (#6e6e6e under Dark). COMMITTED and PUSHED 2026-10-14 18:20 (origin `2e22aeba96`), not staged: `ca392899e3` -- the text views on the theme's ground; the test read (110,110,110) overlaid against (25,25,25) docked on the stage of 15:22 |
 | 122 | 2026-10-14 | a change request: the overlay's AUTO-HIDE HINT colour to follow the theme -- under Dark it cannot be seen | OPEN; read by the note-taker: the Dark overlay sheet gives the hint a dark grey (50, 50, 50 at 0.6), on a dark view. COMMITTED and PUSHED 2026-10-14 18:20 (origin `2e22aeba96`), not staged: `ca392899e3` -- the hint's colour |
 | 123 | 2026-10-14 | a change request: the SELECTION VIEW in overlay mode -- its list column backed with the SAME colour and alpha as the property editor's | OPEN; read by the note-taker: the property editor backs whole rows (alternating), the selection view since `04e05bbd38` only the text, with the tree's text ground; one point under the entry, not put as blocking. COMMITTED and PUSHED 2026-10-14 18:20 (origin `2e22aeba96`), not staged: `7d9b32b296` -- the selection view's rows as the property editor's |
-| 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started. NOT FIXED by the first try (build r28c): under the render manager a selection never enters the on-top group; the view's selection taken in too -- in the tree, a build r29 running, not committed |
-| 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered. IN THE TREE, not committed: the first form (build r28c, never pushed, never staged) WROTE the editor's initial 0 into a box's Length when the omni search opened it -- fixed, the trim after the editor's value with its signals blocked; its test checks the property stays 10 mm |
+| 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started. NOT FIXED by the first try (build r28c): under the render manager a selection never enters the on-top group; the view's selection taken in too -- in the tree, a build r29 running, not committed. FIXED, COMMITTED `e6bea25bcd`, LOCAL, not pushed, not staged: the view's selection taken into its clip box while "show selection on top" is on; a far box selected -- planes 3.5 to 13.8 on the stage of 15:22, 2.7 to 2016.7 now (the test on the screen) |
+| 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered. IN THE TREE, not committed: the first form (build r28c, never pushed, never staged) WROTE the editor's initial 0 into a box's Length when the omni search opened it -- fixed, the trim after the editor's value with its signals blocked; its test checks the property stays 10 mm. FIXED, COMMITTED `7402a52754`, LOCAL, not pushed, not staged: its test 7 of 7, the Length staying 10 mm; the stage of 15:22 reads "0.500000" and "10.00 mm" |
 | 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
-| 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking. IN THE TREE, not committed: its test 7 of 7 on the build r28c |
-| 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry. THE REPORTER about 17:27: "Basically the entire Techdraw Extend Dimensions toolbar has invisible icons". FOUND by the note-taker 17:30: 14 TechDraw extension icons draw NOTHING in Qt's SVG renderer -- all of them, and only they, wrap their drawing in an Inkscape filter blending with "BackgroundImage", which this Qt's SVG renderer (it renders filters) cannot do; the icons of that toolbar. A correction: the all-icons audit DID run (17:20, offscreen, read only), the note-taker had written it had not. THE BUILD SESSION (17:35) confirms the cause by one file and takes way 1: a script that drops those filters and their uses from the 14 files and nothing else -- written, to be applied after its running build, then built and pictured. Not committed. 17:51: the 14 icons fixed in the tree (the filters removed), not built yet |
+| 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking. IN THE TREE, not committed: its test 7 of 7 on the build r28c. DONE, COMMITTED `d9c3193856`, LOCAL, not pushed, not staged (7 of 7) |
+| 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry. THE REPORTER about 17:27: "Basically the entire Techdraw Extend Dimensions toolbar has invisible icons". FOUND by the note-taker 17:30: 14 TechDraw extension icons draw NOTHING in Qt's SVG renderer -- all of them, and only they, wrap their drawing in an Inkscape filter blending with "BackgroundImage", which this Qt's SVG renderer (it renders filters) cannot do; the icons of that toolbar. A correction: the all-icons audit DID run (17:20, offscreen, read only), the note-taker had written it had not. THE BUILD SESSION (17:35) confirms the cause by one file and takes way 1: a script that drops those filters and their uses from the 14 files and nothing else -- written, to be applied after its running build, then built and pictured. Not committed. 17:51: the 14 icons fixed in the tree (the filters removed), not built yet. FIXED, COMMITTED `ce40352c52`, LOCAL, not pushed, not staged: the 14 icons draw nothing on the stage of 15:22, all draw now |
 | 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry. PROBED 17:35 by the build session on the copy staged 15:22: a page exported to PDF (the path "print to file" and Print All to a file share) is VECTOR already -- 0 images, about 12448 path operators, 172 text runs. Left: the NATIVE printer path (to a printer, "Microsoft Print to PDF" among them), where Qt prints through GDI and turns antialiased or part-transparent drawing into images. TWO POINTS for the reporter: which printer or output, and which part looked like pixels. THE REPORTER to the build session about 18:20 (relayed): "used techdraw tool button print all pages, used pdf printer. Every page is rasterized" -- points c and d answered. The build session 18:29: "Export PDF" of three of scanner.FCStd's pages is VECTOR but for each page's own image view; the native "Microsoft Print to PDF" path (Windows GDI turns anything drawn with alpha into images -- the faces' fully transparent fill by default) is the suspect, a native print running |
-| 130 | 2026-10-14 | SURFACE FINISH: set to "Blast" on one object -- a warning in the report view ("dataChanged() called with an invalid index range"), the finish drawn, but the object then shows NO (PRE)SELECTION HIGHLIGHT; set back to "None" -- no warning, the highlight back, but the finish STILL DRAWN | OPEN; read by the note-taker, nothing run: the warning is an off-by-one in the property view's model, harmless by reading; the highlight and the finish that stays NOT found; one point under the entry. 17:51, the build session: the WARNING's off-by-one confirmed, fixed in the tree, not built; the missing highlight and the finish that stays NOT REPRODUCED by a script on the copy staged 15:22 (a Part box, its appearance's finish set to blasted and back from Python: the grain shows and goes, the highlight works). It hangs on HOW the reporter set it -- point a, made precise: which object, and the steps in the property view. the warning's fix in the tree, not committed |
+| 130 | 2026-10-14 | SURFACE FINISH: set to "Blast" on one object -- a warning in the report view ("dataChanged() called with an invalid index range"), the finish drawn, but the object then shows NO (PRE)SELECTION HIGHLIGHT; set back to "None" -- no warning, the highlight back, but the finish STILL DRAWN | OPEN; read by the note-taker, nothing run: the warning is an off-by-one in the property view's model, harmless by reading; the highlight and the finish that stays NOT found; one point under the entry. 17:51, the build session: the WARNING's off-by-one confirmed, fixed in the tree, not built; the missing highlight and the finish that stays NOT REPRODUCED by a script on the copy staged 15:22 (a Part box, its appearance's finish set to blasted and back from Python: the grain shows and goes, the highlight works). It hangs on HOW the reporter set it -- point a, made precise: which object, and the steps in the property view. the warning's fix in the tree, not committed. THE WARNING fixed, COMMITTED `de22312a07`, LOCAL, not pushed, not staged; the rest waits for the reporter's point a |
 | 131 | 2026-10-14 | A CRASH at the program's EXIT on the copy staged 15:22, found by the build session (after a test harness's time-out): `App::TransactionCopyCache` destroying a string list property in the static destruction -- a static cache outliving the owners of its properties | OPEN; found by the build session, not entered by it; its dump and log kept |
-| 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept |
+| 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE found and FIXED by the build session (18:38), COMMITTED `d9c3193856`, LOCAL, not pushed, not staged: a TechDraw page view answered "Undo"/"Redo" from its document without checking it was there -- a page view with no document; guarded as the general view does. Reproduced a second time in its native print run. WHY the view had no document NOT found |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17741,7 +17765,7 @@ a. The ALTERNATING rows (the property editor's every second row in the
 b. The selection view's PICK LIST (the second list, the pick-selection
    list) -- taken as the same.
 
-## 124. A selected feature of a hidden body is drawn on top but cut off by the view's clip planes -- OPEN, to be fixed by way 2 (the reporter's choice)
+## 124. A selected feature of a hidden body is drawn on top but cut off by the view's clip planes -- OPEN, to be fixed by way 2 (the reporter's choice); FIXED `e6bea25bcd` 2026-10-14, local
 
 Found by the build session on 2026-10-13 (20:14) while it worked on entry
 108, and recorded there as a side finding: on the copy staged 16:55 and
@@ -17774,7 +17798,7 @@ is affected; the one cost is that view's depth precision when the on-top
 object is far from the rest (way 3 is the remedy if that shows).
 Not started; relayed to the build session 16:41.
 
-## 125. The omni search: a float property's value without trailing zeros (a change request) -- OPEN
+## 125. The omni search: a float property's value without trailing zeros (a change request) -- OPEN; FIXED `7402a52754` 2026-10-14, local
 
 **2026-10-14 about 16:41, the reporter:** "new request, do not show trailing
 zeros for float property values in omni search"
@@ -17893,7 +17917,7 @@ The note-taker's candidate (a scaled screen) is withdrawn: the box is at
 100%. Points a and c of 17:04 are answered by the reading as far as the
 cause goes. WAITS FOR THE REPORTER: way (1) or (2).
 
-## 127. TechDraw: print only the selected pages (a change request) -- OPEN
+## 127. TechDraw: print only the selected pages (a change request) -- OPEN; DONE `d9c3193856` 2026-10-14, local
 
 **2026-10-14 17:11, the reporter:** "new request, support print ony the
 selected Techdraw pages"
@@ -17922,7 +17946,7 @@ a. HOW it is offered: a new command ("Print Selected Pages") beside
 b. To a PDF as well (the print dialog's "print to file", which today goes
    through `printAllPdf`): taken as yes, one PDF with the selected pages.
 
-## 128. Some TechDraw toolbar buttons show no icon, under every theme -- OPEN (an audit of all dark-line icons first asked, withdrawn); the CAUSE FOUND 2026-10-14 17:30: an SVG filter on the drawing of 14 extension icons
+## 128. Some TechDraw toolbar buttons show no icon, under every theme -- OPEN (an audit of all dark-line icons first asked, withdrawn); the CAUSE FOUND 2026-10-14 17:30: an SVG filter on the drawing of 14 extension icons; FIXED `ce40352c52` 2026-10-14, local
 
 **2026-10-14 17:19, the reporter:** "new request, you audit now for all icons
 for dark line drawings only, which is invisible in dark theme. propose a
@@ -18170,7 +18194,7 @@ session's test harness; whether the reporter's ordinary exit meets it is
 not known. "Neither entered" by the build session; entered here by the
 note-taker, as found crashes have been (entries 79, 82).
 
-## 132. A crash while TechDraw pages are exported to PDF: a command's active test reaching a freed document (found by the build session) -- OPEN
+## 132. A crash while TechDraw pages are exported to PDF: a command's active test reaching a freed document (found by the build session) -- OPEN; the crash guarded `d9c3193856` 2026-10-14, local; why the view had no document not found
 
 **2026-10-14 18:29, found by the build session** on the copy staged 15:22,
 while it probed entry 129 -- From the build session's message, which it stamps 18:45; written here 18:29. "(B) during the page exports, from
