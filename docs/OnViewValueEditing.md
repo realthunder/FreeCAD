@@ -1,7 +1,7 @@
 # On-view value editing: dress-up handles and typed values in the 3D view
 
-A design proposal, not built; revised the same day with the reporter's
-answers a to f (section 5). Asked by the reporter on 2026-10-14
+A design, not built; revised the same day with the reporter's answers
+a to f and after (section 5) -- AGREED in full 2026-10-14 13:53. Asked by the reporter on 2026-10-14
 (`docs/HandsOnQueue.md` entry 117): rework the dress-up features' editing
 manipulator, keeping in mind that this fork's fillet has a default radius
 and per-edge radii (one or two, or more along the edge); and, in general,
@@ -345,11 +345,17 @@ modify without entering edit. f, show me how would you implement it."
   menu, every value change mirrored to the group, the group highlighted
   when a handle is active -- section 6.
 
-LEFT for the reporter: the other features' menu entries (3.3, the
-note-taker's examples), feature by feature; and the note-taker's smaller
-proposals in section 6 (an expression conflict inside a group, the
-"reversed in its group" flag, Tab unchanged); and whether each group gets
-a colour of its own (taken: one colour for all customised handles).
+AGREED by the reporter 2026-10-14 13:53 ("agree with your proposal"):
+the note-taker's smaller proposals in section 6 -- in an expression
+conflict inside a group the newest write wins and the panel marks the
+others; a "reversed in its group" flag per member for two radii (params
+mirrored as 1 - param); Tab visits every handle, not once per group. Read
+by the note-taker as covering also the other features' menu entries of
+3.3 as a starting set, each settled when that feature is built, and one
+colour for all customised handles.
+
+NOTHING IS LEFT OPEN in the design. It is not an order of work: building
+it waits for the reporter's word.
 
 ## 6. Edge groups: DECIDED by the reporter (2026-10-14 13:46)
 
