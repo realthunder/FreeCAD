@@ -35,6 +35,9 @@
 #include <QPrinter>
 #endif
 
+#include <QPainterPath>
+#include <QTextItem>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
@@ -58,6 +61,181 @@
 
 using namespace TechDrawGui;
 using namespace TechDraw;
+
+namespace {
+
+/** What a page is drawn through on its way to a native printer
+ * (docs/HandsOnQueue.md entry 129, "used techdraw tool button print all
+ * pages, used pdf printer. Every page is rasterized").
+ *
+ * Qt prints to a Windows printer -- "Microsoft Print to PDF" among them --
+ * through GDI, and turns into an image whatever is drawn with a pen or a
+ * brush it counts as transparent or "advanced", and with enough of those
+ * the bounding box of them all: the whole sheet, at the printer's
+ * resolution of the moment. A TechDraw page draws such things that draw
+ * nothing at all: QtSvg gives a path with stroke="none" a solid-line pen
+ * whose brush is empty (every letter of the template's frame), and page
+ * items stroke with a fully transparent pen. This engine hands every
+ * drawing call on to the printer's own painter unchanged, but for those
+ * pens and brushes, which it leaves out -- the picture is the same, and
+ * the printer gets lines and text.
+ */
+class PrintSafeEngine : public QPaintEngine
+{
+public:
+    explicit PrintSafeEngine(QPainter* target)
+        : QPaintEngine(QPaintEngine::AllFeatures), target(target)
+    {}
+
+    bool begin(QPaintDevice*) override { return true; }
+    bool end() override { return true; }
+    Type type() const override { return QPaintEngine::User; }
+
+    void updateState(const QPaintEngineState& state) override
+    {
+        const auto flags = state.state();
+        if (flags & DirtyPen)
+            pen = state.pen();
+        if (flags & DirtyBrush)
+            brush = state.brush();
+        if (flags & DirtyBrushOrigin)
+            target->setBrushOrigin(state.brushOrigin());
+        if (flags & DirtyFont)
+            target->setFont(state.font());
+        if (flags & DirtyTransform)
+            target->setTransform(state.transform());
+        if (flags & (DirtyClipPath | DirtyClipRegion | DirtyClipEnabled)) {
+            if (!state.isClipEnabled() || state.clipOperation() == Qt::NoClip)
+                target->setClipping(false);
+            else if (flags & DirtyClipPath)
+                target->setClipPath(state.clipPath(), state.clipOperation());
+            else if (flags & DirtyClipRegion)
+                target->setClipRegion(state.clipRegion(), state.clipOperation());
+        }
+        if (flags & DirtyHints)
+            target->setRenderHints(state.renderHints());
+        if (flags & DirtyOpacity)
+            target->setOpacity(state.opacity());
+        if (flags & DirtyCompositionMode)
+            target->setCompositionMode(state.compositionMode());
+        if (flags & (DirtyPen | DirtyBrush))
+            applyTools();
+    }
+
+    void drawPath(const QPainterPath& path) override { target->drawPath(path); }
+
+    void drawPolygon(const QPointF* points, int count, PolygonDrawMode mode) override
+    {
+        QPolygonF polygon;
+        polygon.reserve(count);
+        for (int i = 0; i < count; ++i)
+            polygon.append(points[i]);
+        switch (mode) {
+            case PolylineMode:
+                target->drawPolyline(polygon);
+                break;
+            case OddEvenMode:
+                target->drawPolygon(polygon, Qt::OddEvenFill);
+                break;
+            default:
+                target->drawPolygon(polygon, Qt::WindingFill);
+                break;
+        }
+    }
+
+    void drawPixmap(const QRectF& r, const QPixmap& pm, const QRectF& sr) override
+    {
+        target->drawPixmap(r, pm, sr);
+    }
+
+    void drawImage(const QRectF& r, const QImage& image, const QRectF& sr,
+                   Qt::ImageConversionFlags flags) override
+    {
+        target->drawImage(r, image, sr, flags);
+    }
+
+    void drawTiledPixmap(const QRectF& r, const QPixmap& pm, const QPointF& p) override
+    {
+        target->drawTiledPixmap(r, pm, p);
+    }
+
+    void drawTextItem(const QPointF& p, const QTextItem& textItem) override
+    {
+        target->drawTextItem(p, textItem);
+    }
+
+private:
+    /// The pen and the brush as drawn, but for those that draw nothing
+    void applyTools()
+    {
+        QPen p = pen;
+        if (p.style() != Qt::NoPen
+            && (p.brush().style() == Qt::NoBrush || p.color().alpha() == 0))
+            p = QPen(Qt::NoPen);
+        target->setPen(p);
+        QBrush b = brush;
+        if (b.style() != Qt::NoBrush && b.gradient() == nullptr && b.texture().isNull()
+            && b.color().alpha() == 0)
+            b = QBrush(Qt::NoBrush);
+        target->setBrush(b);
+    }
+
+    QPainter* target;
+    QPen pen;
+    QBrush brush;
+};
+
+/// A device with the printer's metrics whose engine is a PrintSafeEngine
+class PrintSafeDevice : public QPaintDevice
+{
+public:
+    explicit PrintSafeDevice(QPainter* target)
+        : engine(target), device(target->device())
+    {}
+    ~PrintSafeDevice() override = default;
+
+    QPaintEngine* paintEngine() const override { return &engine; }
+
+protected:
+    int metric(PaintDeviceMetric m) const override
+    {
+        switch (m) {
+            case PdmWidth: return device->width();
+            case PdmHeight: return device->height();
+            case PdmWidthMM: return device->widthMM();
+            case PdmHeightMM: return device->heightMM();
+            case PdmNumColors: return device->colorCount();
+            case PdmDepth: return device->depth();
+            case PdmDpiX: return device->logicalDpiX();
+            case PdmDpiY: return device->logicalDpiY();
+            case PdmPhysicalDpiX: return device->physicalDpiX();
+            case PdmPhysicalDpiY: return device->physicalDpiY();
+            case PdmDevicePixelRatio: return int(device->devicePixelRatio());
+            case PdmDevicePixelRatioScaled:
+                return int(device->devicePixelRatio() * QPaintDevice::devicePixelRatioFScale());
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            case PdmDevicePixelRatioF_EncodedA:
+            case PdmDevicePixelRatioF_EncodedB:
+                return QPaintDevice::encodeMetricF(m, device->devicePixelRatio());
+#endif
+            default: return QPaintDevice::metric(m);
+        }
+    }
+
+private:
+    mutable PrintSafeEngine engine;
+    QPaintDevice* device;
+};
+
+/// Whether \a painter paints on a printer of the platform's own (not Qt's
+/// PDF writer, which keeps everything as it is drawn)
+bool onNativePrinter(const QPainter& painter)
+{
+    auto printer = dynamic_cast<QPrinter*>(painter.device());
+    return printer && printer->outputFormat() == QPrinter::NativeFormat;
+}
+
+} // namespace
 
 /* TRANSLATOR TechDrawGui::PagePrinter */
 
@@ -326,7 +504,22 @@ void PagePrinter::renderPage(ViewProviderPage* vpp, QPainter& painter, QRectF& s
     }
 
     vpp->getQGSPage()->refreshViews();
-    vpp->getQGSPage()->render(&painter, targetRect, sourceRect);
+    if (onNativePrinter(painter)) {
+        // through PrintSafeEngine, which leaves out the pens and brushes
+        // that draw nothing and would make the printer rasterize the page
+        painter.save();
+        {
+            PrintSafeDevice safe(&painter);
+            QPainter through(&safe);
+            through.setRenderHints(painter.renderHints());
+            vpp->getQGSPage()->render(&through, targetRect, sourceRect);
+            through.end();
+        }
+        painter.restore();
+    }
+    else {
+        vpp->getQGSPage()->render(&painter, targetRect, sourceRect);
+    }
 
     // Reset
     vpp->setFrameState(saveState);

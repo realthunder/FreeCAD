@@ -46,6 +46,7 @@
 #include "PagePrinter.h"
 
 #include <QImage>
+#include <QPrinter>
 
 #include <Gui/Renderer/Page2D.h>
 #include "PageFeed.h"
@@ -68,6 +69,12 @@ public:
         );
         add_varargs_method("exportPageAsSvg", &Module::exportPageAsSvg,
             "exportPageAsSvg(DrawPageObject, FilePath) -- print page as Svg to file."
+        );
+        add_varargs_method("printPages", &Module::printPages,
+            "printPages([DrawPageObject, ...], printerName='', outputFile='') -- print the pages\n"
+            "as Print All does, with no dialog: to the named printer (the default printer\n"
+            "if none is named), to outputFile through the printer's own driver if one is\n"
+            "given (a name ending in .pdf prints with Qt's own PDF writer instead)."
         );
         add_varargs_method("renderPageVg", &Module::renderPageVg,
             "renderPageVg(DrawPageObject, FilePath, [width, height]) -- render the page "
@@ -183,6 +190,59 @@ private:
     }
 
 //!exportPageAsPdf(PageObject, FullPath)
+    //! printPages([PageObject, ...], printerName='', outputFile='')
+    Py::Object printPages(const Py::Tuple& args)
+    {
+        PyObject* seq;
+        char* printerName = nullptr;
+        char* outputFile = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O|etet", &seq, "utf-8", &printerName, "utf-8",
+                              &outputFile)) {
+            throw Py::TypeError("expected ([Page, ...], printerName, outputFile)");
+        }
+        std::string printer = printerName ? printerName : "";
+        std::string output = outputFile ? outputFile : "";
+        PyMem_Free(printerName);
+        PyMem_Free(outputFile);
+
+        std::vector<App::DocumentObject*> pages;
+        Py::Sequence items(seq);
+        for (const auto& item : items) {
+            PyObject* o = item.ptr();
+            if (!PyObject_TypeCheck(o, &(App::DocumentObjectPy::Type)))
+                throw Py::TypeError("expected document objects");
+            auto obj = static_cast<App::DocumentObjectPy*>(o)->getDocumentObjectPtr();
+            if (!obj || !obj->isDerivedFrom(TechDraw::DrawPage::getClassTypeId()))
+                throw Py::TypeError("expected TechDraw pages");
+            pages.push_back(obj);
+        }
+        if (pages.empty())
+            return Py::None();
+
+        QPrinter qprinter(QPrinter::HighResolution);
+        qprinter.setFullPage(true);
+        if (!printer.empty())
+            qprinter.setPrinterName(QString::fromStdString(printer));
+        if (!output.empty()) {
+            const QString file = QString::fromStdString(output);
+            // a .pdf name turns QPrinter into Qt's own PDF writer; any other
+            // keeps the printer's driver, writing to the file
+            qprinter.setOutputFileName(file);
+        }
+        try {
+            App::Document* doc = pages.front()->getDocument();
+            if (qprinter.outputFormat() == QPrinter::NativeFormat)
+                PagePrinter::printAll(&qprinter, doc, pages);
+            else
+                PagePrinter::printAllPdf(&qprinter, doc, pages);
+        }
+        catch (Base::Exception& e) {
+            e.setPyException();
+            throw Py::Exception();
+        }
+        return Py::None();
+    }
+
     Py::Object exportPageAsPdf(const Py::Tuple& args)
     {
         PyObject *pageObj;
