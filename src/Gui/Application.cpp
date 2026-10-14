@@ -859,7 +859,7 @@ void Application::open(const char* FileName, const char* Module)
 
     if (Module) {
         try {
-            if (File.isDir() || File.hasExtension("FCStd")) {
+            if (File.isDir() || File.hasExtension("FCStd") || File.hasExtension("TStd")) {
                 bool handled = false;
                 std::string filepath = File.filePath();
                 for (auto &v : d->documents) {
@@ -929,7 +929,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
             Command::doCommand(Command::App, "import %s", Module);
 
             // load the file with the module
-            if (File.hasExtension("FCStd")) {
+            if (File.hasExtension("FCStd") || File.hasExtension("TStd")) {
                 Command::doCommand(Command::App, "%s.open(%s)"
                                                , Module, unicodepath.c_str());
                 if (activeDocument())

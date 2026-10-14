@@ -800,13 +800,14 @@ QIcon FileIconProvider::icon(const QFileInfo & info) const
         return QIcon(QStringLiteral(":/icons/freecad-doc.png"));
     };
 
-    if (info.suffix().toLower() == QStringLiteral("fcstd")) {
+    const QString suffix = info.suffix().toLower();
+    if (suffix == QStringLiteral("fcstd") || suffix == QStringLiteral("tstd")) {
         // Check if a thumbnail is available
         QString fileName = toUrl(info);
         QString thumb = urlToThumbnail(fileName);
         return iconFromFile(thumb);
     }
-    else if (info.suffix().toLower().startsWith(QStringLiteral("fcstd"))) {
+    else if (suffix.startsWith(QStringLiteral("fcstd")) || suffix.startsWith(QStringLiteral("tstd"))) {
         QIcon icon(QStringLiteral(":/icons/freecad-doc.png"));
         QIcon darkIcon;
         int w = QApplication::style()->pixelMetric(QStyle::PM_ListViewIconSize);

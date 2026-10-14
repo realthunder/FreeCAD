@@ -570,7 +570,8 @@ bool GUIApplication::event(QEvent * ev)
     if (ev->type() == QEvent::FileOpen) {
         QString file = static_cast<QFileOpenEvent*>(ev)->file();
         QFileInfo fi(file);
-        if (fi.suffix().toLower() == QStringLiteral("fcstd")) {
+        const QString suffix = fi.suffix().toLower();
+        if (suffix == QStringLiteral("fcstd") || suffix == QStringLiteral("tstd")) {
             QByteArray fn = file.toUtf8();
             Application::Instance->open(fn, "FreeCAD");
             return true;

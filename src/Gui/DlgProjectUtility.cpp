@@ -47,7 +47,7 @@ DlgProjectUtility::DlgProjectUtility(QWidget* parent, Qt::WindowFlags fl)
     ui->setupUi(this);
     connect(ui->extractButton, &QPushButton::clicked, this, &DlgProjectUtility::extractButton);
     connect(ui->createButton, &QPushButton::clicked, this, &DlgProjectUtility::createButton);
-    ui->extractSource->setFilter(QStringLiteral("%1 (*.FCStd)").arg(tr("Project file")));
+    ui->extractSource->setFilter(QStringLiteral("%1 (*.FCStd *.TStd)").arg(tr("Project file")));
 }
 
 /**

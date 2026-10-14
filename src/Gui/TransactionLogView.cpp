@@ -3188,7 +3188,7 @@ void TransactionLogView::onImportFile()
         return;
     const QString path = FileDialog::getOpenFileName(
         this, tr("Merge from file"), QString(),
-        QStringLiteral("%1 (*.FCStd)").arg(tr("FreeCAD document")));
+        QStringLiteral("%1 (*.FCStd *.TStd)").arg(tr("FreeCAD document")));
     if (!path.isEmpty())
         importFile(path, QString());
 }

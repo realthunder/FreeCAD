@@ -33,6 +33,7 @@
 # include <QFileInfo>
 # include <QHBoxLayout>
 # include <QLabel>
+# include <QLineEdit>
 # include <QMessageBox>
 # include <QPushButton>
 # include <QRadioButton>
@@ -1998,6 +1999,75 @@ FormatAnswer confirmSchemaUpgrade(const QStringList &docs, bool *acked)
     return FormatAnswer::Standard;
 }
 
+/// Where a plain save of `doc` is about to go, kept to tell the user afterwards.
+struct SaveTarget
+{
+    explicit SaveTarget(App::Document* doc)
+        : doc(doc)
+        , opened(doc->FileName.getStrValue())
+        , target(doc->getSaveFileName())
+        , existed(target != opened && Base::FileInfo(target).exists())
+    {}
+
+    /** Said once the save is through: a file other builds read was left as
+     * it was and the document now lives at a sibling under the new format's
+     * extension (App::Document::getSaveFileName).
+     */
+    void report() const
+    {
+        if (doc->FileName.getStrValue() == opened)
+            return;
+        const QString saved = QString::fromUtf8(Base::FileInfo(target).fileName().c_str());
+        const QString kept = QString::fromUtf8(Base::FileInfo(opened).fileName().c_str());
+        QMessageBox box(QMessageBox::Warning, QObject::tr("Saved as a new file"),
+                        existed ? QObject::tr("<b>Saved as %1, replacing the one there.</b>")
+                                      .arg(saved.toHtmlEscaped())
+                                : QObject::tr("<b>Saved as %1.</b>").arg(saved.toHtmlEscaped()),
+                        QMessageBox::Ok, getMainWindow());
+        box.setInformativeText(
+            QObject::tr("%1 is unchanged. The new format does not open in other FreeCAD "
+                        "versions, so it gets its own file. To update %1 itself, use Save As "
+                        "with the standard format.")
+                .arg(kept));
+        box.exec();
+        getMainWindow()->appendRecentFile(QString::fromUtf8(target.c_str()));
+    }
+
+    App::Document* doc;
+    std::string opened;
+    std::string target;
+    bool existed;
+};
+
+/** `fn` given the extension of the format about to be written, asking before
+ * a renamed target replaces a file the dialog never asked about. False when
+ * the user declines.
+ */
+bool nameForSchema(QString& fn, long schema)
+{
+    const std::string named = App::Document::fileNameForSchema(fn.toUtf8().constData(), schema);
+    const QString renamed = QString::fromUtf8(named.c_str());
+    if (renamed == fn)
+        return true;
+    if (QFileInfo::exists(renamed)
+            && QMessageBox::question(getMainWindow(), QObject::tr("Replace file"),
+                                     QObject::tr("%1 already exists. Replace it?")
+                                         .arg(QFileInfo(renamed).fileName()),
+                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                != QMessageBox::Yes)
+        return false;
+    fn = renamed;
+    return true;
+}
+
+/// A save dialog's document filter, the format about to be written first so
+/// that a name typed without an extension gets that one.
+QString documentFilter(const QString& label, bool compact)
+{
+    return compact ? QStringLiteral("%1 (*.TStd *.FCStd)").arg(label)
+                   : QStringLiteral("%1 (*.FCStd *.TStd)").arg(label);
+}
+
 } // anonymous namespace
 
 /* Offer the schema their own content needs to every document about to be
@@ -2281,10 +2351,12 @@ bool Document::save()
                     Command::doCommand(Command::Doc,"App.getDocument(\"%s\").recompute()",doc->getName());
                 }
 
+                SaveTarget target(doc);
                 Command::doCommand(Command::Doc,"App.getDocument(\"%s\").save()",doc->getName());
                 auto gdoc = Application::Instance->getDocument(doc);
                 if (gdoc)
                     gdoc->setModified(false);
+                target.report();
             }
 
             // empty file name signals the intention to rebuild recent file
@@ -2403,7 +2475,7 @@ public:
 
         apply();
         QObject::connect(compactBtn, &QRadioButton::toggled,
-                         [this](bool) { apply(); });
+                         [this](bool on) { apply(); renameFor(on); });
         QObject::connect(dedupPCurves, &QCheckBox::toggled,
                          [this](bool) { apply(); });
         QObject::connect(dedupCongruent, &QCheckBox::toggled,
@@ -2419,6 +2491,20 @@ private:
         result->dedupPCurves = dedupPCurves->isChecked();
         result->dedupCongruent = dedupCongruent->isChecked();
         result->dedupGeometry = dedupGeometry->isChecked();
+    }
+
+    /// The name being typed follows the format, so the dialog shows the
+    /// file the save will write: Part.TStd for compact, Part.FCStd for
+    /// standard. The edit is the dialog's own, found once this widget is in it.
+    void renameFor(bool compact)
+    {
+        auto edit = window()->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"));
+        if (!edit)
+            return;
+        const std::string named = App::Document::fileNameForSchema(
+            edit->text().toUtf8().constData(),
+            compact ? App::Document::getCurrentSchemaVersion() : 4);
+        edit->setText(QString::fromUtf8(named.c_str()));
     }
 
     Choices *result;
@@ -2456,10 +2542,14 @@ bool Document::saveAs()
     chosen.dedupCongruent = App::DocumentParams::getDedupCongruentShapes();
     chosen.dedupGeometry = App::DocumentParams::getDedupCrossFileGeometry();
 
+    // The extension follows the format: what the dialog opens on is the
+    // file this format would write, and DocumentFormatOption keeps the two
+    // together as the choice changes.
+    const long schema = compact ? App::Document::getCurrentSchemaVersion() : 4;
     QString exe = qApp->applicationName();
     QString fn = FileDialog::getSaveFileName(getMainWindow(), QObject::tr("Save %1 Document").arg(exe),
-        QString::fromUtf8(getDocument()->FileName.getValue()),
-        QStringLiteral("%1 %2 (*.FCStd)").arg(exe).arg(QObject::tr("Document")),
+        QString::fromUtf8(App::Document::fileNameForSchema(curFile ? curFile : "", schema).c_str()),
+        documentFilter(QStringLiteral("%1 %2").arg(exe, QObject::tr("Document")), compact),
         nullptr, QFileDialog::Options(), QFileDialog::AnyFile,
         new DocumentFormatOption(compact, &chosen));
 
@@ -2500,6 +2590,14 @@ bool Document::saveAs()
                 getMainWindow()->showMessage(QObject::tr("Saving aborted"), 2000);
                 return false;
             }
+        }
+
+        // Whatever was typed, and whichever way the prompts above sent the
+        // format: a compact file is never written under .FCStd, where every
+        // other FreeCAD would try it and fail, nor a standard one under .TStd.
+        if (!nameForSchema(fn, chosen.compact ? App::Document::getCurrentSchemaVersion() : 4)) {
+            getMainWindow()->showMessage(QObject::tr("Saving aborted"), 2000);
+            return false;
         }
 
         // save as new file name
@@ -2602,8 +2700,10 @@ void Document::saveAll()
                 App::AutoTransaction trans("Recompute");
                 Command::doCommand(Command::Doc,"App.getDocument('%s').recompute()",doc->getName());
             }
+            SaveTarget target(doc);
             Command::doCommand(Command::Doc,"App.getDocument('%s').save()",doc->getName());
             gdoc->setModified(false);
+            target.report();
         }
         catch (const Base::Exception& e) {
             QMessageBox::critical(getMainWindow(),
@@ -2623,10 +2723,16 @@ bool Document::saveCopy()
 {
     getMainWindow()->showMessage(QObject::tr("Save a copy of the document under new filename..."));
 
+    // A copy is written at the document's own schema; its name follows that.
+    const long schema = getDocument()->getSaveSchemaVersion();
+    const bool compact = schema >= 5;
     QString exe = qApp->applicationName();
     QString fn = FileDialog::getSaveFileName(getMainWindow(), QObject::tr("Save %1 Document").arg(exe),
-                                             QString::fromUtf8(getDocument()->FileName.getValue()),
-                                             QObject::tr("%1 document (*.FCStd)").arg(exe));
+        QString::fromUtf8(App::Document::fileNameForSchema(
+            getDocument()->FileName.getStrValue(), schema).c_str()),
+        documentFilter(QObject::tr("%1 document").arg(exe), compact));
+    if (!fn.isEmpty() && !nameForSchema(fn, schema))
+        fn.clear();
     if (!fn.isEmpty()) {
         const char * DocName = App::GetApplication().getDocumentName(getDocument());
 

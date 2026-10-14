@@ -116,11 +116,13 @@ void StdCmdOpen::activated(int iMsg)
 
     std::vector<std::string> filetypes = App::GetApplication().getImportTypes();
     std::vector<std::string>::iterator it;
-    // Make sure FCStd is the very first fileformat
-    it = std::find(filetypes.begin(), filetypes.end(), "FCStd");
-    if (it != filetypes.end()) {
-        filetypes.erase(it);
-        filetypes.insert(filetypes.begin(), "FCStd");
+    // Make sure the document formats are the very first fileformats
+    for (const char* doctype : {"TStd", "FCStd"}) {
+        it = std::find(filetypes.begin(), filetypes.end(), doctype);
+        if (it != filetypes.end()) {
+            filetypes.erase(it);
+            filetypes.insert(filetypes.begin(), doctype);
+        }
     }
     for (it=filetypes.begin();it != filetypes.end();++it) {
         formatList += QStringLiteral(" *.");
@@ -245,7 +247,7 @@ void StdCmdImport::activated(int iMsg)
     std::vector<std::string> filetypes = App::GetApplication().getImportTypes();
     std::vector<std::string>::const_iterator it;
     for (it=filetypes.begin();it != filetypes.end();++it) {
-        if (*it != "FCStd") {
+        if (*it != "FCStd" && *it != "TStd") {
             // ignore the project file format
             formatList += QStringLiteral(" *.");
             formatList += QString::fromUtf8(it->c_str());
@@ -258,7 +260,7 @@ void StdCmdImport::activated(int iMsg)
     std::map<std::string, std::string>::const_iterator jt;
     for (jt=FilterList.begin();jt != FilterList.end();++jt) {
         // ignore the project file format
-        if (jt->first.find("(*.FCStd)") == std::string::npos) {
+        if (jt->first.find("(*.FCStd") == std::string::npos) {
             formatList += QString::fromUtf8(jt->first.c_str());
             formatList += QStringLiteral(";;");
         }
@@ -459,7 +461,7 @@ void StdCmdExport::activated(int iMsg)
     std::map<std::string, std::string> filterMap = App::GetApplication().getExportFilters();
     for (const auto &filter : filterMap) {
         // ignore the project file format
-        if (filter.first.find("(*.FCStd)") == std::string::npos)
+        if (filter.first.find("(*.FCStd") == std::string::npos)
             filterList << QString::fromStdString(filter.first);
     }
     QString formatList = filterList.join(QStringLiteral(";;"));
@@ -569,7 +571,7 @@ void StdCmdMergeProjects::activated(int iMsg)
     QString exe = qApp->applicationName();
     QString project = FileDialog::getOpenFileName(Gui::getMainWindow(),
         QString::fromUtf8(QT_TR_NOOP("Merge document")), FileDialog::getWorkingDirectory(),
-        QString::fromUtf8(QT_TR_NOOP("%1 document (*.FCStd)")).arg(exe));
+        QString::fromUtf8(QT_TR_NOOP("%1 document (*.FCStd *.TStd)")).arg(exe));
     if (!project.isEmpty()) {
         FileDialog::setWorkingDirectory(project);
         App::Document* doc = App::GetApplication().getActiveDocument();

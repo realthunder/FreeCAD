@@ -4886,7 +4886,7 @@ QWidget* PropertyLinkItem::createChildEditor(const PropertyItem *child,
 void PropertyLinkItem::setChildEditorData(const PropertyItem * /*child*/, QWidget *editor, const QVariant& data) const
 {
     if (auto fc = qobject_cast<Gui::FileChooser*>(editor)) {
-        fc->setFilter(QStringLiteral("%1 (*.FCStd)").arg(tr("Project file")));
+        fc->setFilter(QStringLiteral("%1 (*.FCStd *.TStd)").arg(tr("Project file")));
         QFileInfo fileInfo(data.toString());
         if (fileInfo.isRelative()) {
             if (auto xlink = getXLink()) {
