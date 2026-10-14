@@ -131,6 +131,23 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 11:41, the reporter, three things in one message:** "116, yes
+fix finding 5. I've already told build session about 98 and theme colours.
+I'd like to rework dressup editing manipulator. make this an try. note
+that this fork support both default radius and per edge (one or two)
+radius. consider that. And in general, I want be able to enter text
+without task panel, by using editdatumlabel. survey what other CAD do and
+propose a design"
+- Entry 116: finding 5 to be fixed -- under the entry.
+- Entry 98 (the proposal of 11:20) and the THEMES' COLOURS: the reporter
+  has answered both TO THE BUILD SESSION; those words have not reached
+  the note-taker -- asked of the build session 11:42, recorded when
+  relayed.
+- A NEW ENTRY, 117: rework the dress-up manipulator; values entered in
+  the view by the editable datum label; a survey of other CAD and a
+  proposed design first.
+Written here 11:42.
+
 **2026-10-14 11:25, the reporter, a QUESTION (no entry):** "question, why
 there are two arrows editing the fillet"
 ANSWERED by the note-taker from the source, nothing run, the reporter's
@@ -2355,7 +2372,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003`. `56504486e6` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; the real double click under `Lens003` is the reporter's to try |
 | 114 | 2026-10-14 | A CRASH on the copy staged 08:10: switching the theme to Dark by Tools > Preset configurations > Themes > Dark theme ends the program (an access violation) | OPEN; the debugger's log, the short crash log and the DUMP read by the note-taker on the reporter's word: the theme writes `PreSelectColor` into TechDraw's `Colors` settings and one of that group's observers is an object already destroyed; a candidate by reading, NOT shown by a run: the page view's observer added for entry 112 (`2a317f254e`) is attached to that group and never detached; one point under the entry, NOT ANSWERED. THE CANDIDATE IS RIGHT (2026-10-14 09:10, the build session): REPRODUCED on the staged copy of 08:10 by a new test -- a page's view opened, its document closed, a theme applied: the session ends with the reporter's stack to the line. The fix, one line (`hGrpColors->Detach(this)`), is in a build; NOT committed. The point a no longer needed for the cause. THE FIX COMMITTED `778bde3979` (09:27), LOCAL, not pushed, not staged: the page's view takes itself off the `Colors` group; with its test. A push and a restage wait for the reporter's word. THE FIX TESTED (09:58, the build session, on the build r18 = the committed code): its test 6 of 6 offscreen, the session goes on through a TechDraw colour written and two themes applied after a page's view has gone; five neighbours pass; the two full suites NOT run on that build. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: the crash fix `778bde3979` is in the reporter's copy now |
 | 115 | 2026-10-14 | the 3D view's background does not follow its settings: the preference is a RADIAL gradient, a LINEAR one is shown, and it does not respond to a change of the setting | OPEN; the reporter's configuration and the source read by the note-taker, nothing run: the configuration says radial (`Gradient` 0, `RadialGradient` 1); the cause NOT found by reading; one thing that can give linear -- every theme writes `Gradient` 1, which wins over radial; three points under the entry, NOT ANSWERED. MADE PRECISE by the reporter 09:50: a COLOUR change shows at once; a change of the PATTERN does not -- it shows only when the mouse moves over the 3D view, even with the preferences open. A CANDIDATE by reading, not shown: setting the pattern asks for no redraw (old code); points b and c answered by this, one new point under the entry (what a theme does to the pattern). POINT d ANSWERED 09:54: "change both theme to default to Simply color" -- the Dark and the Light theme are to give the ONE-COLOUR background ("Simple color"), no gradient. Not started; one smaller point under the entry (Light's single colour is the same dark grey as Dark's). REPRODUCED 09:57 by the build session on the staged copy: the settings arrive, the REDRAW is missing -- the note-taker's candidate right; fixed in the tree (`setGradient` touches the node), in a build, not committed. THE THEMES: after Dark or Light both keys are on, the view is LINEAR and the preference page opens with "Radial" selected -- page and view disagree; the themes' change waits on the reporter's answer of 09:54, which crossed this. THE THEMES (09:58): the build session applies the reporter's answer to `Dark.cfg` and `Light.cfg` after its running build; for LIGHT's single colour it takes #C3C3C3, the theme's present top colour, "unless the user names another; said to them". THE REPORTER to the build session about 10:00 and 10:01 (relayed 10:23): Light's simple colour to be "its old center gradient color" -- then "wait for the background color, simple color is which setting?"; answered by the build session; the themes' change is HELD until the reporter confirms, the theme files untouched. THE REDRAW: the first fix did not ask for one; put right in a build r21; on the staged copy NO change of pattern repaints the view, a gradient to one colour included. STAGED 2026-10-14 10:36 (labelled `0694f94687` and "dirty", its code the tree at `bd5f1c358d` by the build session's word), NOT pushed: the redraw at a change of the pattern (`8cdd37309b`; its test 6 of 6 offscreen and on the screen, four of six failing on the copy of 08:10) is in the reporter's copy; the THEMES' change is NOT -- held for the reporter's confirmation |
-| 116 | 2026-10-14 | a task, said by the reporter to the build session after entry 114's crash: "spawn an agent to audit for missing signal auto disconnect" | AUDITED 10:23 by a read-only agent of the build session's; no second case of entry 114's kind (every other parameter observer detaches from every group it attached to); SEVEN findings of other kinds, two HIGH (an Assembly view provider's connection to the main window never released; Mesh's fill-hole command), none from today's work; fixes written for six, NOT applied; one (the selection singleton) "left for a word". WHAT IT COVERED (10:24): the observers and the signal and Qt connections under `src/Gui`, `src/Mod` and `src/App`; NOT the modules' App parts beyond its searches, `src/Base` beyond two files, anything in Python, `src/3rdParty`; SIX more places listed for a second look, not verified, not fixed. The six fixes are what the build session does next "unless they say otherwise" -- put to the reporter by it |
+| 116 | 2026-10-14 | a task, said by the reporter to the build session after entry 114's crash: "spawn an agent to audit for missing signal auto disconnect" | AUDITED 10:23 by a read-only agent of the build session's; no second case of entry 114's kind (every other parameter observer detaches from every group it attached to); SEVEN findings of other kinds, two HIGH (an Assembly view provider's connection to the main window never released; Mesh's fill-hole command), none from today's work; fixes written for six, NOT applied; one (the selection singleton) "left for a word". WHAT IT COVERED (10:24): the observers and the signal and Qt connections under `src/Gui`, `src/Mod` and `src/App`; NOT the modules' App parts beyond its searches, `src/Base` beyond two files, anything in Python, `src/3rdParty`; SIX more places listed for a second look, not verified, not fixed. The six fixes are what the build session does next "unless they say otherwise" -- put to the reporter by it. FINDING 5 (the selection singleton's static connection): the reporter 11:41 "yes fix finding 5"
+| 117 | 2026-10-14 | a change request: REWORK the dress-up features' editing manipulator (the handles in the 3D view), with this fork's default radius and per-edge radius (one or two) in mind; and, in general, entering values WITHOUT the task panel, by the on-view editable datum label; a SURVEY of what other CAD programs do and a PROPOSED DESIGN asked first | OPEN, a survey and a proposal asked; relayed to the build session; three points under the entry, not put as blocking |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -16738,7 +16756,7 @@ on one point -- a change between one colour and a gradient does NOT
 show at once either; the switch's change does not draw the view, for
 the reason the build session gives.
 
-## 116. A task: audit for signal connections and observers that are never released (after entry 114's crash) -- AUDITED 2026-10-14: no second case of 114's kind; seven findings of other kinds, two HIGH; fixes written for six, not applied
+## 116. A task: audit for signal connections and observers that are never released (after entry 114's crash) -- AUDITED 2026-10-14: no second case of 114's kind; seven findings of other kinds, two HIGH; fixes written for six, not applied; finding 5 to be fixed too (the reporter, 2026-10-14 11:41)
 
 **2026-10-14 about 10:04, the reporter -- said to the build session, relayed
 by it (its message stamped 10:23, written here 10:23); the note-taker
@@ -16829,6 +16847,65 @@ The note-taker's note: so the audit is a search by pattern with its
 worst findings read; six further places are NAMED and not judged. Whether
 they get the second look is not said by anyone.
 
+**2026-10-14 11:41, the reporter:** "116, yes fix finding 5" -- the
+selection singleton's function-static connection that captures the
+first instance (the build session's "left for a word"): to be fixed
+too. The word, given to the note-taker, relayed to the build session
+11:42.
+
+## 117. Rework the dress-up editing manipulator, with default and per-edge radii; values entered in the view without the task panel; a survey of other CAD and a proposed design first (a change request) -- OPEN, said 2026-10-14
+
+**2026-10-14 11:41, the reporter:** "I'd like to rework dressup editing
+manipulator. make this an try. note that this fork support both default
+radius and per edge (one or two) radius. consider that. And in general, I
+want be able to enter text without task panel, by using editdatumlabel.
+survey what other CAD do and propose a design"
+
+The note-taker's reading, not the reporter's words:
+- "make this an try": make this an ENTRY -- this one.
+- THE MANIPULATOR of the dress-up features' edit (fillet, chamfer, and
+  the like) -- the handles drawn in the 3D view while the panel is open
+  (the reporter's question of 11:25 about the fillet's two arrows came
+  just before) -- is to be REWORKED.
+- It has to fit what this fork's fillet can hold: a DEFAULT radius for
+  every edge, and PER EDGE a radius of its own -- one, or two (a radius
+  at each end, a varying fillet).
+- IN GENERAL, not for the dress-ups alone: a value is to be ENTERED IN
+  THE VIEW, without going to the task panel, by the editable datum label
+  -- the box that comes up on a dimension label in the view, as the
+  sketcher's on-view parameters have it.
+- FIRST a SURVEY of how other CAD programs do this (handles on fillets
+  and chamfers, per-edge values, typing a value in the view), then a
+  PROPOSED DESIGN. Nothing to be built before the design is put.
+
+READ in the source, nothing run -- pointers:
+- The handles today: upstream's gizmos, ported 2026-09-24
+  (`a56e0777da`: "Fillet (radius on both faces of the first edge),
+  Chamfer (distance, second distance or angle), Thickness (value) and
+  Draft (angle)"); the fork's setback corner handles (2026-10-07). In
+  the fillet panel: `src/Mod/PartDesign/Gui/TaskFilletParameters.cpp`
+  (`setupGizmos`, line 215; two radius arrows for the FIRST edge only,
+  lines 305 to 313). The gizmo classes: `src/Gui/Inventor/Draggers/Gizmo.h`.
+- The fillet's values: `src/Mod/PartDesign/App/FeatureFillet.h` --
+  `Radius` (the default), `Segments` (`Part::PropertyFilletSegments`,
+  the per-edge values), `Corners`, `UseAllEdges`; the per-edge element
+  `Part::FilletElement` holds two radii (`r1`, `r2`;
+  `src/Mod/Part/App/PropertyTopoShape.h` line 415).
+- The editable label: `src/Gui/EditableDatumLabel.cpp` (with
+  `SoDatumLabel`); used today by the sketcher's on-view parameters
+  (`src/Mod/Sketcher/Gui/DrawSketchController.h`), and in
+  `MirrorViewer.cpp`, `PatternWidgets.cpp`, `TaskImage.cpp`.
+
+NOT said, lettered; none put as blocking:
+a. WHICH dress-ups: all those with handles today (fillet, chamfer,
+   draft, thickness) -- taken so, the fillet first by the reporter's
+   note on its radii.
+b. "In general": every feature's edit (a pad's length, a pocket's
+   depth, a pattern's count ...) may take a value in the view -- taken
+   so; the design to say where it starts.
+c. WHO surveys and proposes: relayed to the build session as its task;
+   the note-taker writes only this queue.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -16839,5 +16916,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 116 are of 2026-10-14, 116 said to the build
+it; entries 114 to 117 are of 2026-10-14, 116 said to the build
 session)
