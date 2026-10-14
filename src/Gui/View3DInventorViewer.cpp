@@ -3589,6 +3589,7 @@ void View3DInventorViewer::handleEventCB(void* userdata, SoEventCallback* n)
 void View3DInventorViewer::setGradientBackground(View3DInventorViewer::Background grad)
 {
     int whichChild = 0;
+    const auto pattern = pcBackGround->getGradient();
     switch (grad) {
     case Background::NoGradient:
         whichChild = -1;
@@ -3600,8 +3601,18 @@ void View3DInventorViewer::setGradientBackground(View3DInventorViewer::Backgroun
         pcBackGround->setGradient(SoFCBackgroundGradient::RADIAL);
         break;
     }
-    if(pcBackGroundSwitch->whichChild.getValue() != whichChild)
+    bool changed = pcBackGround->getGradient() != pattern;
+    if(pcBackGroundSwitch->whichChild.getValue() != whichChild) {
         pcBackGroundSwitch->whichChild.setValue(whichChild);
+        changed = true;
+    }
+    // The pattern is no field of the background's node, and the background is
+    // not under the scene a change of which draws the view again: asked for
+    // here, as a change of its colours asks. The view kept the old pattern
+    // until something else drew it -- the pointer moved over it
+    // (docs/HandsOnQueue.md entry 115).
+    if (changed)
+        getSoRenderManager()->scheduleRedraw();
 }
 
 bool View3DInventorViewer::hasGradientBackground() const
