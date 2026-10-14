@@ -151,6 +151,14 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 07:03: NEW ENTRY 134 -- TechDraw pages remember their view's
+open state as a spreadsheet does and show no eye in the tree; the
+reporter's word to the build session "Do 3. After done push and restage";
+IN WORK.** From the build session's message (it stamps the word about
+09:00), written here 07:03. When 134 is done the build session pushes and
+restages on the same word -- with entry 117's steps 1 to 3, local since
+00:09. Origin and the staged copy still `3e764d4566`.
+
 **2026-10-15 02:18: BOTH SUITES GREEN on r40 with entry 117 steps 1 to 3 --
 ctest 957/957, Python 3763 OK; the build session's log `97b62d0b75`.
 Nothing pushed or staged since 22:59.**
@@ -189,7 +197,8 @@ READ in the source, nothing run: a spreadsheet has no eye
 `setToggleVisibility(NoToggleVisibility)`); a TechDraw page still does --
 its Visibility IS its view being open (`ViewProviderPage` show()/hide(),
 `src/Mod/TechDraw/Gui/ViewProviderPage.cpp` 274 to 293, isShow() 474).
-It becomes entry 134 on the reporter's word.
+It becomes entry 134 on the reporter's word. -- IT IS: entry 134, on
+the reporter's word to the build session 2026-10-15 (see the entry).
 23:10, the build session sent its answer of 2026-10-13 as it wrote it
 then (from its transcript): "I answered yes (with a rule for older files:
 a page with Visibility on and no layout record is opened once at load;
@@ -2754,6 +2763,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 131 | 2026-10-14 | A CRASH at the program's EXIT on the copy staged 15:22, found by the build session (after a test harness's time-out): `App::TransactionCopyCache` destroying a string list property in the static destruction -- a static cache outliving the owners of its properties | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE read and a FIX written by the build session (19:21), not built: the copy cache was a static map; at exit its destructor destroyed copies whose own destructor asked the same map, halfway destroyed, to drop them -- now a map that is never destroyed. FIXED, COMMITTED `84757008ee`, LOCAL, not pushed, not staged. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
 | 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE found and FIXED by the build session (18:38), COMMITTED `d9c3193856`, LOCAL, not pushed, not staged: a TechDraw page view answered "Undo"/"Redo" from its document without checking it was there -- a page view with no document; guarded as the general view does. Reproduced a second time in its native print run. WHY the view had no document NOT found. the GUARD PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage"; why no document not found |
 | 133 | 2026-10-14 | TechDraw printing: open the print with LANDSCAPE as the default (a change request, said to the build session) | OPEN; DONE by the build session, written, NOT committed, building r32: "Print All Pages" and "Print Selected Pages" open their print box on landscape (were the printer's default, portrait); each page still laid out in its own template's orientation; the single page's Print already took the template's. Not testable by a script (the Windows print box) -- the REPORTER'S LOOK. COMMITTED `560022c91b`, LOCAL, not pushed, not staged, built in r32; the REPORTER'S LOOK still owed. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
+| 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18556,6 +18566,59 @@ tree, uncommitted (`src/Mod/TechDraw/Gui/MDIViewPage.cpp`,
 `printer.setPageOrientation(QPageLayout::Landscape)` before the dialog).
 WAITS FOR THE REPORTER'S LOOK at the print box.
 
+## 134. TechDraw pages: the view's open state remembered as a spreadsheet's, no eye in the tree (a change request, said to the build session) -- OPEN; IN WORK 2026-10-15
+
+**2026-10-13, the reporter -- a question put to the build session, not
+through the note-taker; the note-taker did not hear it.** Recorded in the
+head block of 2026-10-13 12:43 as "the reporter's question on TechDraw
+pages without an eye" (the build session's words); the reporter's own
+words then were not sent.
+
+**2026-10-14 23:00, the reporter to the note-taker:** "i remember there
+is an entry asking to make techdraw page remember its vew state like
+spreadsheet and do not show its eye in tree. Is that done"
+
+The note-taker's reading: two things -- (1) a page REMEMBERS its view
+state the way a spreadsheet does: whether its view is open is saved with
+the document and comes back on opening, not tied to the page's
+Visibility; (2) a page has NO EYE in the tree, as a spreadsheet has none.
+Answered then: not done, no entry (the full answer in the head block of
+2026-10-14 23:00).
+
+The build session's answer of 2026-10-13, as it sent it 2026-10-14 23:10
+from its transcript: "I answered yes (with a rule for older files: a page
+with Visibility on and no layout record is opened once at load; keep
+show()/hide() working; check whether TechDraw uses the page's Visibility
+for updates); waits for their word to queue it."
+
+**2026-10-15, before 07:03 by the note-taker's clock (about 09:00 by the
+build session's), the reporter -- typed to the build session in reply to
+its status, relayed by it; the note-taker did not hear it:** "Do 3. After
+done push and restage"
+The build session: "Item 3 in that status was the TechDraw page that
+remembers its view state and has no eye in the tree, like a spreadsheet.
+Please queue it as entry 134 under my 10-13 rule. I'm starting it now.
+When it is done I push and restage on the same word."
+
+The note-taker's reading: the word to DO it, and -- once it is done -- to
+PUSH and RESTAGE; that push carries entry 117's steps 1 to 3 too (local
+since 2026-10-15 00:09), by the note-taker's reading of "push", as
+everything local goes. The status the reporter answered was not sent to
+the note-taker; "3" is its third item by the build session's account.
+NOT said:
+a. an older file's pages -- the build session's rule (a page saved with
+   its eye on opens once at load) is its own, not put to the reporter in
+   the note-taker's hearing;
+b. what becomes of a script's or a command's show/hide of a page (the
+   build session keeps them working);
+c. whether TechDraw's views still update while a page is closed -- the
+   build session's own check, open.
+READ in the source, nothing run: a spreadsheet has no eye
+(`src/Mod/Spreadsheet/Gui/ViewProviderSpreadsheet.cpp` 57,
+`setToggleVisibility(NoToggleVisibility)`); a page's Visibility opens and
+closes its view (`src/Mod/TechDraw/Gui/ViewProviderPage.cpp` show() 274
+to 284, hide() 289 to 293, isShow() 474).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -18567,4 +18630,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it)
+the build session, 131 and 132 found by it; entry 134 is of
+2026-10-15, said to the build session)
