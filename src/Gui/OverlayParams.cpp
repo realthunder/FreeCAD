@@ -373,13 +373,11 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayThemeItemColor", "DockOverlayThemeItemColor", App::ParamInfo::Bool, true)
         .setTitle("Item background follows the theme")
-        .setDoc("Back the items of an overlaid tree view, property view and selection\n"
-"view, and the text of the Python console and the report view, with\n"
-"the colour the 3D view's background has where the panel lies: one\n"
-"colour as it is; a linear gradient's top colour, its bottom one for\n"
-"a panel at the bottom; a radial one averaged over what the panel\n"
-"covers. So that their text reads over the view. When off the\n"
-"'Item background color' is used.")
+        .setDoc("Back the text of overlaid panels (tree, property view, selection\n"
+"view, Python console, report view) with the 3D view's background\n"
+"colour where the panel lies: a linear gradient's top colour (bottom\n"
+"for a panel at the bottom), a radial one averaged over the panel.\n"
+"When off the 'Item background color' is used.")
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAlpha", "DockOverlayAlpha", App::ParamInfo::Int, 180)
         .setTitle("Overlay background opacity")
@@ -797,13 +795,11 @@ void OverlayParams::removeDockOverlayMoveNaviCube() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *OverlayParams::docDockOverlayThemeItemColor() {
     return QT_TRANSLATE_NOOP("OverlayParams",
-"Back the items of an overlaid tree view, property view and selection\n"
-"view, and the text of the Python console and the report view, with\n"
-"the colour the 3D view's background has where the panel lies: one\n"
-"colour as it is; a linear gradient's top colour, its bottom one for\n"
-"a panel at the bottom; a radial one averaged over what the panel\n"
-"covers. So that their text reads over the view. When off the\n"
-"'Item background color' is used.");
+"Back the text of overlaid panels (tree, property view, selection\n"
+"view, Python console, report view) with the 3D view's background\n"
+"colour where the panel lies: a linear gradient's top colour (bottom\n"
+"for a panel at the bottom), a radial one averaged over the panel.\n"
+"When off the 'Item background color' is used.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1334,7 +1330,7 @@ void OverlayParams::removeDockOverlayMinimumSize() {
     instance()->handle->RemoveInt("DockOverlayMinimumSize");
 }
 
-// Auto generated code (Gui/OverlayParams.py:197)
+// Auto generated code (Gui/OverlayParams.py:195)
 const std::vector<QString> OverlayParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),

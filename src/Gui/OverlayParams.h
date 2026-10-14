@@ -28,7 +28,7 @@ import OverlayParams
 OverlayParams.declare()
 ]]]*/
 
-// Auto generated code (Gui/OverlayParams.py:183)
+// Auto generated code (Gui/OverlayParams.py:181)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -222,13 +222,11 @@ public:
     //@{
     /// Accessor for parameter DockOverlayThemeItemColor
     ///
-    /// Back the items of an overlaid tree view, property view and selection
-    /// view, and the text of the Python console and the report view, with
-    /// the colour the 3D view's background has where the panel lies: one
-    /// colour as it is; a linear gradient's top colour, its bottom one for
-    /// a panel at the bottom; a radial one averaged over what the panel
-    /// covers. So that their text reads over the view. When off the
-    /// 'Item background color' is used.
+    /// Back the text of overlaid panels (tree, property view, selection
+    /// view, Python console, report view) with the 3D view's background
+    /// colour where the panel lies: a linear gradient's top colour (bottom
+    /// for a panel at the bottom), a radial one averaged over the panel.
+    /// When off the 'Item background color' is used.
     static const bool & getDockOverlayThemeItemColor();
     static const bool & defaultDockOverlayThemeItemColor();
     static void removeDockOverlayThemeItemColor();
@@ -458,7 +456,7 @@ public:
     static void onDockOverlayMinimumSizeChanged();
     //@}
 
-    // Auto generated code (Gui/OverlayParams.py:189)
+    // Auto generated code (Gui/OverlayParams.py:187)
     static const std::vector<QString> AnimationCurveTypes;
 
 // Auto generated code (Tools/params_utils.py:179)
