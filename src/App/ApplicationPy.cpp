@@ -322,7 +322,7 @@ PyObject* Application::sLoadFile(PyObject * /*self*/, PyObject *args)
             const char *pathRepr = PyUnicode_AsUTF8(pathReprObj);
 
             str << "import " << module << std::endl;
-            if (fi.hasExtension("FCStd"))
+            if (fi.hasExtension("FCStd") || fi.hasExtension("TStd"))
                 str << module << ".openDocument(" << pathRepr << ")" << std::endl;
             else
                 str << module << ".insert(" << pathRepr << ",'" << doc << "')" << std::endl;

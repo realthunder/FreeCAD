@@ -185,6 +185,10 @@ struct DocumentP
     /// A saveCopy() without history: the copy embeds nothing, and the
     /// History property the live document had is put back afterwards.
     bool savingWithoutHistory {false};
+    /// The schema the file at FileName holds, as read or last written; 0
+    /// while there is no such file. A plain save that would raise a file
+    /// other builds read into one they do not writes a sibling instead.
+    long fileSchema {0};
     /// The sent file importFork() is bringing in (sec 30.29), by its hash,
     /// for the import's record to name; empty for a file from a path.
     std::string importingRequest;

@@ -657,9 +657,9 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "as a directory."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CheckExtension", "CheckExtension", App::ParamInfo::Bool, true)
         .setTitle("Check Extension")
-        .setDoc("Add .FCStd to the file name when a document is saved under a name\n"
-"without that extension, so that a save cannot overwrite an unrelated\n"
-"file by accident."),
+        .setDoc("Add .TStd (.FCStd for the standard format) to the file name when a\n"
+"document is saved under a name without either extension, so that a\n"
+"save cannot overwrite an unrelated file by accident."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ForceXML", "ForceXML", App::ParamInfo::Int, 3)
         .setTitle("Force XML")
         .setDoc("How much object data new documents keep inside the XML when saved\n"
@@ -758,11 +758,12 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UseFCBakExtension", "UseFCBakExtension", App::ParamInfo::Bool, true)
         .setTitle("Use FC Bak Extension")
         .setDoc("Name a backup after the document, with the date of the replaced\n"
-"file and the extension .FCBak. When off a backup is the document\n"
-"file name followed by a number, as in Part.FCStd1."),
+"file and the extension .TBak (.FCBak for a .FCStd file). When off a\n"
+"backup is the document file name followed by a number, as in\n"
+"Part.TStd1."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveBackupDateFormat", "SaveBackupDateFormat", App::ParamInfo::String, "%Y%m%d-%H%M%S")
         .setTitle("Save Backup Date Format")
-        .setDoc("Date format used in the names of .FCBak backup files, in strftime\n"
+        .setDoc("Date format used in the names of .TBak and .FCBak backup files, in strftime\n"
 "notation. A dot in the format is written as a dash."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CountBackupFiles", "CountBackupFiles", App::ParamInfo::Int, 1)
         .setTitle("Count Backup Files")
@@ -1168,9 +1169,9 @@ void DocumentParams::removeCompressionLevel() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docCheckExtension() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Add .FCStd to the file name when a document is saved under a name\n"
-"without that extension, so that a save cannot overwrite an unrelated\n"
-"file by accident.");
+"Add .TStd (.FCStd for the standard format) to the file name when a\n"
+"document is saved under a name without either extension, so that a\n"
+"save cannot overwrite an unrelated file by accident.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1719,8 +1720,9 @@ void DocumentParams::removeCreateBackupFiles() {
 const char *DocumentParams::docUseFCBakExtension() {
     return QT_TRANSLATE_NOOP("DocumentParams",
 "Name a backup after the document, with the date of the replaced\n"
-"file and the extension .FCBak. When off a backup is the document\n"
-"file name followed by a number, as in Part.FCStd1.");
+"file and the extension .TBak (.FCBak for a .FCStd file). When off a\n"
+"backup is the document file name followed by a number, as in\n"
+"Part.TStd1.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1748,7 +1750,7 @@ void DocumentParams::removeUseFCBakExtension() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docSaveBackupDateFormat() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Date format used in the names of .FCBak backup files, in strftime\n"
+"Date format used in the names of .TBak and .FCBak backup files, in strftime\n"
 "notation. A dot in the format is written as a dash.");
 }
 

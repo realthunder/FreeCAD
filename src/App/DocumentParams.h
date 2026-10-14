@@ -156,9 +156,9 @@ public:
     //@{
     /// Accessor for parameter CheckExtension
     ///
-    /// Add .FCStd to the file name when a document is saved under a name
-    /// without that extension, so that a save cannot overwrite an unrelated
-    /// file by accident.
+    /// Add .TStd (.FCStd for the standard format) to the file name when a
+    /// document is saved under a name without either extension, so that a
+    /// save cannot overwrite an unrelated file by accident.
     static const bool & getCheckExtension();
     static const bool & defaultCheckExtension();
     static void removeCheckExtension();
@@ -419,8 +419,9 @@ public:
     /// Accessor for parameter UseFCBakExtension
     ///
     /// Name a backup after the document, with the date of the replaced
-    /// file and the extension .FCBak. When off a backup is the document
-    /// file name followed by a number, as in Part.FCStd1.
+    /// file and the extension .TBak (.FCBak for a .FCStd file). When off a
+    /// backup is the document file name followed by a number, as in
+    /// Part.TStd1.
     static const bool & getUseFCBakExtension();
     static const bool & defaultUseFCBakExtension();
     static void removeUseFCBakExtension();
@@ -432,7 +433,7 @@ public:
     //@{
     /// Accessor for parameter SaveBackupDateFormat
     ///
-    /// Date format used in the names of .FCBak backup files, in strftime
+    /// Date format used in the names of .TBak and .FCBak backup files, in strftime
     /// notation. A dot in the format is written as a dash.
     static const std::string & getSaveBackupDateFormat();
     static const std::string & defaultSaveBackupDateFormat();

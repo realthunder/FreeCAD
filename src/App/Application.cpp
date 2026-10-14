@@ -1163,6 +1163,14 @@ Document* Application::openDocumentPrivate(const char * FileName,
     if (!File.exists()) {
         std::stringstream str;
         str << "File '" << FileName << "' does not exist!";
+        // Not followed, only pointed at: a plain Save of a standard-format
+        // file writes the current format beside it under the other extension
+        // (Document::getSaveFileName), and whatever links the old name --
+        // another document, the recent file list -- is left naming it.
+        std::string sibling = Document::findSiblingFile(FileName);
+        if (!sibling.empty())
+            str << " '" << FileInfo(sibling).fileName()
+                << "' is beside it -- it may have been saved in another format.";
         THROWM(Base::FileSystemError, str.str().c_str())
     }
 
@@ -3500,6 +3508,7 @@ std::list<std::string> Application::processFiles(const std::list<std::string>& f
 
         try {
             if (file.hasExtension("fcstd")
+                    || file.hasExtension("tstd")
                     || file.hasExtension("std")
                     || file.fileName() == "Document.xml"
                     || (file.isDir() && Base::FileInfo(it + "/Document.xml").exists()))

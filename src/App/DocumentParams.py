@@ -64,9 +64,9 @@ Params = [
               "fastest) to 9 (smallest, slowest). Has no effect on a document saved\n"
               "as a directory."),
     ParamBool('CheckExtension', True,
-        doc = "Add .FCStd to the file name when a document is saved under a name\n"
-              "without that extension, so that a save cannot overwrite an unrelated\n"
-              "file by accident."),
+        doc = "Add .TStd (.FCStd for the standard format) to the file name when a\n"
+              "document is saved under a name without either extension, so that a\n"
+              "save cannot overwrite an unrelated file by accident."),
     ParamInt('ForceXML', 3,
         title = 'Force XML',
         doc = "How much object data new documents keep inside the XML when saved\n"
@@ -251,10 +251,11 @@ Params = [
               "written."),
     ParamBool('UseFCBakExtension', True,
         doc = "Name a backup after the document, with the date of the replaced\n"
-              "file and the extension .FCBak. When off a backup is the document\n"
-              "file name followed by a number, as in Part.FCStd1."),
+              "file and the extension .TBak (.FCBak for a .FCStd file). When off a\n"
+              "backup is the document file name followed by a number, as in\n"
+              "Part.TStd1."),
     ParamString('SaveBackupDateFormat', "%Y%m%d-%H%M%S",
-        doc = "Date format used in the names of .FCBak backup files, in strftime\n"
+        doc = "Date format used in the names of .TBak and .FCBak backup files, in strftime\n"
               "notation. A dot in the format is written as a dash."),
     ParamInt('CountBackupFiles', 1,
         doc = "How many backup files are kept for one document. The oldest are\n"

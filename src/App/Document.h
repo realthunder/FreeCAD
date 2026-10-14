@@ -270,6 +270,11 @@ public:
     /// Save a copy under another name; `withHistory` false leaves the
     /// embedded history out of the copy (docs/TransactionLog.md sec 13.3).
     bool saveCopy(const char* file, bool withHistory = true) const;
+    /** Where a plain save() writes: the document's own file, or -- when that
+     * file is in a format other builds read and the save is not -- a sibling
+     * with this schema's extension, so the readable file is left as it was.
+     */
+    std::string getSaveFileName() const;
     void save(Base::Writer &writer, bool archive) const;
     /// Restore the document from the file in Property Path
     void restore (const char *filename=nullptr,
@@ -1053,6 +1058,24 @@ public:
     /// format it cannot carry (a split save shares no default block)
     /// without that changing the version the file is written under.
     long resolveSchemaVersion(const Base::Writer &writer) const;
+    /** The file extension, without the dot, a document of `schema` is
+     * written under: "TStd" for this fork's own format (5 and later), which
+     * no other reader opens, "FCStd" for the standard one.
+     */
+    static const char* getFileExtension(long schema);
+    /// The backup extension for a document file: "TBak" for a .TStd, "FCBak"
+    /// for anything else.
+    static const char* getBackupExtension(const std::string& file);
+    /// Whether `ext` (no dot, any case) names a document file of any schema.
+    static bool isDocumentExtension(const std::string& ext);
+    /** `file` with its document extension swapped for the one `schema` is
+     * written under. A name with no document extension comes back as it is.
+     */
+    static std::string fileNameForSchema(const std::string& file, long schema);
+    /** The other-schema sibling of a document file that exists on disk --
+     * `Part.TStd` for `Part.FCStd` and the reverse -- or empty.
+     */
+    static std::string findSiblingFile(const std::string& file);
     //@}
 
     void Save (Base::Writer &writer) const override;

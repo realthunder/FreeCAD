@@ -2477,8 +2477,10 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         filename = tempfile.gettempdir() + os.sep + self.Doc.Name
         # Act
         self.Doc.saveAs(filename)
+        # The extension saveAs() adds is the schema's: .TStd at 5, .FCStd at 4.
+        filename = self.Doc.FileName
         App.closeDocument(self.Doc.Name)
-        self.Doc = App.openDocument(filename + ".FCStd")
+        self.Doc = App.openDocument(filename)
         self.Doc.recompute()
         # Assert
         self.assertEqual(self.Doc.Sketch.Shape.ElementMapSize, 18)

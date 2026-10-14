@@ -2724,6 +2724,7 @@ void Document::Restore(Base::XMLReader &reader)
         THROWM(Base::XMLParseException, "Not a FreeCAD document")
     long scheme = reader.getAttributeAsInteger("SchemaVersion");
     reader.DocumentSchema = scheme;
+    d->fileSchema = scheme;
     if (reader.hasAttribute("ProgramVersion")) {
         reader.ProgramVersion = reader.getAttribute("ProgramVersion");
     } else {
@@ -2826,13 +2827,26 @@ void Document::Restore(Base::XMLReader &reader)
     const long was = std::min<long>(scheme > 0 ? scheme : current, SaveSchemaVersion.getValue());
     if (was < current) {
         SaveSchemaVersion.setValue(current);
-        if (!d->checkingOut && !testStatus(VersionDoc) && !testStatus(Importing))
-            Base::Console().warning(DocLabel,
-                "'%s' is in an older file format (schema %ld) and will be saved in the "
-                "current one (schema %ld), which only this FreeCAD reads. To keep a copy "
-                "other FreeCAD versions can open, use Save As and choose the standard "
-                "format.\n",
-                DocLabel.c_str(), was, current);
+        if (!d->checkingOut && !testStatus(VersionDoc) && !testStatus(Importing)) {
+            // A plain Save leaves a file other builds read alone and writes
+            // the current format beside it, under its own extension.
+            const std::string target = getSaveFileName();
+            if (target != FileName.getStrValue())
+                Base::Console().warning(DocLabel,
+                    "'%s' is in an older file format (schema %ld). Save writes the current "
+                    "one (schema %ld), which only this FreeCAD reads, to '%s' and leaves "
+                    "this file as it is. To update this file for other FreeCAD versions, "
+                    "use Save As and choose the standard format.\n",
+                    DocLabel.c_str(), was, current,
+                    Base::FileInfo(target).fileName().c_str());
+            else
+                Base::Console().warning(DocLabel,
+                    "'%s' is in an older file format (schema %ld) and will be saved in the "
+                    "current one (schema %ld), which only this FreeCAD reads. To keep a copy "
+                    "other FreeCAD versions can open, use Save As and choose the standard "
+                    "format.\n",
+                    DocLabel.c_str(), was, current);
+        }
     }
 
     // SchemeVersion "2"
@@ -4256,7 +4270,56 @@ unsigned int Document::getMemSize () const
     return size;
 }
 
-static std::string checkFileName(const char *file) {
+const char* Document::getFileExtension(long schema)
+{
+    // Schema 5 is the format no other reader opens (FC_ELEM_FCDOCUMENT), so
+    // it is the one that needs a name of its own: an extension says to the
+    // OS, the file manager and every other FreeCAD what the root element says
+    // to a reader, before anything tries to open it.
+    return schema >= 5 ? "TStd" : "FCStd";
+}
+
+const char* Document::getBackupExtension(const std::string& file)
+{
+    return boost::iequals(Base::FileInfo(file).extension(), "TStd") ? "TBak" : "FCBak";
+}
+
+bool Document::isDocumentExtension(const std::string& ext)
+{
+    return boost::iequals(ext, "FCStd") || boost::iequals(ext, "TStd");
+}
+
+std::string Document::fileNameForSchema(const std::string& file, long schema)
+{
+    const std::string ext = Base::FileInfo(file).extension();
+    const char* want = getFileExtension(schema);
+    if (!isDocumentExtension(ext) || boost::iequals(ext, want))
+        return file;
+    return file.substr(0, file.size() - ext.size()) + want;
+}
+
+std::string Document::findSiblingFile(const std::string& file)
+{
+    const std::string ext = Base::FileInfo(file).extension();
+    if (!isDocumentExtension(ext))
+        return {};
+    std::string other = file.substr(0, file.size() - ext.size())
+        + (boost::iequals(ext, "TStd") ? "FCStd" : "TStd");
+    return Base::FileInfo(other).exists() ? other : std::string();
+}
+
+std::string Document::getSaveFileName() const
+{
+    std::string file = FileName.getStrValue();
+    // Only a file this build read in a format others read too, about to be
+    // written in one they do not. Anything else is saved where it is.
+    if (file.empty() || d->fileSchema <= 0 || d->fileSchema >= 5
+            || getSaveSchemaVersion() < 5 || Base::FileInfo(file).isDir())
+        return file;
+    return fileNameForSchema(file, getSaveSchemaVersion());
+}
+
+static std::string checkFileName(const char *file, long schema) {
     Base::FileInfo fi(file);
     if(fi.isDir())
         return file;
@@ -4265,14 +4328,15 @@ static std::string checkFileName(const char *file) {
 
     // Append extension if missing. This option is added for security reason, so
     // that the user won't accidentally overwrite other file that may be critical.
+    // Either document extension counts as one; a name given without picks
+    // the one of the schema about to be written.
     if(DocumentParams::getCheckExtension())
     {
         const char *ext = strrchr(file,'.');
-        if(!ext || !boost::iequals(ext+1,"fcstd")) {
-            if(ext && ext[1] == 0)
-                fn += "FCStd";
-            else
-                fn += ".FCStd";
+        if(!ext || !Document::isDocumentExtension(ext+1)) {
+            if(!ext || ext[1] != 0)
+                fn += ".";
+            fn += Document::getFileExtension(schema);
         }
     }
     return fn;
@@ -4280,7 +4344,7 @@ static std::string checkFileName(const char *file) {
 
 bool Document::saveAs(const char* _file)
 {
-    std::string file = checkFileName(_file);
+    std::string file = checkFileName(_file, getSaveSchemaVersion());
     // Naming a host file to write is fs.write (F1, docs/Sandbox.md 7.29).
     // save() writes the document's OWN file and stays the guest's to call
     // (S1); saveAs chooses a path, so it is gated -- and a path the user
@@ -4294,13 +4358,16 @@ bool Document::saveAs(const char* _file)
         this->Label.setValue(fi.fileNamePure());
         this->Uid.touch(); // this forces a rename of the transient directory
     }
+    // A name given is the file written, whatever was there: the sibling rule
+    // of save() protects a file opened, not one asked for.
+    d->fileSchema = 0;
 
     return save();
 }
 
 bool Document::saveCopy(const char* _file, bool withHistory) const
 {
-    std::string file = checkFileName(_file);
+    std::string file = checkFileName(_file, getSaveSchemaVersion());
     // a copy is a host file written by path, exactly as saveAs (7.29)
     ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     if (this->FileName.getStrValue() != file) {
@@ -4335,6 +4402,22 @@ bool Document::save ()
     }
 
     if (*(FileName.getValue()) != '\0') {
+        // Raising a file other builds read into a format they do not is not
+        // done in place: the current format goes to a sibling under its own
+        // extension, the original is left as it was, and the document lives
+        // at the sibling from here on (user ruling 2026-10-14).
+        const std::string target = getSaveFileName();
+        if (target != FileName.getStrValue()) {
+            // A new file on the host, not the document's own (7.29).
+            ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, target);
+            // Said where a script will see it: a macro that saves what it
+            // opened finds a new file, not the one it read.
+            FC_MSG("'" << Label.getValue() << "' saved as " << target << ", beside "
+                    << FileName.getValue() << ", which is left as it was");
+            Base::FlagToggler<> quiet(d->bookkeeping, false);
+            FileName.setValue(target);
+            Uid.touch(); // a different file: rename the transient directory, as saveAs does
+        }
         {
             Base::FlagToggler<> quiet(d->bookkeeping, false);
             // Save the name of the tip object in order to handle in Restore()
@@ -4351,7 +4434,10 @@ bool Document::save ()
             }
         }
 
-        return saveToFile(FileName.getValue());
+        if (!saveToFile(FileName.getValue()))
+            return false;
+        d->fileSchema = getSaveSchemaVersion();
+        return true;
     }
 
     return false;
@@ -4380,6 +4466,10 @@ public:
     }
     void useBackupExtension(bool on) {
         useFCBakExtension = on;
+    }
+    /// "FCBak" or "TBak", without the dot (Document::getBackupExtension).
+    void setBackupExtension(const std::string& ext) {
+        backupExtension = ext;
     }
     void setDateFormat(const std::string& fmt) {
         saveBackupDateFormat = fmt;
@@ -4487,8 +4577,6 @@ private:
                     for (const Base::FileInfo& it : files) {
                         std::string file = it.fileName();
                         std::string fext = it.extension();
-                        std::string fextUp = fext;
-                        std::transform(fextUp.begin(), fextUp.end(), fextUp.begin(),(int (*)(int))toupper);
                         // re-enforcing identification of the backup file
 
 
@@ -4497,8 +4585,10 @@ private:
                              (file.length() > fn.length()) &&
                              checkDigits(file.substr(fn.length()))) ||
                              // .FCBak case : The bame starts with the base name of the project + "."
-                             // + complement with no "." + ".FCBak"
-                             ((fextUp == "FCBAK") && startsWith(file, pbn) &&
+                             // + complement with no "." + ".FCBak". Only this file's own
+                             // kind: Part.TStd and Part.FCStd share a base name, and the
+                             // backups of one are not the other's to prune.
+                             (boost::iequals(fext, backupExtension) && startsWith(file, pbn) &&
                              (checkValidComplement(file, pbn, fext)))) {
                             // Asked last, and of the entries with a backup's
                             // name alone: it is a question to the file
@@ -4558,7 +4648,7 @@ private:
                             }
                         }
                         else {
-                            if (!renameFileNoErase(fi, fn+".FCBak")) {
+                            if (!renameFileNoErase(fi, fn+"."+backupExtension)) {
                                 fn = fn + "-";
                             }
                             else {
@@ -4568,7 +4658,7 @@ private:
 
                         if (!done) {
                             while (ext < numberOfFiles + 10) {
-                                if (renameFileNoErase(fi, fn+std::to_string(ext)+".FCBak"))
+                                if (renameFileNoErase(fi, fn+std::to_string(ext)+"."+backupExtension))
                                     break;
                                 ext++;
                             }
@@ -4659,6 +4749,7 @@ private:
     Policy policy;
     int numberOfFiles;
     bool useFCBakExtension;
+    std::string backupExtension {"FCBak"};
     std::string saveBackupDateFormat;
 };
 }
@@ -4813,6 +4904,7 @@ bool Document::saveToFile(const char* filename) const
         if (useFCBakExtension) {
             policy.setPolicy(BackupPolicy::TimeStamp);
             policy.useBackupExtension(useFCBakExtension);
+            policy.setBackupExtension(getBackupExtension(nativePath));
             policy.setDateFormat(saveBackupDateFormat);
         }
         else {
