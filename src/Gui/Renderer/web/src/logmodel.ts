@@ -3,7 +3,7 @@
 // functions, so that the gate checks them in node with no DOM
 // (widgets/gate.ts).
 
-import type { LogBranch, LogOp, LogReach, LogRow, LogVersion } from './control';
+import type { LogBranch, LogOp, LogReach, LogRequest, LogRow, LogVersion } from './control';
 
 /// What a refusal says, in the card's words.
 export function logRefusal(e: { code?: string; message?: string } | undefined): string {
@@ -59,56 +59,104 @@ const UNDO_KINDS = ['user', 'implicit', 'undo', 'redo', 'pick'];
 
 /// Whether a row can be taken back from where the document is: it changed
 /// something, by hand, and is of this branch's history -- and, for all but
-/// the host, it is the asker's own and not from before the serving point
-/// (sec 32.23). The host decides; this is what the card offers.
+/// the host, it is the asker's own (sec 30.10, 32.25). The host decides;
+/// this is what the card offers.
 export function rowUndoable(row: LogRow, reach: LogReach): boolean {
   if (!row.here || row.ops === 0 || !UNDO_KINDS.includes(row.kind)) return false;
-  return reach.host || (row.mine && row.within);
+  return reach.host || row.mine;
 }
 
 /// Why a row is not offered to be taken back, where that is who asks.
 export function rowUndoWhy(row: LogRow, reach: LogReach): string {
   if (reach.host || !row.here || row.ops === 0 || !UNDO_KINDS.includes(row.kind)) return '';
-  if (!row.within) return BEFORE;
   return row.mine ? '' : `${row.author} made this row: it is theirs to take back, or the host's`;
 }
 
-const BEFORE = 'from before this document was served: the host\'s';
-const SHARED = 'in a shared document this is the host\'s to do';
+const BEFORE = 'from before the point this branch is yours to write from';
+const NEEDS = 'this needs write access of the branch, which the host gives';
 
 /// Whether the one who asks may move the document in its log at all --
-/// switch, restore, make or rename a branch: the host anywhere, the others
-/// in a document that was opened for them from a branch.
+/// switch, restore, make a branch: the host, and one who writes the branch
+/// the document is on.
 export function mayMove(reach: LogReach): boolean {
-  return reach.host || reach.own;
+  return reach.host || reach.write;
 }
 
 /// Why something that moves the document is not offered; empty when it is.
-/// `within` is whether what it is done to -- a row, a version, a branch --
-/// is from the serving point on.
+/// `within` is whether what it is done to -- a row, a version -- is one the
+/// asker may move a document from.
 export function moveWhy(reach: LogReach, within = true): string {
   if (reach.host) return '';
-  if (!reach.own) return SHARED;
+  if (!reach.write) return NEEDS;
   return within ? '' : BEFORE;
 }
 
-/// A row a branch can be made from: any for the host; for the others one
-/// made since the serving point, or the serving point itself.
-export function rowBranchWhy(row: LogRow, reach: LogReach, floor?: number): string {
-  return moveWhy(reach, row.within || row.seq === floor);
+/// A row a branch can be made from.
+export function rowBranchWhy(row: LogRow, reach: LogReach): string {
+  return moveWhy(reach, row.within);
 }
 
 /// The branches offered to be deleted: not the one the document is on; for
-/// all but the host, in a document of their own, those made since the
-/// serving point but the one the document was opened on.
+/// all but the host, those of the asker's own making.
 export function deletable(branches: LogBranch[], reach: LogReach): LogBranch[] {
-  return branches.filter((b) => !b.current
-    && (reach.host || (reach.own && b.within && !b.root)));
+  return branches.filter((b) => !b.current && (reach.host || b.made));
+}
+
+/// The branches offered to be switched to: for all but the host, those the
+/// asker writes -- and none where it does not write the one it is on.
+export function switchable(b: LogBranch, reach: LogReach): boolean {
+  if (b.current) return true;
+  if (b.closed) return false;
+  return reach.host || (reach.write && b.write);
 }
 
 /// Whether a version's acts are the asker's: see moveWhy.
 export function versionWhy(v: LogVersion, reach: LogReach): string {
   return moveWhy(reach, v.within);
+}
+
+/// Rows that can be applied here: of another branch, and having set
+/// something. Anyone who is listed them may.
+export function rowsAppliable(rows: LogRow[]): boolean {
+  return rows.length > 0 && rows.every((r) => !r.here && r.ops > 0);
+}
+
+/// What a request asks, in words.
+export function requestText(r: LogRequest): string {
+  return `merge ${r.source || '(a branch that is gone)'} into ${r.target || '(a branch that is gone)'}`;
+}
+
+/// How a request stands, in words.
+export function requestState(r: LogRequest): string {
+  if (r.state === 'open') return 'open';
+  return r.closedBy ? `${r.state} by ${r.closedBy}` : r.state;
+}
+
+/// What the asker may do of a request, and why it may not merge one it
+/// could: a merge is done in a document that is on the branch merged into.
+export function requestActs(r: LogRequest): {
+  merge: boolean; reject: boolean; withdraw: boolean; mergeWhy: string;
+} {
+  const open = r.state === 'open';
+  return {
+    merge: open && r.handles && r.here,
+    reject: open && r.handles,
+    withdraw: open && r.mine,
+    mergeWhy: open && r.handles && !r.here
+      ? `it is merged in a document that is on ${r.target}` : '',
+  };
+}
+
+/// The requests as listed: those still open first, then the newest.
+export function sortRequests(list: LogRequest[]): LogRequest[] {
+  return [...list].sort((a, b) =>
+    (a.state === 'open' ? 0 : 1) - (b.state === 'open' ? 0 : 1) || b.id - a.id);
+}
+
+/// Why two branches are not one to ask a merge of; empty when they are.
+export function requestProblem(source: string, target: string): string {
+  if (!source || !target) return 'two branches';
+  return source === target ? 'a branch is not merged into itself' : '';
 }
 
 /// The rows chosen after a click on one: alone, or with the others where
@@ -158,6 +206,7 @@ export function actRefusal(e: { code?: string; message?: string } | undefined): 
     case 'ViewOnly': return 'Changing the history needs the right to edit.';
     case 'Forbidden': return e?.message || 'Only the host may do that.';
     case 'NotYours': return e?.message || 'That row is not yours to take back.';
+    case 'Conflicts': return e?.message || 'It meets what was set here since.';
     case 'Editing': return 'An edit is open: leave it first.';
     case 'Offline':
     case 'Timeout': return 'The viewer did not answer.';

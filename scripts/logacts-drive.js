@@ -88,6 +88,17 @@ const HELPERS = () => {
                  offered: [...el.options].filter((o) => !o.disabled).map((o) => o.value)}
               : null;
   };
+  window.__fcRequests = () => [...document.querySelectorAll('.fc-log-requests tbody tr')]
+    .map((tr) => ({id: Number(tr.dataset.id), what: first(tr.querySelectorAll('td')[1]),
+                   state: (tr.querySelector('.fc-log-kind') || {}).innerText || '',
+                   who: tr.querySelectorAll('td')[2].innerText.trim()}));
+  window.__fcPick = (selector, value) => {
+    const el = document.querySelector(selector);
+    if (!el) return false;
+    el.value = value;
+    el.dispatchEvent(new Event('change', {bubbles: true}));
+    return el.value === value;
+  };
   window.__fcSwitch = (name) => {
     const el = document.querySelector('.fc-log-branchsel');
     if (!el) return false;
@@ -277,6 +288,60 @@ async function answer(page, text) {
     out.restoreSaid = await page.evaluate(() => window.__fcStatus());
     await page.evaluate(() => window.__fcTab('rows'));
     await phase('restored');
+
+    // A row of the branch this one was made from, which is read: applied here.
+    // The host commits it there at the phase before.
+    out.mainRow = await waitFor(
+      page, () => window.__fcRows().some((r) => r.what === 'on main' && r.away), 20000);
+    await page.evaluate(() => window.__fcClickRow('on main'));
+    await sleep(300);
+    out.applySays = await page.evaluate(() => window.__fcActSays('apply'));
+    out.applyUndoSays = await page.evaluate(() => window.__fcActSays('undo'));
+    out.applyAsked = await page.evaluate(() => window.__fcClickAct('apply'));
+    await waitFor(page, () => /applied/.test((window.__fcStatus() || {}).text || ''), 30000);
+    out.applySaid = await page.evaluate(() => window.__fcStatus());
+    // The host makes one more row here at this phase, as the page's user
+    await phase('applied');
+    await waitFor(page, () => window.__fcRows().some((r) => r.what === 'mine last'), 15000);
+
+    // The work asked back
+    await page.evaluate(() => window.__fcTab('requests'));
+    await waitFor(page, () => !!document.querySelector('.fc-log-reqsource'), 10000);
+    out.noRequests = await page.evaluate(() => window.__fcRequests().length);
+    out.askNothing = await page.evaluate(() => window.__fcActSays('request-new'));
+    out.pickedSource = await page.evaluate(
+      (name) => window.__fcPick('.fc-log-reqsource', name), first);
+    out.pickedTarget = await page.evaluate(() => window.__fcPick('.fc-log-reqtarget', 'main'));
+    await page.click('.fc-log-reqnote');
+    await page.keyboard.type('the work of the page');
+    await sleep(200);
+    out.askSays = await page.evaluate(() => window.__fcActSays('request-new'));
+    out.askAsked = await page.evaluate(() => window.__fcClickAct('request-new'));
+    await waitFor(page, () => /Request \d+/.test((window.__fcStatus() || {}).text || ''), 20000);
+    out.askSaid = await page.evaluate(() => window.__fcStatus());
+    await waitFor(page, () => window.__fcRequests().length > 0, 15000);
+    out.requests = await page.evaluate(() => window.__fcRequests());
+    await page.evaluate(() => {
+      const tr = document.querySelector('.fc-log-requests tbody tr');
+      if (tr) tr.click();
+    });
+    await sleep(300);
+    out.requestActs = await page.evaluate(
+      () => ['request-merge', 'request-reject', 'request-withdraw']
+        .map((a) => window.__fcActSays(a)));
+    out.requestTab = await page.evaluate(
+      () => (document.querySelector('.fc-log [data-tab="requests"]') || {}).textContent);
+    await shot(page, 'requests');
+    // The host merges it in the first document at this phase
+    await phase('asked');
+    out.mergedSeen = await waitFor(
+      page, () => window.__fcRequests().some((r) => /merged/.test(r.state)), 30000);
+    out.requestsEnd = await page.evaluate(() => window.__fcRequests());
+    out.requestActsEnd = await page.evaluate(
+      () => ['request-merge', 'request-reject', 'request-withdraw']
+        .map((a) => window.__fcActSays(a)));
+    await page.evaluate(() => window.__fcTab('rows'));
+    await phase('merged');
 
     // The branch renamed
     out.renameAsked = await page.evaluate(() => window.__fcClickAct('rename-branch'));

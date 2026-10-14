@@ -897,8 +897,8 @@ html.fc-split-forbidden * {
 .fc-log-num { text-align: right; color: #a8b4c4; }
 .fc-log-record { color: #8a8f98; }
 .fc-log-away { font-style: italic; color: #9aa0aa; }
-/* from before the serving point of a document opened from a branch (sec
-   32.23): read, and not acted on */
+/* from before the point the branch is the asker's to write from (sec
+   32.25): read, and not acted on */
 .fc-log-before { color: #7d828b; }
 .fc-log-op { display: flex; align-items: center; padding: 3px 8px; }
 .fc-log-optext { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -930,6 +930,10 @@ html.fc-split-forbidden * {
 .fc-log-rowacts { border-top: 1px solid rgba(255, 255, 255, 0.1); border-bottom: none; }
 .fc-log-ask { background: rgba(88, 132, 255, 0.12); }
 .fc-log-asklabel { flex: 1 1 100%; }
+/* the requests to merge (sec 32.25): what is asked, in one line that wraps */
+.fc-log-reqnew { background: none; }
+.fc-log-reqnew select.fc-log-act { max-width: 120px; }
+.fc-log-reqsaid { color: #a8b4c4; }
 .fc-log-act,
 .fc-log-branchsel,
 .fc-log-askinput {

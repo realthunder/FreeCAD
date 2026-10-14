@@ -20,27 +20,32 @@
 // Seeing the log needs the right to edit (ruled 2026-10-13): a viewer is
 // answered ViewOnly, which the card says in words.
 //
-// Whose the document's place in its log is (sec 32.23) is the host's to say
-// with every list: in a shared document a client takes back its own rows
-// and takes versions, and the rest is the host's; in a document opened for
-// it from a branch the rest is its own too, from the serving point on. The
-// card offers what would be done and says of the rest why not.
+// What the one at the page may (sec 32.25) is the host's to say with every
+// list: by branch, read or write. Reading a branch lists it, lets its rows
+// be applied here and a merge of it be asked for; writing the one the
+// document is on lets the document be moved -- restore, switch, branch --
+// from a point on, and writing a branch lets the requests to merge into it
+// be dealt with. A client of a shared document reads its branch: it takes
+// back its own rows and takes versions. The card offers what would be done
+// and says of the rest why not.
 
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
 import {
-  logBranches, logDeleteBranch, logNameVersion, logNewBranch, logOps, logRenameBranch,
-  logRestore, logRows, logSnapshot, logSwitchBranch, logUndoRows, logValue, logVersions,
+  logApply, logBranches, logCloseRequest, logDeleteBranch, logMergeRequest, logNameVersion,
+  logNewBranch, logOps, logRenameBranch, logRequest, logRequests, logRestore, logRows,
+  logSnapshot, logSwitchBranch, logUndoRows, logValue, logVersions,
   onConnection, onLogChanged, showRowChange,
-  type LogBranch, type LogOp, type LogOpsReply, type LogReach, type LogRow,
+  type LogBranch, type LogOp, type LogOpsReply, type LogReach, type LogRequest, type LogRow,
   type LogValueReply, type LogVersion,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
 import {
   actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefusal, logWhen,
-  mayMove, mergeNewest, moveWhy, pickRows, rowBranchWhy, rowUndoable, rowUndoWhy, undoLabel,
-  versionText, versionWhy,
+  mayMove, mergeNewest, moveWhy, pickRows, requestActs, requestProblem, requestState,
+  requestText, rowBranchWhy, rowUndoable, rowUndoWhy, rowsAppliable, sortRequests, switchable,
+  undoLabel, versionText, versionWhy,
 } from './logmodel.ts';
 
 const POS_KEY = 'fcviewer.log.pos';
@@ -66,6 +71,8 @@ interface Ask {
   problem?: (text: string) => string;
   /// The act: what it says when done
   run: (text: string) => Promise<string>;
+  /// A second answer, where there are two ways to go on
+  other?: { label: string; run: () => Promise<string> };
 }
 
 export function LogPanel(props: LogPanelProps) {
@@ -84,11 +91,15 @@ export function LogPanel(props: LogPanelProps) {
   const [records, setRecords] = createSignal((() => {
     try { return localStorage.getItem(RECORDS_KEY) === '1'; } catch { return false; }
   })());
-  const [tab, setTab] = createSignal<'rows' | 'versions'>('rows');
+  const [tab, setTab] = createSignal<'rows' | 'versions' | 'requests'>('rows');
+  const [requests, setRequests] = createSignal<LogRequest[]>([]);
+  const [request, setRequest] = createSignal<number | null>(null);
+  const [reqSource, setReqSource] = createSignal('');
+  const [reqTarget, setReqTarget] = createSignal('');
+  const [reqNote, setReqNote] = createSignal('');
   const [branches, setBranches] = createSignal<LogBranch[]>([]);
   // Until the host says: nothing but reading is offered
-  const [reach, setReach] = createSignal<LogReach>({ host: false, own: false });
-  const [floor, setFloor] = createSignal<number | undefined>(undefined);
+  const [reach, setReach] = createSignal<LogReach>({ host: false, write: false });
   const [versions, setVersions] = createSignal<LogVersion[]>([]);
   const [version, setVersion] = createSignal<number | null>(null);
   const [ask, setAsk] = createSignal<Ask | null>(null);
@@ -104,6 +115,9 @@ export function LogPanel(props: LogPanelProps) {
   let again = false;
   /// The row the rows between are counted from, with shift held
   let anchor: number | null = null;
+  /// How far back the log was read: the rows of branches that are not read
+  /// are left out of a page, so the oldest row listed is not it
+  let oldest = 0;
 
   const shown = () => (records() ? rows() : rows().filter((r) => r.ops > 0));
   /// The one row chosen, whose ops are listed; none where several are
@@ -112,8 +126,10 @@ export function LogPanel(props: LogPanelProps) {
   const pickedRows = () => rows().filter((r) => picked().includes(r.seq));
   const chosenVersion = () => versions().find((v) => v.num === version()) ?? null;
   const chosenRow = () => rows().find((r) => r.seq === selected()) ?? null;
-  /// Why the branch the document is on is not the asker's to move from
-  const hereWhy = () => moveWhy(reach(), current()?.within ?? true);
+  const chosenRequest = () => requests().find((r) => r.id === request()) ?? null;
+  const openRequests = () => requests().filter((r) => r.state === 'open').length;
+  /// Why the document is not the asker's to move
+  const hereWhy = () => moveWhy(reach());
   /// Why the rows chosen are not taken back: the first that says
   const undoWhy = () => pickedRows().map((r) => rowUndoWhy(r, reach())).find((w) => w) ?? '';
 
@@ -136,8 +152,8 @@ export function LogPanel(props: LogPanelProps) {
       setRows(merged);
       setMore(kept ? more() : r.more);
       at = { head: r.head, branch: r.branch, last: r.last };
-      setReach({ host: r.host, own: r.own });
-      setFloor(r.floor);
+      oldest = kept && oldest ? oldest : (r.oldest ?? 0);
+      setReach({ host: r.host, write: r.write });
       setError('');
       const left = picked().filter((seq) => merged.some((row) => row.seq === seq));
       if (left.length !== picked().length) choose(left);
@@ -161,7 +177,12 @@ export function LogPanel(props: LogPanelProps) {
     try {
       const b = await logBranches(props.doc());
       setBranches(b.branches);
-      setReach({ host: b.host, own: b.own });
+      setReach({ host: b.host, write: b.write });
+    } catch { /* said by the rows */ }
+    try {
+      const q = await logRequests(props.doc());
+      setRequests(sortRequests(q.requests));
+      if (request() !== null && !q.requests.some((x) => x.id === request())) setRequest(null);
     } catch { /* said by the rows */ }
     if (tab() !== 'versions') return;
     try {
@@ -174,10 +195,12 @@ export function LogPanel(props: LogPanelProps) {
 
   const loadOlder = async () => {
     const list = rows();
-    if (!list.length) return;
+    const before = oldest || (list.length ? list[list.length - 1].seq : 0);
+    if (!before) return;
     try {
-      const r = await logRows(props.doc(), { before: list[list.length - 1].seq });
+      const r = await logRows(props.doc(), { before });
       setRows([...rows(), ...r.rows]);
+      oldest = r.oldest ?? before;
       setMore(r.more);
     } catch (e: any) {
       setError(logRefusal(e));
@@ -276,6 +299,72 @@ export function LogPanel(props: LogPanelProps) {
     setAsk(null);
     void act(() => q.run(text));
   };
+  const answerOther = () => {
+    const q = ask();
+    if (!q?.other) return;
+    setAsk(null);
+    void act(q.other.run);
+  };
+
+  /// What was asked met what was set here since: the host says how many,
+  /// and the card asks a side for them all -- each is picked one by one at
+  /// the desktop's panel, which the card has not.
+  const askSide = (said: string, run: (side: 'ours' | 'theirs') => Promise<string>) => question({
+    label: `${said} Which side for all of them?`,
+    yes: 'Take theirs',
+    run: () => run('theirs'),
+    other: { label: 'Keep ours', run: () => run('ours') },
+  });
+  /// An act that may meet conflicts: done, or asked a side and done again
+  const actWithSides = (run: (side?: 'ours' | 'theirs') => Promise<string>) => {
+    if (busy()) return;
+    setBusy(true);
+    setStatus(null);
+    run().then(
+      (text) => setStatus({ text, bad: false }),
+      (e: any) => {
+        if (e?.code === 'Conflicts') askSide(actRefusal(e), (side) => run(side));
+        else setStatus({ text: actRefusal(e), bad: true });
+      },
+    ).finally(() => {
+      setBusy(false);
+      void refresh();
+      void refreshLists();
+    });
+  };
+
+  const applyPicked = () => {
+    const seqs = [...picked()].sort((a, b) => a - b);
+    if (!seqs.length) return;
+    actWithSides(async (side) => {
+      const r = await logApply(seqs, side, props.doc());
+      choose([]);
+      if (!r.row) return 'Applied: nothing changed here';
+      return seqs.length === 1 ? `Row ${seqs[0]} applied as row ${r.row}`
+                               : `${seqs.length} rows applied as row ${r.row}`;
+    });
+  };
+
+  const askMerge = () => {
+    const source = reqSource();
+    const target = reqTarget();
+    const note = reqNote().trim();
+    if (requestProblem(source, target)) return;
+    void act(async () => {
+      const r = await logRequest(source, target, note, props.doc());
+      setReqNote('');
+      return `Request ${r.request}: merge ${source} into ${target}`;
+    });
+  };
+  const mergeRequested = (r: LogRequest) => actWithSides(async (side) => {
+    const m = await logMergeRequest(r.id, side, props.doc());
+    return m.forwarded ? `Merged ${r.source}: ${m.forwarded} rows taken as they are`
+                       : `Merged ${r.source} as row ${m.row}`;
+  });
+  const closeRequest = (r: LogRequest, state: 'withdrawn' | 'rejected') => void act(async () => {
+    await logCloseRequest(r.id, state, props.doc());
+    return `Request ${r.id} ${state}`;
+  });
 
   const undoPicked = () => {
     const seqs = [...picked()].sort((a, b) => a - b);
@@ -362,6 +451,9 @@ export function LogPanel(props: LogPanelProps) {
     setBranches([]);
     setVersions([]);
     setVersion(null);
+    setRequests([]);
+    setRequest(null);
+    oldest = 0;
     setAsk(null);
     setStatus(null);
     choose([]);
@@ -422,8 +514,7 @@ export function LogPanel(props: LogPanelProps) {
                     }}>
               <For each={branches()}>
                 {(b) => (
-                  <option value={b.name} selected={b.current}
-                          disabled={!b.current && (b.closed || !!moveWhy(reach(), b.within))}>
+                  <option value={b.name} selected={b.current} disabled={!switchable(b, reach())}>
                     {b.closed ? `${b.name} (closed)` : b.name}
                   </option>
                 )}
@@ -439,11 +530,12 @@ export function LogPanel(props: LogPanelProps) {
         </div>
 
         <div class="fc-log-acts">
-          <For each={['rows', 'versions'] as const}>
+          <For each={['rows', 'versions', 'requests'] as const}>
             {(which) => (
               <button class="fc-log-act fc-log-tab" classList={{ 'fc-log-sel': tab() === which }}
                       data-tab={which} onClick={() => setTab(which)}>
-                {which === 'rows' ? 'Rows' : 'Versions'}
+                {which === 'rows' ? 'Rows' : which === 'versions' ? 'Versions'
+                  : openRequests() ? `Requests (${openRequests()})` : 'Requests'}
               </button>
             )}
           </For>
@@ -492,6 +584,11 @@ export function LogPanel(props: LogPanelProps) {
                     disabled={!!askProblem()} title={askProblem() || undefined}>
               {ask()!.yes}
             </button>
+            <Show when={ask()!.other}>
+              <button class="fc-log-act" type="button" data-act="other" onClick={answerOther}>
+                {ask()!.other!.label}
+              </button>
+            </Show>
             <button class="fc-log-act" type="button" data-act="no" onClick={() => setAsk(null)}>
               Cancel
             </button>
@@ -522,11 +619,12 @@ export function LogPanel(props: LogPanelProps) {
                           'fc-log-sel': picked().includes(row.seq),
                           'fc-log-record': row.ops === 0,
                           'fc-log-away': !row.here,
-                          'fc-log-before': reach().own && !row.within,
+                          'fc-log-before': reach().write && !reach().host && !row.within,
                         }}
                         data-seq={row.seq}
                         title={!row.here ? `on branch ${row.branchName}`
-                          : reach().own && !row.within ? 'from before this document was served'
+                          : reach().write && !reach().host && !row.within
+                            ? 'from before the point this branch is yours to write from'
                             : undefined}
                         onClick={(e) => clickRow(row.seq, e)}>
                       <td class="fc-log-num">{row.seq}</td>
@@ -568,12 +666,22 @@ export function LogPanel(props: LogPanelProps) {
               </button>
               <button class="fc-log-act" data-act="branch-here"
                       disabled={busy() || !chosenRow()
-                                || !!rowBranchWhy(chosenRow()!, reach(), floor())}
-                      title={(chosenRow() && rowBranchWhy(chosenRow()!, reach(), floor()))
+                                || !!rowBranchWhy(chosenRow()!, reach())}
+                      title={(chosenRow() && rowBranchWhy(chosenRow()!, reach()))
                              || 'a new branch whose history ends at this row, switched to'}
                       onClick={() => newBranch({ row: selected()! }, `row ${selected()}`)}>
                 Branch from here...
               </button>
+              <Show when={pickedRows().some((r) => !r.here)}>
+                <button class="fc-log-act" data-act="apply"
+                        disabled={busy() || !rowsAppliable(pickedRows())}
+                        title={'what the rows chosen set, written to this branch as a step '
+                               + 'of its own; their branch is not merged by it'}
+                        onClick={applyPicked}>
+                  {picked().length === 1 ? `Apply row ${picked()[0]} here`
+                                         : `Apply ${picked().length} rows here`}
+                </button>
+              </Show>
               <span class="fc-log-spacer" />
               <label class="fc-log-records" title="a click adds a row to those chosen">
                 <input type="checkbox" data-act="several" checked={several()}
@@ -665,7 +773,7 @@ export function LogPanel(props: LogPanelProps) {
                           'fc-log-sel': version() === v.num,
                           'fc-log-record': !v.named,
                           'fc-log-away': !v.here,
-                          'fc-log-before': reach().own && !v.within,
+                          'fc-log-before': reach().write && !reach().host && !v.within,
                         }}
                         data-num={v.num}
                         onClick={() => setVersion(v.num)}>
@@ -719,6 +827,86 @@ export function LogPanel(props: LogPanelProps) {
                       onClick={() => newBranch({ version: chosenVersion()!.num },
                                                `version ${chosenVersion()!.num}`)}>
                 Branch from here...
+              </button>
+            </div>
+          </Show>
+        </Show>
+
+        <Show when={tab() === 'requests'}>
+          <form class="fc-log-ask fc-log-reqnew" onSubmit={(e) => { e.preventDefault(); askMerge(); }}>
+            <span>Merge</span>
+            <select class="fc-log-act fc-log-reqsource" value={reqSource()}
+                    onChange={(e) => setReqSource(e.currentTarget.value)}>
+              <option value="">a branch...</option>
+              <For each={branches()}>{(b) => <option value={b.name}>{b.name}</option>}</For>
+            </select>
+            <span>into</span>
+            <select class="fc-log-act fc-log-reqtarget" value={reqTarget()}
+                    onChange={(e) => setReqTarget(e.currentTarget.value)}>
+              <option value="">a branch...</option>
+              <For each={branches()}>{(b) => <option value={b.name}>{b.name}</option>}</For>
+            </select>
+            <input class="fc-log-askinput fc-log-reqnote" type="text" placeholder="a note"
+                   value={reqNote()} onInput={(e) => setReqNote(e.currentTarget.value)} />
+            <button class="fc-log-act" type="submit" data-act="request-new"
+                    disabled={busy() || !!requestProblem(reqSource(), reqTarget())}
+                    title={requestProblem(reqSource(), reqTarget())
+                           || 'ask whoever writes the second branch to merge the first into it'}>
+              Ask
+            </button>
+          </form>
+          <div class="fc-log-rows fc-log-requests">
+            <table>
+              <thead>
+                <tr><th class="fc-log-num">#</th><th>Request</th><th>Who</th><th>When</th></tr>
+              </thead>
+              <tbody>
+                <For each={requests()}>
+                  {(r) => (
+                    <tr classList={{
+                          'fc-log-sel': request() === r.id,
+                          'fc-log-record': r.state !== 'open',
+                        }}
+                        data-id={r.id} title={r.note || undefined}
+                        onClick={() => setRequest(r.id)}>
+                      <td class="fc-log-num">{r.id}</td>
+                      <td>
+                        {requestText(r)}
+                        <span class="fc-log-kind">{requestState(r)}</span>
+                      </td>
+                      <td>{logAuthor({ author: r.by, authorKind: r.byKind })}</td>
+                      <td>{logWhen(r.time)}</td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+            <Show when={!requests().length}>
+              <div class="fc-log-empty">No requests.</div>
+            </Show>
+          </div>
+
+          <Show when={chosenRequest()}>
+            <div class="fc-log-rowacts">
+              <Show when={chosenRequest()!.note}>
+                <span class="fc-log-asklabel fc-log-reqsaid">{chosenRequest()!.note}</span>
+              </Show>
+              <button class="fc-log-act" data-act="request-merge"
+                      disabled={busy() || !requestActs(chosenRequest()!).merge}
+                      title={requestActs(chosenRequest()!).mergeWhy
+                             || 'merge it into the branch the document is on'}
+                      onClick={() => mergeRequested(chosenRequest()!)}>
+                Merge
+              </button>
+              <button class="fc-log-act" data-act="request-reject"
+                      disabled={busy() || !requestActs(chosenRequest()!).reject}
+                      onClick={() => closeRequest(chosenRequest()!, 'rejected')}>
+                Reject
+              </button>
+              <button class="fc-log-act" data-act="request-withdraw"
+                      disabled={busy() || !requestActs(chosenRequest()!).withdraw}
+                      onClick={() => closeRequest(chosenRequest()!, 'withdrawn')}>
+                Withdraw
               </button>
             </div>
           </Show>

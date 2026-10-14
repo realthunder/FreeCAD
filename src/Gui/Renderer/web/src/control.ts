@@ -515,21 +515,23 @@ export interface LogRow {
   ops: number;               // 0: a record, which changed nothing
   here: boolean;             // of the history the document is at the head of
   mine: boolean;             // made by the one who asks
-  within: boolean;           // made since the serving point, where there is one
+  within: boolean;           // a document may be moved from it by the one who asks
 }
 
-/// Whose the document's place in its log is (docs/TransactionLog.md sec
-/// 32.23): the host's connection may move it anywhere; in a document opened
-/// from a branch to be served (`own`) so may the others, from the serving
-/// point on; in a shared one they may not.
+/// What the one who asks may (docs/TransactionLog.md sec 32.25): the host
+/// all of it; anyone else by branch, and `write` says the branch the
+/// document is on is one it writes -- which is what lets it move the
+/// document: restore, switch, branch.
 export interface LogReach {
   host: boolean;
-  own: boolean;
+  write: boolean;
 }
 
 export interface LogRowsReply extends LogReach {
   doc: string;
-  floor?: number;            // the row the document was served from, in one of its own
+  floor?: number;            // the row the branch the document is on is written from
+  oldest?: number;           // the oldest row the page was read to: rows of branches
+                             // that are not read are left out of it
   rows: LogRow[];            // newest first
   more: boolean;             // older ones than these exist
   reset?: boolean;           // more came than a page: start over from these
@@ -615,7 +617,7 @@ export interface LogVersion {
   time: number;
   here: boolean;             // of the history the document is at the head of
   head: boolean;             // the document as it stands
-  within: boolean;           // at the serving point or since, where there is one
+  within: boolean;           // a document may be moved to it by the one who asks
 }
 
 export interface LogBranch {
@@ -627,8 +629,27 @@ export interface LogBranch {
   time: number;
   closed: boolean;           // not switched to
   current: boolean;          // the one the document is on
-  within: boolean;           // the one served or made from it since, where there is one
-  root?: boolean;            // the one the document was opened on to be served
+  write: boolean;            // the one who asks writes it
+  floor?: number;            // and from which row
+  made: boolean;             // made by the asker's own doing: its to delete
+}
+
+/// A request to merge one branch into another.
+export interface LogRequest {
+  id: number;
+  source: string;            // the branch to merge
+  target: string;            // the branch to merge it into
+  by: string;
+  byKind: string;
+  note: string;
+  time: number;
+  state: string;             // open, merged, rejected, withdrawn
+  closed?: number;
+  closedBy?: string;
+  result?: number;           // the row the merge wrote
+  mine: boolean;             // asked by the one who asks: its to withdraw
+  handles: boolean;          // the asker writes the target: its to merge or reject
+  here: boolean;             // the document is on the target, where it is merged
 }
 
 /// Rows taken back as one step though none is the last: all of them or
@@ -683,6 +704,45 @@ export function logRenameBranch(name: string, to: string, doc?: string): Promise
 
 export function logDeleteBranch(name: string, doc?: string): Promise<LogPlace & { rows: number }> {
   return sendOp('log.deleteBranch', withDoc(doc, { name }));
+}
+
+/// Rows of a branch that is read, applied to the one the document is on as
+/// a step of the asker's own. Where they meet what was set here since, the
+/// host answers `Conflicts` with how many, and `fallback` says a side for
+/// them all.
+export function logApply(
+  rows: number[], fallback?: 'ours' | 'theirs', doc?: string,
+): Promise<LogPlace & { row: number; failed: number }> {
+  return sendOp('log.apply', withDoc(doc, fallback ? { rows, fallback } : { rows }));
+}
+
+export function logRequests(
+  doc?: string,
+): Promise<LogPlace & LogReach & { requests: LogRequest[] }> {
+  return sendOp('log.requests', withDoc(doc, {}));
+}
+
+/// Ask for `source` to be merged into `target`: for one who reads both.
+export function logRequest(
+  source: string, target: string, note: string, doc?: string,
+): Promise<LogPlace & { request: number }> {
+  return sendOp('log.request', withDoc(doc, { source, target, note }));
+}
+
+/// End a request without merging: `withdrawn` by who asked, `rejected` by
+/// who writes its target.
+export function logCloseRequest(
+  request: number, state: 'withdrawn' | 'rejected', doc?: string,
+): Promise<LogPlace> {
+  return sendOp('log.closeRequest', withDoc(doc, { request, state }));
+}
+
+/// Do what a request asks, in a document that is on its target. `Conflicts`
+/// and `fallback` as for logApply.
+export function logMergeRequest(
+  request: number, fallback?: 'ours' | 'theirs', doc?: string,
+): Promise<LogPlace & { row: number; forwarded: number; failed: number }> {
+  return sendOp('log.mergeRequest', withDoc(doc, fallback ? { request, fallback } : { request }));
 }
 
 /// The host's "this document's log has other rows now": the document's

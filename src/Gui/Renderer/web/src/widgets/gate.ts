@@ -30,8 +30,9 @@ import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilte
          BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_OK } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefusal, logWhen,
-         mayMove, mergeNewest, moveWhy, pickRows, rowBranchWhy, rowUndoable, rowUndoWhy,
-         undoLabel, versionText, versionWhy } from '../logmodel.ts';
+         mayMove, mergeNewest, moveWhy, pickRows, requestActs, requestProblem, requestState,
+         requestText, rowBranchWhy, rowUndoable, rowUndoWhy, rowsAppliable, sortRequests,
+         switchable, undoLabel, versionText, versionWhy } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -761,9 +762,9 @@ function checkLog(): void {
         logRefusal({ code: 'LogError', message: 'boom' }) === 'boom');
 
   // acting on what is listed (sec 32.22)
-  const host = { host: true, own: false };
-  const shared = { host: false, own: false };
-  const own = { host: false, own: true };
+  const host = { host: true, write: false };
+  const reads = { host: false, write: false };
+  const writes = { host: false, write: true };
   check(t, 'a row made by hand, here, that changed something can be taken back',
         rowUndoable(row(5), host));
   check(t, 'a record cannot', !rowUndoable(row(5, { ops: 0 }), host));
@@ -771,44 +772,90 @@ function checkLog(): void {
   check(t, "another branch's row cannot", !rowUndoable(row(5, { here: false }), host));
   check(t, 'an undo can be, as any step', rowUndoable(row(5, { kind: 'undo' }), host));
 
-  // whose it is to do (sec 32.23)
+  // what the one who asks may (sec 32.25)
   const theirs = row(5, { mine: false, author: 'ann' });
   check(t, "the host takes back anyone's row", rowUndoable(theirs, host));
-  check(t, 'a client its own', rowUndoable(row(5), shared) && rowUndoable(row(5), own));
+  check(t, 'a client its own, whether it writes the branch or reads it',
+        rowUndoable(row(5), reads) && rowUndoable(row(5), writes));
   check(t, "not another's, and is told whose it is",
-        !rowUndoable(theirs, shared) && rowUndoWhy(theirs, shared).includes('ann'),
-        rowUndoWhy(theirs, shared));
+        !rowUndoable(theirs, reads) && !rowUndoable(theirs, writes)
+        && rowUndoWhy(theirs, reads).includes('ann'), rowUndoWhy(theirs, reads));
   const before = row(3, { within: false });
-  check(t, 'nor its own from before the serving point',
-        !rowUndoable(before, own) && rowUndoWhy(before, own).includes('before'),
-        rowUndoWhy(before, own));
-  check(t, 'a row that is no step says nothing of who', rowUndoWhy(row(5, { ops: 0 }), shared) === '');
-  check(t, 'the host may move the document, and a client one of its own',
-        mayMove(host) && mayMove(own) && !mayMove(shared));
-  check(t, "in a shared document moving it is the host's",
-        moveWhy(shared).includes('shared') && moveWhy(host) === '' && moveWhy(own) === '');
-  check(t, 'in its own, not from before the serving point',
-        moveWhy(own, false).includes('before') && moveWhy(host, false) === '');
-  check(t, 'a branch is made from the serving point itself',
-        rowBranchWhy(before, own, 3) === '' && rowBranchWhy(before, own, 4) !== ''
-        && rowBranchWhy(row(5), own, 3) === '' && rowBranchWhy(row(5), shared) !== '');
+  check(t, 'its own from before the point it writes from is still its own to take back',
+        rowUndoable(before, writes) && rowUndoWhy(before, writes) === '');
+  check(t, 'a row that is no step says nothing of who',
+        rowUndoWhy(row(5, { ops: 0 }), reads) === '');
+  check(t, 'the host may move the document, and one who writes its branch',
+        mayMove(host) && mayMove(writes) && !mayMove(reads));
+  check(t, 'one who reads is told what it needs',
+        moveWhy(reads).includes('write access') && moveWhy(host) === ''
+        && moveWhy(writes) === '');
+  check(t, 'one who writes, not from before the point',
+        moveWhy(writes, false).includes('before') && moveWhy(host, false) === '');
+  check(t, 'a branch is made from a row the document may be moved from',
+        rowBranchWhy(row(5), writes) === '' && rowBranchWhy(before, writes) !== ''
+        && rowBranchWhy(row(5), reads) !== '' && rowBranchWhy(before, host) === '');
   const br = (name: string, extra: Record<string, unknown> = {}): any => ({
     id: 1, name, head: 1, fromVersion: 0, fromSeq: 0, time: 0, closed: false, current: false,
-    within: true, ...extra });
-  const all = [br('main', { within: false }), br('served', { root: true }),
-               br('try'), br('now', { current: true })];
+    write: false, made: false, ...extra });
+  const all = [br('main'), br('given', { write: true }), br('try', { write: true, made: true }),
+               br('shut', { write: true, closed: true }),
+               br('now', { current: true, write: true })];
   const names = (list: Array<{ name: string }>): string => list.map((b) => b.name).join(',');
   check(t, 'the host deletes any branch but the one the document is on',
-        names(deletable(all, host)) === 'main,served,try', names(deletable(all, host)));
-  check(t, 'a client those made since the serving point, but the one served',
-        names(deletable(all, own)) === 'try', names(deletable(all, own)));
-  check(t, 'and none in a shared document', deletable(all, shared).length === 0);
+        names(deletable(all, host)) === 'main,given,try,shut', names(deletable(all, host)));
+  check(t, 'anyone else those of its own making, not one it was given',
+        names(deletable(all, writes)) === 'try', names(deletable(all, writes)));
+  check(t, 'one who writes switches to the branches it writes, not to a closed one',
+        names(all.filter((b) => switchable(b, writes))) === 'given,try,now',
+        names(all.filter((b) => switchable(b, writes))));
+  check(t, 'one who reads switches to none', names(all.filter((b) => switchable(b, reads)))
+        === 'now');
+  check(t, 'the host to any that is open',
+        names(all.filter((b) => switchable(b, host))) === 'main,given,try,now');
   const ver = (extra: Record<string, unknown> = {}): any => ({
     num: 2, named: true, name: 'kept', branch: 1, branchName: 'main', seq: 5, time: 0,
     here: true, head: false, within: true, ...extra });
-  check(t, 'a version is restored by the host, and by a client since the serving point',
-        versionWhy(ver(), host) === '' && versionWhy(ver(), own) === ''
-        && versionWhy(ver({ within: false }), own) !== '' && versionWhy(ver(), shared) !== '');
+  check(t, 'a version is restored by the host, and by one who writes, since the point',
+        versionWhy(ver(), host) === '' && versionWhy(ver(), writes) === ''
+        && versionWhy(ver({ within: false }), writes) !== '' && versionWhy(ver(), reads) !== '');
+
+  // rows of a branch that is read, applied here
+  check(t, 'rows of another branch that set something can be applied here',
+        rowsAppliable([row(7, { here: false }), row(8, { here: false })]));
+  check(t, "not this branch's own, nor a record, nor none",
+        !rowsAppliable([row(7, { here: false }), row(8)])
+        && !rowsAppliable([row(7, { here: false, ops: 0 })]) && !rowsAppliable([]));
+
+  // the requests to merge
+  const rq = (extra: Record<string, unknown> = {}): any => ({
+    id: 3, source: 'try', target: 'main', by: 'ann', byKind: 'invited', note: '', time: 0,
+    state: 'open', mine: false, handles: false, here: false, ...extra });
+  check(t, 'a request says what it asks', requestText(rq()) === 'merge try into main');
+  check(t, 'of a branch that is gone, that it is',
+        requestText(rq({ source: '' })).includes('gone'));
+  check(t, 'how it stands, and who ended it',
+        requestState(rq()) === 'open'
+        && requestState(rq({ state: 'merged', closedBy: 'host' })) === 'merged by host');
+  check(t, 'who asked withdraws it and does nothing else of it',
+        JSON.stringify(requestActs(rq({ mine: true })))
+        === '{"merge":false,"reject":false,"withdraw":true,"mergeWhy":""}',
+        JSON.stringify(requestActs(rq({ mine: true }))));
+  check(t, 'who writes the target rejects it, and merges it where the document is on it',
+        requestActs(rq({ handles: true, here: true })).merge
+        && requestActs(rq({ handles: true, here: true })).reject
+        && !requestActs(rq({ handles: true })).merge
+        && requestActs(rq({ handles: true })).mergeWhy.includes('main'),
+        requestActs(rq({ handles: true })).mergeWhy);
+  check(t, 'one that ended has nothing to do',
+        JSON.stringify(requestActs(rq({ state: 'merged', mine: true, handles: true, here: true })))
+        === '{"merge":false,"reject":false,"withdraw":false,"mergeWhy":""}');
+  check(t, 'the open ones are listed first, then the newest',
+        sortRequests([rq({ id: 1, state: 'merged' }), rq({ id: 2 }), rq({ id: 5, state: 'rejected' }),
+                      rq({ id: 4 })]).map((r) => r.id).join(',') === '4,2,5,1');
+  check(t, 'a merge is asked of two branches that differ',
+        requestProblem('try', 'main') === '' && requestProblem('try', 'try') !== ''
+        && requestProblem('', 'main') !== '');
 
   const listed = [9, 8, 7, 6, 5];
   const pick = (picked: number[], anchor: number | null, seq: number, how = {}): string => {
@@ -847,6 +894,9 @@ function checkLog(): void {
         actRefusal({ code: 'Forbidden' }).includes('host')
         && actRefusal({ code: 'Forbidden', message: 'before the serving point' })
            === 'before the serving point');
+  check(t, 'what meets what was set here says how, in the host\'s words',
+        actRefusal({ code: 'Conflicts', message: '2 of what it sets was also set here' })
+        .startsWith('2 of'));
   check(t, "a row that is another's says so",
         actRefusal({ code: 'NotYours', message: "row 5 is ann's" }) === "row 5 is ann's");
   check(t, 'an edit in the way says to leave it',
