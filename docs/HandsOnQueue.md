@@ -122,6 +122,14 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 09:38 and 09:40, the reporter: a new defect, entry 115 --
+the 3D view's background shows a LINEAR gradient where radial is set and
+does not respond to a change of the setting; and a question on entry 98
+-- can the text's outline be drawn even where it has a background.**
+Written here 09:41. 115: the configuration and the source read, the
+cause not found, three points put. 98: under the entry, the answer the
+build session's.
+
 **2026-10-14 09:10: entry 114's crash REPRODUCED on the staged copy by the
 build session -- the note-taker's candidate is right, its fix (one line)
 is in a build r18 since 09:09, NOT committed; a push and a restage "need
@@ -2213,7 +2221,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 95 | 2026-10-13 | the omni search: an object's name typed in small letters finds the one object whose name begins with a capital; a dot then resolves its properties but the typed name stays in small letters -- it should be corrected to the name of the object found. ANSWERED 11:38: corrected at the dot whenever the property list is shown -- that is, whenever the text has resolved to an object; every later step the same; and with several objects differing by capitals only, corrected to the object it resolved to | COMMITTED `7f3ef57348`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN, with a test (12:43); a LIMIT (13:51): a FURTHER step typed small ("/ Crate.placement.") brings up no list and stays as typed. The three points answered 11:38, nothing left unanswered |
 | 96 | 2026-10-13 | the close icon of an overlay panel gets a border, so that it does not look like the mark for an icon that was not found (a change request). ANSWERED 11:40: a SQUARE frame, a line only; "yes" on which buttons, taken for the close button alone; the same X framed on a task panel in its view and on a docked panel too, and where the same icon is used in the menu | THE MENU'S ICON STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE MENU'S TINT NOT SHOWN either way on that build (17:25): its test fails offscreen, where the colour scheme does not change; changed again for the next build (in the source 15:08): the four `Std_DockOverlayToggle<Side>` commands get the glyph tinted white under a dark theme. THE REPORTER ON THE STAGE OF 13:56 (14:09): fine on the overlay's title bar; but in the menu View > Dock window overlays, under the DARK theme, the icon is dark on dark and cannot be seen -- Light is fine. NOT FINISHED. COMMITTED `cbb01f5de3`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. WRITTEN (12:43): a square frame, a line, in `overlay/close.svg` itself, the cross smaller inside it -- so the title bar, a task panel in its view and the menu commands that use the picture all get it. The three points answered 11:40; one reading to confirm (b), and which menu is not said. THE MENU'S ICONS: COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55); shown on the build r7 on the real screen 19 of 19, with the reporter's configuration too -- by the build session the copy staged 16:55 "may well" have had them working, its failing run was offscreen. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the menu's icons as redone are in the reporter's copy now |
 | 97 | 2026-10-13 | A CRASH: File > Revert on the loaded `scanner.FCStd` ends the program (the copy staged 09:36, under the debugger) | COMMITTED `3549b0a19f`, PUSHED 2026-10-13 15:58 (committed 14:50); STAGED 2026-10-13 13:56 from the code as it then stood, uncommitted. FIXED ON A BUILD (12:43): `revert-document.py` 12 of 12 in three runs; the scanner file reverted with and without the recompute, no crash, no crash log. REPRODUCED 2026-10-13 11:50 on the staged copy, the cause SHOWN: every Revert of a document with a TechDraw page in a group whose view is open crashes, with or without the recompute before -- closing the page's view hides the page, a write outside any command that opens an implicit transaction on the page and its group; both are deleted a moment later and the queued commit reads them. The fix: while the restore deletes the objects the document wants no transaction. Before, the debugger's log and the dump READ by the note-taker, nothing run: an access violation at 11:18:43 in `App::TransactionLog::onCommit` -- while the revert is reading the objects in again its progress bar lets a queued commit of an implicit transaction run, and that commit describes an object the revert has already deleted. The build session's reading (11:33), not shown yet: the restore clears the undo stack, THEN signals the deletion and deletes the objects, and only after that marks the document as restoring; a write made in between opens an implicit transaction that holds the objects about to be deleted. A reproduction on the staged copy is running. Log and dump kept; the note-taker's two points answered by the run, nothing waits for the reporter |
-| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); ANSWERED 17:04: the backing behind the TEXT only; in the SAME BACKGROUND THE TREE'S ITEMS USE (not the widget's own, as the note-taker had read it); these two panels only; and the text's outline dropped wherever there is a background -- in the TREE too, a change to entry 87 as built. Nothing left unanswered. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55) (the text's ground, no outline over a ground; `overlay-text-ground.py` with it). A CHANGE TO ANSWER b BY ENTRY 111's FIX (22:06, `905d023394`, local): under DARK the console's and the report view's ground is now dark (40), NOT the tree items' grey -- ONE POINT for the reporter under entry 111. ANSWER b MADE PRECISE 23:04 under entry 111: the tree items' background while the automatic item background setting is on, the widget's own background while it is off. By `023552c8fd` (2026-10-13 23:46, local): the ground is the tree items' with the item background setting on, the panel's own with it off. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the text's ground, by the item background setting (`023552c8fd`, PUSHED 2026-10-14 07:56) |
+| 98 | 2026-10-13 | an overlay in transparent mode: the Python console and the report view get a background behind their TEXT, in the colour of their own widget background, at the overlay's background alpha (a change request). ADDED by the reporter 14:13: where the text has a background its OUTLINE is turned off, "like tree item background" | OPEN; NOT in the stage of 13:56 (asked by the reporter about 14:12, answered by the note-taker); ANSWERED 17:04: the backing behind the TEXT only; in the SAME BACKGROUND THE TREE'S ITEMS USE (not the widget's own, as the note-taker had read it); these two panels only; and the text's outline dropped wherever there is a background -- in the TREE too, a change to entry 87 as built. Nothing left unanswered. COMMITTED `8ef425ceae` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55) (the text's ground, no outline over a ground; `overlay-text-ground.py` with it). A CHANGE TO ANSWER b BY ENTRY 111's FIX (22:06, `905d023394`, local): under DARK the console's and the report view's ground is now dark (40), NOT the tree items' grey -- ONE POINT for the reporter under entry 111. ANSWER b MADE PRECISE 23:04 under entry 111: the tree items' background while the automatic item background setting is on, the widget's own background while it is off. By `023552c8fd` (2026-10-13 23:46, local): the ground is the tree items' with the item background setting on, the panel's own with it off. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the text's ground, by the item background setting (`023552c8fd`, PUSHED 2026-10-14 07:56). THE REPORTER ASKS 2026-10-14 09:40: can the text's OUTLINE be drawn even with the background -- some colours are hard to see on some backgrounds, an automatic background cannot work in all cases; a reading by the note-taker under the entry, the answer the build session's |
 | 99 | 2026-10-13 | an origin's planes and axes (`App::Origin`): (1) where they are hidden behind an object they are drawn as a dashed line or border, and the dashes are too sparse to make out -- denser; (2) a QUESTION, how is the origin's size controlled now -- it is too small, which with the sparse dashes makes it worse; (3) picking: the axes and the planes' borders to be picked at NORMAL priority -- they are in the group shown on top; the lowered priority made for the origin's planes leaves them all blocked by the object at this size. ANSWERED 13:23: the dashes a quarter gap and three quarters line; the DEFAULT of "Datum scale" 200; the hidden parts of axes and borders picked THROUGH a face in front, the plane's face keeps its lowered priority; the same for all -- origins, coordinate systems, datum planes and lines | The dashes (0xFFF0) and the scale's default (200) STAGED 2026-10-13 16:55 FROM UNCOMMITTED CODE, not tested, NOT committed -- THE PICKING DOES NOT WORK on that build (17:25): the test fails, the face is still picked -- the cause found, changed for the next build (in the source 15:08); the PICKING in the source, in the build of 15:45 (15:52); its test shows the defect on the staged copy -- at four points of the X axis inside a box the pick is the box's face. The reporter's configuration as copied 14:52 stores `DatumScale` 300 -- set by the reporter since. The four points answered 13:23, nothing left unanswered; the question ANSWERED by the note-taker from the source (the setting "Datum scale"); a reading of the source, nothing run; one caution of the note-taker's on the changed default. 19:17: (b) the default scale 200 ALONE is COMMITTED `6e7232e7c2`, PUSHED 2026-10-13 19:24; (c) THE PICKING STILL DOES NOT WORK after two changes, offscreen and on the real screen -- the build r8 carries a trace to find out why; (a) the dashes are in the same file as (c) and wait with it, NOT committed (they are in the staged copy of 16:55). 20:15: (c) REWORKED after the trace (the scene pass never used the rule; now a pass of its own whenever a single pick ends on a face) -- in the tree, NOT built, not committed. (a) the dashes: last looked at on the builds r5/r7 (three quarters line, a quarter gap), not by itself since; (c) in the build r9 (20:17). (c) STILL NOT WORKING on the builds r9 and r10 (22:06); the cause found in two parts (the kept pick paths start below the camera; applied one by one a ray pick keeps only the last path's hits); a build r11 applies them in one traversal, results to come. Not committed. (c) WORKS on the build r14 (23:20): `datum-picked-through-a-face.py` 3 of 3 on the real screen -- the X axis picked through a box, and a datum plane by its face; (a) the dashes and (c) COMMITTED `1109842583`, LOCAL, not pushed, not staged. The whole entry is committed now. `1109842583` (the dashes and the picking) PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree: the whole entry is in the reporter's copy now |
 | 100 | 2026-10-13 | the Dark theme's borders a bit more subtle: a darker grey (a change request, after entry 77) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. THE REPORTER ASKS (17:22) what the border's colour is now -- answered by the note-taker from the theme file, by calculation: about #646464 (a grey of 100) on panels of about #2C2C2C (44); the note-taker's guess of step 4 would be about #323232 (50), too near the panels to be seen. How much darker is still the reporter's to say. DECIDED 17:32: the border is #4B4B4B. Which borders and the check boxes: not said, taken as the general border colour, the check boxes as they are. COMMITTED `062f56a133` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `GeneralBorderColor` "#4B4B4B" in `Dark.yaml`, the check boxes and radio buttons as they were. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree |
 | 101 | 2026-10-13 | the View menu: the view cell operations in a group of their own; and the items from `Std_ViewTitleBar` to the end of the menu in a group too (a change request) | OPEN; a reading of the source by the note-taker, nothing run; three points under the entry, NOT ANSWERED. ANSWERED in part 17:22: a NEW GROUP COMMAND, "say Std_SplitView", holding everything of the split view and its cells, placed AFTER the menu item "Standard views"; the second group (from `Std_ViewTitleBar` to the end) not spoken of in the answer. ANSWERED 17:32: `Std_ViewCreate` stays where it is; the title bar items go into a NEW GROUP COMMAND of the build session's naming, at the END of the View menu. Nothing left unanswered. COMMITTED `648cf34f83` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): `Std_SplitView` ("Split view") after "Standard views", `Std_WindowBars` ("Title, menu and status bars") the last entry, Create new view where it was. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree |
@@ -2230,6 +2238,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11). ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; the smaller point answered 17:17: A SETTING gates it, by default the same as the 3D view; and the Qt-drawn page too IF it is easy -- to be looked at by the build session. COMMITTED `2a317f254e` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): the setting `Colors/BackgroundAs3DView` (on by default), the Qt-drawn page too (one rule for both); 6 of 6; NO check box in TechDraw's preference page yet. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; still no check box on TechDraw's preference page. Its commit `2a317f254e` is the cause of the CRASH of entry 114. The check box for `Colors/BackgroundAs3DView` is in the tree, not committed (2026-10-14 09:10) |
 | 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003`. `56504486e6` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; the real double click under `Lens003` is the reporter's to try |
 | 114 | 2026-10-14 | A CRASH on the copy staged 08:10: switching the theme to Dark by Tools > Preset configurations > Themes > Dark theme ends the program (an access violation) | OPEN; the debugger's log, the short crash log and the DUMP read by the note-taker on the reporter's word: the theme writes `PreSelectColor` into TechDraw's `Colors` settings and one of that group's observers is an object already destroyed; a candidate by reading, NOT shown by a run: the page view's observer added for entry 112 (`2a317f254e`) is attached to that group and never detached; one point under the entry, NOT ANSWERED. THE CANDIDATE IS RIGHT (2026-10-14 09:10, the build session): REPRODUCED on the staged copy of 08:10 by a new test -- a page's view opened, its document closed, a theme applied: the session ends with the reporter's stack to the line. The fix, one line (`hGrpColors->Detach(this)`), is in a build; NOT committed. The point a no longer needed for the cause |
+| 115 | 2026-10-14 | the 3D view's background does not follow its settings: the preference is a RADIAL gradient, a LINEAR one is shown, and it does not respond to a change of the setting | OPEN; the reporter's configuration and the source read by the note-taker, nothing run: the configuration says radial (`Gradient` 0, `RadialGradient` 1); the cause NOT found by reading; one thing that can give linear -- every theme writes `Gradient` 1, which wins over radial; three points under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -13006,7 +13015,7 @@ document with a page in a group, its view open, reverted twice; "on the
 staged copy it crashes at the first revert"); the scanner file reverted
 with and without the migration recompute: no crash, no crash log.
 
-## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, not started; the text's outline off where it has a background (added 2026-10-13 14:13); the four points answered 17:04: the text only, the tree items' background, these two, no outline where there is a background; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged; STAGED 2026-10-14 08:10
+## 98. An overlay in transparent mode: a background behind the text of the Python console and the report view (a change request) -- OPEN, not started; the text's outline off where it has a background (added 2026-10-13 14:13); the four points answered 17:04: the text only, the tree items' background, these two, no outline where there is a background; COMMITTED `8ef425ceae` 2026-10-13, pushed 19:24, not staged; STAGED 2026-10-14 08:10; ASKED 2026-10-14: the outline to be drawn even where the text has a background
 
 **2026-10-13 12:11, the reporter:** "new request, when in overlay transparent
 mode, add text background (same color for their widget background) for
@@ -13113,6 +13122,44 @@ The note-taker's reading:
   leaving out the see-through fill but keeping text and icons); noted
   under entry 87.
 Nothing of this entry is left unanswered.
+
+**2026-10-14 09:40, the reporter asks:** "entry 98, text background. is
+it possible to draw text outline even with the background? because some
+color is not quite visible to some background color. it becomes diffcult
+for auto background to work in all cases"
+
+The note-taker's reading, not the reporter's words:
+- A question, and by its reason a request in the making: the text of an
+  overlaid console or report view -- the tree's items too, not said --
+  should have its OUTLINE as well where it has a background behind it.
+- The reason: no one background suits every text colour (the green of
+  a comment on the items' grey, the black of Classic on a dark ground --
+  entry 111); with an outline the text would read whatever the ground,
+  and the automatic choice of a ground would not have to be right in
+  every case.
+- It turns back the reporter's own point d of 2026-10-13 17:04 ("drop it
+  too if has background"), which was given because "tree item with
+  background does not show outline anyway" -- and which `8ef425ceae`
+  built: no outline over a ground.
+
+READ in what is recorded here, nothing run; the ANSWER is the build
+session's to give:
+- Why an item with a background showed no outline before: the outline
+  is an effect on the panel's painted picture -- it edges whatever the
+  panel painted solid. Where a ground is painted behind the letters the
+  solid thing is the ground's rectangle, so the edge goes round the
+  rectangle and not round the letters (the build session, 2026-10-13
+  17:25: the effect "leaves out its shadow wherever the source is at
+  least as opaque as such a ground").
+- So, by the note-taker's reading, NOT shown: it is possible only if
+  the letters are edged apart from their ground -- the text painted or
+  taken by itself for the outline, the ground laid under both. Whether
+  that is easy in the three panels (a text view's own outline pen for
+  the console and the report view, an item painter for the tree) is for
+  the build session to say.
+NOT said: whether the tree's items are meant too; and whether, with the
+outline there, the ground stays as ruled at 23:04 (entry 111: by the
+item background setting) -- taken as yes.
 
 ## 99. An origin's planes and axes: the dashes of the hidden part too sparse, the origin too small, and the axes and borders to be picked at normal priority -- the dashes and the default in a build 2026-10-13 15:08, the picking not started; the four points answered 2026-10-13 13:23: dashes three quarters line, the scale's default 200, picked through a face, all datums; STAGED 2026-10-13 16:55 from uncommitted code, not tested; the default scale COMMITTED `6e7232e7c2` 2026-10-13, pushed 19:24; the picking STILL NOT WORKING 19:17, the dashes wait with it; the picking still not working on the builds r9 and r10 (22:06), its cause found, a build r11 to come; the picking WORKS on the build r14, the dashes and the picking COMMITTED `1109842583` 2026-10-13, local; STAGED 2026-10-14 08:10
 
@@ -16071,6 +16118,63 @@ ever destroyed it does not arise. It does not always end the program
 (the build session's first try did not): a freed observer may be called
 harmlessly, which is no safer.
 
+## 115. The 3D view's background does not follow its settings: radial is set, linear is shown, a change of the setting does nothing -- OPEN; the configuration says radial; the cause not found by reading; three points not answered
+
+**2026-10-14 09:38, the reporter:** "new defect, 3d view background color and
+gradient pattern does not follow settings. my preference is radial, what
+shows is linear and does not response to setting change"
+
+The note-taker's reading, not the reporter's words:
+- Two things are said to be wrong with the 3D view's background: its
+  COLOUR and its GRADIENT PATTERN. The pattern: the reporter has radial
+  set, the view shows a linear gradient. And a change of the setting
+  changes nothing in the view.
+- On which copy is not said; taken as the copy staged at 08:10 today,
+  which runs under the debugger since 09:35 (process 32220) -- started
+  again after the crash of entry 114.
+
+READ by the note-taker, nothing run, the running program not looked
+into (no word for that):
+- The reporter's configuration (`%APPDATA%\FreeCAD\user.cfg`, written
+  09:37), group `Preferences/View`: `Gradient` 0, `RadialGradient` 1,
+  `UseBackgroundColorMid` 1; the colours `BackgroundColor` 1010580735,
+  `BackgroundColor2` 2088533247, `BackgroundColor3` 1010580735,
+  `BackgroundColor4` 2088533247; the theme named is "Dark". So what is
+  STORED says radial, with a middle colour.
+- How the view takes it (`src/Gui/View3DSettings.cpp` line 264): at a
+  change of `Gradient` or `RadialGradient` -- linear if `Gradient` is
+  on, ELSE radial if `RadialGradient` is on, else none; set on every
+  viewer the settings object knows
+  (`View3DInventorViewer::setGradientBackground`, line 3589). The same
+  is done once when a view is made (lines 84, 85).
+- The render engine is fed the type from the viewer
+  (`View3DInventorViewer::Private::backgroundFeed`, line 1008: linear
+  if the viewer's node says LINEAR, else radial) and draws both
+  (`src/Gui/Renderer/BGFXViewEnv.cpp` line 578: a strip for linear, a
+  32-segment circle for radial).
+- By this reading a stored radial should show radial, and a change
+  should reach the view at once. THE CAUSE IS NOT FOUND by reading.
+- ONE THING THAT CAN GIVE LINEAR, a candidate for part of it, not
+  shown: every theme's file sets BOTH `Gradient` 1 and `RadialGradient`
+  1 (`src/Gui/PreferencePacks/Dark/Dark.cfg` lines 96 and 97; Light the
+  same; Classic `Gradient` 1, `RadialGradient` 0), and with both on the
+  code above takes LINEAR. So right after a theme is applied the view
+  is linear whatever the reporter had -- and the reporter applied a
+  theme this morning (entry 114). That does not explain a change of
+  the setting doing nothing afterwards, and the stored `Gradient` is 0
+  now.
+
+NOT said, lettered for an answer:
+a. SINCE WHEN: was the radial background right on yesterday's copy
+   (staged 16:55) and wrong since this morning's stage -- or since the
+   theme was switched to Dark this morning?
+b. WHICH CHANGE gets no response: the choice of pattern on the
+   preference page (linear / radial / one colour), the colours there,
+   or both -- and does a RESTART of the program show the radial
+   background?
+c. THE COLOUR: what is wrong with it besides the pattern -- colours
+   other than the ones set, or only the way they are laid out?
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -16081,4 +16185,4 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entry 114 is of 2026-10-14)
+it; entries 114 and 115 are of 2026-10-14)
