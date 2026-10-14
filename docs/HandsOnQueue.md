@@ -147,6 +147,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 17:19 to 17:25, the reporter, three messages: NEW ENTRIES 128
+and 129.** An audit of all icons drawn in dark lines only, asked and then
+WITHDRAWN ("looks like it is just techdraw missing some icon in some of
+its toolbar button") -- entry 128; TechDraw's printing to give vector
+output -- entry 129. Each under its entry. Written here 17:26.
+
 **2026-10-14 17:11, the reporter, a NEW ENTRY 127:** "new request, support
 print ony the selected Techdraw pages". Read: "Print All Pages" prints
 every page of the active document; the selected ones to be printed in its
@@ -2583,6 +2589,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
 | 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
 | 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking |
+| 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry |
+| 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17881,6 +17889,71 @@ a. HOW it is offered: a new command ("Print Selected Pages") beside
 b. To a PDF as well (the print dialog's "print to file", which today goes
    through `printAllPdf`): taken as yes, one PDF with the selected pages.
 
+## 128. Some TechDraw toolbar buttons show no icon, under every theme -- OPEN (an audit of all dark-line icons first asked, withdrawn)
+
+**2026-10-14 17:19, the reporter:** "new request, you audit now for all icons
+for dark line drawings only, which is invisible in dark theme. propose a
+general fix. maybe add some white translucent background"
+
+The note-taker began: an audit script that draws every icon offscreen
+(`..\dl\handson\2026-10-14\entry128\icon_audit.py`, written, NOT run --
+the reporter stopped the run).
+
+**2026-10-14 about 17:21, the reporter:** "wait, withdraw last request, looks
+like it is just techdraw missing some icon in some of its toolbar button,
+invisible in either theme or classic. check that instead"
+
+The note-taker's reading: the audit of all icons is WITHDRAWN. What is
+seen: some buttons of TechDraw's toolbars have NO icon at all -- empty
+under Dark, Light and Classic alike -- not dark lines on a dark ground.
+
+READ by the note-taker, nothing run:
+- Every icon NAME given by TechDraw's commands (`sPixmap`, 122 names in
+  `src/Mod/TechDraw/Gui/*.cpp`) and every name asked for in code
+  (`BitmapFactory().pixmap` / `iconFromTheme` and the like, 66 names) is
+  found in `src/Mod/TechDraw/Gui/Resources/TechDraw.qrc` (185 files) or in
+  `src/Gui/Icons`. So no button lacks its icon FILE by name.
+- Left to look at: an icon file that is there but draws nothing in Qt's
+  SVG renderer (no drawable elements, or drawn only through CSS or
+  filters it ignores) -- a check of the files themselves, started
+  17:26, slow on this box; or a button whose command has no icon set
+  at all (a group command whose current entry has none).
+
+NOT said, lettered:
+a. WHICH buttons -- their names or tooltips, or which toolbar.
+
+## 129. TechDraw printing to give vector output, so that it scales without loss (a change request) -- OPEN
+
+**2026-10-14 about 17:25, the reporter:** "new request, make Techdraw printing
+output vector so that it can scale losslessly"
+
+The note-taker's reading: what TechDraw prints -- on paper and to a PDF --
+is to be VECTOR drawing, not pixels, so a printed or exported page keeps
+its sharpness at any zoom or scale.
+
+READ in the source, nothing run:
+- Printing draws the page's QGraphicsScene onto the printer's or a PDF
+  writer's painter (`PagePrinter::renderPage`,
+  `src/Mod/TechDraw/Gui/PagePrinter.cpp` 309 to 337:
+  `getQGSPage()->render(&painter, targetRect, sourceRect)`; the PDF
+  through `QPdfWriter`, 128 to 131 and 229 to 235). That path KEEPS
+  vectors for items that paint lines, curves and text.
+- What would turn into pixels on that path, by the note-taker's
+  knowledge of Qt, not shown here: an item with a QGraphicsEffect (the
+  template gets a colourising effect while "light on dark" is on,
+  `QGISVGTemplate.cpp` 100 to 105 -- the print switches "light on dark"
+  off first, 322 to 326, whether the template is redrawn without it is
+  not read); items drawn from pixmaps (image views, pixmap hatches, an
+  SVG symbol drawn to a picture); a cache drawn as an image.
+- So which parts come out as pixels today is NOT KNOWN by reading; the
+  build session to print a page to PDF and look.
+
+NOT said, lettered, not put as blocking:
+a. To PAPER, to PDF, or both -- taken as both ("scale losslessly" reads
+   as the PDF above all).
+b. WHAT is seen as pixels now: the whole page, the template, the hatches,
+   images -- on which page.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -17891,5 +17964,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 127 are of 2026-10-14, 116 and 119 said to the
+it; entries 114 to 129 are of 2026-10-14, 116 and 119 said to the
 build session)
