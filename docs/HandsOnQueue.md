@@ -2570,7 +2570,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 122 | 2026-10-14 | a change request: the overlay's AUTO-HIDE HINT colour to follow the theme -- under Dark it cannot be seen | OPEN; read by the note-taker: the Dark overlay sheet gives the hint a dark grey (50, 50, 50 at 0.6), on a dark view |
 | 123 | 2026-10-14 | a change request: the SELECTION VIEW in overlay mode -- its list column backed with the SAME colour and alpha as the property editor's | OPEN; read by the note-taker: the property editor backs whole rows (alternating), the selection view since `04e05bbd38` only the text, with the tree's text ground; one point under the entry, not put as blocking |
 | 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started |
-| 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking |
+| 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17742,6 +17742,13 @@ a. "property values": the properties of DOCUMENT OBJECTS the omni search
    "0.500000000000" in `user.cfg`) -- taken as both.
 b. A value with a UNIT (a length "12.00 mm"): taken as the same rule,
    the unit kept.
+
+**2026-10-14 16:47, the reporter answers:** "entry 125, yes both, yes same
+rule"
+
+The note-taker's reading: a -- BOTH, the document objects' properties and
+the settings the omni search shows; b -- a value with a unit by the SAME
+rule, the unit kept ("12 mm", not "12.00 mm"). Nothing left unanswered.
 
 ## Inbox
 
