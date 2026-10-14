@@ -307,8 +307,10 @@ private:
 const QString OverlayStyleSheet::_default = QStringLiteral(
         "* {alternate-background-color: rgba(250,250,250,120)}"
 
+        // (not the text views: the report view and the console keep the
+        // theme's ground, as docked -- docs/HandsOnQueue.md entry 121)
         "QComboBox, QComboBox:editable, QComboBox:!editable, QLineEdit,"
-        "QTextEdit, QPlainTextEdit, QAbstractSpinBox, QDateEdit, QDateTimeEdit,"
+        "QAbstractSpinBox, QDateEdit, QDateTimeEdit,"
         "Gui--PropertyEditor--PropertyEditor QLabel "
             "{background : palette(base);}"
 
@@ -2502,6 +2504,41 @@ static QColor radialAverageUnder(const QWidget *where)
     return result;
 }
 
+QColor OverlayManager::overlayViewGround(const QWidget *where)
+{
+    // The colour the 3D view has where the panel lies over it. A linear
+    // gradient runs from its first colour at the top to its last at the
+    // bottom; a radial one, averaged over what the panel covers of it, or
+    // its rim's colour with no view under the panel. (Linear wins where
+    // both are on, as in the view.)
+    if (ViewParams::getGradient())
+        return packedColour(overlaySideOf(where) == Qt::BottomDockWidgetArea
+            ? ViewParams::getBackgroundColor3() : ViewParams::getBackgroundColor2());
+    if (ViewParams::getRadialGradient()) {
+        const QColor ground = radialAverageUnder(where);
+        return ground.isValid() ? ground : packedColour(ViewParams::getBackgroundColor3());
+    }
+    return packedColour(ViewParams::getBackgroundColor());
+}
+
+QColor OverlayManager::overlayHintColour(const QColor &sheet, const QWidget *where)
+{
+    // The sheet's colour where it stands out from the view's ground; else a
+    // light grey on a dark ground and a dark one on a light ground. The
+    // Dark sheets' hint was a dark grey, lost on the Dark theme's view
+    // (docs/HandsOnQueue.md entry 122: "make overlay auto hide hint color
+    // theme aware, current color is not visible in dark theme").
+    const QColor ground = overlayViewGround(where);
+    auto luma = [](const QColor &c) {
+        return 0.299 * c.redF() + 0.587 * c.greenF() + 0.114 * c.blueF();
+    };
+    if (sheet.isValid() && std::abs(luma(sheet) - luma(ground)) >= 0.3)
+        return sheet;
+    QColor colour = luma(ground) < 0.5 ? QColor(220, 220, 220) : QColor(50, 50, 50);
+    colour.setAlpha(sheet.isValid() ? sheet.alpha() : 150);
+    return colour;
+}
+
 QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha, const QWidget *where)
 {
     QBrush brush = own;
@@ -2515,23 +2552,7 @@ QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha, const
             colour.setPackedValue(TreeParams::getItemBackground());
             return QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b, colour.a));
         }
-        // The colour the 3D view has where the panel lies over it. A linear
-        // gradient runs from its first colour at the top to its last at the
-        // bottom; a radial one, averaged over what the panel covers of it, or
-        // its rim's colour with no view under the panel. (Linear wins where
-        // both are on, as in the view.)
-        QColor ground;
-        if (ViewParams::getGradient())
-            ground = packedColour(overlaySideOf(where) == Qt::BottomDockWidgetArea
-                ? ViewParams::getBackgroundColor3() : ViewParams::getBackgroundColor2());
-        else if (ViewParams::getRadialGradient()) {
-            ground = radialAverageUnder(where);
-            if (!ground.isValid())
-                ground = packedColour(ViewParams::getBackgroundColor3());
-        }
-        else
-            ground = packedColour(ViewParams::getBackgroundColor());
-        brush = QBrush(ground);
+        brush = QBrush(overlayViewGround(where));
         alpha = overlayAlpha(alpha);
     }
     if (alpha >= 0) {

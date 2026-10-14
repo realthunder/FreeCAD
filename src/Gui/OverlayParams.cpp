@@ -324,8 +324,7 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAutoView", "DockOverlayAutoView", App::ParamInfo::Bool, true)
         .setTitle("Auto hide in non 3D view")
         .setDoc("Hide overlay dock panels automatically while the active view is not\n"
-"a 3D view. Transparent panels also turn opaque over a maximized\n"
-"view that cannot be panned.")
+"a 3D view.")
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayDelay", "DockOverlayDelay", App::ParamInfo::Int, 200)
         .setTitle("Layout delay (ms)")
@@ -506,8 +505,7 @@ void OverlayParams::removeCornerNaviCube() {
 const char *OverlayParams::docDockOverlayAutoView() {
     return QT_TRANSLATE_NOOP("OverlayParams",
 "Hide overlay dock panels automatically while the active view is not\n"
-"a 3D view. Transparent panels also turn opaque over a maximized\n"
-"view that cannot be panned.");
+"a 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1330,7 +1328,7 @@ void OverlayParams::removeDockOverlayMinimumSize() {
     instance()->handle->RemoveInt("DockOverlayMinimumSize");
 }
 
-// Auto generated code (Gui/OverlayParams.py:195)
+// Auto generated code (Gui/OverlayParams.py:194)
 const std::vector<QString> OverlayParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),

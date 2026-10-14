@@ -167,6 +167,17 @@ public:
                                         const QWidget *where = nullptr);
     /// View/DockOverlayAlpha, or \a alpha where a style sheet set one
     static int overlayAlpha(int alpha = -1);
+    /** The colour of the 3D view's background where the overlay of \a where
+     * lies over it, by the background's pattern and the overlay's side, as
+     * overlayItemBackground() takes it with the setting on; opaque.
+     */
+    static QColor overlayViewGround(const QWidget *where = nullptr);
+    /** The colour of an overlay's auto-hide hint (docs/HandsOnQueue.md entry
+     * 122): \a sheet, the style sheet's hintColor, where it stands out from
+     * overlayViewGround(); else a light grey over a dark view and a dark one
+     * over a light view, at the sheet's opacity.
+     */
+    static QColor overlayHintColour(const QColor &sheet, const QWidget *where = nullptr);
     /** Paint \a ground behind the text of one block of a text view, line by
      * line and as wide as each line's text; \a pos is where the block's
      * layout stands in what \a painter paints on. For a text view in a

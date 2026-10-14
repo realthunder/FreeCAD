@@ -320,9 +320,11 @@ void OverlayProxyWidget::paintEvent(QPaintEvent *)
     if(!drawLine)
         return;
     QPainter painter(this);
-    painter.setOpacity(_hintColor.color().alphaF());
+    // in a colour that stands out from the view where it is drawn
+    const QColor hint = OverlayManager::overlayHintColour(_hintColor.color(), owner);
+    painter.setOpacity(hint.alphaF());
     painter.setPen(Qt::transparent);
-    painter.setBrush(_hintColor);
+    painter.setBrush(hint);
 
     QRect rect = this->getRect();
     painter.drawRect(rect);
@@ -1295,17 +1297,13 @@ void OverlayTabWidget::setTransparent(bool enable)
 
 bool OverlayTabWidget::isTransparent() const
 {
-    if (!actTransparent.isChecked())
-        return false;
-    if(OverlayParams::getDockOverlayAutoView()) {
-        auto view = getMainWindow()->activeWindow();
-        if (!view) return false;
-        if(!view->onHasMsg("CanPan")
-                && view->parentWidget()
-                && view->parentWidget()->isMaximized())
-            return false;
-    }
-    return true;
+    // The eye alone. A panel was made opaque as well while the active view
+    // was a maximized one that cannot be panned -- a spreadsheet, a page --
+    // whose own content the panel's text would have been lost over; the
+    // items' and the text views' own grounds read on any view now
+    // (docs/HandsOnQueue.md entries 98 and 120: "with item background
+    // feature, we can enable transparency mode in all cases").
+    return actTransparent.isChecked();
 }
 
 bool OverlayTabWidget::isOverlaid(QueryOption option) const

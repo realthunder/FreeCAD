@@ -28,7 +28,7 @@ import OverlayParams
 OverlayParams.declare()
 ]]]*/
 
-// Auto generated code (Gui/OverlayParams.py:181)
+// Auto generated code (Gui/OverlayParams.py:180)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -91,8 +91,7 @@ public:
     /// Accessor for parameter DockOverlayAutoView
     ///
     /// Hide overlay dock panels automatically while the active view is not
-    /// a 3D view. Transparent panels also turn opaque over a maximized
-    /// view that cannot be panned.
+    /// a 3D view.
     static const bool & getDockOverlayAutoView();
     static const bool & defaultDockOverlayAutoView();
     static void removeDockOverlayAutoView();
@@ -456,7 +455,7 @@ public:
     static void onDockOverlayMinimumSizeChanged();
     //@}
 
-    // Auto generated code (Gui/OverlayParams.py:187)
+    // Auto generated code (Gui/OverlayParams.py:186)
     static const std::vector<QString> AnimationCurveTypes;
 
 // Auto generated code (Tools/params_utils.py:179)
