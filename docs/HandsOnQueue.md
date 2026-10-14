@@ -166,6 +166,15 @@ READ in the source, nothing run: a spreadsheet has no eye
 its Visibility IS its view being open (`ViewProviderPage` show()/hide(),
 `src/Mod/TechDraw/Gui/ViewProviderPage.cpp` 274 to 293, isShow() 474).
 It becomes entry 134 on the reporter's word.
+23:10, the build session sent its answer of 2026-10-13 as it wrote it
+then (from its transcript): "I answered yes (with a rule for older files:
+a page with Visibility on and no layout record is opened once at load;
+keep show()/hide() working; check whether TechDraw uses the page's
+Visibility for updates); waits for their word to queue it." -- "Put it
+under entry 134 if the reporter gives the word. Not started; I'm on entry
+117 step 1." The note-taker's reading: the "layout record" is the saved
+state of which views are open, as kept for a spreadsheet; an older file
+has none, so a page saved with its eye on opens once at load.
 
 **2026-10-14 23:00: PUSHED 22:57 (origin `3e764d4566`) and STAGED 22:59, CLEAN
 (label `3e764d4566`, occt `a81d25f148`, coin `d2da5cc93`), on the
