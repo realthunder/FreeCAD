@@ -227,11 +227,19 @@ answers.
   ITS HANDLE (the reporter, 13:51: "root button same color as handle");
   the active handle
   and its group highlighted over that (3.3, section 6). The note-taker's
-  first proposal (the button's shape for the mode, a colour per group, a
-  band along the edge) is NOT taken. NOT said: whether each GROUP has a
-  colour of its own or all customised handles share one -- taken as ONE
-  customised colour; the group shows itself by the highlight when a
-  handle is active.
+  first proposal's other parts (the button's shape for the mode, a band
+  along the edge) are NOT taken.
+  EACH GROUP ITS OWN COLOUR (the reporter, 2026-10-14 13:54: "each group
+  show its own color. choose color from a set of distinct ones (auto
+  generated)"): every customised handle, and its root button, in its
+  GROUP's colour; the colours generated automatically, distinct from one
+  another, from the default handles' colour and from the highlight. The
+  note-taker's way, for the build to settle: a hue per group id stepped by
+  the golden ratio (hue = frac(h0 + id * 0.618)) at one saturation and
+  value that read on both themes, a hue too near the default colour's or
+  the highlight's skipped -- so the same id keeps the same colour from
+  session to session without storing it. The group sub-menu shows each
+  group's colour beside its label (6.1).
 - OTHER FEATURES put their own operations in the same menu, on the same
   button (3.4 for the dress-ups). For instance -- the note-taker's
   examples, to be settled feature by feature: Pad/Pocket length --
@@ -351,8 +359,9 @@ conflict inside a group the newest write wins and the panel marks the
 others; a "reversed in its group" flag per member for two radii (params
 mirrored as 1 - param); Tab visits every handle, not once per group. Read
 by the note-taker as covering also the other features' menu entries of
-3.3 as a starting set, each settled when that feature is built, and one
-colour for all customised handles.
+3.3 as a starting set, each settled when that feature is built. (One
+colour for all customised handles, the note-taker's first reading, is
+replaced by a colour per group at 13:54.)
 
 NOTHING IS LEFT OPEN in the design. It is not an order of work: building
 it waits for the reporter's word.
@@ -388,7 +397,8 @@ shared expressions) are REPLACED by this one.
   The note-taker's forms, for the build to settle: one radius --
   "2   R 3 mm"; two radii -- "3   R 3 mm -> 5 mm"; varying -- "4   R 2
   to 6 mm, 4 points"; and, where it helps, the member count at the end --
-  "2   R 3 mm  (3 edges)". The edge's own group is checked.
+  "2   R 3 mm  (3 edges)". The edge's own group is checked, and each
+  item shows its group's colour beside it.
 - A CHANGE to any value of an edge -- its radius, its two radii, a
   point's position (param or length), whatever the edge holds -- is
   MIRRORED to every edge with the same group id, the same change.
