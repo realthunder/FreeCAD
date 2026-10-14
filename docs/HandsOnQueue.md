@@ -2576,7 +2576,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 123 | 2026-10-14 | a change request: the SELECTION VIEW in overlay mode -- its list column backed with the SAME colour and alpha as the property editor's | OPEN; read by the note-taker: the property editor backs whole rows (alternating), the selection view since `04e05bbd38` only the text, with the tree's text ground; one point under the entry, not put as blocking |
 | 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started |
 | 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
-| 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine |
+| 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17756,7 +17756,7 @@ The note-taker's reading: a -- BOTH, the document objects' properties and
 the settings the omni search shows; b -- a value with a unit by the SAME
 rule, the unit kept ("12 mm", not "12.00 mm"). Nothing left unanswered.
 
-## 126. The bgfx render engine: a line pattern at scale 1 does not look right, at scale 2 it looks normal -- OPEN, three points not answered
+## 126. The bgfx render engine: a line pattern at scale 1 does not look right, at scale 2 it looks normal -- OPEN, three points not answered; the cause read 2026-10-14: the Dot mask 0xaaaa, one pixel on and off -- two ways for the reporter
 
 **2026-10-14 17:04, the reporter:** "new defect, bgfx rendering line pattern
 scale 1 does not seems right. scale 2 looks normal."
@@ -17822,6 +17822,29 @@ in the screen's visible pixels (the factor times the device pixel ratio),
 or give a dot a least length on the screen. Not shown. Points a (which
 pattern setting) and c (compared with what; the screen's scaling) still
 open.
+
+**2026-10-14 17:10, the build session: the CAUSE, by reading, nothing run --
+NOT the screen's scaling; the note-taker's candidate WITHDRAWN.** From its
+message stamped 17:20, written here 17:10.
+- "NOT the screen's scaling -- this box's display is at 100% (AppliedDPI
+  96, one 1920x1080 screen), so a view pixel is a visible pixel."
+- "The cause: the 'Dot' choice of the pattern combo is the mask 0xaaaa
+  (PrefWidgets.cpp about 1075: Solid 0xffff, Dash 0xf0f0, Dot 0xaaaa,
+  Dash Dot 0x33ff) -- one pixel on, one off at scale 1; under the
+  anti-aliasing (the user's AntiAliasing 3) single-pixel dots blur into a
+  grey line. Dash is four on, four off, which is why it 'looks ok'.
+  glLineStipple counts the same pixels, so the Coin path had it too: not
+  the engine's." (The masks SEEN by the note-taker at
+  `src/Gui/PrefWidgets.cpp` 1076 to 1079.)
+- "Two ways, for the user to choose: (1) the Dot choice becomes 0xcccc
+  (two on, two off), with a stored 0xaaaa read as the new dot; small, only
+  that choice changes; (2) count the pattern in units of the line's width
+  (as Qt's own dotted pens do), which lengthens every pattern on wide
+  lines, dashes too. I recommend (1). Not started; told the user the
+  same."
+The note-taker's candidate (a scaled screen) is withdrawn: the box is at
+100%. Points a and c of 17:04 are answered by the reading as far as the
+cause goes. WAITS FOR THE REPORTER: way (1) or (2).
 
 ## Inbox
 
