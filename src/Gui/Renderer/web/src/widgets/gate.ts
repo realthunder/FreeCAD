@@ -32,7 +32,9 @@ import type { Frame } from './protocol.ts';
 import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefusal, logWhen,
          mayMove, mergeNewest, moveWhy, pickRows, requestActs, requestProblem, requestState,
          requestText, rowBranchWhy, rowUndoable, rowUndoWhy, rowsAppliable, sortRequests,
-         switchable, undoLabel, versionText, versionWhy } from '../logmodel.ts';
+         switchable, undoLabel, versionText, versionWhy,
+         changeName, changePicked, changeTakes, picksOf, previewText, sortChanges,
+         unpickedConflicts } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -903,6 +905,44 @@ function checkLog(): void {
         actRefusal({ code: 'Editing' }).includes('leave it'));
   check(t, 'a viewer is told why of an act too',
         actRefusal({ code: 'ViewOnly' }).includes('right to edit'));
+
+  // the merge's own list (sec 32.26): conflicts first, a side for each
+  const change = (key: string, kind: string, extra: Record<string, unknown> = {}): any => ({
+    key, kind, op: 'set', ckind: 'obj', object: key.split('.')[0], prop: key.split('.')[1] ?? '',
+    derived: false, ours: '1', theirs: '2', base: '0', ...extra });
+  const sorted = sortChanges([change('Box.Width', 'take'), change('Box.Shape', 'derived'),
+                              change('view:Box.Color', 'view'), change('Box.Height', 'conflict')]);
+  check(t, 'a preview lists the conflicts first, what goes in, the view, the derived',
+        sorted.map((c) => c.kind).join(',') === 'conflict,take,view,derived',
+        sorted.map((c) => c.kind).join(','));
+  check(t, 'a change is named by the object\'s label and the property',
+        changeName(change('Box.Height', 'conflict', { label: 'Bracket' })) === 'Bracket.Height'
+        && changeName(change('.Label', 'take', { ckind: 'doc', object: '' })) === '(document).Label',
+        changeName(change('Box.Height', 'conflict', { label: 'Bracket' })));
+  check(t, 'a conflict and a view are given a side; the rest say what goes in',
+        changePicked(change('a.b', 'conflict')) && changePicked(change('a.b', 'view'))
+        && !changePicked(change('a.b', 'take'))
+        && changeTakes(change('a.b', 'take'), {}) === 'theirs'
+        && changeTakes(change('a.b', 'merge'), {}) === 'both'
+        && changeTakes(change('a.b', 'view'), {}) === 'ours'
+        && changeTakes(change('a.b', 'conflict'), {}) === 'pick a side'
+        && changeTakes(change('a.b', 'conflict'), { 'a.b': 'theirs' }) === 'theirs');
+  const two = [change('Box.Height', 'conflict'), change('Box.Length', 'conflict'),
+               change('view:Box.Color', 'view'), change('Box.Width', 'take')];
+  check(t, 'the act waits for a side for each conflict, not for a view',
+        unpickedConflicts(two, {}) === 2
+        && unpickedConflicts(two, { 'Box.Height': 'ours' }) === 1
+        && unpickedConflicts(two, { 'Box.Height': 'ours', 'Box.Length': 'theirs' }) === 0);
+  const sent = picksOf(two, { 'Box.Height': 'ours', 'Box.Length': 'theirs', 'Box.Width': 'ours',
+                              'gone.Key': 'theirs' });
+  check(t, 'the picks sent are of the changes that ask a side, and of no other',
+        JSON.stringify(sent) === '{"Box.Height":"ours","Box.Length":"theirs"}',
+        JSON.stringify(sent));
+  check(t, 'the line says how much, or that nothing here moved',
+        previewText({ what: 'rows', count: 3, conflicts: 1, forward: 0 }, 'Apply row 7')
+          === 'Apply row 7: 3 changes, 1 conflict'
+        && previewText({ what: 'merge', count: 0, conflicts: 0, forward: 2 }, 'Merge a into b')
+          === 'Merge a into b: nothing here moved since, 2 rows taken as they are');
 }
 
 checkLog();

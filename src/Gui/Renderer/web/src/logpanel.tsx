@@ -28,24 +28,30 @@
 // be dealt with. A client of a shared document reads its branch: it takes
 // back its own rows and takes versions. The card offers what would be done
 // and says of the rest why not.
+//
+// The merge's own (sec 32.26): where an apply or a merge meets what was set
+// here since, the card asks one side for all of them, or opens the list of
+// what it would do -- `log.preview` -- and a side is picked for each
+// conflict; a merge undone at the head is rolled back.
 
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
 import {
   logApply, logBranches, logCloseRequest, logDeleteBranch, logMergeRequest, logNameVersion,
-  logNewBranch, logOps, logRenameBranch, logRequest, logRequests, logRestore, logRows,
-  logSnapshot, logSwitchBranch, logUndoRows, logValue, logVersions,
+  logNewBranch, logOps, logPreview, logRenameBranch, logRequest, logRequests, logRestore,
+  logRollBack, logRows, logSnapshot, logSwitchBranch, logUndoRows, logValue, logVersions,
   onConnection, onLogChanged, showRowChange,
-  type LogBranch, type LogOp, type LogOpsReply, type LogReach, type LogRequest, type LogRow,
-  type LogValueReply, type LogVersion,
+  type LogBranch, type LogChange, type LogOp, type LogOpsReply, type LogReach, type LogRequest,
+  type LogRow, type LogSides, type LogValueReply, type LogVersion,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
 import {
-  actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefusal, logWhen,
-  mayMove, mergeNewest, moveWhy, pickRows, requestActs, requestProblem, requestState,
-  requestText, rowBranchWhy, rowUndoable, rowUndoWhy, rowsAppliable, sortRequests, switchable,
-  undoLabel, versionText, versionWhy,
+  actRefusal, branchNameProblem, changeName, changePicked, changeTakes, deletable, logAuthor,
+  logOpText, logRefusal, logWhen, mayMove, mergeNewest, moveWhy, picksOf, pickRows,
+  previewText, requestActs, requestProblem, requestState, requestText, rowBranchWhy,
+  rowUndoable, rowUndoWhy, rowsAppliable, sortChanges, sortRequests, switchable, undoLabel,
+  unpickedConflicts, versionText, versionWhy,
 } from './logmodel.ts';
 
 const POS_KEY = 'fcviewer.log.pos';
@@ -73,6 +79,21 @@ interface Ask {
   run: (text: string) => Promise<string>;
   /// A second answer, where there are two ways to go on
   other?: { label: string; run: () => Promise<string> };
+  /// A third, which is no act: it opens something more to answer
+  more?: { label: string; open: () => void };
+}
+
+type Side = 'ours' | 'theirs';
+
+/// The list of what an apply or a merge would do, a side to pick for each
+/// conflict (sec 32.26): open in the card in place of the lists.
+interface Picker {
+  title: string;
+  yes: string;
+  line: string;
+  changes: LogChange[];
+  /// The act, with the sides picked: what it says when done
+  run: (sides: LogSides) => Promise<string>;
 }
 
 export function LogPanel(props: LogPanelProps) {
@@ -106,6 +127,11 @@ export function LogPanel(props: LogPanelProps) {
   const [askText, setAskText] = createSignal('');
   const [status, setStatus] = createSignal<{ text: string; bad: boolean } | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [picker, setPicker] = createSignal<Picker | null>(null);
+  const [sides, setSides] = createSignal<Record<string, Side>>({});
+  /// The merge undone at the head, asked when a merge or an undo is chosen
+  const [undone, setUndone] = createSignal<{ source: string; rows: number; may: boolean;
+                                             why: string } | null>(null);
 
   let panelRef: HTMLDivElement | undefined;
   let headerRef: HTMLDivElement | undefined;
@@ -215,8 +241,20 @@ export function LogPanel(props: LogPanelProps) {
     setValue(null);
     setValueError('');
     setNote('');
+    setUndone(null);
     if (seqs.length !== 1) return;
     const seq = seqs[0];
+    // A merge, or an undo of one: whether a merge undone at the head can be
+    // rolled back -- asked now, and not with every list (Gui/SceneLog.cpp)
+    const row = rows().find((r) => r.seq === seq);
+    if (row && (row.kind === 'merge' || row.kind === 'undo')) {
+      logRollBack(true, props.doc())
+        .then((r) => {
+          if (selected() === seq)
+            setUndone({ source: r.source, rows: r.rows, may: !!r.may, why: r.why ?? '' });
+        })
+        .catch(() => { /* none undone at the head */ });
+    }
     logOps(seq, props.doc())
       .then((r) => { if (selected() === seq) setOps(r); })
       .catch((e) => { if (selected() === seq) setNote(logRefusal(e)); });
@@ -305,25 +343,70 @@ export function LogPanel(props: LogPanelProps) {
     setAsk(null);
     void act(q.other.run);
   };
+  const answerMore = () => {
+    const q = ask();
+    if (!q?.more) return;
+    setAsk(null);
+    q.more.open();
+  };
+
+  /// The list of what it would do, asked of the host; a side picked for
+  /// each conflict, the act goes on with them
+  const openPicker = (of: { rows: number[] } | { request: number }, title: string, yes: string,
+                      run: (sides: LogSides) => Promise<string>) => {
+    if (busy()) return;
+    setBusy(true);
+    setStatus(null);
+    logPreview(of, props.doc()).then(
+      (p) => {
+        setSides({});
+        setPicker({ title, yes, line: previewText(p, title), changes: sortChanges(p.changes),
+                    run });
+      },
+      (e: any) => setStatus({ text: actRefusal(e), bad: true }),
+    ).finally(() => setBusy(false));
+  };
+  const pickSide = (key: string, side: Side) => setSides({ ...sides(), [key]: side });
+  const pickAll = (side: Side) => {
+    const all: Record<string, Side> = {};
+    for (const c of picker()?.changes ?? []) if (changePicked(c)) all[c.key] = side;
+    setSides(all);
+  };
+  const pickerLeft = () => unpickedConflicts(picker()?.changes ?? [], sides());
+  const answerPicker = () => {
+    const p = picker();
+    if (!p || pickerLeft()) return;
+    const picks = picksOf(p.changes, sides());
+    setPicker(null);
+    void act(() => p.run({ picks }));
+  };
 
   /// What was asked met what was set here since: the host says how many,
-  /// and the card asks a side for them all -- each is picked one by one at
-  /// the desktop's panel, which the card has not.
-  const askSide = (said: string, run: (side: 'ours' | 'theirs') => Promise<string>) => question({
+  /// and the card asks a side for them all -- or opens the list, where a
+  /// side is picked for each.
+  interface Sided {
+    run: (sides?: LogSides) => Promise<string>;
+    of: { rows: number[] } | { request: number };
+    title: string;
+    yes: string;
+  }
+  const askSide = (said: string, s: Sided) => question({
     label: `${said} Which side for all of them?`,
     yes: 'Take theirs',
-    run: () => run('theirs'),
-    other: { label: 'Keep ours', run: () => run('ours') },
+    run: () => s.run({ fallback: 'theirs' }),
+    other: { label: 'Keep ours', run: () => s.run({ fallback: 'ours' }) },
+    more: { label: 'Pick each...', open: () => openPicker(s.of, s.title, s.yes, s.run) },
   });
   /// An act that may meet conflicts: done, or asked a side and done again
-  const actWithSides = (run: (side?: 'ours' | 'theirs') => Promise<string>) => {
+  const actWithSides = (s: Sided) => {
+    const run = s.run;
     if (busy()) return;
     setBusy(true);
     setStatus(null);
     run().then(
       (text) => setStatus({ text, bad: false }),
       (e: any) => {
-        if (e?.code === 'Conflicts') askSide(actRefusal(e), (side) => run(side));
+        if (e?.code === 'Conflicts') askSide(actRefusal(e), s);
         else setStatus({ text: actRefusal(e), bad: true });
       },
     ).finally(() => {
@@ -336,12 +419,17 @@ export function LogPanel(props: LogPanelProps) {
   const applyPicked = () => {
     const seqs = [...picked()].sort((a, b) => a - b);
     if (!seqs.length) return;
-    actWithSides(async (side) => {
-      const r = await logApply(seqs, side, props.doc());
-      choose([]);
-      if (!r.row) return 'Applied: nothing changed here';
-      return seqs.length === 1 ? `Row ${seqs[0]} applied as row ${r.row}`
-                               : `${seqs.length} rows applied as row ${r.row}`;
+    actWithSides({
+      of: { rows: seqs },
+      title: seqs.length === 1 ? `Apply row ${seqs[0]}` : `Apply ${seqs.length} rows`,
+      yes: 'Apply',
+      run: async (sides) => {
+        const r = await logApply(seqs, sides, props.doc());
+        choose([]);
+        if (!r.row) return 'Applied: nothing changed here';
+        return seqs.length === 1 ? `Row ${seqs[0]} applied as row ${r.row}`
+                                 : `${seqs.length} rows applied as row ${r.row}`;
+      },
     });
   };
 
@@ -356,11 +444,39 @@ export function LogPanel(props: LogPanelProps) {
       return `Request ${r.request}: merge ${source} into ${target}`;
     });
   };
-  const mergeRequested = (r: LogRequest) => actWithSides(async (side) => {
-    const m = await logMergeRequest(r.id, side, props.doc());
-    return m.forwarded ? `Merged ${r.source}: ${m.forwarded} rows taken as they are`
-                       : `Merged ${r.source} as row ${m.row}`;
+  const mergeRequested = (r: LogRequest) => actWithSides({
+    of: { request: r.id },
+    title: `Merge ${r.source} into ${r.target}`,
+    yes: 'Merge',
+    run: async (sides) => {
+      const m = await logMergeRequest(r.id, sides, props.doc());
+      return m.forwarded ? `Merged ${r.source}: ${m.forwarded} rows taken as they are`
+                         : `Merged ${r.source} as row ${m.row}`;
+    },
   });
+  /// The merge of a request looked at first: what it would do, a side for
+  /// each conflict
+  const previewRequested = (r: LogRequest) => openPicker(
+    { request: r.id }, `Merge ${r.source} into ${r.target}`, 'Merge',
+    async (sides) => {
+      const m = await logMergeRequest(r.id, sides, props.doc());
+      return m.forwarded ? `Merged ${r.source}: ${m.forwarded} rows taken as they are`
+                         : `Merged ${r.source} as row ${m.row}`;
+    });
+  const rollBack = () => {
+    const u = undone();
+    if (!u) return;
+    question({
+      label: `Take the merge of ${u.source} out of the history? Its ${u.rows} rows go, and a `
+             + 'merge of it asks everything again. This cannot be undone.',
+      yes: 'Roll back',
+      run: async () => {
+        const r = await logRollBack(false, props.doc());
+        choose([]);
+        return `The merge of ${r.source} rolled back: ${r.rows} rows out`;
+      },
+    });
+  };
   const closeRequest = (r: LogRequest, state: 'withdrawn' | 'rejected') => void act(async () => {
     await logCloseRequest(r.id, state, props.doc());
     return `Request ${r.id} ${state}`;
@@ -455,6 +571,7 @@ export function LogPanel(props: LogPanelProps) {
     setRequest(null);
     oldest = 0;
     setAsk(null);
+    setPicker(null);
     setStatus(null);
     choose([]);
     let retry = 0;
@@ -589,6 +706,11 @@ export function LogPanel(props: LogPanelProps) {
                 {ask()!.other!.label}
               </button>
             </Show>
+            <Show when={ask()!.more}>
+              <button class="fc-log-act" type="button" data-act="more" onClick={answerMore}>
+                {ask()!.more!.label}
+              </button>
+            </Show>
             <button class="fc-log-act" type="button" data-act="no" onClick={() => setAsk(null)}>
               Cancel
             </button>
@@ -606,7 +728,69 @@ export function LogPanel(props: LogPanelProps) {
           <div class="fc-log-error">{error()}</div>
         </Show>
 
-        <Show when={tab() === 'rows'}>
+        <Show when={picker()}>
+          <div class="fc-log-picker">
+            <div class="fc-log-asklabel">{picker()!.line}</div>
+            <div class="fc-log-rowacts">
+              <button class="fc-log-act" data-act="pick-ours" onClick={() => pickAll('ours')}>
+                All ours
+              </button>
+              <button class="fc-log-act" data-act="pick-theirs" onClick={() => pickAll('theirs')}>
+                All theirs
+              </button>
+            </div>
+            <div class="fc-log-rows fc-log-changes">
+              <For each={picker()!.changes}>
+                {(c) => (
+                  <div class="fc-log-change" classList={{ 'fc-log-conflict': c.kind === 'conflict' }}
+                       data-key={c.key} title={c.note || undefined}>
+                    <div class="fc-log-changehead">
+                      <span>{changeName(c)}</span>
+                      <span class="fc-log-kind">{c.kind === 'conflict' ? 'conflict'
+                        : `${c.kind} ${c.op}`.trim()}</span>
+                      <span class="fc-log-spacer" />
+                      <Show when={!changePicked(c)}>
+                        <span class="fc-log-kind">{changeTakes(c, sides())}</span>
+                      </Show>
+                    </div>
+                    <Show when={changePicked(c)}>
+                      <div class="fc-log-sides">
+                        <For each={['ours', 'theirs'] as const}>
+                          {(which) => (
+                            <button class="fc-log-pick"
+                                    classList={{ 'fc-log-sel': sides()[c.key] === which
+                                                 || (c.kind === 'view' && !sides()[c.key]
+                                                     && which === 'ours') }}
+                                    data-side={which}
+                                    title={c.base !== undefined ? `at the base: ${c.base || '-'}`
+                                                                : undefined}
+                                    onClick={() => pickSide(c.key, which)}>
+                              <span class="fc-log-kind">{which}</span>
+                              {(which === 'ours' ? c.ours : c.theirs) || '-'}
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+            <div class="fc-log-rowacts">
+              <button class="fc-log-act" data-act="picker-yes" disabled={busy() || !!pickerLeft()}
+                      title={pickerLeft() ? `${pickerLeft()} conflicts have no side yet`
+                                          : undefined}
+                      onClick={answerPicker}>
+                {picker()!.yes}
+              </button>
+              <button class="fc-log-act" data-act="picker-no" onClick={() => setPicker(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={!picker() && tab() === 'rows'}>
           <div class="fc-log-rows">
             <table>
               <thead>
@@ -672,6 +856,16 @@ export function LogPanel(props: LogPanelProps) {
                       onClick={() => newBranch({ row: selected()! }, `row ${selected()}`)}>
                 Branch from here...
               </button>
+              <Show when={undone()}>
+                <button class="fc-log-act" data-act="roll-back"
+                        disabled={busy() || !undone()!.may}
+                        title={undone()!.why
+                               || (`the merge of ${undone()!.source} was undone: its rows leave `
+                                   + 'the history')}
+                        onClick={rollBack}>
+                  Roll back merge...
+                </button>
+              </Show>
               <Show when={pickedRows().some((r) => !r.here)}>
                 <button class="fc-log-act" data-act="apply"
                         disabled={busy() || !rowsAppliable(pickedRows())}
@@ -757,7 +951,7 @@ export function LogPanel(props: LogPanelProps) {
           </Show>
         </Show>
 
-        <Show when={tab() === 'versions'}>
+        <Show when={!picker() && tab() === 'versions'}>
           <div class="fc-log-rows fc-log-versions">
             <table>
               <thead>
@@ -832,7 +1026,7 @@ export function LogPanel(props: LogPanelProps) {
           </Show>
         </Show>
 
-        <Show when={tab() === 'requests'}>
+        <Show when={!picker() && tab() === 'requests'}>
           <form class="fc-log-ask fc-log-reqnew" onSubmit={(e) => { e.preventDefault(); askMerge(); }}>
             <span>Merge</span>
             <select class="fc-log-act fc-log-reqsource" value={reqSource()}
@@ -897,6 +1091,13 @@ export function LogPanel(props: LogPanelProps) {
                              || 'merge it into the branch the document is on'}
                       onClick={() => mergeRequested(chosenRequest()!)}>
                 Merge
+              </button>
+              <button class="fc-log-act" data-act="request-preview"
+                      disabled={busy() || !requestActs(chosenRequest()!).merge}
+                      title={requestActs(chosenRequest()!).mergeWhy
+                             || 'what it would merge, a side picked for each conflict'}
+                      onClick={() => previewRequested(chosenRequest()!)}>
+                Look first...
               </button>
               <button class="fc-log-act" data-act="request-reject"
                       disabled={busy() || !requestActs(chosenRequest()!).reject}

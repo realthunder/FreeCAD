@@ -3,7 +3,9 @@
 // functions, so that the gate checks them in node with no DOM
 // (widgets/gate.ts).
 
-import type { LogBranch, LogOp, LogReach, LogRequest, LogRow, LogVersion } from './control';
+import type {
+  LogBranch, LogChange, LogOp, LogReach, LogRequest, LogRow, LogVersion,
+} from './control';
 
 /// What a refusal says, in the card's words.
 export function logRefusal(e: { code?: string; message?: string } | undefined): string {
@@ -212,4 +214,68 @@ export function actRefusal(e: { code?: string; message?: string } | undefined): 
     case 'Timeout': return 'The viewer did not answer.';
     default: return e?.message || e?.code || 'not done';
   }
+}
+
+// -- The merge's own panel (docs/TransactionLog.md sec 32.26) --------------
+
+/// The changes of a preview in the order the desktop's merge dialog lists
+/// them: the conflicts first, then what goes in, then what is kept or
+/// recomputed.
+export function sortChanges(changes: LogChange[]): LogChange[] {
+  const rank = (kind: string) => (kind === 'conflict' ? 0
+    : kind === 'merge' || kind === 'take' ? 1 : kind === 'view' ? 2
+      : kind === 'derived' ? 3 : 4);
+  return [...changes].sort((a, b) => rank(a.kind) - rank(b.kind));
+}
+
+/// A change's place: the object, by its label where it has one, and the
+/// property.
+export function changeName(c: LogChange): string {
+  const what = c.ckind === 'doc' ? '(document)' : (c.label || c.object);
+  return c.prop ? `${what}.${c.prop}` : what;
+}
+
+/// Whether a change is given a side here: a conflict, and a view's, which
+/// keeps ours unless picked.
+export function changePicked(c: LogChange): boolean {
+  return c.kind === 'conflict' || c.kind === 'view';
+}
+
+/// What goes in of a change: the side picked, or what its kind says.
+export function changeTakes(c: LogChange, sides: Record<string, 'ours' | 'theirs'>): string {
+  if (changePicked(c)) return sides[c.key] ?? (c.kind === 'view' ? 'ours' : 'pick a side');
+  switch (c.kind) {
+    case 'take': return 'theirs';
+    case 'merge': return 'both';
+    case 'same': return 'the same';
+    case 'derived': return 'recomputed';
+    case 'name': return 'named';
+    case 'unit': return 'with its conflict';
+    default: return c.kind;
+  }
+}
+
+/// How many conflicts have no side yet: the act waits for none.
+export function unpickedConflicts(changes: LogChange[],
+                                  sides: Record<string, 'ours' | 'theirs'>): number {
+  return changes.filter((c) => c.kind === 'conflict' && !sides[c.key]).length;
+}
+
+/// The picks an act sends: the sides said, of the changes that ask one.
+export function picksOf(changes: LogChange[], sides: Record<string, 'ours' | 'theirs'>):
+  Record<string, 'ours' | 'theirs'> {
+  const out: Record<string, 'ours' | 'theirs'> = {};
+  for (const c of changes) {
+    if (changePicked(c) && sides[c.key]) out[c.key] = sides[c.key];
+  }
+  return out;
+}
+
+/// The line above the list: what is merged or applied, and how much of it.
+export function previewText(p: { what: string; source?: string; count: number;
+                                  conflicts: number; forward: number },
+                            title: string): string {
+  const many = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+  if (p.forward) return `${title}: nothing here moved since, ${many(p.forward, 'row')} taken as they are`;
+  return `${title}: ${many(p.count, 'change')}, ${many(p.conflicts, 'conflict')}`;
 }

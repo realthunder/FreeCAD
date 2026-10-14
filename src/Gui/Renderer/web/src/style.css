@@ -956,6 +956,35 @@ select.fc-log-act option { color: #e8e8ea; background: rgb(34, 36, 41); }
 .fc-log-show { margin-left: 6px; }
 .fc-log-show:disabled { opacity: 0.5; cursor: default; }
 .fc-log-side.fc-log-sel { background: rgba(88, 132, 255, 0.28); }
+/* The merge's own list (sec 32.26): what an apply or a merge would do, a
+   side to pick for each conflict, the values on each side as text. */
+.fc-log-picker { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.fc-log-picker > .fc-log-asklabel { padding: 5px 8px; }
+.fc-log-changes { padding: 2px 0; }
+.fc-log-change { padding: 4px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.fc-log-change.fc-log-conflict { background: rgba(255, 196, 88, 0.07); }
+.fc-log-changehead { display: flex; align-items: center; }
+.fc-log-sides { display: flex; gap: 6px; margin-top: 4px; }
+.fc-log-pick {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: left;
+  font: 11px ui-monospace, monospace;
+  color: #cfd3da;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fc-log-pick .fc-log-kind { margin: 0 6px 0 0; font-family: system-ui, sans-serif; }
+.fc-log-pick.fc-log-sel {
+  background: rgba(88, 132, 255, 0.28);
+  border-color: rgba(88, 132, 255, 0.8);
+}
 .fc-log-value {
   flex: 1 1 80px;
   min-height: 48px;
@@ -984,7 +1013,9 @@ select.fc-log-act option { color: #e8e8ea; background: rgb(34, 36, 41); }
   .fc-log-act,
   .fc-log-branchsel,
   .fc-log-askinput,
-  .fc-log-side { min-height: 44px; min-width: 44px; }
+  .fc-log-side,
+  .fc-log-pick { min-height: 44px; min-width: 44px; }
+  .fc-log-sides { flex-direction: column; }
   .fc-log-rows td,
   .fc-log-op { padding-top: 8px; padding-bottom: 8px; }
 }

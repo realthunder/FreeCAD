@@ -711,9 +711,71 @@ export function logDeleteBranch(name: string, doc?: string): Promise<LogPlace & 
 /// host answers `Conflicts` with how many, and `fallback` says a side for
 /// them all.
 export function logApply(
-  rows: number[], fallback?: 'ours' | 'theirs', doc?: string,
+  rows: number[], sides?: LogSides, doc?: string,
 ): Promise<LogPlace & { row: number; failed: number }> {
-  return sendOp('log.apply', withDoc(doc, fallback ? { rows, fallback } : { rows }));
+  return sendOp('log.apply', withDoc(doc, { rows, ...sidesOf(sides) }));
+}
+
+/// A side for each conflict, by its key (LogChange.key), and one for the
+/// rest: what an apply or a merge that meets conflicts goes on with
+/// (docs/TransactionLog.md sec 32.26)
+export interface LogSides {
+  fallback?: 'ours' | 'theirs';
+  picks?: Record<string, 'ours' | 'theirs'>;
+}
+
+function sidesOf(sides?: LogSides): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (sides?.fallback) out.fallback = sides.fallback;
+  if (sides?.picks && Object.keys(sides.picks).length) out.picks = sides.picks;
+  return out;
+}
+
+/// One change a merge or an apply would make (Document::MergeChange):
+/// `conflict` asks a side, `view` keeps ours unless picked; the values are
+/// text, at the base, ours and theirs.
+export interface LogChange {
+  key: string;               // what a pick names it by
+  kind: string;              // take, same, conflict, view, derived, unit, merge, name
+  op: string;                // set, addprop, delprop, create, remove, revive, unit
+  ckind: string;             // doc, obj, view
+  object: string;
+  label?: string;
+  prop: string;
+  derived: boolean;
+  base?: string;
+  ours?: string;
+  theirs?: string;
+  note?: string;
+}
+
+export interface LogPreviewReply extends LogPlace {
+  what: 'rows' | 'merge';
+  request?: number;
+  source?: string;           // the branch a request merges
+  base: number;              // the newest row both histories hold
+  forward: number;           // rows taken as they are, where nothing here moved
+  fastForward: boolean;
+  conflicts: number;
+  changes: LogChange[];
+  count: number;             // how many there are; `changes` may be fewer
+}
+
+/// What an apply of `rows`, or the merge `request` asks, would do: nothing
+/// changes. Refused as the act would be.
+export function logPreview(
+  of: { rows: number[] } | { request: number }, doc?: string,
+): Promise<LogPreviewReply> {
+  return sendOp('log.preview', withDoc(doc, of));
+}
+
+/// The merge undone at the head taken out of the log; with `dry`, only
+/// what it would take out and whether the asker may.
+export function logRollBack(
+  dry: boolean, doc?: string,
+): Promise<LogPlace & { merge: number; source: string; rows: number; may?: boolean;
+                       why?: string }> {
+  return sendOp('log.rollBack', withDoc(doc, dry ? { dry: true } : {}));
 }
 
 export function logRequests(
@@ -738,11 +800,11 @@ export function logCloseRequest(
 }
 
 /// Do what a request asks, in a document that is on its target. `Conflicts`
-/// and `fallback` as for logApply.
+/// and the sides as for logApply.
 export function logMergeRequest(
-  request: number, fallback?: 'ours' | 'theirs', doc?: string,
+  request: number, sides?: LogSides, doc?: string,
 ): Promise<LogPlace & { row: number; forwarded: number; failed: number }> {
-  return sendOp('log.mergeRequest', withDoc(doc, fallback ? { request, fallback } : { request }));
+  return sendOp('log.mergeRequest', withDoc(doc, { request, ...sidesOf(sides) }));
 }
 
 /// The host's "this document's log has other rows now": the document's
