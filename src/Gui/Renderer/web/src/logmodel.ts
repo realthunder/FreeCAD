@@ -316,6 +316,10 @@ export interface KeptLine {
   release: boolean;          // the asker may let it go, or stop keeping it
   why: string;               // why not
   count: number;             // an object's: how many values are listed
+  keeper: string;            // who kept it by itself, where not the host
+  mine: boolean;             // the asker did
+  keep: boolean;             // under an object: the asker may keep it by itself
+  keepWhy: string;
 }
 
 /// An object of the list in words: its label, or its number where the
@@ -332,21 +336,37 @@ export function keptLines(values: LogKeptValue[], objects: LogKeptObject[]): Kep
     lines.push({ key: `v:${v.ref}`, kind: 'value', cid: v.cid, obj: v.here ? v.obj ?? '' : '',
                  object: keptObjectText(v),
                  prop: v.prop, seq: v.seq, rowThere: v.row, ref: v.ref, alone: true,
-                 release: v.release, why: v.why ?? '', count: 0 });
+                 release: v.release, why: v.why ?? '', count: 0, keeper: v.keeper ?? '',
+                 mine: !!v.mine, keep: false, keepWhy: '' });
   }
   for (const o of objects) {
     lines.push({ key: `o:${o.cid}`, kind: 'object', cid: o.cid, obj: o.here ? o.obj ?? '' : '',
                  object: keptObjectText(o),
                  prop: '', seq: 0, rowThere: false, ref: '', alone: false,
-                 release: o.release, why: o.why ?? '', count: o.values.length });
+                 release: o.release, why: o.why ?? '', count: o.values.length, keeper: '',
+                 mine: false, keep: false, keepWhy: '' });
     for (const v of o.values) {
       lines.push({ key: `u:${o.cid}:${v.ref}`, kind: 'under', cid: o.cid,
                    obj: o.here ? o.obj ?? '' : '', object: keptObjectText(o), prop: v.prop, seq: v.seq, rowThere: true,
                    ref: v.ref, alone: v.alone, release: !!v.release, why: v.why ?? '',
-                   count: 0 });
+                   count: 0, keeper: v.keeper ?? '', mine: !!v.mine, keep: !!v.keep,
+                   keepWhy: v.keepWhy ?? '' });
     }
   }
   return lines;
+}
+
+/// Who kept a value by itself, in words: none where the host did.
+export function keeperText(line: { keeper: string; mine: boolean }): string {
+  if (line.mine) return 'by you';
+  return line.keeper ? `by ${line.keeper}` : '';
+}
+
+/// Why keeping at a row -- a version's -- is not the asker's: the host's,
+/// and of one who writes the branch since the point, which `within` says.
+export function keepWhy(reach: LogReach, within: boolean): string {
+  if (reach.host || within) return '';
+  return reach.write ? BEFORE : NEEDS;
 }
 
 /// The tab's title: the count, so that something kept is seen unopened.

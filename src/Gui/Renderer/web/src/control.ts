@@ -568,6 +568,9 @@ export interface LogOpsReply {
   script?: string;
   ops: LogOp[];
   count: number;             // how many the row has; `ops` may be fewer
+  keep?: boolean;            // the asker may keep a value at the row
+  keepWhy?: string;          // and why not
+  keepObject?: boolean;      // the asker may keep every value of an object: the host
 }
 
 export interface LogValueReply {
@@ -825,6 +828,9 @@ export interface LogKeptValue {
   row: boolean;              // that row is still in the log
   release: boolean;          // the asker may let it go
   why?: string;              // and why not
+  keeper?: string;           // who kept it, where not the host
+  keeperKind?: string;
+  mine?: boolean;            // the asker kept it
 }
 
 /// An object every value of which is kept, and those the log has of it.
@@ -833,9 +839,11 @@ export interface LogKeptObject {
   obj?: string;
   label?: string;
   here: boolean;
-  /// `release` and `why` of one kept by itself too, as for LogKeptValue
+  /// `release`, `why` and the keeper of one kept by itself too, as for
+  /// LogKeptValue; `keep`: whether the asker may keep it by itself
   values: Array<{ ref: string; prop: string; seq: number; alone: boolean; release?: boolean;
-                  why?: string }>;
+                  why?: string; keeper?: string; mine?: boolean; keep?: boolean;
+                  keepWhy?: string }>;
   release: boolean;          // the asker may stop keeping it
   why?: string;
 }
@@ -843,13 +851,15 @@ export interface LogKeptObject {
 export function logKept(
   doc?: string,
 ): Promise<LogPlace & LogReach & { values: LogKeptValue[]; objects: LogKeptObject[];
-                                   count: number }> {
+                                   count: number; keepObject?: boolean }> {
   return sendOp('log.kept', withDoc(doc, {}));
 }
 
 /// Keep, or let go of, the value of an object at a row (0: where the
 /// document is); with no `prop` every value of it a recompute wrote. One
 /// object by name or id, or several by name. `values` is how many moved.
+/// Keeping is the host's, and of one who writes the row's branch since the
+/// point; letting go is also the keeper's.
 export function logKeep(
   what: { obj?: string; cid?: number; objects?: string[]; prop?: string; row?: number },
   keep: boolean, doc?: string,
@@ -858,7 +868,7 @@ export function logKeep(
 }
 
 /// Keep every value of an object the log has and will have, or stop: the
-/// host's, that.
+/// host's alone, both.
 export function logKeepObject(
   what: { obj?: string; cid?: number }, keep: boolean, doc?: string,
 ): Promise<LogPlace & { cid: number; changed: boolean }> {

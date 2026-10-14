@@ -56,6 +56,7 @@ import {
   changeTakes, deletable, keepText,
   keptCountText, keptLines, keptRowText, keptTabText, logAuthor, logOpText, logRefusal,
   logWhen, mayMove, mergeNewest, moveWhy, opKeepable, opKeptText, picksOf, pickRows,
+  keeperText, keepWhy,
   previewText, requestActs, requestProblem, requestState, requestText, rowBranchWhy,
   rowUndoable, rowUndoWhy, rowsAppliable, sortChanges, sortRequests, switchable, undoLabel,
   unpickedConflicts, versionText, versionWhy, type KeptLine,
@@ -1057,23 +1058,25 @@ export function LogPanel(props: LogPanelProps) {
                 )}
               </For>
               <Show when={opKeepable(chosenOp()!)}>
-                <button class="fc-log-side" data-act="keep-value" disabled={busy()}
+                <button class="fc-log-side" data-act="keep-value"
+                        disabled={busy() || (!chosenOp()!.keptValue && !ops()!.keep)}
                         title={chosenOp()!.keptValue
                           ? 'let go of this value: a save then leaves it out of the file, unless '
                             + 'a kept version reaches it or its object is kept'
-                          : 'keep this value in the file: a save leaves a value a recompute wrote '
-                            + 'out, unless a kept version reaches it'}
+                          : ops()!.keepWhy
+                            || ('keep this value in the file: a save leaves a value a recompute '
+                                + 'wrote out, unless a kept version reaches it')}
                         onClick={() => keepOpValue(chosenOp()!, !chosenOp()!.keptValue)}>
                   {chosenOp()!.keptValue ? 'Let go' : 'Keep'}
                 </button>
                 <button class="fc-log-side" data-act="keep-object"
-                        disabled={busy() || (!!chosenOp()!.keptObject && !reach().host)}
-                        title={chosenOp()!.keptObject
-                          ? (reach().host ? 'stop keeping every value of it'
-                            : 'every value of an object is kept on every branch: the host lets '
-                              + 'them go')
-                          : 'keep every value of it the log has and will have: the file grows '
-                            + 'by each'}
+                        disabled={busy() || !ops()!.keepObject}
+                        title={!ops()!.keepObject
+                          ? 'every value of an object is kept on every branch: the host keeps '
+                            + 'them, and lets them go'
+                          : chosenOp()!.keptObject ? 'stop keeping every value of it'
+                            : 'keep every value of it the log has and will have: the file grows '
+                              + 'by each'}
                         onClick={() => keepObject({ obj: chosenOp()!.obj },
                                                   chosenOp()!.label || chosenOp()!.obj!,
                                                   !chosenOp()!.keptObject)}>
@@ -1170,12 +1173,15 @@ export function LogPanel(props: LogPanelProps) {
                 Branch from here...
               </button>
               <button class="fc-log-act" data-act="keep-selected"
-                      disabled={busy() || !selectedObjects().length || !chosenVersion()!.seq}
+                      disabled={busy() || !selectedObjects().length || !chosenVersion()!.seq
+                                || !!keepWhy(reach(), chosenVersion()!.within)}
                       title={!chosenVersion()!.seq ? 'this version was taken at no row'
-                        : !selectedObjects().length ? 'select the objects to keep as they are here'
+                        : keepWhy(reach(), chosenVersion()!.within)
+                          || (!selectedObjects().length
+                            ? 'select the objects to keep as they are here'
                           : 'what a recompute made of the objects selected -- their shapes -- '
                             + 'there, written into the file by a save though the version is not '
-                            + 'kept'}
+                            + 'kept')}
                       onClick={() => keepSelectedAt(chosenVersion()!, true)}>
                 Keep selected here
               </button>
@@ -1216,6 +1222,9 @@ export function LogPanel(props: LogPanelProps) {
                         <Show when={k.kind === 'under' && k.alone}>
                           <span class="fc-log-kind">by itself too</span>
                         </Show>
+                        <Show when={keeperText(k)}>
+                          <span class="fc-log-kind" data-keeper={k.keeper}>{keeperText(k)}</span>
+                        </Show>
                       </td>
                       <td>{k.kind === 'under' ? '' : k.object}</td>
                       <td>{k.kind === 'object' ? keptCountText(k.count) : k.prop}</td>
@@ -1253,11 +1262,13 @@ export function LogPanel(props: LogPanelProps) {
               </Show>
               <Show when={chosenKept()!.kind === 'under'}>
                 <button class="fc-log-act" data-act="kept-alone"
-                        disabled={busy() || (chosenKept()!.alone && !chosenKept()!.release)}
+                        disabled={busy() || (chosenKept()!.alone ? !chosenKept()!.release
+                                                                 : !chosenKept()!.keep)}
                         title={chosenKept()!.alone
                           ? (chosenKept()!.why || 'kept by itself no more: it goes with its row')
-                          : 'it then stays when its row goes, in a trim or a squash, and when '
-                            + 'the object is no longer kept'}
+                          : chosenKept()!.keepWhy
+                            || ('it then stays when its row goes, in a trim or a squash, and when '
+                                + 'the object is no longer kept')}
                         onClick={() => keepAlone(chosenKept()!)}>
                   {chosenKept()!.alone ? 'Not by itself' : 'Keep by itself'}
                 </button>

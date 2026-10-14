@@ -35,7 +35,8 @@ import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefu
          switchable, undoLabel, versionText, versionWhy,
          changeName, changePicked, changeTakes, picksOf, previewText, sortChanges,
          unpickedConflicts, keepText, keptCountText, keptLines, keptObjectText, keptRowText,
-         keptTabText, opKeepable, opKeptText, changeLeavable, changeLeftOut } from '../logmodel.ts';
+         keptTabText, opKeepable, opKeptText, changeLeavable, changeLeftOut, keeperText,
+         keepWhy } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -969,10 +970,12 @@ function checkLog(): void {
     [{ ref: 'aa', cid: 3, obj: 'Cut', label: 'Cut', here: true, prop: 'Shape', seq: 7, row: true,
        release: true },
      { ref: 'bb', cid: 9, here: false, prop: 'Shape', seq: 2, row: false, release: false,
-       why: 'the host lets it go' }],
+       why: 'the host lets it go', keeper: 'ann~1a2b3c', keeperKind: 'invited' }],
     [{ cid: 1, obj: 'Box', label: 'Bracket', here: true, release: false, why: 'host',
-       values: [{ ref: 'cc', prop: 'Shape', seq: 4, alone: false },
-                { ref: 'aa', prop: 'Shape', seq: 7, alone: true }] }]);
+       values: [{ ref: 'cc', prop: 'Shape', seq: 4, alone: false, keep: false,
+                  keepWhy: 'before' },
+                { ref: 'aa', prop: 'Shape', seq: 7, alone: true, mine: true, keeper: 'me',
+                  release: true }] }]);
   check(t, 'the kept are listed values first, then each object with its values under it',
         lines.map((l) => l.kind).join(',') === 'value,value,object,under,under'
         && lines[2].count === 2 && lines[4].alone && !lines[3].alone,
@@ -981,6 +984,17 @@ function checkLog(): void {
         keptObjectText({ cid: 1, obj: 'Box', label: 'Bracket', here: true }) === 'Bracket (Box)'
         && keptObjectText({ cid: 3, obj: 'Cut', label: 'Cut', here: true }) === 'Cut'
         && keptObjectText({ cid: 9, here: false }) === 'obj:9, not in the document');
+  check(t, 'a value kept by a client says who, or that it was the asker; the host\'s says nothing',
+        keeperText(lines[0]) === '' && keeperText(lines[1]) === 'by ann~1a2b3c'
+        && keeperText(lines[4]) === 'by you' && keeperText(lines[2]) === '',
+        lines.map(keeperText).join('|'));
+  check(t, 'a value under an object carries whether the asker may keep it by itself',
+        !lines[3].keep && lines[3].keepWhy === 'before' && !lines[4].keep && lines[4].release);
+  check(t, 'keeping at a version: the host, or one who writes from before it',
+        keepWhy({ host: true, write: false }, false) === ''
+        && keepWhy({ host: false, write: true }, true) === ''
+        && keepWhy({ host: false, write: true }, false).includes('before the point')
+        && keepWhy({ host: false, write: false }, false).includes('write access'));
   check(t, 'a row gone says so; an object has no row',
         keptRowText(lines[0]) === '7' && keptRowText(lines[1]) === '2, gone'
         && keptRowText(lines[2]) === '');
