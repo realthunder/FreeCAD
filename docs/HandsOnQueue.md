@@ -147,6 +147,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 17:41, the reporter, a NEW ENTRY 130:** surface finish "Blast" set
+on one object -- a warning, then no (pre)selection highlight on it; set
+back to "None" -- the highlight back, the finish still drawn. The warning
+read as an off-by-one in the property view's model; the rest not found by
+reading. Written here 17:43.
+
 **2026-10-14 17:19 to 17:25, the reporter, three messages: NEW ENTRIES 128
 and 129.** An audit of all icons drawn in dark lines only, asked and then
 WITHDRAWN ("looks like it is just techdraw missing some icon in some of
@@ -2591,6 +2597,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking |
 | 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry. THE REPORTER about 17:27: "Basically the entire Techdraw Extend Dimensions toolbar has invisible icons". FOUND by the note-taker 17:30: 14 TechDraw extension icons draw NOTHING in Qt's SVG renderer -- all of them, and only they, wrap their drawing in an Inkscape filter blending with "BackgroundImage", which this Qt's SVG renderer (it renders filters) cannot do; the icons of that toolbar. A correction: the all-icons audit DID run (17:20, offscreen, read only), the note-taker had written it had not. THE BUILD SESSION (17:35) confirms the cause by one file and takes way 1: a script that drops those filters and their uses from the 14 files and nothing else -- written, to be applied after its running build, then built and pictured. Not committed |
 | 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry. PROBED 17:35 by the build session on the copy staged 15:22: a page exported to PDF (the path "print to file" and Print All to a file share) is VECTOR already -- 0 images, about 12448 path operators, 172 text runs. Left: the NATIVE printer path (to a printer, "Microsoft Print to PDF" among them), where Qt prints through GDI and turns antialiased or part-transparent drawing into images. TWO POINTS for the reporter: which printer or output, and which part looked like pixels |
+| 130 | 2026-10-14 | SURFACE FINISH: set to "Blast" on one object -- a warning in the report view ("dataChanged() called with an invalid index range"), the finish drawn, but the object then shows NO (PRE)SELECTION HIGHLIGHT; set back to "None" -- no warning, the highlight back, but the finish STILL DRAWN | OPEN; read by the note-taker, nothing run: the warning is an off-by-one in the property view's model, harmless by reading; the highlight and the finish that stays NOT found; one point under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18017,6 +18024,60 @@ c. WHICH printer or output did the print go to -- a printer, "Microsoft
    Print to PDF", or "print to file"?
 d. WHICH part looked like pixels -- lines, text, the template, hatching?
 
+## 130. Surface finish: "Blast" set -- a warning, then no selection highlight on the object; "None" set -- the highlight back, the finish still drawn -- OPEN
+
+**2026-10-14 17:41, the reporter:** "new defect, something is off with surface
+finish. I tried to set one object with Surface finish Blast. when I and
+selecting I saw some error message as shown below. Then the surface
+finish applied. but then the object stop showing any (pre)selection
+highlight. Then I tried setting surface finish back to none. this time no
+error. But the surface finish is still rendered. (pre)selection highlight
+came back"
+
+The report view's lines the reporter pasted, as given:
+
+    17:32:47  dataChanged() called with an invalid index range:
+    \u2514\u2500 17:32:46  dataChanged() called with an invalid index range:
+        topleft: QModelIndex(0,1,0x28985efa380,Gui::PropertyEditor::PropertyModel(0x2891aababe0))
+        bottomRight:QModelIndex(-1,-1,0x0,QObject(0x0))
+        topleft:
+
+(the second line's tree mark is two non-ASCII characters in the
+reporter's paste, written here as their codes)
+
+The note-taker's reading: three things --
+1. a WARNING while the finish is chosen in the property view;
+2. with "Blast" the finish is drawn, but the object no longer shows a
+   highlight when the pointer is over it or when it is selected;
+3. back to "None": the highlight returns, but the BLAST FINISH STAYS on
+   the screen.
+
+READ in the source by the note-taker, nothing run:
+- 1, the warning: `PropertyModel::updateChildren`
+  (`src/Gui/propertyeditor/PropertyModel.cpp` 638 to 646) signals a
+  change from row 0 to row `numChild` -- one past the last row, an index
+  that does not exist, hence "bottomRight: QModelIndex(-1,-1,...)". An
+  off-by-one (`numChild - 1` is meant); by reading HARMLESS -- the rows
+  are still redrawn -- and not the cause of 2 or 3.
+- Where a finish comes from: an object's appearance can state one
+  (`App::SurfaceFinish`, `src/App/MaterialAppearance.h` 52;
+  `ShapeAppearance`), and a view's `Render_Finish` setting gives one to an
+  appearance that states none (`ViewProviderGeometryObject.cpp` 960 to
+  995: "an appearance that states a finish ANYWHERE is the authority").
+  The render cache and the engine draw it (`SoFCRenderCache.cpp`,
+  `SoFCVertexCache.cpp` 2487 `hasFinishMaterial`, the shader
+  `fc_finish.sh`).
+- 2 and 3: NOT found by reading. A guess, not shown: a finished object
+  gets a material of its own in the render cache, and the highlight
+  passes do not find it under that material while the finish is on; and
+  going back to "None" may not drop the finished material from the cache
+  -- so the drawing keeps it while the highlight finds the object again.
+
+NOT said, lettered:
+a. WHICH property was set: the object's appearance ("Surface finish"
+   under its appearance in the property view) or the view's
+   `Render_Finish` -- and which object (a body, a Part feature).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -18027,5 +18088,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 129 are of 2026-10-14, 116 and 119 said to the
+it; entries 114 to 130 are of 2026-10-14, 116 and 119 said to the
 build session)
