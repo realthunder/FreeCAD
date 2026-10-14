@@ -140,7 +140,10 @@ An `OnViewValue` binds ONE value of a feature to the view:
   from the current shape -- the GizmoHelper functions already compute
   these);
 - how: an optional handle (a Gizmo) and a label (an EditableDatumLabel)
-  showing the value, the label clickable to type.
+  showing the value, the label clickable to type;
+- what else: a list of ACTIONS for the handle's root button (3.3) --
+  each a title, a checked state where it is a choice, and what it does --
+  given by the feature's panel (later by its view provider).
 
 It replaces "a gizmo bound to a spin box". The panel's spin box, when the
 panel shows that value, is bound to the same path, so the two stay in step
@@ -173,8 +176,9 @@ recompute (where today the fillet panel repositions its pools).
 DECIDED by the reporter 2026-10-14 13:21 (a, b, c): one arrow; the default
 radius's label always at the top middle of the view, the others only
 beside their handle when it is active; a pressable at the root of each
-arrow that cycles default / one radius / two radii. This section is
-written to those answers.
+arrow -- made at 13:25 a BUTTON opening a context menu (the mode, remove,
+and each feature's own operations). This section is written to those
+answers.
 
 - THE DEFAULT RADIUS: its label is ALWAYS shown, at the TOP MIDDLE of the
   view (a fixed place on the screen, not on an edge), e.g. "Radius 2 mm";
@@ -187,21 +191,35 @@ written to those answers.
   turned more toward the camera, and moves to the other face when the
   camera turns past the edge. (Today's two arrows say the same thing
   twice.)
-- THE STATE TOGGLE (c): at the ROOT of each edge's arrow sits a small
-  pressable button. Each press moves the edge to the next state, and
-  round again:
-  1. DEFAULT -- the edge takes the default radius (no entry of its own;
-     its arrow, if dragged, drives the default);
-  2. ONE RADIUS of its own -- one point `(0, r)`, `r` starting at the
-     radius it had;
-  3. TWO RADII -- two points, at the start and the end of the edge, both
-     starting at the radius it had; a second arrow at the far end of the
-     edge for the end radius, each with its own root button.
-  The button's look says the state (for instance: hollow = default, one
-  dot = one radius, two dots = two radii). An edge with MORE than two
-  points (possible in the file and in the panel) shows its points' arrows
-  and a button marked "more", which the press does not cycle -- it is set
-  in the panel.
+- THE ROOT BUTTON (c, made general by the reporter at 13:25 -- it
+  replaces the cycling toggle first proposed): the ROOT of each handle is
+  drawn as a BUTTON; a click on it opens a CONTEXT MENU of what can be done
+  with that value. For the fillet's edge arrow:
+  - the MODE, as three checkable entries, the current one checked:
+    1. "Default radius" -- the edge takes the default (no entry of its
+       own; its arrow, if dragged, drives the default);
+    2. "One radius" -- one point `(0, r)`, `r` starting at the radius it
+       had;
+    3. "Two radii" -- two points, at the start and the end of the edge,
+       both starting at the radius it had; a second arrow at the far end
+       of the edge for the end radius, with its own root button;
+  - "Remove" -- the edge is taken out of the fillet (the panel's remove).
+  An edge with MORE than two points (possible in the file and in the
+  panel) shows its points' arrows and a menu whose mode reads "Varying
+  (set in the panel)", not one of the three.
+  The button's look says the mode at a glance (for instance: hollow =
+  default, one dot = one radius, two dots = two radii).
+- OTHER FEATURES put their own operations in the same menu, on the same
+  button (3.4 for the dress-ups). For instance -- the note-taker's
+  examples, to be settled feature by feature: Pad/Pocket length --
+  "Reversed", "Symmetric to plane", the length type ("Dimension",
+  "Through all", "Up to face" ...); Revolution angle -- "Reversed",
+  "Symmetric"; Hole depth -- "Reversed", "Through all"; Draft -- "Reverse
+  pull direction"; Thickness -- "Reversed", the join type. Today several
+  of these handles toggle "Reversed" on a plain click (the gizmos' click
+  callback, `TaskExtrudeParameters.cpp` 242 to 244, Revolution, Hole); the
+  menu takes that over, so a click on the arrow itself no longer flips
+  anything by surprise.
 - HOW OTHER PROGRAMS SWITCH this (asked by the reporter, c), from the
   survey: none found has a button on the handle. Fusion has a type per
   edge set (Constant / Variable ...) in the dialog [3]; SolidWorks a
@@ -223,11 +241,12 @@ written to those answers.
 
 - Chamfer: the same as the fillet -- the default values' label at the top
   middle, per-edge values through `ChamferInfo` as the fillet's through
-  `Segments`; the root button cycles default / own size / own two sizes or
-  size and angle (by `ChamferType`), and a click on the edge's direction
-  marker flips.
-- Draft: one angle handle; Thickness: one value handle; their label at the
-  top middle. Only the move to 3.1 and 3.2.
+  `Segments`; the root button's menu: the mode ("Default size", "Own
+  size", "Own two sizes" or "Own size and angle", by `ChamferType`),
+  "Flip direction", "Remove".
+- Draft: one angle handle, its menu "Reverse pull direction", "Remove"
+  (the face); Thickness: one value handle, its menu "Reversed", the join
+  type, "Remove" (the face); their label at the top middle.
 
 ### 3.5 Without the task panel
 
@@ -264,8 +283,8 @@ seen on the screen (1.4, and entry 118).
 1. `OnViewValue` and `OnViewValueSet` (3.1), the active handle and typing
    (3.2), with the fillet's DEFAULT radius as the first user -- one arrow,
    its label at the top middle.
-2. The fillet's per-edge values: the root button's three states, the
-   second arrow at the far end, position handles (3.3).
+2. The fillet's per-edge values: the root button and its menu (mode,
+   remove), the second arrow at the far end, position handles (3.3).
 3. Edge groups (section 6), if wanted after reading it.
 4. Chamfer, Draft, Thickness moved to it (3.4).
 5. Panel optional (3.5.1).
@@ -287,14 +306,23 @@ modify without entering edit. f, show me how would you implement it."
 - a: ONE arrow -- 3.3.
 - b: the default's label at the top middle, the others beside an ACTIVE
   handle only, highlighted -- 3.3.
-- c: the root button cycling default / one radius / two radii -- 3.3,
-  with the survey's answer to "how other CAD does this".
+- c: the root of each handle a BUTTON opening a context menu -- for the
+  fillet the mode (default / one radius / two radii) and "Remove", other
+  features their own operations (the reporter's second thought, 13:25:
+  "or, maybe that's better and more general, make the root of the handle
+  pressable, like show it as a button, when clicked show the context menu
+  to selection various options. for fillet, that's the mode selection
+  (default, per edge one radius, two radius), and a remove action. for
+  other features put their own operations") -- 3.3, with the survey's
+  answer to "how other CAD does this".
 - d: no typing during a drag; the active handle takes typing -- 3.2.
 - e: answered; outside an edit proposed to drop -- 3.5.2.
 - f: how edge groups would be built -- section 6.
 
 LEFT for the reporter: whether 3.5.2 is dropped; whether edge groups
-(section 6) are wanted, and in which of its two forms.
+(section 6) are wanted, and in which of its two forms; the other
+features' menu entries (3.3, the note-taker's examples) feature by
+feature.
 
 ## 6. Edge groups: how it would be built (f)
 
@@ -338,7 +366,8 @@ call, an edge with a group gets points from the group -- `(0, r1)`, or
 A note for two radii in a group: "start" and "end" follow each edge's own
 direction, which differs between edges; the group's two radii would land
 reversed on some. Either a per-edge "reversed" flag in the group
-membership (saved as `rev="1"`), set by the toggle, or a rule (the end
+membership (saved as `rev="1"`), set by a "Reverse" entry in the
+member's root button menu, or a rule (the end
 nearer the group's first edge's start is the start). The flag is simpler
 to explain; to be chosen when built.
 
@@ -348,10 +377,11 @@ Gui:
   on a group row; dragging an edge row onto a group row joins it.
 - View: ONE arrow per group, on its first member edge; small markers on
   the other members, highlighted with it when it is active; its label
-  (beside it when active) names the group: "G1  R 3 mm". The root button
-  of a group cycles one radius / two radii (a group is never "default").
-  A member's own root button takes it OUT of the group (to its own one
-  radius). Tab visits each group once, not each member.
+  (beside it when active) names the group: "G1  R 3 mm". The menu of a
+  group's root button: "One radius", "Two radii", "Ungroup" (a group is
+  never "default"); a member's own menu adds "Leave group" (to its own
+  one radius) and "Reverse" (6.2, two radii). Tab visits each group once,
+  not each member.
 - To make a group from the view: select several edges in the view while
   editing (Ctrl-click, as the panel's add-by-selection does), then the
   "Group" command on the selection (a key, or the context menu).
