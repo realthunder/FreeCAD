@@ -29,8 +29,9 @@ Two views a1 and a2 of one document, in two cells:
     is still the active view.
 
 The clicks are the real pointer's, through the window system (XTEST on
-X11): a mouse event sent through Qt to a 3D view is not handled as a
-click of the pointer is, and does not move the keyboard focus there.
+X11, SendInput on Windows, skipped with the session locked): a mouse
+event sent through Qt to a 3D view is not handled as a click of the
+pointer is, and does not move the keyboard focus there.
 
 Run through scripts/gui-test.sh, or by hand as `FreeCAD <this script>`
 with GT_OUT set.
@@ -43,7 +44,6 @@ import traceback
 import FreeCAD
 import FreeCADGui
 from PySide import QtCore, QtWidgets
-from PySide6 import QtTest
 
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
@@ -88,13 +88,39 @@ def cell_of(view):
     return w
 
 
+def desktop_takes_input():
+    """Windows: whether the pointer can be pressed here at all -- not with
+    the session locked."""
+    if not hasattr(ctypes, "windll"):
+        return True
+    user32 = ctypes.windll.user32
+    user32.OpenInputDesktop.restype = ctypes.c_void_p
+    desktop = user32.OpenInputDesktop(0, False, 0x0100)  # DESKTOP_SWITCHDESKTOP
+    if not desktop:
+        return False
+    user32.CloseDesktop.argtypes = [ctypes.c_void_p]
+    user32.CloseDesktop(desktop)
+    return True
+
+
 def click_into(view):
     """A click of the real pointer in the middle of the view."""
     widget = widget_of(view)
     at = widget.mapToGlobal(widget.rect().center())
     if hasattr(ctypes, "windll"):
-        # No pointer to press here: the nearest thing Qt has
-        QtTest.QTest.mouseClick(widget, QtCore.Qt.LeftButton)
+        # The real pointer, by SendInput's older form. The middle of what
+        # the screen shows of the view: the window can reach past the screen
+        screen = widget.screen().geometry()
+        shown = QtCore.QRect(widget.mapToGlobal(QtCore.QPoint(0, 0)), widget.size())
+        at = shown.intersected(screen).center()
+        ratio = widget.devicePixelRatioF()
+        user32 = ctypes.windll.user32
+        user32.SetCursorPos(int(screen.x() + (at.x() - screen.x()) * ratio),
+                            int(screen.y() + (at.y() - screen.y()) * ratio))
+        settle(150)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+        settle(80)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
         settle(400)
         return
     x11 = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
@@ -132,6 +158,9 @@ def active_is(view):
 def run():
     try:
         mw = FreeCADGui.getMainWindow()
+        if not desktop_takes_input():
+            note("SKIP the session is locked: no pointer to click with")
+            return
         VIEW.SetBool("ShowNaviCube", False)
         VIEW.SetBool("UseNavigationAnimations", False)
         doc = FreeCAD.newDocument(DOC)
