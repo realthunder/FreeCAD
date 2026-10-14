@@ -47,8 +47,11 @@
 #include <QTextBlock>
 #include <QTextLayout>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <unordered_map>
+#include <vector>
 
 #include "OverlayManager.h"
 
@@ -2122,6 +2125,16 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
         if(!activeTabWidget)
             return false;
 
+        // A release goes where its press went. One whose press was passed
+        // on is handled above, by the widget tracked; any other release is
+        // the widget's that took the press. A view cell's border dragged
+        // and let go over a see-through panel had its release passed on to
+        // the view under the panel: the border never saw it, the cell was
+        // not closed, and the drag's frames stayed (docs/HandsOnQueue.md
+        // entry 117).
+        if (ev->type() == QEvent::MouseButtonRelease)
+            return false;
+
         ev->accept();
         d->interceptEvent(hitWidget, ev);
         if (ev->isAccepted() && ev->type() == QEvent::MouseButtonPress) {
@@ -2312,24 +2325,181 @@ void OverlayManager::paintTextGround(QPainter &painter, const QTextBlock &block,
 
 QBrush OverlayManager::overlayTextGround(const QColor &own, const QWidget *where)
 {
-    if (OverlayParams::getDockOverlayThemeItemColor())
-        return overlayItemBackground(QBrush(), -1, where);
-    // The view's own background. Not its palette's: an overlay's style sheet
-    // has made that one transparent.
+    // The items' ground, followed by the theme or set -- "item background
+    // color (when auto not enabled) shall apply to tree view and python
+    // console and report view, and selection view" (docs/HandsOnQueue.md
+    // entry 98, 2026-10-14)
+    QBrush brush = overlayItemBackground(QBrush(), -1, where);
+    if (brush.style() != Qt::NoBrush)
+        return brush;
+    // None set: the view's own background. Not its palette's: an overlay's
+    // style sheet has made that one transparent.
     QColor colour = own.isValid() ? own : QApplication::palette().color(QPalette::Base);
     colour.setAlpha(overlayAlpha());
     return QBrush(colour);
+}
+
+/// The overlay \a widget is in, or none
+static const OverlayTabWidget *overlayOf(const QWidget *widget)
+{
+    for (const QWidget *w = widget; w; w = w->parentWidget()) {
+        if (auto tab = qobject_cast<const OverlayTabWidget*>(w))
+            return tab;
+    }
+    return nullptr;
 }
 
 /// The side of the main window the overlay of \a widget is on;
 /// Qt::NoDockWidgetArea for a widget in no overlay
 static Qt::DockWidgetArea overlaySideOf(const QWidget *widget)
 {
-    for (const QWidget *w = widget; w; w = w->parentWidget()) {
-        if (auto tab = qobject_cast<const OverlayTabWidget*>(w))
-            return tab->getDockArea();
+    auto tab = overlayOf(widget);
+    return tab ? tab->getDockArea() : Qt::NoDockWidgetArea;
+}
+
+static QColor packedColour(unsigned long packed)
+{
+    App::Color colour;
+    colour.setPackedValue(static_cast<uint32_t>(packed));
+    return QColor::fromRgbF(colour.r, colour.g, colour.b);
+}
+
+/** The radial background's colour at a point of its view, \a x and \a y from
+ * -1 to 1 across it, as SoFCBackgroundGradient draws it: from the centre's
+ * colour to the rim's on a circle of radius sqrt(2), through the middle's on
+ * an oval 0.3 sqrt(2) by sqrt(1/2) where that one is used. Between the oval
+ * and the circle a point of the oval runs to the point of the circle at the
+ * same angle; how far along its point is, is found by halving.
+ */
+static void radialColourAt(double x, double y, const double centre[3], const double middle[3],
+                           const double rim[3], bool useMiddle, double out[3])
+{
+    auto mix = [out](const double *a, const double *b, double t) {
+        t = std::clamp(t, 0.0, 1.0);
+        for (int i = 0; i < 3; ++i)
+            out[i] = a[i] + (b[i] - a[i]) * t;
+    };
+    const double R = std::sqrt(2.0);
+    if (!useMiddle) {
+        mix(centre, rim, std::sqrt(x * x + y * y) / R);
+        return;
     }
-    return Qt::NoDockWidgetArea;
+    const double a = 0.3 * std::sqrt(2.0);
+    const double b = std::sqrt(0.5);
+    const double inner = std::sqrt((x / a) * (x / a) + (y / b) * (y / b));
+    if (inner <= 1.0) {
+        mix(centre, middle, inner);
+        return;
+    }
+    // outside the oval: the s of the ring through the point, oval at 0,
+    // circle at 1
+    double lo = 0.0;
+    double hi = 1.0;
+    for (int i = 0; i < 16; ++i) {
+        const double s = (lo + hi) / 2;
+        const double ra = a + (R - a) * s;
+        const double rb = b + (R - b) * s;
+        if ((x / ra) * (x / ra) + (y / rb) * (y / rb) > 1.0)
+            lo = s;
+        else
+            hi = s;
+    }
+    mix(middle, rim, (lo + hi) / 2);
+}
+
+/** The radial background averaged over what the overlay of \a where covers
+ * of the 3D view under it -- "suggest a way to calculate a better auto item
+ * background color when radial background is enabled, so it blend in better"
+ * (docs/HandsOnQueue.md entry 98, 2026-10-14; the average was the proposal,
+ * agreed the same day). Invalid where no 3D view lies under the overlay.
+ *
+ * Asked by every item painted: worked out once for a place of the overlay
+ * and of its view and the colours, and kept while those stay.
+ */
+static QColor radialAverageUnder(const QWidget *where)
+{
+    auto tab = overlayOf(where);
+    if (!tab || !getMainWindow())
+        return QColor();
+    const QRect panel(tab->mapToGlobal(QPoint(0, 0)), tab->size());
+    const unsigned long colours[3] = {ViewParams::getBackgroundColor2(),
+                                      ViewParams::getBackgroundColor4(),
+                                      ViewParams::getBackgroundColor3()};
+    const bool useMiddle = ViewParams::getUseBackgroundColorMid();
+
+    struct Kept {
+        QPointer<QWidget> view;
+        QRect panel;
+        QRect viewRect;
+        unsigned long colours[3];
+        bool useMiddle;
+        QColor result;
+    };
+    static std::vector<Kept> kept;
+    auto viewRectOf = [](const QWidget *view) {
+        return QRect(view->mapToGlobal(QPoint(0, 0)), view->size());
+    };
+    for (const Kept &k : kept) {
+        if (k.view && k.view->isVisible() && k.panel == panel
+                && k.viewRect == viewRectOf(k.view) && k.useMiddle == useMiddle
+                && std::equal(colours, colours + 3, k.colours))
+            return k.result;
+    }
+
+    // The 3D view the overlay covers most of: with the view split, the one
+    // whose background the panel mostly lies on
+    QWidget *view = nullptr;
+    QRect area;
+    qint64 best = 0;
+    const auto views = getMainWindow()->findChildren<View3DInventor*>();
+    for (View3DInventor *view3d : views) {
+        QWidget *gl = view3d->getViewer() ? view3d->getViewer()->getGLWidget() : nullptr;
+        if (!gl || !gl->isVisible() || gl->window() != tab->window())
+            continue;
+        const QRect common = panel.intersected(viewRectOf(gl));
+        const qint64 size = qint64(common.width()) * common.height();
+        if (size > best) {
+            best = size;
+            view = gl;
+            area = common;
+        }
+    }
+    if (!view)
+        return QColor();
+
+    double c[3][3];
+    for (int i = 0; i < 3; ++i) {
+        const QColor q = packedColour(colours[i]);
+        c[i][0] = q.redF();
+        c[i][1] = q.greenF();
+        c[i][2] = q.blueF();
+    }
+    // an 8 by 8 grid over the part covered, each point in the middle of its
+    // square
+    const QRect viewRect = viewRectOf(view);
+    const int n = 8;
+    double sum[3] = {0, 0, 0};
+    for (int j = 0; j < n; ++j) {
+        for (int i = 0; i < n; ++i) {
+            const double px = area.left() + (i + 0.5) * area.width() / n;
+            const double py = area.top() + (j + 0.5) * area.height() / n;
+            const double x = 2.0 * (px - viewRect.left()) / std::max(1, viewRect.width()) - 1.0;
+            const double y = 1.0 - 2.0 * (py - viewRect.top()) / std::max(1, viewRect.height());
+            double at[3];
+            radialColourAt(x, y, c[0], c[1], c[2], useMiddle, at);
+            for (int k = 0; k < 3; ++k)
+                sum[k] += at[k];
+        }
+    }
+    const QColor result = QColor::fromRgbF(float(sum[0] / (n * n)), float(sum[1] / (n * n)),
+                                           float(sum[2] / (n * n)));
+
+    // one kept for each overlay's place: four sides, and a few gone stale
+    if (kept.size() >= 8)
+        kept.erase(kept.begin());
+    Kept k{view, panel, viewRect, {colours[0], colours[1], colours[2]}, useMiddle, result};
+    kept.push_back(k);
+    return result;
 }
 
 QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha, const QWidget *where)
@@ -2347,17 +2517,21 @@ QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha, const
         }
         // The colour the 3D view has where the panel lies over it. A linear
         // gradient runs from its first colour at the top to its last at the
-        // bottom; a radial one from its first at the centre to its last at
-        // the rim, and an overlay is along an edge. (Linear wins where both
-        // are on, as in the view.)
-        unsigned long packed = ViewParams::getBackgroundColor();
+        // bottom; a radial one, averaged over what the panel covers of it, or
+        // its rim's colour with no view under the panel. (Linear wins where
+        // both are on, as in the view.)
+        QColor ground;
         if (ViewParams::getGradient())
-            packed = overlaySideOf(where) == Qt::BottomDockWidgetArea
-                ? ViewParams::getBackgroundColor3() : ViewParams::getBackgroundColor2();
-        else if (ViewParams::getRadialGradient())
-            packed = ViewParams::getBackgroundColor3();
-        colour.setPackedValue(static_cast<uint32_t>(packed));
-        brush = QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b));
+            ground = packedColour(overlaySideOf(where) == Qt::BottomDockWidgetArea
+                ? ViewParams::getBackgroundColor3() : ViewParams::getBackgroundColor2());
+        else if (ViewParams::getRadialGradient()) {
+            ground = radialAverageUnder(where);
+            if (!ground.isValid())
+                ground = packedColour(ViewParams::getBackgroundColor3());
+        }
+        else
+            ground = packedColour(ViewParams::getBackgroundColor());
+        brush = QBrush(ground);
         alpha = overlayAlpha(alpha);
     }
     if (alpha >= 0) {
