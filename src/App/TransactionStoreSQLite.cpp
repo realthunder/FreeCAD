@@ -169,15 +169,17 @@ public:
         exec("CREATE TABLE IF NOT EXISTS branch(id INTEGER PRIMARY KEY, name TEXT UNIQUE,"
              " from_version INTEGER, from_seq INTEGER, head_seq INTEGER, id_base INTEGER,"
              " last_id INTEGER DEFAULT 0, created REAL, closed REAL,"
-             " target INTEGER DEFAULT 0)");
+             " target INTEGER DEFAULT 0, joined INTEGER DEFAULT 0)");
         // Sec 30.29: the files of requests, held until they are dealt with.
         // By the row's identity, not its number: a fast-forward writes a
         // record again under a new one (sec 30.4 P1).
         exec("CREATE TABLE IF NOT EXISTS heldfile(session INTEGER, ord INTEGER, file BLOB,"
              " branch INTEGER DEFAULT 0, PRIMARY KEY(session, ord)) WITHOUT ROWID");
         // Sec 32.11: the values kept, one by one and by their object.
+        // The keeper (sec 32.27): empty for the host.
         exec("CREATE TABLE IF NOT EXISTS keepvalue(hash BLOB PRIMARY KEY, cid INTEGER,"
-             " prop TEXT, seq INTEGER) WITHOUT ROWID");
+             " prop TEXT, seq INTEGER, kind TEXT DEFAULT '', name TEXT DEFAULT '')"
+             " WITHOUT ROWID");
         exec("CREATE TABLE IF NOT EXISTS keepobject(cid INTEGER PRIMARY KEY)");
         // Sec 32.25: what a user may do of a branch, and the requests to
         // merge one branch into another.
@@ -756,11 +758,16 @@ public:
 
     void keepValue(const LogKept& kept) override
     {
-        auto s = prepare("INSERT OR REPLACE INTO keepvalue(hash,cid,prop,seq) VALUES(?,?,?,?)");
+        // Kept again: as it was, but the host's keep makes it the host's
+        auto s = prepare("INSERT INTO keepvalue(hash,cid,prop,seq,kind,name) VALUES(?,?,?,?,?,?)"
+                         " ON CONFLICT(hash) DO UPDATE SET kind='', name=''"
+                         " WHERE excluded.kind=''");
         bindHash(s, 1, kept.hash);
         sqlite3_bind_int64(s, 2, kept.cid);
         bindText(s, 3, kept.prop);
         sqlite3_bind_int64(s, 4, kept.seq);
+        bindText(s, 5, kept.kind);
+        bindText(s, 6, kept.kind.empty() ? std::string() : kept.name);
         step(s);
     }
 
@@ -774,7 +781,8 @@ public:
 
     std::vector<LogKept> keptValues() override
     {
-        auto s = prepare("SELECT hash,cid,prop,seq FROM keepvalue ORDER BY seq, cid, prop");
+        auto s = prepare("SELECT hash,cid,prop,seq,kind,name FROM keepvalue"
+                         " ORDER BY seq, cid, prop");
         std::vector<LogKept> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogKept kept;
@@ -782,6 +790,8 @@ public:
             kept.cid = static_cast<long>(sqlite3_column_int64(s, 1));
             kept.prop = text(s, 2);
             kept.seq = sqlite3_column_int64(s, 3);
+            kept.kind = text(s, 4);
+            kept.name = text(s, 5);
             out.push_back(std::move(kept));
         }
         sqlite3_reset(s);
@@ -1982,12 +1992,13 @@ public:
         b.created = sqlite3_column_double(s, 7);
         b.closed = sqlite3_column_double(s, 8);
         b.target = sqlite3_column_int64(s, 9);
+        b.joined = sqlite3_column_int64(s, 10);
     }
 
     std::vector<LogBranch> branches() override
     {
         auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
-                         "target FROM branch ORDER BY id");
+                         "target,joined FROM branch ORDER BY id");
         std::vector<LogBranch> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogBranch b;
@@ -2001,7 +2012,7 @@ public:
     bool getBranch(int64_t id, LogBranch& b) override
     {
         auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
-                         "target FROM branch WHERE id=?");
+                         "target,joined FROM branch WHERE id=?");
         sqlite3_bind_int64(s, 1, id);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         if (found)
@@ -2013,7 +2024,7 @@ public:
     bool findBranch(const std::string& name, LogBranch& b) override
     {
         auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
-                         "target FROM branch WHERE name=?");
+                         "target,joined FROM branch WHERE name=?");
         bindText(s, 1, name);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         if (found)
@@ -2036,7 +2047,7 @@ public:
             sqlite3_reset(m);
         }
         auto s = prepare("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,"
-                         "last_id,created,closed,target) VALUES(?,?,?,?,?,?,?,?,?,?)");
+                         "last_id,created,closed,target,joined) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
         sqlite3_bind_int64(s, 1, b.id);
         bindText(s, 2, b.name);
         sqlite3_bind_int64(s, 3, b.fromVersion);
@@ -2047,6 +2058,7 @@ public:
         sqlite3_bind_double(s, 8, b.created);
         sqlite3_bind_double(s, 9, b.closed);
         sqlite3_bind_int64(s, 10, b.target);
+        sqlite3_bind_int64(s, 11, b.joined);
         step(s);
         b.id = sqlite3_last_insert_rowid(db);
         return b.id;
@@ -2055,7 +2067,7 @@ public:
     bool updateBranch(const LogBranch& b) override
     {
         auto s = prepare("UPDATE branch SET name=?, from_version=?, from_seq=?, id_base=?,"
-                         " last_id=?, created=?, closed=?, target=? WHERE id=?");
+                         " last_id=?, created=?, closed=?, target=?, joined=? WHERE id=?");
         bindText(s, 1, b.name);
         sqlite3_bind_int64(s, 2, b.fromVersion);
         sqlite3_bind_int64(s, 3, b.fromSeq);
@@ -2064,7 +2076,8 @@ public:
         sqlite3_bind_double(s, 6, b.created);
         sqlite3_bind_double(s, 7, b.closed);
         sqlite3_bind_int64(s, 8, b.target);
-        sqlite3_bind_int64(s, 9, b.id);
+        sqlite3_bind_int64(s, 9, b.joined);
+        sqlite3_bind_int64(s, 10, b.id);
         step(s);
         return sqlite3_changes(db) > 0;
     }

@@ -479,6 +479,8 @@ again. False if there is no log or no such version.</UserDocu>
 
 The branches of the transaction log (docs/TransactionLog.md sec 17, 26):
 id, name, from_version, from_seq, head, id_base, last_id, created, closed,
+target, joined -- for one a client made in a document served from a branch,
+that branch's id: everyone who joins that document writes it (sec 32.25) --
 and current -- whether the document is on it. Empty without a log.</UserDocu>
       </Documentation>
     </Methode>
@@ -731,7 +733,8 @@ False lets it go again. Returns the refs kept, or let go.</UserDocu>
         <UserDocu>getKeptTransactionValues() -> list of dict
 
 The values keepTransactionValue() keeps: {'ref', 'cid', 'object', 'prop',
-'seq'}, the row being the one it was asked for at.</UserDocu>
+'seq'}, the row being the one it was asked for at. One a served client kept
+says who, as the log names a user: 'kind' and 'name'.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="releaseTransactionValue">

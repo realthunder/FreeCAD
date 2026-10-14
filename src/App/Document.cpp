@@ -10652,7 +10652,8 @@ std::string Document::logValueAt(int64_t seq, long cid, const std::string& prop)
 }
 
 std::vector<std::string> Document::keepLogValue(long cid, const std::string& prop, int64_t seq,
-                                                bool keep)
+                                                bool keep, const std::string& keeperKind,
+                                                const std::string& keeperName)
 {
     std::vector<std::string> out;
     TransactionLog* log = getTransactionLog();
@@ -10673,6 +10674,8 @@ std::vector<std::string> Document::keepLogValue(long cid, const std::string& pro
             kept.cid = cid;
             kept.prop = name;
             kept.seq = seq;
+            kept.kind = keeperKind;
+            kept.name = keeperName;
             store.keepValue(kept);
         }
         else if (!store.releaseValue(ref)) {
@@ -10697,6 +10700,8 @@ std::vector<Document::KeptValue> Document::keptLogValues()
         v.cid = kept.cid;
         v.prop = kept.prop;
         v.seq = kept.seq;
+        v.kind = kept.kind;
+        v.name = kept.name;
         if (auto obj = getObjectByID(kept.cid)) {
             if (obj->getNameInDocument())
                 v.object = obj->getNameInDocument();

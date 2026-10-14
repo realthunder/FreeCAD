@@ -1315,6 +1315,7 @@ PyObject* DocumentPy::getTransactionBranches(PyObject *args)
             d.setItem("created", Py::Float(b.created));
             d.setItem("closed", Py::Float(b.closed));
             d.setItem("target", Py::Long(static_cast<long long>(b.target)));
+            d.setItem("joined", Py::Long(static_cast<long long>(b.joined)));
             d.setItem("current", Py::Boolean(b.id == log->branch()));
             list.append(d);
         }
@@ -1788,6 +1789,11 @@ PyObject* DocumentPy::getKeptTransactionValues(PyObject *args)
             d.setItem("object", Py::String(v.object));
             d.setItem("prop", Py::String(v.prop));
             d.setItem("seq", Py::Long(static_cast<long long>(v.seq)));
+            // Who kept it: none for the host (sec 32.27)
+            if (!v.kind.empty()) {
+                d.setItem("kind", Py::String(v.kind));
+                d.setItem("name", Py::String(v.name));
+            }
             list.append(d);
         }
         return Py::new_reference_to(list);

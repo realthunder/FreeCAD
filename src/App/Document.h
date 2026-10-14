@@ -709,10 +709,15 @@ public:
     /** Keep the value property `prop` of object `cid` has at row `seq`, or
      * with `keep` false let it go. With no `prop`, every property of the
      * object a recompute wrote. Returns the refs kept or let go: none where
-     * the log holds no such value.
+     * the log holds no such value. `keeperKind` and `keeperName` say who
+     * keeps it, as the log names a user (sec 32.27): none for the host. A
+     * value kept already stays as it was kept, but for the host's keep,
+     * which makes it the host's.
      */
     std::vector<std::string> keepLogValue(long cid, const std::string& prop = std::string(),
-                                          int64_t seq = 0, bool keep = true);
+                                          int64_t seq = 0, bool keep = true,
+                                          const std::string& keeperKind = std::string(),
+                                          const std::string& keeperName = std::string());
     struct KeptValue
     {
         std::string ref;
@@ -720,6 +725,8 @@ public:
         std::string object;   ///< the object's name, where the document has it
         std::string prop;
         int64_t seq {0};      ///< the row it was asked for at
+        std::string kind;     ///< who kept it: empty for the host
+        std::string name;
     };
     std::vector<KeptValue> keptLogValues();
     /// Let go of the kept value `ref`, whether a row still names it or not:

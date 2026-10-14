@@ -96,6 +96,11 @@ struct LogBranch
     /// of its own (sec 30.3 S.a): the default side of its merges. 0 for
     /// none.
     int64_t target {0};
+    /// The branch a document was opened on to be served (sec 32.25) where
+    /// one who joined that document made this one: everyone who joins it
+    /// writes this one too, from its fork. 0 for none -- the host's own,
+    /// and every branch made elsewhere.
+    int64_t joined {0};
 };
 
 /** A user row (sec 30.6 U1): who the author of a row is, known across
@@ -224,12 +229,16 @@ struct LogRef
 
 /// A value kept by its hash (TransactionStore::keepValue()): whose it is,
 /// and the row it was asked for at -- what a list of the kept says of it.
+/// And who kept it, as the log names a user (sec 32.27): empty for the
+/// host. A keeper may let go of what it kept.
 struct LogKept
 {
     std::string hash;
     long cid {0};
     std::string prop;
     int64_t seq {0};
+    std::string kind;
+    std::string name;
 };
 
 /** A stored entity (table `entity`, sec 23.1): anything the log holds
@@ -557,6 +566,9 @@ public:
      * one object that was asked for; or as any value of an object all of
      * whose values are kept. A value kept by its hash is a root of its own
      * as well: it stays when its row goes.
+     *
+     * A value kept again stays as it was kept -- its row, its keeper --
+     * except that the host's keep makes it the host's.
      */
     //@{
     virtual void keepValue(const LogKept& kept) = 0;
