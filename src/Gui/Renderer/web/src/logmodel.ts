@@ -242,9 +242,23 @@ export function changePicked(c: LogChange): boolean {
   return c.kind === 'conflict' || c.kind === 'view';
 }
 
+/// Whether a change can be left out of the act, as the desktop's dialog
+/// unticks it: one of theirs that goes in. Left out, it is sent as `ours`,
+/// and every change of the same key with it -- the properties of one sketch
+/// merged together share one (sec 31.10).
+export function changeLeavable(c: LogChange): boolean {
+  return c.kind === 'take' || c.kind === 'merge';
+}
+
+/// Whether a change is left out.
+export function changeLeftOut(c: LogChange, sides: Record<string, 'ours' | 'theirs'>): boolean {
+  return changeLeavable(c) && sides[c.key] === 'ours';
+}
+
 /// What goes in of a change: the side picked, or what its kind says.
 export function changeTakes(c: LogChange, sides: Record<string, 'ours' | 'theirs'>): string {
   if (changePicked(c)) return sides[c.key] ?? (c.kind === 'view' ? 'ours' : 'pick a side');
+  if (changeLeftOut(c, sides)) return 'left out';
   switch (c.kind) {
     case 'take': return 'theirs';
     case 'merge': return 'both';
@@ -262,12 +276,14 @@ export function unpickedConflicts(changes: LogChange[],
   return changes.filter((c) => c.kind === 'conflict' && !sides[c.key]).length;
 }
 
-/// The picks an act sends: the sides said, of the changes that ask one.
+/// The picks an act sends: the sides said, of the changes that ask one,
+/// and `ours` of those left out.
 export function picksOf(changes: LogChange[], sides: Record<string, 'ours' | 'theirs'>):
   Record<string, 'ours' | 'theirs'> {
   const out: Record<string, 'ours' | 'theirs'> = {};
   for (const c of changes) {
     if (changePicked(c) && sides[c.key]) out[c.key] = sides[c.key];
+    else if (changeLeftOut(c, sides)) out[c.key] = 'ours';
   }
   return out;
 }
@@ -290,6 +306,7 @@ export interface KeptLine {
   key: string;               // what a line is chosen by
   kind: 'value' | 'object' | 'under';
   cid: number;
+  obj: string;               // its name, where the document has it
   object: string;            // in words
   prop: string;
   seq: number;
@@ -312,17 +329,19 @@ export function keptObjectText(o: { cid: number; obj?: string; label?: string;
 export function keptLines(values: LogKeptValue[], objects: LogKeptObject[]): KeptLine[] {
   const lines: KeptLine[] = [];
   for (const v of values) {
-    lines.push({ key: `v:${v.ref}`, kind: 'value', cid: v.cid, object: keptObjectText(v),
+    lines.push({ key: `v:${v.ref}`, kind: 'value', cid: v.cid, obj: v.here ? v.obj ?? '' : '',
+                 object: keptObjectText(v),
                  prop: v.prop, seq: v.seq, rowThere: v.row, ref: v.ref, alone: true,
                  release: v.release, why: v.why ?? '', count: 0 });
   }
   for (const o of objects) {
-    lines.push({ key: `o:${o.cid}`, kind: 'object', cid: o.cid, object: keptObjectText(o),
+    lines.push({ key: `o:${o.cid}`, kind: 'object', cid: o.cid, obj: o.here ? o.obj ?? '' : '',
+                 object: keptObjectText(o),
                  prop: '', seq: 0, rowThere: false, ref: '', alone: false,
                  release: o.release, why: o.why ?? '', count: o.values.length });
     for (const v of o.values) {
       lines.push({ key: `u:${o.cid}:${v.ref}`, kind: 'under', cid: o.cid,
-                   object: keptObjectText(o), prop: v.prop, seq: v.seq, rowThere: true,
+                   obj: o.here ? o.obj ?? '' : '', object: keptObjectText(o), prop: v.prop, seq: v.seq, rowThere: true,
                    ref: v.ref, alone: v.alone, release: !!v.release, why: v.why ?? '',
                    count: 0 });
     }

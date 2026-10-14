@@ -35,7 +35,7 @@ import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefu
          switchable, undoLabel, versionText, versionWhy,
          changeName, changePicked, changeTakes, picksOf, previewText, sortChanges,
          unpickedConflicts, keepText, keptCountText, keptLines, keptObjectText, keptRowText,
-         keptTabText, opKeepable, opKeptText } from '../logmodel.ts';
+         keptTabText, opKeepable, opKeptText, changeLeavable, changeLeftOut } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -934,7 +934,7 @@ function checkLog(): void {
         unpickedConflicts(two, {}) === 2
         && unpickedConflicts(two, { 'Box.Height': 'ours' }) === 1
         && unpickedConflicts(two, { 'Box.Height': 'ours', 'Box.Length': 'theirs' }) === 0);
-  const sent = picksOf(two, { 'Box.Height': 'ours', 'Box.Length': 'theirs', 'Box.Width': 'ours',
+  const sent = picksOf(two, { 'Box.Height': 'ours', 'Box.Length': 'theirs', 'Box.Width': 'theirs',
                               'gone.Key': 'theirs' });
   check(t, 'the picks sent are of the changes that ask a side, and of no other',
         JSON.stringify(sent) === '{"Box.Height":"ours","Box.Length":"theirs"}',
@@ -944,6 +944,25 @@ function checkLog(): void {
           === 'Apply row 7: 3 changes, 1 conflict'
         && previewText({ what: 'merge', count: 0, conflicts: 0, forward: 2 }, 'Merge a into b')
           === 'Merge a into b: nothing here moved since, 2 rows taken as they are');
+
+  // a change of theirs left out, as the desktop unticks it
+  check(t, 'what goes in of theirs can be left out; a conflict, a view, a derived cannot',
+        changeLeavable(change('a.b', 'take')) && changeLeavable(change('a.b', 'merge'))
+        && !changeLeavable(change('a.b', 'conflict')) && !changeLeavable(change('a.b', 'view'))
+        && !changeLeavable(change('a.b', 'derived')));
+  const outs = [change('Sketch.Geometry', 'merge'), change('Sketch.Constraints', 'merge',
+                { key: 'Sketch.Geometry' }), change('Box.Width', 'take'),
+                change('Box.Height', 'conflict')];
+  const leftSides: Record<string, 'ours' | 'theirs'> = { 'Sketch.Geometry': 'ours',
+                                                         'Box.Height': 'theirs' };
+  check(t, 'left out it says so, with every change of its key, and is sent as ours',
+        changeLeftOut(outs[0], leftSides) && changeLeftOut(outs[1], leftSides)
+        && !changeLeftOut(outs[2], leftSides)
+        && changeTakes(outs[0], leftSides) === 'left out'
+        && changeTakes(outs[2], leftSides) === 'theirs'
+        && JSON.stringify(picksOf(outs, leftSides))
+          === '{"Sketch.Geometry":"ours","Box.Height":"theirs"}',
+        JSON.stringify(picksOf(outs, leftSides)));
 
   // what is kept in the file (sec 32.27)
   const lines = keptLines(

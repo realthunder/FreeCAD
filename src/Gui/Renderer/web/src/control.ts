@@ -891,6 +891,13 @@ export function showRowChange(obj: string, row: number, doc?: string): Promise<a
   return sendOp('edit', withDoc(doc, { obj, mode: EDIT_VALUE_DIFF, row }));
 }
 
+/// The same edit, of a value the log keeps in the file (its ref) against
+/// what the object has now (docs/TransactionLog.md sec 32.27).
+export function showKeptValue(obj: string, kept: string, doc?: string): Promise<any> {
+  window.fcviewerStateCamera?.();
+  return sendOp('edit', withDoc(doc, { obj, mode: EDIT_VALUE_DIFF, kept }));
+}
+
 // ---- The streamed desktop tool bars (docs/ThinClient.md 8.11 item 4) ----
 
 /// Listen for the scene socket going up or down. Returns the unsubscribe.

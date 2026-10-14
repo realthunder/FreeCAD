@@ -46,13 +46,14 @@ import {
   logApply, logBranches, logCloseRequest, logDeleteBranch, logKeep, logKeepObject, logKept,
   logMergeRequest, logNameVersion, logNewBranch, logOps, logPreview, logRelease, logRenameBranch,
   logRequest, logRequests, logRestore, logRollBack, logRows, logSnapshot, logSwitchBranch,
-  logUndoRows, logValue, logVersions, onConnection, onLogChanged, showRowChange,
+  logUndoRows, logValue, logVersions, onConnection, onLogChanged, showKeptValue, showRowChange,
   type LogBranch, type LogChange, type LogOp, type LogOpsReply, type LogReach, type LogRequest,
   type LogRow, type LogSides, type LogValueReply, type LogVersion,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
 import {
-  actRefusal, branchNameProblem, changeName, changePicked, changeTakes, deletable, keepText,
+  actRefusal, branchNameProblem, changeLeavable, changeLeftOut, changeName, changePicked,
+  changeTakes, deletable, keepText,
   keptCountText, keptLines, keptRowText, keptTabText, logAuthor, logOpText, logRefusal,
   logWhen, mayMove, mergeNewest, moveWhy, opKeepable, opKeptText, picksOf, pickRows,
   previewText, requestActs, requestProblem, requestState, requestText, rowBranchWhy,
@@ -390,9 +391,19 @@ export function LogPanel(props: LogPanelProps) {
     ).finally(() => setBusy(false));
   };
   const pickSide = (key: string, side: Side) => setSides({ ...sides(), [key]: side });
+  /// A change of theirs left out, or in again: by its key, so with every
+  /// change of the same key
+  const leaveOut = (key: string, out: boolean) => {
+    const next = { ...sides() };
+    if (out) next[key] = 'ours'; else delete next[key];
+    setSides(next);
+  };
   const pickAll = (side: Side) => {
     const all: Record<string, Side> = {};
-    for (const c of picker()?.changes ?? []) if (changePicked(c)) all[c.key] = side;
+    for (const c of picker()?.changes ?? []) {
+      if (changePicked(c)) all[c.key] = side;
+      else if (changeLeftOut(c, sides())) all[c.key] = 'ours';   // stays out
+    }
     setSides(all);
   };
   const pickerLeft = () => unpickedConflicts(picker()?.changes ?? [], sides());
@@ -635,6 +646,15 @@ export function LogPanel(props: LogPanelProps) {
                             props.doc());
     return keepText(r.values, !line.alone, `of ${line.object} at row ${line.seq}`);
   });
+  /// The kept value over its object, against what it has now: the edit a
+  /// row's change is shown as
+  const showKept = (line: KeptLine) => {
+    if (!line.obj || !line.ref) return;
+    setStatus(null);
+    showKeptValue(line.obj, line.ref, props.doc())
+      .catch((e) => setStatus({ text: e?.code === 'ViewOnly' ? logRefusal(e)
+                                       : (e?.message ?? e?.code ?? 'not shown'), bad: true }));
+  };
   const showKeptRow = (line: KeptLine) => {
     setTab('rows');
     choose([line.seq]);
@@ -834,9 +854,17 @@ export function LogPanel(props: LogPanelProps) {
             <div class="fc-log-rows fc-log-changes">
               <For each={picker()!.changes}>
                 {(c) => (
-                  <div class="fc-log-change" classList={{ 'fc-log-conflict': c.kind === 'conflict' }}
+                  <div class="fc-log-change"
+                       classList={{ 'fc-log-conflict': c.kind === 'conflict',
+                                    'fc-log-record': changeLeftOut(c, sides()) }}
                        data-key={c.key} title={c.note || undefined}>
                     <div class="fc-log-changehead">
+                      <Show when={changeLeavable(c)}>
+                        <input type="checkbox" class="fc-log-take" data-key={c.key}
+                               checked={!changeLeftOut(c, sides())}
+                               title="untick to leave it out: what is here stays"
+                               onChange={(e) => leaveOut(c.key, !e.currentTarget.checked)} />
+                      </Show>
                       <span>{changeName(c)}</span>
                       <span class="fc-log-kind">{c.kind === 'conflict' ? 'conflict'
                         : `${c.kind} ${c.op}`.trim()}</span>
@@ -1232,6 +1260,13 @@ export function LogPanel(props: LogPanelProps) {
                             + 'the object is no longer kept'}
                         onClick={() => keepAlone(chosenKept()!)}>
                   {chosenKept()!.alone ? 'Not by itself' : 'Keep by itself'}
+                </button>
+              </Show>
+              <Show when={chosenKept()!.kind !== 'object' && chosenKept()!.obj}>
+                <button class="fc-log-act" data-act="kept-show" disabled={props.viewOnly()}
+                        title="the kept value over its object, against what the object has now"
+                        onClick={() => showKept(chosenKept()!)}>
+                  Show
                 </button>
               </Show>
               <Show when={chosenKept()!.kind !== 'object' && chosenKept()!.rowThere}>
