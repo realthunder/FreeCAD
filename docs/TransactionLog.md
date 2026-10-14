@@ -19056,6 +19056,8 @@ but not before it."
 
 So there are two kinds of served document, and the ops of 32.22 answer by
 which it is (`Reach`, `Gui/SceneLog.cpp`).
+(*Since, 2026-10-14: to become one rule by branch, of which these two
+are the defaults -- designed and agreed in 32.25, not built.*)
 
 **A shared document** is one served as it is: the desktop and every
 client are in it. Where it is in its log is the host's to move. Below
@@ -19189,6 +19191,188 @@ sent for any step of it. `tests/gui/serve-shape-diff-browser.py` (13,
 one more): the host shows the overlay the desktop's way before the
 page asks for its own edit; it is on the host, under the object, and
 not in the page.
+
+### 32.25 Design: read and write by branch, rows applied, requests to merge (2026-10-14, agreed, not built)
+
+**Asked (user, 2026-10-14)**: "I would like to change the log access
+model a bit. Each client can be assign a read and write permission of
+any branch. The read access allow the client to see what's in that
+branch and pick rows to apply on this working branch. Or if the client
+has only read access in his working branch, then he can only undoes his
+only row and take snapshot like a normal client. Those with write access
+can restore and switch, delete in that branch but only from a specific
+point, by default the serving point. Client with read access of a branch
+can also send merge request to merge of any other accessible branch to
+that branch. Client with write access can handle the merge. So i am
+thinking maybe store the merge request in the log database somewhere,
+and add some ui in log panel to work on it."
+
+**Agreed (user, the same day)**, to the proposal below as it stands,
+its defaults included: "Agree with your proposal. Document the design.
+Start in next session." So this section is the design, and nothing of
+it is in the tree. It replaces the two kinds of served document of
+32.23 with one rule, of which they are the two defaults; what is built
+today is 32.22 to 32.24.
+
+**What one may is by branch.** The host's connection, and the desktop,
+may all of it. Anyone else, of a branch:
+
+- **reads** it: its history is listed -- its rows, the versions taken
+  on it, the branch itself; its rows are applied to the branch the
+  document is on (`log.apply`); a merge of it into another branch that
+  is read, or of another into it, is asked for (`log.request`). In the
+  branch it works on, one who only reads does what a client of a shared
+  document does: edits, takes back its own rows (30.10), takes
+  versions;
+- **writes** it, from a point on: it also moves a document that is on
+  the branch -- restores a version, switches to the branch, branches
+  from it, names a version -- and deals with the requests to merge into
+  it (`log.mergeRequest`, `log.closeRequest`). The point is a version of
+  the branch, or where the branch forks when none is said: nothing
+  before it is restored to or branched from. A branch made from one
+  that is written, since the point, is its maker's own: written from
+  its fork, and its to delete. A branch that was given is not: the host
+  deletes it.
+
+A branch that is not read is not listed, and is unknown to the one who
+asks: its rows are no rows, its name no branch.
+
+**Where it is said.** In the log's store, table `access`: the user's
+kind and name -- who the log says wrote a row, whichever login -- the
+branch, read or write, and the point (`from_seq`, `from_version`, both 0
+for the fork). `Document::setBranchAccess()` / `clearBranchAccess()`,
+`doc.setTransactionAccess(kind, name, branch, write=False, version=0)`,
+`clearTransactionAccess`, `getTransactionAccess`. A branch deleted takes
+what was said of it with it.
+
+**Where nothing is said** (`Reach`, `Gui/SceneLog.cpp`):
+
+- the branch of the document a connection is in is read. That is every
+  client of a shared document, and is 32.23's first kind;
+- a document opened from a branch to be served (`Gui.serveBranch`) is
+  written by whoever joins it, from where that branch forks -- 32.23's
+  second kind -- and the branch it was made from is read, so that what
+  is done there can be asked back into it.
+
+What is said of a user for a branch is what holds for it, in place of
+these: a branch served to someone can be said to be read only.
+
+**Moving the document** -- a restore, a switch, a branch made -- needs
+the branch the document is on to be written, whatever is done it to: a
+document on a branch that is only read is not moved by one who writes
+some other branch.
+
+**Rows applied** (`log.apply`, `rows`, and `fallback`). The rows of
+another branch that is read, applied to the branch the document is on as
+one step of the asker's own (31.12, `Document::pickRows`). Where what
+they set meets what was set here since, each needs a side. The desktop's
+panel asks each; the op takes one side for them all, `fallback` (`ours`,
+`theirs`), and without it answers `Conflicts` with how many, and nothing
+moves. The page then asks which side.
+
+**Requests to merge.** Table `mergerequest` of the store: the branch to
+merge and the one to merge it into, who asked (kind and name), a note,
+when, and how it stands -- `open`, `merged`, `rejected`, `withdrawn` --
+with who ended it, when, and the row the merge wrote.
+`Document::requestMerge()` / `closeMergeRequest()`,
+`doc.requestTransactionMerge(source, target, note='')`,
+`getTransactionMergeRequests`, `closeTransactionMergeRequest`.
+
+| op | asks | for | answers |
+| --- | --- | --- | --- |
+| `log.requests` | | anyone who edits | those of branches the asker reads, and its own: `id`, `source`, `target`, `by`, `byKind`, `note`, `time`, `state`, `closed`, `closedBy`, `result`; `mine`, `handles` (the asker writes the target), `here` (the document is on the target) |
+| `log.request` | `source`, `target`, `note` | one who reads both | `request`; `Refused` where the same is asked already |
+| `log.closeRequest` | `request`, `state` | `withdrawn`: who asked; `rejected`: who writes the target | |
+| `log.mergeRequest` | `request`, `fallback` | who writes the target, in a document that is on it | `row`, `forwarded`, `failed`; `Conflicts` as for `log.apply`, the request staying open |
+
+A merge is into the branch a document is on (28), so a request is dealt
+with in a document that is on its target; asked elsewhere the op says
+so. A merge done answers the requests that asked for it by whichever
+way it was done -- the desktop's "Merge...", Python, the op
+(`Document::mergeBranch`).
+
+**The cue across documents.** The documents of one file have the one
+log: a row written in one is among what a client of another is listed.
+`log.changed` goes to those who watch any document of the file when
+one of them commits, undoes, redoes or recomputes, and when what is said
+of the file's branches changes.
+
+**The lists.** `log.rows` leaves out the rows of branches that are not
+read; a page can come out short of its limit for it, so the reply says
+how far back it was read (`oldest`), which is what the next page is
+asked before. Every list says `host` and `write` -- the asker writes the
+branch the document is on -- and `floor`, the row it writes it from; a
+row and a version say `within`, that a document may be moved from them;
+a branch says `write`, `floor` and `made`. `own`, `root` and a branch's
+`within` of 32.23 are gone.
+
+**The page.** A third list, "Requests", with how many are open in its
+name: a line to ask a merge -- the branch, the one to merge it into, a
+note -- the requests, those open first, and for the one chosen "Merge"
+(for who writes its target, where the document is on it), "Reject" and
+"Withdraw". Rows of another branch have "Apply row N here". Where a
+merge or an apply meets conflicts the card asks one question: take
+theirs for all of them, or keep ours.
+
+**The desktop.** The log's panel has "Serve branch...", for a document
+that is shared: the branch is named, made and served, and the status
+line says the document a client joins. "Access..." lists what is said
+of users and branches and says more: a user the log knows, reads or
+writes, the branch, and for a write the version it starts at. The
+requests list of the panel shows the merges asked for beside what an
+import brought: "Merge..." where the document is on the branch it is to
+go into, and "Reject".
+
+**What this changes of 32.23.** A row of the asker's own from before
+the point is its own to take back: taking back is what one who reads
+does, and the point is where writing starts. Deleting is of a branch
+the asker made, where it was of any but the one served. The branch a
+served one was made from is listed, to be asked back into.
+
+**Left.** Each conflict picked by itself in the browser, which is the
+merge's own panel (the third stage of 32.21). The requests of 30.20 --
+a file sent, a branch an import made -- are another list of the same
+panel and are not asked through these ops. Access is said by user;
+there is no group, and no access of "everyone who edits" to a branch
+other than the two defaults.
+
+**Order of work.**
+
+1. The store: the two tables, and what a deleted branch takes with it.
+   `Document`'s four calls and the six of Python.
+2. The ops: `Reach` by branch in place of host / own; the lists
+   filtered and flagged; `log.apply`; the four of the requests; the cue
+   across the documents of a file.
+3. The page: the model, "Apply row here", the "Requests" list, the one
+   question of sides.
+4. The desktop's panel: "Serve branch...", "Access...", the requests
+   asked for in its list; a merge answering its requests.
+5. Tests: `tests/gui/serve-log-acts.py` and its browser half restated
+   -- an editor who reads, is given another branch to read, applies a
+   row, meets a conflict, asks, withdraws; the host merging and
+   rejecting; a client in a branch served, asking its work back -- the
+   gate of the card's model, and a check of the desktop's dialog.
+
+A first draft of all five was written while this was discussed and is
+kept outside the tree (`~/.cache/lv-merge/access/` on the Linux box:
+three scripts that patch the tree in order, the ops and the page as
+whole files, the two tests). It has not been compiled.
+
+**Decided with it** (each was put to the user as an assumption, and
+stands):
+
+- access is said by user in the log's store, not with the sharing
+  grants: a branch's number means something only there, and it goes
+  with the file;
+- with nothing said, a client reads the branch of the document it
+  joined; whoever joins a document opened from a branch to be served
+  writes that branch from where it forks, and reads the one it was made
+  from;
+- a merge or an apply that meets conflicts, asked from a browser, takes
+  one side for all of them; each picked by itself stays the desktop's;
+- a client deletes the branches it made, not one it was given;
+- its own row from before the point it writes from is its own to take
+  back.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
