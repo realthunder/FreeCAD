@@ -7042,7 +7042,7 @@ a value.
 
 **Tests.** `fillet-radius-typed-in-view` 18, `fillet-edge-handles-in-view` 15,
 `fillet-point-position-in-view` 6, `fillet-groups-in-view` 11 (offscreen and
-on the screen, pictures looked at); `TestFillet` 21 with 7 new
+on the screen, pictures looked at); `TestFillet` 21 with 6 new
 `TestFilletGroups`. The neighbours: pattern labels 12, sketch label pick 12,
 label scale 9, `sketch-arc-labels` 11 on the screen (its log needed UTF-8,
 `9451ff9f31`; its pixel claims fail offscreen only).
