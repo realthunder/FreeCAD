@@ -147,6 +147,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 17:11, the reporter, a NEW ENTRY 127:** "new request, support
+print ony the selected Techdraw pages". Read: "Print All Pages" prints
+every page of the active document; the selected ones to be printed in its
+stead or beside it. Written here 17:12.
+
 **2026-10-14 17:04, the reporter, a NEW ENTRY 126:** "new defect, bgfx
 rendering line pattern scale 1 does not seems right. scale 2 looks
 normal." Read in the source; a candidate (a scaled screen, dashes counted
@@ -2577,6 +2582,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 124 | 2026-10-14 | a selected feature of a body HIDDEN in the document is drawn on top but CUT OFF by the view's clip planes -- only the corner nearest the camera drawn (entry 108's side finding of 2026-10-13); to be FIXED by "way 2" | OPEN; the reporter chose the way (between 16:15 and 16:41): the view's own bounds hook takes in the bounds of every on-top entry, from its view provider, visibility not asked -- per view, no shared cache touched. Not started |
 | 125 | 2026-10-14 | a change request: the omni search shows a FLOAT property's value WITHOUT TRAILING ZEROS | OPEN; where the omni search writes a value as text not found by the note-taker in a short search; one point under the entry, not put as blocking. ANSWERED 16:47: both -- object properties and settings; a value with a unit the same rule, the unit kept. Nothing left unanswered |
 | 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
+| 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17846,6 +17852,35 @@ The note-taker's candidate (a scaled screen) is withdrawn: the box is at
 100%. Points a and c of 17:04 are answered by the reading as far as the
 cause goes. WAITS FOR THE REPORTER: way (1) or (2).
 
+## 127. TechDraw: print only the selected pages (a change request) -- OPEN
+
+**2026-10-14 17:11, the reporter:** "new request, support print ony the
+selected Techdraw pages"
+
+The note-taker's reading: with some TechDraw pages SELECTED (in the tree),
+print those pages -- one print job, one page of paper each -- and not
+every page of the document, nor only the one shown.
+
+READ in the source, nothing run:
+- Today there are two ways to print pages: the page view's own print (one
+  page), and "Print All Pages" -- the command `TechDraw_PrintAll`
+  (`src/Mod/TechDraw/Gui/Command.cpp` 274 to 296) and the page view's
+  context menu entry (`MDIViewPage.cpp` 119, 120) -- which opens the print
+  dialog and prints EVERY page of the ACTIVE document
+  (`MDIViewPage::printAllPages`, 587 to 605; `PagePrinter::printAll` and
+  `printAllPdf` collect them with `getObjectsOfType(DrawPage)`,
+  `PagePrinter.cpp` about 180).
+- So, by this reading, what is asked is the same path fed with the
+  selected pages in place of all of them.
+
+NOT said, lettered, not put as blocking:
+a. HOW it is offered: a new command ("Print Selected Pages") beside
+   "Print All Pages", or "Print All Pages" printing the selection when
+   pages are selected -- taken as a new command, also in the page view's
+   context menu.
+b. To a PDF as well (the print dialog's "print to file", which today goes
+   through `printAllPdf`): taken as yes, one PDF with the selected pages.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -17856,5 +17891,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 126 are of 2026-10-14, 116 and 119 said to the
+it; entries 114 to 127 are of 2026-10-14, 116 and 119 said to the
 build session)
