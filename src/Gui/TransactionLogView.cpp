@@ -3000,11 +3000,12 @@ public:
         setObjectName(QStringLiteral("TransactionAccessDialog"));
         auto layout = new QVBoxLayout(this);
         auto note = new QLabel(
-            QObject::tr("Who reads a branch is listed it, applies its rows to the branch they "
-                        "work on, and asks for merges of it. Who writes it also restores, "
-                        "switches and branches there from a point on, and deals with the "
-                        "requests to merge into it. With nothing said, a client reads the "
-                        "branch of the document it joins, and writes one served to it."),
+            QObject::tr("Who reads a branch sees its history, can apply its steps to the "
+                        "branch they work on, and can ask for it to be merged. Who writes it "
+                        "can also restore, switch and branch there from a point on, and deals "
+                        "with the requests to merge into it. With nothing said here, a client "
+                        "reads the branch of the document it joined, and writes a branch "
+                        "served to it."),
             this);
         note->setWordWrap(true);
         layout->addWidget(note);
