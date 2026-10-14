@@ -497,6 +497,8 @@ above the tabs. It is hidden while there are none.
   someone connected to the shared document, section 12) for: *Merge...*,
   when the document is on the branch it goes into, and *Reject*.
 
+![A merge someone asked for, and its menu](images/transaction-log/17-asked-merge-menu.png)
+
 The Conflicts column says how many conflicts a merge would have, before you
 open it. It is empty for a merge that was asked for: its preview says.
 
@@ -577,6 +579,8 @@ list too: you read it.
 **A branch you read and are not on.** Its steps are in the list in
 italics, with its name. Two things can be done with it:
 
+![A step of another branch, and Apply row N here](images/transaction-log/15-log-browser-apply.png)
+
 - **Take a step of it.** Click the step, then **Apply row N here**: what
   that step set is written to the branch you are on, as one step of your
   own, which undo takes back. Several at once as for undo. Where a step
@@ -588,6 +592,8 @@ italics, with its name. Two things can be done with it:
   must be branches you read. This is how the work you did in a branch
   served to you goes back: ask for your branch to be merged into the
   sharer's.
+
+![The Requests list: a merge asked for, with its note](images/transaction-log/15-log-browser-requests.png)
 
 A request stays in the list, open ones first, with who asked and when,
 and the number of open ones is in the list's name. Click one to act on
@@ -612,6 +618,8 @@ A merge that meets conflicts asks the same one question.
   document they joined and write a branch that was served to them, as
   described above; a line here is in place of that, so a served branch can
   be made read only for one person.
+
+  ![Access: who reads or writes which branch, and from where](images/transaction-log/17-access.png)
 - **The merges asked for** are in the panel's request list (section 11),
   beside the files that were sent: *merge A into B*, who asked, the note.
   Double-click one, or **Merge...** in its menu, to open the merge's

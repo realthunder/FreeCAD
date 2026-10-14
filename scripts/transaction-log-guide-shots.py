@@ -70,6 +70,21 @@ def shot(name, *widgets):
     said.append("%s %dx%d" % (name, pix.width(), pix.height()))
 
 
+def shotWidget(name, widget):
+    """A window as it draws itself: no other window's pixels at its edges."""
+    settle()
+    path = os.path.join(OUT, name + ".png")
+    pix = widget.grab()
+    pix.save(path)
+    try:
+        from PIL import Image
+
+        Image.open(path).convert("RGB").quantize(colors=256).save(path, optimize=True)
+    except Exception:
+        pass
+    said.append("%s %dx%d" % (name, pix.width(), pix.height()))
+
+
 def part(of, name):
     for w in of.findChildren(QtWidgets.QWidget):
         if w.objectName() == name:
@@ -376,6 +391,67 @@ def run():
         QtCore.QMetaObject.invokeMethod(dock, "mergeBranch", QtCore.Qt.DirectConnection,
                                         QtCore.Q_ARG(str, "side"))
         settle()
+
+        # 17: who may what of a branch, and a merge someone asked for
+        # (docs/TransactionLog.md sec 32.25). Two who came to the document
+        # and wrote a row each are users the log knows.
+        for kind, name, prop, value in (("invited", "bob", "Width", 22),
+                                        ("verified", "ann@example.com", "Height", 19)):
+            doc.pushTransactionActor(kind, name)
+            try:
+                doc.openTransaction("%s: %s" % (name, prop.lower()))
+                setattr(box, prop, value)
+                doc.recompute()
+                doc.commitTransaction()
+            finally:
+                doc.popTransactionActor()
+        doc.setTransactionAccess("invited", "bob", "side")
+        doc.setTransactionAccess("verified", "ann@example.com", "main", True, released)
+        doc.pushTransactionActor("invited", "bob")
+        try:
+            doc.requestTransactionMerge("side", "main", "the longer box, please")
+        finally:
+            doc.popTransactionActor()
+        settle()
+        wait(0.5)
+
+        def grabAccess():
+            dialog = QtWidgets.QApplication.activeModalWidget()
+            if dialog is None or dialog.objectName() != "TransactionAccessDialog":
+                said.append("access: no dialog")
+                if dialog is not None:
+                    dialog.reject()
+                return
+            dialog.setGeometry(420, 300, 660, 300)
+            level = part(dialog, "TransactionAccessLevel")
+            level.setCurrentIndex(1)
+            where = part(dialog, "TransactionAccessBranch")
+            where.setCurrentIndex(where.findText("main"))
+            start = part(dialog, "TransactionAccessFrom")
+            start.setCurrentIndex(start.findData(released))
+            wait(0.5)
+            shotWidget("17-access", dialog)
+            dialog.accept()
+
+        QtCore.QTimer.singleShot(700, grabAccess)
+        part(dock, "TransactionAccess").click()
+        settle()
+        requests = part(dock, "TransactionRequests")
+        asked = None
+        for i in range(requests.topLevelItemCount()):
+            if requests.topLevelItem(i).text(0) == "merge side into main":
+                asked = requests.topLevelItem(i)
+        if asked is not None:
+            # The panel put back at the bottom of the window: the merge's
+            # preview, beside it, leaves it out of the window's area
+            if isinstance(dock.parentWidget(), QtWidgets.QDockWidget):
+                mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, dock.parentWidget())
+            panel()
+            wait(0.5)
+            requests.setCurrentItem(asked)
+            withMenu("17-asked-merge-menu", requests, asked, tabs, requests)
+        else:
+            said.append("asked merge: not listed")
     except Exception:
         said.append(traceback.format_exc())
     with open(os.path.join(OUT, "shots.txt"), "w") as f:

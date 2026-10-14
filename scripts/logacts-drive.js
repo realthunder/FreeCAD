@@ -297,6 +297,7 @@ async function answer(page, text) {
     await sleep(300);
     out.applySays = await page.evaluate(() => window.__fcActSays('apply'));
     out.applyUndoSays = await page.evaluate(() => window.__fcActSays('undo'));
+    await shot(page, 'apply');
     out.applyAsked = await page.evaluate(() => window.__fcClickAct('apply'));
     await waitFor(page, () => /applied/.test((window.__fcStatus() || {}).text || ''), 30000);
     out.applySaid = await page.evaluate(() => window.__fcStatus());
