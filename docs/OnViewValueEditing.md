@@ -211,12 +211,35 @@ answers.
     3. "Two radii" -- two points, at the start and the end of the edge,
        both starting at the radius it had; a second arrow at the far end
        of the edge for the end radius, with its own root button;
+  - "Group" -- a sub-menu: this feature's groups by id with their values,
+    and "New group" (section 6); shown for a customised edge;
   - "Remove" -- the edge is taken out of the fillet (the panel's remove).
   An edge with MORE than two points (possible in the file and in the
   panel) shows its points' arrows and a menu whose mode reads "Varying
   (set in the panel)", not one of the three.
-  The button's look says the mode at a glance (for instance: hollow =
-  default, one dot = one radius, two dots = two radii).
+  The look tells the modes apart -- see VISUAL HINTS below.
+- VISUAL HINTS: DEFAULT and CUSTOMISED edges told apart (asked by the
+  reporter 13:47; the note-taker's proposal, three layers that work
+  together, each readable without the others):
+  1. THE ROOT BUTTON'S SHAPE says the mode: DEFAULT -- a HOLLOW ring;
+     ONE RADIUS -- a FILLED disc; TWO RADII -- a filled disc at EACH end
+     of the edge (one per arrow); VARYING (more than two points, set in
+     the panel) -- a filled disc with a small tick ring. Shape, not colour
+     alone, so it reads for colour-blind users and in a monochrome
+     picture.
+  2. COLOUR says default or group: default handles (ring and arrow) in
+     the theme's NEUTRAL handle colour, drawn thinner and at reduced
+     opacity -- they are many and all mean one value, the one at the top
+     middle; customised handles SOLID, in their GROUP's colour, taken from
+     a short palette by group id (id 1 the first colour, and so on), so
+     that the members of one group match at a glance; the group id
+     itself small inside the filled disc. The active handle and its group
+     are drawn highlighted over this (3.3, section 6).
+  3. THE EDGE (optional, a setting): a customised edge drawn with a thin
+     band in its group's colour along it while editing, so a group can be
+     seen without hunting for its handles.
+  A default edge's arrow, dragged, drives the default radius -- its
+  neutral look says that it is the shared value.
 - OTHER FEATURES put their own operations in the same menu, on the same
   button (3.4 for the dress-ups). For instance -- the note-taker's
   examples, to be settled feature by feature: Pad/Pocket length --
@@ -264,15 +287,15 @@ panel.
 1. IN AN EDIT, panel optional. All of 3.2 to 3.4 works with the panel
    collapsed or hidden (the overlay's auto-hide already hides it); the
    view alone is enough to change every value the panel has.
-2. OUTSIDE AN EDIT -- PROPOSED TO DROP. The reporter asked (e, 13:21):
+2. OUTSIDE AN EDIT -- DROPPED by the reporter (13:46, "yes, drop").
+   The reporter had asked (e, 13:21):
    "double-click is entering edit right? so what's the point of modify
    without entering edit". Answered in the session: Creo's plain "Edit"
    and SolidWorks' double-click on a dimension change values without the
    feature's full edit, and it would work here as a property write and a
    recompute, as the property view already does; but in FreeCAD a double
    click already IS the edit, and with step 1 the edit itself takes typed
-   values in the view with the panel hidden -- so the gain is small. Kept
-   out of the order of work unless the reporter wants it.
+   values in the view with the panel hidden -- so the gain is small.
 
 ### 3.6 Settings
 
@@ -293,7 +316,7 @@ seen on the screen (1.4, and entry 118).
    its label at the top middle.
 2. The fillet's per-edge values: the root button and its menu (mode,
    remove), the second arrow at the far end, position handles (3.3).
-3. Edge groups (section 6), if wanted after reading it.
+3. Edge groups as the reporter decided them (section 6).
 4. Chamfer, Draft, Thickness moved to it (3.4).
 5. Panel optional (3.5.1).
 
@@ -324,107 +347,123 @@ modify without entering edit. f, show me how would you implement it."
   other features put their own operations") -- 3.3, with the survey's
   answer to "how other CAD does this".
 - d: no typing during a drag; the active handle takes typing -- 3.2.
-- e: answered; outside an edit proposed to drop -- 3.5.2.
-- f: how edge groups would be built -- section 6.
+- e: outside an edit DROPPED (13:46) -- 3.5.2.
+- f: edge groups DECIDED by the reporter's own rule (13:46): an
+  automatic group id per customised edge, joined by changing it from the
+  menu, every value change mirrored to the group, the group highlighted
+  when a handle is active -- section 6.
 
-LEFT for the reporter: whether 3.5.2 is dropped; whether edge groups
-(section 6) are wanted, and in which of its two forms; the other
-features' menu entries (3.3, the note-taker's examples) feature by
-feature.
+LEFT for the reporter: the other features' menu entries (3.3, the
+note-taker's examples), feature by feature; and the note-taker's smaller
+proposals in section 6 (an expression conflict inside a group, the
+"reversed in its group" flag, Tab unchanged).
 
-## 6. Edge groups: how it would be built (f)
+## 6. Edge groups: DECIDED by the reporter (2026-10-14 13:46)
 
-A GROUP is one value shared by several edges of one fillet: change it once,
-every member changes. (SolidWorks' multiple radius fillet, Fusion's edge
-sets and Creo's round sets are the same idea.)
+The reporter's words: "about the group, my idea is for all customized edge
+store a new group id auto assigned when first enter the customization
+mode. user can change the group id to join. in the context menu add a
+selection for group. when an edge's radius (one or two, or point ratio,
+whatever), mirror the same change to all edge with the same group id. when
+activate a handle (by click or tab), hight all in the same group.
+enter/space act only on the actual activated handle, but the value change
+will be mirrored just the same"
 
-### 6.1 What is there to build on
+The two forms first written here (a group table inside `Segments`, or
+shared expressions) are REPLACED by this one.
 
-- `Segments` (`Part::PropertyFilletSegments`, `PropertyDressUp.cpp`) is a
-  map from an edge name to its points, saved as
-  `<EdgeSegments><Segments id="Edge12" count=".."><Segment param= radius=
-  length=/>...` (Save, line 264). Its `connectLinkProperty` (line 168)
-  keeps the map's keys in step when Base's edge references are renamed
-  (the topological naming work), and renames the expressions bound to
-  them. Anything stored IN this property per edge gets that for free.
-- The default `Radius` is already a group in all but name: "every edge
-  that has no entry".
+### 6.1 The rule
 
-### 6.2 Form A, recommended: groups inside `Segments`
+- Every CUSTOMISED edge -- one whose mode is not "Default radius" --
+  carries a GROUP ID.
+- When an edge FIRST leaves the default (its menu's "One radius" or "Two
+  radii"), it gets a NEW group id of its own, assigned automatically (the
+  lowest id not in use on this feature). So by default every customised
+  edge is a group of one.
+- The user may CHANGE an edge's group id to JOIN another group: the root
+  button's menu has a "Group" entry, a sub-menu listing the groups of
+  this feature by id (with their values beside them, e.g. "2 -- R 3 mm")
+  and "New group". Joining a group takes that group's values.
+- A CHANGE to any value of an edge -- its radius, its two radii, a
+  point's position (param or length), whatever the edge holds -- is
+  MIRRORED to every edge with the same group id, the same change.
+- ACTIVATING a handle (a click or Tab) HIGHLIGHTS every edge of its
+  group; the active handle itself is drawn as the active one.
+- Enter and Space act only on the ACTIVE handle (its label, its menu);
+  the change they make is mirrored all the same.
+- An edge going back to "Default radius" leaves its group (its id is
+  dropped); a group whose last member goes is gone.
 
-App (Part, `PropertyDressUp.h/.cpp`):
-1. A group table in the same property: `name -> {radius1, radius2,
-   two}` (two = whether the group has two radii). Saved as
-   `<Group name="G1" radius="3" radius2="3" two="0"/>` elements inside
-   `<EdgeSegments>`; an old file has none -- nothing changes for it.
-2. Per edge, a group NAME instead of points: saved as `<Segments
-   id="Edge12" group="G1"/>`. `Restore` reads `group` when it is there.
-   An older build reading a new file ignores the unknown element and
-   attribute and gives those edges the default radius -- a clean fall
-   back, nothing lost on re-save by the new build.
-3. Expression paths: `Segments.Groups.G1.Radius`, `.Radius2` -- added to
-   `getPaths`, `getPyPathValue`, `setPyPathValue` (lines 318 to 450) as the
-   per-edge paths are now.
-4. Python: `fillet.Segments` round-trips the groups; a helper
-   `setGroup(name, edges, r1, r2=None)`.
+### 6.2 How it is stored
 
-PartDesign (`FeatureFillet.cpp`, around 114 to 127): before the kernel
-call, an edge with a group gets points from the group -- `(0, r1)`, or
-`(0, r1), (1, r2)` when `two`. The kernel (`makeFillet`) does not change.
-A note for two radii in a group: "start" and "end" follow each edge's own
-direction, which differs between edges; the group's two radii would land
-reversed on some. Either a per-edge "reversed" flag in the group
-membership (saved as `rev="1"`), set by a "Reverse" entry in the
-member's root button menu, or a rule (the end
-nearer the group's first edge's start is the start). The flag is simpler
-to explain; to be chosen when built.
+- Each edge keeps its OWN values as it does today, in `Segments`; the
+  group id is one more thing stored per edge: `<Segments id="Edge12"
+  group="2" count="1">...`. `Restore` reads `group` when it is there.
+- So the FILE stays complete without the groups: every member carries
+  its values. An older build reads the values, ignores the id, and makes
+  the same fillet -- only the mirroring is lost there. Nothing is lost on
+  a re-save by the new build.
+- The group id rides on the per-edge entry, so it follows the edge when
+  the edge is renamed upstream, with the entry itself
+  (`connectLinkProperty` -- once the build session's fix of 13:45 is in,
+  6.5).
+- Python and expressions: `Segments.Edge12.Group` as a path, read and
+  written like the per-point paths; a helper on the feature,
+  `setEdgeGroup(edge, id)`.
 
-Gui:
-- Panel: group rows in the tree (name, radius, radius2), member edges as
-  their children; "Group" on a multi-selection of edge rows, "Ungroup"
-  on a group row; dragging an edge row onto a group row joins it.
-- View: ONE arrow per group, on its first member edge; small markers on
-  the other members, highlighted with it when it is active; its label
-  (beside it when active) names the group: "G1  R 3 mm". The menu of a
-  group's root button: "One radius", "Two radii", "Ungroup" (a group is
-  never "default"); a member's own menu adds "Leave group" (to its own
-  one radius) and "Reverse" (6.2, two radii). Tab visits each group once,
-  not each member.
-- To make a group from the view: select several edges in the view while
-  editing (Ctrl-click, as the panel's add-by-selection does), then the
-  "Group" command on the selection (a key, or the context menu).
+### 6.3 Where the mirroring happens
 
-Tests (`TestFillet.py`): a group of three edges; the group's radius
-changed -- all three change; an edge taken out -- it keeps the radius it
-had; two radii with a reversed member; save and restore; an edge renamed
-by a change upstream keeps its group (the `connectLinkProperty` path);
-an old file restores with no groups. GUI: the group's single arrow and
-its markers, Tab once per group, a typed value reaching every member.
+- In the property, not in the GUI: `PropertyFilletSegments` gets a
+  setter that writes an edge's points and copies them to every edge with
+  the same group id, in one change (one recompute, one undo step). The
+  panel, the on-view handles and Python all write through it, so a value
+  set from any of them is mirrored the same way.
+- An EXPRESSION on one member's value: mirrored by the same setter when
+  the expression's value changes (the expression engine writes through
+  the property's path setter). Expressions on two members of one group
+  that disagree are a conflict; the note-taker's proposal: the newest
+  write wins and the panel marks the group's other expressions.
+- TWO RADII across edges: "start" and "end" follow each edge's own
+  direction, which differs between edges, so a mirrored (r1, r2) can land
+  reversed on some members. The note-taker's proposal: each member keeps
+  a "reversed in its group" flag (saved as `rev="1"`), set by a "Reverse"
+  entry in that member's menu, and the mirror swaps for it. Point
+  positions (param) mirror as 1 - param on a reversed member.
 
-Chamfer: the same, with `ChamferInfo` (`PropertyChamferEdges`) and a
-group table of `{size, size2, angle}`.
+### 6.4 In the view and the panel
 
-### 6.3 Form B, no new storage: groups as expressions
+- View: each member edge has its own handle(s) as before; the active
+  handle's group is highlighted; the label shows beside the active handle
+  only, as for any edge, with the group id, e.g. "2  R 3 mm".
+- Panel: a "Group" column in the edge tree, an editable number; the same
+  mirroring when a value is typed there.
+- Tab: visits every handle as before (not once per group) -- the
+  reporter's rule says Enter and Space act on the active handle; the
+  note-taker took Tab as unchanged.
 
-Each member edge keeps its own point, its radius bound by an expression
-to one place -- the first member's radius, or a spreadsheet cell or a
-named variable. The panel and the view treat edges whose radii are bound
-to the same expression as a group. Nothing in the file format changes and
-older builds compute it the same; but a group then has no name of its
-own, a member's value shows as an expression, and taking an edge out
-means clearing an expression. Simpler to build, plainer to break.
+### 6.5 Tests
 
-### 6.4 Seen in the source on the way, not part of this design
+`TestFillet.py`: two edges customised get two ids; one joins the other's
+group and takes its values; a radius changed on one is mirrored; two radii
+with a reversed member; a point's param mirrored (1 - param when
+reversed); back to default leaves the group; save and restore keep the
+ids; an older file (no ids) restores with every customised edge on its
+own; an edge renamed upstream keeps its id (after the build session's
+rename fix). GUI: the group highlighted on activation; a value typed at
+the active handle reaching every member.
+
+Chamfer: the same, on `PropertyChamferEdges` (size, size2, angle, flip
+mirrored; flip itself per member).
+
+### 6.6 Seen in the source on the way, not part of this design
 
 `PropertyFilletSegments::connectLinkProperty` (`PropertyDressUp.cpp` 184
-to 197), in the loop that renames the expressions of each point when an
-edge is renamed: both `p1` and `p2` are built from the OLD path (`path`,
-not `pathNew`), so the per-point renames rename nothing; and the loop
-steps `i` twice (`++i` in the body and in the `for`), so only every
-second point is visited. By reading only, nothing run: an expression on a
-per-point radius of an edge that gets renamed may be left pointing at the
-old name. For the build session to look at; not an entry unless the
-reporter says.
+to 197), as first read by the note-taker: both `p1` and `p2` built from
+the OLD path, and the index stepped twice. CONFIRMED by the build session
+(13:45) and WIDER: the whole rename map is backwards, new -> old, in
+`Segments` and in `PropertyChamferEdges` alike, so an expression on a
+per-edge value never follows a renamed edge. The build session fixes it
+on its own judgement (a test `TestDressUpNamesFollow`).
 
 ## Sources
 
