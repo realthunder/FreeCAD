@@ -2287,7 +2287,7 @@ SelectionSingleton::SelectionSingleton() :
 
     // Read once, this used to wait for the next start.
     fmtDecimal = static_cast<int>(App::UnitsParams::getDecimalsPreSel());
-    static fastsignals::scoped_connection decimalsChanged
+    connectDecimals
         = App::UnitsParams::signalParamChanged().connect([this](const char* name) {
               if (name && strcmp(name, "DecimalsPreSel") == 0) {
                   fmtDecimal = static_cast<int>(App::UnitsParams::getDecimalsPreSel());

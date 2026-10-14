@@ -1085,6 +1085,12 @@ protected:
      * time any object is deleted.
      */
     fastsignals::scoped_connection connectDeletedObject;
+    /// The preselection's decimals followed, for this instance: a
+    /// function-static connection held the first instance's this, and every
+    /// later one (a view's own, of per-view selection) went without -- and
+    /// was called into after the first was gone (docs/HandsOnQueue.md entry
+    /// 116, finding 5).
+    fastsignals::scoped_connection connectDecimals;
 
     std::string DocName;
     std::string FeatName;
