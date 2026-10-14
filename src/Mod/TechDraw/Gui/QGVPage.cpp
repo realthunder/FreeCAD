@@ -234,6 +234,12 @@ public:
             "User parameter:BaseApp/Preferences/View");
         hGrp->Detach(this);
         hGrpGeneral->Detach(this);
+        // ... and the third it was attached to. Left attached, the group
+        // called an observer that was gone at the next write of a TechDraw
+        // colour after a page view had been closed -- a theme writes them:
+        // an access violation in Subject::Notify
+        // (docs/HandsOnQueue.md entry 114).
+        hGrpColors->Detach(this);
     }
 };
 
