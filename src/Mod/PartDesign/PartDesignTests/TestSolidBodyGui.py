@@ -666,6 +666,86 @@ class TestSolidBodyGui(unittest.TestCase):
         # the other solid is nothing the pad is part of
         self.assertEqual(picked("Solid001." + other), (True, [(second.Name, other)]))
 
+    def testPadOnAFaceOfTheSolidBody(self):
+        """A face of the solid body for the profile of a feature of that solid:
+        by the command with the face selected, and by the Profile button of
+        the panel. Each pick was refused as a cycle in a message box, and the
+        pad was left without a profile."""
+        from PySide import QtCore, QtWidgets
+
+        a, b, c, d = self.twoSolids()
+        first = self.Body.SolidBodies[0]
+        self.Body.Tip = b
+        self.Doc.recompute()
+        first.ViewObject.Visibility = True
+        self.pump()
+        base = b.Shape.Volume
+        # Box001's version of the top
+        version = self.faceAt(first, 12, 8, 10)
+
+        boxes = []
+
+        def closeBox():
+            box = QtWidgets.QApplication.activeModalWidget()
+            if isinstance(box, QtWidgets.QMessageBox):
+                boxes.append(box.text())
+                box.done(0)
+
+        guard = QtCore.QTimer()
+        guard.timeout.connect(closeBox)
+        guard.start(200)
+
+        def profile():
+            return (pad.Profile[0].Name, list(pad.Profile[1])) if pad.Profile else None
+
+        def profileButton():
+            for w in Gui.getMainWindow().findChildren(QtWidgets.QPushButton):
+                try:
+                    if w.isVisible() and w.text() == "Profile":
+                        return w
+                except RuntimeError:
+                    pass  # gone with a panel before
+            self.fail("no Profile button")
+
+        try:
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(self.Doc.Name, "Body", "Solid." + version)
+            names = set(o.Name for o in self.Doc.Objects)
+            Gui.runCommand("PartDesign_Pad")
+            self.pump(40)
+            pad = [o for o in self.Doc.Objects if o.Name not in names][0]
+            # the element of the feature before
+            self.assertEqual(profile(), (b.Name, [self.faceAt(b, 12, 8, 10)]))
+            button = profileButton()
+            if not button.isChecked():
+                button.click()
+                self.pump()
+            # the top Box left alone, beside the first, which is Box001's by
+            # now; named on the solid as the pad leaves it; and once only
+            beside = self.faceAt(first, 2, 8, 10)
+            self.assertTrue(self.pick("Solid." + beside))
+            self.assertEqual(
+                profile(), (b.Name, [self.faceAt(b, 12, 8, 10), self.faceAt(b, 2, 8, 10)])
+            )
+            self.pick("Solid." + beside)
+            self.assertEqual(
+                profile(), (b.Name, [self.faceAt(b, 12, 8, 10), self.faceAt(b, 2, 8, 10)])
+            )
+            self.assertEqual(boxes, [])
+            Gui.Selection.clearSelection()
+            Gui.Control.activeTaskDialog().accept()
+            self.pump(40)
+            self.assertFalse(Gui.Control.activeDialog())
+            self.Doc.recompute()
+            self.assertTrue(pad.isValid())
+            # two faces of 5 x 10, padded by 10
+            self.assertAlmostEqual(pad.Shape.Volume, base + 1000.0, places=3)
+        finally:
+            guard.stop()
+            Gui.Selection.clearSelection()
+            Gui.Control.closeDialog()
+            self.pump()
+
 
 class TestOpenedBodyGui(unittest.TestCase):
     """A file that was only opened is not a modified document.

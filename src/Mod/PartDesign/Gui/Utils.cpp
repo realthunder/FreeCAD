@@ -71,6 +71,7 @@
 #include <Mod/PartDesign/App/FeaturePrimitive.h>
 #include <Mod/PartDesign/App/FeatureWrap.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
+#include <Mod/PartDesign/App/SolidBody.h>
 
 #include "Utils.h"
 #include "WorkflowManager.h"
@@ -1431,13 +1432,28 @@ public:
                     continue;
                 if (!sobj)
                     FC_THROWM(Base::RuntimeError, "Object not found: " << sobjT.getSubObjectFullName(docName));
-                if (inList.count(sobj))
-                    FC_THROWM(Base::RuntimeError, "Cyclic dependency on object " << sobjT.getSubObjectFullName(docName));
+                if (inList.count(sobj)) {
+                    // The solid body of the edited feature's solid: the
+                    // element of the feature before, which is what the solid
+                    // body makes of the reference (SolidBody::keepOutOfItself()).
+                    // Turned here, for a face beside one turned already to be
+                    // of the same object.
+                    auto solid = Base::freecad_dynamic_cast<PartDesign::SolidBody>(sobj);
+                    std::string element = sobjT.getOldElementName();
+                    auto turned = solid ? solid->referenceFrom(editObj, element) : nullptr;
+                    if (!turned || turned == solid)
+                        FC_THROWM(Base::RuntimeError, "Cyclic dependency on object " << sobjT.getSubObjectFullName(docName));
+                    sobjT = App::SubObjectT(turned, element.c_str());
+                    sobj = turned;
+                }
                 sobjT.normalized();
                 // Make sure that if a subelement is chosen for some object,
                 // we exclude whole object reference for that object.
                 auto &subs = links[sobj];
                 std::string element = sobjT.getOldElementName();
+                // Once each, also where two picks turned into the same element
+                if (std::find(subs.begin(), subs.end(), element) != subs.end())
+                    continue;
                 if (element.size()) {
                     if (subs.size() == 1 && subs.front().empty()) {
                         for (auto it=sobjs.begin(); it!=sobjs.end();) {
