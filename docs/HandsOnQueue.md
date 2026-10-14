@@ -147,6 +147,17 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 15:46, the reporter: THREE NEW ENTRIES, 120 to 122, in one
+message:** "new request, check what is gating the transparent overlay mode. with item background feature, we can enable transparency mode in all cases. btw, check why the report view has a different background in overlay non-transparency mode than non-overlay mode. Python console shares the same background color. another request, make overlay auto hide hint color theme aware, current color is not visible in dark theme"
+- 120: what gates the transparent mode -- read: an overlay turns opaque
+  over a maximized view that cannot be panned, while "Auto hide in non 3D
+  view" is on; to be dropped "in all cases".
+- 121: the report view's ground in a non-transparent overlay -- a
+  candidate: the overlay sheet's own ground for text boxes.
+- 122: the auto-hide hint's colour -- the Dark overlay sheet gives it a
+  dark grey on a dark view.
+Written here 15:49.
+
 **2026-10-14 15:22: PUSHED (15:20) and STAGED (15:22, clean) on the
 reporter's word to the build session about 14:58: "push and restage.
 anything else in the notes".** The reporter's word relayed by the build
@@ -2524,6 +2535,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 117 | 2026-10-14 | a change request: REWORK the dress-up features' editing manipulator (the handles in the 3D view), with this fork's default radius and per-edge radius (one or two) in mind; and, in general, entering values WITHOUT the task panel, by the on-view editable datum label; a SURVEY of what other CAD programs do and a PROPOSED DESIGN asked first | OPEN, a survey and a proposal asked; relayed to the build session; three points under the entry, not put as blocking. THE REPORTER 12:28: "You do the survey and design and you assumptions are correct" -- the SURVEY and the DESIGN are the NOTE-TAKER's to do; the readings a, b, c confirmed (all dress-ups with handles, the fillet first; every feature's edit in general). THE SURVEY AND THE DESIGN WRITTEN 12:39 by the note-taker: `docs/OnViewValueEditing.md` -- one on-view value bound to a property PATH (a handle and a clickable label each), so per-edge and per-point values get their own; one arrow per radius; typing by click, Tab, type-while-dragging; a feature's values in the view without the panel as a later step. NOT BUILT; six points (a to f) for the reporter at its end. THE SIX POINTS ANSWERED about 13:21: one arrow; the default's label always at the top middle, the others beside an active handle only; a button at the arrow's root cycling default / one radius / two radii; no typing during a drag, the active handle takes typing; outside an edit questioned -- proposed to drop; edge groups -- "show me how": the document REVISED (`39f35dd406`) with the decisions and a section on how groups would be built. LEFT: whether outside-an-edit is dropped, and whether groups are wanted, in which form. THE REPORTER 13:25, more general: the handle's root a BUTTON opening a CONTEXT MENU -- for the fillet the mode (default, one radius, two radii) and a remove action, other features their own operations; the document revised (`d488495906`). THE REPORTER 13:28: with a handle active, SPACE opens its context menu and ENTER starts typing in its dimension; the document revised (`aa4c5ee4ab`). THE REPORTER 13:46: outside-an-edit DROPPED; EDGE GROUPS by their own rule -- an automatic group id per customised edge, changed from the menu to join, every value change mirrored to the group, the group highlighted with the active handle; 13:47: a VISUAL HINT asked for default against customised handles -- proposed. The document revised (`92f4b73baf`); the design is now complete but for each feature's menu entries and the note-taker's smaller proposals. THE REPORTER 13:49: in the group sub-menu each item's label LEADS WITH THE GROUP ID, then a short summary of its setting; the document revised (`cee2c9033d`). THE VISUAL HINT DECIDED 13:50 and 13:51: the HANDLE'S COLOUR, default one colour and customised another, the root button the same colour as its handle; the note-taker's shapes, group colours and edge band not taken. Whether each group has its own colour not said -- taken as one; the document revised (`0901981604`). THE REPORTER 13:53: "agree with your proposal" -- the note-taker's smaller proposals agreed; THE DESIGN IS AGREED IN FULL, nothing left open (`fae1b1b149`). NOT BUILT: building it waits for the reporter's word. THE REPORTER 13:54: EACH GROUP ITS OWN COLOUR, from an automatically generated set of distinct colours -- the note-taker's "one colour" reading replaced; the document revised (`ea43e34a7d`) |
 | 118 | 2026-10-14 | the scene light's manipulator does not work: no draggable arrow is seen; the reporter thinks it does not use the manipulator the shadow light had (a directional light's) | OPEN; the source read by the note-taker, nothing run: it IS Coin's directional light dragger, as entry 63 asked (2026-10-09), drawn through an overlay capture of its own; the cause NOT found by reading; two points under the entry, NOT ANSWERED. NOT LOOKED AT until 14:32; the build session STARTS on it then (its message stamped 14:40): on the dev build r26, the real screen, pictures by saveRenderDump -- the handle switched on as the Display style menu does, whether the arrow is drawn, whether a drag turns the light. The reporter's two points stay open. NOT REPRODUCED 14:41 by the build session, on the screen, with a fresh profile and with a copy of the reporter's configuration, on the dev build and on the copy staged 11:55: the orange arrow is drawn over the model, a drag turns the headlight, Escape takes it down. The difference is in how the reporter meets it -- the points a and b, and the build session's own question (which document, a split view) put to the reporter |
 | 119 | 2026-10-14 | a split view overlaid by a task panel: the splitter dragged to close a split and the mouse released over the panel's transparent area -- the split is not closed and the drag's frame stays ("the mouse release event is not passthrough"); said to the build session about 11:15 | FIXED by the build session, COMMITTED `f83174eb42` (its message calls it "entry 117", made before the queue's 117 existed), LOCAL, not pushed, not staged; its test fails on the staged copy as it should. A further word of the reporter's 11:50: every handle drag should end itself and hide its frame when tracking is lost -- in work. STAGED 2026-10-14 11:55 (labelled `260a43578f`, dirty by test scripts only, its code `04e05bbd38`), NOT pushed: the release fix is in the reporter's copy (its test passes on the dev build, failed on the copy of 10:36). THE REPORTER'S 11:50 WORD DONE: COMMITTED `721b639bca` (11:57), LOCAL, not staged -- the view cells' border and corner, and the in-view task panel's title drag, end when the left button is found up; the test committed with it. THE LOST-TRACKING RULE `721b639bca`: 11 of 11 on the build r25; on the stage of 11:55 its "release never comes" part fails, as expected. LOCAL, not staged. PUSHED 2026-10-14 15:20 (origin `d3d1968480`), STAGED 2026-10-14 15:22 from a clean tree: the drags that end themselves (`721b639bca`) are in the reporter's copy now |
+| 120 | 2026-10-14 | a change request: find what GATES an overlay's transparent mode, and with the item background feature let transparency be on IN ALL CASES | OPEN; the gate read by the note-taker in the source, nothing run: a transparent panel turns opaque while the active view is a MAXIMIZED view that cannot be panned, when "Auto hide in non 3D view" is on |
+| 121 | 2026-10-14 | the report view's background in an overlay that is NOT transparent differs from its background when not overlaid; the Python console's is the same in both | OPEN; a candidate read by the note-taker, not shown: the overlay style sheet gives every text box a ground of its own (#6e6e6e under Dark) |
+| 122 | 2026-10-14 | a change request: the overlay's AUTO-HIDE HINT colour to follow the theme -- under Dark it cannot be seen | OPEN; read by the note-taker: the Dark overlay sheet gives the hint a dark grey (50, 50, 50 at 0.6), on a dark view |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -17455,6 +17469,86 @@ the press, never got its release, so its drag neither finished nor
 cleared its frame. The reporter's second word asks for a sturdier rule
 for every handle: a drag that has lost its mouse ends by itself.
 
+## 120. What gates an overlay's transparent mode; with the item background, transparency in all cases (a change request) -- OPEN, the gate read in the source
+
+**2026-10-14 15:46, the reporter, one message for entries 120 to 122:** "new request, check what is gating the transparent overlay mode. with item background feature, we can enable transparency mode in all cases. btw, check why the report view has a different background in overlay non-transparency mode than non-overlay mode. Python console shares the same background color. another request, make overlay auto hide hint color theme aware, current color is not visible in dark theme"
+
+The note-taker's reading, not the reporter's words:
+- Find what keeps an overlay panel from being transparent although its
+  transparent mode is on, and -- now that the items and the text have a
+  ground of their own (entry 98), which keeps them readable over anything
+  -- let transparency hold IN ALL CASES.
+
+READ in the source by the note-taker, nothing run:
+- `OverlayTabWidget::isTransparent` (`src/Gui/OverlayWidgets.cpp` 1296 to
+  1308): the panel's transparent switch (`actTransparent`, saved per panel
+  as `Transparent`) -- and, while `View/DockOverlayAutoView` ("Auto hide in
+  non 3D view", on by default) is on, NOT transparent when the active view
+  is MAXIMIZED and does not answer "CanPan" (a view that cannot be panned:
+  not a 3D view). Its documentation says so: "Transparent panels also turn
+  opaque over a maximized view that cannot be panned"
+  (`src/Gui/OverlayParams.py` 104 to 107).
+- That is the one condition found in the panel; the overlay MODES
+  (`OverlayManager.cpp` about 978 to 992: "transparent all", "transparent
+  none", toggle) set the switch itself, they do not gate it.
+- So, by this reading, "in all cases" means: drop the maximized
+  non-panning view condition from `isTransparent` (the auto-hide part of
+  that setting stays as it is). NOT shown that nothing else gates it --
+  the build session to look on the screen.
+
+NOT said, not put as blocking: whether the SETTING's documentation is to
+change with it (taken as yes: its second sentence goes).
+
+## 121. The report view's background in a non-transparent overlay differs from its background when not overlaid; the Python console's does not -- OPEN, a candidate by reading
+
+**2026-10-14 15:46, the reporter:** the second part of the message above --
+"btw, check why the report view has a different background in overlay
+non-transparency mode than non-overlay mode. Python console shares the
+same background color."
+
+The note-taker's reading: in an overlay whose transparent mode is OFF,
+the report view shows another background than when it is docked as
+usual; the Python console shows the same in both -- so the report view
+should match it, by the reporter's words.
+
+A CANDIDATE, read in the source, nothing run, not shown:
+- The overlay style sheet in use under Dark
+  (`src/Gui/Stylesheets/overlay/Dark-Outline.qss`, chosen when none is
+  named, `OverlayManager.cpp` 264 to 290) gives every `QTextEdit` and
+  `QPlainTextEdit` in an overlay a ground of its own, `background :
+  #6e6e6e` (lines 6 to 17). The report view is a text box of that kind.
+- The Python console takes its colours from the editor's settings (the
+  theme's Editor colours), set on the widget itself, which would win over
+  that rule -- so it looks the same overlaid or not. By the note-taker's
+  reading only; the build session to show which rule paints each.
+
+## 122. The overlay's auto-hide hint colour to follow the theme -- under Dark it cannot be seen (a change request) -- OPEN, read in the source
+
+**2026-10-14 15:46, the reporter:** the third part of the message above --
+"another request, make overlay auto hide hint color theme aware, current
+color is not visible in dark theme"
+
+The note-taker's reading: the strip that hints where an auto-hidden
+overlay panel will come out (`OverlayProxyWidget`) is to take a colour
+that shows under the theme in use; under Dark today it cannot be seen.
+
+READ in the source, nothing run:
+- The hint's colour is a style sheet property, `qproperty-hintColor` of
+  `Gui--OverlayProxyWidget`; its default in the code is rgba(50, 50, 50,
+  150) (`src/Gui/OverlayWidgets.cpp` 98).
+- `Dark-Outline.qss` (line 105), the sheet used under Dark: rgba(50, 50,
+  50, 0.6) -- a dark grey at 60% over a dark 3D view; `Light-Outline.qss`
+  (line 100): rgba(250, 250, 250, 0.6) -- a near-white over a light view.
+  So each theme's hint is the colour of the view it lies on -- by this
+  reading both are hard to see, the Dark one as the reporter says. The
+  older sheets (`Dark_overlay.qss` and others) use rgba(100, 100, 100,
+  0.6).
+NOT said: what colour, and whether "theme aware" means the theme's own
+accent or a contrast to the 3D view's background behind it (which entry
+98 now knows, by pattern and side) -- the note-taker's proposal: a colour
+taken against the view's background where the hint lies, as entry 98's
+ground is; not put as blocking.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -17465,5 +17559,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 119 are of 2026-10-14, 116 and 119 said to the
+it; entries 114 to 122 are of 2026-10-14, 116 and 119 said to the
 build session)
