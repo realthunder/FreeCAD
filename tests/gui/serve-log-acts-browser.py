@@ -41,6 +41,9 @@ Chrome do it through scripts/logacts-drive.js. Asserted:
   - a row of the branch it was made from that meets what was set here
     asks one side for all, or opens the list of what it would do; a side
     picked for its conflict, it is applied with it (sec 32.26);
+  - a merge the page's user asked for and made, undone on its socket, is
+    rolled back from the card: the button is offered, asks, and the merge
+    and its undoing leave the log while the box stays as it was (sec 32.26);
   - a value is kept in the file from its op, which then says so, the tab
     counts it and the host keeps it; it is listed with its object and
     property, its text read, and let go from there by the page's user, who
@@ -237,6 +240,13 @@ def at_phase(name):
         doc.recompute()
         doc.commitTransaction()
         change("here height", Height=60)
+    elif name == "main moved":
+        # Something on the first branch for the page's merge of it to take
+        doc = state["doc"]
+        doc.openTransaction("main wider")
+        doc.getObject("Box").Width = 33
+        doc.recompute()
+        doc.commitTransaction()
     elif name == "asked":
         doc = state["doc"]
         state["asked"] = [(r["source"], r["target"], r["by"], r["by_kind"], r["state"],
@@ -580,6 +590,27 @@ def verify():
               and out.get("keptTabEnd") == "Kept" and out.get("keptEmpty") is True
               and s.get("released", {}).get("kept") == [],
               (out.get("releaseSaid"), out.get("keptTabEnd"), s.get("released", {}).get("kept")))
+        merged, undid, rolled = (s.get("page merged", {}), s.get("page undid", {}),
+                                 s.get("rolled back", {}))
+        kinds = lambda sample: [r[2] for r in sample.get("rows", [])]
+        check("the page's user asks for the first branch and merges it, as a merge row",
+              out.get("rbAsked") is True and out.get("rbRequest") is True
+              and out.get("rbMergeAsked") is True and said(out.get("rbMergeSaid"), "Merged")
+              and merged.get("box", (0, 0, 0))[1] == 33
+              and kinds(merged).count("merge") == kinds(s.get("released", {})).count("merge") + 1,
+              (out.get("rbMergeSaid"), merged.get("box")))
+        check("undone on its own socket: the box is as it was",
+              out.get("rbUndoSent") is True and undid.get("box", (0, 0, 0))[1] != 33
+              and kinds(undid)[-1:] == ["undo"], (undid.get("box"), kinds(undid)[-3:]))
+        rb = out.get("rbSays") or {}
+        check("Roll back merge... is offered, asks, and the merge leaves the log; the box stays",
+              out.get("rbOffered") is True and rb.get("disabled") is False
+              and out.get("rbClicked") is True and out.get("rbAnswered") is True
+              and said(out.get("rbSaid"), "rolled back")
+              and kinds(rolled).count("merge") == kinds(s.get("released", {})).count("merge")
+              and "undo" not in kinds(rolled)[-1:]
+              and rolled.get("box") == undid.get("box"),
+              (rb, out.get("rbSaid"), rolled.get("box"), kinds(rolled)[-3:]))
         before_main = s.get("restored", {})
         check("nothing the page did moved the document the branch was served from",
               before_main.get("main") == listed.get("main")

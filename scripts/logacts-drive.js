@@ -448,6 +448,59 @@ async function answer(page, text) {
     out.keptEmpty = await page.evaluate(
       () => document.querySelectorAll('.fc-log-keptlist tbody tr').length === 0);
     await phase('released');
+
+    // A merge of the page's user, undone, rolled back from the card (sec
+    // 32.26): the branch this one was made from -- the host changes it at
+    // this phase -- asked for here and merged by the page, undone on the
+    // page's own socket (an undo step is its author's), then taken out
+    await phase('main moved');
+    await page.evaluate(() => window.__fcTab('requests'));
+    await waitFor(page, () => !!document.querySelector('.fc-log-reqsource'), 10000);
+    const target = await page.evaluate(() => (window.__fcBranch() || {}).value);
+    // (the branch this one was made from: `first` is this one's, renamed)
+    await page.evaluate(() => window.__fcPick('.fc-log-reqsource', 'main'));
+    await page.evaluate((name) => window.__fcPick('.fc-log-reqtarget', name), target);
+    out.rbAsked = await page.evaluate(() => window.__fcClickAct('request-new'));
+    await waitFor(page, () => /Request \d+/.test((window.__fcStatus() || {}).text || ''), 20000);
+    out.rbRequest = await waitFor(page, (src) => window.__fcRequests()
+      .some((r) => r.state === 'open' && r.what.startsWith('merge ' + src)), 15000, 'main');
+    await page.evaluate((src) => {
+      const r = window.__fcRequests().find((x) => x.state === 'open'
+                                              && x.what.startsWith('merge ' + src));
+      const tr = r && document.querySelector(`.fc-log-requests tbody tr[data-id="${r.id}"]`);
+      if (tr) tr.click();
+    }, 'main');
+    await sleep(300);
+    out.rbMergeAsked = await page.evaluate(() => window.__fcClickAct('request-merge'));
+    // Where it meets what was set here, theirs for all
+    await waitFor(page, () => !!window.__fcAct('yes')
+                  || /Merged/.test((window.__fcStatus() || {}).text || ''), 20000);
+    if (await page.evaluate(() => !!window.__fcAct('yes')))
+      await page.evaluate(() => window.__fcClickAct('yes'));
+    await waitFor(page, () => /Merged/.test((window.__fcStatus() || {}).text || ''), 30000);
+    out.rbMergeSaid = await page.evaluate(() => window.__fcStatus());
+    await phase('page merged');
+    out.rbUndoSent = await page.evaluate(
+      () => !!window.fcviewerControlSend
+            && window.fcviewerControlSend(JSON.stringify({id: 99001, op: 'undo'})) !== false);
+    await phase('page undid');
+    await page.evaluate(() => window.__fcTab('rows'));
+    // The newest row, the merge's undoing: whether one is undone at the
+    // head is asked as it is chosen
+    await waitFor(page, () => window.__fcRows().length > 0, 10000);
+    await page.evaluate(() => {
+      const tr = document.querySelector('.fc-log-rows:not(.fc-log-versions) tbody tr');
+      if (tr) tr.click();
+    });
+    out.rbOffered = await waitFor(
+      page, () => !!window.__fcAct('roll-back') && !window.__fcAct('roll-back').disabled, 15000);
+    out.rbSays = await page.evaluate(() => window.__fcActSays('roll-back'));
+    await shot(page, 'roll-back');
+    out.rbClicked = await page.evaluate(() => window.__fcClickAct('roll-back'));
+    out.rbAnswered = await answer(page);
+    await waitFor(page, () => /rolled back/.test((window.__fcStatus() || {}).text || ''), 20000);
+    out.rbSaid = await page.evaluate(() => window.__fcStatus());
+    await phase('rolled back');
   }
   catch (e) {
     out.failure = String((e && e.stack) || e);

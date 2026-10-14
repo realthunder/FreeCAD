@@ -70,6 +70,7 @@ NEAR, FAR = 10.0, 400.0
 VW, VH = 800, 600
 
 ACTS = ("log.kept", "log.keep", "log.keepObject", "log.release")
+MODE = 6  # Gui::ViewProvider::ValueDiff
 
 state = {"done": False}
 asked = queue.Queue()
@@ -126,6 +127,18 @@ def kept_on_host():
 def ids():
     doc = FreeCAD.getDocument(DOC)
     return {name: doc.getObject(name).ID for name in ("Box", "Cut")}
+
+
+def edit_state():
+    """The edit on the host: whether one is open, what its panel says it
+    shows, and what the cut's two states found."""
+    from PySide import QtWidgets
+    gdoc = FreeCADGui.getDocument(DOC)
+    label = [w.text() for w in QtWidgets.QApplication.allWidgets()
+             if w.objectName() == "diffWhat" and isinstance(w, QtWidgets.QLabel)]
+    return {"edit": gdoc.getInEdit() is not None,
+            "what": label[-1] if label else "",
+            "found": dict(FreeCAD.getDocument(DOC).getObject("Cut").ViewObject.getValueDiff())}
 
 
 def grant_write():
@@ -226,6 +239,17 @@ class Client(threading.Thread):
         ref = next((v["ref"] for v in (got["kept1"] or {}).get("values", [])), "")
         got["ref"] = ref
         got["release_a"] = self.do(ws, "log.release", ref=ref)
+
+        # The kept value over the cut, against what it has now: the edit a
+        # row's change is shown as, with the ref in place of the row
+        got["show"] = self.do(ws, "edit", obj="Cut", mode=MODE, kept=ref)
+        ws.drain(1.0)
+        got["shown"] = on_host(edit_state)
+        got["reset"] = self.do(ws, "resetEdit")
+        ws.drain(0.5)
+        got["after_reset"] = on_host(edit_state)
+        got["show_none"] = self.do(ws, "edit", obj="Cut", mode=MODE, kept="0" * 40)
+        got["show_other"] = self.do(ws, "edit", obj="Box", mode=MODE, kept=ref)
 
         # Every value of the box; twice; not A's to stop
         got["keepobj"] = self.do(ws, "log.keepObject", obj="Box")
@@ -365,6 +389,22 @@ def check_all(got):
     check("A is refused letting it go by its row",
           code(got.get("letgo_a")) == "Forbidden", got.get("letgo_a"))
     check("and by its ref", code(got.get("release_a")) == "Forbidden", got.get("release_a"))
+
+    shown = got.get("shown") or {}
+    found = shown.get("found") or {}
+    check("A shows the kept value over the cut: the edit opens, saying what it shows",
+          ok(got.get("show")) and shown.get("edit") is True
+          and "the value kept at row %d" % taller in shown.get("what", ""),
+          (got.get("show"), shown.get("what")))
+    check("against what the cut has now, which a later row changed",
+          found.get("changed", 0) + found.get("moved", 0) + found.get("added", 0)
+          + found.get("removed", 0) > 0, found)
+    check("the edit is left", ok(got.get("reset"))
+          and (got.get("after_reset") or {}).get("edit") is False, got.get("after_reset"))
+    check("a value not kept, or kept of another object, is none to show",
+          code(got.get("show_none")) == "UnknownValue"
+          and code(got.get("show_other")) == "UnknownValue",
+          (got.get("show_none"), got.get("show_other")))
 
     ko, ko2 = got.get("keepobj") or {}, got.get("keepobj2") or {}
     check("A keeps every value of the box; a second time changes nothing",
