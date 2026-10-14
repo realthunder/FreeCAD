@@ -2246,7 +2246,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11). ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; the smaller point answered 17:17: A SETTING gates it, by default the same as the 3D view; and the Qt-drawn page too IF it is easy -- to be looked at by the build session. COMMITTED `2a317f254e` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): the setting `Colors/BackgroundAs3DView` (on by default), the Qt-drawn page too (one rule for both); 6 of 6; NO check box in TechDraw's preference page yet. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; still no check box on TechDraw's preference page. Its commit `2a317f254e` is the cause of the CRASH of entry 114. The check box for `Colors/BackgroundAs3DView` is in the tree, not committed (2026-10-14 09:10) |
 | 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003`. `56504486e6` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; the real double click under `Lens003` is the reporter's to try |
 | 114 | 2026-10-14 | A CRASH on the copy staged 08:10: switching the theme to Dark by Tools > Preset configurations > Themes > Dark theme ends the program (an access violation) | OPEN; the debugger's log, the short crash log and the DUMP read by the note-taker on the reporter's word: the theme writes `PreSelectColor` into TechDraw's `Colors` settings and one of that group's observers is an object already destroyed; a candidate by reading, NOT shown by a run: the page view's observer added for entry 112 (`2a317f254e`) is attached to that group and never detached; one point under the entry, NOT ANSWERED. THE CANDIDATE IS RIGHT (2026-10-14 09:10, the build session): REPRODUCED on the staged copy of 08:10 by a new test -- a page's view opened, its document closed, a theme applied: the session ends with the reporter's stack to the line. The fix, one line (`hGrpColors->Detach(this)`), is in a build; NOT committed. The point a no longer needed for the cause |
-| 115 | 2026-10-14 | the 3D view's background does not follow its settings: the preference is a RADIAL gradient, a LINEAR one is shown, and it does not respond to a change of the setting | OPEN; the reporter's configuration and the source read by the note-taker, nothing run: the configuration says radial (`Gradient` 0, `RadialGradient` 1); the cause NOT found by reading; one thing that can give linear -- every theme writes `Gradient` 1, which wins over radial; three points under the entry, NOT ANSWERED |
+| 115 | 2026-10-14 | the 3D view's background does not follow its settings: the preference is a RADIAL gradient, a LINEAR one is shown, and it does not respond to a change of the setting | OPEN; the reporter's configuration and the source read by the note-taker, nothing run: the configuration says radial (`Gradient` 0, `RadialGradient` 1); the cause NOT found by reading; one thing that can give linear -- every theme writes `Gradient` 1, which wins over radial; three points under the entry, NOT ANSWERED. MADE PRECISE by the reporter 09:50: a COLOUR change shows at once; a change of the PATTERN does not -- it shows only when the mouse moves over the 3D view, even with the preferences open. A CANDIDATE by reading, not shown: setting the pattern asks for no redraw (old code); points b and c answered by this, one new point under the entry (what a theme does to the pattern) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -16206,7 +16206,7 @@ ever destroyed it does not arise. It does not always end the program
 (the build session's first try did not): a freed observer may be called
 harmlessly, which is no safer.
 
-## 115. The 3D view's background does not follow its settings: radial is set, linear is shown, a change of the setting does nothing -- OPEN; the configuration says radial; the cause not found by reading; three points not answered
+## 115. The 3D view's background does not follow its settings: radial is set, linear is shown, a change of the setting does nothing -- OPEN; the configuration says radial; the cause not found by reading; three points not answered; made precise 2026-10-14 09:50: colours respond at once, the pattern only at the next redraw (the mouse over the view) -- a candidate by reading: no redraw is asked for
 
 **2026-10-14 09:38, the reporter:** "new defect, 3d view background color and
 gradient pattern does not follow settings. my preference is radial, what
@@ -16262,6 +16262,52 @@ b. WHICH CHANGE gets no response: the choice of pattern on the
    background?
 c. THE COLOUR: what is wrong with it besides the pattern -- colours
    other than the ones set, or only the way they are laid out?
+
+**2026-10-14 09:50, the reporter:** "entry 115. color change is responsive
+instantly. gradient pattern change not, but it does apply if I move mouse
+over 3d view, even with preference dialog open"
+
+The note-taker's reading, not the reporter's words:
+- A change of the background's COLOURS shows in the 3D view at once:
+  nothing wrong there (point c answered -- the colour itself is not the
+  defect).
+- A change of the PATTERN (linear / radial / one colour) does NOT show
+  at once. It shows as soon as the mouse moves over the 3D view, with
+  the preferences dialog still open (point b answered: it is the
+  pattern; no restart is needed).
+- So the setting IS taken; what is missing is the view being drawn
+  again when the pattern changes.
+
+A CANDIDATE, READ in the source, nothing run, NOT shown:
+- The colours' handler (`src/Gui/View3DSettings.cpp` line 425) ends in
+  the viewer's `setBackgroundColor`, which has the view drawn again.
+- The pattern's handler (line 264) calls
+  `View3DInventorViewer::setGradientBackground` (line 3589): it writes
+  the pattern into the background node by
+  `SoFCBackgroundGradient::setGradient`, a plain assignment that tells
+  nobody (`SoFCBackgroundGradient.cpp` line 161), and sets the
+  background's switch ONLY IF its value changes (lines 3603, 3604).
+  Between linear and radial the switch keeps its value, so nothing is
+  told and nothing is drawn until something else draws the view -- the
+  mouse over it.
+- From one colour to a gradient, or back, the switch does change: by
+  this reading THAT change should show at once. Not said by the
+  reporter either way.
+- By `git blame` both halves are old: the "only if it changes" of
+  2020, the pattern written into the node of 2023. So by reading this
+  is NOT a regression of today's stage -- point a (since when) is not
+  needed for the cause. The reporter met it today, by the note-taker's
+  guess, because the theme switch had turned the pattern linear and
+  they set it back.
+
+ONE NEW POINT, the note-taker's, lettered for an answer:
+d. WHAT A THEME DOES TO THE PATTERN. The Dark and the Light theme each
+   write `Gradient` 1 AND `RadialGradient` 1, and with both on the
+   program shows LINEAR -- so applying a theme turns a radial background
+   linear (which, by the note-taker's guess, is how the reporter came
+   to see linear this morning). Should a theme (1) leave the pattern as
+   the user has it, (2) give RADIAL, as its file seems to mean by
+   naming it, or (3) stay as it is, linear?
 
 ## Inbox
 
