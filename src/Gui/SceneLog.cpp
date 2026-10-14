@@ -288,7 +288,10 @@ struct Authors
  * makes (`log.branch`) is said to be its own as it is made
  * (LogAccess::made): written from its fork, and its to delete. Who made a
  * branch is not told from where the branch forks -- the host's branch off
- * one a client writes is the host's.
+ * one a client writes is the host's. One it makes in a document opened from
+ * a branch to be served is written by everyone who joins that document as
+ * well (LogBranch::joined, ruled 2026-10-14): a branch made there moves the
+ * document they share. It is still its maker's alone to delete.
  */
 struct Reach
 {
@@ -448,6 +451,17 @@ Reach reachOf(App::Document* doc, App::TransactionLog* log)
             if (byId.count(root->second.target) && !said.count(root->second.target))
                 reach.of[root->second.target].read = true;
         }
+        // ... and a branch one who joined it made there is written by
+        // everyone who joins it, from its fork
+        for (const auto& entry : byId) {
+            const App::LogBranch& b = entry.second;
+            if (b.joined != served->second || said.count(b.id))
+                continue;
+            Reach::Of& o = reach.of[b.id];
+            o.read = o.write = true;
+            o.fromSeq = b.fromSeq;
+            o.fromVersion = b.fromVersion;
+        }
     }
     // What it is listed: the histories of the branches it reads
     for (const auto& entry : reach.of) {
@@ -473,6 +487,17 @@ const char* const kNeedsWrite
 const char* const kNeedsRead = "that branch is not one this connection reads";
 const char* const kBeforePoint
     = "that is from before the point this branch is written from";
+
+/** Why keeping a value at a row is not the asker's, or nothing (ruled
+ * 2026-10-14): what is kept grows the file every save writes, so it is the
+ * host's, and of one who writes the branch of the row, since the point.
+ */
+QString keepWhy(const Reach& reach, const App::LogTransaction& row)
+{
+    if (reach.row(row))
+        return QString();
+    return QString::fromLatin1(reach.writes(row.branch) ? kBeforePoint : kNeedsWrite);
+}
 
 /// A row of the one who asks (sec 30.10 item 1, as App has it): one user
 /// whichever login, by kind and name; no actor is the desktop's user
@@ -625,11 +650,18 @@ QJsonObject opsOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
     try {
         App::TransactionStore& store = log->store();
         const auto rows = store.transactions(row, 1);
+        const Reach reach = reachOf(doc, log);
         // A row of a branch the asker does not read is none to it
-        if (row <= 0 || rows.empty() || rows.front().seq != row
-                || !reachOf(doc, log).sees(rows.front()))
+        if (row <= 0 || rows.empty() || rows.front().seq != row || !reach.sees(rows.front()))
             return sceneControlError(id, "UnknownRow", QString::number(row));
         reply[QLatin1String("row")] = double(row);
+        // What the asker may keep at the row (sec 32.27): its values, and
+        // every value of an object
+        const QString keepNot = keepWhy(reach, rows.front());
+        reply[QLatin1String("keep")] = keepNot.isEmpty();
+        if (!keepNot.isEmpty())
+            reply[QLatin1String("keepWhy")] = keepNot;
+        reply[QLatin1String("keepObject")] = reach.host;
         reply[QLatin1String("name")] = QString::fromStdString(rows.front().name);
         // What a record carries in place of ops (sec 11), and the lines a
         // macro recorded of any row
@@ -1139,6 +1171,14 @@ QJsonObject newBranchOp(const QJsonObject& req, const std::string& boundDoc, uin
             own.write = true;
             own.made = true;
             store.setAccess(own);
+            // ... and made in a document opened from a branch to be served,
+            // everyone's who joins that document to write
+            auto served = servedBranches().find(doc->getName());
+            App::LogBranch branch;
+            if (served != servedBranches().end() && store.getBranch(made, branch)) {
+                branch.joined = served->second;
+                store.updateBranch(branch);
+            }
         }
         objectsMoved(doc);
         QJsonObject reply = placeReply(id, doc, log);
@@ -1231,9 +1271,11 @@ QJsonObject deleteBranchOp(const QJsonObject& req, const std::string& boundDoc, 
             return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
         const Reach::Of* of = reach.find(branch.id);
         if (!reach.host && !(of && of->made))
-            return notReached(id, of && of->write
-                                      ? "that branch was given, not made here: the host deletes it"
-                                      : kNeedsWrite);
+            return notReached(id, !(of && of->write) ? kNeedsWrite
+                                  : branch.joined
+                                  ? "another who joined made that branch: its maker, or the "
+                                    "host, deletes it"
+                                  : "that branch was given, not made here: the host deletes it");
         const size_t rows = doc->deleteBranch(name);
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("rows")] = double(rows);
@@ -1856,18 +1898,27 @@ bool keptListed(App::Document* doc, const Reach& reach, const App::LogKept& kept
     return there ? reach.sees(row) : objectHere(doc, kept.cid);
 }
 
+/// Whether the asker kept `kept`: one the host kept has no keeper
+bool keptByAsker(const App::LogKept& kept)
+{
+    return !kept.kind.empty() && std::make_pair(kept.kind, kept.name) == asker();
+}
+
 /** Why letting go of a value kept by itself is not the asker's, or nothing.
  * The next save leaves a value let go out of the file, and nothing brings
- * it back: the host's, and of one who writes the branch of the row it was
- * kept at, since the point. Keeping takes nothing, and is anyone's who is
- * listed the row.
+ * it back: the host's, its keeper's (ruled 2026-10-14), and of one who
+ * writes the branch of the row it was kept at, since the point.
  */
-QString letGoWhy(const Reach& reach, bool there, const App::LogTransaction& row)
+QString letGoWhy(const Reach& reach, const App::LogKept& kept, bool there,
+                 const App::LogTransaction& row)
 {
-    if (reach.host)
+    if (reach.host || keptByAsker(kept))
         return QString();
     if (!there)
-        return QStringLiteral("the row it was kept at is gone from the log: the host lets it go");
+        return kept.kind.empty()
+            ? QStringLiteral("the row it was kept at is gone from the log: the host lets it go")
+            : QStringLiteral("the row it was kept at is gone from the log: the one who kept it, "
+                             "or the host, lets it go");
     if (!reach.writes(row.branch))
         return QString::fromLatin1(kNeedsWrite);
     if (!reach.row(row))
@@ -1875,8 +1926,18 @@ QString letGoWhy(const Reach& reach, bool there, const App::LogTransaction& row)
     return QString();
 }
 
-const char* const kObjectLetGo
-    = "every value of an object is kept on every branch: the host lets them go";
+const char* const kObjectKeep
+    = "every value of an object is kept on every branch: the host keeps them, and lets them go";
+
+/// Who kept a value, said with it: none for the host
+void keeperJson(QJsonObject& item, const App::LogKept& kept)
+{
+    if (kept.kind.empty())
+        return;
+    item[QLatin1String("keeper")] = QString::fromStdString(kept.name);
+    item[QLatin1String("keeperKind")] = QString::fromStdString(kept.kind);
+    item[QLatin1String("mine")] = keptByAsker(kept);
+}
 
 /// What is kept moved: no row says so, and it is the file's, so every
 /// document of it is told
@@ -1917,7 +1978,8 @@ QJsonObject keptOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
             item[QLatin1String("seq")] = double(kept.seq);
             // The row it was kept at is still in the log
             item[QLatin1String("row")] = there;
-            const QString why = letGoWhy(reach, there, row);
+            keeperJson(item, kept);
+            const QString why = letGoWhy(reach, kept, there, row);
             item[QLatin1String("release")] = why.isEmpty();
             if (!why.isEmpty())
                 item[QLatin1String("why")] = why;
@@ -1945,10 +2007,16 @@ QJsonObject keptOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
                     // and is let go as one kept by itself is
                     auto found = alone.find(set.second);
                     value[QLatin1String("alone")] = found != alone.end();
+                    // ... which is a keep at its row (keepWhy)
+                    const QString keepNot = keepWhy(reach, row);
+                    value[QLatin1String("keep")] = keepNot.isEmpty();
+                    if (!keepNot.isEmpty())
+                        value[QLatin1String("keepWhy")] = keepNot;
                     if (found != alone.end()) {
                         App::LogTransaction at;
                         const bool there = rowOf(store, found->second.seq, at);
-                        const QString why = letGoWhy(reach, there, at);
+                        keeperJson(value, found->second);
+                        const QString why = letGoWhy(reach, found->second, there, at);
                         value[QLatin1String("release")] = why.isEmpty();
                         if (!why.isEmpty())
                             value[QLatin1String("why")] = why;
@@ -1959,13 +2027,15 @@ QJsonObject keptOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
             item[QLatin1String("values")] = under;
             item[QLatin1String("release")] = reach.host;
             if (!reach.host)
-                item[QLatin1String("why")] = QString::fromLatin1(kObjectLetGo);
+                item[QLatin1String("why")] = QString::fromLatin1(kObjectKeep);
             objects.append(item);
         }
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("values")] = values;
         reply[QLatin1String("objects")] = objects;
         reply[QLatin1String("count")] = double(values.size() + objects.size());
+        // An object's every value is kept, and no longer, by the host alone
+        reply[QLatin1String("keepObject")] = reach.host;
         reachJson(reply, reach);
         watchFor(doc, client);
         return reply;
@@ -1978,9 +2048,10 @@ QJsonObject keptOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
 /** `log.keep`: keep in the file the value an object's property has at a
  * row -- `row`, or where the document is -- or with no `prop` every value
  * of it a recompute wrote; of one object (`obj`, `cid`) or several
- * (`objects`, by name: what is selected, at a version's row). With `keep`
- * false, let them go: each by the row it was kept at (letGoWhy), all of
- * them or none.
+ * (`objects`, by name: what is selected, at a version's row). The host's,
+ * and of one who writes the branch of the row, since the point (keepWhy);
+ * what one keeps says it kept it. With `keep` false, let them go: each by
+ * its keeper and the row it was kept at (letGoWhy), all of them or none.
  */
 QJsonObject keepOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
 {
@@ -2022,8 +2093,12 @@ QJsonObject keepOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
             return sceneControlError(id, "UnknownRow", QString::number(seq));
         size_t count = 0;
         if (keep) {
+            const QString why = keepWhy(reach, row);
+            if (!why.isEmpty())
+                return sceneControlError(id, "Forbidden", why);
+            const auto who = reach.host ? std::pair<std::string, std::string>() : asker();
             for (long cid : cids)
-                count += doc->keepLogValue(cid, prop, seq, true).size();
+                count += doc->keepLogValue(cid, prop, seq, true, who.first, who.second).size();
         }
         else {
             // The values there that are kept, each judged by the row it was
@@ -2042,7 +2117,7 @@ QJsonObject keepOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
                         continue;
                     App::LogTransaction at;
                     const bool there = rowOf(store, found->second.seq, at);
-                    const QString why = letGoWhy(reach, there, at);
+                    const QString why = letGoWhy(reach, found->second, there, at);
                     if (!why.isEmpty())
                         return sceneControlError(id, "Forbidden", why);
                     refs.insert(found->first);
@@ -2065,8 +2140,9 @@ QJsonObject keepOp(const QJsonObject& req, const std::string& boundDoc, uint64_t
 }
 
 /** `log.keepObject`: keep every value of an object the log has and will
- * have; with `keep` false stop. Keeping is anyone's who is in the document;
- * stopping lets go of its values on every branch, and is the host's.
+ * have; with `keep` false stop. The host's, both (ruled 2026-10-14): it
+ * keeps, and lets go, its values on every branch, and grows the file with
+ * every recompute.
  */
 QJsonObject keepObjectOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
 {
@@ -2084,8 +2160,8 @@ QJsonObject keepObjectOp(const QJsonObject& req, const std::string& boundDoc, ui
         if (cid <= 0 || (!reach.host && !objectHere(doc, cid)))
             return sceneControlError(id, "UnknownObject",
                                      req.value(QLatin1String("obj")).toString());
-        if (!keep && !reach.host)
-            return notReached(id, kObjectLetGo);
+        if (!reach.host)
+            return notReached(id, kObjectKeep);
         const std::vector<long> before = log->store().keptObjects();
         const bool was = std::find(before.begin(), before.end(), cid) != before.end();
         doc->keepLogValuesOf(cid, keep);
@@ -2127,7 +2203,7 @@ QJsonObject releaseOp(const QJsonObject& req, const std::string& boundDoc, uint6
             // One the asker is not listed is none to it
             if (!keptListed(doc, reach, kept, there, row))
                 break;
-            const QString why = letGoWhy(reach, there, row);
+            const QString why = letGoWhy(reach, kept, there, row);
             if (!why.isEmpty())
                 return sceneControlError(id, "Forbidden", why);
             if (!doc->releaseLogValue(ref))

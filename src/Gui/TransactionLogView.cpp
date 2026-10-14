@@ -1427,7 +1427,12 @@ void TransactionLogView::refreshKept()
             return !rows.empty() && rows.front().seq == seq;
         };
         for (const auto& value : store.keptValues()) {
-            lines.push_back({false, tr("one value"), value.cid, QString::fromStdString(value.prop),
+            // One a served client kept says who (sec 32.27): its keeper may
+            // let it go
+            const QString what = value.kind.empty()
+                ? tr("one value")
+                : tr("one value, by %1").arg(QString::fromStdString(value.name));
+            lines.push_back({false, what, value.cid, QString::fromStdString(value.prop),
                              value.seq, rowThere(value.seq), value.hash, shortRef(value.hash)});
             ++kept;
         }
@@ -1460,8 +1465,8 @@ void TransactionLogView::refreshKept()
     };
     QString said;
     for (const auto& line : lines) {
-        said += QStringLiteral("%1|%2|%3|%4|%5|%6\n")
-                    .arg(line.under ? 1 : 0).arg(objectText(line.cid), line.prop)
+        said += QStringLiteral("%1|%2|%3|%4|%5|%6|%7\n")
+                    .arg(line.under ? 1 : 0).arg(line.what, objectText(line.cid), line.prop)
                     .arg(line.seq).arg(line.rowThere ? 1 : 0)
                     .arg(QString::fromStdString(line.ref) + line.value);
     }

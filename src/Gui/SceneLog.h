@@ -91,7 +91,9 @@ namespace Gui
  * takes back its own rows (sec 30.10) and takes versions, as every client
  * of a shared document -- and a document opened from a branch to be served
  * (serveLogBranch) is written by whoever joins it, from where that branch
- * forks. A branch a connection makes is said to be its own as it is made.
+ * forks. A branch a connection makes is said to be its own as it is made;
+ * made in a document opened to be served, everyone who joins that document
+ * writes it too, and only its maker deletes it (ruled 2026-10-14).
  * What is not the asker's is `Forbidden`; a branch it does not read is not
  * listed and is unknown to it, as its rows, its versions and the requests
  * of it are.
@@ -104,10 +106,12 @@ namespace Gui
  *   log.keepObject  every value of an object kept, or no longer
  *   log.release     a value kept by itself let go, by its ref
  *
- * Keeping takes nothing, and is anyone's who is listed the row. A value let
- * go is left out of the file by the next save: the host's, and of one who
- * writes the branch of the row it was kept at, since the point. Stopping an
- * object's being kept lets its values go on every branch: the host's.
+ * What is kept grows the file every save writes (ruled 2026-10-14): a value
+ * is kept by the host, and by one who writes the branch of the row, since
+ * the point -- which is said as its keeper. A value let go is left out of
+ * the file by the next save: the host's, its keeper's, and of one who
+ * writes the branch of the row it was kept at, since the point. Every
+ * value of an object is kept, and no longer, on every branch: the host's.
  */
 GuiExport void installSceneLogOps();
 
