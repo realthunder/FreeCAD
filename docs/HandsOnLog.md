@@ -6773,6 +6773,49 @@ The staged copy was running; closed on the reporter's word ("Close it
 for me, no need to save"). The installer: fcad `7d5698c950`, not dirty;
 occt `a81d25f148`; coin `d2da5cc93`. Not tested by me on the staged copy.
 
+**Entry 114, 09:00: the staged copy of 08:10 crashes at a change of theme
+-- my commit of entry 112.** `2a317f254e` attached `QGVPage`'s observer to
+TechDraw's `Colors` group and did not detach it: once a page's view had
+been destroyed the group called a dead observer at the next write of one
+of its keys, and a theme writes them (the note-taker read the dump: an
+access violation in `Base::Subject<const char*>::Notify`, "PreSelectColor",
+`Mod/TechDraw/Colors`). REPRODUCED on the staged copy, offscreen, by
+`tests/gui/techdraw-colour-after-page-view-closed.py` -- the session ends
+at the theme, EXIT -1073741819, its `crash.log` the reporter's stack.
+FIXED `778bde3979`, the one `Detach`; on build r18 the test 6 of 6, and
+`techdraw-page-ground-as-3d-view` 6, `theme-owns-techdraw-preselect` 7,
+`theme-switch-contrast` 39, `overlay-preset-follows-the-theme` 45,
+`revert-document` 12. No other observer of a widget's lifetime was added
+in these weeks (the rest of the `Attach` calls are the generated parameter
+classes, which live as long as the program). LOCAL; a push and a restage
+asked of the reporter 09:11.
+
+Entry 112's missing part, the check box on TechDraw's colour page:
+`463a36a58b`, `techdraw-page-ground-preference.py` 6 of 6 offscreen.
+
+**Two reports of mine corrected the same morning, by probes on r16.**
+
+- Entry 109 lights NOTHING under a per-view edit, the reporter's setting:
+  the hover names the preview's face, and the view with that preselection
+  and without it differ in 0 pixels (an edge of the base: 82). The preview
+  is a node of the edit session there, not under the feature's switch --
+  the highlight's path leads nowhere. A fix is written (the panel colours
+  the preview's face), not built.
+- Entry 104: cavity shading is not drawn in any picture my test sessions
+  take -- the setting on and off, default and strong values, the default
+  configuration and a copy of the reporter's: 0 pixels, 0 levels. So
+  `cavity-not-for-view-hidden.py` could never see the effect and its "5 of
+  5" says nothing for the ghost's fix `038b8b1b1a`, which is UNVERIFIED by
+  me. Why the pass does not run there: not found; the build that carried a
+  trace for it (r17) hung in its configure step, `ninja -t wincodepage`
+  not returning for 27 minutes, and was killed. For the second defect a
+  cleaner probe -- a cover that hides a grooved block entirely, both
+  against the cover alone (`e104x.py`): Shaded, 0 pixels at every zoom;
+  "Flat Lines", 4 to 118 pixels from 16 times zoomed out: the hidden
+  block's edge lines come through the cover.
+- `pd-origin-in-edit`'s failing claim was the test's strip, too short
+  since an origin is drawn at twice the size: `9bfa88b726`, 15 of 15.
+
 **Where the evening left things** (before that push). Origin `LinkVibe` = `5c0b30ce1b`
 (20:13). LOCAL on top of it, not pushed: `905d023394` (111, first form),
 `26f0a30de0` (109), `1109842583` (99 a and c, the late pick), `56504486e6`
