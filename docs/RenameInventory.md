@@ -97,7 +97,9 @@ properties:
   definition), no migration needed.
 - **MIME/file association**: register the new app id as handler for the
   *unchanged* `.FCStd` type. Upstream's `org.freecad` MIME declaration
-  stays recognized.
+  stays recognized. `application/x-extension-tstd` (glob `*.tstd`) is
+  declared beside it, with the thumbnailer and `.desktop` entry taking both;
+  its icon is `freecad-doc.svg` until the brand has a document icon of its own.
 - **Lock files / single-instance keys** derive from `ExeName` — old and new
   builds will not see each other's instances during a transition; acceptable.
 
@@ -126,9 +128,31 @@ properties:
 The compatibility surface. Renaming any of these buys nothing and breaks
 the ecosystem the product depends on:
 
-- **`.FCStd` format and extension** — file exchange with FreeCAD users is a
-  feature. A distinct format would be a *hard-fork* act, exactly what we're
-  not doing.
+- **`.FCStd` for the standard format (schema 4)** -- file exchange with
+  FreeCAD users is a feature, and a schema 4 file is still written under
+  `.FCStd`. **Revised 2026-10-14: schema 5 is `.TStd`.** The distinct format
+  this section once declined already exists -- schema 5 renamed the root to
+  `<FCDocument>` so that no other reader opens it -- and a schema 5 file named
+  `.FCStd` told the OS, upstream and the user something false. The rules, as
+  built on the `Branding` branch:
+  - The extension follows the schema: 5 writes `.TStd` (backups `.TBak`), 4
+    writes `.FCStd` (backups `.FCBak`). Opening goes by the content, never the
+    extension, and accepts both.
+  - A plain Save that would raise a standard file into schema 5 -- which is
+    every first save of an opened `.FCStd`, since restore raises the schema --
+    writes `Part.TStd` beside `Part.FCStd`, leaves the original untouched, and
+    the document lives at `Part.TStd` from then on. The Gui says so in one
+    dialog (`Document::getSaveFileName`).
+  - Save As and Save a Copy name the file for the format chosen; the name
+    field follows the Standard/Compact toggle as it is flipped. A Python
+    `saveAs()` given an explicit name writes exactly that name.
+  - Links are NOT redirected. Opening a missing `Part.FCStd` whose
+    `Part.TStd` exists -- a link's target, a recent file -- fails as before,
+    and the error names the sibling.
+  - Why "Std": `FCStd` is "FreeCAD Standard", after OCAF's "Standard"
+    document format, whose extension is `.std` (`MDTV-Standard` in OCCT's
+    `resources/StdResource/Standard`); FreeCAD still opens a bare `.std` from
+    the command line. `TStd` keeps the pattern for the brand initial.
 - **Python modules `FreeCAD`, `FreeCADGui`, `Part`, …** — every workbench,
   addon and user macro imports these. This API *is* the ecosystem. (Upstream
   derivatives that rebranded all kept them.) The ~4,500-file grep count
