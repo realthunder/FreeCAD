@@ -6746,7 +6746,34 @@ tests passed out of 957" (`ctest36.log`); Python "Ran 3755 tests in
 859.336s, OK (skipped=52, expected failures=6)" (`pytest36.log`) -- three
 more than on r9, the binder's.
 
-**Where the evening leaves things.** Origin `LinkVibe` = `5c0b30ce1b`
+**2026-10-14, the morning: entry 108 ruled, PUSHED 07:56 (`7d5698c950`),
+STAGED 08:10:46 from the clean tree.** The reporter: "Entry 108. When
+visible follow the control in edit panel. If preview is on, show on top,
+else show normal. If hidden, then always shiwn on top"; asked which
+control, the "Show on top" check box (what the code did) or "Show
+preview": "Show preview"; then "Visible checking not only apply to the
+body itself, but to the full editing path", and "After done push and
+restage."
+
+`Monitor::wantEditOnTop()` (`PartDesign/Gui/Utils.cpp`): on top when the
+preview is on, or when anything on the path of the edit down to its body
+is hidden. The panel's "Show on top" check box is gone and
+`Part/EditOnTop` no longer read -- my consequence, under that rule it
+decided nothing. `tests/gui/edit-on-top-by-preview-and-path.py` replaces
+the test of the evening before: 9 of 9 on build r16 -- preview on, all
+shown / the body hidden / the part hidden: one picture; preview off: the
+feature in its place, and with the body hidden something on top all the
+same. Nine edit neighbours pass; `pd-origin-in-edit` fails one claim
+("ring: drawn, the Z axis at the body", 4 pixels for more than 5), the
+same 4 on the copy staged 2026-10-13 16:55 -- not this change's, not
+looked into. The suites were not run again on r16, which differs from
+r15 by that one source and its header.
+
+The staged copy was running; closed on the reporter's word ("Close it
+for me, no need to save"). The installer: fcad `7d5698c950`, not dirty;
+occt `a81d25f148`; coin `d2da5cc93`. Not tested by me on the staged copy.
+
+**Where the evening left things** (before that push). Origin `LinkVibe` = `5c0b30ce1b`
 (20:13). LOCAL on top of it, not pushed: `905d023394` (111, first form),
 `26f0a30de0` (109), `1109842583` (99 a and c, the late pick), `56504486e6`
 (113), `023552c8fd` (111 as ruled), and the note-taker's queue commits
