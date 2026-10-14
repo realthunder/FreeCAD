@@ -220,6 +220,19 @@ def said():
             for a in FreeCAD.getDocument(DOC).getTransactionAccess()]
 
 
+def undo_main_state():
+    """The first document's merges, and what the host's connection has to
+    redo (an undo step is its author's, sec 30.10)."""
+    doc = FreeCAD.getDocument(DOC)
+    doc.pushTransactionActor("verified", HOST)
+    try:
+        redo = list(doc.RedoNames)
+    finally:
+        doc.popTransactionActor()
+    return {"redo": redo,
+            "merges": [r["seq"] for r in doc.getTransactionLog() if r["kind"] == "merge"]}
+
+
 def serve_branch():
     """The host serves a branch of the document to a client of its own."""
     doc = FreeCAD.getDocument(DOC)
@@ -465,6 +478,13 @@ class Client(threading.Thread):
         got["rows_applied"] = self.do(ws, "log.rows", limit=3)
         got["host_moved_on"] = on_host(change("taller yet", Height=50))
         got["a_apply_conflict"] = self.do(ws, "log.apply", rows=away[:1])
+        # What it would do, each conflict by the key its side is picked by
+        got["a_preview"] = self.do(ws, "log.preview", rows=away[:1])
+        keys = [c["key"] for c in (got["a_preview"] or {}).get("changes", [])
+                if c.get("kind") == "conflict"]
+        got["a_apply_ours"] = self.do(ws, "log.apply", rows=away[:1],
+                                      picks={k: "ours" for k in keys})
+        got["host_ours"] = on_host(host())
         got["host_conflict"] = on_host(host())
         got["a_apply_theirs"] = self.do(ws, "log.apply", rows=away[:1], fallback="theirs")
         got["host_theirs"] = on_host(host())
@@ -630,12 +650,37 @@ class Client(threading.Thread):
         got["c_merge"] = self.do(cs, "log.mergeRequest", request=back)
         hs = self.join("serve-log-acts-h2", identity=HOST)
         got["h2_requests"] = ask(hs, {"id": 1, "op": "log.requests"})
+        got["c_preview"] = self.do(cs, "log.preview", request=back)
+        got["h2_preview"] = ask(hs, {"id": 7, "op": "log.preview", "request": back})
         got["h2_merge"] = ask(hs, {"id": 2, "op": "log.mergeRequest", "request": back})
         if (got["h2_merge"] or {}).get("code") == "Conflicts":
             got["h2_merge"] = ask(hs, {"id": 3, "op": "log.mergeRequest", "request": back,
                                        "fallback": "theirs"})
         got["main_merged"] = on_host(host())
         got["c_requests_end"] = self.do(cs, "log.requests")
+
+        # A merge undone, and rolled back: the host's, not another's. One of
+        # its own, which writes a row (that of C's work went as it was),
+        # undone by the connection that made it: an undo step is its
+        # author's
+        got["rb_branch"] = ask(hs, {"id": 9, "op": "log.branch", "name": "rb"})
+        on_host(change("on rb", Width=7))
+        got["rb_switch"] = ask(hs, {"id": 10, "op": "log.switch", "name": first})
+        on_host(change("on first", Length=9))
+        rq = (ask(hs, {"id": 11, "op": "log.request", "source": "rb", "target": first})
+              or {}).get("request", 0)
+        got["rb_merge"] = ask(hs, {"id": 12, "op": "log.mergeRequest", "request": rq})
+        got["h2_undo"] = ask(hs, {"id": 8, "op": "undo"})
+        hs.drain(0.5)
+        got["undo_merge"] = on_host(undo_main_state)
+        es = self.join("serve-log-acts-e")
+        got["e_dry"] = self.do(es, "log.rollBack", dry=True)
+        got["e_rollback"] = self.do(es, "log.rollBack")
+        es.close()
+        got["h2_dry"] = ask(hs, {"id": 4, "op": "log.rollBack", "dry": True})
+        got["h2_rollback"] = ask(hs, {"id": 5, "op": "log.rollBack"})
+        got["h2_rollback_again"] = ask(hs, {"id": 6, "op": "log.rollBack"})
+        got["main_rolled"] = on_host(undo_main_state)
         hs.close()
         cs.close()
 
@@ -904,6 +949,16 @@ def verify_shared(got, watcher):
           got.get("host_moved_on", {}).get("box") == (14, 10, 50)
           and code(conflict) == "Conflicts" and conflict.get("conflicts") == 1
           and got.get("host_conflict") == got.get("host_moved_on"), conflict)
+    preview = got.get("a_preview") or {}
+    conflicts = [c for c in preview.get("changes", []) if c.get("kind") == "conflict"]
+    check("its preview lists the conflict, by its key, with the values on each side",
+          ok(preview) and preview.get("what") == "rows" and preview.get("conflicts") == 1
+          and len(conflicts) == 1 and conflicts[0].get("key") == "Box.Height"
+          and conflicts[0].get("prop") == "Height" and "50" in conflicts[0].get("ours", "")
+          and "40" in conflicts[0].get("theirs", ""), preview)
+    check("a side picked for each, it goes on: ours keeps what is here",
+          ok(got.get("a_apply_ours")) and got.get("host_ours", {}).get("box") == (14, 10, 50),
+          (got.get("a_apply_ours"), got.get("host_ours", {}).get("box")))
     check("and with a side said for them it is applied",
           ok(got.get("a_apply_theirs")) and got.get("host_theirs", {}).get("box") == (14, 10, 40),
           (got.get("a_apply_theirs"), got.get("host_theirs", {}).get("box")))
@@ -1201,6 +1256,29 @@ def verify_own(got):
           and ended.get(back, {}).get("state") == "merged"
           and ended[back].get("closedBy") == HOST,
           (seen.get(back), got.get("h2_merge"), mm.get("box"), ended.get(back)))
+    hp = got.get("h2_preview") or {}
+    check("its preview, asked where the document is on its target, says what it would merge; "
+          "asked elsewhere, it says so",
+          ok(hp) and hp.get("what") == "merge" and hp.get("source") == "for-ann"
+          and len(hp.get("changes", [])) > 0
+          and code(got.get("c_preview")) == "Refused",
+          (hp.get("what"), hp.get("source"), len(hp.get("changes", [])),
+           got.get("c_preview")))
+    um, mr = got.get("undo_merge") or {}, got.get("main_rolled") or {}
+    dry = got.get("h2_dry") or {}
+    check("the merge undone, another who reads the branch may not roll it back",
+          len(um.get("merges", [])) >= 1 and len(um.get("redo", [])) >= 1
+          and (got.get("e_dry") or {}).get("may") is False
+          and code(got.get("e_rollback")) == "Forbidden",
+          (um, got.get("rb_merge"), got.get("h2_undo"), got.get("e_dry"),
+           got.get("e_rollback")))
+    check("the host does: its rows leave the log, the merge is no longer there to redo",
+          ok(dry) and dry.get("may") is True and dry.get("source") == "rb"
+          and ok(got.get("h2_rollback")) and (got.get("h2_rollback") or {}).get("rows", 0) >= 2
+          and len(mr.get("merges", [])) == len(um.get("merges", [])) - 1
+          and len(mr.get("redo", [])) == len(um.get("redo", [])) - 1
+          and code(got.get("h2_rollback_again")) == "Refused",
+          (dry, got.get("h2_rollback"), mr, got.get("h2_rollback_again")))
 
 
 def verify():

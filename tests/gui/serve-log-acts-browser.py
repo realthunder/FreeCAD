@@ -38,6 +38,9 @@ Chrome do it through scripts/logacts-drive.js. Asserted:
   - after a change by the host the version kept is no longer the document
     as it stands, and restoring it from the card puts the host back;
   - the branch is renamed from the card, starting from its name;
+  - a row of the branch it was made from that meets what was set here
+    asks one side for all, or opens the list of what it would do; a side
+    picked for its conflict, it is applied with it (sec 32.26);
   - none of it moved the document the branch was served from.
 
 Needs the built viewer (build/wasm/fcviewer.html; `ninja -C build/wasm`),
@@ -220,6 +223,15 @@ def at_phase(name):
             change("mine last", Height=21)
         finally:
             served.popTransactionActor()
+    elif name == "conflicted":
+        # The same property set on the branch the page's was made from, and
+        # here: a row of the first that meets what was set here
+        doc = state["doc"]
+        doc.openTransaction("main height")
+        doc.getObject("Box").Height = 50
+        doc.recompute()
+        doc.commitTransaction()
+        change("here height", Height=60)
     elif name == "asked":
         doc = state["doc"]
         state["asked"] = [(r["source"], r["target"], r["by"], r["by_kind"], r["state"],
@@ -525,6 +537,21 @@ def verify():
               and ("trunk", True) in renamed.get("branches", [])
               and not any(n == BRANCH for n, _ in renamed.get("branches", [])),
               (out.get("renameStarts"), out.get("renamed"), renamed.get("branches")))
+        picked = s.get("picked", {})
+        pk = out.get("picker") or {}
+        check("a row that meets what was set here asks one side for all, or each: the list of "
+              "what it would do, waiting for a side for its conflict",
+              out.get("conflictApply") is True and "Which side" in (out.get("conflictAsk") or "")
+              and out.get("moreAsked") is True
+              and any(c.get("key") == "Box.Height" and c.get("conflict")
+                      for c in pk.get("changes", []))
+              and pk.get("yesDisabled") is True and out.get("pickedTheirs") is True
+              and out.get("yesAfter") is False,
+              (out.get("conflictAsk"), pk, out.get("yesAfter")))
+        check("theirs picked for it, the row is applied with it",
+              out.get("pickerYes") is True and said(out.get("pickerSaid"), "applied as row")
+              and out.get("pickerGone") is True and picked.get("box", (0, 0, 0))[2] == 50,
+              (out.get("pickerSaid"), picked.get("box")))
         before_main = s.get("restored", {})
         check("nothing the page did moved the document the branch was served from",
               before_main.get("main") == listed.get("main")

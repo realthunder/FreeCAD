@@ -354,6 +354,44 @@ async function answer(page, text) {
     out.renamed = await page.evaluate(() => window.__fcBranch());
     out.renameSaid = await page.evaluate(() => window.__fcStatus());
     await phase('renamed');
+
+    // A row of the branch this one was made from that meets what was set
+    // here since -- the host sets one property on both at this phase -- asks
+    // one side for all, or each: the list, a side picked (sec 32.26)
+    await phase('conflicted');
+    await page.evaluate(() => window.__fcTab('rows'));
+    out.conflictRow = await waitFor(
+      page, () => window.__fcRows().some((r) => r.what === 'main height' && r.away), 20000);
+    await page.evaluate(() => window.__fcClickRow('main height'));
+    await sleep(300);
+    out.conflictApply = await page.evaluate(() => window.__fcClickAct('apply'));
+    await waitFor(page, () => !!window.__fcAct('more'), 20000);
+    out.conflictAsk = await page.evaluate(
+      () => (document.querySelector('.fc-log-ask .fc-log-asklabel') || {}).textContent);
+    out.moreAsked = await page.evaluate(() => window.__fcClickAct('more'));
+    await waitFor(page, () => !!document.querySelector('.fc-log-picker .fc-log-change'), 20000);
+    out.picker = await page.evaluate(() => ({
+      line: (document.querySelector('.fc-log-picker > .fc-log-asklabel') || {}).textContent,
+      changes: [...document.querySelectorAll('.fc-log-change')].map((d) => ({
+        key: d.dataset.key,
+        conflict: d.classList.contains('fc-log-conflict'),
+        sides: [...d.querySelectorAll('.fc-log-pick')].map((b) => b.textContent),
+      })),
+      yesDisabled: (window.__fcAct('picker-yes') || {}).disabled,
+    }));
+    out.pickedTheirs = await page.evaluate(() => {
+      const b = document.querySelector('.fc-log-change[data-key="Box.Height"] [data-side="theirs"]');
+      if (b) b.click();
+      return !!b;
+    });
+    await sleep(200);
+    out.yesAfter = await page.evaluate(() => (window.__fcAct('picker-yes') || {}).disabled);
+    await shot(page, 'picker');
+    out.pickerYes = await page.evaluate(() => window.__fcClickAct('picker-yes'));
+    await waitFor(page, () => /applied/.test((window.__fcStatus() || {}).text || ''), 30000);
+    out.pickerSaid = await page.evaluate(() => window.__fcStatus());
+    out.pickerGone = await page.evaluate(() => !document.querySelector('.fc-log-picker'));
+    await phase('picked');
   }
   catch (e) {
     out.failure = String((e && e.stack) || e);
