@@ -576,6 +576,11 @@ were served from, but no further. The branch you were given is not yours
 to delete. The sharer's branch, the one yours was made from, is in the
 list too: you read it.
 
+Somebody else may join the same branch served to you. You share that
+document, and you both write the branch you were given and every branch
+either of you makes in it, so neither is left on a branch they cannot
+move from. Only whoever made a branch, or the sharer, deletes it.
+
 **A branch you read and are not on.** Its steps are in the list in
 italics, with its name. Two things can be done with it:
 
@@ -623,18 +628,18 @@ the sharer's, or yours for a merge you made yourself on a branch you
 write.
 
 **Shapes kept in the file** (section 8). Click an operation that set a
-shape: **Keep** beside its value keeps that shape in the file, **Keep
-all of it** every shape that object has had and will have, and the
+shape: **Keep** beside its value keeps that shape in the file, and the
 operation then says *kept*. A version has **Keep selected here**: the
 objects you selected, as they were at that version. The fourth list,
-**Kept**, shows what is kept -- its name carries how many -- and a line of
-it shows its value, **Show** draws it over its object against what the
-object is now (as **Show** on an operation does), **Show row N** goes to
-its step, and **Let go** lets
-it go: the next save leaves it out of the file, for good. So keeping is
-anybody's, but letting go is the sharer's, or yours for a value kept at a
-step of a branch you write; stopping every shape of an object being kept
-is the sharer's.
+**Kept**, shows what is kept -- its name carries how many, and a shape
+you kept says *by you* -- and a line of it shows its value, **Show** draws
+it over its object against what the object is now (as **Show** on an
+operation does), **Show row N** goes to its step, and **Let go** lets it
+go: the next save leaves it out of the file, for good. Everything kept
+makes every save bigger, so you keep a shape only at a step of a branch
+you write; you let it go if you kept it, or if it was kept at a step of a
+branch you write. Keeping every shape an object has had and will have --
+**Keep all of it** -- and stopping that, are the sharer's alone.
 
 ![A shape kept, in the Kept list](images/transaction-log/15-log-browser-kept.png)
 

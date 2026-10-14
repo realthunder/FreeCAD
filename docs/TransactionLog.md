@@ -19358,7 +19358,8 @@ join one served document are two: each writes the branch that was
 served, and a branch one of them makes is that one's. Where the
 document is left on it, the other reads it there and does not move the
 document -- "moving the document", above -- until its maker or the host
-does.
+does. *(Ruled otherwise since, 32.29: the others who join that document
+write it too; only its maker deletes it.)*
 
 **A branch another document is on is not deleted**
 (`Document::deleteBranch`): its rows would go from under that document.
@@ -19506,7 +19507,9 @@ object is kept `keptObject` -- the desktop's "yes, kept". Each is
 of it is a row, so what is kept moving is told as `log.changed` to the
 editors of every document of the file, which share the store.
 
-**Who may** (chosen in the building, not ruled). Keeping takes nothing from anyone: it
+**Who may** (chosen in the building; ruled otherwise since, 32.29: a value
+is kept by one who writes the row's branch, an object by the host alone,
+and a value is let go by its keeper too). Keeping takes nothing from anyone: it
 is anyone's who is listed the row. Letting a value go is not undone --
 the next save leaves it out of the file, and what a save leaves out is
 gone (13.3). So a value kept by itself is let go by the host, or by one
@@ -19610,6 +19613,83 @@ edit left; a value not kept, or of another object, refused.
 `scripts/transaction-log-shapediff-check.py` (133): a keep from Python is
 counted in the tab not shown, and let go with it shown, with no refresh
 asked. `web/src/widgets/gate.ts` (263, +2): what is left out.
+
+### 32.29 Who keeps, and a branch made where two join: ruled (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "32.27. rule 1, only host can keep
+object, other with write access can keep value. rule 2. record who other
+than host kept value, and allow them to let go. btw, I presume current
+log panel can list all kept values/objects? rule 3, answered by rule 1.
+32.25 (b)" -- after the choices 32.27 and 32.25 made in the building were
+laid out with their alternatives: who keeps (1), who lets a value go (2),
+who stops an object's being kept (3), and a branch one of two who join a
+served document makes ((a) its maker's, as built; (b) written by all who
+joined, deleted by its maker; (c) the access of the branch it was made
+from; (d) **Branch...** not switching a shared document).
+
+**Keeping.** What is kept grows the file every save writes; an object
+kept grows it with every recompute from then on. So:
+
+- a value is kept by the host, and by one who writes the branch of the
+  row, since the point -- `Reach::row`, as for a row a document is moved
+  from (`keepWhy`). One who only reads keeps nothing, and is told why;
+- every value of an object is kept, and no longer, by the host alone
+  (`log.keepObject`, both ways) -- which answers who stops it too.
+
+**Who kept it.** `keepvalue` has `kind` and `name`: who kept a value, as
+the log names a user (`LogKept`; the last two of
+`Document::keepLogValue`), empty for the host. A value kept again stays
+as it was kept -- its row, its keeper -- but for the host's keep, which
+makes it the host's: a client's keep takes over neither the host's nor
+another client's. A value is let go by its keeper, beside the host and
+one who writes the branch of the row it was kept at since the point;
+the keeper still may where that row is gone, and where its write has
+been taken back since. The column is added in place, as is
+`branch.joined` below: no release has the store (27.55).
+
+**Said.** `log.kept` says of a value a client kept `keeper`,
+`keeperKind`, and `mine` where it is the asker's; of a value under an
+object `keep` and `keepWhy`, whether the asker may keep it by itself; and
+`keepObject`, which only the host may. `log.ops` says of the row `keep`,
+`keepWhy` and `keepObject`. `getKeptTransactionValues()` gives `kind` and
+`name` of a value a client kept. The page's Kept list says "by you" or
+"by <name>"; **Keep**, **Keep all of it**, **Keep by itself** and **Keep
+selected here** are greyed with the reason where they are not the
+asker's. The desktop's Kept tab says "one value, by <name>".
+
+**What the panel lists** -- the question asked with the ruling. The
+desktop's Kept tab lists every value kept by itself and every object
+kept, with its values, whoever kept them: it is the host's. The page
+lists the same to the host's connection; to a client, what it is listed
+of the rows (32.27) -- a value whose row it is listed, or whose row is
+gone and whose object is in the document; an object in the document.
+
+**A branch made where two join** (32.25, (b)). A branch a client makes in
+a document opened from a branch to be served is written by everyone who
+joins that document, from its fork; only its maker, or the host,
+deletes it. `LogBranch::joined` (`branch.joined`) is the branch that
+document was opened on, set as the branch is made; `reachOf` gives each
+who joins that document write of every branch so marked, where nothing
+else is said of them. So one joiner's **Branch...** no longer leaves the
+other on a branch it only reads: it moves the document from there as the
+maker does. The host's own branches are as they were. Another joiner's
+delete is refused with "another who joined made that branch: its maker,
+or the host, deletes it". `getTransactionBranches()` gives `joined`.
+
+**Tests.** `tests/gui/serve-log-kept.py` (45, +8): the row says A, who
+reads, keeps nothing, and A is refused a value and an object; what the
+host keeps is listed to A with no keeper; a value under the box not A's
+to keep by itself; given to write, A is told it keeps at the row, keeps a
+value listed as its own and said so on the host, and is still refused an
+object; the host's keep makes it the host's; A's value and the host's,
+A's write taken back and their rows trimmed: A lets go of its own and is
+refused the host's. `tests/gui/serve-log-acts.py` (+1): D, who joins the
+document C made branches in, writes them, switches the document from
+one and back, and is refused deleting it. `tests/gui/serve-log-acts-
+browser.py`: **Keep all of it** greyed for the page's user, with the
+host's reason; the value it kept listed "by you". `web/src/widgets/
+gate.ts` (266, +3): the keeper said, a value under an object keepable or
+not, keeping at a version.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
