@@ -30,6 +30,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QMessageBox>
+#include <QThread>
 
 #include <Inventor/SbString.h>
 #endif
@@ -160,6 +161,37 @@ Sketcher::SketchObject* getSketchObject()
 
 // Copy
 
+// On Windows a program that watches the clipboard (a clipboard manager, a
+// cloud drive) opens it after every change to read it, and what Qt put there
+// is only rendered when asked for -- by this thread. Busy building the copy,
+// the thread did not answer, the reader held the clipboard open waiting for
+// it, and the write found it open: Qt retries three times, then drops it with
+// only a warning. So the copy was lost without a word, the next paste did
+// nothing, and a cut deleted what it had not copied. Between tries the
+// reader's request is answered (posted events, no user input). Only there
+// does owning the clipboard say that the write took: elsewhere it is not
+// checked.
+static bool setClipboardText(const QString& text)
+{
+    QClipboard* clipboard = QGuiApplication::clipboard();
+#ifdef Q_OS_WIN
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        if (attempt > 0) {
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+            QThread::msleep(20);
+        }
+        clipboard->setText(text);
+        if (clipboard->ownsClipboard()) {
+            return true;
+        }
+    }
+    return false;
+#else
+    clipboard->setText(text);
+    return true;
+#endif
+}
+
 bool copySelectionToClipboard(Sketcher::SketchObject* obj) {
     std::vector<int> listOfGeoId = getListOfSelectedGeoIds(true);
     if (listOfGeoId.empty()) { return false; }
@@ -253,12 +285,13 @@ bool copySelectionToClipboard(Sketcher::SketchObject* obj) {
     std::string exportedData = "# Copied from sketcher. From:\n#objectStr = " + Gui::Command::getObjectCmd(obj) + "\n"
         + geosAsStr + "\n" + cstrAsStr;
 
-    if (!exportedData.empty()) {
-        QClipboard* clipboard = QGuiApplication::clipboard();
-        clipboard->setText(QString::fromStdString(exportedData));
-        return true;
+    if (!setClipboardText(QString::fromStdString(exportedData))) {
+        Gui::TranslatedUserError(obj,
+            QObject::tr("Copy failed"),
+            QObject::tr("The clipboard is in use by another program. Try again."));
+        return false;
     }
-    return false;
+    return true;
 }
 
 DEF_STD_CMD_A(CmdSketcherCopyClipboard)

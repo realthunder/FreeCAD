@@ -55,6 +55,13 @@ def settle():
         QtWidgets.QApplication.processEvents()
 
 
+def idle(seconds):
+    """Run the event loop for a while."""
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(int(seconds * 1000), loop.quit)
+    loop.exec()
+
+
 def round_trip():
     import Part
     import Sketcher
@@ -115,6 +122,10 @@ def copy_time(count):
     FreeCADGui.runCommand("Sketcher_CopyClipboard", 0)  # warm
     best = None
     for _ in range(3):
+        # A program watching the clipboard (Windows) reads each copy, and
+        # holds the clipboard open until this thread answers it: the next
+        # copy then waits for it, and that wait is not the copy's cost
+        idle(0.5)
         start = time.perf_counter()
         FreeCADGui.runCommand("Sketcher_CopyClipboard", 0)
         took = time.perf_counter() - start

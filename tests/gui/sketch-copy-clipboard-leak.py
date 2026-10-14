@@ -53,6 +53,27 @@ def settle():
 
 
 def resident_mb():
+    if os.name == "nt":
+        # The working set: what /proc/self/statm calls resident
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+                (name, ctypes.c_size_t) for name in (
+                    "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                    "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage",
+                    "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage")]
+
+        counters = Counters()
+        counters.cb = ctypes.sizeof(counters)
+        process = ctypes.windll.kernel32.GetCurrentProcess
+        process.restype = wintypes.HANDLE
+        info = ctypes.windll.psapi.GetProcessMemoryInfo
+        info.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        if not info(process(), ctypes.byref(counters), counters.cb):
+            raise ctypes.WinError()
+        return counters.WorkingSetSize / (1024.0 * 1024.0)
     with open("/proc/self/statm") as f:
         pages = int(f.read().split()[1])
     return pages * os.sysconf("SC_PAGE_SIZE") / (1024.0 * 1024.0)
