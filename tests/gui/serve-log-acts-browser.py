@@ -44,10 +44,11 @@ Chrome do it through scripts/logacts-drive.js. Asserted:
   - a merge the page's user asked for and made, undone on its socket, is
     rolled back from the card: the button is offered, asks, and the merge
     and its undoing leave the log while the box stays as it was (sec 32.26);
-  - a value is kept in the file from its op, which then says so, the tab
-    counts it and the host keeps it; it is listed with its object and
-    property, its text read, and let go from there by the page's user, who
-    writes the branch (sec 32.27);
+  - a value is kept in the file from its op by the page's user, who writes
+    the branch -- every value of its object is the host's to keep -- and
+    the op then says so, the tab counts it and the host keeps it; it is
+    listed with its object and property as the page's user's, its text
+    read, and let go from there (sec 32.27);
   - none of it moved the document the branch was served from.
 
 Needs the built viewer (build/wasm/fcviewer.html; `ninja -C build/wasm`),
@@ -568,9 +569,10 @@ def verify():
               and out.get("pickerGone") is True and picked.get("box", (0, 0, 0))[2] == 50,
               (out.get("pickerSaid"), picked.get("box")))
         ks = out.get("keepSays") or [{}, {}]
-        check("an op's value is offered to be kept, and every value of its object",
+        check("an op's value is offered to be kept; every value of its object is the host's",
               out.get("keepOp") is True and ks[0].get("text") == "Keep"
-              and ks[0].get("disabled") is False and ks[1].get("text") == "Keep all of it",
+              and ks[0].get("disabled") is False and ks[1].get("text") == "Keep all of it"
+              and ks[1].get("disabled") is True and "host keeps" in ks[1].get("title", ""),
               ks)
         check("kept from the card: said, the op says so, the tab counts it, the host keeps it",
               out.get("keepAsked") is True and said(out.get("keepSaid"), "kept: a save writes")
@@ -579,9 +581,11 @@ def verify():
               (out.get("keepSaid"), out.get("keptTab"), s.get("kept", {}).get("kept")))
         lines = out.get("keptLines") or [{}]
         ka = out.get("keptActs") or [{}, {}]
-        check("listed with its object and property, its text read, the page's user's to let go",
+        check("listed with its object and property as the page's user's, its text read, "
+              "theirs to let go",
               len(lines) == 1 and lines[0].get("kind") == "value"
               and lines[0].get("cells", [])[1:3] == ["Box", "Shape"]
+              and "by you" in lines[0].get("cells", [""])[0]
               and out.get("keptValueShown") is True and ka[0].get("disabled") is False
               and (ka[1].get("text") or "").startswith("Show row"),
               (lines, ka))

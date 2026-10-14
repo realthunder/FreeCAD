@@ -1,5 +1,6 @@
 """Clients of a served document keep in its file the values a recompute
-wrote, and let them go -- each within what it may of the branch.
+wrote, and let them go -- each within what it may of the branch, and what
+it kept.
 
 docs/TransactionLog.md sec 32.27, the fourth stage of the log's panel in a
 browser. A value a recompute wrote -- a shape -- is left out of the history
@@ -11,30 +12,38 @@ a save writes unless a kept version reaches it; one kept is written
   log.keepObject  every value of an object kept, or no longer
   log.release     a value kept by itself let go, by its ref
 
-Keeping takes nothing, and is anyone's who is listed the row. Letting a
-value go is the host's, and of one who writes the branch of the row it was
-kept at; one whose row is gone, the host's. Stopping an object's being kept
-lets its values go on every branch: the host's.
+What is kept grows the file every save writes (ruled 2026-10-14): a value
+is kept by the host, and by one who writes the branch of the row, since the
+point -- said to be its keeper; every value of an object, and no longer, by
+the host alone. Letting a value go is the host's, its keeper's, and of one
+who writes the branch of the row it was kept at; one whose row is gone, the
+host's or its keeper's.
 
 A document served with no window. Client A may edit, and reads the branch
 the document is on; client B came by a link that may only look; client H
 is the host. Asserted:
 
-  - nothing is kept at first; an op says nothing of being kept;
-  - A keeps the cut's shape at a row: one value; its op then says so, the
-    host's document lists it, and A is told why it may not let it go --
-    and is refused letting it go both ways;
-  - A keeps every value of the box: listed with each value the log has of
-    it; a second time changes nothing; A may not stop it;
-  - A keeps the two objects as they are at the first row, as a version's
-    "the selected objects" does; an object, a row or a ref there is none
-    of is said so;
-  - H's keep is told to A (`log.changed`);
-  - H lets go of the value by its ref, stops keeping the box, and lets go
-    of the two objects at the first row: nothing is kept;
-  - given to write the branch, A lets go of a value it kept;
-  - a value kept whose row a trim took is listed to A as gone, and is the
-    host's to let go: A is refused, H lets it go;
+  - nothing is kept at first; an op says nothing of being kept, and its
+    row that A keeps nothing there, and why;
+  - A, who reads, is refused keeping a value and an object;
+  - H keeps the cut's shape at a row: one value; its op then says so, it
+    is listed to A with no keeper, the host's document lists it, and A is
+    told why it may not let it go -- and is refused letting it go both
+    ways;
+  - A shows the kept value over the cut; a value not kept is none to show;
+  - H keeps every value of the box: listed to A with each value the log
+    has of it; a second time changes nothing; A may not stop it;
+  - H keeps the two objects as they are at the first row, as a version's
+    "the selected objects" does: not A's to let go, nor to keep by itself;
+    an object, a row or a ref there is none of is said so;
+  - H's acts are told to A (`log.changed`); H lets go of the value by its
+    ref, stops keeping the box, and lets go of the two at the first row;
+  - given to write the branch, A is told it keeps at the row, keeps a
+    value, listed as its own and said so on the host -- an object still
+    not; H keeping it too makes it the host's; A, who writes, lets it go;
+  - A keeps a value and H another, A's write is taken back, and a trim
+    takes their rows: A lets go of its own, as its keeper, and is refused
+    the host's, which H lets go;
   - B is refused all four.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
@@ -124,6 +133,13 @@ def kept_on_host():
             "objects": list(doc.getKeptTransactionObjects())}
 
 
+def kept_by_on_host():
+    """Who kept each value kept by itself: (ref, kind, name), none for the host."""
+    doc = FreeCAD.getDocument(DOC)
+    return [(k["ref"], k.get("kind", ""), k.get("name", ""))
+            for k in doc.getKeptTransactionValues()]
+
+
 def ids():
     doc = FreeCAD.getDocument(DOC)
     return {name: doc.getObject(name).ID for name in ("Box", "Cut")}
@@ -145,6 +161,11 @@ def grant_write():
     doc = FreeCAD.getDocument(DOC)
     doc.setTransactionAccess("verified", wsclient.IDENTITY, "main", True)
     return [(a["name"], a["branch"], a["write"]) for a in doc.getTransactionAccess()]
+
+
+def revoke_write():
+    doc = FreeCAD.getDocument(DOC)
+    return doc.clearTransactionAccess("verified", wsclient.IDENTITY, "main")
 
 
 def save_and_trim():
@@ -229,8 +250,11 @@ class Client(threading.Thread):
         got["kept0"] = self.do(ws, "log.kept")
         got["ops0"] = self.do(ws, "log.ops", row=taller)
 
-        # A keeps the cut's shape at a row, and cannot let it go
-        got["keep"] = self.do(ws, "log.keep", obj="Cut", prop="Shape", row=taller)
+        # A reads the branch: it keeps nothing (ruled 2026-10-14); the host
+        # keeps the cut's shape at a row, and A cannot let it go
+        got["keep_a"] = self.do(ws, "log.keep", obj="Cut", prop="Shape", row=taller)
+        got["keepobj_a"] = self.do(ws, "log.keepObject", obj="Box")
+        got["keep"] = self.do(hs, "log.keep", obj="Cut", prop="Shape", row=taller)
         got["ops1"] = self.do(ws, "log.ops", row=taller)
         got["kept1"] = self.do(ws, "log.kept")
         got["host1"] = on_host(kept_on_host)
@@ -251,15 +275,15 @@ class Client(threading.Thread):
         got["show_none"] = self.do(ws, "edit", obj="Cut", mode=MODE, kept="0" * 40)
         got["show_other"] = self.do(ws, "edit", obj="Box", mode=MODE, kept=ref)
 
-        # Every value of the box; twice; not A's to stop
-        got["keepobj"] = self.do(ws, "log.keepObject", obj="Box")
-        got["keepobj2"] = self.do(ws, "log.keepObject", obj="Box")
+        # Every value of the box: the host's; twice; not A's to stop
+        got["keepobj"] = self.do(hs, "log.keepObject", obj="Box")
+        got["keepobj2"] = self.do(hs, "log.keepObject", obj="Box")
         got["kept2"] = self.do(ws, "log.kept")
         got["ops2"] = self.do(ws, "log.ops", row=taller)
         got["stopobj_a"] = self.do(ws, "log.keepObject", obj="Box", keep=False)
 
         # The two as they are at the first row, as a version's menu does
-        got["keepsel"] = self.do(ws, "log.keep", objects=["Box", "Cut"], row=base)
+        got["keepsel"] = self.do(hs, "log.keep", objects=["Box", "Cut"], row=base)
         got["kept3"] = self.do(ws, "log.kept")
         got["unknown_obj"] = self.do(ws, "log.keep", objects=["Box", "Nothing"], row=base)
         got["unknown_obj1"] = self.do(ws, "log.keep", obj="Nothing", row=base)
@@ -276,20 +300,34 @@ class Client(threading.Thread):
         got["host2"] = on_host(kept_on_host)
         got["kept4"] = self.do(ws, "log.kept")
 
-        # Given to write the branch, A lets go of what it kept
+        # Given to write the branch, A keeps a value, said to be its own --
+        # an object's every value still not
         got["granted"] = on_host(grant_write)
+        got["ops5"] = self.do(ws, "log.ops", row=taller)
         got["keep_w"] = self.do(ws, "log.keep", obj="Cut", prop="Shape", row=taller)
         got["kept5"] = self.do(ws, "log.kept")
+        got["host5"] = on_host(kept_by_on_host)
+        got["keepobj_w"] = self.do(ws, "log.keepObject", obj="Box")
+        # The host keeps it too: the host's then; A writes, and lets it go
+        got["keep_wh"] = self.do(hs, "log.keep", obj="Cut", prop="Shape", row=taller)
+        got["kept5h"] = self.do(ws, "log.kept")
         got["letgo_w"] = self.do(ws, "log.keep", obj="Cut", prop="Shape", row=taller,
                                  keep=False)
         got["host3"] = on_host(kept_on_host)
 
-        # A value past its row: listed as gone, the host's to let go
+        # Its keeper lets go of what it kept though it writes no more and the
+        # row is gone; what the host kept there it does not
         got["keep_t"] = self.do(ws, "log.keep", obj="Cut", prop="Shape", row=taller)
+        got["keep_th"] = self.do(hs, "log.keep", obj="Cut", prop="Shape", row=base)
+        got["revoked"] = on_host(revoke_write)
         got["trim"] = on_host(save_and_trim)
         got["kept6"] = self.do(ws, "log.kept")
+        hosts = [v["ref"] for v in (got["kept6"] or {}).get("values", [])
+                 if v.get("seq") == base]
+        got["ref_h"] = hosts[0] if hosts else ""
         got["release_t_a"] = self.do(ws, "log.release", ref=ref)
-        got["release_t_h"] = self.do(hs, "log.release", ref=ref)
+        got["release_th_a"] = self.do(ws, "log.release", ref=got["ref_h"])
+        got["release_th_h"] = self.do(hs, "log.release", ref=got["ref_h"])
         got["host4"] = on_host(kept_on_host)
 
         # One who may only look
@@ -364,24 +402,33 @@ def check_all(got):
 
     k0 = got.get("kept0") or {}
     check("nothing is kept at first",
-          ok(k0) and k0.get("count") == 0 and k0.get("values") == [] and k0.get("objects") == [],
-          k0)
-    cut0 = op_of(got.get("ops0"), "Cut")
+          ok(k0) and k0.get("count") == 0 and k0.get("values") == [] and k0.get("objects") == []
+          and k0.get("keepObject") is False, k0)
+    o0 = got.get("ops0") or {}
+    cut0 = op_of(o0, "Cut")
     check("the cut's shape op says nothing of being kept",
           cut0.get("derived") is True and "keptValue" not in cut0 and "keptObject" not in cut0,
           cut0)
+    check("and the row says A keeps nothing there, and why",
+          o0.get("keep") is False and "write" in (o0.get("keepWhy") or "")
+          and o0.get("keepObject") is False, o0)
+    check("A, who reads the branch, is refused keeping a value, and an object",
+          code(got.get("keep_a")) == "Forbidden" and "write" in str(got.get("keep_a"))
+          and code(got.get("keepobj_a")) == "Forbidden"
+          and "host keeps" in str(got.get("keepobj_a")),
+          (got.get("keep_a"), got.get("keepobj_a")))
 
     keep = got.get("keep") or {}
-    check("A keeps the cut's shape at a row: one value",
+    check("the host keeps the cut's shape at a row: one value",
           ok(keep) and keep.get("values") == 1 and keep.get("row") == taller, keep)
     cut1 = op_of(got.get("ops1"), "Cut")
     check("its op then says it is kept", cut1.get("keptValue") is True, cut1)
     k1 = got.get("kept1") or {}
     v1 = (k1.get("values") or [{}])[0]
-    check("it is listed: the object, the property, the row",
+    check("it is listed to A: the object, the property, the row, and no keeper",
           k1.get("count") == 1 and v1.get("obj") == "Cut" and v1.get("prop") == "Shape"
           and v1.get("seq") == taller and v1.get("row") is True and v1.get("here") is True
-          and v1.get("ref") == cut1.get("after"), k1)
+          and v1.get("ref") == cut1.get("after") and "keeper" not in v1, k1)
     check("and A is told it may not let it go, and why",
           v1.get("release") is False and "write" in (v1.get("why") or ""), v1)
     check("the host's document keeps it", (got.get("host1") or {}).get("values") == [v1.get("ref")],
@@ -407,12 +454,12 @@ def check_all(got):
           (got.get("show_none"), got.get("show_other")))
 
     ko, ko2 = got.get("keepobj") or {}, got.get("keepobj2") or {}
-    check("A keeps every value of the box; a second time changes nothing",
+    check("the host keeps every value of the box; a second time changes nothing",
           ok(ko) and ko.get("changed") is True and ko.get("cid") == ids_.get("Box")
           and ok(ko2) and ko2.get("changed") is False, (ko, ko2))
     k2 = got.get("kept2") or {}
     o2 = (k2.get("objects") or [{}])[0]
-    check("the box is listed with each value the log has of it",
+    check("the box is listed to A with each value the log has of it",
           k2.get("count") == 2 and o2.get("obj") == "Box" and o2.get("cid") == ids_.get("Box")
           and len(o2.get("values") or []) >= 3
           and all(v.get("prop") for v in o2.get("values") or []), k2)
@@ -423,7 +470,7 @@ def check_all(got):
           got.get("stopobj_a"))
 
     ks = got.get("keepsel") or {}
-    check("A keeps the two objects as they are at the first row",
+    check("the host keeps the two objects as they are at the first row",
           ok(ks) and ks.get("values", 0) >= 2, ks)
     k3 = got.get("kept3") or {}
     seqs = sorted(v.get("seq") for v in k3.get("values") or [])
@@ -434,6 +481,11 @@ def check_all(got):
     check("under the box, its value at that row is kept by itself too, not A's to let go",
           len(under) == 1 and under[0].get("alone") is True and under[0].get("release") is False
           and "write" in (under[0].get("why") or ""), under)
+    others = [v for v in ((k3.get("objects") or [{}])[0].get("values") or [])
+              if not v.get("alone")]
+    check("and a value not kept by itself is not A's to keep so",
+          others and all(v.get("keep") is False and "write" in (v.get("keepWhy") or "")
+                         for v in others), others)
     check("an object, a row or a ref there is none of is said so",
           code(got.get("unknown_obj")) == "UnknownObject"
           and code(got.get("unknown_obj1")) == "UnknownObject"
@@ -456,26 +508,46 @@ def check_all(got):
     check("A is given to write the branch",
           (wsclient.IDENTITY, "main", True) in [tuple(a) for a in got.get("granted") or []],
           got.get("granted"))
+    o5 = got.get("ops5") or {}
+    check("and the row says it keeps there now, though not every value of an object",
+          o5.get("keep") is True and "keepWhy" not in o5 and o5.get("keepObject") is False, o5)
     v5 = ((got.get("kept5") or {}).get("values") or [{}])[0]
-    check("and may let go of what it keeps", ok(got.get("keep_w")) and v5.get("release") is True,
-          v5)
+    check("A keeps the value, and it is listed as A's own",
+          ok(got.get("keep_w")) and v5.get("release") is True and v5.get("mine") is True
+          and v5.get("keeper") == wsclient.IDENTITY and v5.get("keeperKind") == "verified", v5)
+    check("the host's document says who kept it",
+          got.get("host5") == [(v5.get("ref"), "verified", wsclient.IDENTITY)],
+          got.get("host5"))
+    check("an object's every value is still the host's to keep",
+          code(got.get("keepobj_w")) == "Forbidden", got.get("keepobj_w"))
+    v5h = ((got.get("kept5h") or {}).get("values") or [{}])[0]
+    check("the host keeping it too makes it the host's",
+          ok(got.get("keep_wh")) and v5h.get("ref") == v5.get("ref") and "keeper" not in v5h
+          and v5h.get("release") is True, v5h)
     lw = got.get("letgo_w") or {}
-    check("and does", ok(lw) and lw.get("values") == 1
+    check("and A, who writes the branch, lets it go",
+          ok(lw) and lw.get("values") == 1
           and (got.get("host3") or {}).get("values") == [], (lw, got.get("host3")))
 
     trim = got.get("trim") or {}
-    check("kept, saved, and its row trimmed away",
-          ok(got.get("keep_t")) and trim.get("trimmed", 0) > 0
-          and "taller" not in (trim.get("rows") or []), trim)
-    v6 = ((got.get("kept6") or {}).get("values") or [{}])[0]
-    check("it is listed to A as gone, the host's to let go",
-          v6.get("ref") == got.get("ref") and v6.get("row") is False
-          and v6.get("release") is False and "host" in (v6.get("why") or ""), v6)
-    check("A is refused letting it go", code(got.get("release_t_a")) == "Forbidden",
-          got.get("release_t_a"))
-    check("the host lets it go", ok(got.get("release_t_h"))
+    check("kept by A and by the host, A's write taken back, saved, the rows trimmed away",
+          ok(got.get("keep_t")) and ok(got.get("keep_th")) and got.get("revoked") is True
+          and trim.get("trimmed", 0) > 0 and "taller" not in (trim.get("rows") or []),
+          (trim, got.get("revoked")))
+    k6 = {v.get("ref"): v for v in (got.get("kept6") or {}).get("values") or []}
+    mine, hosts = k6.get(got.get("ref")) or {}, k6.get(got.get("ref_h")) or {}
+    check("A's is listed as gone, and A's to let go",
+          mine.get("row") is False and mine.get("mine") is True and mine.get("release") is True,
+          mine)
+    check("the host's is listed as gone, the host's to let go",
+          hosts.get("row") is False and "keeper" not in hosts and hosts.get("release") is False
+          and "host" in (hosts.get("why") or ""), hosts)
+    check("A lets go of its own, and is refused the host's",
+          ok(got.get("release_t_a")) and code(got.get("release_th_a")) == "Forbidden",
+          (got.get("release_t_a"), got.get("release_th_a")))
+    check("the host lets go of its own", ok(got.get("release_th_h"))
           and (got.get("host4") or {}).get("values") == [],
-          (got.get("release_t_h"), got.get("host4")))
+          (got.get("release_th_h"), got.get("host4")))
 
     check("B is refused all four",
           all(code(got.get("b:" + op)) == "ViewOnly" for op in ACTS),

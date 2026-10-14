@@ -77,6 +77,9 @@ Of the document served from a branch:
     branches from the serving point itself, restores its own version,
     renames and deletes a branch of its own making -- but not the one it
     was given -- and takes back a row of its own;
+  - D, who joins the same document, writes the branches C made there and
+    moves the document from them, but does not delete them (ruled
+    2026-10-14);
   - none of it moved the first document;
   - C asks for its branch to be merged back, which is not C's to do; the
     host does it in the first document, which then has what C did.
@@ -620,11 +623,15 @@ class Client(threading.Thread):
         got["c_host_floor"] = on_host(host(name))
         got["c_branches_made"] = self.do(cs, "log.branches")
         got["c_said"] = on_host(said)
-        # Another who joins the branch's document: what C made is C's
+        # Another who joins the branch's document writes what C made there
+        # (ruled 2026-10-14), and moves the document from it; what C made is
+        # C's to delete
         ds = self.join("serve-log-acts-d", doc=name, identity=OTHER)
         got["d_branches"] = self.do(ds, "log.branches")
         got["d_delete"] = self.do(ds, "log.deleteBranch", name="c-try")
         got["d_switch"] = self.do(ds, "log.switch", name="for-ann")
+        got["d_host_switch"] = on_host(host(name))
+        got["d_switch_back"] = self.do(ds, "log.switch", name="c-root")
         got["d_host"] = on_host(host(name))
         ds.close()
         got["c_restore"] = self.do(cs, "log.restore", version=vc)
@@ -1202,17 +1209,23 @@ def verify_own(got):
           ("verified", wsclient.IDENTITY, "c-root", True, True) in c_said
           and ("verified", wsclient.IDENTITY, "c-try", True, True) in c_said
           and not any(s[2] == "for-ann" for s in c_said), c_said)
-    check("another who joins the document writes the branch that was served, and reads the "
-          "one the document is on: what C made is not its own, to list, delete or leave",
+    check("another who joins the document writes the branch that was served, and those C "
+          "made there, which are not its own",
           theirs.get("for-ann", {}).get("write") is True
           and theirs["for-ann"].get("made") is False
           and theirs.get("c-root", {}).get("current") is True
-          and theirs["c-root"].get("write") is False and "c-try" not in theirs
-          and code(got.get("d_delete")) == "UnknownBranch"
-          and code(got.get("d_switch")) == "Forbidden"
-          and got.get("d_host", {}).get("branches") == cf.get("branches"),
-          ({n: (b.get("write"), b.get("made")) for n, b in theirs.items()},
-           got.get("d_delete"), got.get("d_switch")))
+          and theirs["c-root"].get("write") is True and theirs["c-root"].get("made") is False
+          and theirs.get("c-try", {}).get("write") is True
+          and theirs["c-try"].get("made") is False,
+          {n: (b.get("write"), b.get("made")) for n, b in theirs.items()})
+    ds_, dh = got.get("d_host_switch", {}), got.get("d_host", {})
+    check("it moves the document from one C made, and back; deleting it is C's",
+          ok(got.get("d_switch")) and ("for-ann", True) in ds_.get("branches", [])
+          and ok(got.get("d_switch_back")) and dh.get("branches") == cf.get("branches")
+          and code(got.get("d_delete")) == "Forbidden"
+          and "maker" in (got.get("d_delete") or {}).get("message", ""),
+          (got.get("d_switch"), ds_.get("branches"), got.get("d_switch_back"),
+           got.get("d_delete")))
     cr = got.get("c_host_restore", {})
     check("restores a version of its own",
           ok(got.get("c_restore")) and cr.get("box") == (14, 10, 25),
