@@ -150,12 +150,20 @@ public:
      * \a own and \a alpha are what a style sheet set on the view (its
      * overlayItemBackground and overlayAlpha properties): no brush and -1
      * where it set nothing, and then the settings answer -- the 3D view's
-     * background colour as the theme has it, the first colour of a
-     * gradient, at View/DockOverlayAlpha; or, with
-     * View/DockOverlayThemeItemColor off, the tree view's own item
-     * background colour as it is stored.
+     * background colour where the panel lies over it, at
+     * View/DockOverlayAlpha; or, with View/DockOverlayThemeItemColor off,
+     * the tree view's own item background colour as it is stored.
+     *
+     * Which colour of the 3D view's background, by its pattern and by the
+     * side the overlay of \a where is on (docs/HandsOnQueue.md entry 98, asked
+     * 2026-10-14): a radial gradient, its last colour, the rim's -- an
+     * overlay lies along an edge; a linear one, its first colour for an
+     * overlay at the top, the left or the right and its last for one at the
+     * bottom; one colour, that colour. A widget in no overlay, and none
+     * given, counts as not at the bottom.
      */
-    static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1);
+    static QBrush overlayItemBackground(const QBrush &own = QBrush(), int alpha = -1,
+                                        const QWidget *where = nullptr);
     /// View/DockOverlayAlpha, or \a alpha where a style sheet set one
     static int overlayAlpha(int alpha = -1);
     /** Paint \a ground behind the text of one block of a text view, line by
@@ -181,7 +189,8 @@ public:
      * view. Black on that dark was the "scrambled" text of the entry; the
      * setting off puts it back on its own white.
      */
-    static QBrush overlayTextGround(const QColor &own = QColor());
+    static QBrush overlayTextGround(const QColor &own = QColor(),
+                                    const QWidget *where = nullptr);
     /** The brush an item of an overlaid tree is backed with while the pointer
      * is on it (docs/HandsOnQueue.md entry 87): the theme's colour for that at
      * the opacity of the item backgrounds, as wide as those. No brush under

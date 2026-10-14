@@ -2310,10 +2310,10 @@ void OverlayManager::paintTextGround(QPainter &painter, const QTextBlock &block,
     }
 }
 
-QBrush OverlayManager::overlayTextGround(const QColor &own)
+QBrush OverlayManager::overlayTextGround(const QColor &own, const QWidget *where)
 {
     if (OverlayParams::getDockOverlayThemeItemColor())
-        return overlayItemBackground();
+        return overlayItemBackground(QBrush(), -1, where);
     // The view's own background. Not its palette's: an overlay's style sheet
     // has made that one transparent.
     QColor colour = own.isValid() ? own : QApplication::palette().color(QPalette::Base);
@@ -2321,7 +2321,18 @@ QBrush OverlayManager::overlayTextGround(const QColor &own)
     return QBrush(colour);
 }
 
-QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha)
+/// The side of the main window the overlay of \a widget is on;
+/// Qt::NoDockWidgetArea for a widget in no overlay
+static Qt::DockWidgetArea overlaySideOf(const QWidget *widget)
+{
+    for (const QWidget *w = widget; w; w = w->parentWidget()) {
+        if (auto tab = qobject_cast<const OverlayTabWidget*>(w))
+            return tab->getDockArea();
+    }
+    return Qt::NoDockWidgetArea;
+}
+
+QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha, const QWidget *where)
 {
     QBrush brush = own;
     if (brush.style() == Qt::NoBrush) {
@@ -2334,9 +2345,18 @@ QBrush OverlayManager::overlayItemBackground(const QBrush &own, int alpha)
             colour.setPackedValue(TreeParams::getItemBackground());
             return QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b, colour.a));
         }
-        colour.setPackedValue(ViewParams::getGradient() || ViewParams::getRadialGradient()
-                                  ? ViewParams::getBackgroundColor2()
-                                  : ViewParams::getBackgroundColor());
+        // The colour the 3D view has where the panel lies over it. A linear
+        // gradient runs from its first colour at the top to its last at the
+        // bottom; a radial one from its first at the centre to its last at
+        // the rim, and an overlay is along an edge. (Linear wins where both
+        // are on, as in the view.)
+        unsigned long packed = ViewParams::getBackgroundColor();
+        if (ViewParams::getGradient())
+            packed = overlaySideOf(where) == Qt::BottomDockWidgetArea
+                ? ViewParams::getBackgroundColor3() : ViewParams::getBackgroundColor2();
+        else if (ViewParams::getRadialGradient())
+            packed = ViewParams::getBackgroundColor3();
+        colour.setPackedValue(static_cast<uint32_t>(packed));
         brush = QBrush(QColor::fromRgbF(colour.r, colour.g, colour.b));
         alpha = overlayAlpha(alpha);
     }

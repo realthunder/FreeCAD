@@ -223,7 +223,7 @@ QBrush PropertyEditor::overlayRowBackground(const QModelIndex& index) const
         ++above;
     const bool alternate = above & 1;
     if (!alternate)
-        return OverlayManager::overlayItemBackground(_overlayItemBackground, _overlayAlpha);
+        return OverlayManager::overlayItemBackground(_overlayItemBackground, _overlayAlpha, this);
     QColor colour = palette().color(QPalette::AlternateBase);
     colour.setAlpha(OverlayManager::overlayAlpha(_overlayAlpha));
     return QBrush(colour);

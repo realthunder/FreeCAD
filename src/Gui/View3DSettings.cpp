@@ -42,8 +42,38 @@
 #include "SoFCSelectionAction.h"
 #include "View3DSettings.h"
 #include "View3DInventorViewer.h"
+#include "MainWindow.h"
+#include "OverlayWidgets.h"
+
+#include <QAbstractScrollArea>
+#include <QApplication>
+#include <QTimer>
 
 using namespace Gui;
+
+// The overlaid panels back their items with a colour of the 3D view's
+// background (OverlayManager::overlayItemBackground()): painted again when
+// its pattern or a colour of it changes -- once for a burst of changes, which
+// a view applying all its settings as it is made is.
+static void repaintOverlayItems()
+{
+    static bool pending = false;
+    if (pending)
+        return;
+    pending = true;
+    QTimer::singleShot(0, qApp, []() {
+        pending = false;
+        auto mw = getMainWindow();
+        if (!mw)
+            return;
+        const auto tabs = mw->findChildren<OverlayTabWidget*>();
+        for (auto tab : tabs) {
+            const auto areas = tab->findChildren<QAbstractScrollArea*>();
+            for (auto area : areas)
+                area->viewport()->update();
+        }
+    });
+}
 
 View3DSettings::View3DSettings(ParameterGrp::handle hGrp,
                                View3DInventorViewer* view)
@@ -272,6 +302,8 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
         for (auto _viewer : _viewers) {
             _viewer->setGradientBackground(background);
         }
+        // the overlaid panels back their items with a colour of it
+        repaintOverlayItems();
     }
     else if (strcmp(Reason,"ShowFPS") == 0) {
         for (auto _viewer : _viewers) {
@@ -448,6 +480,8 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
                                                     SbColor(r4, g4, b4));
             }
         }
+        // the overlaid panels back their items with a colour of it
+        repaintOverlayItems();
     }
 }
 

@@ -2076,7 +2076,7 @@ void TreeWidget::setOverlayAlpha(int alpha)
 
 QBrush TreeWidget::effectiveOverlayItemBackground() const
 {
-    return OverlayManager::overlayItemBackground(_overlayItemBackground, _overlayAlpha);
+    return OverlayManager::overlayItemBackground(_overlayItemBackground, _overlayAlpha, this);
 }
 
 int TreeWidget::iconHeight() const

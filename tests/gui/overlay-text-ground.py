@@ -1,6 +1,7 @@
 """In a see-through overlay the Python console and the report view back their
-text, line by line, with the ground the tree view gives its items -- and what
-stands on such a ground is not outlined.
+text, line by line, with the ground the tree view gives its items -- the 3D
+view's background colour where the overlay lies over it -- and the text is
+edged on that ground.
 
 docs/HandsOnQueue.md entry 98: "when in overlay transparent mode, add text
 background (same color for their widget background) for python console and
@@ -9,12 +10,23 @@ turn of text outline when having text background"; and as answered: behind
 the text only; the same background the tree's items use; these two panels;
 and where there is a background the outline is dropped, for a tree item too.
 
+And as asked 2026-10-14: "when 3d view background is radial, then auto item
+background (including python console and report view) color should select
+the 'End'. if gradiant is Linear, then when overlay dock in top or left or
+right, use 'Start' color. when docked bottom, use 'Stop' color. If no
+gradiant, just use the single color"; and "is it possible to draw text
+outline even with the background?" -- "the outline yes, gate it to the
+existing outline system".
+
 Claims, every dock overlaid and each overlay's transparent mode on, some
 lines written to the console and to the report view:
-  - the console's panel paints a ground at the overlay's opacity, in the
-    colour of the tree's item ground, over a good part of the rows its text
-    is on -- and nothing at all on a stretch below its last line;
-  - the same for the report view;
+  - the console's panel paints a ground at the overlay's opacity over a good
+    part of the rows its text is on -- and nothing at all on a stretch below
+    its last line. Its colour is the 3D view's background where the overlay
+    is: the pattern linear, the first colour for an overlay at the top, the
+    left or the right and the last for one at the bottom; radial, the last
+    colour; one colour, that colour;
+  - the same for the report view, and the tree's items follow the same rule;
   - with "Item background follows the theme" off (View/
     DockOverlayThemeItemColor) each of the two stands on its OWN background
     instead, at the same opacity: the console's colour where it has one
@@ -23,9 +35,10 @@ lines written to the console and to the report view:
     color setting. Follow tree item background color if enabled, else use
     its own widget background" -- the Classic theme keeps a black text in
     the console and gives the tree's items a dark ground);
-  - around the text on that ground there is no outline: no pixel of the
-    panel that is darker than the ground and more opaque than it, beyond a
-    handful (an outline laid a dark rim under the edge of every glyph).
+  - the text is edged on its ground: beside the letters the panel has
+    pixels more opaque than the ground -- the outline laid over the ground
+    and under the letters (it was dropped there once, when it was laid under
+    the whole ground).
 
 Runs with QT_QPA_PLATFORM=offscreen as well as on a screen; the pointer is not
 moved.
@@ -103,15 +116,26 @@ def through(tab, widget):
     return image.copy(QtCore.QRect(widget.mapTo(tab, QtCore.QPoint(0, 0)), widget.size()))
 
 
-def ground_colour():
-    """The ground the tree view gives its items: the colour most of its
-    pixels at the overlay's opacity have"""
-    tree = find("Gui::TreeWidget")
-    tab = overlay_of(tree) if tree is not None else None
-    if tab is None or not eye(tab, True):
-        return None
-    settle(800)
-    image = through(tab, tree.viewport())
+def rgb_of(packed):
+    return ((packed >> 24) & 255, (packed >> 16) & 255, (packed >> 8) & 255)
+
+
+def ground_for(tab):
+    """The colour of the 3D view's background where an overlay lies over it,
+    by the pattern and by the overlay's side (its name says the side)"""
+    one = rgb_of(VIEW.GetUnsigned("BackgroundColor", 0xEAE5DCFF))
+    first = rgb_of(VIEW.GetUnsigned("BackgroundColor2", 0x333365FF))
+    last = rgb_of(VIEW.GetUnsigned("BackgroundColor3", 0xABABC1FF))
+    if VIEW.GetBool("Gradient", True):
+        return last if tab.objectName() == "OverlayBottom" else first
+    if VIEW.GetBool("RadialGradient", False):
+        return last
+    return one
+
+
+def commonest_ground(tab, widget):
+    """The colour most pixels of a widget at the overlay's opacity have"""
+    image = through(tab, widget)
     alpha = VIEW.GetInt("DockOverlayAlpha", 180)
     seen = {}
     for y in range(0, image.height(), 2):
@@ -140,11 +164,8 @@ def look(name, edit, own=None):
     image.save(os.path.join(OUT, name.replace(" ", "-") + ".png"))
     alpha = VIEW.GetInt("DockOverlayAlpha", 180)
     if own is None:
-        want = ground_colour()
-        if not check("%s: the tree view beside it has items with a ground to compare with"
-                     % name, want is not None):
-            return
-        which = "in the item ground's colour"
+        want = ground_for(tab)
+        which = "in the 3D background's colour for an overlay at %s" % tab.objectName()[7:].lower()
     else:
         want = own
         which = "in its own background's colour"
@@ -164,8 +185,8 @@ def look(name, edit, own=None):
                 ground += 1
                 rows_with_ground.add(y)
                 last = y
-            elif a > alpha + 10 and sum(rgb) < sum(want) - 45 and a < 250:
-                # darker than the ground and more opaque: an outline's rim
+            elif a > alpha + 10 and a < 250:
+                # more opaque than the ground and not ink: the outline on it
                 rim += 1
     note("INFO %s: %dx%d, ground pixels %d on %d rows (the last at y %d), clear %d, rim %d; "
          "the ground wanted %s at %d" % (name, w, h, ground, len(rows_with_ground), last, clear,
@@ -179,8 +200,8 @@ def look(name, edit, own=None):
     if below:
         check("%s: below its last line nothing is painted" % name, max(below) == 0,
               "the most opaque %d" % max(below))
-    check("%s: no outline around the text on its ground" % name, rim <= ground // 200 + 10,
-          "%d rim pixels beside %d of ground" % (rim, ground))
+    check("%s: the text is edged on its ground" % name, rim >= 40,
+          "%d pixels of an outline beside %d of ground" % (rim, ground))
 
 
 def start():
@@ -219,6 +240,37 @@ def report_step():
         return
     look("the report view", report)
     mw().grab().save(os.path.join(OUT, "window.png"))
+
+
+def pattern_step():
+    """The ground follows the pattern of the 3D view's background, for the
+    text panels and for the tree's items alike"""
+    was = (VIEW.GetBool("Gradient", True), VIEW.GetBool("RadialGradient", False))
+    tree = find("Gui::TreeWidget")
+    console = find("Gui::PythonConsole")
+    panels = [("the tree", tree.viewport() if tree is not None else None),
+              ("the Python console", console.viewport() if console is not None else None)]
+    try:
+        for label, linear, radial in (("linear", True, False), ("radial", False, True),
+                                      ("one colour", False, False)):
+            VIEW.SetBool("Gradient", linear)
+            VIEW.SetBool("RadialGradient", radial)
+            settle(1200)
+            for name, widget in panels:
+                tab = overlay_of(widget) if widget is not None else None
+                if tab is None or not eye(tab, True):
+                    continue
+                settle(400)
+                got = commonest_ground(tab, widget)
+                want = ground_for(tab)
+                check("%s, the background %s: its ground is the colour for an overlay at %s"
+                      % (name, label, tab.objectName()[7:].lower()),
+                      got is not None and max(abs(got[i] - want[i]) for i in range(3)) <= 6,
+                      "%s for %s" % (got, want))
+    finally:
+        VIEW.SetBool("Gradient", was[0])
+        VIEW.SetBool("RadialGradient", was[1])
+        settle(800)
 
 
 def own_step():
@@ -263,5 +315,5 @@ def advance():
     QtCore.QTimer.singleShot(1000, advance)
 
 
-STEPS[:] = [start, console_step, report_step, own_step]
+STEPS[:] = [start, console_step, report_step, pattern_step, own_step]
 QtCore.QTimer.singleShot(3000, advance)
