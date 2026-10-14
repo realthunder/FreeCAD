@@ -31,6 +31,7 @@
 # include <QJsonArray>
 # include <QJsonDocument>
 # include <QJsonObject>
+# include <QRegularExpression>
 # include <QTimer>
 #endif
 
@@ -67,6 +68,8 @@ constexpr int kRowsMost = 500;
 /// The ops of one row that are sent: a recompute of a large document sets
 /// thousands of properties, and a page lists none of that at once
 constexpr int kOpsMost = 2000;
+/// A value of a merge's preview, as text, at most so long
+constexpr int kChangeText = 160;
 /// How much of a value's text is sent: a shape is megabytes of it
 constexpr int kValueDefault = 64 * 1024;
 constexpr int kValueMost = 1024 * 1024;
@@ -1248,11 +1251,72 @@ QJsonObject conflictsReply(const QJsonValue& id, size_t count)
     return reply;
 }
 
+/// The side picked for each conflict, by its key (MergeChange::key): `ours`
+/// or `theirs`. A key with `ours` of a change that asks nothing leaves it
+/// out (Document::pickRows)
+std::map<std::string, std::string> picksOf(const QJsonObject& req)
+{
+    std::map<std::string, std::string> picks;
+    const QJsonObject said = req.value(QLatin1String("picks")).toObject();
+    for (auto it = said.begin(); it != said.end(); ++it) {
+        const QString side = it.value().toString();
+        if (side == QLatin1String("ours") || side == QLatin1String("theirs"))
+            picks[it.key().toStdString()] = side.toStdString();
+    }
+    return picks;
+}
+
+/// The conflicts of a preview no side is picked for
+size_t unpicked(const App::Document::MergePreview& preview,
+                const std::map<std::string, std::string>& picks)
+{
+    size_t count = 0;
+    for (const auto& c : preview.changes) {
+        if (c.kind == "conflict" && !picks.count(c.key))
+            ++count;
+    }
+    return count;
+}
+
+/** The rows an apply, or its preview, names: of a branch the asker reads,
+ * and not of this branch's history. False with the refusal.
+ */
+bool rowsToApply(const QJsonObject& req, App::TransactionLog* log, const Reach& reach,
+                 std::vector<int64_t>& rows, QJsonObject& refusal)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    for (const QJsonValue& value : req.value(QLatin1String("rows")).toArray()) {
+        if (value.isDouble() && value.toInteger(0) > 0)
+            rows.push_back(value.toInteger(0));
+    }
+    if (rows.empty()) {
+        refusal = sceneControlError(id, "BadRequest", QStringLiteral("no rows"));
+        return false;
+    }
+    App::TransactionStore& store = log->store();
+    const std::set<int64_t> history = historyOf(log);
+    for (int64_t row : rows) {
+        const auto read = store.transactions(row, 1);
+        // A row of a branch the asker does not read is none to it
+        if (read.empty() || read.front().seq != row || !reach.sees(read.front())) {
+            refusal = sceneControlError(id, "UnknownRow", QString::number(row));
+            return false;
+        }
+        if (history.count(row)) {
+            refusal = sceneControlError(
+                id, "Here", QStringLiteral("row %1 is of this branch's history already").arg(row));
+            return false;
+        }
+    }
+    return true;
+}
+
 /** `log.apply`: rows of a branch the asker reads, applied to the branch the
  * document is on as a step of its own (sec 31.12) -- the asker's, as any
  * edit of the document is. Where what they set meets what was set here
- * since, each needs a side: `fallback` says one for them all, and without
- * it the op is refused with how many (`Conflicts`).
+ * since, each needs a side: `picks` says one for each, by its key
+ * (`log.preview` lists them), `fallback` one for the rest, and without
+ * them the op is refused with how many (`Conflicts`).
  */
 QJsonObject applyRowsOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
 {
@@ -1262,38 +1326,23 @@ QJsonObject applyRowsOp(const QJsonObject& req, const std::string& boundDoc, uin
     App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
     if (!log)
         return refusal;
-    std::vector<int64_t> rows;
-    for (const QJsonValue& value : req.value(QLatin1String("rows")).toArray()) {
-        if (value.isDouble() && value.toInteger(0) > 0)
-            rows.push_back(value.toInteger(0));
-    }
-    if (rows.empty())
-        return sceneControlError(id, "BadRequest", QStringLiteral("no rows"));
     try {
-        App::TransactionStore& store = log->store();
-        const std::set<int64_t> history = historyOf(log);
         const Reach reach = reachOf(doc, log);
-        for (int64_t row : rows) {
-            const auto read = store.transactions(row, 1);
-            // A row of a branch the asker does not read is none to it
-            if (read.empty() || read.front().seq != row || !reach.sees(read.front()))
-                return sceneControlError(id, "UnknownRow", QString::number(row));
-            if (history.count(row))
-                return sceneControlError(
-                    id, "Here",
-                    QStringLiteral("row %1 is of this branch's history already").arg(row));
-        }
+        std::vector<int64_t> rows;
+        if (!rowsToApply(req, log, reach, rows, refusal))
+            return refusal;
         // Asked of the preview first, which changes nothing: the apply
         // itself, before it finds a conflict with no side, takes out a
         // merge that was undone (sec 31.21) -- and what is refused moves
         // nothing
         const std::string fallback = fallbackOf(req);
+        const auto picks = picksOf(req);
         if (fallback.empty()) {
-            const size_t conflicts = doc->previewPick(rows).conflicts;
+            const size_t conflicts = unpicked(doc->previewPick(rows), picks);
             if (conflicts > 0)
                 return conflictsReply(id, conflicts);
         }
-        const App::Document::MergeResult result = doc->pickRows(rows, {}, fallback);
+        const App::Document::MergeResult result = doc->pickRows(rows, picks, fallback);
         if (!result.unresolved.empty())
             return conflictsReply(id, result.unresolved.size());
         objectsMoved(doc);
@@ -1480,9 +1529,9 @@ QJsonObject closeRequestOp(const QJsonObject& req, const std::string& boundDoc, 
 
 /** `log.mergeRequest`: do what a request asks -- merge its branch into the
  * one the document is on, which is the one it names (sec 28). For one who
- * writes that branch. A conflict needs a side: `fallback` says one for
- * them all, and without it the merge is refused with how many
- * (`Conflicts`) and the request stays open.
+ * writes that branch. A conflict needs a side: `picks` says one for each,
+ * `fallback` one for the rest, and without them the merge is refused with
+ * how many (`Conflicts`) and the request stays open.
  */
 QJsonObject mergeRequestOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
 {
@@ -1521,12 +1570,13 @@ QJsonObject mergeRequestOp(const QJsonObject& req, const std::string& boundDoc, 
         // The preview first, as for `log.apply`: what is refused moves
         // nothing
         const std::string fallback = fallbackOf(req);
+        const auto picks = picksOf(req);
         if (fallback.empty()) {
-            const size_t conflicts = doc->previewMerge(from.name).conflicts;
+            const size_t conflicts = unpicked(doc->previewMerge(from.name), picks);
             if (conflicts > 0)
                 return conflictsReply(id, conflicts);
         }
-        const App::Document::MergeResult result = doc->mergeBranch(from.name, {}, fallback);
+        const App::Document::MergeResult result = doc->mergeBranch(from.name, picks, fallback);
         if (!result.unresolved.empty())
             return conflictsReply(id, result.unresolved.size());
         doc->closeMergeRequest(request.id, "merged", result.seq);
@@ -1535,6 +1585,197 @@ QJsonObject mergeRequestOp(const QJsonObject& req, const std::string& boundDoc, 
         reply[QLatin1String("row")] = double(result.seq);
         reply[QLatin1String("forwarded")] = double(result.forwarded);
         reply[QLatin1String("failed")] = double(result.failed.size());
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/// A value as one line, as the desktop's merge dialog has it: its text, cut,
+/// and how many files go with it. A derived value -- a shape -- by its ref
+/// alone: reading it would read its geometry
+QString changeText(App::TransactionLog* log, const std::string& ref, bool derived)
+{
+    if (ref.empty())
+        return QString();
+    App::CapturedValue v;
+    if (derived || !log->readValue(ref, v))
+        return QStringLiteral("#") + QString::fromStdString(ref.substr(0, 10));
+    QString text = QString::fromStdString(v.fragment).simplified();
+    // A property saved as one element with its value -- a number, a
+    // length, a word -- said as that value: `60`, not `<Float value=...`
+    static const QRegularExpression one(
+        QStringLiteral(R"re(^<(\w+)\s+value="([^"]*)"\s*/>$)re"));
+    const QRegularExpressionMatch m = one.match(text);
+    if (m.hasMatch() && v.attachments.empty()) {
+        QString value = m.captured(2);
+        value.replace(QLatin1String("&quot;"), QLatin1String("\""))
+            .replace(QLatin1String("&lt;"), QLatin1String("<"))
+            .replace(QLatin1String("&gt;"), QLatin1String(">"))
+            .replace(QLatin1String("&apos;"), QLatin1String("'"))
+            .replace(QLatin1String("&amp;"), QLatin1String("&"));
+        bool number = false;
+        const double d = value.toDouble(&number);
+        return number ? QString::number(d, 'g', 12) : value;
+    }
+    if (text.size() > kChangeText)
+        text = text.left(kChangeText) + QStringLiteral("...");
+    if (!v.attachments.empty())
+        text += QStringLiteral(" [+%1]").arg(v.attachments.size());
+    return text;
+}
+
+/** `log.preview`: what an apply (`rows`) or the merge a request asks
+ * (`request`) would do, changing nothing: every change, each conflict with
+ * the key a side is picked by (`picks` of `log.apply`, `log.mergeRequest`),
+ * the values at the base, ours and theirs as text. Asked as the act would
+ * be: rows of a branch the asker reads, a request it is listed, in a
+ * document on its target.
+ */
+QJsonObject previewOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    try {
+        App::TransactionStore& store = log->store();
+        const Reach reach = reachOf(doc, log);
+        App::Document::MergePreview preview;
+        QJsonObject reply;
+        if (req.contains(QLatin1String("request"))) {
+            App::LogMergeRequest request;
+            if (!openRequest(req, store, reach, log->userOf(App::ActorScope::current().get()),
+                             request, refusal))
+                return refusal;
+            if (!reach.reads(request.source))
+                return notReached(id, kNeedsRead);
+            App::LogBranch from;
+            App::LogBranch into;
+            if (!store.getBranch(request.source, from) || !store.getBranch(request.target, into))
+                return sceneControlError(id, "UnknownBranch",
+                                         QStringLiteral("a branch of it is gone"));
+            if (into.id != log->branch())
+                return sceneControlError(
+                    id, "Refused",
+                    QStringLiteral("the document is not on %1, which the request is to merge into")
+                        .arg(QString::fromStdString(into.name)));
+            preview = doc->previewMerge(from.name);
+            reply = placeReply(id, doc, log);
+            reply[QLatin1String("what")] = QStringLiteral("merge");
+            reply[QLatin1String("request")] = double(request.id);
+            reply[QLatin1String("source")] = QString::fromStdString(from.name);
+        }
+        else {
+            std::vector<int64_t> rows;
+            if (!rowsToApply(req, log, reach, rows, refusal))
+                return refusal;
+            preview = doc->previewPick(rows);
+            reply = placeReply(id, doc, log);
+            reply[QLatin1String("what")] = QStringLiteral("rows");
+        }
+        reply[QLatin1String("base")] = double(preview.base);
+        reply[QLatin1String("forward")] = double(preview.forward.size());
+        reply[QLatin1String("fastForward")] = preview.fastForward;
+        reply[QLatin1String("conflicts")] = double(preview.conflicts);
+        QJsonArray changes;
+        for (const auto& c : preview.changes) {
+            if (changes.size() >= kOpsMost)
+                break;
+            QJsonObject item;
+            item[QLatin1String("key")] = QString::fromStdString(c.key);
+            item[QLatin1String("kind")] = QString::fromStdString(c.kind);
+            item[QLatin1String("op")] = QString::fromStdString(c.op);
+            item[QLatin1String("ckind")] = QString::fromStdString(c.ckind);
+            item[QLatin1String("object")] = QString::fromStdString(c.object);
+            if (App::DocumentObject* obj = doc->getObject(c.object.c_str()))
+                item[QLatin1String("label")] = QString::fromUtf8(obj->Label.getValue());
+            item[QLatin1String("prop")] = QString::fromStdString(c.prop);
+            item[QLatin1String("derived")] = c.derived;
+            if (!c.prop.empty()) {
+                item[QLatin1String("base")] = changeText(log, c.base, c.derived);
+                item[QLatin1String("ours")] = changeText(log, c.ours, c.derived);
+                item[QLatin1String("theirs")] = changeText(log, c.theirs, c.derived);
+            }
+            if (!c.note.empty())
+                item[QLatin1String("note")] = QString::fromStdString(c.note);
+            changes.append(item);
+        }
+        reply[QLatin1String("changes")] = changes;
+        reply[QLatin1String("count")] = double(preview.changes.size());
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** Why the merge undone at the head is not the asker's to roll back, or
+ * nothing. It takes the merge's rows out for good (sec 31.21): the
+ * host's, and of one who writes the branch the document is on, a merge of
+ * its own since the point.
+ */
+QString rollBackWhy(App::TransactionLog* log, const Reach& reach, int64_t seq)
+{
+    if (reach.host)
+        return QString();
+    if (!reach.moves())
+        return QString::fromLatin1(kNeedsWrite);
+    const auto read = log->store().transactions(seq, 1);
+    if (read.empty() || read.front().seq != seq)
+        return QStringLiteral("the merge is not in the log");
+    Authors authors(log->store());
+    if (!ownRow(authors.users[authors.sessions[read.front().session].user]))
+        return QStringLiteral("that merge is another's: its maker or the host rolls it back");
+    if (!reach.row(read.front()))
+        return QString::fromLatin1(kBeforePoint);
+    return QString();
+}
+
+/** `log.rollBack`: the merge undone at the head taken out of the log (sec
+ * 31.21, Document::rollBackMerge): its rows and its undoing go, the other
+ * branch is no longer merged. The document does not change. With `dry`,
+ * only what it would take out and whether the asker may (`may`, `why`):
+ * asked when a merge is chosen, as the desktop's menu asks when it opens
+ * -- not with every list, since asking commits an edit left open and
+ * waits for the rows being written.
+ */
+QJsonObject rollBackOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    try {
+        const auto undone = doc->undoneMerge();
+        if (undone.seq <= 0)
+            return sceneControlError(id, "Refused",
+                                     QStringLiteral("no merge undone at the head to roll back"));
+        const QString why = rollBackWhy(log, reachOf(doc, log), undone.seq);
+        if (req.value(QLatin1String("dry")).toBool()) {
+            QJsonObject reply = placeReply(id, doc, log);
+            reply[QLatin1String("merge")] = double(undone.seq);
+            reply[QLatin1String("source")] = QString::fromStdString(undone.branch);
+            reply[QLatin1String("rows")] = double(undone.rows);
+            reply[QLatin1String("may")] = why.isEmpty();
+            if (!why.isEmpty())
+                reply[QLatin1String("why")] = why;
+            return reply;
+        }
+        if (!why.isEmpty())
+            return sceneControlError(id, "Forbidden", why);
+        const auto done = doc->rollBackMerge();
+        if (done.seq <= 0)
+            return sceneControlError(id, "Refused", QStringLiteral("not rolled back"));
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("merge")] = double(done.seq);
+        reply[QLatin1String("source")] = QString::fromStdString(done.branch);
+        reply[QLatin1String("rows")] = double(done.rows);
         return reply;
     }
     catch (const Base::Exception& e) {
@@ -1612,4 +1853,8 @@ void Gui::installSceneLogOps()
     registerSceneControlOp(QStringLiteral("log.request"), true, requestOp);
     registerSceneControlOp(QStringLiteral("log.closeRequest"), true, closeRequestOp);
     registerSceneControlOp(QStringLiteral("log.mergeRequest"), true, mergeRequestOp);
+    // The merge's own (sec 32.26): what it would do, each conflict picked,
+    // and a merge undone rolled back
+    registerSceneControlOp(QStringLiteral("log.preview"), true, previewOp);
+    registerSceneControlOp(QStringLiteral("log.rollBack"), true, rollBackOp);
 }
