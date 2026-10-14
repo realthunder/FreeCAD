@@ -31,16 +31,6 @@
        linejoin_type="extrp_arc"
        miter_limit="4"
        end_linecap_type="zerowidth" />
-    <filter
-       inkscape:collect="always"
-       style="color-interpolation-filters:sRGB"
-       id="filter1958">
-      <feBlend
-         inkscape:collect="always"
-         mode="exclusion"
-         in2="BackgroundImage"
-         id="feBlend1960" />
-    </filter>
   </defs>
   <sodipodi:namedview
      id="base"
@@ -81,8 +71,7 @@
      inkscape:label="Livello 1"
      inkscape:groupmode="layer"
      id="layer1"
-     transform="translate(0,-288.53332)"
-     style="filter:url(#filter1958)">
+     transform="translate(0,-288.53332)">
     <g
        id="g844"
        transform="matrix(0.50602245,-0.59108638,0.56200138,0.5322104,-158.27536,139.95086)">

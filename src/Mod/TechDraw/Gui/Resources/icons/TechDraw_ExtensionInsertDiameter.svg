@@ -31,16 +31,6 @@
        linejoin_type="extrp_arc"
        miter_limit="4"
        end_linecap_type="zerowidth" />
-    <filter
-       inkscape:collect="always"
-       style="color-interpolation-filters:sRGB"
-       id="filter1958">
-      <feBlend
-         inkscape:collect="always"
-         mode="exclusion"
-         in2="BackgroundImage"
-         id="feBlend1960" />
-    </filter>
   </defs>
   <sodipodi:namedview
      id="base"
@@ -80,8 +70,7 @@
      inkscape:label="Livello 1"
      inkscape:groupmode="layer"
      id="layer1"
-     transform="translate(0,-288.53332)"
-     style="filter:url(#filter1958)">
+     transform="translate(0,-288.53332)">
     <g
        id="g832"
        transform="matrix(0.45774741,0,0,0.45774741,0.20138822,160.379)">
@@ -110,7 +99,7 @@
          id="g908">
         <path
            sodipodi:type="star"
-           style="opacity:1;fill:#ffff00;fill-opacity:1;fill-rule:nonzero;stroke:#2b2200;stroke-width:0.49879649;stroke-linecap:square;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;filter:url(#filter1958)"
+           style="opacity:1;fill:#ffff00;fill-opacity:1;fill-rule:nonzero;stroke:#2b2200;stroke-width:0.49879649;stroke-linecap:square;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
            id="path1970-2"
            sodipodi:sides="3"
            sodipodi:cx="-17.197916"
