@@ -234,6 +234,9 @@ public:
             "User parameter:BaseApp/Preferences/View");
         hGrp->Detach(this);
         hGrpGeneral->Detach(this);
+        // Left attached, the next change of a colour, such as the one an
+        // export to PDF makes, called a page view that is gone
+        hGrpColors->Detach(this);
     }
 };
 
