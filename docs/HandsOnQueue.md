@@ -122,6 +122,17 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 09:00: A CRASH on the copy staged at 08:10 -- entry 114:
+switching the theme to Dark by Tools > Preset configurations > Themes
+ends the program.** The reporter, 09:00; the debugger's log and the dump
+read by the note-taker on their word, written here 09:04. The theme
+writes TechDraw's `Colors` settings and a destroyed observer of that
+group is called. A candidate by reading, not shown by a run: the page
+view's observer that entry 112's commit `2a317f254e` attached to that
+group is never detached -- so the crash would be a REGRESSION OF TODAY'S
+STAGE, met whenever a TechDraw colour is written after a page's view
+has gone. Under the entry.
+
 **2026-10-14 08:10: STAGED -- and PUSHED at 07:56 -- on the reporter's word
 "After done push and restage." Origin/LinkVibe = `7d5698c950` (was
 `5c0b30ce1b`); the staged copy is `7d5698c950`, "fcad dirty False".** From
@@ -2198,6 +2209,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 111 | 2026-10-13 | the Python console or the report view overlaid on a TechDraw page drawn by the bgfx renderer: after a change of theme the text in the overlay is SCRAMBLED over the page -- in the same overlay the half that lies over a 3D view is right (a screenshot; said as "new defect and request"). MORE from the reporter 17:10: under LIGHT it is fine; under CLASSIC it is scrambled too, over the 3D view AND over the page; "it seems that the scramble is related to text outline drawing" | OPEN; ANSWERED 17:11: the "request" IS entry 112; before the change of theme the text is right; a page drawn by Qt and the other panels not checked, guessed not related; the eye taken to be beside the point. Nothing waits for the reporter. NOT STARTED (19:17); the build session's note: the outline is gone over a ground since `8ef425ceae`, "which may change what the user sees there". REPRODUCED 20:15 by the build session on the staged copy of 16:55: it is CONTRAST, not corruption -- under Dark light text on the page's light ground, only the outline's dark pieces seen; under Classic BLACK text on the dark overlay sheet. Entries 98 and 112 make Dark readable on the dev build; a change for Classic in the tree, not built. THE CLASSIC PART COMMITTED `905d023394` (22:06), LOCAL, not pushed, not staged: the console's black text stands on a light ground (232). A SIDE EFFECT under DARK: the console's ground is dark (40) now, not the tree items' -- ONE POINT for the reporter under the entry. THE POINT ANSWERED 23:04: gated by the tree's automatic item background setting -- the tree items' background when it is on, the widget's own background when it is off. The legibility rule of `905d023394` is replaced by this (the note-taker's reading). Not started. AS RULED, in the tree and in the build r15 (23:20), not committed: the setting ON, the tree items' ground; OFF, the view's own background at the overlay's opacity (the console's editor background where one is set, else the palette's base colour). AS RULED: COMMITTED `023552c8fd` (2026-10-13 23:46), LOCAL, not pushed, not staged; `overlay-text-ground.py` offscreen 20 pass, 4 fail as before the change; NOT shown on the real screen. With the setting ON Classic's black text is on the dark item ground again -- "what the ruling makes of it". `905d023394` and `023552c8fd` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; not shown on the real screen by the build session |
 | 112 | 2026-10-13 | the background of a TechDraw page's view the same as the 3D view's (a change request; the "request" announced with entry 111, confirmed 17:11). ANSWERED 17:12: around the sheet only, the paper as it is; the GRADIENT too; for a page drawn by the BGFX RENDERER only | OPEN; the points answered 17:12; the smaller point answered 17:17: A SETTING gates it, by default the same as the 3D view; and the Qt-drawn page too IF it is easy -- to be looked at by the build session. COMMITTED `2a317f254e` 2026-10-13 about 19:11, PUSHED 2026-10-13 19:24, NOT in the staged copy (that is still the build of 16:55): the setting `Colors/BackgroundAs3DView` (on by default), the Qt-drawn page too (one rule for both); 6 of 6; NO check box in TechDraw's preference page yet. STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; still no check box on TechDraw's preference page |
 | 113 | 2026-10-13 | a double click on `Binder008` in the tree view, where it is grouped under `Lens003`: the report view says "<Exception> PropertyLinks.cpp(4693): self linking" (on the stage of 16:55, where entry 105 asks for that double click) | OPEN; the reporter's LIVE session read on the reporter's word, one script of reads only, and the source read: under `Lens003` the selection is the binder ITSELF, with no parent, and the double click then sets the binder as its own context; two points under the entry, NOT ANSWERED. NOT STARTED (19:17): the build session waits for the two points. ANSWERED 23:04: the reporter sees the cause -- a link to itself is forbidden; it is to be ALLOWED for a link of HIDDEN scope; a binder at the root has ITSELF as its context. So the double click with no parent sets the binder as its own context and that is right. Not started. AS RULED, in the tree and in the build r15 (23:20), NOT built when said, not committed: `PropertyXLink` alone lets a hidden-scope link name its owner; the binder takes itself as context for the document's root; a stored self context is read back; entry 105's rule unchanged. The "previous commit" NOT found by the build session either. WORKS on the build r15 (2026-10-13 23:46), COMMITTED `56504486e6`, LOCAL, not pushed, not staged: on `scanner.FCStd` `Binder008` selected by itself and double clicked by script -- no "self linking", Valid, its context itself, its shape where it was, the same after a recompute; `TestShapeBinder` 17 OK. NOT tried: the reporter's own way, a real double click on the item under `Lens003`. `56504486e6` PUSHED 2026-10-14 07:56; STAGED 2026-10-14 08:10 at `7d5698c950`, from a clean tree; the real double click under `Lens003` is the reporter's to try |
+| 114 | 2026-10-14 | A CRASH on the copy staged 08:10: switching the theme to Dark by Tools > Preset configurations > Themes > Dark theme ends the program (an access violation) | OPEN; the debugger's log, the short crash log and the DUMP read by the note-taker on the reporter's word: the theme writes `PreSelectColor` into TechDraw's `Colors` settings and one of that group's observers is an object already destroyed; a candidate by reading, NOT shown by a run: the page view's observer added for entry 112 (`2a317f254e`) is attached to that group and never detached; one point under the entry, NOT ANSWERED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -15871,6 +15883,98 @@ try after a restage. And this run also shows entry 105 on the committed
 code by name: `Binder008` in the error after the migration recompute,
 `Sketch043` and `Pad033` Valid.
 
+## 114. A crash: switching the theme to Dark by Tools > Preset configurations > Themes -- OPEN; the log and the dump read: a destroyed observer of TechDraw's Colors settings is called; a candidate by reading, entry 112's page view observer never detached; one point not answered
+
+**2026-10-14 09:00, the reporter:** "new crash. check live cdb and crash dump. I
+am switching theme to dark using Tools -> Preset configurations -> Themes
+-> Dark theme"
+
+READ by the note-taker on the reporter's word -- the live debugger's LOG,
+the program's short crash log and the DUMP. The live debugger
+(`cdb.exe`, process 91176) and the crashed program under it (`FreeCAD.exe`,
+process 126244, "not responding") were NOT touched: nothing typed into
+them, nothing attached to them; they still stand at the second chance.
+The dump was opened OFFLINE by a second debugger of the note-taker's own
+(its output to a file, a limit of 90 s; it ended by itself), eight reads
+and no more.
+- The session: the reporter's copy under cdb (`tools\fcad-user-cdb.cmd`),
+  the stage of 08:10 today (`7d5698c950`), started 08:52:40, up for 6 min
+  20 s at the crash. TechDraw's modules were loaded in it (the log:
+  `TechDraw.pyd`, `TechDrawGui.pyd`).
+- The log `D:\works\sw\tools\dbg\cdb_fcad_user.log`: "Access violation
+  - code c0000005 (first chance)" at 08:59:00, "Attempt to read from
+  address 00007fff00000009", in
+  `FreeCADBase!Base::Subject<char const *>::Notify+0x3e`
+  (`src\Base\Observer.h` @ 185), the instruction `call qword ptr
+  [rax+8]` with rax = 00007fff00000001 -- a call through the table of
+  an object whose memory holds something else. Then the dump written,
+  then the second chance.
+- The program's own short log,
+  `%APPDATA%\FreeCAD\crash-2026_10_14-08_59_10_889.log`: "native
+  exception 0xc0000005 at 00007FF83A7F939E (FreeCADBase.dll+0x16939e),
+  reading 0x7fff00000009", "event type 3, receiver QMenu" -- the
+  release of the mouse button on the menu.
+- The stack, from the crash outwards:
+  1. `Base::Subject<char const *>::Notify` (`Observer.h` @ 185) --
+     `(*Iter)->OnChange(*this, rcReason)`, the call of ONE observer of a
+     settings group
+  2. `ParameterGrp::_SetAttribute` (`Parameter.cpp` @ 755) -- the
+     notice to the group's old-style observers that a key was written
+  3. `ParameterGrp::SetUnsigned` (`Parameter.cpp` @ 926)
+  4. `ParameterGrp::insertTo` (`Parameter.cpp` @ 292, the copy of the
+     unsigned values), under four more `insertTo` (@ 257), one for each
+     group on the way down
+  5. `Gui::PreferencePack::applyConfigChanges`
+     (`PreferencePackManager.cpp` @ 173) <- `PreferencePack::apply` (@
+     119) <- `PreferencePackManager::apply` (@ 342)
+  6. `Gui::PresetsAction::applyPreferencePack` (`Action.cpp` @ 3300) <-
+     `PresetsAction::onAction` (@ 3270) <- `QMenu::mouseReleaseEvent`
+- The DUMP,
+  `D:\works\sw\tools\dbg\dumps\fcad_user_av_6428_2026-10-14_08-59-06-356_ed24.dmp`
+  (6.0 MB), read at the crash's own registers: the key being written is
+  "PreSelectColor"; the group is named "Colors", its parents "TechDraw",
+  "Mod", "Preferences" -- TechDraw's `Colors` settings.
+- Kept, outside the repository, in `..\dl\handson\2026-10-14\entry114`:
+  the whole debugger log (it is written over at the next start under the
+  debugger), the short crash log, the note-taker's eight debugger
+  commands and what they printed. The dump stays where the debugger
+  wrote it.
+
+The note-taker's reading, from the log and the dump: applying the Dark
+theme copies its values into the settings one by one; when it writes
+TechDraw's preselection colour, the group `Mod/TechDraw/Colors` tells its
+observers, and ONE OF THEM NO LONGER EXISTS -- an object that was
+destroyed without taking itself off the group's list. SHOWN by the dump:
+which group and which key. NOT shown by it: which object that observer
+was.
+
+A CANDIDATE, READ in the source, nothing run, NOT shown:
+- `QGVPage::Private` (`src/Mod/TechDraw/Gui/QGVPage.cpp`), the observer
+  a TechDraw page's view keeps, attaches to three groups when the view
+  is made (lines 154 to 160): the 3D view's, TechDraw's `General`, and
+  -- added by `2a317f254e` (entry 112, the page view's background
+  following the 3D view's, 2026-10-13) -- TechDraw's `Colors`:
+  `hGrpColors->Attach(this)`.
+- Its `detach()` (line 231) takes it off the first two only:
+  `hGrp->Detach(this)`, `hGrpGeneral->Detach(this)`. There is no
+  `hGrpColors->Detach(this)`.
+- So once a page's view has been destroyed -- the page closed, its
+  document closed, or the view made anew -- TechDraw's `Colors` group
+  keeps a pointer to it, and the next write of ANY key in that group
+  calls it: a theme (all three name TechDraw colours), or a colour
+  changed on TechDraw's preference page.
+- It fits what is shown: the group, a key of the group, a theme writing
+  it, the copy staged at 08:10 being the first to have `2a317f254e`.
+  Whether a page's view had been open and was gone before the switch is
+  NOT known -- the point below.
+
+NOT said, lettered for an answer:
+a. Before switching the theme in that session: had a TechDraw page been
+   open in a view and been CLOSED again -- or the document that has the
+   pages closed, reverted or loaded a second time? (If yes, the
+   candidate above is the path; if no page view was ever closed, it is
+   something else.)
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -15881,4 +15985,4 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it)
+it; entry 114 is of 2026-10-14)
