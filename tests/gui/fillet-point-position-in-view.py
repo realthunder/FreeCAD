@@ -9,7 +9,7 @@ points (0, 1 mm), (0.5, 2 mm), (1, 1 mm). In edit. Claims:
   - Edge2 has four handles -- a radius arrow per point and a knob for the
     middle one -- and Edge1 one: five shown;
   - Tab four times reaches the knob (the default, R1, R2, P2), whose label
-    reads "P2 5 mm"; 7 and Enter put the point at 0.7 of the edge, its
+    reads "1  P2 5 mm" (its group first); 7 and Enter put the point at 0.7 of the edge, its
     radius kept;
   - Space there: the menu reads "Varying (set in the panel)", checked and
     not to be chosen.
@@ -167,7 +167,7 @@ def run():
             key(Qt.Key_Tab)
         labels = text_labels()
         note("INFO labels: %s" % labels)
-        check("four Tabs: the knob's label reads 'P2 5 mm'", "P2 5 mm" in labels, labels)
+        check("four Tabs: the knob's label reads '1  P2 5 mm'", "1  P2 5 mm" in labels, labels)
         if os.environ.get("GT_PICTURE"):
             view().saveRenderDump(os.path.join(OUT, "fillet-point-knob.png"), metadata=False)
 

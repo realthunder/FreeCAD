@@ -14,7 +14,7 @@ A 10 mm PartDesign box, a fillet on Edge1 and Edge2 at 1 mm, in edit. Claims:
   - "Two radii" from it: Edge1 has two points at 0 and 1, both 1 mm, and
     three arrows are shown;
   - Tab (the first point's value, the default still active), 2, Enter: Edge1's first point is
-    2 mm, and its label "R1 2 mm" is shown beside the arrow;
+    2 mm, and its label "1  R1 2 mm" (its group first) is shown beside the arrow;
   - Space there: "Two radii" checked; "Default radius" from it: Edge1 has no
     points of its own, two arrows again;
   - Tab, Space, "Remove": the fillet has Edge2 alone, one arrow.
@@ -241,7 +241,7 @@ def run():
               segments(fillet) == [[(0.0, 2.0, 0.0), (1.0, 1.0, 0.0)]], (typed, segments(fillet)))
         labels = text_labels()
         note("INFO labels: %s" % labels)
-        check("its label 'R1 2 mm' is shown with the default's", "R1 2 mm" in labels
+        check("its label '1  R1 2 mm' (group, point, value) is shown with the default's", "1  R1 2 mm" in labels
               and "Radius 1 mm" in labels, labels)
 
         if os.environ.get("GT_PICTURE"):

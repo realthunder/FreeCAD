@@ -194,6 +194,11 @@ private:
     void setEdgePointPosition(const std::string& edge, int point, double distance);
     /// Take the edge out of the fillet, as the panel's removal does
     void removeEdge(const std::string& edge);
+    /// Put a customised edge in \a group; 0, a new group of its own
+    void setEdgeGroup(const std::string& edge, int group);
+    void setEdgeReversed(const std::string& edge, bool reversed);
+    /// A group's points in a few words: "R 3 mm", "R 2 mm -> 4 mm" ...
+    static QString groupSummary(const Part::PropertyFilletSegments::Segments& segments);
     //@}
 
     /// One handle per fillet of the current corner, at most this many

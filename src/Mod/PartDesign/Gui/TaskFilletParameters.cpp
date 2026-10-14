@@ -39,9 +39,16 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <cmath>
 #include <QActionGroup>
+#include <QColor>
+#include <QIcon>
 #include <QMenu>
+#include <QPixmap>
+#include <QSpinBox>
 #include <QTimer>
+#include <Base/Quantity.h>
+#include <Gui/SpinBox.h>
 #include <BRepGProp.hxx>
 #include <GCPnts_AbscissaPoint.hxx>
 #include <GProp_GProps.hxx>
@@ -78,6 +85,8 @@ using namespace Gui;
 namespace {
 // The column of a corner's setbacks
 constexpr int SetbackColumn = 4;
+// The column of a customised edge's group (docs/OnViewValueEditing.md 6.4)
+constexpr int GroupColumn = 5;
 }
 
 /* TRANSLATOR PartDesignGui::TaskFilletParameters */
@@ -103,6 +112,14 @@ QWidget *FilletSegmentDelegate::createEditor(QWidget *parent, const QStyleOption
             owner->setBinding(editor, index);
         return editor;
     }
+    // a customised edge's group: a number, joined by typing another's
+    if (index.column() == GroupColumn) {
+        if (index.parent().isValid() || index.model()->data(index, Qt::UserRole).toInt() <= 0)
+            return nullptr;
+        auto editor = new QSpinBox(parent);
+        editor->setRange(1, 9999);
+        return editor;
+    }
     if (index.column() < 1 || index.column() > 3)
         return nullptr;
     if (!index.parent().isValid()) {
@@ -126,6 +143,11 @@ void FilletSegmentDelegate::setEditorData(QWidget *editor, const QModelIndex &in
 {
     auto value = index.model()->data(index, Qt::UserRole).toDouble();
 
+    if (auto groupBox = qobject_cast<QSpinBox*>(editor)) {
+        groupBox->setValue(int(value));
+        groupBox->selectAll();
+        return;
+    }
     Gui::QuantitySpinBox *spinBox = static_cast<Gui::QuantitySpinBox*>(editor);
     spinBox->setValue(value);
     spinBox->selectNumber();
@@ -134,6 +156,12 @@ void FilletSegmentDelegate::setEditorData(QWidget *editor, const QModelIndex &in
 void FilletSegmentDelegate::setModelData(QWidget *editor, QAbstractItemModel *model,
                                         const QModelIndex &index) const
 {
+    if (auto groupBox = qobject_cast<QSpinBox*>(editor)) {
+        groupBox->interpretText();
+        model->setData(index, QString::number(groupBox->value()), Qt::DisplayRole);
+        model->setData(index, groupBox->value(), Qt::UserRole);
+        return;
+    }
     Gui::QuantitySpinBox *spinBox = static_cast<Gui::QuantitySpinBox*>(editor);
     spinBox->interpretText();
     Base::Quantity value = spinBox->value();
@@ -171,6 +199,14 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     setup(ui->message, ui->treeWidgetReferences, ui->buttonRefAdd);
 
     ui->treeWidgetReferences->setItemDelegate(new FilletSegmentDelegate(this));
+    // A customised edge's group, after the corners' setbacks
+    if (ui->treeWidgetReferences->columnCount() <= GroupColumn)
+        ui->treeWidgetReferences->setColumnCount(GroupColumn + 1);
+    ui->treeWidgetReferences->headerItem()->setText(GroupColumn, tr("Group"));
+    ui->treeWidgetReferences->headerItem()->setToolTip(GroupColumn, tr(
+"The group of an edge with radii of its own. A change to one edge\n"
+"of a group is made to every edge of it; type another group's\n"
+"number to join it."));
 
     Base::connect(ui->btnClear, &QPushButton::clicked, this, &TaskFilletParameters::clearSegments);
     Base::connect(ui->btnAdd, &QPushButton::clicked, this, &TaskFilletParameters::newSegment);
@@ -379,12 +415,34 @@ bool edgeHandlePlacement(Part::TopoShape& edge, TopoDS_Face& face, double fracti
     return true;
 }
 
-/// The colour of a customised edge's handles. Step 3 of the design gives
-/// each group its own.
-const Base::Color& customisedColor()
+/** The colour of a group's handles (docs/OnViewValueEditing.md 3.3, the
+ * reporter 2026-10-14 13:54: "each group show its own color. choose color
+ * from a set of distinct ones (auto generated)"). A hue stepped by the golden
+ * ratio from the id -- the same id keeps its colour from session to session
+ * -- passing over the hues of the default handles (the theme's red) and of
+ * the highlight (yellow).
+ */
+Base::Color groupColor(int group)
 {
-    static const Base::Color color(0.95F, 0.55F, 0.10F);
-    return color;
+    double hue = std::fmod(0.08 + group * 0.618033988749895, 1.0);
+    auto near = [&hue](double other) {
+        double d = std::fabs(hue - other);
+        return std::min(d, 1.0 - d) < 0.07;
+    };
+    for (int i = 0; i < 4 && (near(0.0) || near(0.15)); ++i) {
+        hue = std::fmod(hue + 0.11, 1.0);
+    }
+    QColor color = QColor::fromHsvF(float(hue), 0.75F, 0.95F);
+    return Base::Color(float(color.redF()), float(color.greenF()), float(color.blueF()));
+}
+
+/// A swatch of a group's colour for its menu item
+QIcon groupIcon(int group)
+{
+    const Base::Color color = groupColor(group);
+    QPixmap pixmap(12, 12);
+    pixmap.fill(QColor::fromRgbF(color.r, color.g, color.b));
+    return QIcon(pixmap);
 }
 } // namespace
 
@@ -453,7 +511,9 @@ void TaskFilletParameters::updateEdgeHandles()
         }
         total += points;
         shown.push_back(edge);
-        layout += edge + ":" + std::to_string(fillet->Segments.getValue(edge).size()) + ";";
+        // the group too: its colour is the handles'
+        layout += edge + ":" + std::to_string(fillet->Segments.getValue(edge).size()) + ":"
+            + std::to_string(fillet->Segments.getGroup(edge)) + ";";
     }
     if (layout != edgeHandleLayout) {
         clearEdgeHandles();
@@ -486,13 +546,16 @@ void TaskFilletParameters::updateEdgeHandles()
                 box->bind(path);
                 box->setValue(segments[point].radius);
                 handle.box = box;
+                const int group = fillet->Segments.getGroup(edge);
                 handle.gizmo = new Gui::LinearGizmo(box);
-                handle.gizmo->setColor(customisedColor());
-                // "R", or which of its points: "R1", "R2" ...
+                handle.gizmo->setColor(groupColor(group));
+                // The group, then "R", or which of its points: "2  R1" ...
                 QString title = segments.size() == 1
                     ? tr("R") : tr("R%1").arg(point + 1);
+                title = QStringLiteral("%1  %2").arg(group).arg(title);
                 const int value = onViewValues->addValue(
                     box, title, Gui::OnViewValueSet::Place::AtHandle, handle.gizmo);
+                onViewValues->setGroup(value, group);
                 onViewValues->setMenu(value, [this](QMenu& menu, Gui::LinearGizmo* gizmo) {
                     fillEdgeMenu(menu, gizmo);
                 });
@@ -523,10 +586,11 @@ void TaskFilletParameters::updateEdgeHandles()
                 along.box = alongBox;
                 along.gizmo = new Gui::LinearGizmo(alongBox);
                 along.gizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
-                along.gizmo->setColor(customisedColor());
+                along.gizmo->setColor(groupColor(group));
                 const int place = onViewValues->addValue(
-                    alongBox, tr("P%1").arg(point + 1), Gui::OnViewValueSet::Place::AtHandle,
-                    along.gizmo);
+                    alongBox, QStringLiteral("%1  %2").arg(group).arg(tr("P%1").arg(point + 1)),
+                    Gui::OnViewValueSet::Place::AtHandle, along.gizmo);
+                onViewValues->setGroup(place, group);
                 onViewValues->setMenu(place, [this](QMenu& menu, Gui::LinearGizmo* gizmo) {
                     fillEdgeMenu(menu, gizmo);
                 });
@@ -735,8 +799,8 @@ void TaskFilletParameters::fillEdgeMenu(QMenu& menu, Gui::LinearGizmo* gizmo)
     const int mode = edgeMode(segments);
 
     menu.addSection(QString::fromStdString(edge));
-    auto group = new QActionGroup(&menu);
-    group->setExclusive(true);
+    auto modes = new QActionGroup(&menu);
+    modes->setExclusive(true);
     const char* titles[] = {
         QT_TR_NOOP("Default radius"),
         QT_TR_NOOP("One radius"),
@@ -746,7 +810,7 @@ void TaskFilletParameters::fillEdgeMenu(QMenu& menu, Gui::LinearGizmo* gizmo)
         QAction* action = menu.addAction(tr(titles[i]));
         action->setCheckable(true);
         action->setChecked(mode == i);
-        group->addAction(action);
+        modes->addAction(action);
         // After the menu: the change takes this handle away
         connect(action, &QAction::triggered, this, [this, edge, i, radius]() {
             QTimer::singleShot(0, this, [this, edge, i, radius]() {
@@ -759,6 +823,53 @@ void TaskFilletParameters::fillEdgeMenu(QMenu& menu, Gui::LinearGizmo* gizmo)
         action->setCheckable(true);
         action->setChecked(true);
         action->setEnabled(false);
+    }
+
+    // A customised edge's group (docs/OnViewValueEditing.md 6.1): each item
+    // leads with the group's id, then what its points are, in its colour
+    const int group = fillet->Segments.getGroup(edge);
+    if (group > 0) {
+        menu.addSeparator();
+        QMenu* groups = menu.addMenu(groupIcon(group), tr("Group"));
+        auto groupActions = new QActionGroup(groups);
+        groupActions->setExclusive(true);
+        for (int id : fillet->Segments.getGroups()) {
+            const auto members = fillet->Segments.getGroupMembers(id);
+            QString text = QStringLiteral("%1   %2").arg(id).arg(
+                groupSummary(fillet->Segments.getValue(members.front())));
+            if (members.size() > 1) {
+                text += QStringLiteral("  ") + tr("(%1 edges)").arg(members.size());
+            }
+            QAction* action = groups->addAction(groupIcon(id), text);
+            action->setCheckable(true);
+            action->setChecked(id == group);
+            groupActions->addAction(action);
+            connect(action, &QAction::triggered, this, [this, edge, id]() {
+                QTimer::singleShot(0, this, [this, edge, id]() {
+                    setEdgeGroup(edge, id);
+                });
+            });
+        }
+        groups->addSeparator();
+        QAction* add = groups->addAction(tr("New group"));
+        // already alone in its group: a new one would only renumber it
+        add->setEnabled(fillet->Segments.getGroupMembers(group).size() > 1);
+        connect(add, &QAction::triggered, this, [this, edge]() {
+            QTimer::singleShot(0, this, [this, edge]() {
+                setEdgeGroup(edge, 0);
+            });
+        });
+        // Its start and end the other way round from its group's
+        if (fillet->Segments.getGroupMembers(group).size() > 1 && mode != 1) {
+            QAction* reversed = menu.addAction(tr("Reversed in group"));
+            reversed->setCheckable(true);
+            reversed->setChecked(fillet->Segments.isReversed(edge));
+            connect(reversed, &QAction::triggered, this, [this, edge](bool checked) {
+                QTimer::singleShot(0, this, [this, edge, checked]() {
+                    setEdgeReversed(edge, checked);
+                });
+            });
+        }
     }
     menu.addSeparator();
     QAction* remove = menu.addAction(tr("Remove"));
@@ -808,6 +919,59 @@ void TaskFilletParameters::setEdgeMode(const std::string& edge, int mode, double
         default:
             return;
     }
+    refresh();
+    recompute();
+}
+
+QString TaskFilletParameters::groupSummary(const Part::PropertyFilletSegments::Segments& segments)
+{
+    auto text = [](double radius) {
+        return Gui::trimTrailingZeros(
+            QString::fromStdString(Base::Quantity(radius, Base::Unit::Length).getUserString()),
+            QLocale());
+    };
+    if (segments.empty()) {
+        return {};
+    }
+    switch (edgeMode(segments)) {
+        case 1:
+            return tr("R %1").arg(text(segments[0].radius));
+        case 2:
+            return tr("R %1 -> %2").arg(text(segments[0].radius), text(segments[1].radius));
+        default: {
+            auto [low, high] = std::minmax_element(
+                segments.begin(), segments.end(),
+                [](const auto& a, const auto& b) { return a.radius < b.radius; });
+            return tr("R %1 to %2, %3 points")
+                .arg(text(low->radius), text(high->radius))
+                .arg(segments.size());
+        }
+    }
+}
+
+void TaskFilletParameters::setEdgeGroup(const std::string& edge, int group)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || fillet->Segments.getGroup(edge) == 0) {
+        return;
+    }
+    setupTransaction();
+    // 0: a group of its own, by the lowest free id
+    fillet->Segments.setGroup(edge, group > 0 ? group : fillet->Segments.newGroup());
+    refresh();
+    recompute();
+}
+
+void TaskFilletParameters::setEdgeReversed(const std::string& edge, bool reversed)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || fillet->Segments.isReversed(edge) == reversed) {
+        return;
+    }
+    setupTransaction();
+    fillet->Segments.setReversed(edge, reversed);
     refresh();
     recompute();
 }
@@ -1181,6 +1345,10 @@ void TaskFilletParameters::refresh()
             refreshCorner(item, cornerEdges[getGeometryItemText(item).constData()]);
             continue;
         }
+        const int group = pcFillet->Segments.getGroup(getGeometryItemText(item).constData());
+        item->setData(GroupColumn, Qt::UserRole, group);
+        item->setText(GroupColumn, group > 0 ? QString::number(group) : QString());
+        item->setIcon(GroupColumn, group > 0 ? groupIcon(group) : QIcon());
         int j = 0;
         for (const auto &segment : pcFillet->Segments.getValue(getGeometryItemText(item).constData())) {
             setSegment(j<item->childCount() ? item->child(j) : new QTreeWidgetItem(item),
@@ -1197,6 +1365,12 @@ void TaskFilletParameters::updateSegment(QTreeWidgetItem *item, int column)
     if (getCornerItem(item)) {
         if (column == SetbackColumn)
             updateCorner(item);
+        return;
+    }
+    if (column == GroupColumn) {
+        if (!item->parent())
+            setEdgeGroup(getGeometryItemText(item).constData(),
+                         item->data(GroupColumn, Qt::UserRole).toInt());
         return;
     }
     if (column<1 || column>3)

@@ -105,6 +105,11 @@ public:
     void setHandleAnchor(LinearGizmo* handle, const Base::Vector3d& world);
     /// What the menu of the value at \a index offers
     void setMenu(int index, MenuProvider provider);
+    /** The group of the value at \a index, 0 for none: while a value is
+     * active, the handles of every value of its group are highlighted too
+     * (docs/OnViewValueEditing.md 6.1)
+     */
+    void setGroup(int index, int group);
     /** Keep the first \a count values, drop the rest -- with their labels,
      * and with the hold on their handles, which the caller deletes after.
      */

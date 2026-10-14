@@ -59,6 +59,7 @@ struct OnViewValueSet::Entry
     /// Where each handle stands, in world coordinates; by the handle's place
     std::vector<Base::Vector3d> anchors;
     MenuProvider menu;
+    int group = 0;
     QMetaObject::Connection boxConnection;
     std::unique_ptr<EditableDatumLabel> label;
 };
@@ -202,6 +203,14 @@ void OnViewValueSet::setMenu(int index, MenuProvider provider)
 {
     if (index >= 0 && index < count()) {
         entries[index]->menu = std::move(provider);
+    }
+}
+
+void OnViewValueSet::setGroup(int index, int group)
+{
+    if (index >= 0 && index < count()) {
+        entries[index]->group = group;
+        highlight();
     }
 }
 
@@ -428,10 +437,13 @@ void OnViewValueSet::updateLabel(int index)
 
 void OnViewValueSet::highlight()
 {
-    // Every handle of the active value: a default drives all its edges
+    // Every handle of the active value -- a default drives all its edges --
+    // and of every value of its group
+    const int group = active >= 0 ? entries[active]->group : 0;
     for (int i = 0; i < count(); ++i) {
+        const bool lit = i == active || (group > 0 && entries[i]->group == group);
         for (LinearGizmo* handle : entries[i]->handles) {
-            handle->setHighlighted(i == active);
+            handle->setHighlighted(lit);
         }
     }
 }
