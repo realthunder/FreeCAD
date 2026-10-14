@@ -211,8 +211,9 @@ answers.
     3. "Two radii" -- two points, at the start and the end of the edge,
        both starting at the radius it had; a second arrow at the far end
        of the edge for the end radius, with its own root button;
-  - "Group" -- a sub-menu: this feature's groups by id with their values,
-    and "New group" (section 6); shown for a customised edge;
+  - "Group" -- a sub-menu: this feature's groups, one item each, and
+    "New group" (section 6, the item labels in 6.1); shown for a
+    customised edge;
   - "Remove" -- the edge is taken out of the fillet (the panel's remove).
   An edge with MORE than two points (possible in the file and in the
   panel) shows its points' arrows and a menu whose mode reads "Varying
@@ -382,8 +383,16 @@ shared expressions) are REPLACED by this one.
   edge is a group of one.
 - The user may CHANGE an edge's group id to JOIN another group: the root
   button's menu has a "Group" entry, a sub-menu listing the groups of
-  this feature by id (with their values beside them, e.g. "2 -- R 3 mm")
-  and "New group". Joining a group takes that group's values.
+  this feature and "New group". Joining a group takes that group's
+  values.
+- THE GROUP ITEM'S LABEL (decided by the reporter 2026-10-14 13:49):
+  LEADS WITH THE GROUP ID, then a SHORT SUMMARY of the group's setting.
+  The note-taker's forms, for the build to settle: one radius --
+  "2   R 3 mm"; two radii -- "3   R 3 mm -> 5 mm"; varying -- "4   R 2
+  to 6 mm, 4 points"; and, where it helps, the member count at the end --
+  "2   R 3 mm  (3 edges)". The edge's own group is checked. The label's
+  id is the same number shown inside the group's root buttons (3.3, the
+  visual hints), and its colour swatch beside it.
 - A CHANGE to any value of an edge -- its radius, its two radii, a
   point's position (param or length), whatever the edge holds -- is
   MIRRORED to every edge with the same group id, the same change.
