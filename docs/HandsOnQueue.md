@@ -147,6 +147,13 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-14 18:29, from the build session (its message stamped 18:45):
+entry 129 answered by the reporter to it -- "Print All Pages" to the PDF
+printer, every page rasterized; the PDF EXPORT of scanner's pages is
+vector, the system printer path the suspect. And TWO CRASHES it found on
+the copy staged 15:22, entered as 131 (at exit) and 132 (during page
+export).** Each under its entry.
+
 **2026-10-14 18:20: PUSHED on the reporter's word to the build session about
 18:30 by its clock, "Push now" -- origin/LinkVibe = `2e22aeba96`. NOT
 restaged.** From the build session (its message stamped 18:35); the
@@ -2613,8 +2620,10 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 126 | 2026-10-14 | under the bgfx render engine a LINE PATTERN at scale 1 does not look right; at scale 2 it looks normal | OPEN; read by the note-taker, nothing run: the engine draws a dash bit as `factor` screen pixels, as glLineStipple does; which pattern and scale are meant, and what is wrong, not said -- three points under the entry, NOT ANSWERED. POINT b ANSWERED 17:07: at scale 1 "the dots are far too dense to distinguish" -- fits the candidate (each dash bit one view pixel, half a visible one on a 200% screen); a and c still open. 17:08: "the dash looks ok on scale 1" -- so it is the DOTTED pattern that is too dense at scale 1, the dashed one is fine. THE CAUSE read by the build session (its message stamped 17:20, written here 17:10), nothing run: NOT the screen's scaling (this box is at 100%) -- the "Dot" choice is the mask 0xaaaa, one pixel on and one off, which the anti-aliasing blurs grey; Coin's path had it too. Two ways for the reporter: (1) Dot becomes 0xcccc (two on, two off), recommended; (2) the pattern counted in line widths. WAITS FOR THE REPORTER'S CHOICE; the note-taker's candidate withdrawn |
 | 127 | 2026-10-14 | a change request: PRINT ONLY THE SELECTED TechDraw pages | OPEN; read by the note-taker: TechDraw's "Print All Pages" takes every page of the active document; two points under the entry, not put as blocking. IN THE TREE, not committed: its test 7 of 7 on the build r28c |
 | 128 | 2026-10-14 | some TechDraw TOOLBAR BUTTONS show NO ICON -- invisible under every theme, Classic too (first asked as an audit of all icons drawn in dark lines only, WITHDRAWN by the reporter) | OPEN; read by the note-taker: every icon NAME TechDraw's commands ask for exists in its resource file, so the cause is not a missing file by name; which buttons is not said -- one point under the entry. THE REPORTER about 17:27: "Basically the entire Techdraw Extend Dimensions toolbar has invisible icons". FOUND by the note-taker 17:30: 14 TechDraw extension icons draw NOTHING in Qt's SVG renderer -- all of them, and only they, wrap their drawing in an Inkscape filter blending with "BackgroundImage", which this Qt's SVG renderer (it renders filters) cannot do; the icons of that toolbar. A correction: the all-icons audit DID run (17:20, offscreen, read only), the note-taker had written it had not. THE BUILD SESSION (17:35) confirms the cause by one file and takes way 1: a script that drops those filters and their uses from the 14 files and nothing else -- written, to be applied after its running build, then built and pictured. Not committed. 17:51: the 14 icons fixed in the tree (the filters removed), not built yet |
-| 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry. PROBED 17:35 by the build session on the copy staged 15:22: a page exported to PDF (the path "print to file" and Print All to a file share) is VECTOR already -- 0 images, about 12448 path operators, 172 text runs. Left: the NATIVE printer path (to a printer, "Microsoft Print to PDF" among them), where Qt prints through GDI and turns antialiased or part-transparent drawing into images. TWO POINTS for the reporter: which printer or output, and which part looked like pixels |
+| 129 | 2026-10-14 | a change request: TechDraw PRINTING to give VECTOR output, so that it scales without loss | OPEN; read by the note-taker: the print draws the page's scene onto the printer or a PDF writer, which keeps vectors -- what comes out as pixels is not known; two points under the entry. PROBED 17:35 by the build session on the copy staged 15:22: a page exported to PDF (the path "print to file" and Print All to a file share) is VECTOR already -- 0 images, about 12448 path operators, 172 text runs. Left: the NATIVE printer path (to a printer, "Microsoft Print to PDF" among them), where Qt prints through GDI and turns antialiased or part-transparent drawing into images. TWO POINTS for the reporter: which printer or output, and which part looked like pixels. THE REPORTER to the build session about 18:20 (relayed): "used techdraw tool button print all pages, used pdf printer. Every page is rasterized" -- points c and d answered. The build session 18:29: "Export PDF" of three of scanner.FCStd's pages is VECTOR but for each page's own image view; the native "Microsoft Print to PDF" path (Windows GDI turns anything drawn with alpha into images -- the faces' fully transparent fill by default) is the suspect, a native print running |
 | 130 | 2026-10-14 | SURFACE FINISH: set to "Blast" on one object -- a warning in the report view ("dataChanged() called with an invalid index range"), the finish drawn, but the object then shows NO (PRE)SELECTION HIGHLIGHT; set back to "None" -- no warning, the highlight back, but the finish STILL DRAWN | OPEN; read by the note-taker, nothing run: the warning is an off-by-one in the property view's model, harmless by reading; the highlight and the finish that stays NOT found; one point under the entry. 17:51, the build session: the WARNING's off-by-one confirmed, fixed in the tree, not built; the missing highlight and the finish that stays NOT REPRODUCED by a script on the copy staged 15:22 (a Part box, its appearance's finish set to blasted and back from Python: the grain shows and goes, the highlight works). It hangs on HOW the reporter set it -- point a, made precise: which object, and the steps in the property view. the warning's fix in the tree, not committed |
+| 131 | 2026-10-14 | A CRASH at the program's EXIT on the copy staged 15:22, found by the build session (after a test harness's time-out): `App::TransactionCopyCache` destroying a string list property in the static destruction -- a static cache outliving the owners of its properties | OPEN; found by the build session, not entered by it; its dump and log kept |
+| 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18041,6 +18050,35 @@ c. WHICH printer or output did the print go to -- a printer, "Microsoft
    Print to PDF", or "print to file"?
 d. WHICH part looked like pixels -- lines, text, the template, hatching?
 
+**2026-10-14 about 18:20, the reporter -- typed to the build session,
+relayed by it; the note-taker did not hear it:** "Entry 129, used
+techdraw tool button print all pages, used pdf printer. Every page is
+rasterized" -- and: "Try pdf export o scanner file and post the file
+here"
+
+The note-taker's reading: c -- the toolbar's "Print All Pages", to the
+PDF PRINTER (the system's, by the build session's reading "Microsoft Print
+to PDF"); d -- EVERY page comes out as pixels, all of it.
+
+**2026-10-14 18:29, the build session:** From the build session's message, which it stamps 18:45; written here 18:29.
+- "DONE in part: a COPY of scanner.FCStd (2026-10-06) on the copy STAGED
+  15:22, the migration box answered No: 10 TechDraw pages; Export PDF
+  (TechDrawGui.exportPageAsPdf) of Page, Page001, Page002: each VECTOR
+  but for 2 image objects = one 1321x606 bitmap with its mask --
+  scanner has a TechDraw::DrawViewImage on each of its 10 pages, so that
+  image is the page's own. The three PDFs SENT to the user."
+- "So 'Print All' to the native 'Microsoft Print to PDF' (Windows GDI:
+  anything drawn with alpha -- faces filled with a fully transparent
+  brush under Colors/ClearFace, the default -- turns into images) is the
+  remaining suspect; a native print of scanner's pages is running now."
+- "my first native-print probe used the office HP printer's driver to a
+  FILE (Qt reset the printer when told NativeFormat after a .pdf name) --
+  PCL spooled to disk, nothing sent to the printer; result void, fixed."
+The note-taker's note: so the export path the build session probed is
+vector; the path the reporter used, the system's PDF printer, is not
+yet shown. The office printer was not printed to, by the build
+session's word.
+
 ## 130. Surface finish: "Blast" set -- a warning, then no selection highlight on the object; "None" set -- the highlight back, the finish still drawn -- OPEN
 
 **2026-10-14 17:41, the reporter:** "new defect, something is off with surface
@@ -18116,6 +18154,36 @@ a. WHICH OBJECT -- a Part feature, a PartDesign body or feature, a link;
    in the property view (the appearance expanded, "Surface finish",
    "Blast" chosen?).
 
+## 131. A crash at the program's exit: the transaction copy cache destroyed after its owners (found by the build session) -- OPEN
+
+**2026-10-14 18:29, found by the build session** on the copy staged 15:22,
+while it probed entry 129 -- From the build session's message, which it stamps 18:45; written here 18:29. "(A) at process exit after the
+harness's timeout: App::TransactionCopyCache::dropSlow / take
+(Transactions.cpp 460-471) destroying a PropertyStringList in static
+destruction (execute_onexit_table) -- a static cache outliving its
+properties' owners." "Dumps and logs: s1\g-e129c-staged\home ...
+(crash.log, crash.dmp)."
+The note-taker's reading: the program can crash as it ENDS -- a cache
+kept in a static object still holds properties whose objects are gone by
+the time statics are destroyed. Met after a time-out of the build
+session's test harness; whether the reporter's ordinary exit meets it is
+not known. "Neither entered" by the build session; entered here by the
+note-taker, as found crashes have been (entries 79, 82).
+
+## 132. A crash while TechDraw pages are exported to PDF: a command's active test reaching a freed document (found by the build session) -- OPEN
+
+**2026-10-14 18:29, found by the build session** on the copy staged 15:22,
+while it probed entry 129 -- From the build session's message, which it stamps 18:45; written here 18:29. "(B) during the page exports, from
+MainWindow::_updateActions -> CommandManager::testActive ->
+Command::testActive -> App::Document::getAvailableRedos (Document.cpp
+2150), reading 0xcc8: a command's active test reaching a freed document
+(or its transactions)." "Dumps and logs: ... s1\g-e129c2-staged\home
+(crash.log, crash.dmp)."
+The note-taker's reading: while pages are exported, the periodic check of
+which commands are active asks a document for its redo steps -- a
+document, or its transactions, already freed. Whether the reporter can
+meet it outside the build session's script is not known.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -18126,5 +18194,5 @@ entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
 entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
-it; entries 114 to 130 are of 2026-10-14, 116 and 119 said to the
-build session)
+it; entries 114 to 132 are of 2026-10-14, 116 and 119 said to the
+build session, 131 and 132 found by it)
