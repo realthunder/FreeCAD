@@ -1,6 +1,7 @@
 # On-view value editing: dress-up handles and typed values in the 3D view
 
-A design proposal, not built. Asked by the reporter on 2026-10-14
+A design proposal, not built; revised the same day with the reporter's
+answers a to f (section 5). Asked by the reporter on 2026-10-14
 (`docs/HandsOnQueue.md` entry 117): rework the dress-up features' editing
 manipulator, keeping in mind that this fork's fillet has a default radius
 and per-edge radii (one or two, or more along the edge); and, in general,
@@ -161,75 +162,95 @@ recompute (where today the fillet panel repositions its pools).
   in a stable order (default first, then edges in the panel's order, then
   corners); Ctrl+Enter commits and leaves the edit (the label's existing
   signal).
-- TYPE WHILE DRAGGING: during a handle's drag, a digit key opens that
-  handle's label with the digit typed, and the drag stops; Enter commits.
+- THE ACTIVE HANDLE TAKES TYPING (decided 2026-10-14, d): a handle made
+  active by Tab or a click is highlighted and shows its label beside it; a
+  digit typed then goes into that label without a further click. No typing
+  during a drag.
 - Each commit is one undo step.
 
 ### 3.3 The fillet
 
-- The DEFAULT radius: ONE handle and its label, on one edge that uses the
-  default (the first such edge in the panel's order). The label reads like
-  "R 2 mm". The other default edges get only a small marker (a dot at
-  their middle), clickable to show their own label.
-- ONE ARROW per radius, not two. It lies in the face beside the edge that
-  is turned more toward the camera, and moves to the other face when the
-  camera turns past the edge; the label sits at its tip. (Today's two
-  arrows say the same thing twice.)
-- A PER-EDGE value: an edge with its own radius shows its own handle and
-  label, in the "own value" colour, e.g. "R 3 mm".
-  - To GIVE an edge its own value from the view: open the label of a
-    default edge (click its marker, then its label) and type -- the edge
-    gets one point `(0, value)`. To GIVE IT BACK to the default: empty the
-    label (the patterns' "unset" already means this).
-- TWO RADII and VARYING radii: an edge with several points shows a label
-  per point at its position along the edge, and two handles per point: the
-  radius arrow and a POSITION handle that slides along the edge (Inventor's
-  position manipulator). A label's context menu: "Vary along this edge"
-  (one point becomes two, at the start and the end, both the current
-  radius), "Add a point here", "Remove this point", "Use the default".
-  The position is typed as a fraction or, with a unit, as a length
-  (`Length` wins over `Param`, as the property has it).
-- CORNERS: the setback and depth handles stay as they are, each with its
-  label; shown for the corner the pointer is over or the panel has current.
-- CLUTTER: with many edges, show the labels of (a) the default, (b) every
-  edge with its own value, (c) the edge under the pointer -- and markers
-  for the rest. A setting may show all.
+DECIDED by the reporter 2026-10-14 13:21 (a, b, c): one arrow; the default
+radius's label always at the top middle of the view, the others only
+beside their handle when it is active; a pressable at the root of each
+arrow that cycles default / one radius / two radii. This section is
+written to those answers.
+
+- THE DEFAULT RADIUS: its label is ALWAYS shown, at the TOP MIDDLE of the
+  view (a fixed place on the screen, not on an edge), e.g. "Radius 2 mm";
+  click or Tab to it and type.
+- EVERY OTHER LABEL is shown only BESIDE ITS HANDLE, and only while that
+  handle is ACTIVE -- made so by Tab or by a click on it; the active handle
+  is drawn highlighted. No other labels, so a fillet of many edges shows
+  its handles and one number at most beside them.
+- ONE ARROW per radius (a). It lies in the face beside the edge that is
+  turned more toward the camera, and moves to the other face when the
+  camera turns past the edge. (Today's two arrows say the same thing
+  twice.)
+- THE STATE TOGGLE (c): at the ROOT of each edge's arrow sits a small
+  pressable button. Each press moves the edge to the next state, and
+  round again:
+  1. DEFAULT -- the edge takes the default radius (no entry of its own;
+     its arrow, if dragged, drives the default);
+  2. ONE RADIUS of its own -- one point `(0, r)`, `r` starting at the
+     radius it had;
+  3. TWO RADII -- two points, at the start and the end of the edge, both
+     starting at the radius it had; a second arrow at the far end of the
+     edge for the end radius, each with its own root button.
+  The button's look says the state (for instance: hollow = default, one
+  dot = one radius, two dots = two radii). An edge with MORE than two
+  points (possible in the file and in the panel) shows its points' arrows
+  and a button marked "more", which the press does not cycle -- it is set
+  in the panel.
+- HOW OTHER PROGRAMS SWITCH this (asked by the reporter, c), from the
+  survey: none found has a button on the handle. Fusion has a type per
+  edge set (Constant / Variable ...) in the dialog [3]; SolidWorks a
+  Constant size / Variable size choice and a "multiple radius" option
+  (general knowledge, [2]); Onshape a "Variable fillet" check box [6];
+  CATIA a variable option and points added on the edge [11]; Creo, by an
+  old forum answer, a right-click on the radius handle and "Add radius"
+  for a variable round [13]. So the switch on the handle itself is this
+  fork's own -- closest to Creo's right-click on the handle.
+- CORNERS: the setback and depth handles stay as they are; their labels
+  show, like the others, when a handle is active.
+- POINTS ALONG AN EDGE: the arrow of a point that is not at an end gets
+  a POSITION handle as well, sliding along the edge (Inventor's position
+  manipulator, [5]); its label, when active, takes the position as a
+  fraction or, with a unit, as a length (`Length` wins over `Param`, as
+  the property has it). Points are added and removed in the panel.
 
 ### 3.4 The other dress-ups
 
-- Chamfer: the same as the fillet, with up to three values per edge (size,
-  size2, angle) and a click on the edge's direction marker for "flip";
-  per-edge values through `ChamferInfo` exactly as the fillet's through
-  `Segments`.
-- Draft: one angle handle and label; Thickness: one value handle and
-  label. Only the move to 3.1 and 3.2.
+- Chamfer: the same as the fillet -- the default values' label at the top
+  middle, per-edge values through `ChamferInfo` as the fillet's through
+  `Segments`; the root button cycles default / own size / own two sizes or
+  size and angle (by `ChamferType`), and a click on the edge's direction
+  marker flips.
+- Draft: one angle handle; Thickness: one value handle; their label at the
+  top middle. Only the move to 3.1 and 3.2.
 
 ### 3.5 Without the task panel
 
 The reporter's "in general": a value entered in the view WITHOUT the task
-panel. Two steps, the second built on the first:
+panel.
 
 1. IN AN EDIT, panel optional. All of 3.2 to 3.4 works with the panel
    collapsed or hidden (the overlay's auto-hide already hides it); the
    view alone is enough to change every value the panel has.
-2. OUTSIDE AN EDIT. A view provider can list its feature's on-view values
-   (`ViewProvider::getOnViewValues()`, built from the same bindings). With
-   one feature selected, a double click on the feature in the view -- or a
-   key -- shows its values' labels in the view without opening the panel
-   (Creo shows a feature's dimensions this way); a click on a label types,
-   Enter commits and recomputes as one undo step; Escape or a click
-   elsewhere hides them. The dress-ups first, then Pad/Pocket (length,
-   offset, taper), Revolution (angles), Hole (depth), Helix, the primitives
-   -- each already has handles placed by its panel, to be moved into its
-   view provider.
+2. OUTSIDE AN EDIT -- PROPOSED TO DROP. The reporter asked (e, 13:21):
+   "double-click is entering edit right? so what's the point of modify
+   without entering edit". Answered in the session: Creo's plain "Edit"
+   and SolidWorks' double-click on a dimension change values without the
+   feature's full edit, and it would work here as a property write and a
+   recompute, as the property view already does; but in FreeCAD a double
+   click already IS the edit, and with step 1 the edit itself takes typed
+   values in the view with the panel hidden -- so the gain is small. Kept
+   out of the order of work unless the reporter wants it.
 
 ### 3.6 Settings
 
 - The existing gizmo switch stays (handles on or off).
-- New: "Values in the view" -- off / in an edit only / also on a selected
-  feature (step 3.5.2), as the sketcher's on-view parameter visibility is a
-  setting.
-- New: "Show the labels of" -- the default and own values / every edge.
+- New: "Values in the view while editing" -- on (default) / off.
 
 ### 3.7 Thin client and drawing
 
@@ -240,31 +261,132 @@ seen on the screen (1.4, and entry 118).
 
 ## 4. Order of work
 
-1. `OnViewValue` and `OnViewValueSet` (3.1) and typing (3.2), with the
-   fillet's DEFAULT radius as the first user -- one arrow, its label.
-2. The fillet's per-edge values: own value, give back to default, varying
-   points with position handles, the context menu (3.3).
-3. Chamfer, Draft, Thickness moved to it (3.4).
-4. Panel optional (3.5.1).
-5. Outside an edit (3.5.2), feature by feature.
+1. `OnViewValue` and `OnViewValueSet` (3.1), the active handle and typing
+   (3.2), with the fillet's DEFAULT radius as the first user -- one arrow,
+   its label at the top middle.
+2. The fillet's per-edge values: the root button's three states, the
+   second arrow at the far end, position handles (3.3).
+3. Edge groups (section 6), if wanted after reading it.
+4. Chamfer, Draft, Thickness moved to it (3.4).
+5. Panel optional (3.5.1).
 
 Each step is shown on the real screen by a picture and by typed values, as
 the hands-on queue asks.
 
-## 5. For the reporter to decide
+## 5. Decided, and what is left
 
-a. ONE arrow per radius, on the face turned to the camera -- or keep the
-   two?
-b. Which labels show at once on a fillet with many edges: the default,
-   the own values and the edge under the pointer (proposed) -- or all?
-c. How a varying radius is made in the view: the label's context menu
-   (proposed) -- or a drag along the edge with a modifier key?
-d. Type while dragging (3.2): wanted?
-e. Outside an edit (3.5.2): shown by a double click on the feature, by a
-   key, or whenever one feature is selected?
-f. Edge GROUPS (one value for several edges, as SolidWorks, Fusion and
-   Creo have): wanted? The fork's `Segments` is per edge; a group would be
-   a new property or a shared expression.
+The reporter, 2026-10-14 about 13:21: "a, one. b, the default radius
+always show in the top middle. others only show besides the handle when
+Tab or clicked (show highlight for the active handle). c, How other CAD
+does this? my thoughts are something pressable, maybe sit at the root of
+the arrow handle. each press toggle a state between default, per edge one
+radius, two radius. d, no need, active handle accepts typing is enought, I
+think. e, double-click is entering edit right? so what's the point of
+modify without entering edit. f, show me how would you implement it."
+
+- a: ONE arrow -- 3.3.
+- b: the default's label at the top middle, the others beside an ACTIVE
+  handle only, highlighted -- 3.3.
+- c: the root button cycling default / one radius / two radii -- 3.3,
+  with the survey's answer to "how other CAD does this".
+- d: no typing during a drag; the active handle takes typing -- 3.2.
+- e: answered; outside an edit proposed to drop -- 3.5.2.
+- f: how edge groups would be built -- section 6.
+
+LEFT for the reporter: whether 3.5.2 is dropped; whether edge groups
+(section 6) are wanted, and in which of its two forms.
+
+## 6. Edge groups: how it would be built (f)
+
+A GROUP is one value shared by several edges of one fillet: change it once,
+every member changes. (SolidWorks' multiple radius fillet, Fusion's edge
+sets and Creo's round sets are the same idea.)
+
+### 6.1 What is there to build on
+
+- `Segments` (`Part::PropertyFilletSegments`, `PropertyDressUp.cpp`) is a
+  map from an edge name to its points, saved as
+  `<EdgeSegments><Segments id="Edge12" count=".."><Segment param= radius=
+  length=/>...` (Save, line 264). Its `connectLinkProperty` (line 168)
+  keeps the map's keys in step when Base's edge references are renamed
+  (the topological naming work), and renames the expressions bound to
+  them. Anything stored IN this property per edge gets that for free.
+- The default `Radius` is already a group in all but name: "every edge
+  that has no entry".
+
+### 6.2 Form A, recommended: groups inside `Segments`
+
+App (Part, `PropertyDressUp.h/.cpp`):
+1. A group table in the same property: `name -> {radius1, radius2,
+   two}` (two = whether the group has two radii). Saved as
+   `<Group name="G1" radius="3" radius2="3" two="0"/>` elements inside
+   `<EdgeSegments>`; an old file has none -- nothing changes for it.
+2. Per edge, a group NAME instead of points: saved as `<Segments
+   id="Edge12" group="G1"/>`. `Restore` reads `group` when it is there.
+   An older build reading a new file ignores the unknown element and
+   attribute and gives those edges the default radius -- a clean fall
+   back, nothing lost on re-save by the new build.
+3. Expression paths: `Segments.Groups.G1.Radius`, `.Radius2` -- added to
+   `getPaths`, `getPyPathValue`, `setPyPathValue` (lines 318 to 450) as the
+   per-edge paths are now.
+4. Python: `fillet.Segments` round-trips the groups; a helper
+   `setGroup(name, edges, r1, r2=None)`.
+
+PartDesign (`FeatureFillet.cpp`, around 114 to 127): before the kernel
+call, an edge with a group gets points from the group -- `(0, r1)`, or
+`(0, r1), (1, r2)` when `two`. The kernel (`makeFillet`) does not change.
+A note for two radii in a group: "start" and "end" follow each edge's own
+direction, which differs between edges; the group's two radii would land
+reversed on some. Either a per-edge "reversed" flag in the group
+membership (saved as `rev="1"`), set by the toggle, or a rule (the end
+nearer the group's first edge's start is the start). The flag is simpler
+to explain; to be chosen when built.
+
+Gui:
+- Panel: group rows in the tree (name, radius, radius2), member edges as
+  their children; "Group" on a multi-selection of edge rows, "Ungroup"
+  on a group row; dragging an edge row onto a group row joins it.
+- View: ONE arrow per group, on its first member edge; small markers on
+  the other members, highlighted with it when it is active; its label
+  (beside it when active) names the group: "G1  R 3 mm". The root button
+  of a group cycles one radius / two radii (a group is never "default").
+  A member's own root button takes it OUT of the group (to its own one
+  radius). Tab visits each group once, not each member.
+- To make a group from the view: select several edges in the view while
+  editing (Ctrl-click, as the panel's add-by-selection does), then the
+  "Group" command on the selection (a key, or the context menu).
+
+Tests (`TestFillet.py`): a group of three edges; the group's radius
+changed -- all three change; an edge taken out -- it keeps the radius it
+had; two radii with a reversed member; save and restore; an edge renamed
+by a change upstream keeps its group (the `connectLinkProperty` path);
+an old file restores with no groups. GUI: the group's single arrow and
+its markers, Tab once per group, a typed value reaching every member.
+
+Chamfer: the same, with `ChamferInfo` (`PropertyChamferEdges`) and a
+group table of `{size, size2, angle}`.
+
+### 6.3 Form B, no new storage: groups as expressions
+
+Each member edge keeps its own point, its radius bound by an expression
+to one place -- the first member's radius, or a spreadsheet cell or a
+named variable. The panel and the view treat edges whose radii are bound
+to the same expression as a group. Nothing in the file format changes and
+older builds compute it the same; but a group then has no name of its
+own, a member's value shows as an expression, and taking an edge out
+means clearing an expression. Simpler to build, plainer to break.
+
+### 6.4 Seen in the source on the way, not part of this design
+
+`PropertyFilletSegments::connectLinkProperty` (`PropertyDressUp.cpp` 184
+to 197), in the loop that renames the expressions of each point when an
+edge is renamed: both `p1` and `p2` are built from the OLD path (`path`,
+not `pathNew`), so the per-point renames rename nothing; and the loop
+steps `i` twice (`++i` in the body and in the `for`), so only every
+second point is visited. By reading only, nothing run: an expression on a
+per-point radius of an edge that gets renamed may be left pointing at the
+old name. For the build session to look at; not an entry unless the
+reporter says.
 
 ## Sources
 
@@ -290,3 +412,5 @@ f. Edge GROUPS (one value for several edges, as SolidWorks, Fusion and
     https://www.staff.city.ac.uk/~ra600/ME2105/Catia%20course/CATIA%20Tutorials/prtug_C2/prtugbt0609.htm
 12. IBM support, APAR HD54873 (double-click a variable fillet's radius
     value): https://www.ibm.com/support/pages/apar/HD54873
+13. PTC Community, variable round (2008 forum answer, "add radius"):
+    https://community.ptc.com/creo-modeling-questions-5/variable-round-chamfer-38079
