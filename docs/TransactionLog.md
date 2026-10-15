@@ -13465,7 +13465,7 @@ raised past what one frame of the socket carries**: the server reads
 messages of 64 MB at most and the bytes travel as base64, so the ceiling
 is 46 MB. A file larger than that does not come this way; it is handed
 over and brought in with "Merge from file...". Sending in pieces would
-lift that and is not built.
+lift that and is not built. (Built since: 32.36 -- the ceiling is 1 GB.)
 
 `widgets.upload` lost its constant and its copies of the name and path
 helpers to the same module; what it does is unchanged.
@@ -20148,6 +20148,74 @@ nothing more. `tests/gui/serve-log-browser.py` (15, +2): every row a node
 on the one lane, the branch named at its head; the shape's value said in a
 line. The browser drives read a row's name by its cell's class now, the
 graph's column being first.
+
+### 32.36 A file larger than one message, sent in pieces (2026-10-15)
+
+**Asked** ("continue"): item 8 of the same list, the last -- a file larger
+than one message of the socket carries. The server reads messages of 64 MB
+at most and a file travels as base64, so one message took 46 MB, which was
+also the most `UploadLimitMB` could be set to (sec 30.23: "Sending in
+pieces would lift that and is not built").
+
+**Three ops, and the two that take a file name the pieces.** All three
+mutating, as the ops they feed are: what may not be sent whole may not be
+sent in pieces.
+
+- `upload.begin {size, for}` -- the size first, so a file the host will not
+  take is refused before a byte travels: `TooLarge` past the upload limit,
+  and with `for: "requests.send"` also `TooMany` past what may wait (sec
+  30.29). The answer is the upload's number and the size of a piece, 4 MB.
+- `upload.piece {upload, at, data}` -- the next bytes, in order: a piece
+  that does not start where the last ended is refused, not placed, and one
+  that would run past the size given is `TooLarge`. The answer is how much
+  has come.
+- `upload.cancel {upload}` -- let go of it now.
+- `requests.send` and `widgets.upload` take `upload` in place of `data`:
+  `SceneRequests::decode()` hands over what the pieces brought, all of it,
+  and lets the upload go. Named before all of it has come is `BadRequest`;
+  the limit is read again there, since it may have been lowered meanwhile.
+
+**Found on the way.** The check made before decoding -- that the base64
+is not longer than the bytes allowed -- counted its last four characters as
+three bytes when they may stand for one or two, the rest padding: a file of
+exactly the limit whose length is not a multiple of three was refused as
+too large. Whole, that was a file at the limit to the byte and nobody met
+it; in pieces every last piece is exactly what is left, and the 60 MB send
+failed on it. The check allows the two.
+
+**Whose it is.** An upload is held for the connection that began it, and
+its number is no handle for any other: a piece or a send naming another
+connection's upload is `UnknownUpload`, as one that never was. One at a
+time per connection -- a new `upload.begin` replaces what the last left
+half sent -- and four at a time in all (`Busy` past that). One no piece has
+come for in two minutes is let go: a connection that leaves in the middle
+says nothing. The bytes are held in memory until taken, so the ceiling no
+setting passes is now 1 GB, where it was one message; the control in the
+sharing dialogs goes to 1024, its tip saying a large file goes in pieces
+and that a copy to merge must also fit in what may wait.
+
+**The page.** `sendFile()` (`web/src/control.ts`) sends a file of 4 MB or
+less whole, as before -- one round trip -- and a larger one in pieces:
+begin, the pieces one after the other, then the op naming the upload; it
+cancels what it left half sent when anything fails. Both callers use it:
+"Send my copy to merge..." and a mirrored panel's file chooser. The menu's
+send says how far it has got in a line at the foot of the page ("Sending
+large.FCStd: 24.0 of 60.0 MB") while it goes.
+
+**Tests.** `scripts/transaction-log-request-check.py` (rq, 49, +18): a size past
+the limit and past what may wait refused before a byte goes; a view-only
+connection may not begin; a piece out of order refused and nothing placed;
+another connection's upload unknown to it, for a piece and for the send;
+the send named before all has come refused; 60 MB in fifteen pieces taken
+as a request, its bytes the bytes sent, its number let go after; cancelled
+and replaced uploads hold nothing; the panel's upload in three pieces,
+written whole, and under the same limit. `scripts/share-panel-check.py`:
+the control's top is 1024. `tests/gui/serve-request-browser.py` (new, 7, ctest
+`GuiServeRequestBrowser`):
+Chrome sends 60 MB through the menu -- the page says how far it has got,
+more than once, and ends at the whole; the host has it waiting under the
+page's name, its bytes the file's, and nothing of the pieces held after.
+`scripts/request-drive.js` reads the progress line.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
