@@ -160,6 +160,9 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:30: entry 147 -- also more contrast inside the icon, the inner
+edges for example.** Under the entry.
+
 **2026-10-15 16:04: NEW ENTRY 147 -- TechDraw's new print icon looks disabled
 (low contrast, grey); sharper, darker edges wanted. It is the shared
 document-print icon, Std_Print's too.** Under the entry.
@@ -2972,7 +2975,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit. 15:52: "yes to all" -- every handle (the rotation handle too); it follows the user's pre-selection settings |
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
 | 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open |
-| 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry |
+| 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20072,6 +20075,15 @@ READ in the source, nothing run:
   #595959 and one #ffffff; fills #a7a7a7, #fbfbfb, black (5) and one
   #729fcf (blue) -- mid greys for the outlines, by the note-taker's
   reading the low contrast the reporter sees.
+
+**2026-10-15 16:30, the reporter adds:** "also increase inner contrast. inner
+edges for example"
+
+The note-taker's reading: besides the darker OUTER edges, the contrast
+INSIDE the icon goes up too -- the INNER edges (the lines within the
+printer's shape: the paper slot, the paper, the tray, by the note-taker's
+reading) darker or sharper against the fills, "for example" -- other
+inner details the same way. Point c (the fills) still not said.
 
 ## Inbox
 
