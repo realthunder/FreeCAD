@@ -130,7 +130,11 @@ copy", the build session), 2026-10-15 14:47 (`1df007d0f2`, CLEAN,
 pushed 14:45, on the reporter's direct "Push and restage now" to the
 build session 14:25: entry 117 step 4 (the chamfer), 135, 136 (the
 fillet) and 137; build r54; "I did not test the staged copy", the
-build session).
+build session), 2026-10-15 22:20 (`9c68e150ad`, CLEAN, pushed 22:18,
+on the reporter's "push and restage" to the build session that evening,
+relayed: entries 139 to 150 (144 without its outline, 146 unseen, 148's
+faces and one click cause); its code build r70 at `eefc466af4`, the
+later commits docs only).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -159,6 +163,20 @@ report views, the reporter's own files -- is kept beside the dev tree under
 read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
+
+**2026-10-16 07:02 (written; the build session's message arrived overnight):
+PUSHED 2026-10-15 22:18 (origin `9c68e150ad`, was `1df007d0f2`) and
+STAGED 22:20 CLEAN (`9c68e150ad`, INSTALL-USER OK, exit 0; occt
+`a81d25f148`, coin `d2da5cc93`)** -- on the reporter's word "push and
+restage" said to the build session on the evening of 2026-10-15
+(relayed; the note-taker did not hear it). The note-taker checked the
+reflog of origin/LinkVibe and `.conda/user-app/INSTALLED.txt` (installed
+2026-10-15 22:20:17, fcad 9c68e150ad, dirty False); nothing run. The code
+is build r70 (`eefc466af4`); the commits after it change docs only. The
+staged copy now has entries 139 to 150, NOT 138. STILL OPEN: 138 (a
+screenshot asked), 144's outline (the screen under D3D11), 146 (needs the
+reporter's eye), 148's f/g/h, 143's red-only-with-preview choice, the
+silhouette test as a candidate entry, 130/133 (the reporter's hands-on).
 
 **2026-10-15 21:28: entry 143 -- the note-taker's 21:26 note CORRECTED: the red
 faces stay after release (tested); the choice not put to the reporter is
