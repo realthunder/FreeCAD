@@ -160,6 +160,14 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:29: NEW ENTRIES 141, 142 and 143, all on the fillet's on-view
+editing (one message, split by the note-taker).** 141 (a defect): the
+arrow's tooltip shows at once and hides on any movement -- a timer and a
+check wanted. 142: the arrow's direction the difference of upstream's two
+arrows. 143: the recompute skips missing or failed edges and makes the
+rest, keeps the failed edges' old preview, stays in error; a stop cursor
+while a drag fails. Under each entry.
+
 **2026-10-15 14:47: PUSHED 2026-10-15 14:45 (origin `1df007d0f2`) and STAGED 14:47 CLEAN (`1df007d0f2`)** -- on the
 reporter's direct "Push and restage now" to the build session 14:25:
 entry 117 step 4 (the chamfer), 135, 136 (the fillet), 137. Build r54,
@@ -2909,6 +2917,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header. NOT REPRODUCED 14:22 by the build session: offscreen the selection view's header and the property editor's read the SAME ground; it asks the reporter for a SCREENSHOT and the panel layout |
 | 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140 |
 | 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED |
+| 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN |
+| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry |
+| 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19511,6 +19522,135 @@ sheet's tree grey (100,100,100 under Dark). The text views keep the
 theme's ground (entry 121). Plan: give the lists the report view's ground
 at runtime while they're overlaid and not see-through. Not started."
 
+## 141. The fillet's on-view arrow tooltip shows at once and hides on any movement (a defect) -- OPEN
+
+**2026-10-15 15:29, the reporter** (one message; it holds 141, 142 and 143 --
+the note-taker split it into three entries, the whole message quoted here
+once): "new defect, fillet on view edit arraow tooltip does not show correctly.
+It shows immedately on mouse touching the arrow. then any further movement,
+even still hitting the arrow will hide the tooltip. expected behavor is
+have a timer and before showing the tooltip check if still hitting the
+arrow. any repeated hitting do not hide tooltip. New request, regarding
+fillet on view edit. current, I assum the arrow is align to one of the
+tangent direction of the fillet face. I guess that's why upstream uses two
+arrow, because there is are two tangent direction. I want to make the
+arrow direction to be difference of these two tangent direction, in other
+word, use the two arrow direction from upstream and use the difference.
+also. when doing recompute, skip any missing or failed fillet and compute
+as many fillets as possible. keep the previous preview faces cooresponding
+to the failed edges for visual inspection along with the newly made
+preview fillet face. still mark the object for error. when dragging if
+recompute fails for that dragging fillet, change cursor to stop sign."
+
+The note-taker's reading of the first part (the defect):
+- On the copy STAGED 14:47 (`1df007d0f2`, entry 135's tooltip), the
+  arrow's tooltip shows the MOMENT the pointer touches the arrow; then any
+  movement at all -- even with the pointer still over the arrow -- HIDES
+  it.
+- Wanted: a TIMER (a hover delay); when it fires, check the pointer is
+  STILL over the arrow, and only then show the tooltip. Further movement
+  over the arrow ("any repeated hitting") does NOT hide it.
+NOT said:
+a. the delay -- Qt's usual tooltip delay, by the note-taker's reading;
+b. the chamfer's handles (the same Gizmo) -- the same, by the note-taker's
+   reading;
+c. when it hides: on leaving the arrow, by the note-taker's reading (and
+   on a press, as now).
+READ in the source, nothing run: `src/Gui/Inventor/Draggers/Gizmo.cpp`
+240 to 252 -- on a pointer move the tooltip is shown when `over` changes
+to true and hidden when it changes to false, with no delay. By the
+note-taker's reading, a move while over is a no-op in that code, so what
+hides the text is not found by this reading (Qt's QToolTip hides itself
+when the pointer moves away from where it was shown, perhaps -- a guess).
+
+## 142. The fillet's on-view arrow direction: the difference of upstream's two arrow directions (a change request) -- OPEN
+
+**2026-10-15 15:29, the reporter** -- the second part of the message quoted
+under entry 141: "New request, regarding fillet on view edit. current, I
+assum the arrow is align to one of the tangent direction of the fillet
+face. I guess that's why upstream uses two arrow, because there is are two
+tangent direction. I want to make the arrow direction to be difference of
+these two tangent direction, in other word, use the two arrow direction
+from upstream and use the difference."
+
+The note-taker's reading:
+- Now: each fillet arrow lies in ONE of the edge's two faces, pointing
+  into it (step 2: "in the face beside the first edge turned more toward
+  the camera") -- the reporter takes this to be along one of the fillet
+  face's two tangent directions (at its two boundaries), and so why
+  upstream shows two arrows.
+- Wanted: ONE arrow whose direction is the DIFFERENCE of upstream's two
+  arrow directions (the arrow on face A minus the arrow on face B).
+NOT said:
+d. which way: A - B or B - A, i.e. which side the arrow points to;
+e. by the note-taker's reading of the source (below) upstream's two
+   arrows BOTH point INTO their own face, away from the edge. Their
+   DIFFERENCE then runs ACROSS the corner, from one arrow's tip toward the
+   other's -- parallel to the chord of the fillet's arc, i.e. the fillet
+   face's tangent at its MIDDLE. Their SUM would be the corner's BISECTOR
+   (into the material; its opposite points out of the corner). Which of
+   the two is meant is the reporter's -- the note-taker's reading is the
+   literal difference, the middle tangent, which matches the reporter's
+   "two tangent directions";
+f. where the arrow sits -- still on the edge, by the note-taker's reading;
+g. the chamfer (which shows its sizes per face) -- not asked, by the
+   note-taker's reading.
+READ in the source, nothing run:
+- Upstream's arrow: `src/Mod/Part/App/GizmoHelper.cpp` 151 to 184
+  (`getDraggerPlacementFromEdgeAndFace`): `dir = normal x tangent`, turned
+  to point toward a point inside the face near the edge -- into the face.
+- The fork's per-point arrow: `src/Mod/PartDesign/Gui/TaskFilletParameters.cpp`
+  395 to 440 (`edgeHandlePlacement`), the same rule at a point along the
+  edge.
+- The chamfer already takes BOTH faces' arrows:
+  `src/Mod/PartDesign/Gui/TaskChamferParameters.cpp` 635 to 636.
+
+## 143. The fillet's recompute: as many fillets as possible, failed edges skipped, their old preview kept, a stop cursor on a failing drag (a change request) -- OPEN
+
+**2026-10-15 15:29, the reporter** -- the third part of the message quoted
+under entry 141: "also. when doing recompute, skip any missing or failed
+fillet and compute as many fillets as possible. keep the previous preview
+faces cooresponding to the failed edges for visual inspection along with
+the newly made preview fillet face. still mark the object for error. when
+dragging if recompute fails for that dragging fillet, change cursor to
+stop sign."
+
+The note-taker's reading:
+1. The fillet's recompute SKIPS any edge that is MISSING (its reference
+   gone) or whose fillet FAILS, and makes as many fillets as it can from
+   the rest.
+2. For the failed edges, the PREVIOUS preview faces (from the last
+   recompute that made them) are KEPT and shown, beside the newly made
+   preview fillet faces, so the user can look at what went wrong.
+3. The object is STILL MARKED in error (the recompute does not report
+   success because some fillets were made).
+4. While DRAGGING an arrow: if the recompute fails for the fillet being
+   dragged, the CURSOR changes to a STOP SIGN (Qt's forbidden cursor, by
+   the note-taker's reading).
+NOT said:
+h. is it in the EDIT only (the preview), or the feature's RESULT too --
+   does the fillet's Shape, after OK, hold the partial result (the
+   fillets that worked) while it is in error? By the note-taker's reading
+   the words "when doing recompute ... still mark the object for error"
+   mean the feature's own recompute, so the result holds the partial
+   fillet -- not said;
+i. how "failed" is found per edge: OCCT fails a fillet as a whole, so
+   finding which edge fails may mean trying edges (or edge groups) one by
+   one -- a cost on large fillets; not the reporter's to rule unless the
+   build session asks;
+j. how the kept old preview faces look (the same as the new ones, or
+   marked -- a colour) -- not said;
+k. the cursor: back to normal as soon as a recompute in the drag succeeds,
+   by the note-taker's reading; and what is shown/kept when the drag is
+   RELEASED on a failing value (entry 136: a drag release is one step);
+l. the chamfer -- the same, by the note-taker's reading? Not said.
+Related: entry 135 point 1 (no arrows while a reference is missing),
+DONE 14:47 -- handles show on the edges still there.
+READ in the source, nothing run: `src/Mod/PartDesign/App/FeatureFillet.cpp`
+127 to 160 -- ONE `makEFillet` call for all edges; a null or invalid
+result fails the whole feature ("Resulting shape is null" / "Resulting
+shape is invalid"); nothing per edge.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -19522,5 +19662,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 140
+the build session, 131 and 132 found by it; entries 134 to 143
 are of 2026-10-15, 134 said to the build session)
