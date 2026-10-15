@@ -972,6 +972,14 @@ void TaskChamferParameters::removeEdge(const std::string& edge)
     onRefDeleted();
 }
 
+void TaskChamferParameters::heldStepRolledBack()
+{
+    // A cancelled drag: every handle where the feature, rolled back,
+    // has its value -- the default's other arrows too (entry 145)
+    if (gizmoContainer)
+        setGizmoPositions();
+}
+
 void TaskChamferParameters::finishedRecomputeFeature()
 {
     TaskDressUpParameters::finishedRecomputeFeature();

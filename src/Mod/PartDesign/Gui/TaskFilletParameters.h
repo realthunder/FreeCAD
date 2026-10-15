@@ -93,6 +93,7 @@ protected:
     void populateOtherItems() override;
     void onRefDeleted() override;
     void finishedRecomputeFeature() override;
+    void heldStepRolledBack() override;
 
     void removeSegments();
     void clearSegments();

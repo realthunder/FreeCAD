@@ -1275,6 +1275,14 @@ void TaskFilletParameters::setCornerFaceGizmoPositions(PartDesign::Fillet *fille
     }
 }
 
+void TaskFilletParameters::heldStepRolledBack()
+{
+    // A cancelled drag: every handle where the feature, rolled back,
+    // has its value -- the default's other arrows too (entry 145)
+    if (gizmoContainer)
+        setGizmoPositions();
+}
+
 void TaskFilletParameters::finishedRecomputeFeature()
 {
     TaskDressUpParameters::finishedRecomputeFeature();

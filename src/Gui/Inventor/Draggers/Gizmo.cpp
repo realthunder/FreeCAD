@@ -544,13 +544,16 @@ void LinearGizmo::cancelDrag()
         return;
     }
     dragCancelled = true;
-    // The owner first: it rolls the drag's step back, the property with it
-    notifyDrag(DragEvent::Cancelled);
+    // The box back first, then the owner told: it rolls the drag's step back
+    // and puts every handle of the value where the box says -- the others a
+    // default value drives too (entry 145), which the blocked box does not
+    // tell
     {
         const QSignalBlocker blocker(property);
         property->setValue(initialValue);
     }
     setDragLength(initialValue);
+    notifyDrag(DragEvent::Cancelled);
 }
 
 void LinearGizmo::draggingContinued()
@@ -833,12 +836,13 @@ void RotationGizmo::cancelDrag()
         return;
     }
     dragCancelled = true;
-    notifyDrag(DragEvent::Cancelled);
+    // the box back first, then the owner told (as a linear handle's)
     {
         const QSignalBlocker blocker(property);
         property->setValue(initialValue);
     }
     setRotAngle(initialValue);
+    notifyDrag(DragEvent::Cancelled);
 }
 
 void RotationGizmo::draggingContinued()

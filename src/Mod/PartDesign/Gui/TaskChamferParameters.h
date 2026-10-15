@@ -102,6 +102,7 @@ protected:
     bool getFlipDirection() const;
     void onNewItem(QTreeWidgetItem *item);
     void finishedRecomputeFeature() override;
+    void heldStepRolledBack() override;
     
 private:
     void setUpUI(PartDesign::Chamfer* pcChamfer);

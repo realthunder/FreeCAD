@@ -472,7 +472,9 @@ void TaskFeatureParameters::endHeldStep(bool abort)
         stepTid = 0;
         // No refresh: the dragged box is put back by its handle, and a
         // refresh writes the panel's boxes back to the feature -- a step of
-        // its own for nothing
+        // its own for nothing. The handles are placed again, though: the
+        // others of the value did not hear the box put back.
+        heldStepRolledBack();
         return;
     }
     closeStep();

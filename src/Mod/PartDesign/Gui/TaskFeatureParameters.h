@@ -146,6 +146,9 @@ protected:
     /// abort rolls it back (a cancelled drag)
     void beginHeldStep();
     void endHeldStep(bool abort);
+    /// After a held step was rolled back (a cancelled drag): the handles of
+    /// a value put back where the feature has it (entry 145)
+    virtual void heldStepRolledBack() {}
     /// Holds a step from the first key typed in \a box until Enter or the
     /// focus leaving it: what is typed in a panel box is one step, not one
     /// per key
