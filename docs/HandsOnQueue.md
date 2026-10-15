@@ -160,6 +160,9 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:44: entry 145 ANSWERED -- only the other arrows wrong; Esc the
+same; the chamfer not tried yet.** Under the entry.
+
 **2026-10-15 15:42: entries 142, 143 and 144 ANSWERED.** 142: the SUM (the
 bisector); the note-taker's PROPOSAL for the chamfer's arrows written,
 asked for by the reporter, not ruled. 143: the partial result kept, failed
@@ -2941,7 +2944,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry. ANSWERED 15:42: the SUM ("I guess it should be the sum then") -- the corner's bisector; the reporter ASKED the note-taker for a proposal for the chamfer's arrows (more than one for two distances or an angle) -- the note-taker's PROPOSAL under the entry, not yet ruled |
 | 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them |
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit |
-| 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN |
+| 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19879,6 +19882,16 @@ Undo inside the edit, the handles stayed where the undone drag had left
 them. Fixed: the panels re-place their handles on refresh.") -- the
 same kind of miss, on the abort path rather than the Undo path, by the
 note-taker's reading.
+
+**2026-10-15 15:44, the reporter answers:** "entry 145, yes, only other arrows
+are wrong. yes esc same. haven't tried chamfer yet"
+
+The note-taker's reading:
+a. answered: ONLY the OTHER default edges' arrows are wrong; the dragged
+   arrow and the radius value are restored.
+b. answered: an abort by Esc shows the SAME.
+c. the chamfer: NOT TRIED by the reporter -- unknown; by the
+   note-taker's reading the fix covers it too if it shares the defect.
 
 ## Inbox
 
