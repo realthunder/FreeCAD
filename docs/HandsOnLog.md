@@ -7053,3 +7053,52 @@ the edge; nothing active after a mode change; a reversed member's points by
 length keep their length; at most 64 handles.
 
 Steps 4 (chamfer, draft, thickness) and 5 (panel optional) not started.
+
+## Entry 134: a TechDraw page keeps its view state as a spreadsheet does (2026-10-15)
+
+The reporter's word "Do 3. After done push and restage", item 3 of the build
+session's status: the page shows no eye in the tree and its view state is
+kept like a spreadsheet's. Committed `0d4125a132`, built r41.
+
+**What changed.** `ViewProviderPage`: NoToggleVisibility; `isShow()` always
+true (its tree item is not greyed with the view closed); the Visibility read
+from a file opens nothing, in the restore and in the base `finishRestoring()`
+that sets it from the App object afterwards. The document's view records
+decide: a split view layout naming `O:<page>` reopens it. The rule for older
+files (written before the records, or by another program -- their Camera
+has no `viewareas` attribute, `Gui::Document::hasObjectViewRecords()`): a
+page with Visibility on is opened once at the load. `vp.show()`/`hide()` and
+setting Visibility from a script still open and close the view, and keep
+Visibility in step, so a file read by another program opens what was open.
+
+**Found on the way, fixed:** with split views off an object view was never
+recorded, so a page came back only by its Visibility and a spreadsheet not
+at all; now an object view outside any container is written as a layout of
+its one leaf, and with split views off the recorded object views are opened
+as views of their own. And Show/Hide/Toggle all objects and the selection's
+show/hide/Space set every page's Visibility -- "Show all objects" opened
+every page; they now pass over what has no eye (pages, sheets, VarSets).
+
+**The open check of 10-13:** TechDraw does not read the page's Visibility for
+updates (`DrawPage` never does; the Gui reads its views' own Visibility).
+
+**Tests.** `techdraw-page-view-state` 18/18 offscreen: no eye, the commands
+and Space leave the page alone, show/hide, saved open/closed and reopened,
+records emptied -> closed with Visibility on, no records -> opened once, split
+views off -> recorded as one leaf and reopened, the same file with split
+views on. Neighbours: `task-panel-place` 59/59, `techdraw-colour-after-page-
+view-closed` 6/6. Four more (`sheet-view-reopen`, `sheet-view-on-request`,
+`view-in-cell-goes-with-its-object`, `techdraw-page-before-its-view-providers`)
+and two claims of `techdraw-never-shown-page-exports` fail offscreen -- the
+SAME failures on the staged copy (`3e764d4566`, before the change): their
+cells and pixels are not there offscreen. Not run on the screen (the
+reporter is at the box).
+
+**Not covered:** a file saved before this change with split views off, its
+pages open as plain tabs: those have no record and do not come back the
+first time.
+
+**Suites on r41:** Python 3763 OK (skipped=52, expected failures=6); ctest
+889 of 957 in the full run, the other 68 (ExpressionImage/Routing) failed only
+for want of FCX_PYODIDE, which that chain set after ctest -- rerun with it,
+91/91 of those groups pass. So 957/957.
