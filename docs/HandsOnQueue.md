@@ -156,6 +156,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 10:03: NEW ENTRY 137 -- TechDraw's Print All and Print Selected
+combined into one command, TechDraw_Print: the selected pages, or all when
+none is selected, its tooltip saying so.** Under the entry, four points
+not answered.
+
 **2026-10-15 09:58: entry 136 ANSWERED -- the fillet first; a drag's release
 one undo step if it changed something; OK its own step; redo wanted; and
 NEW: a click of another mouse button or Esc during a drag cancels it and
@@ -2808,6 +2813,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
 | 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles |
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said |
+| 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18867,6 +18873,44 @@ does today in the edit (by entry 117's step 1 account the view leaves the
 edit on Esc's release, and Esc deactivates an active handle) -- by the
 note-taker's reading, the Esc that cancels a drag does nothing more.
 
+## 137. TechDraw: Print All Pages and Print Selected Pages combined into one command, TechDraw_Print (a change request) -- OPEN
+
+**2026-10-15 10:03, the reporter:** "New request, combine Techdraw print all
+and print selected into one commend TechDraw_Print, mention in its doc
+(tooltip) that it will print selected pages, or all pages if no
+selection"
+
+The note-taker's reading: ONE command, named TechDraw_Print, in place of
+the two (TechDraw_PrintAll and TechDraw_PrintSelected, the latter added
+for entry 127): with TechDraw pages selected it prints those; with none
+selected it prints all pages. Its tooltip says exactly that. The landscape
+start of entry 133 applies to it, by the note-taker's reading, as to both
+before.
+NOT said:
+a. the old command names -- TechDraw_PrintAll is upstream's, and may be
+   in a user's own tool bars, shortcuts or macros: kept as hidden aliases
+   that run the new command, or dropped;
+b. "all pages" -- of the ACTIVE document (as Print All does today) or of
+   every open document (selected pages are taken from any document
+   today);
+c. the menu text and icon (both commands use the Print All icon today);
+d. what counts as "a selection" when other things than pages are
+   selected (e.g. a view on a page) -- that view's page, or no page
+   selected, so all.
+READ in the source, nothing run:
+- `src/Mod/TechDraw/Gui/Command.cpp` 273 to 323: CmdTechDrawPrintAll
+  ("Print All Pages", `MDIViewPage::printAllPages()`, active while a page
+  exists) and CmdTechDrawPrintSelected ("Prints the selected pages, in the
+  order they were selected", `printPages(selectedPages())`, active only
+  with a page selected).
+- `src/Mod/TechDraw/Gui/MDIViewPage.cpp`: printAllPages takes the ACTIVE
+  document's pages (about 610); selectedPages() reads the selection of
+  every document ("*", about 623).
+- `src/Mod/TechDraw/Gui/Workbench.cpp` 208-209, 303-304, 418-419: the two
+  listed side by side in three places.
+- `src/Gui/PreferencePackTemplates/Shortcuts.cfg` 915 names
+  TechDraw_PrintAll.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -18878,5 +18922,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 136
+the build session, 131 and 132 found by it; entries 134 to 137
 are of 2026-10-15, 134 said to the build session)
