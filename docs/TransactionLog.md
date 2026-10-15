@@ -18081,7 +18081,7 @@ newest of its run; an object kept, every shape its recomputes make.
 - A kept object that is removed stays in `keepobject`. *(Let go from
   the list: 32.12.)*
 - The document is not marked modified by keeping; what is kept is
-  written by the next save all the same.
+  written by the next save all the same. *(Marked since: 32.30.)*
 - 32.9's "a value the log let go" stands: nothing says why nothing is
   shown, and the state's document is not asked.
 
@@ -18136,6 +18136,7 @@ again where it is still listed.
 **Left.**
 
 - The document is still not marked modified by keeping or letting go.
+  *(Marked since: 32.30.)*
 - The list is of the document the panel is on; nothing says what a file
   not open keeps.
 
@@ -19024,7 +19025,9 @@ showed what is no longer so.
 merge", which are the merge's (the third stage; the question of 32.20 it
 waited for is ruled, 32.24). Trim, squash, "Open version", "Branch to document": the first
 two take rows away for good, the others open a document the page is not
-joined to. Kept values and requests are the fourth stage.
+joined to. Kept values and requests are the fourth stage. *(Ruled since,
+32.30: a trim and a squash are the host's; nothing opens a document from
+a page.)*
 
 **Tests.** `tests/gui/serve-log-acts.py` (37), served with no window: a
 client that may edit, one that may only look, and the host -- each act,
@@ -19135,6 +19138,9 @@ button for it yet, and says nothing of which document a branch is
 served in. A branch that exists already is not served as it is -- a new
 one is always made. The document opened for the branch has no window
 and is closed by closing it from Python or with the application.
+*(Since 32.30, closing the last window says so and offers to show it;
+saving it says first that it is not the branch the file is checked out
+on.)*
 
 **Tests.** `tests/gui/serve-log-acts.py` (64): the shared document with
 a client that may edit, one that may only look and the host -- what
@@ -19392,7 +19398,7 @@ case of the tests:
 merge's own panel (the third stage of 32.21) -- built since, 32.26. The
 requests of 30.20 --
 a file sent, a branch an import made -- are another list of the same
-panel and are not asked through these ops. Access is said by user;
+panel and are not asked through these ops. *(Listed since, 32.30.)* Access is said by user;
 there is no group, and no access of "everyone who edits" to a branch
 other than the two defaults.
 
@@ -19401,7 +19407,8 @@ not by every word listed of the branches that are read: the version a
 branch forks from is named `branch <name>` and is the parent's, a record
 of a switch or a merge names the other branch, and a new branch's name
 that is taken is refused as taken. `log.rows` says the log's last row
-number, whoever asks. None of it is a row, a value or a shape.
+number, whoever asks. None of it is a row, a value or a shape. *(Ruled
+since, 32.30: such a branch is listed by its name, greyed.)*
 
 A user is who the log says: for a browser its grant counts, a label and
 the first six digits of its key (30.32). What is said of that user is
@@ -19552,6 +19559,7 @@ reason.
   object against what it has now (32.12) is the desktop's. *(Built
   since: 32.28.)*
 - The document is still not marked modified by keeping (32.11).
+  *(Marked since: 32.30.)*
 
 **Tests.** `tests/gui/serve-log-kept.py` (33): nothing kept at first; A
 keeps the cut's shape at a row, its op says so, the host's document
@@ -19690,6 +19698,137 @@ browser.py`: **Keep all of it** greyed for the page's user, with the
 host's reason; the value it kept listed "by you". `web/src/widgets/
 gate.ts` (266, +3): the keeper said, a value under an object keepable or
 not, keeping at a version.
+
+### 32.30 What the browser's panel left, closed (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "Close all 5. 3, host only and no doc
+opening action. 4, when closing a document, if it is the last visible one
+and there'rs still hidden one left. Warn the user, and offer to show those
+documents. Also when saving, warn if it is not the current checked out
+branch, I. E. The outer document. 5, maybe just grayed out would do." --
+after five things were laid out as left by 32.11 to 32.29: (1) keeping
+does not mark the document modified; (2) the requests of 30.20 are not on
+the page; (3) trim, squash, "Open version" and "Branch to document" are
+not on the page; (4) a branch served in a document of its own has no
+window on the desktop; (5) the name of a branch a client does not read
+shows in the text of versions and records.
+
+**(1) A keep marks the document modified.** What is kept is written by
+the next save (32.11), so a keep is a change of the file like any other.
+`Gui::Document` marks itself modified on `App::Document::
+signalLogKeptChanged`. That signal is now raised only where something
+moved: `TransactionStore::keepValue()` says whether it did, and a value
+kept again as it is kept -- the same keeper, or a client's keep of the
+host's -- is no change, and marks nothing.
+
+**(2) The requests on the page.** `log.requests` lists, beside the merges
+asked for, the requests of 30.20 as the desktop's list has them:
+
+- `files`: the files sent and not read (`Gui::SceneRequests`) -- the
+  host's connection all of them, a client the ones it sent (`mine`);
+- `imports`: the branches an import made that the branch the document
+  is on has not taken (`Document::importRequests`), of those the asker
+  reads -- its file, who made its rows and who sent it, its operations,
+  and whether it shares no history or stopped at a row.
+
+What is done with them is the host's (30.20 H6: nothing a connection sent
+is read for its asking):
+
+- `log.bring`: a file sent brought in, as "Bring in only" brings it --
+  read into a branch of its own (`Document::importSentFile`), which is
+  then an import to merge;
+- `log.mergeImport`: an import merged into the branch the document is
+  on, as `log.mergeRequest` merges -- `picks`, `fallback`, `Conflicts`;
+  `log.preview` with `import` is its preview;
+- `log.dropFile`: a file let go unread -- by the host, or withdrawn by
+  the one who sent it, to whom another's file is unknown;
+- an import is deleted as a branch is, `log.deleteBranch`.
+
+A file arriving or going is said to the documents watched (`log.changed`,
+from `SceneRequests::signalChanged`). The page's Requests tab has a second
+list under the merges asked for, "Sent, or brought in": a file says its
+name and size and that nothing read it, with **Bring in** and **Delete,
+unread** -- **Withdraw** for its sender; an import says its operations and
+who made and sent it, with **Merge**, **Look first...** (the picker of
+32.26) and **Delete**. The tab's count is of all three kinds. A file is
+brought in and then merged, two steps, where the desktop's menu has "Bring
+in and merge..." as one: the page asks the host for each, and a file that
+imports nothing new says so at the first.
+
+**(3) A trim and a squash are the host's.** Both take rows out of the log
+for good. `log.trim` takes a branch's history before one of its versions
+out (`Document::trimBranch`, sec 16.7); `log.squash` folds the rows
+between an older version and one of its versions into one row
+(`Document::squashVersions`) -- asked with no `from`, it lists the
+versions a squash may start from, newest first, each with the rows it
+would fold (`Gui::logVersionsBehind`, which the desktop's panel now uses
+too), and a start that is not behind is refused. To anyone else both are
+`Forbidden`: "that takes rows out of the log for good, which is the
+host's". The page's Versions tab has **Trim to here...** and **Squash to
+here...**, greyed with that reason below the host; the squash asks where
+from in a list, its question carrying `choices`. "Open version", "Branch
+to document" and the desktop's "Open in a document of its own" of an
+import are not offered: each opens a document the page is not joined to.
+
+**(4) A document with no window.** A branch served in a document of its
+own (32.23) has no window on the desktop. Closing, of its own asking, the
+last document that has a window while such a document is open, the
+desktop says so (`Gui::Document::canClose`, `HiddenDocuments`): "Closing
+<it> leaves a document open with no window: <name>. It stays open, and
+served if it is, with nothing that shows it." -- **Show Them**, which
+gives each its window once the close is done, **Leave Hidden**, or
+Cancel. Not when everything closes (the application's exit, "Close all"),
+and not of a version pins show or a temporary document, which go with
+what holds them. Before this, closing the last window made the first
+document left active and gave it a window, unasked
+(`Application::switchActiveDocument`): a document with no window is no
+longer picked to be active, and with none that has a window none is.
+
+Saving such a document goes by the warning of 27.5 ruling 4, which now
+says first that it is not the file's own document: "This is branch <b> of
+<file>, not the branch the file is checked out on: that is <a>, in <the
+file's own document>." -- or, where the file's own document is on the
+same branch or is not open, that it is not the document the file is
+checked out as. **Save over File** and **Save to History** are as they
+were.
+
+**(5) A branch not read is listed greyed.** Its name was in the text
+already -- a version named `branch <name>`, a record of a switch, a name
+refused as taken (32.25 "Left") -- and is no longer hidden from the list
+either: `log.branches` lists every branch, one the asker does not read
+by its `id`, `name` and `read: false` alone; a version is listed with
+its branch's name and `branchRead: false` where that is not read. An op
+that names such a branch -- a switch, a rename, a delete, a request, a
+trim -- is refused as not read (`Forbidden`, "that branch is not one
+this connection reads") where it was `UnknownBranch`. Its rows, the
+versions taken on it and the requests of it are still not listed. The
+page greys it in the branch list and in the two lists a merge is asked
+from, offering it for nothing.
+
+**Tests.** `tests/gui/serve-log-acts.py` (105, +10): a branch not read
+is listed greyed, and a switch, a request and a delete of it refused as
+that; a squash and a trim refused A and moving nothing; the versions
+behind, newest first; a start ahead refused; the rows between folded
+into one; the other branch trimmed, the document where it was; a file A
+sends listed to A as its own and to the host, not A's to bring in, and
+withdrawn; sent again, brought in by the host as a branch listed as an
+import, which A is not listed nor may merge; looked at and merged by the
+host, the copy's change here; another file deleted unread by the host;
+B refused all twenty. `tests/gui/serve-log-kept.py` (46, +1): a keep
+marks the host's document modified, a keep of what is kept already
+does not. `tests/gui/serve-log-acts-browser.py` (44, +2): a branch of
+the host's the page's user does not read greyed in the list and offered
+for nothing; **Trim to here...** and **Squash to here...** greyed with
+the host's reason. `scripts/transaction-log-hidden-check.py` (8, new,
+`HIDDENCHECK_OUT`): the branch's document saved says it is not the
+branch the file is checked out on and which is; the outer document's
+window closed asks, by name; cancelled it stays; left hidden, the
+branch's document stays with no window; a window closed while another
+document has one asks nothing; the last closed again and shown, the
+branch's document has a window. `web/src/widgets/gate.ts` (272, +6).
+
+**Not pictured.** The guide has no picture of the page's second request
+list nor of the desktop's question.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 

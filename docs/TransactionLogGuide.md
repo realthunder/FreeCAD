@@ -347,6 +347,8 @@ Or, for objects as they were at a version: select the objects, right-click
 the version, **Keep the selected objects as they are at version N**.
 
 An operation whose shape is kept reads `yes, kept` in the Derived column.
+Keeping or letting go marks the document as changed: the next save is what
+writes it into the file, or leaves it out.
 
 **The Kept tab** lists what is kept; its title carries the count.
 
@@ -562,10 +564,13 @@ does not move with what you do. From that point on you write it:
   document is, **Branch from here...** from the step or the version you
   clicked, **Rename...** renames the one you are on, and **Delete...**
   removes one you made -- for good. Switching waits until nobody has an
-  edit open.
+  edit open. A branch you do not read is in the list in grey: you see its
+  name, and nothing of it.
 - **Versions**, the second list. Click a version to **Restore** the
   document to it -- one step, which undo takes back -- or to name, rename
-  or unname it.
+  or unname it. **Trim to here...** and **Squash to here...** take steps
+  out of the history for good, and are the sharer's alone: for anyone else
+  they are greyed, and say so.
 - Undoing a step of your own and taking a version, as above.
 
 ![The versions, from the History panel](images/transaction-log/15-log-browser-versions.png)
@@ -608,6 +613,16 @@ for whoever writes the branch it is to go into -- and a merge is done in a
 document that is on that branch, so the button says so when yours is not.
 A merge that meets conflicts asks the same one question. **Look first...**
 opens the list before anything is merged.
+
+Under the merges asked for, a second list, **Sent, or brought in**: the
+copies of the file sent to be merged (with *Send my copy to merge...* in
+the viewer's menu) and not read yet, and the branches a copy was brought
+in as and not merged yet. You see the copies you sent, and **Withdraw** one
+to take it back, unread. The sharer sees them all: **Bring in** reads a
+copy into a branch of its own, which then shows in the same list with how
+many operations it has, who made them and who sent it; **Merge** and
+**Look first...** merge it as a request is merged, and **Delete** throws
+it away -- a copy unread, or a branch with what was brought in.
 
 ![A side picked for each conflict](images/transaction-log/15-log-browser-picker.png)
 
@@ -668,7 +683,17 @@ branch you write. Keeping every shape an object has had and will have --
   is on the branch it goes into; **Reject** ends it. However the merge is
   done, the request is answered by it.
 
-Trimming and squashing are done in the desktop's panel.
+Trimming and squashing can be done from the page too, by the sharer
+(**Trim to here...**, **Squash to here...** on a version; the squash asks
+which older version to start from); opening a version or a branch as a
+document of its own is done in the desktop's panel.
+
+**A served branch has no window.** If you close the last document that
+has a window while such a document is still open, FreeCAD says so and
+names it: **Show Them** gives it a window, **Leave Hidden** leaves it
+open and served with none, **Cancel** keeps the document you were
+closing. Saving it warns first that it is not the branch the file is
+checked out on, and names the one that is.
 
 ## 13. I want to...
 
