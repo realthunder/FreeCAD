@@ -160,6 +160,19 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 21:26: entries 141, 142, 143 (fillet and chamfer), 149 and 150
+DONE; 144 DONE but its outline (needs the screen under D3D11); 146
+committed, not checkable offscreen; 148's faces DONE (UseWireJoiner, old
+views keep the old finder) and one click cause fixed (a dimension took
+presses over its whole rectangle: 54+ of 93 dead clicks on Front010 down
+to 10) -- ALL COMMITTED LOCAL, not pushed, not staged (origin still 1df007d0f2); log
+`5ca4041b81`.** OPEN for the reporter under 148: overlapping edges, image
+views over a part view, 10 edges still dead. The build session also found
+TechDraw's GUI test
+DrawStoredGeometryTest.testASilhouetteIsNamedFromItsFaceAndSurvivesAReload
+failing, the same on the staged 1df007d0f2 (pre-existing) -- a candidate
+entry if the reporter wants; NOT made an entry by the note-taker.
+
 **2026-10-15 18:00: 144 and 146 BUILT in r60 and in r63, NOT committed (144's
 outline still needs an on-screen D3D11 check; 146 not checkable
 offscreen); 141's timer was in r60; 142's drag rule holds; 148's old
@@ -3014,16 +3027,16 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header. NOT REPRODUCED 14:22 by the build session: offscreen the selection view's header and the property editor's read the SAME ground; it asks the reporter for a SCREENSHOT and the panel layout |
 | 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140. DONE by the build log (seen 16:57): `340d03f023`, LOCAL, not pushed, not staged -- every colour of Dark, Light and Classic measured, those under 4.5:1 revised; test overlay-text-colours 6; r59 |
 | 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED. DONE by the build log (seen 16:57): `e9a5143778` (+ `ba8fab9ccc`), LOCAL, not pushed, not staged -- the selection view's list on the report view's text ground; the log's text says "transparent mode", the commit "not see-through" -- which mode, ASKED of the build session. ANSWERED 16:59 by the build session: the NON-transparent mode (eye off), the log's "transparent" a slip, corrected `5dbfe4ae1d`; the transparent mode as it was |
-| 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face"). CAUSE FOUND and FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): the face BEHIND the handle stayed preselected and every move re-told the selection, which hides every tool tip; with an object in edit nothing behind a handle is preselected (SoFCUnifiedSelection) |
-| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry. ANSWERED 15:42: the SUM ("I guess it should be the sum then") -- the corner's bisector; the reporter ASKED the note-taker for a proposal for the chamfer's arrows (more than one for two distances or an angle) -- the note-taker's PROPOSAL under the entry, not yet ruled. 15:52: the note-taker's CHAMFER PROPOSAL (P1 to P5) AGREED by the reporter. 15:55: the fillet arrow points OUT of the corner (yes); nothing left open. CORRECTED BY THE REPORTER about 16:00 (to the build session, relayed): "out of the corner" (the note-taker's wording, answered "yes" 15:55) is WITHDRAWN -- it depends on an additive or a subtractive corner; THE RULE: DRAGGING IN THE ARROW'S DIRECTION INCREASES THE RADIUS. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): fillet = one arrow along the sum of the in-face directions, standing on the arc; equal chamfer = one arrow square to the chamfer face; two sizes / size+angle as agreed (P2-P5); no camera-based face switch any more |
-| 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them. 15:52: the stop cursor GOES BACK to normal on the next good recompute in the drag. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): fillet AND chamfer keep what they can make, feature still in error, failed edges' faces as last made kept in RED, stop-sign cursor while a drag fails; fillet by OCCT NbFaultyContours, chamfer each edge alone when the whole fails -- no OCCT change |
-| 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit. 15:52: "yes to all" -- every handle (the rotation handle too); it follows the user's pre-selection settings. BUILT r60 (build session, 18:00): hovered arrows lit in the highlight colour, group-wide, r60's tests passed; in r63 too, NOT committed; the OUTLINE part NOT done -- needs an on-screen check under D3D11 |
+| 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face"). CAUSE FOUND and FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): the face BEHIND the handle stayed preselected and every move re-told the selection, which hides every tool tip; with an object in edit nothing behind a handle is preselected (SoFCUnifiedSelection). DONE 21:26 (build session): `cb161d69d3` + `62a8af9234`, LOCAL, not pushed, not staged -- two causes, the preselection behind the arrow and Qt's unanswered tool tip request; test 15 |
+| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry. ANSWERED 15:42: the SUM ("I guess it should be the sum then") -- the corner's bisector; the reporter ASKED the note-taker for a proposal for the chamfer's arrows (more than one for two distances or an angle) -- the note-taker's PROPOSAL under the entry, not yet ruled. 15:52: the note-taker's CHAMFER PROPOSAL (P1 to P5) AGREED by the reporter. 15:55: the fillet arrow points OUT of the corner (yes); nothing left open. CORRECTED BY THE REPORTER about 16:00 (to the build session, relayed): "out of the corner" (the note-taker's wording, answered "yes" 15:55) is WITHDRAWN -- it depends on an additive or a subtractive corner; THE RULE: DRAGGING IN THE ARROW'S DIRECTION INCREASES THE RADIUS. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): fillet = one arrow along the sum of the in-face directions, standing on the arc; equal chamfer = one arrow square to the chamfer face; two sizes / size+angle as agreed (P2-P5); no camera-based face switch any more. DONE 21:26 (build session): `9221363a5c`, LOCAL, not pushed, not staged |
+| 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them. 15:52: the stop cursor GOES BACK to normal on the next good recompute in the drag. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): fillet AND chamfer keep what they can make, feature still in error, failed edges' faces as last made kept in RED, stop-sign cursor while a drag fails; fillet by OCCT NbFaultyContours, chamfer each edge alone when the whole fails -- no OCCT change. DONE 21:26 (build session), fillet and chamfer: `a045ee97b7`, `9221363a5c`, LOCAL, not pushed, not staged -- red faces at the end of the PREVIEW only (the build session's choice); chamfer without an OCCT change |
+| 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit. 15:52: "yes to all" -- every handle (the rotation handle too); it follows the user's pre-selection settings. BUILT r60 (build session, 18:00): hovered arrows lit in the highlight colour, group-wide, r60's tests passed; in r63 too, NOT committed; the OUTLINE part NOT done -- needs an on-screen check under D3D11. DONE 21:26 (build session) in `62a8af9234`, LOCAL, not pushed, not staged, EXCEPT the OUTLINE part (needs the screen under D3D11) |
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter. DONE by the build log (seen 16:57): `1f31e03f49`, LOCAL, not pushed, not staged -- a cancelled drag puts back the other handles of its value; undo test 17; r59 |
-| 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open. BUILT r60 (build session, 18:00): the menu button's highlight as an outline under bgfx; cannot be checked offscreen; in r63 too, NOT committed |
+| 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open. BUILT r60 (build session, 18:00): the menu button's highlight as an outline under bgfx; cannot be checked offscreen; in r63 too, NOT committed. COMMITTED 21:26 (build session): `01ac931be2`, LOCAL, not pushed, not staged; not checkable offscreen |
 | 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept. DONE by the build log (seen 16:57): `ffa839b1b6`, LOCAL, not pushed, not staged -- darker edges, inner lines and arrow; looked at rendered under both themes |
-| 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING. 17:58: the REPORTER's word relayed by the build session: WireJoiner gated by a property, default true for new objects, false for older files (legacy face finder) -- BUILT as DrawViewPart.UseWireJoiner, IN BUILD r63, NOT committed, not pushed, not staged; the hover-but-not-select defect SEPARATE, a probe after r63 |
-| 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): a part view and a projection group picked by a 2 mm band along the frame (shown or not), label and caption, lines and faces; the empty inside lets the click through; other view kinds unchanged |
-| 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57 |
+| 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING. 17:58: the REPORTER's word relayed by the build session: WireJoiner gated by a property, default true for new objects, false for older files (legacy face finder) -- BUILT as DrawViewPart.UseWireJoiner, IN BUILD r63, NOT committed, not pushed, not staged; the hover-but-not-select defect SEPARATE, a probe after r63. 21:26 (build session): FACES DONE `5edea1ed83` (UseWireJoiner; scanner.FCStd's views keep the old finder until set); CLICKS: a CAUSE FOUND and FIXED `eefc466af4` (a dimension took presses over its whole rectangle) -- Front010 clicks selecting nothing at least 54 of 93 before, 10 after; LOCAL, not pushed, not staged; LEFT OPEN for the reporter: overlapping edges (the top one takes the click), the image view ActiveView017 over Rear001 takes clicks, 10 Front010 edges still select nothing |
+| 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): a part view and a projection group picked by a 2 mm band along the frame (shown or not), label and caption, lines and faces; the empty inside lets the click through; other view kinds unchanged. DONE 21:26 (build session): `7c6d93ba5f`, LOCAL, not pushed, not staged |
+| 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57. DONE 21:26 (build session): `c9417fada7`, LOCAL, not pushed, not staged |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19720,6 +19733,13 @@ claim passed and 'stays while moving' failed; the cause was the
 preselection behind the handle. That fix is in r63. All of it is
 uncommitted until r63's tests pass."
 
+**2026-10-15 21:26, the build session: DONE, COMMITTED `cb161d69d3` + `62a8af9234`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"141 DONE: two
+causes -- the face behind the arrow stayed preselected and every move hid
+all tool tips; then Qt's own tool tip request, unanswered, took the hint
+down 0.3 s after it showed. The hint now answers Qt's request; it stays
+resting and moving. Test 15."
+
 ## 142. The fillet's on-view arrow direction: the difference of upstream's two arrow directions (a change request) -- OPEN; the chamfer too, ADDED 15:32; ANSWERED 15:52; the sign CORRECTED about 16:00 -- dragging along the arrow increases the radius
 
 **2026-10-15 15:29, the reporter** -- the second part of the message quoted
@@ -19893,6 +19913,9 @@ note-taker's reading it is kept, NOT checked.
 "Yes, the rule holds. Dragging along the arrow makes the radius or size
 larger, on a cut corner and on a filled one alike."
 
+**2026-10-15 21:26, the build session: DONE, COMMITTED `9221363a5c`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"142 DONE (9221363a5c)".
+
 ## 143. The fillet's recompute: as many fillets as possible, failed edges skipped, their old preview kept, a stop cursor on a failing drag (a change request) -- OPEN; the chamfer too, ADDED 15:32; ANSWERED 15:52
 
 **2026-10-15 15:29, the reporter** -- the third part of the message quoted
@@ -20012,6 +20035,15 @@ release" (15:42) -- by the note-taker's reading kept by "feature still in
 error" and the red faces staying until a good recompute; the cursor goes
 back at the drag's end, as answered 15:52. NOT checked.
 
+**2026-10-15 21:26, the build session: DONE, fillet and chamfer, COMMITTED `a045ee97b7`, `9221363a5c`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"143 DONE fillet + chamfer: red faces at the end of the PREVIEW
+only (my choice); chamfer without an OCCT change (each edge tried alone,
+only when the whole fails)."
+The note-taker's note: "red at the end of the PREVIEW only" is the build
+session's choice, not put to the reporter; the reporter's words of 15:42
+were "color the failed face red if possible. failed face stays failed
+after release".
+
 ## 144. A hover highlight on the on-view arrow, as a normal mesh is highlighted: outline and automatic colour (a change request) -- OPEN; ANSWERED 15:52
 
 **2026-10-15 15:33, the reporter:** "also request, show hover highlight for
@@ -20070,6 +20102,9 @@ note-taker's reading.
 "144 (hovered arrows lit with the highlight colour, group-wide) ... built
 in r60, and r60's tests passed for 144 ... 144's outline part is still not
 done: it needs an on-screen check under D3D11."
+
+**2026-10-15 21:26, the build session: DONE EXCEPT THE OUTLINE, COMMITTED in `62a8af9234`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"144 DONE except the outline part (needs the screen under D3D11)".
 
 ## 145. An aborted drag of a default-radius arrow: the other default edges' arrows not put back (a defect) -- OPEN
 
@@ -20186,6 +20221,10 @@ Nothing left open on 146, by the note-taker's reading.
 **2026-10-15 18:00, the build session: BUILT in r60, in r63 too, NOT committed.** From the build session's answer to the note-taker's questions, received and written here 18:00; nothing run by the note-taker.
 "146 (NaviCube menu outline under bgfx) ... built in r60 ... can't be
 checked offscreen."
+
+**2026-10-15 21:26, the build session: COMMITTED `01ac931be2`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"146 committed (01ac931be2), not
+checkable offscreen."
 
 ## 147. TechDraw's print icon looks disabled: low contrast and grey; sharper, darker edges (a change request) -- OPEN; ALL POINTS ANSWERED 16:34
 
@@ -20364,6 +20403,27 @@ the file, so they open with false and keep the legacy finder. Front010's
 faces change only after UseWireJoiner is set true on that view. I'll tell
 the user when I report."
 
+**2026-10-15 21:26, the build session: FACES DONE `5edea1ed83`; a CLICK CAUSE FOUND and FIXED `eefc466af4`; THREE POINTS LEFT OPEN for the reporter, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"148 faces DONE (5edea1ed83): UseWireJoiner, true for new views, false
+from older files -- scanner.FCStd's views keep the old finder until set.
+148 clicks: CAUSE FOUND and FIXED (eefc466af4): a dimension, a child of
+its view above the edges, took a press anywhere in its whole bounding
+rectangle and selected nothing. Its shape is now its label, lines and
+arrows. On a copy of scanner.FCStd, Front010's clicks selecting nothing:
+at least 54 of 93 before, 10 after. LEFT OPEN (not fixed, for the user):
+where two edges overlap (Front010 Edge0-4 lie on Edge28) the one on top
+takes the click; on Rear001 the image view ActiveView017 lies over the
+view and takes clicks (images keep their whole frame under 149's rule --
+the user may want images to pass clicks too); 10 Front010 edges still
+select nothing, not looked into. PageRendererVg (the user's config has it
+on) makes no difference."
+OPEN for the reporter (by the note-taker's reading, three questions):
+f. overlapping edges (Front010 Edge0-4 on Edge28): the top one takes the
+   click -- what is wanted?
+g. image views (ActiveView017 over Rear001): pass clicks through their
+   empty inside too, like part views under 149?
+h. the 10 Front010 edges still selecting nothing: to be looked into?
+
 ## 149. A TechDraw view takes a click anywhere inside its frame; let it through the transparent background, keep the border pickable (a change request) -- OPEN
 
 **2026-10-15 16:40, the reporter:** "New request, right now Techdraw view is
@@ -20416,6 +20476,9 @@ when frames are hidden; (b) the label and caption are pickable; (c) the
 band is 2 mm on the page; (d) only part views (sections and details
 included) and projection groups; annotation, image, symbol and the other
 view kinds keep the whole frame pickable."
+
+**2026-10-15 21:26, the build session: DONE, COMMITTED `7c6d93ba5f`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"149 DONE (7c6d93ba5f)".
 
 ## 150. Wheel zoom stops under a transparent overlaid task panel when the wheel turns while the pointer moves onto it (a defect) -- OPEN; ANSWERED 16:55 -- every overlaid panel; the tree scrolls instead
 
@@ -20496,6 +20559,9 @@ wheel to whatever is under the pointer, not to where it went).
 **2026-10-15 17:58, the build session: FIX IN BUILD r63, NOT committed, not pushed, not staged.** From the build session's message, received 17:58 (the message says "~18:30", the box clock read 17:58), written here 17:58. Nothing committed for it, nothing run by the note-taker. "150: fix in r63 as
 described before." (the 16:57 plan: within the wheel delay the wheel goes
 where it went, the view or the panel).
+
+**2026-10-15 21:26, the build session: DONE, COMMITTED `c9417fada7`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
+"150 DONE (c9417fada7)".
 
 ## Inbox
 
