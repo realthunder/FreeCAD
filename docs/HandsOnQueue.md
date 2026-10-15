@@ -160,6 +160,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:57: entries 139, 140, 145 and 147 DONE by the build log,
+committed `340d03f023`, `e9a5143778`, `1f31e03f49`, `ffa839b1b6`, LOCAL, not pushed, not staged;
+r59, ctest 957/957, Python 3770 OK. 150's cause read (the wheel delay does
+not remember where the wheel went), fix planned after r60 (141, 144, 146
+building).** Under each entry; 140's mode wording asked.
+
 **2026-10-15 16:55: entry 150 ANSWERED -- the tree and property views the same;
 over the tree the wheel scrolls the tree instead, even over its
 transparent area; entering without wheeling, it zooms.** Under the entry.
@@ -2996,18 +3002,18 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter. THE REPORTER 11:57: "once all done, including entry 136, push and restage" -- a PUSH and a RESTAGE are authorised once 135, 137 and 136 are done. DONE 14:22 for the FILLET, COMMITTED `50bed5f8ab` (drags as undo steps, the label keys), `bd51427d8e` (the fillet's fine undo), LOCAL, not pushed, not staged; tested on r54. The PUSH AND RESTAGE: the build session asks the reporter to CONFIRM directly before it pushes (the word came only by relay). PUSHED 2026-10-15 14:45 (origin `1df007d0f2`) and STAGED 14:47 CLEAN (`1df007d0f2`), on the reporter's DIRECT confirmation to the build session 14:25 |
 | 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice). DONE 14:22, COMMITTED `58242c9b8c`, LOCAL, not pushed, not staged; tested on r54 (print 12). PUSHED 2026-10-15 14:45 (origin `1df007d0f2`) and STAGED 14:47 CLEAN (`1df007d0f2`) |
 | 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header. NOT REPRODUCED 14:22 by the build session: offscreen the selection view's header and the property editor's read the SAME ground; it asks the reporter for a SCREENSHOT and the panel layout |
-| 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140 |
-| 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED |
+| 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140. DONE by the build log (seen 16:57): `340d03f023`, LOCAL, not pushed, not staged -- every colour of Dark, Light and Classic measured, those under 4.5:1 revised; test overlay-text-colours 6; r59 |
+| 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED. DONE by the build log (seen 16:57): `e9a5143778` (+ `ba8fab9ccc`), LOCAL, not pushed, not staged -- the selection view's list on the report view's text ground; the log's text says "transparent mode", the commit "not see-through" -- which mode, ASKED of the build session |
 | 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face") |
 | 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry. ANSWERED 15:42: the SUM ("I guess it should be the sum then") -- the corner's bisector; the reporter ASKED the note-taker for a proposal for the chamfer's arrows (more than one for two distances or an angle) -- the note-taker's PROPOSAL under the entry, not yet ruled. 15:52: the note-taker's CHAMFER PROPOSAL (P1 to P5) AGREED by the reporter. 15:55: the fillet arrow points OUT of the corner (yes); nothing left open. CORRECTED BY THE REPORTER about 16:00 (to the build session, relayed): "out of the corner" (the note-taker's wording, answered "yes" 15:55) is WITHDRAWN -- it depends on an additive or a subtractive corner; THE RULE: DRAGGING IN THE ARROW'S DIRECTION INCREASES THE RADIUS |
 | 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them. 15:52: the stop cursor GOES BACK to normal on the next good recompute in the drag |
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit. 15:52: "yes to all" -- every handle (the rotation handle too); it follows the user's pre-selection settings |
-| 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
+| 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter. DONE by the build log (seen 16:57): `1f31e03f49`, LOCAL, not pushed, not staged -- a cancelled drag puts back the other handles of its value; undo test 17; r59 |
 | 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open |
-| 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept |
+| 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept. DONE by the build log (seen 16:57): `ffa839b1b6`, LOCAL, not pushed, not staged -- darker edges, inner lines and arrow; looked at rendered under both themes |
 | 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING |
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN |
-| 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms |
+| 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19567,6 +19573,16 @@ Nothing left unanswered on 139, by the note-taker's reading.
 
 **2026-10-15 14:22, the build session:** From its message, written here 14:22. "139: queued after 140."
 
+**2026-10-15 16:57, the build log: DONE, COMMITTED `340d03f023`, LOCAL, not pushed, not staged.** From the build session's log, `docs/HandsOnLog.md` section "Entries 139, 140, 145 and 147 (2026-10-15, the afternoon)", commit `62a8540842`, read 16:57; the commits SEEN in `git log`, nothing run.
+"Every report view and editor colour of the Dark, Light and Classic packs
+measured against the panel ground and the overlay's ground (#2D2D2D Dark,
+#E2E2E2 Light and Classic); those under 4.5:1 revised." Dark: error and
+character, comment; Light: logging, warning, error, comment, number,
+class name, Python error; Classic: warning, error, string, character,
+Python error, comment, block comment, operator, class and define name,
+Python output (the values in the log). "Test overlay-text-colours.py 6."
+Tests on r59: ctest 957/957, Python 3770 OK.
+
 ## 140. The selection view in a non-transparent overlay: its background the same as the Python console's and the report view's (a change request) -- OPEN
 
 **2026-10-15 13:58, the reporter:** "new request, make selection view
@@ -19609,6 +19625,22 @@ READ in the source, nothing run:
 sheet's tree grey (100,100,100 under Dark). The text views keep the
 theme's ground (entry 121). Plan: give the lists the report view's ground
 at runtime while they're overlaid and not see-through. Not started."
+
+**2026-10-15 16:57, the build log: DONE, COMMITTED `e9a5143778` (and the test fix
+`ba8fab9ccc`), LOCAL, not pushed, not staged.** From the build session's log, `docs/HandsOnLog.md` section "Entries 139, 140, 145 and 147 (2026-10-15, the afternoon)", commit `62a8540842`, read 16:57; the commits SEEN in `git log`, nothing run. "Its list had no ground of its own in the
+overlay's transparent mode, the report view's had. The overlay's style
+rule now gives `Gui--DockWnd--SelectionView QTreeView` the background the
+report view's text uses (TextEditFieldBackgroundColor, the palette's base
+without one). Test overlay-selection-ground.py: Dark measured, the two
+lists read the same (25,25,25); offscreen the Light pass reads both clear,
+so it proves nothing there."
+The note-taker's note: the reporter asked for the NON-transparent overlay
+mode (13:58); the log's text says "the overlay's transparent mode", the
+commit's title "the overlaid selection view on the text views' ground,
+not see-through" -- by the note-taker's reading the log's "transparent"
+is a slip and the change is for the non-see-through mode, as the build
+session's 14:22 message read the cause; ASKED of the build session, not
+checked. Light proved nothing offscreen.
 
 ## 141. The fillet's on-view arrow tooltip shows at once and hides on any movement (a defect) -- OPEN; the chamfer too, ADDED 15:32
 
@@ -20012,6 +20044,15 @@ b. answered: an abort by Esc shows the SAME.
 c. the chamfer: NOT TRIED by the reporter -- unknown; by the
    note-taker's reading the fix covers it too if it shares the defect.
 
+**2026-10-15 16:57, the build log: DONE, COMMITTED `1f31e03f49`, LOCAL, not pushed, not staged.** From the build session's log, `docs/HandsOnLog.md` section "Entries 139, 140, 145 and 147 (2026-10-15, the afternoon)", commit `62a8540842`, read 16:57; the commits SEEN in `git log`, nothing run.
+"Esc during a drag put the value back but the arrow stayed where it was
+dragged: the box was restored after the owner was told. cancelDrag()
+restores first; the panel is told by
+TaskFeatureParameters::heldStepRolledBack() and the fillet's and
+chamfer's panels place their handles again. The undo test checks the
+arrow's place after a cancel, 17." The commit's title: "a cancelled drag
+puts back the other handles of its value too". The chamfer covered.
+
 ## 146. The navigation cube's menu button: its hover highlight hides its icon (a defect) -- OPEN; ANSWERED 15:50 -- a border of the highlight shape
 
 **2026-10-15 15:47, the reporter:** "new defect, navicube menu hover
@@ -20125,6 +20166,11 @@ a. the SHARED `document-print.svg` is changed -- TechDraw's Print pages
 b. the SAME icon under both themes, checked under both;
 c. the body FILLS are kept; the outer and inner edges get darker.
 Nothing left open on 147, by the note-taker's reading.
+
+**2026-10-15 16:57, the build log: DONE, COMMITTED `ffa839b1b6`, LOCAL, not pushed, not staged.** From the build session's log, `docs/HandsOnLog.md` section "Entries 139, 140, 145 and 147 (2026-10-15, the afternoon)", commit `62a8540842`, read 16:57; the commits SEEN in `git log`, nothing run.
+"Darker edges and lines so it reads on the Light tool bar (looked at
+rendered, both themes)." The commit's title: "the print icon sharper:
+dark edges, inner lines and arrow".
 
 ## 148. TechDraw picking on scanner.FCStd Page009, Front010: faces found wrong (the inner hole a face, the outer faces missing); edges hover but do not select; WireJoiner for the faces? (a defect) -- OPEN; ANSWERED 16:47 -- faces that light on hover do not select either (Rear001)
 
@@ -20315,6 +20361,22 @@ a. by the note-taker's reading: so the wheel goes to the PANEL in that
    while it turns) -- still a guess, nothing run.
 NOT said: c (the copy -- the staged one of 14:47, by the note-taker's
 reading).
+
+**2026-10-15 16:57, the build session: the CAUSE READ, not fixed.** From its
+message, written here 16:57. "OverlayManager::eventFilter: a wheel over
+the plain view (no panel under it) starts the wheel delay; a wheel within
+the delay is then left to the widget under the pointer (return false), so
+over a panel it goes to the panel -- the tree scrolls, the task panel has
+nothing to scroll. The delay was meant to keep a panel's scrolling in the
+panel when its list moves a clear spot under the pointer; it does not
+remember WHERE the wheel went. Fix planned after build r60 (141/144/146,
+running now): remember whether the wheel went to the view or to a panel,
+and within the delay send it to the same one -- zoom continues over any
+panel, painted area or clear; a panel's scroll stays in the panel over
+its clear spots."
+The note-taker's note: the note-taker's guess of 16:50 right in kind
+(the delay), the build session's reading more exact (the delay leaves the
+wheel to whatever is under the pointer, not to where it went).
 
 ## Inbox
 
