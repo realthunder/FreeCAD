@@ -59,7 +59,12 @@ shared document:
   - with an edit open the document is not switched nor branched from
     elsewhere, and is once the edit is left;
   - the host deletes a branch, but not the one the document is on;
-  - B is refused all fifteen.
+  - the host's alone (sec 32.30): a squash and a trim are refused A, and
+    the host squashes the rows between two versions and trims a branch;
+    a file A sends is listed to A and to the host, and A withdraws it; sent
+    again, A is refused bringing it in, the host brings it in, lists the
+    branch it made, previews and merges it;
+  - B is refused all twenty.
 
 Of the document served from a branch:
 
@@ -88,10 +93,12 @@ Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout), or by hand as `FreeCAD <this script>` with GT_OUT set and this
 directory on PYTHONPATH.
 """
+import base64
 import json
 import math
 import os
 import queue
+import shutil
 import tempfile
 import threading
 import time
@@ -121,7 +128,8 @@ VW, VH = 800, 600
 ACTS = ("log.undo", "log.apply", "log.versions", "log.snapshot", "log.nameVersion",
         "log.restore", "log.branches", "log.branch", "log.switch", "log.renameBranch",
         "log.deleteBranch", "log.requests", "log.request", "log.closeRequest",
-        "log.mergeRequest")
+        "log.mergeRequest", "log.trim", "log.squash", "log.bring", "log.dropFile",
+        "log.mergeImport")
 
 state = {"done": False}
 asked = queue.Queue()
@@ -234,6 +242,22 @@ def undo_main_state():
         doc.popTransactionActor()
     return {"redo": redo,
             "merges": [r["seq"] for r in doc.getTransactionLog() if r["kind"] == "merge"]}
+
+
+def edited_copy():
+    """Someone's copy of the file, edited in their own FreeCAD: its bytes,
+    as a client sends them (`requests.send`)."""
+    fork = FreeCAD.openDocument(state["copy"], hidden=True)
+    try:
+        fork.openTransaction("theirs wider")
+        fork.getObject("Cyl").Radius = 3
+        fork.recompute()
+        fork.commitTransaction()
+        fork.save()
+    finally:
+        FreeCAD.closeDocument(fork.Name)
+    with open(state["copy"], "rb") as f:
+        return base64.b64encode(f.read()).decode()
 
 
 def serve_branch():
@@ -568,6 +592,61 @@ class Client(threading.Thread):
                                          "name": "hosts-own"})
         got["ungranted"] = on_host(ungrant(first))
         got["host_maker"] = on_host(host())
+
+        # The host's alone (sec 32.30): a squash and a trim, on a branch of
+        # their own
+        got["h_trimmed"] = ask(hs, {"id": 70, "op": "log.branch", "name": "trimmed"})
+        got["host_t1"] = on_host(change("trim one", Height=31))
+        va = (ask(hs, {"id": 71, "op": "log.snapshot", "name": "va"}) or {}).get("version", 0)
+        got["host_t2"] = on_host(change("trim two", Height=32))
+        got["host_t3"] = on_host(change("trim three", Height=33))
+        vb = (ask(hs, {"id": 72, "op": "log.snapshot", "name": "vb"}) or {}).get("version", 0)
+        got["va"], got["vb"] = va, vb
+        got["host_vb"] = on_host(host())
+        got["a_squash"] = self.do(ws, "log.squash", version=vb)
+        got["a_squash_do"] = self.do(ws, "log.squash", **{"version": vb, "from": va})
+        got["a_trim"] = self.do(ws, "log.trim", branch="trimmed", version=vb)
+        got["host_a_trim"] = on_host(host())
+        got["h_squash_dry"] = ask(hs, {"id": 73, "op": "log.squash", "version": vb})
+        got["h_squash_ahead"] = ask(hs, {"id": 74, "op": "log.squash", "version": va,
+                                         "from": vb})
+        got["h_squash"] = ask(hs, {"id": 75, "op": "log.squash", "version": vb, "from": va})
+        got["host_squashed"] = on_host(host())
+        got["host_t4"] = on_host(change("trim four", Height=34))
+        vc = (ask(hs, {"id": 76, "op": "log.snapshot", "name": "vc"}) or {}).get("version", 0)
+        got["h_trim_back"] = ask(hs, {"id": 77, "op": "log.switch", "name": first})
+        got["h_trim"] = ask(hs, {"id": 78, "op": "log.trim", "branch": "trimmed",
+                                 "version": vc})
+        got["h_trim_none"] = ask(hs, {"id": 79, "op": "log.trim", "branch": "trimmed",
+                                      "version": 999999})
+        got["host_trimmed"] = on_host(host())
+        # A file sent, and the branch it is brought in as
+        data = on_host(edited_copy)
+        got["a_send"] = self.do(ws, "requests.send", name="mine.FCStd", data=data)
+        f1 = (got["a_send"] or {}).get("request", 0)
+        got["a_files"] = self.do(ws, "log.requests")
+        got["h_files"] = ask(hs, {"id": 80, "op": "log.requests"})
+        got["a_bring"] = self.do(ws, "log.bring", file=f1)
+        got["a_withdraw_file"] = self.do(ws, "log.dropFile", file=f1)
+        got["a_files_gone"] = self.do(ws, "log.requests")
+        got["a_send2"] = self.do(ws, "requests.send", name="mine.FCStd", data=data)
+        f2 = (got["a_send2"] or {}).get("request", 0)
+        got["h_bring"] = ask(hs, {"id": 81, "op": "log.bring", "file": f2})
+        into = (got["h_bring"] or {}).get("into", "")
+        got["a_imports"] = self.do(ws, "log.requests")
+        got["h_imports"] = ask(hs, {"id": 82, "op": "log.requests"})
+        got["a_merge_import"] = self.do(ws, "log.mergeImport", branch=into)
+        got["a_preview_import"] = self.do(ws, "log.preview", **{"import": into})
+        got["h_preview_import"] = ask(hs, {"id": 83, "op": "log.preview", "import": into})
+        got["h_merge_import"] = ask(hs, {"id": 84, "op": "log.mergeImport", "branch": into})
+        got["h_import_again"] = ask(hs, {"id": 85, "op": "log.mergeImport", "branch": into})
+        got["h_imports_after"] = ask(hs, {"id": 86, "op": "log.requests"})
+        got["host_imported"] = on_host(lambda: round(
+            FreeCAD.getDocument(DOC).getObject("Cyl").Radius.Value, 3))
+        got["a_send3"] = self.do(ws, "requests.send", name="other.FCStd", data=data)
+        f3 = (got["a_send3"] or {}).get("request", 0)
+        got["h_drop_file"] = ask(hs, {"id": 87, "op": "log.dropFile", "file": f3})
+        got["h_files_end"] = ask(hs, {"id": 88, "op": "log.requests"})
         # A row of A's own for its user to take back from the branch's
         # document, later
         got["write3"] = self.write(ws, "Length", 15.0)
@@ -712,7 +791,11 @@ def build():
         cut.Base, cut.Tool = box, cyl
         doc.recompute()
         doc.commitTransaction()
-        doc.saveAs(os.path.join(tempfile.mkdtemp(prefix="fc-serve-log-acts-"), "log.FCStd"))
+        where = tempfile.mkdtemp(prefix="fc-serve-log-acts-")
+        doc.saveAs(os.path.join(where, "log.FCStd"))
+        # A copy, to be edited elsewhere and sent back (sec 32.30)
+        state["copy"] = os.path.join(where, "mine.FCStd")
+        shutil.copyfile(doc.FileName, state["copy"])
         for name, prop, value in (("taller", "Height", 16), ("wider", "Length", 14),
                                   ("deeper", "Width", 12), ("last", "Height", 18)):
             doc.openTransaction(name)
@@ -750,6 +833,23 @@ def ok(reply):
 
 def forbidden(got, *keys):
     return all(code(got.get(k)) == "Forbidden" for k in keys)
+
+
+def unread(reply):
+    """Refused as a branch the asker does not read (ruled 2026-10-15)."""
+    return code(reply) == "Forbidden" and "reads" in (reply or {}).get("message", "")
+
+
+def readable(reply):
+    """The branches of a `log.branches` reply the asker reads, by name. The
+    others are listed by their names alone, greyed (sec 32.30)."""
+    return {b["name"]: b for b in (reply or {}).get("branches", []) if b.get("read") is not False}
+
+
+def greyed(reply):
+    """... and those, which say nothing but their names."""
+    return sorted(b["name"] for b in (reply or {}).get("branches", [])
+                  if b.get("read") is False and set(b) == {"id", "name", "read"})
 
 
 def verify_shared(got, watcher):
@@ -870,12 +970,13 @@ def verify_shared(got, watcher):
           ok(got.get("branch")) and got["branch"].get("branchName") == "try"
           and hb.get("box") == hr.get("box")
           and ("try", True) in hb.get("branches", []), (got.get("branch"), hb.get("branches")))
-    listed_b = {b["name"]: b for b in (got.get("branches") or {}).get("branches", [])}
-    check("the client is listed the branch the document is on now, and no other",
+    listed_b = readable(got.get("branches"))
+    check("the client reads the branch the document is on now, and is listed the other greyed",
           set(listed_b) == {"try"} and listed_b["try"].get("current") is True
-          and listed_b["try"].get("write") is False, listed_b)
-    check("renaming it is refused the client, and the branch it does not read is unknown to it",
-          forbidden(got, "a_rename") and code(got.get("a_switch")) == "UnknownBranch"
+          and listed_b["try"].get("write") is False and greyed(got.get("branches")) == [first],
+          got.get("branches"))
+    check("renaming it is refused the client, and the branch it does not read is refused as "
+          "that", forbidden(got, "a_rename") and unread(got.get("a_switch"))
           and got.get("host_a2", {}).get("branches") == got.get("host_on_try", {})
           .get("branches"), (got.get("a_switch"), got.get("a_rename")))
     hs = got.get("host_switch", {})
@@ -895,16 +996,16 @@ def verify_shared(got, watcher):
           and code(got.get("branch_noname")) == "BadRequest",
           (got.get("branch_taken"), got.get("branch_noname")))
     # a branch that is not read, then read
-    unread = [b["name"] for b in (got.get("a_branches_unread") or {}).get("branches", [])]
+    reads = sorted(readable(got.get("a_branches_unread")))
     rows_unread = [r["name"] for r in (got.get("a_rows_unread") or {}).get("rows", [])]
-    check("back on the first branch the client is listed that one alone, and no row of the "
-          "other",
-          unread == [first] and "on try" not in rows_unread and "taller" in rows_unread,
-          (unread, rows_unread[:5]))
-    check("a row and a branch it does not read are unknown to it",
+    check("back on the first branch the client reads that one alone, the other greyed, and is "
+          "listed no row of the other",
+          reads == [first] and greyed(got.get("a_branches_unread")) == ["try"]
+          and "on try" not in rows_unread and "taller" in rows_unread,
+          (got.get("a_branches_unread"), rows_unread[:5]))
+    check("a row it does not read is unknown to it, a branch refused as not read",
           code(got.get("a_apply_unread")) == "UnknownRow"
-          and code(got.get("a_switch_unread")) == "UnknownBranch"
-          and code(got.get("a_request_unread")) == "UnknownBranch",
+          and unread(got.get("a_switch_unread")) and unread(got.get("a_request_unread")),
           (got.get("a_apply_unread"), got.get("a_switch_unread"), got.get("a_request_unread")))
     check("nor are its rows by their number, to take back or to be shown",
           code(got.get("a_undo_unread")) == "UnknownRow"
@@ -912,6 +1013,8 @@ def verify_shared(got, watcher):
           and got.get("host_edit_unread", {}).get("edit") is False,
           (got.get("a_undo_unread"), got.get("a_edit_unread")))
     v_unread = [v["name"] for v in (got.get("a_versions_unread") or {}).get("versions", [])]
+    # (a version is listed by the branch it was taken on, greyed where that
+    # is not read: the point a branch is written from may be one)
     v_read = {v["name"]: v for v in (got.get("a_versions_read") or {}).get("versions", [])}
     check("nor a version taken on it, to be listed, named or gone to -- until it is read",
           ok(got.get("h_try_version")) and "try-v" not in v_unread and "kept" in v_unread
@@ -930,7 +1033,7 @@ def verify_shared(got, watcher):
           and ok(got.get("h_withdraw_unread")),
           (got.get("h_request_unread"), got.get("a_requests_unread"),
            got.get("a_withdraw_unread"), got.get("a_merge_unread")))
-    read = {b["name"]: b for b in (got.get("a_branches_read") or {}).get("branches", [])}
+    read = readable(got.get("a_branches_read"))
     rows_read = {r["name"]: r for r in (got.get("a_rows_read") or {}).get("rows", [])}
     check("given to read it, the client is listed the branch, which it does not write",
           ("verified", wsclient.IDENTITY, "try", False) in (got.get("granted") or [])
@@ -1063,18 +1166,18 @@ def verify_shared(got, watcher):
           code(got.get("h_delete_current")) == "Refused"
           and code(got.get("h_delete_none")) == "UnknownBranch",
           (got.get("h_delete_current"), got.get("h_delete_none")))
-    after = sorted(b["name"] for b in (got.get("branches_after") or {}).get("branches", []))
-    check("the client lists the branch it reads still", after == [first], after)
+    after = sorted(readable(got.get("branches_after")))
+    check("the client reads the branch it read still", after == [first], after)
 
     # who made a branch
-    hosts = {b["name"]: b for b in (got.get("a_branches_hosts") or {}).get("branches", [])}
+    hosts = readable(got.get("a_branches_hosts"))
     check("given to write the first branch, a branch the host makes from it is not the "
-          "client's: it is unknown to it",
+          "client's: it is greyed to it, and refused",
           ("verified", wsclient.IDENTITY, first, True) in (got.get("granted_write") or [])
           and ok(got.get("h_branch_own")) and ok(got.get("h_switch_own"))
           and hosts.get(first, {}).get("write") is True and "hosts-own" not in hosts
-          and code(got.get("a_switch_hosts")) == "UnknownBranch"
-          and code(got.get("a_delete_hosts")) == "UnknownBranch",
+          and "hosts-own" in greyed(got.get("a_branches_hosts"))
+          and unread(got.get("a_switch_hosts")) and unread(got.get("a_delete_hosts")),
           (sorted(hosts), got.get("a_switch_hosts"), got.get("a_delete_hosts")))
     own = {b["name"]: b for b in (got.get("a_branches_own") or {}).get("branches", [])}
     hk = got.get("host_maker", {})
@@ -1091,9 +1194,89 @@ def verify_shared(got, watcher):
           (got.get("a_branch_own"), own.get("a-own"), got.get("said_own"),
            got.get("a_delete_own"), got.get("said_deleted"), hk.get("branches")))
 
-    check("the client that may only look is refused all fifteen",
+    verify_hosts(got)
+
+    check("the client that may only look is refused all twenty",
           all(code(watcher.got.get(op)) == "ViewOnly" for op in ACTS),
           {op: code(watcher.got.get(op)) for op in ACTS})
+
+
+def verify_hosts(got):
+    """Sec 32.30: what takes rows out for good, and the requests of a file
+    sent and a branch an import made, are the host's."""
+    first = got.get("first", "")
+    va, vb = got.get("va", 0), got.get("vb", 0)
+    check("a squash and a trim are refused the client, and move nothing",
+          ok(got.get("h_trimmed")) and va > 0 and vb > 0
+          and forbidden(got, "a_squash", "a_squash_do", "a_trim")
+          and "host" in (got.get("a_trim") or {}).get("message", "")
+          and got.get("host_a_trim", {}).get("rows") == got.get("host_vb", {}).get("rows"),
+          (got.get("a_squash"), got.get("a_squash_do"), got.get("a_trim")))
+    behind = [v["num"] for v in (got.get("h_squash_dry") or {}).get("behind", [])]
+    check("asked with no start, the host is told the versions behind, newest first",
+          ok(got.get("h_squash_dry")) and va in behind and behind == sorted(behind, reverse=True)
+          and all(v["rows"] > 0 for v in got["h_squash_dry"]["behind"]),
+          got.get("h_squash_dry"))
+    rows3 = [n for _, n, _ in got.get("host_t3", {}).get("rows", [])]
+    rows_sq = got.get("host_squashed", {}).get("rows", [])
+    check("a start ahead of it is refused; from one behind, the rows between are one row",
+          code(got.get("h_squash_ahead")) == "Refused"
+          and ok(got.get("h_squash")) and got["h_squash"].get("rows", 0) >= 2
+          and "trim two" in rows3 and "trim three" in rows3
+          and not any(n in ("trim two", "trim three") for _, n, _ in rows_sq)
+          and any(k == "squash" for _, _, k in rows_sq)
+          and got.get("host_squashed", {}).get("box") == got.get("host_t3", {}).get("box"),
+          (got.get("h_squash_ahead"), got.get("h_squash"), rows_sq[-4:]))
+    ht = got.get("host_trimmed", {})
+    check("the host trims the other branch: its rows before the version go, the document "
+          "and its branch stay where they are",
+          ok(got.get("h_trim_back")) and ok(got.get("h_trim"))
+          and got["h_trim"].get("rows", 0) > 0
+          and not any(n in ("trim one", "trim four") for _, n, _ in ht.get("rows", []))
+          and any(n == "taller" for _, n, _ in ht.get("rows", []))
+          and (first, True) in ht.get("branches", [])
+          and code(got.get("h_trim_none")) == "UnknownVersion",
+          (got.get("h_trim"), got.get("h_trim_none"), ht.get("branches")))
+
+    f1 = (got.get("a_send") or {}).get("request", 0)
+    a_files = (got.get("a_files") or {}).get("files", [])
+    h_files = (got.get("h_files") or {}).get("files", [])
+    check("a file the client sends is listed to it as its own, and to the host",
+          f1 > 0 and [(f["id"], f["name"], f["mine"]) for f in a_files]
+          == [(f1, "mine.FCStd", True)]
+          and [(f["id"], f["mine"]) for f in h_files] == [(f1, False)]
+          and h_files[0].get("by") == wsclient.IDENTITY,
+          (got.get("a_send"), a_files, h_files))
+    check("it is not the client's to bring in; it withdraws it",
+          forbidden(got, "a_bring") and ok(got.get("a_withdraw_file"))
+          and (got.get("a_files_gone") or {}).get("files") == [],
+          (got.get("a_bring"), got.get("a_withdraw_file"), got.get("a_files_gone")))
+    into = (got.get("h_bring") or {}).get("into", "")
+    imports = {i["branch"]: i for i in (got.get("h_imports") or {}).get("imports", [])}
+    check("the host brings it in: a branch of its own, listed as an import to merge, and the "
+          "file no more",
+          ok(got.get("h_bring")) and into and got["h_bring"].get("rows", 0) >= 1
+          and into in imports and imports[into].get("rows", 0) >= 1
+          and imports[into].get("by", "").startswith(wsclient.IDENTITY)
+          and (got.get("h_imports") or {}).get("files") == [],
+          (got.get("h_bring"), got.get("h_imports")))
+    check("the client, which does not read that branch, is not listed it, and may not merge "
+          "it or look",
+          (got.get("a_imports") or {}).get("imports") == []
+          and forbidden(got, "a_merge_import", "a_preview_import"),
+          (got.get("a_imports"), got.get("a_merge_import"), got.get("a_preview_import")))
+    check("the host looks first, and merges it: the copy's change is here",
+          ok(got.get("h_preview_import")) and got["h_preview_import"].get("what") == "merge"
+          and got["h_preview_import"].get("conflicts") == 0
+          and ok(got.get("h_merge_import")) and got.get("host_imported") == 3
+          and code(got.get("h_import_again")) == "UnknownRequest"
+          and into not in [i["branch"] for i in (got.get("h_imports_after") or {})
+                           .get("imports", [])],
+          (got.get("h_preview_import"), got.get("h_merge_import"), got.get("host_imported"),
+           got.get("h_import_again")))
+    check("another's file the host deletes, unread",
+          ok(got.get("h_drop_file")) and (got.get("h_files_end") or {}).get("files") == [],
+          (got.get("h_drop_file"), got.get("h_files_end")))
 
 
 def verify_own(got):
@@ -1126,7 +1309,7 @@ def verify_own(got):
           and all(r.get("within") is True for r in new)
           and any(r.get("mine") for r in old),
           ([(r["seq"], r.get("within"), r.get("mine")) for r in listed][:6], floor))
-    branches = {b["name"]: b for b in (got.get("c_branches") or {}).get("branches", [])}
+    branches = readable(got.get("c_branches"))
     check("it is listed the branch it was served, which it writes, and the one that was made "
           "from, which it reads",
           (got.get("c_branches") or {}).get("write") is True
@@ -1164,9 +1347,8 @@ def verify_own(got):
           forbidden(got, "c_switch_before", "c_rename_before", "c_delete_before"),
           (got.get("c_switch_before"), got.get("c_rename_before"),
            got.get("c_delete_before")))
-    check("and one it does not read is unknown to it",
-          code(got.get("c_delete_unread")) == "UnknownBranch"
-          and code(got.get("c_switch_unread")) == "UnknownBranch",
+    check("and one it does not read is refused as that",
+          unread(got.get("c_delete_unread")) and unread(got.get("c_switch_unread")),
           (got.get("c_delete_unread"), got.get("c_switch_unread")))
     check("none of which moved the document", cb == cu0,
           (cb.get("box"), cb.get("branches"), len(cb.get("rows", [])),

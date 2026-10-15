@@ -34,9 +34,12 @@ Chrome do it through scripts/logacts-drive.js. Asserted:
   - switching back from the card moves the host; the branch the document
     was served from is not offered to be switched to; the row of the other
     branch is listed as away and is not offered to be taken back; the
-    branch made is offered to be deleted, and no other;
+    branch made is offered to be deleted, and no other; a branch of the
+    host's the page's user does not read is listed greyed and offered for
+    nothing (sec 32.30);
   - after a change by the host the version kept is no longer the document
-    as it stands, and restoring it from the card puts the host back;
+    as it stands, and restoring it from the card puts the host back; a
+    trim and a squash there are greyed as the host's (sec 32.30);
   - the branch is renamed from the card, starting from its name;
   - a row of the branch it was made from that meets what was set here
     asks one side for all, or opens the list of what it would do; a side
@@ -95,6 +98,7 @@ TOKEN = "log-acts-invite"
 CLIENT = "log-acts"
 
 BRANCH = "for-web"
+UNREAD = "hosts-own"
 
 state = {"doc": None, "served": None, "done": False, "run": None, "t0": clock(),
          "seen_phases": 0, "samples": {}}
@@ -298,6 +302,12 @@ def build():
             setattr(box, prop, value)
             doc.recompute()
             doc.commitTransaction()
+        # A branch of the host's that the page's user does not read: listed
+        # to it greyed (sec 32.30)
+        main = doc.getTransactionCursor()["branch"]
+        main = [b["name"] for b in doc.getTransactionBranches() if b["id"] == main][0]
+        doc.createTransactionBranch(UNREAD)
+        doc.switchTransactionBranch(main)
 
         port = free_port()
         if not check("the document is served headless",
@@ -475,6 +485,10 @@ def verify():
               and switched.get("box") == (14, 12, 16),
               (out.get("switchSaid"), out.get("onFirst"), switched.get("branches"),
                switched.get("box")))
+        check("a branch the page's user does not read is listed greyed, and offered for nothing",
+              UNREAD in (out.get("branch") or {}).get("greyed", [])
+              and UNREAD not in (out.get("branch") or {}).get("offered", [UNREAD]),
+              out.get("branch"))
         check("the branch the document was served from is not offered to be switched to",
               sorted(on_try.get("offered", [])) == sorted([BRANCH, "try"])
               and len(on_try.get("options", [])) > len(on_try.get("offered", [])), on_try)
@@ -539,6 +553,11 @@ def verify():
               out.get("versionPicked") is True
               and out.get("versionActs") == ["Restore", "Rename...", "Unname",
                                              "Branch from here..."], out.get("versionActs"))
+        trim, squash = (list(out.get("hostActs") or []) + [None, None])[:2]
+        check("a trim and a squash are the host's: greyed, and the card says so",
+              (trim or {}).get("disabled") is True and (squash or {}).get("disabled") is True
+              and "host" in (trim or {}).get("title", "")
+              and "host" in (squash or {}).get("title", ""), out.get("hostActs"))
         check("restoring it from the card puts the host back, by a row of its own",
               out.get("restoreAsked") is True and said(out.get("restoreSaid"), "Restored to kept")
               and restored.get("box") == (14, 12, 16)

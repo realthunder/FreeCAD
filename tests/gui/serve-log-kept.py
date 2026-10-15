@@ -26,6 +26,8 @@ is the host. Asserted:
   - nothing is kept at first; an op says nothing of being kept, and its
     row that A keeps nothing there, and why;
   - A, who reads, is refused keeping a value and an object;
+  - a keep marks the host's document modified, and one of a value kept
+    already as it is does not (sec 32.30);
   - H keeps the cut's shape at a row: one value; its op then says so, it
     is listed to A with no keeper, the host's document lists it, and A is
     told why it may not let it go -- and is refused letting it go both
@@ -138,6 +140,19 @@ def kept_by_on_host():
     doc = FreeCAD.getDocument(DOC)
     return [(k["ref"], k.get("kind", ""), k.get("name", ""))
             for k in doc.getKeptTransactionValues()]
+
+
+def modified():
+    """Whether the host's document is marked modified: keeping changes what
+    the next save writes (sec 32.30)."""
+    return FreeCADGui.getDocument(DOC).Modified
+
+
+def unmodify():
+    """Saved as the desktop saves it, which leaves the document unmodified
+    (the flag is not Python's to write)."""
+    FreeCADGui.getDocument(DOC).save()
+    return modified()
 
 
 def ids():
@@ -254,10 +269,16 @@ class Client(threading.Thread):
         # keeps the cut's shape at a row, and A cannot let it go
         got["keep_a"] = self.do(ws, "log.keep", obj="Cut", prop="Shape", row=taller)
         got["keepobj_a"] = self.do(ws, "log.keepObject", obj="Box")
+        got["mod_before"] = on_host(unmodify)
         got["keep"] = self.do(hs, "log.keep", obj="Cut", prop="Shape", row=taller)
+        got["mod_keep"] = on_host(modified)
         got["ops1"] = self.do(ws, "log.ops", row=taller)
         got["kept1"] = self.do(ws, "log.kept")
         got["host1"] = on_host(kept_on_host)
+        # Kept again as it is kept: nothing moved, nothing to save
+        on_host(unmodify)
+        got["keep_same"] = self.do(hs, "log.keep", obj="Cut", prop="Shape", row=taller)
+        got["mod_same"] = on_host(modified)
         got["letgo_a"] = self.do(ws, "log.keep", obj="Cut", prop="Shape", row=taller,
                                  keep=False)
         ref = next((v["ref"] for v in (got["kept1"] or {}).get("values", [])), "")
@@ -412,6 +433,11 @@ def check_all(got):
     check("and the row says A keeps nothing there, and why",
           o0.get("keep") is False and "write" in (o0.get("keepWhy") or "")
           and o0.get("keepObject") is False, o0)
+    check("a keep marks the host's document modified, a keep of what is kept already does not",
+          got.get("mod_before") is False and got.get("mod_keep") is True
+          and ok(got.get("keep_same")) and got.get("mod_same") is False,
+          (got.get("mod_before"), got.get("mod_keep"), got.get("keep_same"),
+           got.get("mod_same")))
     check("A, who reads the branch, is refused keeping a value, and an object",
           code(got.get("keep_a")) == "Forbidden" and "write" in str(got.get("keep_a"))
           and code(got.get("keepobj_a")) == "Forbidden"

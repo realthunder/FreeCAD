@@ -86,7 +86,10 @@ const HELPERS = () => {
   window.__fcBranch = () => {
     const el = document.querySelector('.fc-log-branchsel');
     return el ? {value: el.value, options: [...el.options].map((o) => o.value),
-                 offered: [...el.options].filter((o) => !o.disabled).map((o) => o.value)}
+                 offered: [...el.options].filter((o) => !o.disabled).map((o) => o.value),
+                 // a branch the page's user does not read (sec 32.30)
+                 greyed: [...el.options].filter((o) => o.classList.contains('fc-log-unread'))
+                   .map((o) => o.value)}
               : null;
   };
   window.__fcRequests = () => [...document.querySelectorAll('.fc-log-requests tbody tr')]
@@ -287,6 +290,9 @@ async function answer(page, text) {
     out.versionActs = await page.evaluate(
       () => ['restore', 'name-version', 'unname-version', 'branch-version']
         .map((a) => (window.__fcActSays(a) || {}).text || null));
+    // What takes rows out for good is the host's (sec 32.30)
+    out.hostActs = await page.evaluate(
+      () => ['trim', 'squash'].map((a) => window.__fcActSays(a)));
     out.restoreAsked = await page.evaluate(() => window.__fcClickAct('restore'));
     await waitFor(page, () => /Restored/.test((window.__fcStatus() || {}).text || ''), 30000);
     out.restoreSaid = await page.evaluate(() => window.__fcStatus());
