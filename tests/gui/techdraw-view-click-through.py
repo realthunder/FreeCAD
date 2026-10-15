@@ -12,7 +12,12 @@ the gap between them is empty. Claims:
   - a click in the gap selects nothing;
   - a click on the frame's top line, over the gap, selects the view;
   - a click on the view's label selects the view;
-  - a click on an edge selects that edge, as before.
+  - a click on an edge selects that edge, as before;
+  - entry 148 (the reporter, 16:38 and 16:47: edges and faces that light
+    on hover and select nothing): with a diagonal dimension across the
+    view, whose rectangle covers it all, a click on an edge away from the
+    dimension's lines still selects the edge. A dimension took a press
+    anywhere in its rectangle.
 """
 import os
 import traceback
@@ -153,6 +158,51 @@ def clicks():
         if edge and edge[0][1] and edge[0][1][0].startswith("Edge"):
             break
     check("a click on an edge selects that edge",
+          len(edge) == 1 and edge[0][0] == "View" and edge[0][1]
+          and edge[0][1][0].startswith("Edge"), edge)
+
+
+@step(500)
+def dimension():
+    """A distance from the left box's top left corner to the right box's
+    bottom right one: its rectangle covers the whole view"""
+    doc = FreeCAD.getDocument(DOC)
+    view = doc.getObject("View")
+
+    def nearest(x, y):
+        best, name = None, None
+        i = 0
+        while True:
+            try:
+                p = view.getVertexByIndex(i).Point
+            except Exception:
+                break
+            d = (p.x - x) ** 2 + (p.y - y) ** 2
+            if best is None or d < best:
+                best, name = d, "Vertex%d" % i
+            i += 1
+        return name
+
+    a, b = nearest(-40.0, 10.0), nearest(40.0, -10.0)
+    note("INFO the dimension between %s and %s" % (a, b))
+    dim = doc.addObject("TechDraw::DrawViewDimension", "Diagonal")
+    dim.Type = "Distance"
+    dim.References2D = [(view, a), (view, b)]
+    doc.getObject("Page").addView(dim)
+    doc.recompute()
+
+
+@step(3000)
+def under_dimension():
+    page_view().grab().save(os.path.join(OUT, "dimension.png"))
+    # the left box's top edge, inside the dimension's rectangle, away from
+    # its lines
+    edge = []
+    for dx in (0.0, 0.1, -0.1, 0.2):
+        edge = click_mm(VIEW_X - 30.0 + dx, VIEW_Y + 10.0)
+        if edge and edge[0][1] and edge[0][1][0].startswith("Edge"):
+            break
+    check("entry 148: under a dimension's rectangle a click on an edge selects the edge",
           len(edge) == 1 and edge[0][0] == "View" and edge[0][1]
           and edge[0][1][0].startswith("Edge"), edge)
 

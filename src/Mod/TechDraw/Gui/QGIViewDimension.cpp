@@ -2719,6 +2719,26 @@ QRectF QGIViewDimension::boundingRect() const
     return result;
 }
 
+QPainterPath QGIViewDimension::shape() const
+{
+    // A dimension is a child of its view, above the view's edges and
+    // vertexes, and takes a press -- it is movable -- wherever its shape
+    // says. With the whole rectangle around it a click on an edge under
+    // the rectangle selected nothing: on scanner.FCStd's Page009, Front010,
+    // most of the outline (docs/HandsOnQueue.md entry 148).
+    QPainterPath path;
+    path.setFillRule(Qt::WindingFill);
+    for (QGraphicsItem* item : {static_cast<QGraphicsItem*>(datumLabel),
+                                static_cast<QGraphicsItem*>(dimLines),
+                                static_cast<QGraphicsItem*>(aHead1),
+                                static_cast<QGraphicsItem*>(aHead2)}) {
+        if (item && item->isVisible()) {
+            path.addPath(mapFromItem(item, item->shape()));
+        }
+    }
+    return path;
+}
+
 void QGIViewDimension::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
                              QWidget* widget)
 {
