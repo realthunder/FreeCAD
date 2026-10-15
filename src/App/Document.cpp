@@ -11057,14 +11057,41 @@ bool tipVersion(TransactionStore& store, int64_t head, LogVersion& tip)
     return true;
 }
 
+/// A result's document a preview made (sec 32.34): the document it is of,
+/// the version it was read from, the step that holds what was written to
+/// it, and each object's touched state as it was read -- what taking that
+/// step back puts back.
+struct PreviewMade
+{
+    std::string of;
+    int64_t tip {0};
+    int step {0};
+    std::map<long, TouchedState> touched;
+};
+
+/// The results made and still open, by their document's name. A name is
+/// never given twice, so one closed is only forgotten.
+std::map<std::string, PreviewMade>& previewsMade()
+{
+    static std::map<std::string, PreviewMade> made;
+    for (auto it = made.begin(); it != made.end();) {
+        if (GetApplication().getDocument(it->first.c_str()))
+            ++it;
+        else
+            it = made.erase(it);
+    }
+    return made;
+}
+
 } // namespace
 
 Document::MergeOutcome Document::previewMergeResult(const std::string& branch,
                                                     const std::map<std::string, std::string>& picks,
-                                                    const std::string& fallback, int64_t version)
+                                                    const std::string& fallback, int64_t version,
+                                                    const std::string& again)
 {
     MergeOutcome outcome;
-    MergeResult result = _merge(branch, picks, fallback, version, nullptr, &outcome);
+    MergeResult result = _merge(branch, picks, fallback, version, nullptr, &outcome, again);
     outcome.preview = std::move(result.preview);
     outcome.unresolved = std::move(result.unresolved);
     outcome.failed = std::move(result.failed);
@@ -11073,10 +11100,11 @@ Document::MergeOutcome Document::previewMergeResult(const std::string& branch,
 
 Document::MergeOutcome Document::previewPickResult(const std::vector<int64_t>& rows,
                                                    const std::map<std::string, std::string>& picks,
-                                                   const std::string& fallback)
+                                                   const std::string& fallback,
+                                                   const std::string& again)
 {
     MergeOutcome outcome;
-    MergeResult result = _merge(pickLabel(rows), picks, fallback, 0, &rows, &outcome);
+    MergeResult result = _merge(pickLabel(rows), picks, fallback, 0, &rows, &outcome, again);
     outcome.preview = std::move(result.preview);
     outcome.unresolved = std::move(result.unresolved);
     outcome.failed = std::move(result.failed);
@@ -11086,7 +11114,8 @@ Document::MergeOutcome Document::previewPickResult(const std::vector<int64_t>& r
 Document::MergeResult Document::_merge(const std::string& branch,
                                        const std::map<std::string, std::string>& picks,
                                        const std::string& fallback, int64_t version,
-                                       const std::vector<int64_t>* rows, MergeOutcome* outcome)
+                                       const std::vector<int64_t>* rows, MergeOutcome* outcome,
+                                       const std::string& again)
 {
     OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 28: theirs' changes since the base, less
@@ -11464,9 +11493,44 @@ Document::MergeResult Document::_merge(const std::string& branch,
         LogVersion tip;
         if (!tipVersion(log->store(), log->head(), tip))
             THROWM(Base::RuntimeError, "the document as it is could not be taken as a version");
-        // Named as no other was: what shows its values knows them by it
-        static int made = 0;
-        scratch = _openReadVersion(tip.num, "_merged" + std::to_string(++made), false);
+        // Sec 32.34: a result made before with other sides, of this
+        // document as it is still -- the same version -- has what was
+        // written to it taken back, and is written again. Reading the
+        // document is what that spares.
+        auto& results = previewsMade();
+        Document* back = again.empty() ? nullptr : GetApplication().getDocument(again.c_str());
+        auto known = back ? results.find(again) : results.end();
+        if (known != results.end() && known->second.of == getName()
+                && known->second.tip == tip.num && back->d->activeUndoTransaction
+                && back->d->activeUndoTransaction->getID() == known->second.step) {
+            back->_abortTransaction();
+            for (auto obj : back->getObjects()) {
+                auto was = known->second.touched.find(obj->getID());
+                if (was != known->second.touched.end())
+                    setTouchedState(*obj, was->second);
+            }
+            scratch = back;
+            outcome->reused = true;
+        }
+        else {
+            if (back)
+                GetApplication().closeDocument(again.c_str());
+            // Named as no other was: what shows its values knows them by it
+            static int made = 0;
+            scratch = _openReadVersion(tip.num, "_merged" + std::to_string(++made), false);
+            PreviewMade& read = results[scratch->getName()];
+            read.of = getName();
+            read.tip = tip.num;
+            for (auto obj : scratch->getObjects())
+                read.touched.emplace(obj->getID(), touchedStateOf(*obj));
+        }
+        // What is written to it is one step, held open, to be taken back
+        // when other sides are asked for
+        auto step = new Transaction(0);
+        step->Name = "preview";
+        scratch->d->activeUndoTransaction = step;
+        scratch->mUndoMap[step->getID()] = step;
+        results[scratch->getName()].step = step->getID();
     }
     Document& into = scratch ? *scratch : *this;
     struct Closer

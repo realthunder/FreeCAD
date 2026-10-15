@@ -834,6 +834,9 @@ public:
         std::vector<std::string> failed;   ///< objects whose recompute failed there
         std::vector<MergeChange> unresolved;
         MergePreview preview;
+        /// The document of a result made before was rolled back and written
+        /// again, and not read anew (sec 32.34)
+        bool reused {false};
     };
     /** What mergeBranch() with these arguments would make, in a document
      * of its own (docs/TransactionLog.md sec 32.17). Nothing of this
@@ -841,21 +844,30 @@ public:
      * version, unnamed, where it is none already -- what the merge itself
      * takes first. Throws as mergeBranch() does, and where a transaction
      * is open.
+     *
+     * `again` names the document of a result made before with other sides
+     * (sec 32.34), handed back: where it is of this document as it is still,
+     * what was written to it is rolled back and the merge written again,
+     * which spares reading the document; otherwise it is closed and the
+     * document read anew. Either way it is no longer the caller's.
      */
     MergeOutcome previewMergeResult(const std::string& branch,
                                     const std::map<std::string, std::string>& picks = {},
                                     const std::string& fallback = std::string(),
-                                    int64_t version = 0);
+                                    int64_t version = 0, const std::string& again = {});
     /// The same of pickRows().
     MergeOutcome previewPickResult(const std::vector<int64_t>& rows,
                                    const std::map<std::string, std::string>& picks = {},
-                                   const std::string& fallback = std::string());
+                                   const std::string& fallback = std::string(),
+                                   const std::string& again = {});
     /// mergeBranch() and pickRows(): `rows` for the second. With `outcome`
-    /// it is previewMergeResult(): written to a document of its own.
+    /// it is previewMergeResult(): written to a document of its own, or to
+    /// `again` rolled back.
     MergeResult _merge(const std::string& branch,
                        const std::map<std::string, std::string>& picks,
                        const std::string& fallback, int64_t version,
-                       const std::vector<int64_t>* rows, MergeOutcome* outcome = nullptr);
+                       const std::vector<int64_t>* rows, MergeOutcome* outcome = nullptr,
+                       const std::string& again = {});
 
     /// A merge undone at the head of this branch, with nothing since
     /// (docs/TransactionLog.md sec 31.21).

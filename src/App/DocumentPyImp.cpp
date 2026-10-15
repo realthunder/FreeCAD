@@ -1970,6 +1970,7 @@ Py::Dict mergeOutcomeToPy(const App::Document::MergeOutcome& outcome)
         unresolved.append(mergeChangeToPy(c));
     d.setItem("unresolved", unresolved);
     d.setItem("preview", mergePreviewToPy(outcome.preview));
+    d.setItem("reused", Py::Boolean(outcome.reused));
     return d;
 }
 }
@@ -1980,11 +1981,13 @@ PyObject* DocumentPy::previewTransactionMergeResult(PyObject *args)
     PyObject* pyPicks = nullptr;
     const char* fallback = "";
     long long version = 0;
-    if (!PyArg_ParseTuple(args, "s|O!sL", &branch, &PyDict_Type, &pyPicks, &fallback, &version))
+    const char* again = "";
+    if (!PyArg_ParseTuple(args, "s|O!sLs", &branch, &PyDict_Type, &pyPicks, &fallback, &version,
+                          &again))
         return nullptr;
     PY_TRY {
         return Py::new_reference_to(mergeOutcomeToPy(getDocumentPtr()->previewMergeResult(
-            branch, pickedSides(pyPicks), fallback, version)));
+            branch, pickedSides(pyPicks), fallback, version, again)));
     } PY_CATCH;
 }
 
@@ -1993,11 +1996,12 @@ PyObject* DocumentPy::previewTransactionPickResult(PyObject *args)
     PyObject* pyRows = nullptr;
     PyObject* pyPicks = nullptr;
     const char* fallback = "";
-    if (!PyArg_ParseTuple(args, "O|O!s", &pyRows, &PyDict_Type, &pyPicks, &fallback))
+    const char* again = "";
+    if (!PyArg_ParseTuple(args, "O|O!ss", &pyRows, &PyDict_Type, &pyPicks, &fallback, &again))
         return nullptr;
     PY_TRY {
         return Py::new_reference_to(mergeOutcomeToPy(getDocumentPtr()->previewPickResult(
-            pickedRows(pyRows), pickedSides(pyPicks), fallback)));
+            pickedRows(pyRows), pickedSides(pyPicks), fallback, again)));
     } PY_CATCH;
 }
 
