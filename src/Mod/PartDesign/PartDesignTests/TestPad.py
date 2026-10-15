@@ -22,6 +22,7 @@
 import unittest
 
 import FreeCAD
+from parttests.occt_fork import needsOCCTFork
 import Part
 from FreeCAD import Base
 import TestSketcherApp
@@ -349,6 +350,9 @@ class TestPad(unittest.TestCase):
         self.assertAlmostEqual(pad.Shape.BoundBox.ZMax, 20)
         self.assertAlmostEqual(pad.Shape.Volume, 2000)
 
+    # needs the fork's BRepFeat_Form: an empty result up to a face (d0ad46e75a,
+    # e8e2758d6f); measured with upstream's TKFeat alone in the fork's set
+    @needsOCCTFork("BRepFeat_Form's empty result up to a face")
     def testPadUpToShape(self):
         """Up to one face, several, or a whole shape (upstream 309dd6e30d,
         8b9f5bdc4f): the pad stops at the nearest; the Type was offered and

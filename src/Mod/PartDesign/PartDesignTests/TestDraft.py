@@ -23,6 +23,7 @@ import math
 import unittest
 
 import FreeCAD
+from parttests.occt_fork import needsOCCTFork
 import Part
 
 App = FreeCAD
@@ -291,6 +292,9 @@ class TestDraft(unittest.TestCase):
             self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
             self.assertEqual(len(draft.Shape.Faces), 9, method)
 
+    # needs the fork's draft (TKOffset); measured with upstream's TKOffset
+    # alone in the fork's set
+    @needsOCCTFork("the draft's fixes in TKOffset")
     def testDraftSplitFloorCorner(self):
         # A prism whose front wall y=0 (x in [10,20]) meets a slanted wall
         # at (10,0), floor and top split along x=10 from that corner. The
@@ -627,6 +631,9 @@ class TestDraft(unittest.TestCase):
             edges.append(Part.LineSegment(p, q).toShape())
         return Part.Wire(Part.__sortEdges__(edges))
 
+    # needs the fork's draft (TKOffset); measured with upstream's TKOffset
+    # alone in the fork's set
+    @needsOCCTFork("the draft's fixes in TKOffset")
     def testDraftAutoTangentChainBreaksThrough(self):
         # A 40x30x20 block with a 20x10 pocket 16 deep, its corners rounded
         # 2, 2 behind the front wall. The pocket's front wall drafted outward

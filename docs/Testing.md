@@ -1454,6 +1454,40 @@ upstream's rewrite.**
 The expected failures are all in `CAMTests.TestOpenSBPPost` and the
 post-processor sanity checks.
 
+### On another OCCT than the fork (2026-10-15)
+
+FreeCAD runs on upstream's OCCT too (`FCAD_DEV_OCCT_BIN`, see
+`docs/DevEnvironment.md`; on Windows `abi-upstream\tools\run-upstream.cmd`).
+There a test of what the realthunder OCCT fork fixes or adds fails, or hangs,
+for want of the fork -- not for a fault of FreeCAD's -- so it skips instead,
+and says what it needs. On the fork nothing skips this way.
+
+The probe is the one FreeCAD itself uses to find the fork at run time: a C
+function of the fork's toolkits, looked up by name (`lookUpOCCT()` in C++,
+`Part.hasOCCTFunction(toolkit, name)` in Python).
+
+- A test of one of the fork's functions asks for that function:
+  `TopoDS_LockedShape_Raised` for the frozen shapes (`Document.py`'s two
+  refusal cases; `SKIP_WITHOUT_OCCT_IMMUTABLE()` in
+  `tests/src/Mod/Part/App/ImmutableShape.cpp`, 19 cases),
+  `BinTools_ShapeSet_SetStableBytes` for `ShapeStorage.py`'s stable bytes.
+  The fillet's setback corners keep their own skip, on the "OCCT fork" error
+  that asking for one raises elsewhere (`FilletCornerTest`, `TestFillet`,
+  `TestFilletPanel`).
+- A test of one of its fixes to an algorithm, which has no function of its
+  own, asks for the fork (TKBRep's `SetFuncShowTopoShape`) through
+  `parttests.occt_fork.needsOCCTFork(fix)`: 24 in `regression_tests.py` (the
+  thickness fixes in TKOffset, and the BREP reader's long reals, which hangs
+  upstream's reader), 9 in PartDesign (the draft in TKOffset, and
+  `BRepFeat_Form`'s empty result up to a face in TKFeat).
+- The fork's own suites (`occt/tests/fork/{thickness,draft,fillet}`) run
+  nothing there: "SKIP: not the OCCT fork", `summary: SKIP=1`, exit 0.
+
+Which toolkit a failing test needs was measured, not read off its name: the
+test run on the fork's DLLs with that one toolkit replaced by upstream's
+(the fork keeps upstream's ABI, so they mix). A new test that fails on
+upstream's OCCT gets the same treatment: find the toolkit, then the skip.
+
 ## 5. Two traps worth knowing before adding a test
 
 **Give a test that touches the filesystem its own directory.**

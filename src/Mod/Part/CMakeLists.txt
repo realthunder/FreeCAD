@@ -79,6 +79,7 @@ set(Part_tests
     parttests/PrimitiveNamesTest.py
     parttests/TestLinkArray.py
     parttests/FilletCornerTest.py
+    parttests/occt_fork.py
 )
 
 add_custom_target(PartScripts ALL SOURCES

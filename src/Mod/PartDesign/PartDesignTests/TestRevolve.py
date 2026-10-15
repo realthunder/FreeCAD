@@ -23,6 +23,7 @@ import math
 import unittest
 
 import FreeCAD
+from parttests.occt_fork import needsOCCTFork
 import Part
 
 class TestRevolve(unittest.TestCase):
@@ -319,6 +320,9 @@ class TestRevolve(unittest.TestCase):
         self.Doc.recompute()
         self.assertSameBounds(byReference.AddSubShape.BoundBox, byOffset.AddSubShape.BoundBox)
 
+    # needs the fork's BRepFeat_Form: an empty result up to a face (d0ad46e75a,
+    # e8e2758d6f); measured with upstream's TKFeat alone in the fork's set
+    @needsOCCTFork("BRepFeat_Form's empty result up to a face")
     def testUpToFirstAndLast(self):
         # Up to first and last were refused before (upstream 80664a0d30).
         # Up to a face of the base went a full turn: BRepFeat does not stop
@@ -344,6 +348,9 @@ class TestRevolve(unittest.TestCase):
         self.Doc.recompute()
         self.assertSweep(revolution, first + 45)
 
+    # needs the fork's BRepFeat_Form: an empty result up to a face (d0ad46e75a,
+    # e8e2758d6f); measured with upstream's TKFeat alone in the fork's set
+    @needsOCCTFork("BRepFeat_Form's empty result up to a face")
     def testUpToFaceToolIsTheSideAlone(self):
         # AddSubShape of a revolution up to a face held the base as well
         import math
@@ -354,6 +361,9 @@ class TestRevolve(unittest.TestCase):
         self.assertAlmostEqual(revolution.Shape.Volume,
                                box.Shape.Volume + self.torusVolume(first), delta=1.0)
 
+    # needs the fork's BRepFeat_Form: an empty result up to a face (d0ad46e75a,
+    # e8e2758d6f); measured with upstream's TKFeat alone in the fork's set
+    @needsOCCTFork("BRepFeat_Form's empty result up to a face")
     def testSymmetricUpToFace(self):
         # The face is mirrored in the profile plane for the other side
         import math

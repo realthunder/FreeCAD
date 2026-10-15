@@ -5613,6 +5613,9 @@ class TransactionBranchCases(unittest.TestCase):
             "ImmutableShapeValues", True
         ):
             self.skipTest("shape values are not frozen")
+        # upstream's OCCT freezes nothing, so nothing is refused
+        if not Part.hasOCCTFunction("TKBRep", "TopoDS_LockedShape_Raised"):
+            self.skipTest("needs the OCCT fork's TopoDS_LockedShape_Raised (TKBRep)")
 
         class Tolerance:
             def __init__(self, obj):
@@ -5654,6 +5657,9 @@ class TransactionBranchCases(unittest.TestCase):
             "ImmutableShapeValues", True
         ):
             self.skipTest("shape values are not frozen")
+        # upstream's OCCT freezes nothing, so nothing is refused
+        if not Part.hasOCCTFunction("TKBRep", "TopoDS_LockedShape_Raised"):
+            self.skipTest("needs the OCCT fork's TopoDS_LockedShape_Raised (TKBRep)")
 
         runs = []
 

@@ -5,6 +5,8 @@ import Part
 
 import unittest
 
+from parttests.occt_fork import needsOCCTFork
+
 class RegressionTests(unittest.TestCase):
 
     def test_issue_4456(self):
@@ -476,6 +478,7 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(len(result.Wires), 40)
         self.assertEqual(len(result.Edges), 40)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_by_arc_is_the_same_every_run(self):
         """Thickness with intersection and the Arc join put the offsets in hash
         order -- a shape's hash is its TShape's address -- and the result
@@ -528,6 +531,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_past_a_concave_corner(self):
         """Outward with the Arc join past a concave corner, the loop kept the
         corner of an arc face cut off by the next one as a face of its own;
@@ -551,6 +555,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_inward_and_in_intersection_mode(self):
         """Three fork breaks (docs/TransactionLog.md sec 27.91): the T's
         concave bar top inward -- where the stretched removed face crossed an
@@ -580,6 +585,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_with_the_intersection_join(self):
         """The Intersection join (docs/TransactionLog.md sec 27.92): a thick solid
         came back inside out, oriented by the order its shells were glued in; a
@@ -608,6 +614,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_with_a_face_tangent_to_its_neighbours(self):
         """A filleted box with an end or side face removed: the removed face is
         tangent to the fillets, whose offsets never meet it, and the offset
@@ -628,6 +635,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_with_a_curved_face_tangent_to_its_neighbours(self):
         """A filleted box with a fillet removed: the removed face is curved and
         tangent to the planes beside it. Outward the offset failed, inward it
@@ -648,6 +656,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_intersection_join_with_a_face_tangent_to_its_neighbours(self):
         """A filleted box with an end, side or fillet face removed, with the
         Intersection join, which builds no tubes: the neighbour's offset ran
@@ -674,6 +683,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_sealed_below_a_removed_face(self):
         """A cone with a through hole, its top removed, inward: the wall is 1.4
         thick at the top, the cone's and the hole's inner offsets cross at
@@ -701,6 +711,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, 307.1946, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_faces_left_in_pieces(self):
         """Removing a cylinder's side leaves its two caps, which share no
         edge: each is a thick solid of its own, a disc of 16 pi, and the
@@ -725,6 +736,7 @@ class RegressionTests(unittest.TestCase):
         self.assertTrue(result.isValid())
         self.assertAlmostEqual(result.Volume, 24 * math.pi, places=3)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_a_pocket_left_in_pieces(self):
         """A box with a blind hole, its top removed: the hole's wall and floor
         are a piece of their own beside the outside's. They were refused
@@ -753,6 +765,7 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, expected, places=3, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_leaves_its_input(self):
         """A pad of a ring sector straddling angle 0, its outer arc's face
         and both caps removed: the thickness came back right and left its
@@ -781,6 +794,7 @@ class RegressionTests(unittest.TestCase):
             self.assertTrue(pad.isValid(), name)
             self.assertAlmostEqual(pad.Volume, volume, places=6, msg=name)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_with_every_face_removed_is_refused(self):
         """No face stays to be thickened, and there is no answer. A sphere
         with its one face removed came back as the sphere itself, valid and
@@ -835,6 +849,7 @@ class RegressionTests(unittest.TestCase):
                 self.assertAlmostEqual(r.Volume, volume, 3, msg)
                 self.assertTrue(shape.isValid(), msg)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_a_cone_with_its_apex_and_half_a_dome(self):
         """The cone with its apex, base removed: inward it threw with the Arc
         join, and apex down it came back unhollowed with the Intersection
@@ -885,6 +900,7 @@ class RegressionTests(unittest.TestCase):
                 "split box %g, Intersection join: the box back" % offset,
             )
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_coplanar_pieces_and_a_sphere_round_its_pole(self):
         """The four cases the fork had left broken. Half a dome, its second
         side removed inward: an invalid result, the offset sphere bounded by
@@ -939,6 +955,7 @@ class RegressionTests(unittest.TestCase):
                     self.assertAlmostEqual(r.Volume, volume, 3, msg)
         self.assertTrue(box.isValid())
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_a_dome_past_half_a_turn_and_its_sphere_removed(self):
         """A ball cut by its equator and by planes through its axis. Three
         quarters of a dome, its bottom removed outward with the Intersection
@@ -996,6 +1013,7 @@ class RegressionTests(unittest.TestCase):
             self.assertAlmostEqual(shape.Volume, volume, 3)
             self.assertEqual(shape.Faces[0].Surface.Axis, V(0, 0, 1))
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_half_a_ball_and_of_a_placed_shape(self):
         """Half a ball cut through both its poles: its sphere's outline is a
         whole great circle, no axis keeps both poles off it, and it was
@@ -1118,6 +1136,7 @@ class RegressionTests(unittest.TestCase):
                 check("%s half cap, Face%d" % (name, faces[0]), how(cap), faces, -0.5, join, volume)
             check("%s dome on a cylinder, side" % name, how(bullet), [1], 0.5, 2, 100.7315, 2)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_a_dome_with_its_rim_in_two_arcs_and_a_half_ball_with_one_disc(self):
         """A dome whose rim is in two arcs: the loops built the band between a
         seam and a rim only on a rim that is one closed edge, and the dome's
@@ -1207,6 +1226,7 @@ class RegressionTests(unittest.TestCase):
                 check("two domes, both removed", domes, [1, 2], offset, join, 39.1390)
         self.assertEqual((len(lunes.Faces), len(domes.Faces)), (4, 4))
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_the_rest_of_a_ball_a_sphere_on_another_axis_and_an_edge_in_pieces(self):
         """A ball wedge on more than half a turn, its sphere removed outward:
         refused -- the wall is the missing lune with a hole in it, beside none
@@ -1301,6 +1321,7 @@ class RegressionTests(unittest.TestCase):
         domes = ball.generalFuse([equator])[0].Solids[0]
         check("half a ball in two domes, one removed", domes, 1, 0.5, 0, 89.1638)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_of_half_a_ball_with_one_of_its_two_domes_or_lunes_removed(self):
         """The half ball with its sphere in two domes or two lunes, one of them
         removed: refused every way. The removed face lies on the kept face's
@@ -1349,6 +1370,7 @@ class RegressionTests(unittest.TestCase):
             for c in curves:
                 self.assertIsInstance(c, Part.ArcOfCircle, str(axis))
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_arc_join_of_half_a_ball_with_one_of_its_two_faces_removed(self):
         """The same half ball with the Arc join: a tube round the tangent edge
         and, outward, a ball round each of its ends. The flat's offset is cut
@@ -1389,6 +1411,7 @@ class RegressionTests(unittest.TestCase):
                     # no sliver: the smallest face is a ball's
                     self.assertGreater(min(f.Area for f in r.Faces), 0.1, msg)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_with_a_seam_in_pieces(self):
         """A vertex that only cuts an edge in two must change nothing. A seam
         in two pieces, joined, came back parameterised from 0, and stretched
@@ -1431,6 +1454,7 @@ class RegressionTests(unittest.TestCase):
             name = "three quarters of a dome, a vertex on Edge%d" % (index + 1)
             check(name, split_at(dome, index), 3, 0.5, 0, 111.7391)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_with_a_vertex_on_a_rim_and_faces_in_another_order(self):
         """Two things that must change nothing: a vertex on an edge, and the
         order a solid's faces come in. Half a ball cut from a ball by a box
@@ -1486,6 +1510,7 @@ class RegressionTests(unittest.TestCase):
             check("lunes, a vertex on " + name, solid, 1, 0.5, 2, 91.1786)
             check("lunes, a vertex on " + name, solid, 1, -0.5, 2, 74.1857)
 
+    @needsOCCTFork("the thickness fixes in TKOffset")
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
@@ -1619,6 +1644,8 @@ class RegressionTests(unittest.TestCase):
             finally:
                 FreeCAD.closeDocument(doc.Name)
 
+    # upstream's reader spins forever on it: skipped, not run, without the fork
+    @needsOCCTFork("GeomTools::GetReal reads a real longer than its buffer (310bfaf34f)")
     def test_read_brep_with_a_long_fixed_notation_real(self):
         """An unbounded edge's range written as a 101-digit integer part.
 

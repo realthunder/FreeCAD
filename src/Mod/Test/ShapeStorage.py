@@ -2003,6 +2003,10 @@ class ShapeStableBytesCases(ShapeTestCase):
         return set(self.storedGeometry(project))
 
     def testTheFaceStoresTheSameBytesWhateverIsBuiltOnIt(self):
+        # upstream's shape sets write a shared edge's 2D curves with the first
+        # face that has it
+        if not Part.hasOCCTFunction("TKBRep", "BinTools_ShapeSet_SetStableBytes"):
+            self.skipTest("needs the OCCT fork's BinTools_ShapeSet_SetStableBytes (TKBRep)")
         alone = self.baseBytes(False, "alone")
         self.assertEqual(len(alone), 1)
         built = self.baseBytes(True, "built")

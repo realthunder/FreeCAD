@@ -24,6 +24,7 @@ import tempfile
 import unittest
 
 import FreeCAD
+from parttests.occt_fork import needsOCCTFork
 import TestSketcherApp
 
 
@@ -192,6 +193,9 @@ class TestExtrudeSides(unittest.TestCase):
         pad.UpToFace = (box, [top])
         self.assertEqual([(o, list(s)) for o, s in pad.UpToShape], [(box, [top])])
 
+    # needs the fork's BRepFeat_Form: an empty result up to a face (d0ad46e75a,
+    # e8e2758d6f); measured with upstream's TKFeat alone in the fork's set
+    @needsOCCTFork("BRepFeat_Form's empty result up to a face")
     def testUpToFacesApart(self):
         # Faces that do not touch: the prism stops at the nearest it meets,
         # where it ran through all, or failed when it met only the plane

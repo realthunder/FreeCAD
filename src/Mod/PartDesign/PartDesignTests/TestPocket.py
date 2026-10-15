@@ -23,6 +23,7 @@ import unittest
 import ArchiveMembers
 
 import FreeCAD
+from parttests.occt_fork import needsOCCTFork
 import math
 import TestSketcherApp
 
@@ -203,6 +204,9 @@ class TestPocket(unittest.TestCase):
             self.Doc.recompute()
         self.assertAlmostEqual(self.Pocket001.Shape.Volume, 50.0)
 
+    # needs the fork's BRepFeat_Form: an empty result up to a face (d0ad46e75a,
+    # e8e2758d6f); measured with upstream's TKFeat alone in the fork's set
+    @needsOCCTFork("BRepFeat_Form's empty result up to a face")
     def testPocketToCurvedFaceFromHollow(self):
         # upstream issue 16690: a pocket sketched inside a pipe, up to one of
         # its cylinders, cut beyond the face instead of up to it
@@ -270,6 +274,9 @@ class TestPocket(unittest.TestCase):
         removed = 30 / 3 * (100 + bottom ** 2 + 10 * bottom)
         self.assertAlmostEqual(40 * 40 * 30 - pocket.Shape.Volume, removed, delta=0.5)
 
+    # needs the fork's BRepFeat_Form: an empty result up to a face (d0ad46e75a,
+    # e8e2758d6f); measured with upstream's TKFeat alone in the fork's set
+    @needsOCCTFork("BRepFeat_Form's empty result up to a face")
     def testPocketUpToShape(self):
         """A pocket up to a shape (upstream 309dd6e30d): the Pocket had no
         such Type."""
