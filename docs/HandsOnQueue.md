@@ -160,6 +160,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:34: NEW ENTRY 145 (a defect) -- a drag of a default-radius arrow
+aborted by another click leaves the other default edges' arrows where
+the drag put them.** Under the entry.
+
 **2026-10-15 15:33: NEW ENTRY 144 -- a hover highlight on the on-view arrow, by
 the same logic as a normal mesh's: an outline and the automatic colour.**
 Under the entry.
@@ -2929,6 +2933,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry |
 | 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same |
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN |
+| 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19724,6 +19729,35 @@ READ in the source, nothing run: the pre-selection outline is the setting
 (`src/Gui/ViewParams.h` 235 to 242, 463 to 470); where the AUTOMATIC
 colour is chosen NOT found by this short reading.
 
+## 145. An aborted drag of a default-radius arrow: the other default edges' arrows not put back (a defect) -- OPEN
+
+**2026-10-15 15:34, the reporter:** "also defect, when other click aborts a
+drag of an edge with default radius, other default edge arrow does not
+restore its position"
+
+The note-taker's reading:
+- On the fillet's on-view editing (the copy STAGED 14:47, `1df007d0f2`,
+  by the note-taker's reading): the user drags the arrow of an edge that
+  uses the DEFAULT radius. The default radius is shared, so the arrows of
+  the OTHER default-radius edges move along with it during the drag.
+- Another mouse click during the drag ABORTS it (entry 136's rule of
+  09:58: "any other button click, or esc shall cancel and restore to
+  before the drag").
+- The defect: the OTHER default edges' arrows stay where the drag had put
+  them; they are not put back to their positions from before the drag.
+NOT said:
+a. whether the dragged arrow itself and the radius VALUE are restored --
+   by the note-taker's reading yes (only the other arrows are named);
+b. whether Esc (the other abort of entry 136) shows the same -- by the
+   note-taker's reading the same fix covers both;
+c. the chamfer (shared default size) -- the same, by the note-taker's
+   reading.
+Related: entry 136 (the build session's 14:22 "Found on the way: After an
+Undo inside the edit, the handles stayed where the undone drag had left
+them. Fixed: the panels re-place their handles on refresh.") -- the
+same kind of miss, on the abort path rather than the Undo path, by the
+note-taker's reading.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -19735,5 +19769,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 144
+the build session, 131 and 132 found by it; entries 134 to 145
 are of 2026-10-15, 134 said to the build session)
