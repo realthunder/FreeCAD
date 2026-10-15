@@ -160,6 +160,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:04: NEW ENTRY 147 -- TechDraw's new print icon looks disabled
+(low contrast, grey); sharper, darker edges wanted. It is the shared
+document-print icon, Std_Print's too.** Under the entry.
+
 **2026-10-15 16:00: entry 142 CORRECTED by the reporter (to the build session):
 "out of the corner" withdrawn -- it depends on an additive or subtractive
 corner; the rule: dragging along the arrow increases the radius.** Under
@@ -2968,6 +2972,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit. 15:52: "yes to all" -- every handle (the rotation handle too); it follows the user's pre-selection settings |
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
 | 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open |
+| 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20036,6 +20041,38 @@ one pixel border is enought"
 The note-taker's reading: e answered -- the border is ONE PIXEL wide.
 Nothing left open on 146, by the note-taker's reading.
 
+## 147. TechDraw's print icon looks disabled: low contrast and grey; sharper, darker edges (a change request) -- OPEN
+
+**2026-10-15 16:04, the reporter:** "new request, the new techdraw print icon
+has low contrast couple with the greyish color make it look like a
+disabled button. make it sharper, use darker color for edges"
+
+The note-taker's reading:
+- The icon of TechDraw's "Print pages" command (entry 137, the printer
+  icon, on the copy STAGED 14:47) has low contrast, and with its greyish
+  colours it looks like a DISABLED (greyed out) button.
+- Wanted: a SHARPER icon -- more contrast -- with DARKER colours for its
+  EDGES (outlines).
+NOT said:
+a. the SHARED icon: the build session gave the command the general
+   `document-print` icon, which is ALSO the icon of Std_Print (File >
+   Print). Changing the file changes both -- by the note-taker's reading
+   that is fine (the same printer, the same look); or a TechDraw icon of
+   its own -- not said;
+b. the dark theme: darker edges on a dark tool bar -- whether the icon
+   needs a look of its own there (by the note-taker's reading the same
+   icon, checked under both themes);
+c. the fills: only the edges named; the greys of the body (the printer's
+   body and paper) -- lighter or kept, not said.
+READ in the source, nothing run:
+- `src/Mod/TechDraw/Gui/Command.cpp` 294 and `src/Gui/CommandDoc.cpp` 1047
+  (Std_Print): both `sPixmap = "document-print"`; the file
+  `src/Gui/Icons/document-print.svg` (23 KB, last changed 2026-09-06).
+- Its colours (a count of the style values): strokes #898989, #676767,
+  #595959 and one #ffffff; fills #a7a7a7, #fbfbfb, black (5) and one
+  #729fcf (blue) -- mid greys for the outlines, by the note-taker's
+  reading the low contrast the reporter sees.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20047,5 +20084,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 146
+the build session, 131 and 132 found by it; entries 134 to 147
 are of 2026-10-15, 134 said to the build session)
