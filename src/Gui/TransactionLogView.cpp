@@ -4154,38 +4154,6 @@ void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& gl
     }
 }
 
-namespace {
-
-/// The versions a squash to `to` may start from (docs/TransactionLog.md
-/// sec 16.7): those behind it on its own history, oldest first.
-std::vector<App::LogVersion> versionsBehind(App::TransactionStore& store,
-                                            const App::LogVersion& to)
-{
-    std::vector<App::LogVersion> behind;
-    const auto chain = store.chain(to.seq);
-    if (chain.empty())
-        return behind;
-    std::set<int64_t> points;
-    for (const auto& t : chain) {
-        points.insert(t.seq);
-        points.insert(t.parent);
-    }
-    // A version taken at no row is behind only the history that starts
-    // from it: its own branch's, or that of a branch made from it.
-    App::LogBranch first;
-    store.getBranch(chain.front().branch, first);
-    for (const auto& v : store.versions()) {
-        if (v.seq >= to.seq || !points.count(v.seq))
-            continue;
-        if (v.seq == 0 && v.branch != first.id && v.num != first.fromVersion)
-            continue;
-        behind.push_back(v);
-    }
-    return behind;
-}
-
-} // namespace
-
 void TransactionLogView::squashTo(qlonglong version)
 {
     // docs/TransactionLog.md sec 16.7: the rows between an older version
@@ -4199,7 +4167,7 @@ void TransactionLogView::squashTo(qlonglong version)
         App::LogVersion to;
         if (!store.getVersion(version, to))
             return;
-        const auto behind = versionsBehind(store, to);
+        const auto behind = logVersionsBehind(store, to);
         if (behind.empty()) {
             _status->setText(tr("No version behind version %1 to squash from").arg(version));
             return;
@@ -4388,7 +4356,8 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     try {
         App::LogVersion to;
         if (auto l = log())
-            anyBehind = l->store().getVersion(num, to) && !versionsBehind(l->store(), to).empty();
+            anyBehind = l->store().getVersion(num, to)
+                && !logVersionsBehind(l->store(), to).empty();
     }
     catch (Base::Exception&) {
     }

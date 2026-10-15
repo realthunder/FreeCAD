@@ -51,6 +51,7 @@
 #include "Document.h"
 #include "SceneControl.h"
 #include "SceneLog.h"
+#include "SceneRequests.h"
 #include "SceneServeSource.h"
 #include "ViewProviderDocumentObject.h"
 #include "Renderer/SceneServer.h"
@@ -193,6 +194,12 @@ void watchTheFiles()
     connections.emplace_back(App::GetApplication().signalUndoDocument.connect(told));
     connections.emplace_back(App::GetApplication().signalRedoDocument.connect(told));
     connections.emplace_back(App::GetApplication().signalRecomputed.connect(told));
+    // A file sent, or gone: a request of every document watched, which a
+    // page asks again to list (sec 30.20)
+    connections.emplace_back(SceneRequests::signalChanged().connect([]() {
+        for (const auto& entry : watches())
+            queueTell(entry.first);
+    }));
     //NOLINTEND
 }
 
@@ -487,6 +494,29 @@ const char* const kNeedsWrite
 const char* const kNeedsRead = "that branch is not one this connection reads";
 const char* const kBeforePoint
     = "that is from before the point this branch is written from";
+const char* const kHostTrims
+    = "that takes rows out of the log for good, which is the host's";
+const char* const kHostBrings
+    = "a file sent, or a branch an import made, is the host's to bring in and merge";
+
+/** The branch an op names, or the refusal. Every branch is listed to the
+ * asker, the ones it does not read greyed (ruled 2026-10-15): a name says
+ * no more than the versions and the records named after it said already.
+ * So one it does not read is refused as that, and not as unknown.
+ */
+bool namedBranch(const QJsonValue& id, App::TransactionStore& store, const Reach& reach,
+                 const std::string& name, App::LogBranch& branch, QJsonObject& refusal)
+{
+    if (name.empty() || !store.findBranch(name, branch)) {
+        refusal = sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        return false;
+    }
+    if (!reach.reads(branch.id)) {
+        refusal = notReached(id, kNeedsRead);
+        return false;
+    }
+    return true;
+}
 
 /** Why keeping a value at a row is not the asker's, or nothing (ruled
  * 2026-10-14): what is kept grows the file every save writes, so it is the
@@ -939,11 +969,11 @@ QJsonObject versionsOp(const QJsonObject& req, const std::string& boundDoc, uint
             item[QLatin1String("named")] = v.kind == "named";
             item[QLatin1String("name")] = QString::fromStdString(v.name);
             // (the point a branch is written from may be a version of a
-            // branch the asker does not read, which is not named to it)
-            if (reach.reads(v.branch)) {
-                item[QLatin1String("branch")] = double(v.branch);
-                item[QLatin1String("branchName")] = QString::fromStdString(branches[v.branch]);
-            }
+            // branch the asker does not read: named, and said so)
+            item[QLatin1String("branch")] = double(v.branch);
+            item[QLatin1String("branchName")] = QString::fromStdString(branches[v.branch]);
+            if (!reach.reads(v.branch))
+                item[QLatin1String("branchRead")] = false;
             item[QLatin1String("seq")] = double(v.seq);
             item[QLatin1String("time")] = v.created;
             // Of the history the document is at the head of; a version
@@ -979,11 +1009,16 @@ QJsonObject branchesOp(const QJsonObject& req, const std::string& boundDoc, uint
         const Reach reach = reachOf(doc, log);
         QJsonArray list;
         for (const App::LogBranch& b : log->store().branches()) {
-            if (!reach.reads(b.id))
-                continue;
             QJsonObject item;
             item[QLatin1String("id")] = double(b.id);
             item[QLatin1String("name")] = QString::fromStdString(b.name);
+            // One the asker does not read is listed by its name alone, for
+            // a page to grey (ruled 2026-10-15)
+            item[QLatin1String("read")] = reach.reads(b.id);
+            if (!reach.reads(b.id)) {
+                list.append(item);
+                continue;
+            }
             item[QLatin1String("head")] = double(b.head);
             item[QLatin1String("fromVersion")] = double(b.fromVersion);
             item[QLatin1String("fromSeq")] = double(b.fromSeq);
@@ -1203,8 +1238,8 @@ QJsonObject switchOp(const QJsonObject& req, const std::string& boundDoc, uint64
     try {
         App::LogBranch branch;
         const Reach reach = reachOf(doc, log);
-        if (name.empty() || !log->store().findBranch(name, branch) || !reach.reads(branch.id))
-            return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        if (!namedBranch(id, log->store(), reach, name, branch, refusal))
+            return refusal;
         // The whole document is checked out, under everyone in it: for
         // one who writes the branch it is on, to one it writes
         if (!reach.moves() || !reach.writes(branch.id))
@@ -1238,8 +1273,8 @@ QJsonObject renameBranchOp(const QJsonObject& req, const std::string& boundDoc, 
     try {
         App::LogBranch branch;
         const Reach reach = reachOf(doc, log);
-        if (name.empty() || !log->store().findBranch(name, branch) || !reach.reads(branch.id))
-            return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        if (!namedBranch(id, log->store(), reach, name, branch, refusal))
+            return refusal;
         if (!reach.writes(branch.id))
             return notReached(id, kNeedsWrite);
         if (!doc->renameBranch(name, to))
@@ -1267,8 +1302,8 @@ QJsonObject deleteBranchOp(const QJsonObject& req, const std::string& boundDoc, 
     try {
         App::LogBranch branch;
         const Reach reach = reachOf(doc, log);
-        if (name.empty() || !log->store().findBranch(name, branch) || !reach.reads(branch.id))
-            return sceneControlError(id, "UnknownBranch", QString::fromStdString(name));
+        if (!namedBranch(id, log->store(), reach, name, branch, refusal))
+            return refusal;
         const Reach::Of* of = reach.find(branch.id);
         if (!reach.host && !(of && of->made))
             return notReached(id, !(of && of->write) ? kNeedsWrite
@@ -1483,6 +1518,50 @@ QJsonObject requestsOp(const QJsonObject& req, const std::string& boundDoc, uint
         }
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("requests")] = list;
+        // The requests of sec 30.20, as the desktop's list has them: the
+        // files sent and not read -- the host's all, a client's its own --
+        // and the branches an import made that this one has not taken, of
+        // the branches the asker reads. Bringing in and merging them is the
+        // host's (H6): nothing a connection sent is read for its asking.
+        const auto me = asker();
+        QJsonArray files;
+        for (const SceneRequest& r : SceneRequests::list(doc->getName())) {
+            const bool mine = !reach.host && r.sender.toStdString() == me.second
+                && r.senderKind.toStdString() == me.first;
+            if (!reach.host && !mine)
+                continue;
+            QJsonObject item;
+            item[QLatin1String("id")] = double(r.id);
+            item[QLatin1String("name")] = r.name;
+            item[QLatin1String("size")] = double(r.size);
+            item[QLatin1String("by")] = r.sender;
+            item[QLatin1String("byKind")] = r.senderKind;
+            item[QLatin1String("time")] = r.time;
+            item[QLatin1String("mine")] = mine;
+            files.append(item);
+        }
+        reply[QLatin1String("files")] = files;
+        QJsonArray imports;
+        for (const auto& r : doc->importRequests(false)) {
+            App::LogBranch branch;
+            if (!store.findBranch(r.branch, branch) || !reach.reads(branch.id))
+                continue;
+            QJsonObject item;
+            item[QLatin1String("branch")] = QString::fromStdString(r.branch);
+            item[QLatin1String("file")] = QString::fromStdString(r.file);
+            QJsonArray authors;
+            for (const auto& a : r.authors)
+                authors.append(QString::fromStdString(a));
+            item[QLatin1String("authors")] = authors;
+            if (!r.sender.empty())
+                item[QLatin1String("by")] = QString::fromStdString(r.sender);
+            item[QLatin1String("time")] = r.when;
+            item[QLatin1String("rows")] = double(r.rows);
+            item[QLatin1String("independent")] = r.independent;
+            item[QLatin1String("stopped")] = r.stoppedAt != 0;
+            imports.append(item);
+        }
+        reply[QLatin1String("imports")] = imports;
         reachJson(reply, reach);
         watchFor(doc, client);
         return reply;
@@ -1511,11 +1590,9 @@ QJsonObject requestOp(const QJsonObject& req, const std::string& boundDoc, uint6
         const Reach reach = reachOf(doc, log);
         App::LogBranch from;
         App::LogBranch into;
-        // A branch the asker does not read is none to it
-        if (source.empty() || !store.findBranch(source, from) || !reach.reads(from.id))
-            return sceneControlError(id, "UnknownBranch", QString::fromStdString(source));
-        if (target.empty() || !store.findBranch(target, into) || !reach.reads(into.id))
-            return sceneControlError(id, "UnknownBranch", QString::fromStdString(target));
+        if (!namedBranch(id, store, reach, source, from, refusal)
+                || !namedBranch(id, store, reach, target, into, refusal))
+            return refusal;
         const int64_t made = doc->requestMerge(source, target, note);
         QJsonObject reply = placeReply(id, doc, log);
         reply[QLatin1String("request")] = double(made);
@@ -1684,6 +1761,235 @@ QString changeText(App::TransactionLog* log, const std::string& ref, bool derive
     return text;
 }
 
+/** A branch an import made that the branch the document is on has not
+ * taken (sec 30.20 H1), named by an op; or the refusal. The host's to
+ * merge: what a file brought in sets was read for no one's asking but the
+ * host's.
+ */
+bool importBranch(const QJsonValue& id, App::Document* doc, const Reach& reach,
+                  const std::string& name, QJsonObject& refusal)
+{
+    if (!reach.host) {
+        refusal = notReached(id, kHostBrings);
+        return false;
+    }
+    for (const auto& r : doc->importRequests(false)) {
+        if (r.branch == name)
+            return true;
+    }
+    refusal = sceneControlError(id, "UnknownRequest", QString::fromStdString(name));
+    return false;
+}
+
+/** `log.bring`: a file sent, brought in (sec 30.29) -- read, its rows a
+ * branch of their own, which is then a request of its own to merge
+ * (`imports` of `log.requests`). The host's. The branch is the copy's own,
+ * as the desktop's "Bring in only" brings it.
+ */
+QJsonObject bringOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    try {
+        if (!reachOf(doc, log).host)
+            return notReached(id, kHostBrings);
+        const int64_t which = req.value(QLatin1String("file")).toInteger(0);
+        SceneRequest sent;
+        if (which <= 0 || !SceneRequests::find(uint64_t(which), sent, doc->getName())
+                || !sent.inLog)
+            return sceneControlError(id, "UnknownRequest", QString::number(which));
+        const App::Document::ImportResult result = doc->importSentFile(which);
+        SceneRequests::signalChanged()();
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("name")] = sent.name;
+        reply[QLatin1String("into")] = QString::fromStdString(result.branch);
+        reply[QLatin1String("rows")] = double(result.rows);
+        if (result.stoppedAt) {
+            reply[QLatin1String("stopped")] = true;
+            reply[QLatin1String("why")] = QString::fromStdString(result.reason);
+        }
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.dropFile`: a file sent, let go unread -- by the host, or withdrawn
+ * by the one who sent it.
+ */
+QJsonObject dropFileOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    try {
+        const bool host = reachOf(doc, log).host;
+        const int64_t which = req.value(QLatin1String("file")).toInteger(0);
+        SceneRequest sent;
+        const auto me = asker();
+        // Another's file is none to a client: it is not listed one
+        if (which <= 0 || !SceneRequests::find(uint64_t(which), sent, doc->getName())
+                || (!host && (sent.sender.toStdString() != me.second
+                              || sent.senderKind.toStdString() != me.first)))
+            return sceneControlError(id, "UnknownRequest", QString::number(which));
+        if (!SceneRequests::drop(uint64_t(which), false, doc->getName()))
+            return sceneControlError(id, "Refused", QStringLiteral("not dropped"));
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("name")] = sent.name;
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.mergeImport`: a branch an import made merged into the one the
+ * document is on, as `log.mergeRequest` merges -- `picks`, `fallback`, and
+ * `Conflicts` without them. The host's.
+ */
+QJsonObject mergeImportOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string name = req.value(QLatin1String("branch")).toString().toStdString();
+    try {
+        if (!importBranch(id, doc, reachOf(doc, log), name, refusal))
+            return refusal;
+        if (editOpen(doc))
+            return sceneControlError(id, "Editing",
+                                     QStringLiteral("an edit is open: leave it first"));
+        const std::string fallback = fallbackOf(req);
+        const auto picks = picksOf(req);
+        if (fallback.empty()) {
+            const size_t conflicts = unpicked(doc->previewMerge(name), picks);
+            if (conflicts > 0)
+                return conflictsReply(id, conflicts);
+        }
+        const App::Document::MergeResult result = doc->mergeBranch(name, picks, fallback);
+        if (!result.unresolved.empty())
+            return conflictsReply(id, result.unresolved.size());
+        objectsMoved(doc);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("row")] = double(result.seq);
+        reply[QLatin1String("forwarded")] = double(result.forwarded);
+        reply[QLatin1String("failed")] = double(result.failed.size());
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.trim`: the history of a branch before one of its versions taken
+ * out (sec 16.7), but what another branch holds and the named versions.
+ * Nothing takes it back: the host's.
+ */
+QJsonObject trimOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const std::string name = req.value(QLatin1String("branch")).toString().toStdString();
+    const int64_t num = req.value(QLatin1String("version")).toInteger(0);
+    try {
+        App::TransactionStore& store = log->store();
+        const Reach reach = reachOf(doc, log);
+        App::LogBranch branch;
+        if (!namedBranch(id, store, reach, name, branch, refusal))
+            return refusal;
+        if (!reach.host)
+            return notReached(id, kHostTrims);
+        App::LogVersion version;
+        if (num <= 0 || !store.getVersion(num, version))
+            return sceneControlError(id, "UnknownVersion", QString::number(num));
+        const size_t rows = doc->trimBranch(name, num);
+        queueTell(doc->getName());
+        tellTheFile(*doc);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("rows")] = double(rows);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
+/** `log.squash`: the rows between an older version (`from`) and `version`
+ * folded into one row of their net change (sec 16.7); both versions stay,
+ * the unnamed ones between go. Nothing takes it back: the host's. With no
+ * `from`, only the versions it may start from (`behind`, newest first),
+ * each with the rows it would fold.
+ */
+QJsonObject squashOp(const QJsonObject& req, const std::string& boundDoc, uint64_t)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document* doc = nullptr;
+    QJsonObject refusal;
+    App::TransactionLog* log = logOf(req, boundDoc, doc, refusal);
+    if (!log)
+        return refusal;
+    const int64_t num = req.value(QLatin1String("version")).toInteger(0);
+    const int64_t from = req.value(QLatin1String("from")).toInteger(0);
+    try {
+        App::TransactionStore& store = log->store();
+        const Reach reach = reachOf(doc, log);
+        App::LogVersion to;
+        if (num <= 0 || !store.getVersion(num, to) || !reach.sees(to))
+            return sceneControlError(id, "UnknownVersion", QString::number(num));
+        if (!reach.host)
+            return notReached(id, kHostTrims);
+        const auto behind = logVersionsBehind(store, to);
+        if (from <= 0) {
+            QJsonArray list;
+            for (auto v = behind.rbegin(); v != behind.rend(); ++v) {
+                QJsonObject item;
+                item[QLatin1String("num")] = double(v->num);
+                item[QLatin1String("name")] = QString::fromStdString(v->name);
+                item[QLatin1String("seq")] = double(v->seq);
+                item[QLatin1String("rows")] = double(store.chain(to.seq, v->seq + 1).size());
+                list.append(item);
+            }
+            QJsonObject reply = placeReply(id, doc, log);
+            reply[QLatin1String("version")] = double(num);
+            reply[QLatin1String("behind")] = list;
+            return reply;
+        }
+        if (std::none_of(behind.begin(), behind.end(),
+                         [from](const App::LogVersion& v) { return v.num == from; }))
+            return sceneControlError(
+                id, "Refused",
+                QStringLiteral("version %1 is not behind version %2 on its history")
+                    .arg(from).arg(num));
+        const size_t folded = doc->squashVersions(from, num);
+        queueTell(doc->getName());
+        tellTheFile(*doc);
+        QJsonObject reply = placeReply(id, doc, log);
+        reply[QLatin1String("version")] = double(num);
+        reply[QLatin1String("rows")] = double(folded);
+        // The row they were folded into
+        reply[QLatin1String("row")] = double(to.seq);
+        return reply;
+    }
+    catch (const Base::Exception& e) {
+        return sceneControlError(id, "Refused", QString::fromUtf8(e.what()));
+    }
+}
+
 /** `log.preview`: what an apply (`rows`) or the merge a request asks
  * (`request`) would do, changing nothing: every change, each conflict with
  * the key a side is picked by (`picks` of `log.apply`, `log.mergeRequest`),
@@ -1726,6 +2032,16 @@ QJsonObject previewOp(const QJsonObject& req, const std::string& boundDoc, uint6
             reply[QLatin1String("what")] = QStringLiteral("merge");
             reply[QLatin1String("request")] = double(request.id);
             reply[QLatin1String("source")] = QString::fromStdString(from.name);
+        }
+        else if (req.contains(QLatin1String("import"))) {
+            // A branch an import made, merged as `log.mergeImport` would
+            const std::string name = req.value(QLatin1String("import")).toString().toStdString();
+            if (!importBranch(id, doc, reach, name, refusal))
+                return refusal;
+            preview = doc->previewMerge(name);
+            reply = placeReply(id, doc, log);
+            reply[QLatin1String("what")] = QStringLiteral("merge");
+            reply[QLatin1String("source")] = QString::fromStdString(name);
         }
         else {
             std::vector<int64_t> rows;
@@ -2276,6 +2592,32 @@ bool Gui::logKeptListed(App::Document* doc, App::DocumentObject* obj, const std:
     return false;
 }
 
+std::vector<App::LogVersion> Gui::logVersionsBehind(App::TransactionStore& store,
+                                                   const App::LogVersion& to)
+{
+    std::vector<App::LogVersion> behind;
+    const auto chain = store.chain(to.seq);
+    if (chain.empty())
+        return behind;
+    std::set<int64_t> points;
+    for (const auto& t : chain) {
+        points.insert(t.seq);
+        points.insert(t.parent);
+    }
+    // A version taken at no row is behind only the history that starts
+    // from it: its own branch's, or that of a branch made from it.
+    App::LogBranch first;
+    store.getBranch(chain.front().branch, first);
+    for (const auto& v : store.versions()) {
+        if (v.seq >= to.seq || !points.count(v.seq))
+            continue;
+        if (v.seq == 0 && v.branch != first.id && v.num != first.fromVersion)
+            continue;
+        behind.push_back(v);
+    }
+    return behind;
+}
+
 bool Gui::serveLogBranch(App::Document* doc)
 {
     App::TransactionLog* log = doc ? doc->getTransactionLog() : nullptr;
@@ -2330,6 +2672,13 @@ void Gui::installSceneLogOps()
     registerSceneControlOp(QStringLiteral("log.request"), true, requestOp);
     registerSceneControlOp(QStringLiteral("log.closeRequest"), true, closeRequestOp);
     registerSceneControlOp(QStringLiteral("log.mergeRequest"), true, mergeRequestOp);
+    // The files sent and the branches an import made (sec 30.20), and what
+    // takes rows out for good (sec 16.7): the host's
+    registerSceneControlOp(QStringLiteral("log.bring"), true, bringOp);
+    registerSceneControlOp(QStringLiteral("log.dropFile"), true, dropFileOp);
+    registerSceneControlOp(QStringLiteral("log.mergeImport"), true, mergeImportOp);
+    registerSceneControlOp(QStringLiteral("log.trim"), true, trimOp);
+    registerSceneControlOp(QStringLiteral("log.squash"), true, squashOp);
     // The merge's own (sec 32.26): what it would do, each conflict picked,
     // and a merge undone rolled back
     registerSceneControlOp(QStringLiteral("log.preview"), true, previewOp);

@@ -27,11 +27,14 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace App
 {
 class Document;
 class DocumentObject;
+class TransactionStore;
+struct LogVersion;
 }
 
 namespace Gui
@@ -94,9 +97,26 @@ namespace Gui
  * forks. A branch a connection makes is said to be its own as it is made;
  * made in a document opened to be served, everyone who joins that document
  * writes it too, and only its maker deletes it (ruled 2026-10-14).
- * What is not the asker's is `Forbidden`; a branch it does not read is not
- * listed and is unknown to it, as its rows, its versions and the requests
- * of it are.
+ * What is not the asker's is `Forbidden`. A branch it does not read is
+ * listed by its name alone, for a page to grey, and an op that names one is
+ * refused as not read (ruled 2026-10-15); its rows, the versions taken on
+ * it and the requests of it are not listed.
+ *
+ * What takes rows out for good, and the requests of sec 30.20 -- a file a
+ * client sent, a branch an import made -- are the host's (ruled
+ * 2026-10-15):
+ *
+ *   log.trim         a branch's history before a version taken out
+ *   log.squash       the rows between two versions folded into one; with
+ *                    no `from`, the versions it may start from
+ *   log.bring        a file sent, read into a branch of its own
+ *   log.dropFile     a file sent let go unread -- by the host, or by the
+ *                    one who sent it
+ *   log.mergeImport  a branch an import made merged here
+ *
+ * `log.requests` lists them beside the merges asked for: the files sent --
+ * the host's all, a client's its own -- and the branches an import made of
+ * those the asker reads. Nothing opens a document of its own for a page.
  *
  * What a save writes into the file though no kept version reaches it --
  * the values a recompute wrote, kept (sec 32.11, 32.27):
@@ -130,6 +150,12 @@ GuiExport bool logRowListed(App::Document* doc, int64_t row);
  */
 GuiExport bool logKeptListed(App::Document* doc, App::DocumentObject* obj, const std::string& ref,
                              int64_t* row = nullptr);
+
+/** The versions a squash to `to` may start from (docs/TransactionLog.md
+ * sec 16.7): those behind it on its own history, oldest first.
+ */
+GuiExport std::vector<App::LogVersion> logVersionsBehind(App::TransactionStore& store,
+                                                         const App::LogVersion& to);
 
 /** Say that `doc` was opened from a branch to be served: the branch it is
  * on now is the one its clients' reach starts at, where that branch forks
