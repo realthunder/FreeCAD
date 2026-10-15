@@ -7200,3 +7200,43 @@ reproduced -- the selection view's header and the property editor's read
 the same ground (Dark (51,51,51) at 10, Light (128,128,128) at 50; test
 `tests/gui/overlay-header-grounds.py`, not committed yet); a screenshot of
 the reporter's panels is asked for.
+
+## Entries 139, 140, 145 and 147 (2026-10-15, the afternoon)
+
+PUSHED 14:45 (`580e54f0b6..1df007d0f2`) and STAGED 14:47 on the user's
+word, before these; built through r59; committed `e9a5143778`,
+`ba8fab9ccc`, `340d03f023`, `1f31e03f49`, `ffa839b1b6`. LOCAL.
+
+**140, the selection view's list, overlaid.** Its list had no ground of its
+own in the overlay's transparent mode, the report view's had. The overlay's
+style rule now gives `Gui--DockWnd--SelectionView QTreeView` the background
+the report view's text uses (TextEditFieldBackgroundColor, the palette's
+base without one). Test `overlay-selection-ground.py`: Dark measured, the
+two lists read the same (25,25,25); offscreen the Light pass reads both
+clear, so it proves nothing there. `overlay-header-grounds.py` (entry 138)
+committed with it.
+
+**139, the text colours against the panels.** Every report view and
+editor colour of the Dark, Light and Classic packs measured against the
+panel ground and the overlay's ground (#2D2D2D Dark, #E2E2E2 Light and
+Classic); those under 4.5:1 revised. Dark: error and character #FF5C5C,
+comment #70A15A. Light: logging #0063C5, warning #C42302, error #CC0000,
+comment #007600, number #08734B, class name #206C83, Python error #BD2D2D.
+Classic: warning #875A00, error, string, character and Python error
+#CC0000, comment #007400, block comment and operator #646468, class and
+define name #875A00, Python output #666644. Test `overlay-text-colours.py`
+6.
+
+**145, a cancelled drag left its arrow behind.** Esc during a drag put the
+value back but the arrow stayed where it was dragged: the box was restored
+after the owner was told. `cancelDrag()` restores first; the panel is told
+by `TaskFeatureParameters::heldStepRolledBack()` and the fillet's and
+chamfer's panels place their handles again. The undo test checks the
+arrow's place after a cancel, 17.
+
+**147, the Print pages icon.** Darker edges and lines so it reads on the
+Light tool bar (looked at rendered, both themes).
+
+**Tests on r59:** undo 17, text colours 6, editor colours 18, report
+settings 12, chamfer 17, fillet edges 15, groups 10, selection ground 8;
+ctest 957/957; Python 3770 OK (skipped=52, expected failures=6).
