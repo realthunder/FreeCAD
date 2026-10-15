@@ -160,6 +160,9 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:55: 142 -- the arrow points out of the corner; 146 -- a one-pixel
+border. Nothing left open on either.**
+
 **2026-10-15 15:53: entry 146 -- the border for bgfx ONLY.** Under the entry.
 
 **2026-10-15 15:52: entries 142, 143, 144 ANSWERED -- the note-taker's chamfer
@@ -2955,11 +2958,11 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140 |
 | 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED |
 | 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face") |
-| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry. ANSWERED 15:42: the SUM ("I guess it should be the sum then") -- the corner's bisector; the reporter ASKED the note-taker for a proposal for the chamfer's arrows (more than one for two distances or an angle) -- the note-taker's PROPOSAL under the entry, not yet ruled. 15:52: the note-taker's CHAMFER PROPOSAL (P1 to P5) AGREED by the reporter |
+| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry. ANSWERED 15:42: the SUM ("I guess it should be the sum then") -- the corner's bisector; the reporter ASKED the note-taker for a proposal for the chamfer's arrows (more than one for two distances or an angle) -- the note-taker's PROPOSAL under the entry, not yet ruled. 15:52: the note-taker's CHAMFER PROPOSAL (P1 to P5) AGREED by the reporter. 15:55: the fillet arrow points OUT of the corner (yes); nothing left open |
 | 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them. 15:52: the stop cursor GOES BACK to normal on the next good recompute in the drag |
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit. 15:52: "yes to all" -- every handle (the rotation handle too); it follows the user's pre-selection settings |
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
-| 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged) |
+| 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19734,6 +19737,11 @@ Not covered by this word: point d, the fillet arrow's SIGN (out of the
 corner, by the note-taker's reading) -- it stays the note-taker's
 reading.
 
+**2026-10-15 15:55, the reporter, one message on 142 and 146:** "142, yes. 146 one pixel border is enought"
+The note-taker's reading (142): d answered -- the fillet arrow points OUT
+of the corner (dragging outward grows the radius). Nothing left open on
+142, by the note-taker's reading.
+
 ## 143. The fillet's recompute: as many fillets as possible, failed edges skipped, their old preview kept, a stop cursor on a failing drag (a change request) -- OPEN; the chamfer too, ADDED 15:32; ANSWERED 15:52
 
 **2026-10-15 15:29, the reporter** -- the third part of the message quoted
@@ -19990,6 +19998,11 @@ The note-taker's reading: f answered -- the border is for the BGFX
 drawing ONLY; the Coin GL drawing of the cube stays as it is (the
 note-taker's reading "the same border on both paths" REPLACED).
 Still open: e (the border's width).
+
+**2026-10-15 15:55, the reporter** (the message quoted under entry 142): "146
+one pixel border is enought"
+The note-taker's reading: e answered -- the border is ONE PIXEL wide.
+Nothing left open on 146, by the note-taker's reading.
 
 ## Inbox
 
