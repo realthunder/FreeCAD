@@ -160,6 +160,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:55: entry 150 ANSWERED -- the tree and property views the same;
+over the tree the wheel scrolls the tree instead, even over its
+transparent area; entering without wheeling, it zooms.** Under the entry.
+
 **2026-10-15 16:51: entry 148 -- Rear001 on Page009 too; the click selects
 nothing.** Under the entry.
 
@@ -3003,7 +3007,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept |
 | 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING |
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN |
-| 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run |
+| 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20252,7 +20256,7 @@ in `QGIView*`, so Qt picks the view by its whole bounding rectangle (Qt's
 default shape is the bounding rect) -- by the note-taker's reading, the
 opaque pick.
 
-## 150. Wheel zoom stops under a transparent overlaid task panel when the wheel turns while the pointer moves onto it (a defect) -- OPEN
+## 150. Wheel zoom stops under a transparent overlaid task panel when the wheel turns while the pointer moves onto it (a defect) -- OPEN; ANSWERED 16:55 -- every overlaid panel; the tree scrolls instead
 
 **2026-10-15 16:50, the reporter:** "new defect, wheel zoom under transparent
 overlay task panel sometimes does not work. one sequence is when I am
@@ -20290,6 +20294,27 @@ the wheel stays with the panel for as long as it turns; only a pause
 (leaving, coming back without wheeling) ends it -- matching the
 reporter's way back. Over a transparent area the panel has nothing to
 scroll, hence "no response".
+
+**2026-10-15 16:55, the reporter answers:** "tree view and property view behave
+the same. one more addition, when move to the tree view while wheeling,
+the zoom stopped, but the tree view starts to scroll, even if its over the
+transparent area. enter without wheeling can zoom"
+
+The note-taker's reading:
+b. answered: the overlaid TREE VIEW and PROPERTY VIEW in transparent mode
+   behave the SAME as the task panel -- wheeling on while moving onto
+   them stops the zoom.
+- ADDED: over the TREE VIEW the wheel then SCROLLS THE TREE -- even where
+  the pointer is over the tree's transparent area (where a wheel should
+  pass to the view and zoom). Entering the tree WITHOUT wheeling, the
+  wheel there ZOOMS, as it should.
+a. by the note-taker's reading: so the wheel goes to the PANEL in that
+   case -- the task panel shows "no response" because it has nothing to
+   scroll there, the tree scrolls because it has. This fits the
+   note-taker's reading of the wheel delay (the wheel kept with the panel
+   while it turns) -- still a guess, nothing run.
+NOT said: c (the copy -- the staged one of 14:47, by the note-taker's
+reading).
 
 ## Inbox
 
