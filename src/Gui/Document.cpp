@@ -365,6 +365,7 @@ struct DocumentP
     Connection connectTransactionAppend;
     Connection connectTransactionRemove;
     Connection connectPinsReleased;
+    Connection connectLogKept;
     Connection connectTouchedObject;
     Connection connectPurgeTouchedObject;
     Connection connectChangePropertyEditor;
@@ -485,6 +486,10 @@ Document::Document(App::Document* pcDocument,Application * app)
     d->connectPinsReleased = pcDocument->signalPinsReleased.connect
         (std::bind(&Gui::Document::slotPinsReleased, this, sp::_1));
     //NOLINTEND
+    // What is kept is written by the next save (TransactionLog.md 32.11),
+    // so keeping or letting go is a change of the file like any other.
+    d->connectLogKept = pcDocument->signalLogKeptChanged.connect(
+        [this](const App::Document&) { setModified(true); });
 
     // The on-top set is stored in each view's own OnTopObjects property
     // (docs/CoinRetirement.md 5.12), so every change to it has to reach
@@ -531,6 +536,7 @@ Document::~Document()
     d->connectSkipRecompute.disconnect();
     d->connectTransactionAppend.disconnect();
     d->connectTransactionRemove.disconnect();
+    d->connectLogKept.disconnect();
     d->connectTouchedObject.disconnect();
     d->connectPurgeTouchedObject.disconnect();
     d->connectChangePropertyEditor.disconnect();
@@ -2073,9 +2079,35 @@ bool saveVersionDocument(Gui::Document* gdoc)
         return false;
     }
     const QString name = QString::fromUtf8(Base::FileInfo(file).fileName().c_str());
-    QString text = linksPinnedTo(file, num).empty()
-        ? QObject::tr("This is version %1 of %2.").arg(num).arg(name)
-        : QObject::tr("This is version %1 of %2, and other documents pin it.")
+    // Said first (ruled 2026-10-15): this is not the file's own document,
+    // which is on the branch the file is checked out on -- a branch served
+    // in a document of its own is saved from a document nobody sees
+    App::Document* own = nullptr;
+    for (auto other : log->documents()) {
+        if (other != doc && !other->testStatus(App::Document::VersionDoc))
+            own = other;
+    }
+    App::LogBranch mine;
+    App::LogBranch theirs;
+    App::TransactionLog* ownLog = own ? own->getTransactionLog() : nullptr;
+    QString text;
+    if (log->branch() && log->store().getBranch(log->branch(), mine) && ownLog
+            && log->store().getBranch(ownLog->branch(), theirs) && theirs.id != mine.id)
+        text = QObject::tr("This is branch %1 of %2, not the branch the file is checked out "
+                           "on: that is %3, in %4.")
+                   .arg(QString::fromUtf8(mine.name.c_str()), name,
+                        QString::fromUtf8(theirs.name.c_str()),
+                        QString::fromUtf8(own->Label.getValue()));
+    else if (own)
+        text = QObject::tr("This is not the document %1 is checked out as: that is %2.")
+                   .arg(name, QString::fromUtf8(own->Label.getValue()));
+    else
+        text = QObject::tr("This is not the document %1 is checked out as, which is not open.")
+                   .arg(name);
+    text += QStringLiteral("\n\n");
+    text += linksPinnedTo(file, num).empty()
+        ? QObject::tr("It is version %1 of %2.").arg(num).arg(name)
+        : QObject::tr("It is version %1 of %2, and other documents pin it.")
               .arg(num).arg(name);
     App::LogBranch branch;
     if (log->branch() && log->store().getBranch(log->branch(), branch))
@@ -5126,6 +5158,66 @@ bool Document::isLastView()
  *  This method checks if the document can be closed. It checks on
  *  the save state of the document and is able to abort the closing.
  */
+namespace {
+/** Closing `closing`, the last document with a window, leaves those that
+ * have none open with nothing that shows them -- a branch served in a
+ * document of its own (docs/TransactionLog.md sec 32.23) is one. Say so and
+ * offer to show them (ruled 2026-10-15). False when the close is cancelled.
+ * A version pins show, and a temporary document, are no such: they go with
+ * what holds them.
+ */
+bool offerHiddenDocuments(Gui::Document* closing)
+{
+    std::vector<std::string> hidden;
+    QStringList labels;
+    for (auto adoc : App::GetApplication().getDocuments()) {
+        auto gdoc = Application::Instance->getDocument(adoc);
+        if (!gdoc || gdoc == closing || adoc->testStatus(App::Document::TempDoc)
+                || adoc->testStatus(App::Document::FrozenVersion))
+            continue;
+        if (!gdoc->getMDIViews().empty())
+            return true;   // another has a window: this is not the last
+        hidden.emplace_back(adoc->getName());
+        labels << QString::fromUtf8(adoc->Label.getValue());
+    }
+    if (hidden.empty())
+        return true;
+    const QString name = QString::fromUtf8(closing->getDocument()->Label.getValue());
+    const QString list = labels.join(QStringLiteral(", "));
+    const QString text = hidden.size() == 1
+        ? QObject::tr("Closing %1 leaves a document open with no window: %2. It stays open, "
+                      "and served if it is, with nothing that shows it.")
+              .arg(name, list)
+        : QObject::tr("Closing %1 leaves %2 documents open with no window: %3. They stay open, "
+                      "and served if they are, with nothing that shows them.")
+              .arg(name)
+              .arg(hidden.size())
+              .arg(list);
+    QMessageBox box(QMessageBox::Warning, QObject::tr("Documents with no window"), text,
+                    QMessageBox::Cancel, getMainWindow());
+    box.setObjectName(QStringLiteral("HiddenDocuments"));
+    QPushButton* show = box.addButton(QObject::tr("Show Them"), QMessageBox::AcceptRole);
+    show->setObjectName(QStringLiteral("HiddenDocumentsShow"));
+    QPushButton* leave = box.addButton(QObject::tr("Leave Hidden"), QMessageBox::DestructiveRole);
+    leave->setObjectName(QStringLiteral("HiddenDocumentsLeave"));
+    box.setDefaultButton(show);
+    box.exec();
+    if (box.clickedButton() == show) {
+        // After the close: each that is still there gets a window
+        QTimer::singleShot(0, getMainWindow(), [hidden]() {
+            for (const auto& name : hidden) {
+                App::Document* adoc = App::GetApplication().getDocument(name.c_str());
+                Gui::Document* gdoc = adoc ? Application::Instance->getDocument(adoc) : nullptr;
+                if (gdoc && gdoc->getMDIViews().empty())
+                    gdoc->createView(View3DInventor::getClassTypeId());
+            }
+        });
+        return true;
+    }
+    return box.clickedButton() == leave;
+}
+}   // namespace
+
 bool Document::canClose (bool checkModify, bool checkLink)
 {
     if (d->_isClosing)
@@ -5189,6 +5281,11 @@ bool Document::canClose (bool checkModify, bool checkLink)
             break;
         }
     }
+
+    // A close asked for by itself, of a document with a window: what it
+    // leaves with none is said (not when everything closes)
+    if (ok && checkModify && !getMDIViews().empty() && !getMainWindow()->isClosingAll())
+        ok = offerHiddenDocuments(this);
 
     if (ok) {
         // If a task dialog is open that doesn't allow other commands to modify
