@@ -160,6 +160,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:32: entries 141 to 143 -- the CHAMFER too, ADDED by the
+reporter; its arrow direction perpendicular to the chamfer face.** The
+chamfer's two sizes against one normal arrow: a point under entry 142.
+
 **2026-10-15 15:29: NEW ENTRIES 141, 142 and 143, all on the fillet's on-view
 editing (one message, split by the note-taker).** 141 (a defect): the
 arrow's tooltip shows at once and hides on any movement -- a timer and a
@@ -2917,9 +2921,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header. NOT REPRODUCED 14:22 by the build session: offscreen the selection view's header and the property editor's read the SAME ground; it asks the reporter for a SCREENSHOT and the panel layout |
 | 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140 |
 | 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED |
-| 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN |
-| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry |
-| 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN |
+| 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face") |
+| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry |
+| 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19522,7 +19526,7 @@ sheet's tree grey (100,100,100 under Dark). The text views keep the
 theme's ground (entry 121). Plan: give the lists the report view's ground
 at runtime while they're overlaid and not see-through. Not started."
 
-## 141. The fillet's on-view arrow tooltip shows at once and hides on any movement (a defect) -- OPEN
+## 141. The fillet's on-view arrow tooltip shows at once and hides on any movement (a defect) -- OPEN; the chamfer too, ADDED 15:32
 
 **2026-10-15 15:29, the reporter** (one message; it holds 141, 142 and 143 --
 the note-taker split it into three entries, the whole message quoted here
@@ -19563,7 +19567,11 @@ note-taker's reading, a move while over is a no-op in that code, so what
 hides the text is not found by this reading (Qt's QToolTip hides itself
 when the pointer moves away from where it was shown, perhaps -- a guess).
 
-## 142. The fillet's on-view arrow direction: the difference of upstream's two arrow directions (a change request) -- OPEN
+**2026-10-15 15:32, the reporter adds** (written under entry 142): "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face"
+-- by the note-taker's reading, the tooltip timer here applies to the
+chamfer's handles too (point b answered).
+
+## 142. The fillet's on-view arrow direction: the difference of upstream's two arrow directions (a change request) -- OPEN; the chamfer too, ADDED 15:32
 
 **2026-10-15 15:29, the reporter** -- the second part of the message quoted
 under entry 141: "New request, regarding fillet on view edit. current, I
@@ -19605,7 +19613,31 @@ READ in the source, nothing run:
 - The chamfer already takes BOTH faces' arrows:
   `src/Mod/PartDesign/Gui/TaskChamferParameters.cpp` 635 to 636.
 
-## 143. The fillet's recompute: as many fillets as possible, failed edges skipped, their old preview kept, a stop cursor on a failing drag (a change request) -- OPEN
+**2026-10-15 15:32, the reporter adds:** "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face"
+
+The note-taker's reading -- this answers point g here and point b of
+entry 141 and point l of entry 143:
+- Entries 141 (the tooltip timer) and 143 (as many as possible, the old
+  preview kept, still in error, the stop cursor) apply to the CHAMFER as
+  well.
+- Entry 142's direction rule does NOT: the chamfer's arrow points
+  PERPENDICULAR TO THE CHAMFER FACE -- along its normal, by the
+  note-taker's reading pointing out of the material.
+NOT said:
+m. the chamfer's TWO SIZES -- step 4 shows its sizes as arrows along the
+   two faces (two distances, or a distance and an angle with a rotation
+   handle). One arrow along the chamfer face's normal fits an EQUAL
+   distance; does a two-distance chamfer keep its two arrows, or get one
+   normal arrow too (and what does dragging it change then)? Not said;
+n. the angle handle (step 4's rotation handle) -- kept as it is, by the
+   note-taker's reading;
+o. which chamfer face: the one the current result makes, or one computed
+   from the size(s) before the chamfer exists (the first time, or after a
+   failure) -- not said.
+READ in the source, nothing run: the chamfer takes both faces' arrows
+today, `src/Mod/PartDesign/Gui/TaskChamferParameters.cpp` 635 to 636.
+
+## 143. The fillet's recompute: as many fillets as possible, failed edges skipped, their old preview kept, a stop cursor on a failing drag (a change request) -- OPEN; the chamfer too, ADDED 15:32
 
 **2026-10-15 15:29, the reporter** -- the third part of the message quoted
 under entry 141: "also. when doing recompute, skip any missing or failed
@@ -19650,6 +19682,11 @@ READ in the source, nothing run: `src/Mod/PartDesign/App/FeatureFillet.cpp`
 127 to 160 -- ONE `makEFillet` call for all edges; a null or invalid
 result fails the whole feature ("Resulting shape is null" / "Resulting
 shape is invalid"); nothing per edge.
+
+**2026-10-15 15:32, the reporter adds** (written under entry 142): "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face"
+-- by the note-taker's reading, everything here applies to the chamfer too
+(point l answered): skip missing or failed edges, keep their old preview,
+stay in error, the stop cursor on a failing drag.
 
 ## Inbox
 
