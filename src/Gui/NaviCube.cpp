@@ -71,6 +71,7 @@
 # include <QAction>
 # include <QVBoxLayout>
 # include <QPainterPath>
+# include <QPen>
 #endif
 
 
@@ -178,7 +179,10 @@ enum { //
     TEX_DOT_BACKSIDE,
     TEX_DOT_BACKSIDE_PICK,
     TEX_VIEW_MENU_ICON,
-    TEX_VIEW_MENU_FACE
+    TEX_VIEW_MENU_FACE,
+    /// The menu button's shape outlined one pixel wide: its hover under bgfx
+    /// (docs/HandsOnQueue.md entry 146)
+    TEX_VIEW_MENU_BORDER
 };
 enum {
     DIR_UP,DIR_RIGHT,DIR_OUT
@@ -270,6 +274,7 @@ public:
 	GLuint createCubeFaceTex(const char* text, int shape);
 	GLuint createButtonTex(int button, bool stroke = true);
 	GLuint createMenuTex(bool);
+	GLuint createMenuBorderTex();
 
     void createAxisLabels();
 
@@ -916,6 +921,34 @@ GLuint NaviCubeShared::createMenuTex(bool forPicking) {
     return addTexture(image);
 }
 
+/// The menu button's shape -- the pick region's rounded rectangle -- drawn
+/// as a line one pixel wide: under bgfx the filled one, the hover's backdrop,
+/// covered the icon (the reporter, 2026-10-15 15:47 to 15:55: "just draw a
+/// border of the current highlight shape will be enought", "bgfx only", "one
+/// pixel border is enought")
+GLuint NaviCubeShared::createMenuBorderTex() {
+	int texSize = m_CubeWidgetSize * m_OverSample;
+	QImage image(texSize, texSize, QImage::Format_ARGB32);
+	image.fill(qRgba(0, 0, 0, 0));
+	QPainter painter;
+	painter.begin(&image);
+	painter.setRenderHints(QPainter::Antialiasing);
+
+	QTransform transform;
+	transform.translate(texSize * 12 / 16, texSize * 13 / 16);
+	transform.scale(texSize / 200.0, texSize / 200.0); // as createMenuTex()
+	painter.setTransform(transform);
+
+	QPainterPath path;
+	path.addRoundedRect(-25, -8, 75, 45, 6, 6);
+	QPen pen(Qt::white);
+	pen.setCosmetic(true);  // one device pixel, whatever the scale
+	pen.setWidth(1);
+	painter.strokePath(path, pen);
+	painter.end();
+	return addTexture(image);
+}
+
 void NaviCubeShared::addFace(const Vector3f& x, const Vector3f& z, int frontTex, int pickTex, int pickId, bool text) {
 	Vector3f y = x.cross(-z);
 	y = y / y.norm() * x.norm();
@@ -1107,6 +1140,7 @@ bool NaviCubeShared::initNaviCube() {
 
 	m_Textures[TEX_VIEW_MENU_ICON] = createMenuTex(false);
 	m_Textures[TEX_VIEW_MENU_FACE] = createMenuTex(true);
+	m_Textures[TEX_VIEW_MENU_BORDER] = createMenuBorderTex();
 
 	// front,back,pick,pickid
 	addFace(x, z, TEX_TOP, TEX_FRONT_FACE, TEX_TOP, true);
@@ -1612,11 +1646,12 @@ void NaviCubeImplementation::buildCoinButtons()
 
 	for (int b : shared->m_Buttons)
 		m_CoinButtons.emplace_back(b, addQuad(root, b));
-	// Menu icon: a hilite backdrop quad toggled on hover, then the icon
-	// in the plain button color (matching the GL draw).
+	// Menu icon: its shape outlined in the hilite colour, toggled on hover,
+	// then the icon in the plain button color. An outline, not the GL
+	// draw's filled backdrop, which covered the icon here (entry 146).
 	m_CoinMenuHilite = new SoSwitch;
 	auto hsep = new SoSeparator;
-	syncQColor(addQuad(hsep, TEX_VIEW_MENU_FACE), shared->m_HiliteColor);
+	syncQColor(addQuad(hsep, TEX_VIEW_MENU_BORDER), shared->m_HiliteColor);
 	m_CoinMenuHilite->addChild(hsep);
 	m_CoinMenuHilite->whichChild = SO_SWITCH_NONE;
 	root->addChild(m_CoinMenuHilite);
