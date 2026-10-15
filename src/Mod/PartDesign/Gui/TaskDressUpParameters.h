@@ -26,6 +26,7 @@
 
 #include <fastsignals/signal.h>
 
+#include <Base/Color.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 
@@ -33,6 +34,7 @@
 #include "ViewProviderDressUp.h"
 
 class QAction;
+class QIcon;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -90,6 +92,15 @@ protected:
 
     QTreeWidgetItem *getCurrentItem() const;
     void createAddAllEdgesAction(QTreeWidget* parentList);
+
+    /** The colour of an edge group's handles (docs/OnViewValueEditing.md 3.3,
+     * the reporter 2026-10-14 13:54: "each group show its own color. choose
+     * color from a set of distinct ones (auto generated)"), a fillet's and a
+     * chamfer's alike
+     */
+    static Base::Color groupColor(int group);
+    /// A swatch of a group's colour, for its menu item and its panel row
+    static QIcon groupIcon(int group);
 
     void addAllEdges();
 

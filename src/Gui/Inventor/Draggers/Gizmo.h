@@ -26,6 +26,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <QtCore/Qt>
@@ -35,16 +36,23 @@
 #include <Inventor/nodekits/SoBaseKit.h>
 #include <Inventor/SbVec3f.h>
 #include <QMetaObject>
+#include <QString>
 
+#include <Base/Color.h>
 #include <Base/Placement.h>
 #include <Gui/DocumentObserver.h>
 #include <Gui/InputHint.h>
 
 #include <FCGlobal.h>
 
+class SoBaseColor;
 class SoDragger;
 class SoCamera;
+class SoEventCallback;
 class SoInteractionKit;
+class SoNode;
+class SoScale;
+class SoSwitch;
 
 namespace Gui
 {
@@ -75,12 +83,106 @@ public:
 
     virtual void setGeometryScale(float scale) = 0;
     virtual void orientAlongCamera([[maybe_unused]] SoCamera* camera) {};
+    /// What the gizmo has beside its dragger, put in the container after it:
+    /// the node that hears the pointer over the handle. Made by initDragger().
+    virtual SoNode* getExtraNode();
     bool isDelayedUpdateEnabled();
 
     double getMultFactor();
     double getAddFactor();
 
     bool getVisibility();
+
+    /** @name What a value in the view asks of its handle
+     * (Gui::OnViewValueSet, docs/OnViewValueEditing.md 3.1 to 3.3). A kind
+     * of handle without one of these ignores it.
+     */
+    //@{
+    /// Called when the pointer lets go of the handle, dragged or only clicked
+    using ReleaseCallback = std::function<void(bool dragged)>;
+    using MenuCallback = std::function<void()>;
+    /// Draw the handle in its active colour while not dragged
+    virtual void setHighlighted([[maybe_unused]] bool highlighted) {}
+    virtual void setReleaseCallback([[maybe_unused]] ReleaseCallback callback) {}
+    /** Whether letting go of the handle puts the focus in its spin box, the
+     * way upstream has it (the default). A handle whose value is typed in
+     * the view keeps the focus in the view instead.
+     */
+    virtual void setFocusBoxOnRelease([[maybe_unused]] bool focus) {}
+    /// The handle's own colour; none for the theme's
+    virtual void setColor([[maybe_unused]] const std::optional<Base::Color>& color) {}
+    /** A right click on the handle calls \a callback -- which opens its
+     * value's menu -- and the pointer over it shows \a toolTip (entry 135,
+     * the reporter 2026-10-15 11:30: "show tooltip on hover the arrow to
+     * hint right click for context menu"). Null for neither.
+     */
+    void setMenu(MenuCallback callback, const QString& toolTip = QString());
+    /// The pointer is over the handle, as the scene last said
+    bool isHovered() const
+    {
+        return hovered;
+    }
+    /// The menu's callback, for a right click taken before the scene sees it
+    void openMenu()
+    {
+        if (menuCallback) {
+            menuCallback();
+        }
+    }
+    //@}
+
+    /** @name A drag as one undo step (entry 136)
+     * The handle says when a drag starts, finishes, or is cancelled -- by
+     * Esc or another mouse button while it lasts (the reporter, 2026-10-15
+     * 09:58: "when dragging, any other button click, or esc shall cancel and
+     * restore to before the drag"). The owner holds one transaction for it.
+     */
+    //@{
+    enum class DragEvent
+    {
+        Started,
+        Finished,
+        Cancelled,
+    };
+    using DragCallback = std::function<void(DragEvent)>;
+    void setDragCallback(DragCallback callback)
+    {
+        dragCallback = std::move(callback);
+    }
+    bool isDragging() const
+    {
+        return dragging && !dragCancelled;
+    }
+    /// The value back to where the drag began; the rest of the drag changes
+    /// nothing
+    virtual void cancelDrag() {}
+    //@}
+
+protected:
+    /// What the pointer is over or not: the handle's own geometry. Made by
+    /// initDragger(), and put in the container after the dragger.
+    void buildEventNode(SoNode* own);
+    void releaseEventNode();
+    static void eventNodeCallback(void* data, SoEventCallback* cb);
+
+    SoEventCallback* eventNode = nullptr;
+    SoNode* ownNode = nullptr;
+    MenuCallback menuCallback;
+    QString menuToolTip;
+    bool menuPressed = false;
+    bool hovered = false;
+
+    DragCallback dragCallback;
+    bool dragging = false;
+    bool dragCancelled = false;
+    void notifyDrag(DragEvent event)
+    {
+        if (dragCallback) {
+            dragCallback(event);
+        }
+    }
+    /// For the dragger's other events: Esc or another button cancels the drag
+    static void otherDragEvent(void* data, SoDragger* dragger);
 
 protected:
     double multFactor = 1.0f;
@@ -104,7 +206,8 @@ public:
     using ClickCallback = std::function<void()>;
 
     LinearGizmo(QuantitySpinBox* property);
-    ~LinearGizmo() override = default;
+    /// Lets go of its spin box: a box may outlive a gizmo taken out early
+    ~LinearGizmo() override;
 
     SoInteractionKit* initDragger() override;
     void uninitDragger() override;
@@ -125,16 +228,30 @@ public:
     void setAddFactor(const double val);
     void setDraggerStyle(LinearDraggerStyle style);
     void setClickCallback(ClickCallback callback);
+    void setReleaseCallback(ReleaseCallback callback) override;
     void setVisibility(bool visible);
+    /** Draw the handle in its active colour while not dragged: the handle
+     * that takes typed values (docs/OnViewValueEditing.md 3.2).
+     */
+    void setHighlighted(bool highlighted) override;
+    void setFocusBoxOnRelease(bool focus) override;
+    void cancelDrag() override;
+
+    /// The handle's own colour; none for the theme's
+    void setColor(const std::optional<Base::Color>& color) override;
 
 private:
     SoLinearDragger* dragger = nullptr;
     SoLinearDraggerContainer* draggerContainer = nullptr;
+    std::optional<Base::Color> ownColor;
     QMetaObject::Connection quantityChangedConnection;
     QMetaObject::Connection formulaDialogConnection;
     LinearDraggerStyle draggerStyle = LinearDraggerStyle::Arrow;
     bool hasDragged = false;
+    bool highlighted = false;
+    bool focusBoxOnRelease = true;
     ClickCallback clickCallback;
+    ReleaseCallback releaseCallback;
 
     void draggingStarted();
     void draggingFinished();
@@ -181,6 +298,15 @@ public:
     void setClickCallback(ClickCallback callback);
     void setVisibility(bool visible);
 
+    /// As a linear handle's (an angle typed in the view, a chamfer's), but
+    /// with no root button: its value's menu is opened from another handle
+    /// of its edge, or by Space
+    void setHighlighted(bool highlighted) override;
+    void setReleaseCallback(ReleaseCallback callback) override;
+    void setFocusBoxOnRelease(bool focus) override;
+    void cancelDrag() override;
+    void setColor(const std::optional<Base::Color>& color) override;
+
 private:
     SoRotationDragger* dragger = nullptr;
     SoRotationDraggerContainer* draggerContainer = nullptr;
@@ -190,7 +316,11 @@ private:
     QMetaObject::Connection formulaDialogConnection;
     double lastDragOffset = 0.0;
     bool hasDragged = false;
+    bool highlighted = false;
+    bool focusBoxOnRelease = true;
+    std::optional<Base::Color> ownColor;
     ClickCallback clickCallback;
+    ReleaseCallback releaseCallback;
 
     void draggingStarted();
     void draggingFinished();
@@ -255,6 +385,13 @@ public:
     }
     // This should be called only once after construction
     void addGizmos(std::initializer_list<Gui::Gizmo*> gizmos);
+    /** Add one more gizmo after addGizmos(): made, scaled and shown at once.
+     * The container owns it. For handles whose number follows the feature
+     * -- one per edge of a fillet (docs/OnViewValueEditing.md 3.1).
+     */
+    void appendGizmo(Gui::Gizmo* gizmo);
+    /// Take out and delete a gizmo of this container
+    void removeGizmo(Gui::Gizmo* gizmo);
     void attachViewer(Gui::ViewerContext* viewer, Base::Placement& origin);
     void setUpAutoScale(SoCamera* cameraIn);
     void calculateScaleAndOrientation();
@@ -277,6 +414,8 @@ public:
 
 private:
     std::vector<Gizmo*> gizmos;
+    /// What each gizmo put in the geometry: its dragger, then its extra node
+    std::vector<std::pair<SoNode*, SoNode*>> gizmoNodes;
     SoFieldSensor cameraSensor;
     SoFieldSensor cameraPositionSensor;
     WeakPtrT<ViewProviderDragger> viewProvider;

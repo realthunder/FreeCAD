@@ -39,7 +39,8 @@ R = 30.0
 
 
 def note(msg):
-    with open(RESULT, "a") as f:
+    # the labels carry symbols the console code page does not have
+    with open(RESULT, "a", encoding="utf-8") as f:
         f.write(str(msg) + "\n")
         f.flush()
 

@@ -463,3 +463,107 @@ class TestDressUpNamesFollow(unittest.TestCase):
         edge = self.lowerTheCut()
         self.assertEqual([p for p, _ in chamfer.ExpressionEngine],
                          ['.ChamferInfo.%s.Size' % edge])
+
+
+class TestFilletGroups(unittest.TestCase):
+    """Edge groups of a fillet's own values (docs/OnViewValueEditing.md
+    section 6): an id per customised edge, a change to one member mirrored
+    to the others, a member reversed in its group, ids saved and restored,
+    an older file giving each edge a group of its own."""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("PartDesignTestFilletGroups")
+        self.Body = self.Doc.addObject('PartDesign::Body', 'Body')
+        self.Box = self.Body.newObject('PartDesign::AdditiveBox', 'Box')
+        self.Box.Length = self.Box.Width = self.Box.Height = 10
+        self.Fillet = self.Body.newObject('PartDesign::Fillet', 'Fillet')
+        self.Fillet.Base = (self.Box, ['Edge1', 'Edge2', 'Edge3'])
+        self.Fillet.Radius = 1
+        self.Doc.recompute()
+
+    def tearDown(self):
+        for name in list(FreeCAD.listDocuments()):
+            if name.startswith("PartDesignTestFilletGroups"):
+                FreeCAD.closeDocument(name)
+
+    def group(self, edge, obj=None):
+        return (obj or self.Fillet).evalExpression('Segments.%s.Group' % edge)
+
+    def points(self, edge, obj=None):
+        return [(round(p, 6), round(float(r), 6))
+                for p, r, _ in (obj or self.Fillet).evalExpression('Segments.%s' % edge)]
+
+    def testOwnGroupEach(self):
+        # each edge leaving the default gets a group of its own
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0)]), ('Edge2', [(0.0, 1.5)])]
+        self.assertEqual((self.group('Edge1'), self.group('Edge2')), (1, 2))
+
+    def testJoinTakesValuesAndMirrors(self):
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0), (1.0, 1.0)]), ('Edge2', [(0.0, 1.5)])]
+        # joining takes the group's points
+        self.Fillet.setExpression('.Segments.Edge2.Group', '1')
+        self.Doc.recompute()
+        self.assertEqual(self.group('Edge2'), 1)
+        self.assertEqual(self.points('Edge2'), [(0.0, 2.0), (1.0, 1.0)])
+        # a change to one member, an expression's too, reaches the other
+        self.Fillet.setExpression('.Segments.Edge1[0].Radius', '0.5 mm')
+        self.Doc.recompute()
+        self.assertEqual(self.points('Edge2'), [(0.0, 0.5), (1.0, 1.0)])
+        self.assertTrue(self.Fillet.isValid())
+
+    def testReversedMember(self):
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0), (1.0, 1.0)], 1),
+                                ('Edge2', [(0.0, 2.0), (1.0, 1.0)], 1)]
+        self.Fillet.setExpression('.Segments.Edge2.Reversed', '1')
+        self.Doc.recompute()
+        self.assertEqual(self.points('Edge2'), [(0.0, 1.0), (1.0, 2.0)])
+        # mirrored end for end: params as 1 - param
+        self.Fillet.setExpression('.Segments.Edge1[1].Param', '0.25')
+        self.Doc.recompute()
+        self.assertEqual(self.points('Edge1'), [(0.0, 2.0), (0.25, 1.0)])
+        self.assertEqual(self.points('Edge2'), [(0.75, 1.0), (1.0, 2.0)])
+
+    def testDefaultLeavesGroup(self):
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0)], 1), ('Edge2', [(0.0, 2.0)], 1)]
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0)])]
+        self.assertEqual(self.group('Edge1'), 1)
+        with self.assertRaises(Exception):
+            self.group('Edge2')
+        # the next to leave the default takes the lowest free id
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0)]), ('Edge3', [(0.0, 1.0)])]
+        self.assertEqual(self.group('Edge3'), 2)
+
+    def saveAndOpen(self, strip=False):
+        path = os.path.join(tempfile.mkdtemp(), 'groups.FCStd')
+        self.Doc.saveAs(path)
+        name = self.Doc.Name
+        if strip:
+            # as a build without groups wrote it
+            # through ArchiveMembers, as _toOldCorners: the blob members may be
+            # zstd, which zipfile reads only from Python 3.14 on
+            rewritten = path + '.tmp'
+            with zipfile.ZipFile(rewritten, 'w', zipfile.ZIP_DEFLATED) as dst:
+                for item, data in ArchiveMembers.members(path):
+                    if item.filename == 'Document.xml':
+                        data = re.sub(rb' group="\d+"( rev="1")?', b'', data)
+                    dst.writestr(item, data)
+            os.replace(rewritten, path)
+        FreeCAD.closeDocument(name)
+        self.Doc = FreeCAD.openDocument(path)
+        return self.Doc.getObject('Fillet')
+
+    def testSavedAndRestored(self):
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0), (1.0, 1.0)], 3),
+                                ('Edge2', [(0.0, 1.0), (1.0, 2.0)], 3, True),
+                                ('Edge3', [(0.0, 1.5)], 5)]
+        fillet = self.saveAndOpen()
+        self.assertEqual([self.group(e, fillet) for e in ('Edge1', 'Edge2', 'Edge3')], [3, 3, 5])
+        self.assertTrue(fillet.evalExpression('Segments.Edge2.Reversed'))
+        self.assertEqual(self.points('Edge2', fillet), [(0.0, 1.0), (1.0, 2.0)])
+
+    def testOlderFileGroupsOfTheirOwn(self):
+        self.Fillet.Segments = [('Edge1', [(0.0, 2.0)], 1), ('Edge2', [(0.0, 2.0)], 1)]
+        fillet = self.saveAndOpen(strip=True)
+        groups = [self.group(e, fillet) for e in ('Edge1', 'Edge2')]
+        self.assertEqual(len(set(groups)), 2, groups)
+        self.assertEqual(self.points('Edge2', fillet), [(0.0, 2.0)])

@@ -30,6 +30,10 @@
 # include <QKeyEvent>
 # include <QPushButton>
 # include <QCheckBox>
+# include <QColor>
+# include <QIcon>
+# include <QPixmap>
+# include <cmath>
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -544,6 +548,31 @@ void TaskDressUpParameters::createAddAllEdgesAction(QTreeWidget* parentList)
     parentList->setContextMenuPolicy(Qt::ActionsContextMenu);
 }
 
+Base::Color TaskDressUpParameters::groupColor(int group)
+{
+    // A hue stepped by the golden ratio from the id -- the same id keeps its
+    // colour from session to session -- passing over the hues of the default
+    // handles (the theme's red) and of the highlight (yellow)
+    double hue = std::fmod(0.08 + group * 0.618033988749895, 1.0);
+    auto near = [&hue](double other) {
+        double d = std::fabs(hue - other);
+        return std::min(d, 1.0 - d) < 0.07;
+    };
+    for (int i = 0; i < 4 && (near(0.0) || near(0.15)); ++i) {
+        hue = std::fmod(hue + 0.11, 1.0);
+    }
+    QColor color = QColor::fromHsvF(float(hue), 0.75F, 0.95F);
+    return Base::Color(float(color.redF()), float(color.greenF()), float(color.blueF()));
+}
+
+QIcon TaskDressUpParameters::groupIcon(int group)
+{
+    const Base::Color color = groupColor(group);
+    QPixmap pixmap(12, 12);
+    pixmap.fill(QColor::fromRgbF(color.r, color.g, color.b));
+    return QIcon(pixmap);
+}
+
 void TaskDressUpParameters::showMessage(const char *msg) {
     auto DressUpView = getDressUpView();
     if(!messageLabel || !DressUpView)
@@ -878,7 +907,8 @@ bool TaskDressUpParameters::eventFilter(QObject *o, QEvent *e)
             break;
         }
     }
-    return Gui::TaskView::TaskBox::eventFilter(o,e);
+    // the base's: a panel box holding an undo step while it has the focus
+    return TaskFeatureParameters::eventFilter(o,e);
 }
 
 //**************************************************************************
@@ -899,6 +929,8 @@ TaskDlgDressUpParameters::~TaskDlgDressUpParameters() = default;
 
 bool TaskDlgDressUpParameters::accept()
 {
+    // OK's own undo step, the Base set below in it (entry 136)
+    parameter->beginAcceptStep();
     std::vector<std::string> refs = parameter->getReferences();
     std::stringstream str;
     str << Gui::Command::getObjectCmd(vp->getObject()) << ".Base = ("
@@ -913,8 +945,16 @@ bool TaskDlgDressUpParameters::accept()
 bool TaskDlgDressUpParameters::reject()
 {
     auto editDoc = Gui::Application::Instance->editDocument();
-    if(editDoc && parameter->getTransactionID())
-        editDoc->getDocument()->undo(parameter->getTransactionID());
+    if (editDoc) {
+        App::Document* doc = editDoc->getDocument();
+        // Down to the transaction open when the edit began; when that one
+        // was left empty (and so dropped), to the first step the panel
+        // opened (entry 136: a step per operation)
+        bool undone = parameter->getTransactionID()
+            && doc->undo(parameter->getTransactionID());
+        if (!undone && parameter->getFirstStepID())
+            doc->undo(parameter->getFirstStepID());
+    }
 
     return TaskDlgFeatureParameters::reject();
 }

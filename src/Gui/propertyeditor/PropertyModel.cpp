@@ -641,7 +641,10 @@ void PropertyModel::updateChildren(PropertyItem* item, int column, const QModelI
     int numChild = item->childCount();
     if (numChild > 0) {
         QModelIndex topLeft = this->index(0, column, parent);
-        QModelIndex bottomRight = this->index(numChild, column, parent);
+        // the last child is numChild - 1: one past it is no index at all, and
+        // Qt says "dataChanged() called with an invalid index range"
+        // (docs/HandsOnQueue.md entry 130)
+        QModelIndex bottomRight = this->index(numChild - 1, column, parent);
         Q_EMIT dataChanged(topLeft, bottomRight);
     }
 }

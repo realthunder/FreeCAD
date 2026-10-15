@@ -28,6 +28,7 @@
 #include <vector>
 #endif
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Link.h>
@@ -65,6 +66,7 @@
 
 #include "DrawGuiUtil.h"
 #include "PreferencesGui.h"
+#include "DlgPrintPages.h"
 #include "MDIViewPage.h"
 #include "QGIViewPart.h"
 #include "QGSPage.h"
@@ -271,29 +273,42 @@ bool CmdTechDrawRedrawPage::isActive()
 }
 
 //===========================================================================
-// TechDraw_PrintAll
+// TechDraw_Print
 //===========================================================================
 
-DEF_STD_CMD_A(CmdTechDrawPrintAll)
+// The pages to print or export, chosen in a dialog from every open document,
+// in an order of the user's (docs/HandsOnQueue.md entry 137). Replaces
+// TechDraw_PrintAll and entry 127's TechDraw_PrintSelected (the reporter:
+// "drop printall command").
+DEF_STD_CMD_A(CmdTechDrawPrint)
 
-CmdTechDrawPrintAll::CmdTechDrawPrintAll() : Command("TechDraw_PrintAll")
+CmdTechDrawPrint::CmdTechDrawPrint() : Command("TechDraw_Print")
 {
     sAppModule = "TechDraw";
     sGroup = QT_TR_NOOP("TechDraw");
-    sMenuText = QT_TR_NOOP("Print All Pages");
-    sToolTipText = sMenuText;
-    sWhatsThis = "TechDraw_PrintAll";
+    sMenuText = QT_TR_NOOP("Print pages");
+    sToolTipText = QT_TR_NOOP("Prints the pages chosen, from any open document and in an order of\n"
+                              "your own, or exports them to one PDF file");
+    sWhatsThis = "TechDraw_Print";
     sStatusTip = sToolTipText;
-    sPixmap = "actions/TechDraw_PrintAll";
+    sPixmap = "document-print";
 }
 
-void CmdTechDrawPrintAll::activated(int iMsg)
+void CmdTechDrawPrint::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    MDIViewPage::printAllPages();
+    DlgPrintPages::run(Gui::getMainWindow());
 }
 
-bool CmdTechDrawPrintAll::isActive() { return DrawGuiUtil::needPage(this); }
+bool CmdTechDrawPrint::isActive()
+{
+    for (App::Document* doc : App::GetApplication().getDocuments()) {
+        if (!doc->getObjectsOfType(TechDraw::DrawPage::getClassTypeId()).empty()) {
+            return true;
+        }
+    }
+    return false;
+}
 
 //===========================================================================
 // TechDraw_View
@@ -1727,7 +1742,7 @@ void CreateTechDrawCommands()
     rcCmdMgr.addCommand(new CmdTechDrawPageDefault());
     rcCmdMgr.addCommand(new CmdTechDrawPageTemplate());
     rcCmdMgr.addCommand(new CmdTechDrawRedrawPage());
-    rcCmdMgr.addCommand(new CmdTechDrawPrintAll());
+    rcCmdMgr.addCommand(new CmdTechDrawPrint());
     rcCmdMgr.addCommand(new CmdTechDrawView());
     rcCmdMgr.addCommand(new CmdTechDrawBrokenView());
     rcCmdMgr.addCommand(new CmdTechDrawActiveView());

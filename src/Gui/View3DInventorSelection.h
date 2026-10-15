@@ -29,9 +29,11 @@
 #include <set>
 
 #include <App/DocumentObserver.h>
+#include <Base/BoundBox.h>
 #include <Gui/InventorBase.h>
 #include <Gui/Selection.h>
 
+class SoGetBoundingBoxAction;
 class SoGroup;
 class SoNode;
 class SoPath;
@@ -68,6 +70,15 @@ public:
     bool isInGroupOnTop(const App::SubObjectT &objT, bool altOnly=true) const;
     bool hasOnTopObject() const;
     const std::set<App::SubObjectT> &getObjectsOnTop() const;
+
+    /** Extend \a action by the bounds of everything this view shows on top,
+     * each from its view provider by its object and sub-name, shown or not
+     * (docs/HandsOnQueue.md entry 124): the view's near and far planes are
+     * fitted to the scene's box, in which a body hidden in the document is
+     * nothing, and a selected feature of it shown on top was cut off. Kept
+     * while the on-top entries stay the same and until refreshGroupOnTop().
+     */
+    void extendByOnTop(SoGetBoundingBoxAction *action);
 
     SoGroup *getAuxRoot() const;
     SoSwitch *getGroupOnTopSwitch() const;
@@ -112,6 +123,13 @@ private:
     std::map<App::SubObjectT,OnTopInfo> objectsOnTopSel; 
 
     std::map<App::SubObjectT,OnTopInfo> objectsOnTopPreSel;
+
+    // extendByOnTop(): the entries the bounds were taken for, the bounds,
+    // and whether a change of the document has made them old
+    std::string onTopBoundsKey;
+    Base::BoundBox3d onTopBounds;
+    bool onTopBoundsStale = true;
+    bool onTopBoundsBusy = false;
 
     std::unique_ptr<SoSelectionElementAction> selAction;
     std::unique_ptr<SoHighlightElementAction> preselAction;

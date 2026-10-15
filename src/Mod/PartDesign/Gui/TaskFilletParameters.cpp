@@ -39,6 +39,21 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <cmath>
+#include <QActionGroup>
+#include <QColor>
+#include <QIcon>
+#include <QMenu>
+#include <QPixmap>
+#include <QSpinBox>
+#include <QTimer>
+#include <Base/Quantity.h>
+#include <Gui/SpinBox.h>
+#include <BRepGProp.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
+#include <GProp_GProps.hxx>
+#include <Precision.hxx>
+
 #include "ui_TaskFilletParameters.h"
 #include "TaskFilletParameters.h"
 #include "Utils.h"
@@ -53,8 +68,10 @@
 #include <Base/Console.h>
 #include <Base/ExceptionSafeCall.h>
 #include <Base/Tools.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
+#include <Gui/ViewerContext.h>
 #include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureFillet.h>
 
@@ -68,6 +85,8 @@ using namespace Gui;
 namespace {
 // The column of a corner's setbacks
 constexpr int SetbackColumn = 4;
+// The column of a customised edge's group (docs/OnViewValueEditing.md 6.4)
+constexpr int GroupColumn = 5;
 }
 
 /* TRANSLATOR PartDesignGui::TaskFilletParameters */
@@ -93,6 +112,14 @@ QWidget *FilletSegmentDelegate::createEditor(QWidget *parent, const QStyleOption
             owner->setBinding(editor, index);
         return editor;
     }
+    // a customised edge's group: a number, joined by typing another's
+    if (index.column() == GroupColumn) {
+        if (index.parent().isValid() || index.model()->data(index, Qt::UserRole).toInt() <= 0)
+            return nullptr;
+        auto editor = new QSpinBox(parent);
+        editor->setRange(1, 9999);
+        return editor;
+    }
     if (index.column() < 1 || index.column() > 3)
         return nullptr;
     if (!index.parent().isValid()) {
@@ -116,6 +143,11 @@ void FilletSegmentDelegate::setEditorData(QWidget *editor, const QModelIndex &in
 {
     auto value = index.model()->data(index, Qt::UserRole).toDouble();
 
+    if (auto groupBox = qobject_cast<QSpinBox*>(editor)) {
+        groupBox->setValue(int(value));
+        groupBox->selectAll();
+        return;
+    }
     Gui::QuantitySpinBox *spinBox = static_cast<Gui::QuantitySpinBox*>(editor);
     spinBox->setValue(value);
     spinBox->selectNumber();
@@ -124,6 +156,12 @@ void FilletSegmentDelegate::setEditorData(QWidget *editor, const QModelIndex &in
 void FilletSegmentDelegate::setModelData(QWidget *editor, QAbstractItemModel *model,
                                         const QModelIndex &index) const
 {
+    if (auto groupBox = qobject_cast<QSpinBox*>(editor)) {
+        groupBox->interpretText();
+        model->setData(index, QString::number(groupBox->value()), Qt::DisplayRole);
+        model->setData(index, groupBox->value(), Qt::UserRole);
+        return;
+    }
     Gui::QuantitySpinBox *spinBox = static_cast<Gui::QuantitySpinBox*>(editor);
     spinBox->interpretText();
     Base::Quantity value = spinBox->value();
@@ -161,6 +199,14 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     setup(ui->message, ui->treeWidgetReferences, ui->buttonRefAdd);
 
     ui->treeWidgetReferences->setItemDelegate(new FilletSegmentDelegate(this));
+    // A customised edge's group, after the corners' setbacks
+    if (ui->treeWidgetReferences->columnCount() <= GroupColumn)
+        ui->treeWidgetReferences->setColumnCount(GroupColumn + 1);
+    ui->treeWidgetReferences->headerItem()->setText(GroupColumn, tr("Group"));
+    ui->treeWidgetReferences->headerItem()->setToolTip(GroupColumn, tr(
+"The group of an edge with radii of its own. A change to one edge\n"
+"of a group is made to every edge of it; type another group's\n"
+"number to join it."));
 
     Base::connect(ui->btnClear, &QPushButton::clicked, this, &TaskFilletParameters::clearSegments);
     Base::connect(ui->btnAdd, &QPushButton::clicked, this, &TaskFilletParameters::newSegment);
@@ -209,7 +255,746 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     refresh();
     ui->filletRadius->selectAll();
 
+    // The radii in the view (docs/OnViewValueEditing.md 3.1 to 3.3): the
+    // default's label always at the top middle, an arrow on every edge --
+    // an edge that takes the default drives it, a customised one its own
+    // radius, whose label shows beside the arrow while it is active
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
+    onViewValues->addValue(ui->filletRadius, tr("Radius"),
+                           Gui::OnViewValueSet::Place::TopMiddle);
+    onViewValues->setMenu(DefaultValue, [this](QMenu& menu, Gui::Gizmo* handle) {
+        fillEdgeMenu(menu, handle);
+    });
     setupGizmos(DressUpView);
+    connect(onViewValues.get(), &Gui::OnViewValueSet::cameraChanged, this, [this]() {
+        placeEdgeHandles(false);
+    });
+
+    // Every operation an undo step of its own (docs/HandsOnQueue.md entry
+    // 136, "fillet first"): a drag or a label open for typing one step, a
+    // cancelled drag rolled back, the radius box one step while it has the
+    // focus
+    fineUndo = true;
+    connect(onViewValues.get(), &Gui::OnViewValueSet::stepBegun, this, [this]() {
+        beginHeldStep();
+    });
+    connect(onViewValues.get(), &Gui::OnViewValueSet::stepEnded, this, [this](bool abort) {
+        endHeldStep(abort);
+    });
+    for (auto* pool : {&cornerGizmos, &faceGizmos}) {
+        for (auto& cornerGizmo : *pool) {
+            cornerGizmo.gizmo->setDragCallback([this](Gui::Gizmo::DragEvent event) {
+                if (event == Gui::Gizmo::DragEvent::Started) {
+                    beginHeldStep();
+                }
+                else {
+                    endHeldStep(event == Gui::Gizmo::DragEvent::Cancelled);
+                }
+            });
+        }
+    }
+    holdStepWhileFocused(ui->filletRadius);
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskFilletParameters::attachOnViewValues()
+{
+    auto vp = getDressUpView();
+    if (!onViewValues || !vp) {
+        return;
+    }
+    if (auto view = vp->getEditViewer()) {
+        if (view != onViewValues->getView()) {
+            onViewValues->attach(view);
+            placeEdgeHandles(true);
+        }
+    }
+    onViewValues->refresh();
+}
+
+Base::Matrix4D TaskFilletParameters::gizmoToWorld() const
+{
+    // The gizmos' frame is the editing transform less the feature's
+    // placement (ViewProviderDragger::setEditViewer)
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet) {
+        return {};
+    }
+    Base::Matrix4D mat = vp->getDocument()->getEditingTransform();
+    Base::Matrix4D placement = fillet->Placement.getValue().toMatrix();
+    placement.inverse();
+    mat *= placement;
+    return mat;
+}
+
+void TaskFilletParameters::placeEdgeHandles(bool force)
+{
+    Gui::ViewerContext* view = onViewValues ? onViewValues->getView() : nullptr;
+    const Base::Matrix4D toWorld = gizmoToWorld();
+    Base::Vector3d dir;
+    if (view) {
+        // The view's direction where the arrows are
+        Base::Matrix4D toGizmo = toWorld;
+        toGizmo.inverse();
+        const SbVec3f v = view->getViewDirection();
+        dir = toGizmo * Base::Vector3d(v[0], v[1], v[2]) - toGizmo * Base::Vector3d();
+        if (dir.Length() > Precision::Confusion()) {
+            dir.Normalize();
+        }
+        else {
+            dir = Base::Vector3d();
+        }
+    }
+    bool moved = false;
+    for (auto& handle : edgeHandles) {
+        if (!handle.placed) {
+            continue;
+        }
+        int face = handle.face;
+        if (dir.Length() > 0.5) {
+            // An arrow in the face turned toward the camera lies flat on the
+            // screen; the other one points into it. A little either way of
+            // even does not move it, so that it does not flicker.
+            constexpr double hysteresis = 0.05;
+            double along[2];
+            for (int i = 0; i < 2; ++i) {
+                Base::Vector3d d = handle.placements[i].dir;
+                d.Normalize();
+                along[i] = std::fabs(d * dir);
+            }
+            if (along[1 - face] + hysteresis < along[face]) {
+                face = 1 - face;
+            }
+        }
+        if (face == handle.face && !force) {
+            continue;
+        }
+        handle.face = face;
+        handle.gizmo->Gizmo::setDraggerPlacement(handle.placements[face].position,
+                                                 handle.placements[face].dir);
+        if (onViewValues) {
+            // a knob's label by the knob, which stands its distance along
+            Base::Vector3d anchor = handle.placements[face].position;
+            if (handle.position && handle.box) {
+                anchor += handle.placements[face].dir * handle.box->rawValue();
+            }
+            onViewValues->setHandleAnchor(handle.gizmo, toWorld * anchor);
+        }
+        moved = true;
+    }
+    if (moved && gizmoContainer) {
+        gizmoContainer->calculateScaleAndOrientation();
+    }
+}
+
+namespace {
+/// An arrow on an edge at \a fraction of its length, lying in \a face and
+/// pointing into it (GizmoHelper's getDraggerPlacementFromEdgeAndFace, at a
+/// point other than the middle)
+bool edgeHandlePlacement(Part::TopoShape& edge, TopoDS_Face& face, double fraction,
+                         Base::Vector3d& position, Base::Vector3d& dir)
+{
+    const TopoDS_Edge& tdsEdge = TopoDS::Edge(edge.getShape());
+    BRepAdaptor_Curve curve(tdsEdge);
+    double u = curve.FirstParameter();
+    const double length = GCPnts_AbscissaPoint::Length(curve);
+    if (length > Precision::Confusion()) {
+        GCPnts_AbscissaPoint abscissa(curve, fraction * length, curve.FirstParameter());
+        if (abscissa.IsDone()) {
+            u = abscissa.Parameter();
+        }
+    }
+    gp_Pnt pos;
+    gp_Vec derivative;
+    curve.D1(u, pos, derivative);
+    if (derivative.Magnitude() < gp::Resolution()) {
+        return false;
+    }
+    Base::Vector3d tangent(derivative.X(), derivative.Y(), derivative.Z());
+    tangent.Normalize();
+    if (tdsEdge.Orientation() == TopAbs_REVERSED) {
+        tangent = -tangent;
+    }
+    position = Base::Vector3d(pos.X(), pos.Y(), pos.Z());
+
+    auto props = getFaceNormalFromPointNearEdge(edge, u, face);
+    if (props.state == PointOnFaceNearEdgeProps::State::Undefined) {
+        return false;
+    }
+    dir = props.normal.Cross(tangent);
+    if (dir.Length() < Precision::Confusion()) {
+        return false;
+    }
+    dir.Normalize();
+    if (dir.Dot(props.position - position) < 0) {
+        dir = -dir;
+    }
+    if (props.state == PointOnFaceNearEdgeProps::State::OutsideFace) {
+        dir = -dir;
+    }
+    return true;
+}
+} // namespace
+
+std::vector<std::string> TaskFilletParameters::getFilletEdges() const
+{
+    std::vector<std::string> names;
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet) {
+        return names;
+    }
+    if (fillet->UseAllEdges.getValue()) {
+        Part::TopoShape baseShape = fillet->getBaseShape(true);
+        const int count = baseShape.countSubShapes(TopAbs_EDGE);
+        for (int i = 1; i <= count; ++i) {
+            names.push_back("Edge" + std::to_string(i));
+        }
+        return names;
+    }
+    for (const auto& sub : fillet->Base.getSubValues(false)) {
+        if (boost::starts_with(sub, "Edge")
+                && std::find(names.begin(), names.end(), sub) == names.end()) {
+            names.push_back(sub);
+        }
+    }
+    return names;
+}
+
+void TaskFilletParameters::clearEdgeHandles()
+{
+    if (onViewValues) {
+        onViewValues->truncate(DefaultValue + 1);
+        // the default's own arrows go too, the value stays
+        onViewValues->clearHandles(DefaultValue);
+    }
+    for (auto& handle : edgeHandles) {
+        if (gizmoContainer) {
+            gizmoContainer->removeGizmo(handle.gizmo);
+        }
+        if (handle.box) {
+            handle.box->deleteLater();
+        }
+    }
+    edgeHandles.clear();
+    edgeHandleLayout.clear();
+}
+
+void TaskFilletParameters::updateEdgeHandles()
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!gizmoContainer || !onViewValues || !fillet) {
+        return;
+    }
+    // What the handles are made for: the edges and how many points each has.
+    // While it stays, they are only placed again -- a drag recomputes on
+    // every move, and its handle must live through it.
+    std::vector<std::string> edges = getFilletEdges();
+    std::string layout;
+    int total = 0;
+    std::vector<std::string> shown;
+    for (const auto& edge : edges) {
+        const int points = std::max<int>(1, fillet->Segments.getValue(edge).size());
+        if (total + points > MaxEdgeHandles) {
+            break;
+        }
+        total += points;
+        shown.push_back(edge);
+        // the group too: its colour is the handles'
+        layout += edge + ":" + std::to_string(fillet->Segments.getValue(edge).size()) + ":"
+            + std::to_string(fillet->Segments.getGroup(edge)) + ";";
+    }
+    if (layout != edgeHandleLayout) {
+        clearEdgeHandles();
+        edgeHandleLayout = layout;
+        for (const auto& edge : shown) {
+            const auto& segments = fillet->Segments.getValue(edge);
+            if (segments.empty()) {
+                // drives the default radius
+                EdgeHandle handle;
+                handle.edge = edge;
+                handle.gizmo = new Gui::LinearGizmo(ui->filletRadius);
+                onViewValues->addHandle(DefaultValue, handle.gizmo);
+                gizmoContainer->appendGizmo(handle.gizmo);
+                edgeHandles.push_back(handle);
+                continue;
+            }
+            for (int point = 0; point < static_cast<int>(segments.size()); ++point) {
+                EdgeHandle handle;
+                handle.edge = edge;
+                handle.point = point;
+                auto box = new Gui::QuantitySpinBox(this);
+                box->hide();
+                box->setUnit(Base::Unit::Length);
+                box->setMinimum(0.0);
+                box->setMaximum(INT_MAX);
+                App::ObjectIdentifier path(fillet->Segments);
+                path << App::ObjectIdentifier::SimpleComponent(edge)
+                     << App::ObjectIdentifier::ArrayComponent(point)
+                     << App::ObjectIdentifier::SimpleComponent("Radius");
+                box->bind(path);
+                box->setValue(segments[point].radius);
+                handle.box = box;
+                const int group = fillet->Segments.getGroup(edge);
+                handle.gizmo = new Gui::LinearGizmo(box);
+                handle.gizmo->setColor(groupColor(group));
+                // The group, then "R", or which of its points: "2  R1" ...
+                QString title = segments.size() == 1
+                    ? tr("R") : tr("R%1").arg(point + 1);
+                title = QStringLiteral("%1  %2").arg(group).arg(title);
+                const int value = onViewValues->addValue(
+                    box, title, Gui::OnViewValueSet::Place::AtHandle, handle.gizmo);
+                onViewValues->setGroup(value, group);
+                onViewValues->setMenu(value, [this](QMenu& menu, Gui::Gizmo* gizmo) {
+                    fillEdgeMenu(menu, gizmo);
+                });
+                gizmoContainer->appendGizmo(handle.gizmo);
+                connect(box, qOverload<double>(&Gui::QuantitySpinBox::valueChanged), this,
+                        [this, edge, point](double radius) {
+                            setEdgePointRadius(edge, point, radius);
+                        });
+                edgeHandles.push_back(handle);
+
+                // A point inside the edge has a place too: a knob that slides
+                // along the edge, its value the distance from the edge's start
+                const auto& segment = segments[point];
+                const bool inside = segment.length > 0.0
+                    || (segment.param > 0.0 && segment.param < 1.0);
+                if (!inside || edgeMode(segments) != VaryingMode) {
+                    continue;
+                }
+                EdgeHandle along;
+                along.edge = edge;
+                along.point = point;
+                along.position = true;
+                auto alongBox = new Gui::QuantitySpinBox(this);
+                alongBox->hide();
+                alongBox->setUnit(Base::Unit::Length);
+                alongBox->setMinimum(0.0);
+                alongBox->setMaximum(INT_MAX);
+                along.box = alongBox;
+                along.gizmo = new Gui::LinearGizmo(alongBox);
+                along.gizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
+                along.gizmo->setColor(groupColor(group));
+                const int place = onViewValues->addValue(
+                    alongBox, QStringLiteral("%1  %2").arg(group).arg(tr("P%1").arg(point + 1)),
+                    Gui::OnViewValueSet::Place::AtHandle, along.gizmo);
+                onViewValues->setGroup(place, group);
+                onViewValues->setMenu(place, [this](QMenu& menu, Gui::Gizmo* gizmo) {
+                    fillEdgeMenu(menu, gizmo);
+                });
+                gizmoContainer->appendGizmo(along.gizmo);
+                connect(alongBox, qOverload<double>(&Gui::QuantitySpinBox::valueChanged), this,
+                        [this, edge, point](double distance) {
+                            setEdgePointPosition(edge, point, distance);
+                        });
+                edgeHandles.push_back(along);
+            }
+        }
+    }
+
+    // Placed: each point at its place along the edge, each arrow in both
+    // faces to choose from
+    Part::TopoShape baseShape = fillet->getBaseShape(true);
+    for (auto& handle : edgeHandles) {
+        handle.placed = false;
+        const auto& segments = fillet->Segments.getValue(handle.edge);
+        if (handle.position) {
+            placeAlongHandle(handle, baseShape, segments);
+            continue;
+        }
+        double fraction = 0.5;
+        if (handle.point >= 0 && segments.size() > 1
+                && handle.point < static_cast<int>(segments.size())) {
+            const auto& segment = segments[handle.point];
+            fraction = segment.param;
+            if (segment.length > 0.0) {
+                Part::TopoShape edge = baseShape.getSubTopoShape(handle.edge.c_str(), true);
+                GProp_GProps props;
+                BRepGProp::LinearProperties(edge.getShape(), props);
+                fraction = props.Mass() > segment.length ? segment.length / props.Mass() : 1.0;
+            }
+            // Ends drawn a little inside: the arrows of edges meeting at a
+            // corner would stand on one another
+            fraction = std::clamp(fraction, 0.1, 0.9);
+        }
+        if (handle.box) {
+            QSignalBlocker blocker(handle.box);
+            if (handle.point < static_cast<int>(segments.size())) {
+                handle.box->setValue(segments[handle.point].radius);
+            }
+        }
+        try {
+            Part::TopoShape edge = baseShape.getSubTopoShape(handle.edge.c_str(), true);
+            if (edge.isNull()) {
+                handle.gizmo->setVisibility(false);
+                continue;
+            }
+            auto [face1, face2] = getAdjacentFacesFromEdge(edge, baseShape);
+            if (!edgeHandlePlacement(edge, face1, fraction, handle.placements[0].position,
+                                     handle.placements[0].dir)
+                || !edgeHandlePlacement(edge, face2, fraction, handle.placements[1].position,
+                                        handle.placements[1].dir)) {
+                handle.gizmo->setVisibility(false);
+                continue;
+            }
+        }
+        catch (Standard_Failure&) {
+            handle.gizmo->setVisibility(false);
+            continue;
+        }
+        catch (Base::Exception&) {
+            handle.gizmo->setVisibility(false);
+            continue;
+        }
+        // The dragger length won't be equal to the radius if the two faces
+        // are not orthogonal so this correction is needed
+        double angle = handle.placements[0].dir.GetAngle(handle.placements[1].dir);
+        handle.gizmo->setMultFactor(1 / std::tan(angle / 2));
+        handle.gizmo->setVisibility(true);
+        handle.placed = true;
+    }
+    placeEdgeHandles(true);
+}
+
+void TaskFilletParameters::placeAlongHandle(EdgeHandle& handle, Part::TopoShape& baseShape,
+                                            const Part::PropertyFilletSegments::Segments& segments)
+{
+    // From the edge's start toward its end, the knob as far along as the
+    // point is. Measured on the chord: exact on a straight edge, near on a
+    // gently curved one.
+    if (handle.point >= static_cast<int>(segments.size())) {
+        handle.gizmo->setVisibility(false);
+        return;
+    }
+    try {
+        Part::TopoShape edge = baseShape.getSubTopoShape(handle.edge.c_str(), true);
+        if (edge.isNull()) {
+            handle.gizmo->setVisibility(false);
+            return;
+        }
+        BRepAdaptor_Curve curve(TopoDS::Edge(edge.getShape()));
+        gp_Pnt start = curve.Value(curve.FirstParameter());
+        gp_Pnt end = curve.Value(curve.LastParameter());
+        gp_Vec chord(start, end);
+        const double length = GCPnts_AbscissaPoint::Length(curve);
+        if (chord.Magnitude() < Precision::Confusion() || length < Precision::Confusion()) {
+            handle.gizmo->setVisibility(false);
+            return;
+        }
+        handle.chord = chord.Magnitude();
+        handle.length = length;
+        const auto& segment = segments[handle.point];
+        const double fraction = segment.length > 0.0
+            ? std::min(1.0, segment.length / length) : segment.param;
+        chord.Normalize();
+        for (auto& placement : handle.placements) {
+            placement.position = Base::Vector3d(start.X(), start.Y(), start.Z());
+            placement.dir = Base::Vector3d(chord.X(), chord.Y(), chord.Z());
+        }
+        {
+            QSignalBlocker blocker(handle.box);
+            handle.box->setValue(fraction * handle.chord);
+        }
+        // reads the box: the knob goes where the point is
+        handle.gizmo->setMultFactor(1.0);
+        handle.gizmo->setVisibility(true);
+        handle.placed = true;
+    }
+    catch (Standard_Failure&) {
+        handle.gizmo->setVisibility(false);
+    }
+    catch (Base::Exception&) {
+        handle.gizmo->setVisibility(false);
+    }
+}
+
+void TaskFilletParameters::setEdgePointPosition(const std::string& edge, int point, double distance)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    EdgeHandle* handle = nullptr;
+    for (auto& h : edgeHandles) {
+        if (h.position && h.edge == edge && h.point == point) {
+            handle = &h;
+        }
+    }
+    if (!fillet || !handle || handle->chord <= 0.0) {
+        return;
+    }
+    Part::PropertyFilletSegments::Segments segments = fillet->Segments.getValue(edge);
+    if (point < 0 || point >= static_cast<int>(segments.size())) {
+        return;
+    }
+    const double fraction = std::clamp(distance / handle->chord, 0.0, 1.0);
+    auto& segment = segments[point];
+    // as the point was given: by its length along the edge, or its fraction
+    if (segment.length > 0.0) {
+        segment.length = std::max(Precision::Confusion(), fraction * handle->length);
+    }
+    else {
+        segment.param = fraction;
+    }
+    setupTransaction();
+    fillet->Segments.setValue(edge, std::move(segments));
+    refresh();
+    recompute();
+}
+
+void TaskFilletParameters::setEdgePointRadius(const std::string& edge, int point, double radius)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet) {
+        return;
+    }
+    Part::PropertyFilletSegments::Segments segments = fillet->Segments.getValue(edge);
+    if (point < 0 || point >= static_cast<int>(segments.size())
+            || segments[point].radius == radius) {
+        return;
+    }
+    segments[point].radius = radius;
+    setupTransaction();
+    fillet->Segments.setValue(edge, std::move(segments));
+    refresh();
+    recompute();
+}
+
+TaskFilletParameters::EdgeHandle* TaskFilletParameters::findEdgeHandle(const Gui::Gizmo* gizmo)
+{
+    for (auto& handle : edgeHandles) {
+        if (handle.gizmo == gizmo) {
+            return &handle;
+        }
+    }
+    return nullptr;
+}
+
+void TaskFilletParameters::fillEdgeMenu(QMenu& menu, Gui::Gizmo* gizmo)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    EdgeHandle* handle = findEdgeHandle(gizmo);
+    if (!fillet || !handle) {
+        return;
+    }
+    const std::string edge = handle->edge;
+    const auto& segments = fillet->Segments.getValue(edge);
+    // The radius the edge has where the handle is, to start a new mode from
+    double radius = fillet->Radius.getValue();
+    if (handle->point >= 0 && handle->point < static_cast<int>(segments.size())) {
+        radius = segments[handle->point].radius;
+    }
+    const int mode = edgeMode(segments);
+
+    menu.addSection(QString::fromStdString(edge));
+    auto modes = new QActionGroup(&menu);
+    modes->setExclusive(true);
+    const char* titles[] = {
+        QT_TR_NOOP("Default radius"),
+        QT_TR_NOOP("One radius"),
+        QT_TR_NOOP("Two radii"),
+    };
+    for (int i = 0; i < 3; ++i) {
+        QAction* action = menu.addAction(tr(titles[i]));
+        action->setCheckable(true);
+        action->setChecked(mode == i);
+        modes->addAction(action);
+        // After the menu: the change takes this handle away
+        connect(action, &QAction::triggered, this, [this, edge, i, radius]() {
+            QTimer::singleShot(0, this, [this, edge, i, radius]() {
+                setEdgeMode(edge, i, radius);
+            });
+        });
+    }
+    if (mode == VaryingMode) {
+        QAction* action = menu.addAction(tr("Varying (set in the panel)"));
+        action->setCheckable(true);
+        action->setChecked(true);
+        action->setEnabled(false);
+    }
+
+    // A customised edge's group (docs/OnViewValueEditing.md 6.1): each item
+    // leads with the group's id, then what its points are, in its colour
+    const int group = fillet->Segments.getGroup(edge);
+    if (group > 0) {
+        menu.addSeparator();
+        QMenu* groups = menu.addMenu(groupIcon(group), tr("Group"));
+        auto groupActions = new QActionGroup(groups);
+        groupActions->setExclusive(true);
+        for (int id : fillet->Segments.getGroups()) {
+            const auto members = fillet->Segments.getGroupMembers(id);
+            QString text = QStringLiteral("%1   %2").arg(id).arg(
+                groupSummary(fillet->Segments.getValue(members.front())));
+            if (members.size() > 1) {
+                text += QStringLiteral("  ") + tr("(%1 edges)").arg(members.size());
+            }
+            QAction* action = groups->addAction(groupIcon(id), text);
+            action->setCheckable(true);
+            action->setChecked(id == group);
+            groupActions->addAction(action);
+            connect(action, &QAction::triggered, this, [this, edge, id]() {
+                QTimer::singleShot(0, this, [this, edge, id]() {
+                    setEdgeGroup(edge, id);
+                });
+            });
+        }
+        groups->addSeparator();
+        QAction* add = groups->addAction(tr("New group"));
+        // already alone in its group: a new one would only renumber it
+        add->setEnabled(fillet->Segments.getGroupMembers(group).size() > 1);
+        connect(add, &QAction::triggered, this, [this, edge]() {
+            QTimer::singleShot(0, this, [this, edge]() {
+                setEdgeGroup(edge, 0);
+            });
+        });
+        // Its start and end the other way round from its group's
+        if (fillet->Segments.getGroupMembers(group).size() > 1 && mode != 1) {
+            QAction* reversed = menu.addAction(tr("Reversed in group"));
+            reversed->setCheckable(true);
+            reversed->setChecked(fillet->Segments.isReversed(edge));
+            connect(reversed, &QAction::triggered, this, [this, edge](bool checked) {
+                QTimer::singleShot(0, this, [this, edge, checked]() {
+                    setEdgeReversed(edge, checked);
+                });
+            });
+        }
+    }
+    menu.addSeparator();
+    QAction* remove = menu.addAction(tr("Remove"));
+    // every edge is filleted then; the panel's check box says so
+    remove->setEnabled(!fillet->UseAllEdges.getValue());
+    connect(remove, &QAction::triggered, this, [this, edge]() {
+        QTimer::singleShot(0, this, [this, edge]() {
+            removeEdge(edge);
+        });
+    });
+}
+
+int TaskFilletParameters::edgeMode(const Part::PropertyFilletSegments::Segments& segments)
+{
+    if (segments.empty()) {
+        return 0;
+    }
+    if (segments.size() == 1 && segments[0].param == 0.0 && segments[0].length <= 0.0) {
+        return 1;
+    }
+    if (segments.size() == 2 && segments[0].param == 0.0 && segments[1].param == 1.0
+            && segments[0].length <= 0.0 && segments[1].length <= 0.0) {
+        return 2;
+    }
+    return VaryingMode;
+}
+
+void TaskFilletParameters::setEdgeMode(const std::string& edge, int mode, double radius)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || edgeMode(fillet->Segments.getValue(edge)) == mode) {
+        return;
+    }
+    setupTransaction();
+    switch (mode) {
+        case 0:
+            fillet->Segments.removeValue(edge);
+            break;
+        case 1:
+            fillet->Segments.setValue(edge, Part::PropertyFilletSegments::Segments{{0.0, radius}});
+            break;
+        case 2:
+            fillet->Segments.setValue(
+                edge, Part::PropertyFilletSegments::Segments{{0.0, radius}, {1.0, radius}});
+            break;
+        default:
+            return;
+    }
+    refresh();
+    recompute();
+}
+
+QString TaskFilletParameters::groupSummary(const Part::PropertyFilletSegments::Segments& segments)
+{
+    auto text = [](double radius) {
+        return Gui::trimTrailingZeros(
+            QString::fromStdString(Base::Quantity(radius, Base::Unit::Length).getUserString()),
+            QLocale());
+    };
+    if (segments.empty()) {
+        return {};
+    }
+    switch (edgeMode(segments)) {
+        case 1:
+            return tr("R %1").arg(text(segments[0].radius));
+        case 2:
+            return tr("R %1 -> %2").arg(text(segments[0].radius), text(segments[1].radius));
+        default: {
+            auto [low, high] = std::minmax_element(
+                segments.begin(), segments.end(),
+                [](const auto& a, const auto& b) { return a.radius < b.radius; });
+            return tr("R %1 to %2, %3 points")
+                .arg(text(low->radius), text(high->radius))
+                .arg(segments.size());
+        }
+    }
+}
+
+void TaskFilletParameters::setEdgeGroup(const std::string& edge, int group)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || fillet->Segments.getGroup(edge) == 0) {
+        return;
+    }
+    setupTransaction();
+    // 0: a group of its own, by the lowest free id
+    fillet->Segments.setGroup(edge, group > 0 ? group : fillet->Segments.newGroup());
+    refresh();
+    recompute();
+}
+
+void TaskFilletParameters::setEdgeReversed(const std::string& edge, bool reversed)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || fillet->Segments.isReversed(edge) == reversed) {
+        return;
+    }
+    setupTransaction();
+    fillet->Segments.setReversed(edge, reversed);
+    refresh();
+    recompute();
+}
+
+void TaskFilletParameters::removeEdge(const std::string& edge)
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || fillet->UseAllEdges.getValue()) {
+        return;
+    }
+    QTreeWidgetItem* item = nullptr;
+    for (int i = 0; i < ui->treeWidgetReferences->topLevelItemCount(); ++i) {
+        auto top = ui->treeWidgetReferences->topLevelItem(i);
+        if (!getCornerItem(top) && getGeometryItemText(top).constData() == edge) {
+            item = top;
+            break;
+        }
+    }
+    if (!item) {
+        return;
+    }
+    // The panel's own removal, of this row alone
+    setupTransaction();
+    fillet->Segments.removeValue(edge);
+    ui->treeWidgetReferences->clearSelection();
+    item->setSelected(true);
+    onRefDeleted();
 }
 
 void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
@@ -217,9 +1002,6 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
     if (!GizmoContainer::isEnabled()) {
         return;
     }
-
-    radiusGizmo = new Gui::LinearGizmo(ui->filletRadius);
-    radiusGizmo2 = new Gui::LinearGizmo(ui->filletRadius);
 
     // The handles of the current corner, one per fillet, each driving a
     // hidden spin box. The container takes a fixed list, so there is a pool.
@@ -270,8 +1052,7 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
     }
     static_assert(CornerGizmoCount == 6 && CornerFaceGizmoCount == 4,
                   "the container below lists every corner gizmo");
-    gizmoContainer = GizmoContainer::create({radiusGizmo, radiusGizmo2,
-                                             cornerGizmos[0].gizmo, cornerGizmos[1].gizmo,
+    gizmoContainer = GizmoContainer::create({cornerGizmos[0].gizmo, cornerGizmos[1].gizmo,
                                              cornerGizmos[2].gizmo, cornerGizmos[3].gizmo,
                                              cornerGizmos[4].gizmo, cornerGizmos[5].gizmo,
                                              faceGizmos[0].gizmo, faceGizmos[1].gizmo,
@@ -289,36 +1070,17 @@ void TaskFilletParameters::setGizmoPositions()
 
     auto DressUpView = getDressUpView();
     auto fillet = DressUpView ? dynamic_cast<PartDesign::Fillet*>(DressUpView->getObject()) : nullptr;
-    if (!fillet || fillet->isError()) {
-        gizmoContainer->visible = false;
-        return;
-    }
-    Part::TopoShape baseShape = fillet->getBaseShape(true);
-    std::vector<Part::TopoShape> shapes = fillet->getContinuousEdges(baseShape);
-
-    if (shapes.size() == 0) {
+    // Not hidden when the fillet fails: a reference that is gone fails it,
+    // and the arrows of the edges that are there are how it is fixed (entry
+    // 135); an edge that is not there has none (updateEdgeHandles)
+    if (!fillet) {
         gizmoContainer->visible = false;
         return;
     }
     gizmoContainer->visible = true;
 
-    // Attach the arrow to the first edge
-    Part::TopoShape edge = shapes[0];
-    auto [face1, face2] = getAdjacentFacesFromEdge(edge, baseShape);
-
-    DraggerPlacementProps props1 = getDraggerPlacementFromEdgeAndFace(edge, face1);
-    radiusGizmo->Gizmo::setDraggerPlacement(props1.position, props1.dir);
-
-    DraggerPlacementProps props2 = getDraggerPlacementFromEdgeAndFace(edge, face2);
-    radiusGizmo2->Gizmo::setDraggerPlacement(props2.position, props2.dir);
-
-    // The dragger length won't be equal to the radius if the two faces
-    // are not orthogonal so this correction is needed
-    double angle = props1.dir.GetAngle(props2.dir);
-    double correction = 1 / std::tan(angle / 2);
-
-    radiusGizmo->setMultFactor(correction);
-    radiusGizmo2->setMultFactor(correction);
+    // An arrow on every edge, in the face turned more toward the camera
+    updateEdgeHandles();
 
     setCornerGizmoPositions();
 }
@@ -526,6 +1288,7 @@ void TaskFilletParameters::finishedRecomputeFeature()
     // The edge list or the base may have changed; the radius alone does not
     // move the gizmos, but reading the placement again is cheap.
     setGizmoPositions();
+    attachOnViewValues();
 }
 
 void TaskFilletParameters::onRefDeleted() {
@@ -580,6 +1343,10 @@ void TaskFilletParameters::refresh()
             refreshCorner(item, cornerEdges[getGeometryItemText(item).constData()]);
             continue;
         }
+        const int group = pcFillet->Segments.getGroup(getGeometryItemText(item).constData());
+        item->setData(GroupColumn, Qt::UserRole, group);
+        item->setText(GroupColumn, group > 0 ? QString::number(group) : QString());
+        item->setIcon(GroupColumn, group > 0 ? groupIcon(group) : QIcon());
         int j = 0;
         for (const auto &segment : pcFillet->Segments.getValue(getGeometryItemText(item).constData())) {
             setSegment(j<item->childCount() ? item->child(j) : new QTreeWidgetItem(item),
@@ -589,6 +1356,11 @@ void TaskFilletParameters::refresh()
         while (j > item->childCount())
             delete item->child(item->childCount()-1);
     }
+    // The handles follow what the feature holds now -- after an undo or a
+    // redo too, which put the boxes back without telling the handles
+    // (entry 136): placed again, each arrow as long as its box says
+    if (gizmoContainer)
+        setGizmoPositions();
 }
 
 void TaskFilletParameters::updateSegment(QTreeWidgetItem *item, int column)
@@ -596,6 +1368,12 @@ void TaskFilletParameters::updateSegment(QTreeWidgetItem *item, int column)
     if (getCornerItem(item)) {
         if (column == SetbackColumn)
             updateCorner(item);
+        return;
+    }
+    if (column == GroupColumn) {
+        if (!item->parent())
+            setEdgeGroup(getGeometryItemText(item).constData(),
+                         item->data(GroupColumn, Qt::UserRole).toInt());
         return;
     }
     if (column<1 || column>3)

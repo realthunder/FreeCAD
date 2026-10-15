@@ -7,7 +7,8 @@ the page's view up themselves when it has none, as they always did, and write
 the file in the same call: the items have to be there by then, or the file
 holds the template and nothing else.
 
-What this does NOT drive is TechDraw_PrintAll, which prints every page of the
+What this does NOT drive is TechDraw_Print (TechDraw_PrintAll when this was
+written), which prints every page of the
 document from its scene with no view opened, through PagePrinter::renderPage;
 that is behind the system's print dialog and has no way in from Python.
 

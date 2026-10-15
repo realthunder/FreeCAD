@@ -165,6 +165,9 @@ struct DocumentP
     /// token of the maximized cell (empty = none) -- docs/SplitViews.md
     /// sec 5.6.
     std::vector<std::pair<std::string, std::string>> _viewAreaLayouts;
+    /// The file carried the layout records (its Camera has "viewareas"),
+    /// so they say which object views were open -- hasObjectViewRecords()
+    bool _objectViewRecords = false;
     /// The name each of them was saved under, see Gui::BaseView.
     std::map<int, std::string>  _view3DNames;
     /// Where the task panel of a view that is no 3D view goes, by the
@@ -3107,6 +3110,7 @@ void Document::RestoreDocFile(Base::Reader &reader)
         int cameraId = xmlReader.getAttributeAsInteger("id", "0");
         int view3dCount = xmlReader.getAttributeAsInteger("view3d", "0");
         int viewAreaCount = xmlReader.getAttributeAsInteger("viewareas", "0");
+        d->_objectViewRecords = xmlReader.hasAttribute("viewareas");
         // Absent from every file written before 2026-10-07, and passed
         // over by every reader from before it: they take their counts
         // from the attributes they know and skip to the end
@@ -3199,6 +3203,7 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     // partial-document reload) is dropped: the new file speaks for every
     // object now.
     d->_deferVPs = Gui::RenderParams::getProgressiveLoad();
+    d->_objectViewRecords = false;
     d->_deferRecordsRead = false;
     d->_deferLateChanges.clear();
     d->_deferBuf.clear();
@@ -3416,11 +3421,11 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
             applyViewAreaLayouts(views);
             d->_viewAreaLayouts.clear();
         }
-        else if (!useLayouts)
-            d->_viewAreaLayouts.clear();
+        else if (!useLayouts && !d->_deferVPs)
+            openRecordedObjectViews();
     }
-    else
-        d->_viewAreaLayouts.clear();
+    else if (!d->_deferVPs)
+        openRecordedObjectViews();
 
     // reset modified flag
     setModified(doc.testStatus(App::Document::LinkStampChanged));
@@ -3436,6 +3441,49 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
     // With view providers parked it is not the end, and refreshLiveLoad()
     // reads that off the drain rather than being told.
     Application::Instance->refreshLiveLoad();
+}
+
+bool Document::hasObjectViewRecords() const
+{
+    return d->_objectViewRecords;
+}
+
+void Document::openRecordedObjectViews()
+{
+    // Only the O:<object> leaves matter here: the 3D views are restored
+    // from their own records, and without split views there are no cells to
+    // put anything in. An object name is letters, digits and underscores,
+    // and the layout's own syntax uses none of them after the colon.
+    std::vector<std::string> names;
+    for (const auto &entry : d->_viewAreaLayouts) {
+        const std::string &layout = entry.first;
+        for (size_t pos = layout.find("O:"); pos != std::string::npos;
+                pos = layout.find("O:", pos)) {
+            // A leaf starts the layout or follows its syntax, never a
+            // view's name (N:<name> may hold "O:" itself)
+            const char before = pos ? layout[pos - 1] : '{';
+            pos += 2;
+            if (isalnum(static_cast<unsigned char>(before)) || before == '_'
+                    || before == ':' || before == ' ')
+                continue;
+            size_t end = pos;
+            while (end < layout.size()
+                    && (isalnum(static_cast<unsigned char>(layout[end]))
+                        || layout[end] == '_'))
+                ++end;
+            if (end > pos)
+                names.push_back(layout.substr(pos, end - pos));
+            pos = end;
+        }
+    }
+    d->_viewAreaLayouts.clear();
+    for (const auto &name : names) {
+        auto obj = getDocument()->getObject(name.c_str());
+        if (!obj)
+            continue;
+        if (auto vp = dynamic_cast<ViewProviderDocumentObject*>(getViewProvider(obj)))
+            vp->getOrCreateMDIView();
+    }
 }
 
 void Document::applyViewAreaLayouts(const std::list<MDIView*> &views)
@@ -4246,8 +4294,12 @@ void Document::finishDeferredRestore()
     // view (a TechDraw page) be materialized and placed into its cell.
     if (!d->_viewAreaLayouts.empty()) {
         auto views = getMDIViewsOfType(View3DInventor::getClassTypeId());
-        applyViewAreaLayouts(views);
-        d->_viewAreaLayouts.clear();
+        if (views.empty() || !ViewParams::getUseViewArea())
+            openRecordedObjectViews();
+        else {
+            applyViewAreaLayouts(views);
+            d->_viewAreaLayouts.clear();
+        }
     }
 
     // Whatever the drain's phase zero did not get through is this document's
@@ -4582,6 +4634,17 @@ void Document::SaveDocFile (Base::Writer &writer) const
                 maximized = leafToken(mc->childView());
         }
         areaLayouts.emplace_back(std::move(layout), std::move(maximized));
+    }
+    // An object view open outside any container (split views off) is a
+    // layout of one leaf: the records are what say which pages and sheets
+    // were open, and the restore reopens them from here (entry 134)
+    for (const auto & v : mdi) {
+        if (qobject_cast<ViewArea*>(v) || ViewArea::areaOf(v)
+                || v->isDerivedFrom(View3DInventor::getClassTypeId()))
+            continue;
+        std::string token = objectViewToken(v);
+        if (!token.empty())
+            areaLayouts.emplace_back(std::move(token), std::string());
     }
 
     // Where the task panels of the views that are no 3D views go

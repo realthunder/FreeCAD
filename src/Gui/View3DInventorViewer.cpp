@@ -5125,6 +5125,11 @@ void View3DInventorViewer::onGetBoundingBox(SoGetBoundingBoxAction *action)
         if (_pimpl->renderer->boundBox(xmin, ymin, zmin, xmax, ymax, zmax))
             action->extendBy(SbBox3f(xmin, ymin, zmin, xmax, ymax, zmax));
     }
+    // and what this view shows on top, shown in the document or not: the
+    // near and far planes are fitted to this box (docs/HandsOnQueue.md
+    // entry 124, the reporter's choice of "way 2")
+    if (inventorSelection)
+        inventorSelection->extendByOnTop(action);
 }
 
 void View3DInventorViewer::Private::rendererBoundsCB(void *ud, SoAction *action)

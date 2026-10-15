@@ -80,6 +80,9 @@ public:
       ignoreSizeHint(false)
     {
     }
+
+    /// QuantitySpinBox::setTrimTrailingZeros()
+    bool trimZeros = false;
     ~QuantitySpinBoxPrivate() = default;
 
     QString stripped(const QString &t, int *pos) const
@@ -759,38 +762,54 @@ QString QuantitySpinBox::getUserString(const Base::Quantity& val, double& factor
 {
     Q_D(const QuantitySpinBox);
 
+    QString text;
     if (!d->userUnitStr.isEmpty()) {
         factor = d->userScale;
         unitString = d->userUnitStr;
-        return QStringLiteral("%1 %2").arg(
+        text = QStringLiteral("%1 %2").arg(
                 locale().toString(val.getValue() / factor, 'f', decimals()), unitString);
     }
     else if (d->scheme) {
         std::string unitStr;
-        QString text =
-            QString::fromStdString(val.getUserString(d->scheme.get(), factor, unitStr));
+        text = QString::fromStdString(val.getUserString(d->scheme.get(), factor, unitStr));
         unitString = QString::fromStdString(unitStr);
-        return text;
     }
     else {
         std::string unitStr;
-        QString text = QString::fromStdString(val.getUserString(factor, unitStr));
+        text = QString::fromStdString(val.getUserString(factor, unitStr));
         unitString = QString::fromStdString(unitStr);
-        return text;
     }
+    return d->trimZeros ? trimTrailingZeros(text, locale()) : text;
 }
 
 QString QuantitySpinBox::getUserString(const Base::Quantity& val) const
 {
     Q_D(const QuantitySpinBox);
+    QString text;
     if (d->scheme) {
         double factor;
         std::string unitString;
-        return QString::fromStdString(val.getUserString(d->scheme.get(), factor, unitString));
+        text = QString::fromStdString(val.getUserString(d->scheme.get(), factor, unitString));
     }
     else {
-        return QString::fromStdString(val.getUserString());
+        text = QString::fromStdString(val.getUserString());
     }
+    return d->trimZeros ? trimTrailingZeros(text, locale()) : text;
+}
+
+void QuantitySpinBox::setTrimTrailingZeros(bool on)
+{
+    Q_D(QuantitySpinBox);
+    if (d->trimZeros == on)
+        return;
+    d->trimZeros = on;
+    // The same value written anew, and nobody told: the line edit's change
+    // would be read back as typing and reported as a change of the value --
+    // which an editor bound to a property writes to it (a box's Length was
+    // set to 0 so, the trim switched on before the editor had its value)
+    const QSignalBlocker blockBox(this);
+    const QSignalBlocker blockEdit(lineEdit());
+    updateText(d->quantity);
 }
 
 QAbstractSpinBox::StepEnabled QuantitySpinBox::stepEnabled() const

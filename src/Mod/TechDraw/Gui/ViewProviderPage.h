@@ -78,11 +78,17 @@ public:
                          const std::vector<std::string>& elements) const override;
 
     bool useNewSelectionModel() const override { return false; }
-    /// Hides the view provider
+    /// Closes the page's view
     void hide() override;
-    /// Shows the view provider
+    /// Opens the page's view; not while the page is restored, where the
+    /// document's record of the open views decides (finishRestoring)
     void show() override;
+    /// Always: a page has no eye in the tree, like a spreadsheet, and its
+    /// item is not greyed when its view is closed
     bool isShow() const override;
+    /// A file that carries no record of the open views (written by another
+    /// program, or before the records) opens the page if it was visible
+    void finishRestoring() override;
 
     /// Claim all the views for the page
     std::vector<App::DocumentObject*> claimChildren() const override;
@@ -112,6 +118,8 @@ public:
     void removeMDIView();
 
     Gui::MDIView* getMDIView() const override;
+    /// The page's view, opened if it is not
+    Gui::MDIView* getOrCreateMDIView() override;
 
     bool getFrameState();
     void setFrameState(bool state);
@@ -139,6 +147,8 @@ protected:
 private:
     QPointer<MDIViewPage> m_mdiView;
     std::string m_pageName;
+    /// Inside finishRestoring(): a Visibility set there opens no view
+    bool m_finishingRestore = false;
     // A Qt child of m_mdiView, deleted with it whichever way that goes
     QPointer<QGVPage> m_graphicsView;
     QGSPage* m_graphicsScene;

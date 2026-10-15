@@ -78,6 +78,11 @@ public:
     QString unitText();
 
     void setDisplayUnit(const QString &str, double scaler=0.0);
+
+    /// Write the value without the zeros its decimals would end it with,
+    /// the unit kept: "12 mm", not "12.00 mm" (the omni search's editors,
+    /// docs/HandsOnQueue.md entry 125). Off by default.
+    void setTrimTrailingZeros(bool on);
     QString displayUnit();
 
     /// Get the value of the singleStep property

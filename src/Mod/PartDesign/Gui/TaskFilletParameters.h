@@ -28,7 +28,9 @@
 #include <QItemDelegate>
 
 #include <App/ObjectIdentifier.h>
+#include <Base/Matrix.h>
 #include <Gui/Inventor/Draggers/Gizmo.h>
+#include <Mod/Part/App/PropertyDressUp.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "TaskDressUpParameters.h"
@@ -40,10 +42,12 @@ namespace PartDesign {
 class Fillet;
 }
 
+class QMenu;
 class Ui_TaskFilletParameters;
 
 namespace Gui {
 class ExpressionBinding;
+class OnViewValueSet;
 class QuantitySpinBox;
 }
 
@@ -125,10 +129,77 @@ private:
     std::unique_ptr<Ui_TaskFilletParameters> ui;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
-    Gui::LinearGizmo* radiusGizmo = nullptr;
-    Gui::LinearGizmo* radiusGizmo2 = nullptr;
     void setupGizmos(ViewProviderDressUp* vp);
     void setGizmoPositions();
+    /// Show the values in the view the feature is edited in, once it has one
+    void attachOnViewValues();
+
+    /** @name The radii in the view (docs/OnViewValueEditing.md 3.3)
+     * One arrow on every edge, in whichever of its two faces is turned more
+     * toward the camera. An edge that takes the default radius has one, a
+     * handle of the default's value; a customised edge one per point of its
+     * own, each a value of its own. A right click on an arrow opens the edge's
+     * menu: its mode (default, one radius, two radii) and Remove.
+     */
+    //@{
+    /// The default radius's value in the set
+    static constexpr int DefaultValue = 0;
+    /// Arrows at most; edges past them have none
+    static constexpr int MaxEdgeHandles = 64;
+    /// edgeMode() of an edge whose points are none of the three modes
+    static constexpr int VaryingMode = 3;
+    struct HandlePlacement {
+        Base::Vector3d position;
+        Base::Vector3d dir;
+    };
+    struct EdgeHandle {
+        std::string edge;
+        /// The point of the edge's segments it drives; -1, the default radius
+        int point = -1;
+        Gui::LinearGizmo* gizmo = nullptr;
+        /// Hidden, bound to the point's radius; none for the default's
+        Gui::QuantitySpinBox* box = nullptr;
+        /// In each of the edge's two faces
+        HandlePlacement placements[2];
+        int face = 0;
+        bool placed = false;
+        /// A knob sliding along the edge for the point's place, not an arrow
+        /// for its radius; its box holds the distance along the chord
+        bool position = false;
+        double chord = 0.0;
+        double length = 0.0;
+    };
+    std::vector<EdgeHandle> edgeHandles;
+    /// What edgeHandles were made for: edges and their numbers of points
+    std::string edgeHandleLayout;
+    /// The fillet's edges by name, every edge of the base with UseAllEdges
+    std::vector<std::string> getFilletEdges() const;
+    /// Make the arrows when the edges or their points changed; place them
+    void updateEdgeHandles();
+    void clearEdgeHandles();
+    /// Put each arrow in the face turned more toward the camera
+    void placeEdgeHandles(bool force);
+    /// From the gizmos' frame to the world's
+    Base::Matrix4D gizmoToWorld() const;
+    EdgeHandle* findEdgeHandle(const Gui::Gizmo* gizmo);
+    void fillEdgeMenu(QMenu& menu, Gui::Gizmo* gizmo);
+    /// 0 default radius, 1 one radius, 2 two radii, VaryingMode otherwise
+    static int edgeMode(const Part::PropertyFilletSegments::Segments& segments);
+    void setEdgeMode(const std::string& edge, int mode, double radius);
+    void setEdgePointRadius(const std::string& edge, int point, double radius);
+    /// The knob of a point inside its edge: from the start along the chord
+    void placeAlongHandle(EdgeHandle& handle, Part::TopoShape& baseShape,
+                          const Part::PropertyFilletSegments::Segments& segments);
+    /// A point moved to \a distance along its edge's chord
+    void setEdgePointPosition(const std::string& edge, int point, double distance);
+    /// Take the edge out of the fillet, as the panel's removal does
+    void removeEdge(const std::string& edge);
+    /// Put a customised edge in \a group; 0, a new group of its own
+    void setEdgeGroup(const std::string& edge, int group);
+    void setEdgeReversed(const std::string& edge, bool reversed);
+    /// A group's points in a few words: "R 3 mm", "R 2 mm -> 4 mm" ...
+    static QString groupSummary(const Part::PropertyFilletSegments::Segments& segments);
+    //@}
 
     /// One handle per fillet of the current corner, at most this many
     static constexpr int CornerGizmoCount = 6;
@@ -150,6 +221,10 @@ private:
                                      const std::string &vertexName,
                                      const gp_Pnt &point,
                                      const CornerEdges &faces);
+
+    /// The values shown and typed in the view. Last, so that it goes before
+    /// the handles it highlights.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
 };
 
 /// simulation dialog for the TaskView

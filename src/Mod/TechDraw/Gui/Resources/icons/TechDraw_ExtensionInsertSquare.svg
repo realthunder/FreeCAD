@@ -13,22 +13,6 @@
    width="32">
   <defs
      id="defs1870">
-    <filter
-       id="filter1958"
-       style="color-interpolation-filters:sRGB">
-      <feBlend
-         id="feBlend1960"
-         in2="BackgroundImage"
-         mode="exclusion" />
-    </filter>
-    <filter
-       id="filter1958-7"
-       style="color-interpolation-filters:sRGB">
-      <feBlend
-         id="feBlend1960-2"
-         in2="BackgroundImage"
-         mode="exclusion" />
-    </filter>
   </defs>
   <metadata
      id="metadata1873">
@@ -43,7 +27,6 @@
     </rdf:RDF>
   </metadata>
   <g
-     style="filter:url(#filter1958)"
      transform="translate(0,-288.53332)"
      id="layer1">
     <rect
@@ -55,10 +38,9 @@
        style="opacity:1;fill:none;fill-opacity:1;fill-rule:nonzero;stroke:#ff0000;stroke-width:0.5840525;stroke-linecap:square;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" />
     <g
        id="g908"
-       style="filter:url(#filter1958-7)"
        transform="matrix(0.45953633,0,0,0.45953633,0.32783854,160.31576)">
       <path
-         style="opacity:1;fill:#ffff00;fill-opacity:1;fill-rule:nonzero;stroke:#2b2200;stroke-width:0.49879649;stroke-linecap:square;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;filter:url(#filter1958-7)"
+         style="opacity:1;fill:#ffff00;fill-opacity:1;fill-rule:nonzero;stroke:#2b2200;stroke-width:0.49879649;stroke-linecap:square;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
          id="path1970-2"
          d="m -16.83242,289.93849 -1.759744,1.36925 0.575608,-2.15412 -0.305932,-2.20861 1.577716,1.57555 2.065676,0.83936 z"
          transform="matrix(-0.46043869,0.87402234,-0.90622198,-0.46210975,268.4388,443.28052)" />

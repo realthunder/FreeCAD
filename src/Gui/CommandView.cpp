@@ -1474,6 +1474,14 @@ bool StdCmdSelectVisibleObjects::isActive()
     return App::GetApplication().getActiveDocument();
 }
 
+// Whether showing or hiding every object takes this one in: not what has no
+// eye in the tree -- a TechDraw page would open or close its view
+static bool showsWithAll(Gui::Document* doc, App::DocumentObject* obj)
+{
+    auto vp = doc->getViewProvider(obj);
+    return !vp || vp->canToggleVisibility();
+}
+
 //===========================================================================
 // Std_ToggleObjects
 //===========================================================================
@@ -1501,6 +1509,8 @@ void StdCmdToggleObjects::activated(int iMsg)
         (App::DocumentObject::getClassTypeId());
 
     for (std::vector<App::DocumentObject*>::const_iterator it=obj.begin();it!=obj.end();++it) {
+        if (!showsWithAll(doc, *it))
+            continue;
         if (doc->isShow((*it)->getNameInDocument()))
             doCommand(Gui,"Gui.getDocument(\"%s\").getObject(\"%s\").Visibility=False"
                          , app->getName(), (*it)->getNameInDocument());
@@ -1542,6 +1552,8 @@ void StdCmdShowObjects::activated(int iMsg)
         (App::DocumentObject::getClassTypeId());
 
     for (std::vector<App::DocumentObject*>::const_iterator it=obj.begin();it!=obj.end();++it) {
+        if (!showsWithAll(doc, *it))
+            continue;
         doCommand(Gui,"Gui.getDocument(\"%s\").getObject(\"%s\").Visibility=True"
                      , app->getName(), (*it)->getNameInDocument());
     }
@@ -1579,6 +1591,8 @@ void StdCmdHideObjects::activated(int iMsg)
         (App::DocumentObject::getClassTypeId());
 
     for (std::vector<App::DocumentObject*>::const_iterator it=obj.begin();it!=obj.end();++it) {
+        if (!showsWithAll(doc, *it))
+            continue;
         doCommand(Gui,"Gui.getDocument(\"%s\").getObject(\"%s\").Visibility=False"
                      , app->getName(), (*it)->getNameInDocument());
     }

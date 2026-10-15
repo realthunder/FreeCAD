@@ -6927,3 +6927,276 @@ Staged 11:55 = code `04e05bbd38`. LOCAL since the stage, not staged:
 400), `1ac972b406` (the corner coordinate system's box), `49ab88378a` (the
 dress-ups' renames). Entry 117's design (`docs/OnViewValueEditing.md`, the
 note-taker's) is agreed by the reporter and not asked to be built.
+
+## 2026-10-14, the evening: entries 120 to 133 -- PUSHED 15:00 (`d3d1968480`) and 18:32 (`2e22aeba96`), STAGED 15:22; the rest LOCAL
+
+**Pushed and staged on the reporter's words.** "push and restage" (14:58):
+pushed `d3d1968480`, staged 15:22 from build r26, clean. "Push now" (18:30):
+pushed `2e22aeba96` = entries 120 to 123 and the queue; not staged.
+
+**Entries 120 to 123 `ca392899e3`, `7d9b32b296`.** Overlays may be
+see-through over any view (the item background takes care of legibility),
+the console and the report view take the theme's ground in a solid overlay,
+the auto-hide hint has a colour that shows under Dark, and the overlaid
+selection view's list is backed as the property editor's.
+
+**Entry 124 `e6bea25bcd`, on-top items clipped by the view's planes.** The
+reporter chose "way 2": `View3DInventorSelection::extendByOnTop` adds the
+on-top groups (and, under the render manager, the view's selection while
+ShowSelectionOnTop) to the box `View3DInventorViewer::onGetBoundingBox` sizes
+the clip planes from -- per view. `on-top-inside-the-clip-planes.py`: the
+copy staged 15:22 had planes 3.5..13.8 with the far box at 2003.7..2013.7;
+r29 2.7..2016.7.
+
+**Entry 125 `7402a52754`, no trailing zeros in the omni search.**
+`setTrimTrailingZeros` on DoubleSpinBox/QuantitySpinBox and
+`Gui::trimTrailingZeros`, used after the editor's value with its signals
+blocked (the first form, r28c, wrote the editor's 0 into a Box's Length --
+never pushed or staged). `omni-search-float-text.py` 7/7 on r29.
+
+**Entry 127 `d9c3193856`, print the selected pages.** TechDraw_PrintSelected
+("Print Selected Pages"), in the menus and the page view's context menu
+while pages are selected; PagePrinter::printAll/printAllPdf take the pages.
+`techdraw-print-selected.py` 7/7. Entry 132 (a crash I found) in the same
+commit: MDIViewPage::onHasMsg's Undo/Redo with a view whose document is
+null -- guarded; why that view had none NOT found.
+
+**Entry 128 `ce40352c52`, the Extend Dimensions icons.** 14 icons drew
+nothing behind a BackgroundImage feBlend filter Qt's SVG renderer does not
+do; filter removed. The staged copy paints 0 pixels of them, r29 all.
+
+**Entry 130, only its warning `de22312a07`.** PropertyModel::updateChildren
+signalled dataChanged one row past the last child. The highlight and the
+finish staying were NOT reproduced by a script setting Blast and None; the
+reporter tests it tomorrow ("leave 130 for now").
+
+**Entry 129 `e0378550ba`, native printing stays vector.** Print All to
+"Microsoft Print to PDF" gave every page as one picture while Export PDF was
+vector. Found by probes: QtSvg gives a stroke="none" path a SolidLine pen
+with an empty brush (38 letter paths of the template frame), and page items
+stroke with alpha-0 pens; Windows' GDI engine (QAlphaPaintEngine) turns
+each such draw into an image and, past a few, the whole sheet. Ruled out:
+ClearFace, anti-aliasing, fill rule, the scale transform, fill and stroke in
+one call. `PrintSafeEngine`/`PrintSafeDevice` in PagePrinter.cpp, used only
+when the painter is on a native QPrinter, drop pens whose brush is NoBrush
+or alpha 0 and brushes of alpha 0. `TechDrawGui.printPages(pages,
+printerName='', outputFile='')` prints without the dialog, for the test.
+`techdraw-print-native-vector.py` 3/3 on r31c; scanner's ten pages printed
+so (sent to the reporter): only the ActiveView pictures stay images.
+
+**Entry 131 `84757008ee`, a crash at exit.** The transaction copy cache's
+map was allocated and never destroyed. Python suite on r31c: 3757 OK.
+
+**Entry 126, the Dot pattern; entry 133, landscape.** The reporter chose
+way (1): the Dot choice is 0xcccc (two on, two off), and ViewParams::migrate()
+turns a stored View/SelectionLinePattern 0xaaaa into it at start. Then
+"about the techdraw print function, can you set default landscape": Print
+All Pages and Print Selected Pages set the printer to landscape before their
+dialog (each page is still laid out in its own template's orientation;
+single-page Print already took it). On r32: `line-pattern-dot.py` 7/7 with a
+seeded config (a stored 0xaaaa reads 0xcccc, the combo's Dot is 0xcccc and
+shows as current), `techdraw-print-selected.py` 7/7,
+`techdraw-print-native-vector.py` 3/3. The landscape dialog is the
+reporter's to look at: a script cannot answer Windows' print dialog.
+
+## 2026-10-15, the night: entry 117 built, steps 1 to 3 of docs/OnViewValueEditing.md -- LOCAL, not pushed, not staged
+
+On "Push and restage. Then work on the partdesign on view editing" (2026-10-14
+~22:55): pushed `3e764d4566`, staged 22:59 clean from r32; then the agreed
+design built in its own order of work.
+
+**Step 1 `bb3e87f066`: the default radius in the view.** `Gui::OnViewValueSet`
+(new `src/Gui/OnViewValue.*`) binds values held by spin boxes to the view: a
+label for each, and an ACTIVE handle (a click on it, or Tab in the view) that
+takes typing -- a digit opens its label with the digit, Enter with the value
+selected, Escape deactivates; in the label Enter commits, Escape restores,
+Ctrl+Enter commits and accepts the edit. A value an expression drives shows
+the expression, in the sketcher's expression colour, and is not typed. A new
+text-only `SoDatumLabel::TEXT` draws the always-shown "Radius 2 mm" at the top
+middle of the view (Coin, the bgfx capture and the pick box). One arrow
+instead of two, in the face turned more toward the camera. A trap found by
+the test: the view leaves an edit on Escape's RELEASE
+(`ViewProvider::eventCallback`), so the release of a key taken on its press is
+taken too, and the key that closes a label is marked for its release.
+
+**Step 2 `9ca3501747`, `10efacc050`: an arrow on every edge.** An edge taking
+the default drives it (all its arrows light together); a customised edge has
+an arrow per point, each a value whose label shows beside the arrow while
+active. The ROOT of each arrow is a knob of its colour: a click on it, or
+Space while active, opens the edge's menu -- Default radius / One radius / Two
+radii / Remove; other layouts read "Varying (set in the panel)". A point
+inside an edge also gets a knob sliding along it. `GizmoContainer` takes and
+gives back gizmos after it is made; `LinearGizmo` got the root button, a
+colour of its own, a highlight, and lets go of its spin box when deleted. A
+crash found on the way: the default's value kept pointers to its rebuilt
+arrows.
+
+**Step 3 `0268517025`, `4677a9d715`: edge groups.** In
+`PropertyFilletSegments`: a group id per customised edge, every change
+mirrored to the group in the same change, reversed members turned end for
+end, ids saved as attributes (older files: a group each). In the view: a
+colour per group, a Group sub-menu, Reversed in group, the group lit
+together, a Group column in the panel. Four older bugs of the property fixed
+on the way, among them `getPathValue` returning nothing exactly when it found
+a value.
+
+**Tests.** `fillet-radius-typed-in-view` 18, `fillet-edge-handles-in-view` 15,
+`fillet-point-position-in-view` 6, `fillet-groups-in-view` 10 (offscreen and
+on the screen, pictures looked at; the groups test's final colour reader --
+asking the container for its dragger -- ran offscreen only); `TestFillet` 21 with 6 new
+`TestFilletGroups`. The neighbours: pattern labels 12, sketch label pick 12,
+label scale 9, `sketch-arc-labels` 11 on the screen (its log needed UTF-8,
+`9451ff9f31`; its pixel claims fail offscreen only).
+
+**My choices, not the reporter's:** two radii's ends drawn at 10% and 90% of
+the edge; nothing active after a mode change; a reversed member's points by
+length keep their length; at most 64 handles.
+
+Steps 4 (chamfer, draft, thickness) and 5 (panel optional) not started.
+
+## Entry 134: a TechDraw page keeps its view state as a spreadsheet does (2026-10-15)
+
+The reporter's word "Do 3. After done push and restage", item 3 of the build
+session's status: the page shows no eye in the tree and its view state is
+kept like a spreadsheet's. Committed `0d4125a132`, built r41.
+
+**What changed.** `ViewProviderPage`: NoToggleVisibility; `isShow()` always
+true (its tree item is not greyed with the view closed); the Visibility read
+from a file opens nothing, in the restore and in the base `finishRestoring()`
+that sets it from the App object afterwards. The document's view records
+decide: a split view layout naming `O:<page>` reopens it. The rule for older
+files (written before the records, or by another program -- their Camera
+has no `viewareas` attribute, `Gui::Document::hasObjectViewRecords()`): a
+page with Visibility on is opened once at the load. `vp.show()`/`hide()` and
+setting Visibility from a script still open and close the view, and keep
+Visibility in step, so a file read by another program opens what was open.
+
+**Found on the way, fixed:** with split views off an object view was never
+recorded, so a page came back only by its Visibility and a spreadsheet not
+at all; now an object view outside any container is written as a layout of
+its one leaf, and with split views off the recorded object views are opened
+as views of their own. And Show/Hide/Toggle all objects and the selection's
+show/hide/Space set every page's Visibility -- "Show all objects" opened
+every page; they now pass over what has no eye (pages, sheets, VarSets).
+
+**The open check of 10-13:** TechDraw does not read the page's Visibility for
+updates (`DrawPage` never does; the Gui reads its views' own Visibility).
+
+**Tests.** `techdraw-page-view-state` 18/18 offscreen: no eye, the commands
+and Space leave the page alone, show/hide, saved open/closed and reopened,
+records emptied -> closed with Visibility on, no records -> opened once, split
+views off -> recorded as one leaf and reopened, the same file with split
+views on. Neighbours: `task-panel-place` 59/59, `techdraw-colour-after-page-
+view-closed` 6/6. Four more (`sheet-view-reopen`, `sheet-view-on-request`,
+`view-in-cell-goes-with-its-object`, `techdraw-page-before-its-view-providers`)
+and two claims of `techdraw-never-shown-page-exports` fail offscreen -- the
+SAME failures on the staged copy (`3e764d4566`, before the change): their
+cells and pixels are not there offscreen. Not run on the screen (the
+reporter is at the box).
+
+**Not covered:** a file saved before this change with split views off, its
+pages open as plain tabs: those have no record and do not come back the
+first time.
+
+**Suites on r41:** Python 3763 OK (skipped=52, expected failures=6); ctest
+889 of 957 in the full run, the other 68 (ExpressionImage/Routing) failed only
+for want of FCX_PYODIDE, which that chain set after ctest -- rerun with it,
+91/91 of those groups pass. So 957/957.
+
+## Entry 117 step 4: the chamfer (2026-10-15)
+
+The reporter's "Do chamfer". Built r42 and r43; committed `e2e0bc20ae`
+(Part), `39146aafd0` (Gui), `aaeed0a498` (PD). Draft and thickness not
+done: the word was the chamfer.
+
+**Part.** `PropertyChamferEdges` has groups as the fillet's segments: an id
+per customised edge, sizes and angle mirrored to the group in the same
+change, the flip each edge's own (docs 6.5), saved as `group="N"`, older
+files a group each, the path `ChamferInfo.EdgeN.Group`. Its Python value
+gave the angle as a boolean and the setter refused four and five items --
+fixed.
+
+**Gui.** The handle interface `OnViewValueSet` uses is `Gizmo`'s now, so a
+`RotationGizmo` carries an angle: highlighted, activated by a click, typed.
+`RotationGizmo` disconnects from its box when deleted.
+
+**PD.** Labels at the top middle: Size, and Size 2 or Angle by the type.
+Handles on every edge: an equal size one arrow in the face toward the
+camera; two sizes an arrow in each face; an angle a rotation handle below
+the size's arrow. Menu: Default size / Own size / Own two sizes / Own size
+and angle, Flip direction, Group, Remove. Group column in the panel. The
+panel now follows every recompute of the chamfer (its own type combo
+recomputed past `finishedRecomputeFeature()`, so before this no handle
+followed a type change). Clear cleared every edge whatever was selected --
+fixed.
+
+**My choices:** all four modes offered whatever the chamfer's type (the
+doc's "by ChamferType" read as naming each own mode); "Own size" keeps no
+second size (0, as the panel always wrote it); a default edge's "Flip
+direction" flips the chamfer's FlipDirection.
+
+**Also:** `4677a9d715` (pushed) had written `TaskFilletParameters.cpp` with
+LF line endings; `0d91bca173` puts CRLF back, no content change. Checked
+every file changed since 2026-10-12: no other.
+
+**Tests.** `chamfer-values-in-view` 17/17 offscreen; TestChamfer 10 (7 new
+`TestChamferGroups`); TestFillet 21; the four fillet GUI tests pass after
+the Gizmo change. Suites on r42: ctest 957/957, Python 3770 OK.
+
+## Entries 135, 136 and 137 (2026-10-15)
+
+Built through r54; committed `14201accd6`, `50bed5f8ab`, `bd51427d8e`,
+`58242c9b8c`.
+
+**135, the fillet's handles under the mouse.** Reproduced by mouse
+(`tests/gui/fillet-handle-click-in-view.py`, pixels found by ray picks):
+a plain click on an arrow selected the face behind it and the arrow never
+went active; the root button opened no menu; a missing reference showed no
+arrow. Causes: the selection root handles a release before its children,
+the gizmos' editing root is its sibling after it, and Coin's dragger grabs
+only once the pointer moves -- found with a temporary PICKTRACE of the
+press's pick path after two fixes by reading failed (removed). The fix: a
+press whose pick runs through an SoDragger (the full path; the dragger is a
+part of its container's kit) keeps its release from the selection. The
+panels no longer hide every handle when the feature fails. Then the
+reporter changed the entry (11:30, 11:35): the root button is gone; a
+right click on any handle opens its menu -- taken at the view widget, as
+some navigation styles open the view's own menu before the scene sees the
+click -- and the pointer over a handle shows "Drag to change the value;
+click to type it. Right click for the menu." Space still opens it. Test 11.
+
+**136, an undo step per operation (fillet first).** `TaskFeatureParameters`
+fine undo: setupTransaction() opens a step per event and closes it after
+the recompute it scheduled (the shape goes back with the value); a drag
+one step, Esc or another button cancels it back to where it began (rolled
+back, no step); a label open for typing one step -- Enter commits and
+leaves it open, Escape drops what was not entered, Tab commits, closes and
+moves on, a click away commits; Ctrl+Enter gone; the panel's radius box
+one step from the first key to Enter or the focus leaving; OK a step of
+its own; Cancel undoes down to the edit's first transaction, or to the
+panel's first step when that one was left empty (it was, from a script).
+Found on the way: after an Undo inside the edit the handles stayed where
+the undone drag left them -- the fillet's and chamfer's handles now follow
+a refresh. Test `fillet-undo-steps-in-view` 16; the typed-radius test to
+the new keys, 21.
+
+**137, Print pages.** `TechDraw_Print` replaces TechDraw_PrintAll and
+TechDraw_PrintSelected: a dialog with the documents' pages in a tree (check
+boxes, a document's box tristate), the checked ones as document#page in a
+list ordered by buttons and by dragging, Print (the printer's dialog,
+landscape) and Export PDF; the choice remembered for the session. Test 12.
+
+**My choices:** Cancel in the print dialog keeps the previous remembered
+choice; the tooltip and the right click on every handle, the chamfer's
+angle included; the panel box's step starts at the first key (a focus
+alone holds nothing: the box has the focus when the panel opens).
+
+**Tests on r54:** the nine GUI tests of the round pass (chamfer 17, fillet
+15/10/6/21, click 11, page state 18, print 12, undo 16); ctest 957/957.
+Python 3770 OK (skipped=52, expected failures=6) on r54.
+
+Entry 138 (the selection view's header, overlaid): measured, not
+reproduced -- the selection view's header and the property editor's read
+the same ground (Dark (51,51,51) at 10, Light (128,128,128) at 50; test
+`tests/gui/overlay-header-grounds.py`, not committed yet); a screenshot of
+the reporter's panels is asked for.

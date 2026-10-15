@@ -85,6 +85,32 @@ public:
         return transactionID;
     }
 
+    /** @name Every operation an undo step of its own (docs/HandsOnQueue.md
+     * entry 136, the reporter 2026-10-15 09:47: "I want each operation in
+     * fillet to be undoable ... but Cancel button shall restore to previous
+     * state before edit")
+     *
+     * With fineUndo on, setupTransaction() opens a step for what the current
+     * event changes and closes it when the event is done -- after the
+     * recompute it schedules, if any -- so a menu choice, a mode change or a
+     * value set in the panel is one step. A drag or a label open for typing
+     * holds one step until it ends (beginHeldStep/endHeldStep); a cancelled
+     * drag rolls its step back. OK's work is a step of its own. Cancel still
+     * undoes down to the edit's first step (getTransactionID).
+     */
+    //@{
+    bool isFineUndo() const {
+        return fineUndo;
+    }
+    /// The first step this panel opened, 0 for none: what Cancel undoes down
+    /// to when the transaction open at the edit's start was left empty
+    int getFirstStepID() const {
+        return firstStepTid;
+    }
+    /// The step OK's work goes in
+    void beginAcceptStep();
+    //@}
+
     /// Orders the panels' full recomputes of their feature; 0 for none
     unsigned long getComputedSequence() const {
         return computedSequence;
@@ -113,6 +139,18 @@ protected:
     /// fine steps (upstream 6df51cefd7).
     void showDraggerHints();
     void hideDraggerHints();
+
+    /// One undo step per operation (entry 136); set by a panel that has it
+    bool fineUndo = false;
+    /// A drag, a label open for typing: one step until endHeldStep(); \a
+    /// abort rolls it back (a cancelled drag)
+    void beginHeldStep();
+    void endHeldStep(bool abort);
+    /// Holds a step from the first key typed in \a box until Enter or the
+    /// focus leaving it: what is typed in a panel box is one step, not one
+    /// per key
+    void holdStepWhileFocused(QWidget* box);
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     /** Notifies when the object is about to be removed. */
@@ -147,6 +185,20 @@ protected:
 
 private:
     void saveComputedInput();
+    /// Closes the step setupTransaction() opened, once nothing holds it and
+    /// no recompute is pending
+    void closeStep();
+
+    int stepTid = 0;
+    int firstStepTid = 0;
+    int heldSteps = 0;
+    bool stepCloseQueued = false;
+    /// OK's step is open: a second call (the dress-up's, then the base's)
+    /// keeps it
+    bool acceptStepOpen = false;
+    std::vector<QPointer<QWidget>> focusHeldBoxes;
+    /// The box being typed in, its step held
+    QPointer<QWidget> typingBox;
 
     /// The feature's input values at the last full recompute, by name
     std::vector<std::pair<std::string, std::unique_ptr<App::Property>>> computedInput;

@@ -86,6 +86,7 @@
 #include "QGVPage.h"
 #include "Rez.h"
 #include "ViewProviderPage.h"
+#include "DlgPrintPages.h"
 #include "PagePrinter.h"
 
 using namespace TechDrawGui;
@@ -116,8 +117,12 @@ MDIViewPage::MDIViewPage(ViewProviderPage* pageVp, Gui::Document* doc, QWidget* 
     m_exportPDFAction = new QAction(tr("Export PDF"), this);
     connect(m_exportPDFAction, &QAction::triggered, this, qOverload<>(&MDIViewPage::savePDF));
 
-    m_printAllAction = new QAction(tr("Print All Pages"), this);
-    connect(m_printAllAction, &QAction::triggered, this, qOverload<>(&MDIViewPage::printAllPages));
+    // The pages to print or export, chosen in a dialog (entry 137): it
+    // replaces "Print All Pages" and "Print Selected Pages"
+    m_printAllAction = new QAction(tr("Print pages..."), this);
+    connect(m_printAllAction, &QAction::triggered, this, []() {
+        DlgPrintPages::run(Gui::getMainWindow());
+    });
 
     isSelectionBlocked = 0;
 
@@ -249,11 +254,16 @@ bool MDIViewPage::onHasMsg(const char* pMsg) const
     else if (strcmp("CanPan",pMsg) == 0) {
         return true;
     }
-    else if (strcmp("Redo", pMsg) == 0 && getAppDocument()->getAvailableRedos() > 0) {
-        return true;
+    // A view with no document any more (docs/HandsOnQueue.md entry 132: the
+    // menus' update asked a page view whose document was gone, and read a
+    // null pointer) can neither undo nor redo -- as MDIView::onHasMsg asks
+    else if (strcmp("Redo", pMsg) == 0) {
+        App::Document* doc = getAppDocument();
+        return doc && doc->getAvailableRedos() > 0;
     }
-    else if (strcmp("Undo", pMsg) == 0 && getAppDocument()->getAvailableUndos() > 0) {
-        return true;
+    else if (strcmp("Undo", pMsg) == 0) {
+        App::Document* doc = getAppDocument();
+        return doc && doc->getAvailableUndos() > 0;
     }
     else if (strcmp("Print", pMsg) == 0) {
         return true;
@@ -588,6 +598,9 @@ void MDIViewPage::printAllPages()
 {
     QPrinter printer(QPrinter::HighResolution);
     printer.setFullPage(true);
+    // the dialog opens on landscape, as most drawing sheets are; each page
+    // is still printed in its own template's orientation
+    printer.setPageOrientation(QPageLayout::Landscape);
 
     QPrintDialog dlg(&printer, Gui::getMainWindow());
     if (dlg.exec() == QDialog::Accepted) {
@@ -602,6 +615,38 @@ void MDIViewPage::printAllPages()
             PagePrinter::printAllPdf(&printer, doc);
         }
     }
+}
+
+std::vector<App::DocumentObject*> MDIViewPage::selectedPages()
+{
+    std::vector<App::DocumentObject*> pages;
+    for (auto& sel : Gui::Selection().getSelectionEx("*", App::DocumentObject::getClassTypeId(),
+                                                     Gui::ResolveMode::FollowLink)) {
+        auto obj = sel.getObject();
+        if (obj && obj->isDerivedFrom(TechDraw::DrawPage::getClassTypeId())
+                && std::find(pages.begin(), pages.end(), obj) == pages.end())
+            pages.push_back(obj);
+    }
+    return pages;
+}
+
+void MDIViewPage::printPages(const std::vector<App::DocumentObject*>& pages)
+{
+    if (pages.empty())
+        return;
+    QPrinter printer(QPrinter::HighResolution);
+    printer.setFullPage(true);
+    // landscape, as in printAllPages()
+    printer.setPageOrientation(QPageLayout::Landscape);
+
+    QPrintDialog dlg(&printer, Gui::getMainWindow());
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    App::Document* doc = pages.front()->getDocument();
+    if (printer.outputFileName().isEmpty())
+        PagePrinter::printAll(&printer, doc, pages);
+    else
+        PagePrinter::printAllPdf(&printer, doc, pages);
 }
 
 //flag to prevent selection activity within mdivp

@@ -162,3 +162,124 @@ class TestChamfer(unittest.TestCase):
         FreeCAD.closeDocument("PartDesignTestChamfer")
         # print ("omit closing document for debugging")
 
+
+
+class TestChamferGroups(unittest.TestCase):
+    """Edge groups of a chamfer's own values (docs/OnViewValueEditing.md 6.5):
+    an id per customised edge, a change to the sizes or the angle of one
+    member mirrored to the others while each keeps its own flip, ids saved
+    and restored, an older file giving each edge a group of its own. And the
+    Python form of the property, whose angle read back as a boolean and whose
+    setter refused the four and five items its own message names."""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("PartDesignTestChamferGroups")
+        self.Body = self.Doc.addObject('PartDesign::Body', 'Body')
+        self.Box = self.Body.newObject('PartDesign::AdditiveBox', 'Box')
+        self.Box.Length = self.Box.Width = self.Box.Height = 10
+        self.Chamfer = self.Body.newObject('PartDesign::Chamfer', 'Chamfer')
+        self.Chamfer.Base = (self.Box, ['Edge1', 'Edge2', 'Edge3'])
+        self.Chamfer.Size = 1
+        self.Doc.recompute()
+
+    def tearDown(self):
+        for name in list(FreeCAD.listDocuments()):
+            if name.startswith("PartDesignTestChamferGroups"):
+                FreeCAD.closeDocument(name)
+
+    def group(self, edge, obj=None):
+        return (obj or self.Chamfer).evalExpression('ChamferInfo.%s.Group' % edge)
+
+    def info(self, edge, obj=None):
+        size, size2, angle, flip = (obj or self.Chamfer).evalExpression('ChamferInfo.%s' % edge)
+        return (round(float(size), 6), round(float(size2), 6), round(float(angle), 6), bool(flip))
+
+    def testOwnGroupEach(self):
+        # each edge leaving the defaults gets a group of its own
+        self.Chamfer.ChamferInfo = [('Edge1', 2.0), ('Edge2', 1.5)]
+        self.assertEqual((self.group('Edge1'), self.group('Edge2')), (1, 2))
+
+    def testJoinTakesValuesNotFlip(self):
+        self.Chamfer.ChamferInfo = [('Edge1', 2.0, 1.0, 0.0, False),
+                                    ('Edge2', 1.5, 0.0, 0.0, True)]
+        self.Chamfer.setExpression('.ChamferInfo.Edge2.Group', '1')
+        self.Doc.recompute()
+        self.assertEqual(self.group('Edge2'), 1)
+        # the group's sizes, its own flip
+        self.assertEqual(self.info('Edge2'), (2.0, 1.0, 0.0, True))
+        # a change to one member, an expression's too, reaches the other
+        self.Chamfer.setExpression('.ChamferInfo.Edge1.Size', '0.5 mm')
+        self.Doc.recompute()
+        self.assertEqual(self.info('Edge2'), (0.5, 1.0, 0.0, True))
+        self.assertTrue(self.Chamfer.isValid())
+
+    def testAngleMirroredFlipNot(self):
+        self.Chamfer.ChamferInfo = [('Edge1', 1.0, 0.0, 45.0, False, 1),
+                                    ('Edge2', 1.0, 0.0, 45.0, False, 1)]
+        self.Chamfer.setExpression('.ChamferInfo.Edge1.Angle', '30')
+        self.Chamfer.setExpression('.ChamferInfo.Edge1.Flip', '1')
+        self.Doc.recompute()
+        self.assertEqual(self.info('Edge1'), (1.0, 0.0, 30.0, True))
+        self.assertEqual(self.info('Edge2'), (1.0, 0.0, 30.0, False))
+        self.assertTrue(self.Chamfer.isValid())
+
+    def testDefaultLeavesGroup(self):
+        self.Chamfer.ChamferInfo = [('Edge1', 2.0, 0.0, 0.0, False, 1),
+                                    ('Edge2', 2.0, 0.0, 0.0, False, 1)]
+        self.Chamfer.ChamferInfo = [('Edge1', 2.0)]
+        self.assertEqual(self.group('Edge1'), 1)
+        with self.assertRaises(Exception):
+            self.group('Edge2')
+        # the next to leave the defaults takes the lowest free id
+        self.Chamfer.ChamferInfo = [('Edge1', 2.0), ('Edge3', 1.0)]
+        self.assertEqual(self.group('Edge3'), 2)
+
+    def testPythonForm(self):
+        self.Chamfer.ChamferInfo = [('Edge1', 1.0, 0.0, 30.0, True, 4)]
+        value = self.Chamfer.ChamferInfo
+        self.assertEqual(len(value), 1)
+        edge, size, size2, angle, flip, group = value[0]
+        self.assertEqual((edge, size, size2, angle, flip, group),
+                         ('Edge1', 1.0, 0.0, 30.0, True, 4))
+        # what it gives, it takes back unchanged
+        self.Chamfer.ChamferInfo = value
+        self.assertEqual(self.Chamfer.ChamferInfo, value)
+
+    def saveAndOpen(self, strip=False):
+        import re
+        import tempfile
+        import zipfile
+        path = os.path.join(tempfile.mkdtemp(), 'groups.FCStd')
+        self.Doc.saveAs(path)
+        name = self.Doc.Name
+        if strip:
+            # as a build without groups wrote it; through ArchiveMembers: the
+            # blob members may be zstd
+            rewritten = path + '.tmp'
+            with zipfile.ZipFile(rewritten, 'w', zipfile.ZIP_DEFLATED) as dst:
+                for item, data in ArchiveMembers.members(path):
+                    if item.filename == 'Document.xml':
+                        data = re.sub(rb'" group="\d+"', b'"', data)
+                    dst.writestr(item, data)
+            os.replace(rewritten, path)
+        FreeCAD.closeDocument(name)
+        self.Doc = FreeCAD.openDocument(path)
+        return self.Doc.getObject('Chamfer')
+
+    def testSavedAndRestored(self):
+        self.Chamfer.ChamferInfo = [('Edge1', 1.0, 2.0, 0.0, False, 3),
+                                    ('Edge2', 1.0, 2.0, 0.0, True, 3),
+                                    ('Edge3', 1.5, 0.0, 0.0, False, 5)]
+        chamfer = self.saveAndOpen()
+        self.assertEqual([self.group(e, chamfer) for e in ('Edge1', 'Edge2', 'Edge3')],
+                         [3, 3, 5])
+        self.assertEqual(self.info('Edge2', chamfer), (1.0, 2.0, 0.0, True))
+        self.assertEqual(self.info('Edge3', chamfer), (1.5, 0.0, 0.0, False))
+
+    def testOlderFileGroupsOfTheirOwn(self):
+        self.Chamfer.ChamferInfo = [('Edge1', 2.0, 0.0, 0.0, False, 1),
+                                    ('Edge2', 2.0, 0.0, 0.0, False, 1)]
+        chamfer = self.saveAndOpen(strip=True)
+        groups = [self.group(e, chamfer) for e in ('Edge1', 'Edge2')]
+        self.assertEqual(len(set(groups)), 2, groups)
+        self.assertEqual(self.info('Edge2', chamfer), (2.0, 0.0, 0.0, False))
