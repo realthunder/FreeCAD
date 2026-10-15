@@ -73,6 +73,8 @@ public:
     void updateView(bool update = false) override;
     void tidy();
     QRectF boundingRect() const override;
+    /// A click on the empty inside goes through (entry 149)
+    bool passesClicks() const override { return true; }
 
     virtual void drawAllFaces();
     virtual void drawAllEdges();

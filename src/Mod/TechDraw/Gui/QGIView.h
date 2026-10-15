@@ -82,6 +82,13 @@ public:
     enum {Type = QGraphicsItem::UserType + 101};
     int type() const override { return Type;}
     QRectF boundingRect() const override;
+    /** Where a click or the pointer picks the view. Its whole frame, or,
+     * for a view that passes clicks (passesClicks()), its frame's line --
+     * a band along it, shown or not -- its label and its caption: its
+     * lines and faces are picked themselves, and a click on the rest goes
+     * through to what is under it (docs/HandsOnQueue.md entry 149)
+     */
+    QPainterPath shape() const override;
     void paint( QPainter *painter,
                         const QStyleOptionGraphicsItem *option,
                         QWidget *widget = nullptr ) override;
@@ -184,6 +191,8 @@ protected:
     void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) final;
     virtual QRectF customChildrenBoundingRect() const;
     void dumpRect(const char* text, QRectF rect);
+    /// Whether a click on the view's empty inside goes through (shape())
+    virtual bool passesClicks() const { return false; }
 
     Base::Reference<ParameterGrp> getParmGroupCol();
 
