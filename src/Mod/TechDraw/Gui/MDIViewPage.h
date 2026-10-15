@@ -153,8 +153,8 @@ private:
     QAction *m_exportSVGAction;
     QAction *m_exportDXFAction;
     QAction *m_exportPDFAction;
+    /// "Print pages...", the page dialog (entry 137)
     QAction *m_printAllAction;
-    QAction *m_printSelectedAction;
 
     std::string m_objectName;
     std::string m_documentName;

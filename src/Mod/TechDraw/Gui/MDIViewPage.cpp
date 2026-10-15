@@ -86,6 +86,7 @@
 #include "QGVPage.h"
 #include "Rez.h"
 #include "ViewProviderPage.h"
+#include "DlgPrintPages.h"
 #include "PagePrinter.h"
 
 using namespace TechDrawGui;
@@ -116,12 +117,11 @@ MDIViewPage::MDIViewPage(ViewProviderPage* pageVp, Gui::Document* doc, QWidget* 
     m_exportPDFAction = new QAction(tr("Export PDF"), this);
     connect(m_exportPDFAction, &QAction::triggered, this, qOverload<>(&MDIViewPage::savePDF));
 
-    m_printAllAction = new QAction(tr("Print All Pages"), this);
-    connect(m_printAllAction, &QAction::triggered, this, qOverload<>(&MDIViewPage::printAllPages));
-
-    m_printSelectedAction = new QAction(tr("Print Selected Pages"), this);
-    connect(m_printSelectedAction, &QAction::triggered, this, []() {
-        printPages(selectedPages());
+    // The pages to print or export, chosen in a dialog (entry 137): it
+    // replaces "Print All Pages" and "Print Selected Pages"
+    m_printAllAction = new QAction(tr("Print pages..."), this);
+    connect(m_printAllAction, &QAction::triggered, this, []() {
+        DlgPrintPages::run(Gui::getMainWindow());
     });
 
     isSelectionBlocked = 0;
@@ -507,9 +507,6 @@ void MDIViewPage::contextMenuEvent(QContextMenuEvent* event)
     menu.addAction(m_exportDXFAction);
     menu.addAction(m_exportPDFAction);
     menu.addAction(m_printAllAction);
-    // while pages are selected (docs/HandsOnQueue.md entry 127)
-    if (!selectedPages().empty())
-        menu.addAction(m_printSelectedAction);
     menu.exec(event->globalPos());
 }
 

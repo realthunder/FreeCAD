@@ -243,6 +243,8 @@ SET(TechDrawGui_SRCS
 )
 
 SET(TechDrawGuiView_SRCS
+    DlgPrintPages.cpp
+    DlgPrintPages.h
     MDIViewPage.cpp
     MDIViewPage.h
     PagePrinter.cpp

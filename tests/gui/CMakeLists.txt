@@ -243,7 +243,8 @@ fc_add_gui_test(GuiTechDrawPageItemsWhenNeeded_tests_run
 
 # The other side of the same change: an export of a page nothing has shown
 # writes the whole drawing, not the template alone. Python's exports bring the
-# view up first; TechDraw_PrintAll, which does not, is not driven here.
+# view up first; TechDraw_Print's printing, which does not, is not driven here
+# (its PDF export is, by techdraw-print-pages.py).
 fc_add_gui_test(GuiTechDrawNeverShownPageExports_tests_run
                 techdraw-never-shown-page-exports.py --timeout 180)
 

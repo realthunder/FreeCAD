@@ -205,8 +205,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     *pages << "TechDraw_PageTemplate";
     *pages << "TechDraw_FillTemplateFields";
     *pages << "TechDraw_RedrawPage";
-    *pages << "TechDraw_PrintAll";
-    *pages << "TechDraw_PrintSelected";
+    *pages << "TechDraw_Print";
     *pages << "Separator";
     *pages << "TechDraw_ExportPageSVG";
     *pages << "TechDraw_ExportPageDXF";
@@ -300,8 +299,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     *pages << "TechDraw_PageTemplate";
     *pages << "TechDraw_FillTemplateFields";
     *pages << "TechDraw_RedrawPage";
-    *pages << "TechDraw_PrintAll";
-    *pages << "TechDraw_PrintSelected";
+    *pages << "TechDraw_Print";
 
     Gui::ToolBarItem* views = new Gui::ToolBarItem(root);
     views->setCommand("TechDraw Views");
@@ -415,8 +413,7 @@ Gui::ToolBarItem* Workbench::setupCommandBars() const
     *pages << "TechDraw_PageTemplate";
     *pages << "TechDraw_FillTemplateFields";
     *pages << "TechDraw_RedrawPage";
-    *pages << "TechDraw_PrintAll";
-    *pages << "TechDraw_PrintSelected";
+    *pages << "TechDraw_Print";
 
 
     Gui::ToolBarItem* views = new Gui::ToolBarItem(root);
