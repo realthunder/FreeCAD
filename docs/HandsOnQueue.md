@@ -160,6 +160,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:47: entry 148 ANSWERED -- not known whether it ever worked; the
+unselectable edges maybe the missing faces' borders (TechDraw overlaps
+edges): the false face's lower arc selects, the upper not; and faces too:
+Rear001's leftmost half-circle face lights on hover and does not
+select.** Under the entry.
+
 **2026-10-15 16:40: NEW ENTRY 149 -- a TechDraw view's transparent background
 should let a click through; the border stays pickable.** Under the entry.
 
@@ -2987,7 +2993,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
 | 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open |
 | 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept |
-| 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN |
+| 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face |
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -20107,7 +20113,7 @@ b. the SAME icon under both themes, checked under both;
 c. the body FILLS are kept; the outer and inner edges get darker.
 Nothing left open on 147, by the note-taker's reading.
 
-## 148. TechDraw picking on scanner.FCStd Page009, Front010: faces found wrong (the inner hole a face, the outer faces missing); edges hover but do not select; WireJoiner for the faces? (a defect) -- OPEN
+## 148. TechDraw picking on scanner.FCStd Page009, Front010: faces found wrong (the inner hole a face, the outer faces missing); edges hover but do not select; WireJoiner for the faces? (a defect) -- OPEN; ANSWERED 16:47 -- faces that light on hover do not select either (Rear001)
 
 **2026-10-15 16:38, the reporter:** "new defect. Techdraw picking got some
 problem. scanner file Page009. Front010 face segmentation are wrong. The
@@ -20162,6 +20168,38 @@ READ in the source, nothing run:
   note-taker's reading. `FaceMakerBullseye` uses it too.
 - TechDraw links Part already (it is a Part-based module) -- not checked
   for WireJoiner's export beyond `PartExport` on the class.
+
+**2026-10-15 16:47, the reporter answers:** "entry 148. I am not sure whether
+you worked before. The unselectable edge maybe the rodering of the missing
+face, because techdraw actually contains lots of overlapping edges. for
+exmaple, the center hole that is mistakened to be a face, its lower half
+arc is selected, but not the upper half. Also not all faces (that
+responde to hover highlight) are selectable. for example, in view
+Rear001, the leftmost half circle face is not selectable."
+
+The note-taker's reading ("you worked" read as "it worked", "rodering"
+as "bordering"):
+a. answered: the reporter does NOT KNOW whether this ever worked.
+b. answered in part: the unselectable edges are MAYBE the ones that
+   BORDER the missing faces -- the reporter's guess, because a TechDraw
+   view holds many OVERLAPPING edges (the same line drawn more than
+   once). Example: the centre hole that is taken for a face -- the LOWER
+   half of its arc SELECTS, the UPPER half does NOT.
+- NEW, part of the same defect: FACES too -- not every face that lights
+  up on HOVER can be SELECTED. Example: page view REAR001 (by the
+  note-taker's reading on the same page, Page009 -- not said), the
+  LEFTMOST HALF-CIRCLE face lights on hover and does not select.
+So hover and click disagree for both edges and faces: what lights on
+hover is not what a click takes. The note-taker's guess, not the
+reporter's and not checked: with overlapping items, hover lights one
+item and the click goes to another (an overlapping duplicate, or the
+view itself -- see entry 149, a view takes a click anywhere inside its
+frame) -- nothing run.
+NOT said:
+d. which page holds Rear001 (Page009, by the note-taker's reading);
+e. whether a click on such an edge or face selects SOMETHING ELSE (the
+   view, another edge) or nothing at all -- "no response" at 16:38, by
+   the note-taker's reading nothing at all.
 
 ## 149. A TechDraw view takes a click anywhere inside its frame; let it through the transparent background, keep the border pickable (a change request) -- OPEN
 
