@@ -103,6 +103,9 @@ def ground(widget):
 
 
 def selection_list():
+    """The selection view's list -- the shown one: the pick list beside it
+    is hidden and renders clear"""
+    found = []
     for w in QtWidgets.QApplication.allWidgets():
         try:
             if cls(w) != "QTreeWidget":
@@ -111,10 +114,11 @@ def selection_list():
             while p is not None and cls(p) != "Gui::DockWnd::SelectionView":
                 p = p.parentWidget()
             if p is not None:
-                return w
+                found.append((not w.isHidden(), w))
         except RuntimeError:
             pass
-    return None
+    found.sort(key=lambda pair: not pair[0])
+    return found[0][1] if found else None
 
 
 def report_view():
