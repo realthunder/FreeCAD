@@ -160,6 +160,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:50: entry 146 ANSWERED -- bgfx, both themes, the menu button
+only; the fix: draw only a border of the highlight shape.** Under the
+entry.
+
 **2026-10-15 15:47: NEW ENTRY 146 (a defect) -- the navigation cube's menu button:
 its hover highlight hides its icon.** Under the entry.
 
@@ -2948,7 +2952,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them |
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit |
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
-| 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN |
+| 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19897,7 +19901,7 @@ b. answered: an abort by Esc shows the SAME.
 c. the chamfer: NOT TRIED by the reporter -- unknown; by the
    note-taker's reading the fix covers it too if it shares the defect.
 
-## 146. The navigation cube's menu button: its hover highlight hides its icon (a defect) -- OPEN
+## 146. The navigation cube's menu button: its hover highlight hides its icon (a defect) -- OPEN; ANSWERED 15:50 -- a border of the highlight shape
 
 **2026-10-15 15:47, the reporter:** "new defect, navicube menu hover
 highlight obscure its original icon."
@@ -19929,6 +19933,25 @@ so what covers it is NOT found by this reading (a depth or blending
 order in the overlay, or the icon's colour against the highlight's --
 guesses). The textures: `createMenuTex` 852 on, 1108 to 1109. Last
 changed by `22ece75a08` (the cube kept clear of overlaid docks).
+
+**2026-10-15 15:50, the reporter answers:** "entry 146, bgfx, both themes, menu
+button only. just draw a border of the current highlight shape will be
+enought"
+
+The note-taker's reading:
+a. answered: under the BGFX render engine.
+b. answered: in BOTH themes (so not a matter of one theme's colours).
+c. answered: the MENU button only.
+- The fix the reporter asks for: on hover, draw only a BORDER (an
+  outline) of the present highlight shape, in the highlight colour, in
+  place of the filled backdrop -- the icon inside stays as it is. Why the
+  filled backdrop covers the icon need not be found for this, by the
+  note-taker's reading.
+NOT said:
+e. the border's width -- not said;
+f. the Coin GL drawing (no bgfx) -- the same border, by the note-taker's
+   reading, so the two paths look alike ("matching the GL draw", the
+   source's comment).
 
 ## Inbox
 
