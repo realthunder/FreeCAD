@@ -160,6 +160,9 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:47: NEW ENTRY 146 (a defect) -- the navigation cube's menu button:
+its hover highlight hides its icon.** Under the entry.
+
 **2026-10-15 15:44: entry 145 ANSWERED -- only the other arrows wrong; Esc the
 same; the chamfer not tried yet.** Under the entry.
 
@@ -2945,6 +2948,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them |
 | 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit |
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
+| 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19893,6 +19897,39 @@ b. answered: an abort by Esc shows the SAME.
 c. the chamfer: NOT TRIED by the reporter -- unknown; by the
    note-taker's reading the fix covers it too if it shares the defect.
 
+## 146. The navigation cube's menu button: its hover highlight hides its icon (a defect) -- OPEN
+
+**2026-10-15 15:47, the reporter:** "new defect, navicube menu hover
+highlight obscure its original icon."
+
+The note-taker's reading:
+- The navigation cube's MENU button (the small button by the cube that
+  opens its menu): while the pointer is over it, the HIGHLIGHT drawn for
+  the hover covers the button's ICON, so the icon can no longer be seen
+  (or hardly).
+- Wanted, by the note-taker's reading: the highlight shows BEHIND the
+  icon (or around it), the icon still visible on top.
+NOT said:
+a. the renderer -- the bgfx engine (D3D11, the default here) or Coin's
+   own GL drawing; the cube is drawn by two paths (below);
+b. the theme -- whether the highlight colour and the icon's colour are
+   close in one theme only;
+c. whether it is the menu button only, or the other cube buttons (the
+   arrows, the home button) too -- the menu button only, by the words;
+d. the copy -- the STAGED one of 14:47 (`1df007d0f2`), by the
+   note-taker's reading.
+READ in the source, nothing run: `src/Gui/NaviCube.cpp` 1615 to 1623 --
+the cube's scene for the overlay (the path the bgfx renderer draws):
+"Menu icon: a hilite backdrop quad toggled on hover, then the icon in the
+plain button color (matching the GL draw)" -- a highlight quad of the
+menu's PICK face (`TEX_VIEW_MENU_FACE`) in the highlight colour, switched
+on at hover, and the icon quad (`TEX_VIEW_MENU_ICON`) after it. By the
+note-taker's reading of the order the icon is drawn after the backdrop,
+so what covers it is NOT found by this reading (a depth or blending
+order in the overlay, or the icon's colour against the highlight's --
+guesses). The textures: `createMenuTex` 852 on, 1108 to 1109. Last
+changed by `22ece75a08` (the cube kept clear of overlaid docks).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -19904,5 +19941,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 145
+the build session, 131 and 132 found by it; entries 134 to 146
 are of 2026-10-15, 134 said to the build session)
