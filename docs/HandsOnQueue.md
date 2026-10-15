@@ -18673,7 +18673,7 @@ known gap is for the reporter to weigh; it was not put to them. The
 staged copy was not tested by the build session; the reporter's look is
 owed -- scanner.FCStd, which opens a page by itself (entry 53), is an
 older file and falls under the once-at-load rule.
-08:24, the build session CONFIRMS it: "dl\\handson\\2026-10-06\\scanner.FCStd
+08:24, the build session CONFIRMS it: "dl\handson\2026-10-06\scanner.FCStd
 (saved 10-06 09:17) is an older file. Its GuiDocument.xml Camera has no
 'viewareas' attribute and the file has no ViewArea records. So a visible
 page in it opens once at load, as it did before. From the first save with
