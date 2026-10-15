@@ -3,7 +3,8 @@
 # send it -- kept in the log and not read, listed in the log panel with its
 # sender, refused to a view-only connection, past the upload limit and past
 # what may wait -- then saved aside, brought in by the owner with the merge
-# or without, merged, and let go; a request that is a branch deleted.
+# or without, merged, and let go; a request that is a branch deleted. And a
+# file larger than one message carries, sent in pieces (sec 32.36).
 # One GUI run in a fresh user home, given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
@@ -85,6 +86,25 @@ def send(path, name, client=7, access=None):
     return control({"op": "requests.send", "name": name, "data": data}, client, access)
 
 
+def pieces(op, name, data, client=7, extra=None):
+    """Send `data` to `op` as the page sends a large file (sec 32.36): the
+    size first, then the pieces in order, then the op naming the upload.
+    The replies, in order."""
+    begun = control({"op": "upload.begin", "size": len(data), "for": op}, client)
+    replies = [begun]
+    if not begun.get("ok"):
+        return replies
+    upload, piece = begun["upload"], int(begun["piece"])
+    for at in range(0, len(data), piece):
+        replies.append(control({"op": "upload.piece", "upload": upload, "at": at,
+                                "data": base64.b64encode(data[at:at + piece]).decode()},
+                               client))
+    payload = {"op": op, "name": name, "upload": upload}
+    payload.update(extra or {})
+    replies.append(control(payload, client))
+    return replies
+
+
 def drive(seen, pick):
     dialog = mergeDialog()
     if dialog is None or dialog.objectName() != "TransactionMergeDialog":
@@ -114,6 +134,7 @@ def run():
     share = App.ParamGet("User parameter:BaseApp/Preferences/SceneShare")
     mode = p.GetInt("TransactionLog", 2)
     limit = share.GetInt("UploadLimitMB", 16)
+    waits = share.GetInt("RequestsTotalMB", 64)
     try:
         p.SetInt("TransactionLog", 2)   # the file carries its history
         where = tempfile.mkdtemp()
@@ -247,6 +268,114 @@ def run():
                   [r["id"] for r in Gui.serveRequests()] == [sent[0]["id"]]
                   and len(doc.getTransactionSentFiles()) == 1 and len(rows(requests)) == 1
                   and len(drops) == 1 and '"reason":"unread"' in drops[0]["script"])
+
+            # Sec 32.36: a file larger than one message carries, in pieces.
+            # 60 MB is past the 46 one frame took whole.
+            total = share.GetInt("RequestsTotalMB", 64)
+            share.SetInt("UploadLimitMB", 100)
+            share.SetInt("RequestsTotalMB", 200)
+            large = os.urandom(60 * 1024 * 1024)
+            reply = control({"op": "upload.begin", "size": 101 * 1024 * 1024,
+                             "for": "requests.send"})
+            check("pieces: past the limit, refused before a byte goes (%r)" % reply.get("code"),
+                  reply.get("code") == "TooLarge" and Gui.serveUploads() == (0, 0))
+            share.SetInt("RequestsTotalMB", 50)
+            reply = control({"op": "upload.begin", "size": len(large), "for": "requests.send"})
+            check("pieces: past what may wait, refused before a byte goes (%r)"
+                  % reply.get("code"), reply.get("code") == "TooMany")
+            share.SetInt("RequestsTotalMB", 200)
+            reply = control({"op": "upload.begin", "size": 1, "for": "requests.send"},
+                            7, "view")
+            check("pieces: a view-only connection may not begin (%r)" % reply.get("code"),
+                  reply.get("ok") is False and Gui.serveUploads() == (0, 0))
+            begun = control({"op": "upload.begin", "size": len(large), "for": "requests.send"})
+            upload, piece = begun.get("upload"), int(begun.get("piece", 0))
+            check("pieces: begun, a number and the size of a piece (%r)" % (begun,),
+                  begun.get("ok") is True and piece == 4 * 1024 * 1024
+                  and Gui.serveUploads() == (1, 0))
+
+            def part(at, client=7):
+                return control({"op": "upload.piece", "upload": upload, "at": at,
+                                "data": base64.b64encode(large[at:at + piece]).decode()},
+                               client)
+
+            reply = part(piece)
+            check("pieces: one out of order is refused, not placed (%r)" % (reply.get("message"),),
+                  reply.get("code") == "BadRequest" and Gui.serveUploads() == (1, 0))
+            reply = part(0, 8)
+            check("pieces: another connection's upload is unknown to it (%r)" % reply.get("code"),
+                  reply.get("code") == "UnknownUpload" and Gui.serveUploads() == (1, 0))
+            reply = part(0)
+            check("pieces: the first taken (%r)" % (reply.get("received"),),
+                  reply.get("received") == piece and Gui.serveUploads() == (1, piece))
+            reply = control({"op": "requests.send", "name": "large.FCStd", "upload": upload})
+            check("pieces: the file named before it has all come is refused (%r)"
+                  % (reply.get("message"),),
+                  reply.get("code") == "BadRequest" and len(Gui.serveRequests()) == 1)
+            for at in range(piece, len(large), piece):
+                reply = part(at)
+            check("pieces: all of it come, held until taken (%r)" % (Gui.serveUploads(),),
+                  reply.get("received") == len(large)
+                  and Gui.serveUploads() == (1, len(large)))
+            reply = control({"op": "requests.send", "name": "large.FCStd", "upload": upload},
+                            8)
+            check("pieces: another connection cannot take it (%r)" % reply.get("code"),
+                  reply.get("code") == "UnknownUpload" and len(Gui.serveRequests()) == 1)
+            reply = control({"op": "requests.send", "name": "large.FCStd", "upload": upload})
+            check("pieces: taken as a request, 60 MB (%r)" % (reply,),
+                  reply.get("ok") is True and reply.get("size") == len(large)
+                  and len(Gui.serveRequests()) == 2 and Gui.serveUploads() == (0, 0))
+            bigone = reply.get("request")
+            aside = os.path.join(where, "large.FCStd")
+            QtCore.QMetaObject.invokeMethod(
+                dock, "saveRequestAs", QtCore.Qt.DirectConnection,
+                QtCore.Q_ARG("qulonglong", bigone), QtCore.Q_ARG(str, aside),
+            )
+            check("pieces: the bytes kept are the bytes sent",
+                  os.path.isfile(aside) and open(aside, "rb").read() == large)
+            if os.path.isfile(aside):
+                os.remove(aside)
+            reply = control({"op": "requests.send", "name": "large.FCStd", "upload": upload})
+            check("pieces: taken once, the number let go (%r)" % reply.get("code"),
+                  reply.get("code") == "UnknownUpload" and len(Gui.serveRequests()) == 2)
+            Gui.serveDropRequest(bigone, doc.Name)
+            settle(100)
+            check("pieces: the large one dropped", len(Gui.serveRequests()) == 1)
+
+            # Let go half sent: cancelled, or replaced by the next.
+            begun = control({"op": "upload.begin", "size": len(large), "for": "requests.send"})
+            upload = begun.get("upload")
+            part(0)
+            control({"op": "upload.cancel", "upload": upload})
+            check("pieces: cancelled, nothing held (%r)" % (Gui.serveUploads(),),
+                  Gui.serveUploads() == (0, 0))
+            begun = control({"op": "upload.begin", "size": len(large), "for": "requests.send"})
+            upload = begun.get("upload")
+            part(0)
+            again = control({"op": "upload.begin", "size": 10, "for": "requests.send"})
+            check("pieces: a connection's next upload replaces its last (%r)"
+                  % (Gui.serveUploads(),),
+                  again.get("ok") is True and again.get("upload") != upload
+                  and Gui.serveUploads() == (1, 0))
+            control({"op": "upload.cancel", "upload": again.get("upload")})
+
+            # The panel's chooser takes a large file the same way.
+            replies = pieces("widgets.upload", "large.ttf", large[:9 * 1024 * 1024])
+            done = replies[-1]
+            check("pieces: the panel's upload in three, written whole (%r)"
+                  % ([r.get("ok") for r in replies],),
+                  len(replies) == 5 and done.get("ok") is True and done.get("path")
+                  and open(done["path"], "rb").read() == large[:9 * 1024 * 1024])
+            if done.get("path"):
+                os.remove(done["path"])
+            share.SetInt("UploadLimitMB", 1)
+            replies = pieces("widgets.upload", "large.ttf", large[:2 * 1024 * 1024])
+            check("pieces: the panel's upload under the same limit (%r)"
+                  % (replies[0].get("code"),),
+                  len(replies) == 1 and replies[0].get("code") == "TooLarge")
+            del large
+            share.SetInt("RequestsTotalMB", total)
+            share.SetInt("UploadLimitMB", limit)
 
             # Brought in without the merge: a branch that waits, its file held.
             QtCore.QMetaObject.invokeMethod(
@@ -410,6 +539,7 @@ def run():
     finally:
         p.SetInt("TransactionLog", mode)
         share.SetInt("UploadLimitMB", limit)
+        share.SetInt("RequestsTotalMB", waits)
         App.saveParameter()
     with open(OUT, "w") as f:
         f.write("\n".join(lines) + "\n")

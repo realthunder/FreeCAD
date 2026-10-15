@@ -340,9 +340,9 @@ def run():
         seen = start("LAN", port, limit=24)
         check("the dialog that starts a share came up %r" % (seen.get("doors"),),
               seen["found"] and "LAN" in seen.get("doors", []))
-        check("it has the upload limit, 16 MB unless set, 46 at most %r"
+        check("it has the upload limit, 16 MB unless set, 1024 at most %r"
               % ((seen.get("limit"), seen.get("limit_most"), seen.get("limit_enabled")),),
-              seen.get("limit") == 16 and seen.get("limit_most") == 46
+              seen.get("limit") == 16 and seen.get("limit_most") == 1024
               and seen.get("limit_enabled") is True)
         check("a LAN door shows no identity header", seen.get("header_shown") is False)
         check("accepted, the limit is the preference %r" % (share.GetInt("UploadLimitMB", 0),),

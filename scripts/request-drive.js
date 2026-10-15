@@ -9,8 +9,9 @@
 //   started as FC_SERVE_TOKEN=<secret> FC_SERVE_INVITE=<name>:
 //   http://127.0.0.1:8077/fcviewer.html?doc=Ours&token=s3cret&client=lei
 //
-// Prints one line `REPORT <json>`: whether the row was there, and the text
-// of the alert the page raised. Exits 0 when the alert says the file was
+// Prints one line `REPORT <json>`: whether the row was there, the lines the
+// page showed while it sent (`progress`), whether one was left (`after`),
+// and the text of the alert the page raised. Exits 0 when the alert says the file was
 // sent, 1 when it says anything else, 2 when the row or the alert never
 // appeared -- a view-only connection has no such row, which is the point of
 // running it once as someone who may not write.
@@ -43,7 +44,7 @@ const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
            '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
     env,
   });
-  const report = { row: false, rows: [], alert: null };
+  const report = { row: false, rows: [], alert: null, progress: [], after: null };
   let code = 2;
   try {
     const page = await browser.newPage();
@@ -88,10 +89,20 @@ const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
         page.mouse.click(row.x, row.y),
       ]);
       await chooser.accept([file]);
-      report.alert = await Promise.race([
-        said,
-        new Promise((r) => setTimeout(() => r(null), timeout)),
-      ]);
+      // What the page says while it sends: a file larger than one message
+      // goes in pieces (sec 32.36), and the line says how far it has got.
+      let alert = null;
+      said.then((text) => { alert = text; });
+      const stop = Date.now() + timeout;
+      while (alert === null && Date.now() < stop) {
+        const line = await page.evaluate(() =>
+          document.querySelector('.fc-sending')?.textContent ?? null).catch(() => null);
+        if (line && report.progress[report.progress.length - 1] !== line)
+          report.progress.push(line);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      report.alert = alert;
+      report.after = await page.evaluate(() => !!document.querySelector('.fc-sending'));
       if (report.alert !== null)
         code = report.alert.startsWith('Sent ') ? 0 : 1;
     }

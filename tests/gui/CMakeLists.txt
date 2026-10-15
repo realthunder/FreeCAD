@@ -195,6 +195,11 @@ fc_add_gui_test(GuiServeLogActs_tests_run serve-log-acts.py
                 --timeout 300)
 fc_add_gui_test(GuiServeLogActsBrowser_tests_run serve-log-acts-browser.py
                 --timeout 600)
+# A copy larger than one message of the socket carries, sent from the page
+# in pieces (docs/TransactionLog.md sec 32.36): the progress it says, and
+# the host's copy byte for byte.
+fc_add_gui_test(GuiServeRequestBrowser_tests_run serve-request-browser.py
+                --timeout 600)
 # What is kept in the file (sec 32.27): values a recompute wrote kept, and
 # let go, by an editor, the host and one who writes the branch.
 fc_add_gui_test(GuiServeLogKept_tests_run serve-log-kept.py
