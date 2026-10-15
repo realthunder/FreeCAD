@@ -278,6 +278,49 @@ class ShapeAtAStateTest(unittest.TestCase):
         finally:
             App.closeDocument(plain.Name)
 
+    def testAShapeTheLogLetGoIsComputedAtItsRow(self):
+        # Sec 32.33: a file's copy of the log carries no value a recompute
+        # wrote, so a file opened again has none of its rows' shapes. The
+        # state at a row, read as a document of its own, computes them again.
+        doc, cut = self.doc, self.cut
+        before = cut.Shape.copy()
+        after = self.edit("taller", Height=12)[0]
+        path = doc.FileName
+        doc.save()
+        App.closeDocument(doc.Name)
+        self.doc = doc = App.openDocument(path)
+        cid = doc.getObject("Cut").ID
+        row = [r for r in doc.getTransactionLog() if r["name"] == "taller"][-1]
+        op = [o for o in doc.getTransactionOps(row["seq"])
+              if o["prop"] == "Shape" and o["cid"] == cid][0]
+        self.assertIsNone(Part.getTransactionShape(doc, op["after"], cid))
+        self.assertIsNone(Part.getTransactionShape(doc, op["before"], cid))
+        rows, cursor = len(doc.getTransactionLog()), doc.getTransactionCursor()
+        active = App.ActiveDocument
+        states = []
+        try:
+            for seq, shape in ((row["seq"], after), (row["parent"], before)):
+                state = doc.openTransactionState(seq)
+                states.append(state.Name)
+                self.assertNotEqual(state.Name, doc.Name)
+                there = state.getObject("Cut")
+                self.assertEqual(there.ID, cid)
+                self.assertAlmostEqual(there.Shape.Volume, shape.Volume)
+                self.assertTrue(shape.diff(there.Shape)["same"])
+                self.assertNotIn("Touched", there.State)
+                # Of no log: nothing it does is a row
+                self.assertEqual(state.getTransactionLog(), [])
+            # Nothing of the document moved, and it is still the active one
+            self.assertEqual(len(doc.getTransactionLog()), rows)
+            self.assertEqual(doc.getTransactionCursor(), cursor)
+            self.assertIs(App.ActiveDocument, active)
+            self.assertAlmostEqual(doc.getObject("Cut").Shape.Volume, after.Volume)
+        finally:
+            for name in states:
+                App.closeDocument(name)
+        with self.assertRaises(Exception):
+            doc.openTransactionState(999999)
+
     def seq(self, name):
         return [r for r in self.doc.getTransactionLog() if r["name"] == name][-1]["seq"]
 
