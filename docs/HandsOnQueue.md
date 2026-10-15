@@ -156,6 +156,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 13:58: NEW ENTRY 140 -- in a non-transparent overlay, the selection
+view's background the same as the Python console's and the report
+view's.** Under the entry; five points not said.
+
 **2026-10-15 13:26: entry 139 ALL POINTS ANSWERED -- audit all the text colours of
 both panels; in an overlay the same in every mode; the docked panels may
 share them if simpler; user-set colours kept.** Under the entry.
@@ -2887,6 +2891,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice) |
 | 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header |
 | 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged) |
+| 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19389,6 +19394,43 @@ d. a colour the user set is KEPT; the theme's defaults change;
 e. the text's ground and outline (entries 87 and 98) are unchanged.
 Nothing left unanswered on 139, by the note-taker's reading.
 
+## 140. The selection view in a non-transparent overlay: its background the same as the Python console's and the report view's (a change request) -- OPEN
+
+**2026-10-15 13:58, the reporter:** "new request, make selection view
+background the same as others (python console/report view) in
+non-transparent overlay mode"
+
+The note-taker's reading:
+- In an overlay that is NOT in transparent mode, the selection view's
+  background differs from the other overlaid panels'. It is to be the
+  SAME as the Python console's and the report view's there.
+- The transparent mode is not touched by this (entry 123's rows and entry
+  138's header stay as they are), by the note-taker's reading.
+NOT said:
+a. "background": the panel's whole ground (the list's empty area and the
+   area around it), or the rows too -- the whole ground, by the
+   note-taker's reading;
+b. the ALTERNATING rows in this mode -- kept or dropped (the console and
+   the report view have none);
+c. the selection view's PICK LIST -- the same, by the note-taker's
+   reading;
+d. which themes -- all (Dark, Light, Classic), by the note-taker's
+   reading, as entry 139 said;
+e. the docked (non-overlay) selection view -- unchanged, by the
+   note-taker's reading.
+READ in the source, nothing run:
+- The selection view's overlaid rows: `src/Gui/Selection/SelectionView.cpp`
+  81 to 110 (`OverlayGroundDelegate`, entry 123) -- it paints only when
+  the list has `Qt::WA_NoSystemBackground`, by the note-taker's reading
+  the see-through (transparent) case.
+- The report view's and the Python console's overlay text ground:
+  `src/Gui/ReportView.cpp` 801 on and `src/Gui/TextEdit.cpp` 82 on, the
+  same test.
+- Where each panel's ground comes from in the NON-transparent mode (the
+  overlay style sheets `src/Gui/Stylesheets/overlay/*.qss`, the built-in
+  sheet in `src/Gui/OverlayManager.cpp` ~320 to 360) -- NOT read through;
+  why the selection view's differs NOT found by this reading.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -19400,5 +19442,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 139
+the build session, 131 and 132 found by it; entries 134 to 140
 are of 2026-10-15, 134 said to the build session)
