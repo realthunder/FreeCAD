@@ -156,6 +156,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 13:26: entry 139 ALL POINTS ANSWERED -- audit all the text colours of
+both panels; in an overlay the same in every mode; the docked panels may
+share them if simpler; user-set colours kept.** Under the entry.
+
 **2026-10-15 11:58 and 12:00: NEW ENTRIES 138 and 139.** 138 (a defect): the
 selection view's column header has no background in a transparent overlay,
 asked to be as the property editor's -- the earlier request not found,
@@ -2882,7 +2886,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter. THE REPORTER 11:57: "once all done, including entry 136, push and restage" -- a PUSH and a RESTAGE are authorised once 135, 137 and 136 are done |
 | 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice) |
 | 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header |
-| 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN |
+| 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19333,7 +19337,7 @@ READ in the source, nothing run:
   editor's header shows a background and the selection view's not is NOT
   found by this reading.
 
-## 139. The Python console's and the report view's text colours, to stand out on the overlay background, in both themes, Classic included (a change request) -- OPEN
+## 139. The Python console's and the report view's text colours, to stand out on the overlay background, in both themes, Classic included (a change request) -- OPEN; ALL POINTS ANSWERED 13:26
 
 **2026-10-15 12:00, the reporter:** "new request, revise the python console and
 report view colors on its text to be more standout in overlay background
@@ -19364,6 +19368,26 @@ READ in the source, nothing run:
   `src/Gui/ReportView.cpp` 801 to 816 and `src/Gui/TextEdit.cpp` 82 to
   104 (the Python console), both `OverlayManager::overlayTextGround`
   (entry 98; under Dark the ground dark since entry 111).
+
+**2026-10-15 13:26, the reporter answers:** "entry 139, audit for all colors.
+for overlay, the same for all modes. If it makes things simpler, use the
+same colors on non-overlay panel as well. the rest agree"
+
+The note-taker's reading:
+a. ALL the text colours of both panels are AUDITED -- the Python
+   console's (its syntax colours, output, error) and the report view's
+   (message, log, warning, error) -- and revised where they do not stand
+   out.
+b. In an overlay, the SAME colours whatever the overlay's mode --
+   transparent or not (the note-taker's reading "transparent only"
+   REPLACED).
+c. The docked panels (not overlaid): MAY take the same colours too, if
+   that makes it simpler -- the build session's call (the note-taker's
+   reading "unchanged" REPLACED by this leave).
+"the rest agree" -- the note-taker's readings stand as the reporter's:
+d. a colour the user set is KEPT; the theme's defaults change;
+e. the text's ground and outline (entries 87 and 98) are unchanged.
+Nothing left unanswered on 139, by the note-taker's reading.
 
 ## Inbox
 
