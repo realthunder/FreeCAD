@@ -10660,6 +10660,7 @@ std::vector<std::string> Document::keepLogValue(long cid, const std::string& pro
     if (!log)
         return out;
     auto& store = log->store();
+    bool moved = false;
     if (seq <= 0)
         seq = log->head();
     const std::vector<std::string> props = prop.empty() ? store.derivedPropsOf(cid)
@@ -10676,14 +10677,18 @@ std::vector<std::string> Document::keepLogValue(long cid, const std::string& pro
             kept.seq = seq;
             kept.kind = keeperKind;
             kept.name = keeperName;
-            store.keepValue(kept);
+            moved = store.keepValue(kept) || moved;
         }
         else if (!store.releaseValue(ref)) {
             continue;
         }
+        else {
+            moved = true;
+        }
         out.push_back(ref);
     }
-    if (!out.empty())
+    // Kept again as it was is no change: the file is not marked modified
+    if (moved)
         signalLogKeptChanged(*this);
     return out;
 }

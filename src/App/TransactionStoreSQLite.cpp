@@ -756,12 +756,12 @@ public:
         return out;
     }
 
-    void keepValue(const LogKept& kept) override
+    bool keepValue(const LogKept& kept) override
     {
         // Kept again: as it was, but the host's keep makes it the host's
         auto s = prepare("INSERT INTO keepvalue(hash,cid,prop,seq,kind,name) VALUES(?,?,?,?,?,?)"
                          " ON CONFLICT(hash) DO UPDATE SET kind='', name=''"
-                         " WHERE excluded.kind=''");
+                         " WHERE excluded.kind='' AND keepvalue.kind<>''");
         bindHash(s, 1, kept.hash);
         sqlite3_bind_int64(s, 2, kept.cid);
         bindText(s, 3, kept.prop);
@@ -769,6 +769,7 @@ public:
         bindText(s, 5, kept.kind);
         bindText(s, 6, kept.kind.empty() ? std::string() : kept.name);
         step(s);
+        return sqlite3_changes(db) > 0;
     }
 
     bool releaseValue(const std::string& hash) override

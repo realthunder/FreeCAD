@@ -568,10 +568,11 @@ public:
      * as well: it stays when its row goes.
      *
      * A value kept again stays as it was kept -- its row, its keeper --
-     * except that the host's keep makes it the host's.
+     * except that the host's keep makes it the host's. False where
+     * nothing moved: kept already, and as it stays.
      */
     //@{
-    virtual void keepValue(const LogKept& kept) = 0;
+    virtual bool keepValue(const LogKept& kept) = 0;
     /// False where `hash` was not kept.
     virtual bool releaseValue(const std::string& hash) = 0;
     virtual std::vector<LogKept> keptValues() = 0;

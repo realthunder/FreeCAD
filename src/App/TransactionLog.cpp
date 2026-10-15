@@ -220,7 +220,7 @@ public:
     std::vector<long> objectIdsInOps() override { return inner().objectIdsInOps(); }
     void removeObjectState(const std::vector<long>& ids) override
     { inner().removeObjectState(ids); }
-    void keepValue(const LogKept& kept) override { inner().keepValue(kept); }
+    bool keepValue(const LogKept& kept) override { return inner().keepValue(kept); }
     bool releaseValue(const std::string& hash) override { return inner().releaseValue(hash); }
     std::vector<LogKept> keptValues() override { return inner().keptValues(); }
     void keepObject(long cid, bool keep) override { inner().keepObject(cid, keep); }
