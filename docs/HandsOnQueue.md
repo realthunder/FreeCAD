@@ -156,6 +156,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 11:30: entry 135 CHANGED by the reporter -- the root button at the
+arrow's tail DROPPED; a right click on the arrow opens its menu, and a
+tooltip on hovering the arrow says so.** Point 4 (button at the edge's
+middle) falls away; points 1 and 2 stand. Under the entry.
+
 **2026-10-15 11:27: entry 137 ANSWERED -- export to PDF wanted; a separate list
 beside the tree shows the checked pages as doc_name#page_name, moved up and
 down to set the print order; menu text "Print pages", the tooltip to name
@@ -2842,7 +2847,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE found and FIXED by the build session (18:38), COMMITTED `d9c3193856`, LOCAL, not pushed, not staged: a TechDraw page view answered "Undo"/"Redo" from its document without checking it was there -- a page view with no document; guarded as the general view does. Reproduced a second time in its native print run. WHY the view had no document NOT found. the GUARD PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage"; why no document not found |
 | 133 | 2026-10-14 | TechDraw printing: open the print with LANDSCAPE as the default (a change request, said to the build session) | OPEN; DONE by the build session, written, NOT committed, building r32: "Print All Pages" and "Print Selected Pages" open their print box on landscape (were the printer's default, portrait); each page still laid out in its own template's orientation; the single page's Print already took the template's. Not testable by a script (the Windows print box) -- the REPORTER'S LOOK. COMMITTED `560022c91b`, LOCAL, not pushed, not staged, built in r32; the REPORTER'S LOOK still owed. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
-| 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles |
+| 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles. CHANGED BY THE REPORTER 11:30: the ROOT BUTTON (the pressable item at the arrow's tail) is DROPPED -- point 4 (button at the edge's middle with its own highlight) falls away; instead a TOOLTIP on hovering an arrow hints that a RIGHT CLICK opens its context menu (the menu the button opened) |
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter |
 | 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF |
 
@@ -18791,7 +18796,7 @@ older file and falls under the once-at-load rule.
 page in it opens once at load, as it did before. From the first save with
 this build, the saved layout decides."
 
-## 135. The fillet's on-view editing: no arrow while a reference is missing; an arrow's click released through to the face behind; the root button shows no menu; the root button asked at the edge's middle with a highlight of its own -- OPEN
+## 135. The fillet's on-view editing: no arrow while a reference is missing; an arrow's click released through to the face behind; the root button shows no menu; the root button asked at the edge's middle with a highlight of its own -- OPEN; CHANGED 2026-10-15 11:30: the root button dropped, a right click on the arrow for the menu, a tooltip says so
 
 **2026-10-15 09:46, the reporter:** "new defect. regarding the fillet on view
 edit. if the the fillet has missing reference, no arrow is shown. This
@@ -18856,6 +18861,44 @@ fillet."
 The note-taker's note: 1 answers why, and makes point b (arrows on the
 edges that still exist?) the reporter's to rule. 2 and 3 not reproduced
 yet: the build session's tests never clicked an arrow with the mouse.
+
+**2026-10-15 11:30, the reporter -- a CHANGE OF REQUEST:** "change of request
+to entry 135, ditch the pressable item at tail of array, show tooltip on
+hover the arrow to hint right click for context menu. that'll simplify the
+UI"
+
+The note-taker's reading ("array" read as "arrow"):
+- The ROOT BUTTON -- the pressable knob at the tail of each arrow (entry
+  117 step 2) -- is DROPPED.
+- So point 4 (the button at the edge's middle, with a highlight of its
+  own) and point d FALL AWAY, and point 3 (the button's click opens no
+  menu) goes with the button.
+- The arrow's MENU (Default / One radius / Two radii / Remove, and the
+  Group sub-menu of step 3 -- the menu the button opened) now opens on a
+  RIGHT CLICK on the arrow.
+- Hovering an arrow shows a TOOLTIP that hints at the right click for the
+  context menu.
+- Points 1 and 2 (no arrows while a reference is missing; an arrow's
+  release passing through to the face) are untouched by this, by the
+  note-taker's reading.
+NOT said:
+s. whether the chamfer's handles (step 4, the same Gizmo) change the same
+   way -- yes by the note-taker's reading, they share the button;
+t. whether Space still opens the menu of the active handle from the
+   keyboard (step 2) -- kept, by the note-taker's reading;
+u. the tooltip's text, and whether it also names the other actions (drag
+   to change, click to type);
+v. a right click on the arrow's value label -- the same menu, or nothing.
+READ in the source, nothing run (committed source, not the build
+session's uncommitted edits in the tree):
+- `src/Gui/OnViewValue.cpp` 123 to 128: each handle's root button runs
+  `openMenu(handle, true)`; 517 to 543 `openMenu` builds a QMenu from the
+  entry's provider; 739 to 745 Space opens the same menu.
+- No right-button handling and no tooltip found in
+  `src/Gui/Inventor/Draggers/Gizmo.cpp` or `OnViewValue.cpp`.
+- A right click in the 3D view opens the view's own context menu today
+  (the navigation style), so a right click on an arrow has to be taken
+  before it -- the note-taker's note, not checked in the source.
 
 ## 136. Fine-grained undo inside the fillet's edit, and in every PartDesign edit task; Cancel restores the state before the edit (a change request) -- OPEN; ANSWERED 2026-10-15 09:58 (fillet first, redo, a drag one step, Esc or another button cancels a drag); typing keys ANSWERED 10:07 and 10:13
 
