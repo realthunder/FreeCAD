@@ -133,6 +133,20 @@ void OnViewValueSet::setupHandle(int index, Gizmo* handle)
         },
         tr("Drag to change the value; click to type it.\n"
            "Right click for the menu."));
+    // The pointer over it lights its value's handles and its group's
+    // (entry 144)
+    handle->setHoverCallback([self = QPointer<OnViewValueSet>(this), index](bool over) {
+        if (!self) {
+            return;
+        }
+        if (over) {
+            self->preselected = index;
+        }
+        else if (self->preselected == index) {
+            self->preselected = -1;
+        }
+        self->highlight();
+    });
     // A drag is one undo step (entry 136)
     handle->setDragCallback([self = QPointer<OnViewValueSet>(this), handle](Gizmo::DragEvent event) {
         if (!self) {
@@ -204,6 +218,8 @@ void OnViewValueSet::clearHandles(int index)
         handle->setReleaseCallback(nullptr);
         handle->setMenu(nullptr);
         handle->setDragCallback(nullptr);
+        handle->setHoverCallback(nullptr);
+        handle->setPreselected(false);
         if (handle == rightPressHandle) {
             rightPressHandle = nullptr;
         }
@@ -472,12 +488,17 @@ void OnViewValueSet::updateLabel(int index)
 void OnViewValueSet::highlight()
 {
     // Every handle of the active value -- a default drives all its edges --
-    // and of every value of its group
-    const int group = active >= 0 ? entries[active]->group : 0;
+    // and of every value of its group, selected; those of the value under
+    // the pointer and of its group, pre-selected (entry 144)
+    const int group = active >= 0 && active < count() ? entries[active]->group : 0;
+    const int hovered = preselected >= 0 && preselected < count() ? preselected : -1;
+    const int hoverGroup = hovered >= 0 ? entries[hovered]->group : 0;
     for (int i = 0; i < count(); ++i) {
         const bool lit = i == active || (group > 0 && entries[i]->group == group);
+        const bool prelit = i == hovered || (hoverGroup > 0 && entries[i]->group == hoverGroup);
         for (Gizmo* handle : entries[i]->handles) {
             handle->setHighlighted(lit);
+            handle->setPreselected(prelit && !lit);
         }
     }
 }
