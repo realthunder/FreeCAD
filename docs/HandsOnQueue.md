@@ -156,6 +156,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 10:20: entry 137 CHANGED by the reporter -- print-all dropped; ONE
+print command with a printer icon opens a dialog: a tree of every open
+document and its pages with checkboxes, the current document's pages
+checked and shown, the last choice kept for the session.** Under the
+entry; seven points not said.
+
 **2026-10-15 10:13: entry 136, the edit box's keys ANSWERED -- Esc drops what
 was typed since Enter and closes (a step only if the value changed since
 the box opened); Tab commits, closes and goes to the next handle; a click
@@ -2832,7 +2838,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
 | 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles |
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter |
-| 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136 |
+| 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18978,7 +18984,7 @@ So one open box = one transaction: Enter commits into it (and
 recomputes), Esc / Tab / a click away close it, and it is kept as a step
 only if the value changed.
 
-## 137. TechDraw: Print All Pages and Print Selected Pages combined into one command, TechDraw_Print (a change request) -- OPEN
+## 137. TechDraw: Print All Pages and Print Selected Pages combined into one command, TechDraw_Print (a change request) -- OPEN; CHANGED 2026-10-15 10:20: a dialog to pick the pages
 
 **2026-10-15 10:03, the reporter:** "New request, combine Techdraw print all
 and print selected into one commend TechDraw_Print, mention in its doc
@@ -19015,6 +19021,49 @@ READ in the source, nothing run:
   listed side by side in three places.
 - `src/Gui/PreferencePackTemplates/Shortcuts.cfg` 915 names
   TechDraw_PrintAll.
+
+**2026-10-15 10:20, the reporter -- a CHANGE OF IDEA:** "entry 137, change of
+idea. drop printall command. change the icon to printer. when clicked,
+popup a dialog to select pages. preset as a tree list all documents and
+all pages, default expand current document (scroll to view the its first
+page item). checkbox on both document and page item. toggle document
+checkbox shall toggle all its page items. default check current document
+all pages. remember the last selections for the live session (no need
+persist on disk)."
+
+The note-taker's reading -- this REPLACES the request of 10:03 (the
+selected pages, or all if none):
+- TechDraw_PrintAll is DROPPED (point a answered: not kept, by the
+  note-taker's reading not even as a hidden alias -- not said in so many
+  words). ONE print command remains -- by the note-taker's reading still
+  TechDraw_Print, in place of Print Selected too.
+- Its ICON is a PRINTER (point c, the icon; candidate, the note-taker's:
+  `src/Gui/Icons/document-print.svg`, the general print icon).
+- A click opens a DIALOG to choose the pages:
+  - a TREE of ALL open documents, each with ALL its TechDraw pages;
+  - a CHECKBOX on each document and each page; checking or unchecking a
+    document checks or unchecks all its pages;
+  - at first: the CURRENT document expanded, the list scrolled so its
+    first page shows; ALL the current document's pages checked;
+  - the LAST choice is remembered for this session -- the next print opens
+    with it -- and forgotten when FreeCAD closes (nothing saved to disk).
+- Points b and d of 10:03 fall away: every open document is listed, and
+  the tree selection no longer decides.
+NOT said:
+j. the dialog's buttons -- print, and cancel; whether it also offers
+   "export to PDF" (entry 127 printed to a printer or to one PDF);
+k. whether the printer's own dialog still follows (the landscape start of
+   entry 133), or the page dialog has the printer choice in it;
+l. the order the pages print in -- the tree's order, by the note-taker's
+   reading (127 printed "in the order they were selected");
+m. a document's box when only SOME of its pages are checked -- a
+   part-checked state, by the note-taker's reading;
+n. what the remembered choice does when a document was closed or a page
+   added since -- by the note-taker's reading, unknown ones checked by the
+   document rule, gone ones dropped;
+o. documents with NO pages -- listed or left out (left out, by the
+   note-taker's reading);
+p. the menu text and tooltip.
 
 ## Inbox
 
