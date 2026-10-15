@@ -156,6 +156,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 09:47: NEW ENTRY 136 -- fine-grained undo inside the fillet's
+edit and in every PartDesign edit task, Cancel still restoring the state
+before the edit (the reporter: "related" to 135).** Under the entry, four
+points not answered.
+
 **2026-10-15 09:46: NEW ENTRY 135 -- the fillet's on-view editing on the
 copy staged 08:21: no arrow while a reference is missing (older than 117);
 an arrow's click released through to the face behind; the root button
@@ -2790,6 +2795,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 133 | 2026-10-14 | TechDraw printing: open the print with LANDSCAPE as the default (a change request, said to the build session) | OPEN; DONE by the build session, written, NOT committed, building r32: "Print All Pages" and "Print Selected Pages" open their print box on landscape (were the printer's default, portrait); each page still laid out in its own template's orientation; the single page's Print already took the template's. Not testable by a script (the Windows print box) -- the REPORTER'S LOOK. COMMITTED `560022c91b`, LOCAL, not pushed, not staged, built in r32; the REPORTER'S LOOK still owed. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
 | 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry |
+| 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18752,6 +18758,45 @@ READ in the source, nothing run:
   beside the first edge turned more toward the camera", its root a knob
   of the arrow's colour.
 
+## 136. Fine-grained undo inside the fillet's edit, and in every PartDesign edit task; Cancel restores the state before the edit (a change request) -- OPEN
+
+**2026-10-15 09:47, the reporter** (while entry 135 was being written): "also
+related request, I want each operation in fillet to be undoable. In
+general, I want that fine undoable in all partdesign edit task. but Cancel
+button shall restore to previous state before edit"
+
+The note-taker's reading: while a fillet is being edited, EACH operation
+-- a radius typed or dragged, an edge added, removed, its mode changed,
+joined to a group, flipped (by the note-taker's list from entry 117's
+steps) -- is a step of its own that Undo takes back one at a time; the
+same for the edit task of EVERY PartDesign feature (pad, pocket,
+patterns, the other dress-ups ...). Cancel, as now, puts everything back
+as it was before the edit began, whatever steps were made. "Related" to
+135 by the reporter's word; a separate entry by the note-taker's
+sorting.
+NOT said:
+a. what is "one operation" for a drag or for typing -- one step per drag
+   and per value committed (the note-taker's guess), not per pixel or key;
+b. whether OK leaves the steps in the history as they are, or folds them
+   into one "Edit <name>" step;
+c. whether Redo is wanted inside the edit too;
+d. order of work: the fillet first, then all tasks -- or all at once.
+READ in the source, nothing run:
+- `src/Mod/PartDesign/Gui/TaskFeatureParameters.cpp` 378 to 399,
+  setupTransaction(): an edit opens ONE transaction named "Edit <name>"
+  at the first change and keeps it while it is the active one, so the
+  whole edit is one undo step today; the panel already refreshes on undo
+  and redo (126 to 135, slotUndoDocument / slotRedoDocument).
+- Cancel: the dress-ups undo back to the edit's FIRST transaction by its
+  id (`src/Mod/PartDesign/Gui/TaskDressUpParameters.cpp` 942 to 948,
+  `undo(parameter->getTransactionID())`); the general task aborts the open
+  command (`TaskFeatureParameters.cpp` about 516, `abortCommand()`).
+  By the note-taker's reading the dress-ups' way already restores across
+  several steps; the general way only drops the open one.
+- A rule kept from earlier work (the project's memory note "Undo keeps
+  the recompute mark"): an undo does not clear an object's recompute
+  mark, on purpose.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -18763,5 +18808,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 and 135
+the build session, 131 and 132 found by it; entries 134 to 136
 are of 2026-10-15, 134 said to the build session)
