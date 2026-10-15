@@ -7142,3 +7142,61 @@ every file changed since 2026-10-12: no other.
 **Tests.** `chamfer-values-in-view` 17/17 offscreen; TestChamfer 10 (7 new
 `TestChamferGroups`); TestFillet 21; the four fillet GUI tests pass after
 the Gizmo change. Suites on r42: ctest 957/957, Python 3770 OK.
+
+## Entries 135, 136 and 137 (2026-10-15)
+
+Built through r54; committed `14201accd6`, `50bed5f8ab`, `bd51427d8e`,
+`58242c9b8c`.
+
+**135, the fillet's handles under the mouse.** Reproduced by mouse
+(`tests/gui/fillet-handle-click-in-view.py`, pixels found by ray picks):
+a plain click on an arrow selected the face behind it and the arrow never
+went active; the root button opened no menu; a missing reference showed no
+arrow. Causes: the selection root handles a release before its children,
+the gizmos' editing root is its sibling after it, and Coin's dragger grabs
+only once the pointer moves -- found with a temporary PICKTRACE of the
+press's pick path after two fixes by reading failed (removed). The fix: a
+press whose pick runs through an SoDragger (the full path; the dragger is a
+part of its container's kit) keeps its release from the selection. The
+panels no longer hide every handle when the feature fails. Then the
+reporter changed the entry (11:30, 11:35): the root button is gone; a
+right click on any handle opens its menu -- taken at the view widget, as
+some navigation styles open the view's own menu before the scene sees the
+click -- and the pointer over a handle shows "Drag to change the value;
+click to type it. Right click for the menu." Space still opens it. Test 11.
+
+**136, an undo step per operation (fillet first).** `TaskFeatureParameters`
+fine undo: setupTransaction() opens a step per event and closes it after
+the recompute it scheduled (the shape goes back with the value); a drag
+one step, Esc or another button cancels it back to where it began (rolled
+back, no step); a label open for typing one step -- Enter commits and
+leaves it open, Escape drops what was not entered, Tab commits, closes and
+moves on, a click away commits; Ctrl+Enter gone; the panel's radius box
+one step from the first key to Enter or the focus leaving; OK a step of
+its own; Cancel undoes down to the edit's first transaction, or to the
+panel's first step when that one was left empty (it was, from a script).
+Found on the way: after an Undo inside the edit the handles stayed where
+the undone drag left them -- the fillet's and chamfer's handles now follow
+a refresh. Test `fillet-undo-steps-in-view` 16; the typed-radius test to
+the new keys, 21.
+
+**137, Print pages.** `TechDraw_Print` replaces TechDraw_PrintAll and
+TechDraw_PrintSelected: a dialog with the documents' pages in a tree (check
+boxes, a document's box tristate), the checked ones as document#page in a
+list ordered by buttons and by dragging, Print (the printer's dialog,
+landscape) and Export PDF; the choice remembered for the session. Test 12.
+
+**My choices:** Cancel in the print dialog keeps the previous remembered
+choice; the tooltip and the right click on every handle, the chamfer's
+angle included; the panel box's step starts at the first key (a focus
+alone holds nothing: the box has the focus when the panel opens).
+
+**Tests on r54:** the nine GUI tests of the round pass (chamfer 17, fillet
+15/10/6/21, click 11, page state 18, print 12, undo 16); ctest 957/957.
+Python 3770 OK (skipped=52, expected failures=6) on r54.
+
+Entry 138 (the selection view's header, overlaid): measured, not
+reproduced -- the selection view's header and the property editor's read
+the same ground (Dark (51,51,51) at 10, Light (128,128,128) at 50; test
+`tests/gui/overlay-header-grounds.py`, not committed yet); a screenshot of
+the reporter's panels is asked for.
