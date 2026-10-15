@@ -19136,7 +19136,8 @@ The wait for an open edit stands, for whoever asks.
 **Left.** The host starts it from Python; the sharing panel has no
 button for it yet, and says nothing of which document a branch is
 served in. A branch that exists already is not served as it is -- a new
-one is always made. The document opened for the branch has no window
+one is always made. *(Both since 32.31; the log panel's "Serve
+branch..." is the button, 32.25.)* The document opened for the branch has no window
 and is closed by closing it from Python or with the application.
 *(Since 32.30, closing the last window says so and offers to show it;
 saving it says first that it is not the branch the file is checked out
@@ -19411,7 +19412,7 @@ number, whoever asks. None of it is a row, a value or a shape. *(Ruled
 since, 32.30: such a branch is listed by its name, greyed.)*
 
 A user is who the log says: for a browser its grant counts, a label and
-the first six digits of its key (30.32). What is said of that user is
+the first six digits of its key (30.32). *(Groups since, 32.32.)* What is said of that user is
 said of whoever shows that name; the door decides who may show it.
 
 **Tests.** `tests/gui/serve-log-acts.py` (89: clients A, B, the host
@@ -19828,7 +19829,113 @@ document has one asks nothing; the last closed again and shown, the
 branch's document has a window. `web/src/widgets/gate.ts` (272, +6).
 
 **Not pictured.** The guide has no picture of the page's second request
-list nor of the desktop's question.
+list nor of the desktop's question. *(Both since, 32.31.)*
+
+### 32.31 A branch there is, served as it is; the sharing panel lists what is served (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "Do 2 first, then 1." -- of what 32.23 left:
+(2) a branch that exists is not served as it is, and the sharing panel
+says nothing of which document a branch is served in; (1) the two
+pictures 32.30 did not take.
+
+**A branch there is.** `Gui::serveBranchOf(doc, name)` (Python
+`Gui.serveBranch`) serves a branch `name` there is already as it is: no
+branch is made, and the document opened for it is at its head
+(`Document::openFileBranch`). Asked again, the document that serves it
+already is returned. Refused where another document is on that branch --
+the one the host works in, say, which is shared as it is, not served as a
+branch ("share that document instead") -- and where the branch is closed.
+A new name, or none, makes one where the document is, as before. The log
+panel's **Serve branch...** offers the branches there are in its list,
+but the one the document is on and the closed ones, and takes a new name
+typed over them.
+
+**Found on the way: a branch opened by its name took another's
+document.** `Document::openFileBranch` opens a branch's tip at the newest
+version of its history, and reused the editable instance of that version
+where one was open (`openFileVersion`, at most one of each, 27.22) --
+then switched it to the branch. That instance may be another branch's tip
+already: a branch served in a document of its own is one, opened at the
+same version. So serving a second branch moved the first one's document
+onto it, from under its clients. The open instance is reused now only
+while it is on no branch of its own (`detached`); otherwise a second
+instance is opened, as `openNewBranch()` opens one.
+
+**The sharing panel** lists the branches served in documents of their own
+(`Gui::servedLogBranches()`), under its clients, while there are any: the
+branch, the document a client joins it by (`?doc=`), and how many clients
+are in it. **Show** gives the document a window (32.30), **Close** closes
+it after asking -- whoever is in it is left with none; the branch stays in
+the log.
+
+**Pictured.** `15-log-browser-sent.png`, the page's "Sent, or brought in"
+list as a client sees a copy it sent (taken by
+`tests/gui/serve-log-acts-browser.py`), and `18-hidden-close.png`, the
+desktop's question (`scripts/transaction-log-guide-shots.py`, which now
+serves a branch at its end and closes the last window).
+
+**Tests.** `scripts/share-panel-check.py` (57, +10): no branch served,
+none listed; one served listed with its document and no one in it, with
+no window, **Show** giving it one; a branch there is served as it is --
+no branch made, asked again the same document -- the branch the first
+document is on refused; both listed; **Close** asking, closing its
+document, the branch staying; the one served first still on its own
+branch; their documents closed, none listed.
+`scripts/transaction-log-access-check.py` (36): the branch named again in
+**Serve branch...** is the one served already, no document more.
+`Document.TransactionBranchCases.testABranchOpenedByNameLeavesAnother
+BranchsDocumentWhereItIs` (new): a branch's tip opened by its name beside
+a document on another branch at the same version. `tests/gui/serve-log-
+acts-browser.py` (45, +1): a copy the page's user sent, listed to it
+unread, not its to bring in, withdrawn.
+
+### 32.32 A group is a user: what is said of it is its members' (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "Then work on user group, make it simple,
+maybe just a virtual user, each user can have an extra field of parent to
+act as group." -- of 32.25's "Access is said by user; there is no group".
+
+**A group is a user** of kind `group` (`App::kLogGroupKind`): a name the
+host gives, which nobody logs in as, kept in the log's `user` table as any
+user is. Each user has a `parent`, the group it is in (`LogUser::parent`,
+a column added in place: no release has the store, 27.55); a group has
+one too, so groups nest. Nothing else is new: what a group may of a
+branch is said as of a user (`setBranchAccess("group", name, ...)`, the
+Access dialog), and is had by every user in it.
+
+**Which is had.** Of each branch, what is said of the user itself; else
+what is said of the nearest group it is in, then of that group's group
+(`Document::userGroups`, the user and its groups nearest first; `Reach`
+in `Gui/SceneLog.cpp` takes the first of them said of the branch); else
+the defaults of 32.25 -- the branch of the document it is in is read, a
+branch served to it written. So a user said to read a branch its group
+writes reads it. `made`, a branch's maker's own to delete, is said of a
+user and not had through a group.
+
+**Said.** `Document::addUserGroup(name)` makes a group;
+`Document::setUserGroup(kind, name, group)` puts a user in one, making
+it where there is none, or in none where `group` is empty -- the user
+need not have come yet. A group is not put in itself, however far up
+(`ValueError`). Python: `addTransactionGroup(name)`,
+`setTransactionUserGroup(kind, name, group='')`, and
+`getTransactionUsers()` -- `id`, `kind`, `name` and `group`, the name of
+the group it is in. `setTransactionAccess` takes `group` as a kind. The
+Access dialog lists the groups among the users, each user with the group
+it is in, and has a row under its own: "The user chosen is in group",
+a group there is or a new name -- or none -- and **Put in Group**.
+
+**Tests.** `tests/gui/serve-log-acts.py` (111, +6): a branch the client
+reads nothing of is greyed; put in a group said to read it, the client
+reads it; the group said to write it, writes it; said of the client
+itself to read it, reads it only; a group in a group passes on what is
+said of the outer one; out of the group, greyed again.
+`scripts/transaction-log-access-check.py` (38, +2): a user put in a group
+by a new name in the dialog -- the group made and listed among the users,
+the user's line saying its group and staying chosen -- and taken out from
+Python. `Document.TransactionBranchCases.testUsersInGroups` (new): a user
+in a group made by naming it, the group in another, a group not put in
+itself, an unknown kind refused, a group said of as a user, a user taken
+out.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 

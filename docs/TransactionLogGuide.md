@@ -624,6 +624,8 @@ many operations it has, who made them and who sent it; **Merge** and
 **Look first...** merge it as a request is merged, and **Delete** throws
 it away -- a copy unread, or a branch with what was brought in.
 
+![A copy you sent, waiting unread: yours to withdraw](images/transaction-log/15-log-browser-sent.png)
+
 ![A side picked for each conflict](images/transaction-log/15-log-browser-picker.png)
 
 **The list of what it would do** takes the place of the panel's lists
@@ -660,12 +662,16 @@ branch you write. Keeping every shape an object has had and will have --
 
 **For the sharer**, in the Transaction Log panel on the desktop:
 
-- **Serve branch...** makes a branch where the document is and serves it
-  in a document of its own, with no window. It asks for the branch's name
-  and the status line then says the document's name, which is what someone
-  joins it by. The button is there for a document that is shared.
-  (`Gui.serveBranch(App.ActiveDocument, "name")` does the same from the
-  Python console.)
+- **Serve branch...** serves a branch in a document of its own, with no
+  window. Pick a branch there is, and it is served as it is; type a new
+  name, or none, and a branch is made where the document is. The status
+  line then says the document's name, which is what someone joins it by.
+  The button is there for a document that is shared. The branch the
+  document is on is not offered: share the document itself. The sharing
+  panel lists the branches served, each with its document and how many are
+  in it, and **Show** gives one a window, **Close** closes it -- the branch
+  stays. (`Gui.serveBranch(App.ActiveDocument, "name")` does the same from
+  the Python console.)
 - **Access...** says who may what, and lists what has been said: pick a
   user -- anyone who has connected to the document -- **reads** or
   **writes**, the branch, and for a write the version it starts from, or
@@ -673,7 +679,12 @@ branch you write. Keeping every shape an object has had and will have --
   line away. With nothing said for someone, they read the branch of the
   document they joined and write a branch that was served to them, as
   described above; a line here is in place of that, so a served branch can
-  be made read only for one person.
+  be made read only for one person. **Groups:** choose a user and type a
+  group's name in the row below, **Put in Group** -- a new name makes the
+  group, and an empty one takes the user out. A group is in the list of
+  users too: say what it reads or writes as for anyone, and everyone in it
+  has that, unless something is said of them by name. A group can be put
+  in another group.
 
   ![Access: who reads or writes which branch, and from where](images/transaction-log/17-access.png)
 - **The merges asked for** are in the panel's request list (section 11),
@@ -694,6 +705,8 @@ names it: **Show Them** gives it a window, **Leave Hidden** leaves it
 open and served with none, **Cancel** keeps the document you were
 closing. Saving it warns first that it is not the branch the file is
 checked out on, and names the one that is.
+
+![Closing the last window while a served branch has none](images/transaction-log/18-hidden-close.png)
 
 ## 13. I want to...
 
@@ -774,6 +787,7 @@ the same cache would be offered the document to recover, over the pictures.
 The pictures of section 12 are a browser's, and that script does not take
 them. They are written by the two browser tests into their output directory
 -- `log.png` and `shown.png` by `tests/gui/serve-log-browser.py`, `acts.png`
-and `versions.png` by `tests/gui/serve-log-acts-browser.py` -- and copied
-from there as `14-log-browser*.png` and `15-log-browser-*.png`. Both tests
+and `versions.png` by `tests/gui/serve-log-acts-browser.py`, with the rest of
+its shots (`sent.png` among them) -- and copied from there as
+`14-log-browser*.png` and `15-log-browser-*.png`. Both tests
 say in their first lines how they are run.
