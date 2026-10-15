@@ -33,6 +33,7 @@
 # include <Inventor/actions/SoWriteAction.h>
 # include <Inventor/bundles/SoMaterialBundle.h>
 # include <Inventor/details/SoFaceDetail.h>
+# include <Inventor/draggers/SoDragger.h>
 # include <Inventor/details/SoLineDetail.h>
 # include <Inventor/elements/SoClipPlaneElement.h>
 # include <Inventor/elements/SoCacheElement.h>
@@ -392,6 +393,13 @@ public:
     bool selectAll;
 
     bool skipMouseRelease = false;
+    /** The last button-1 press was grabbed below this root -- by a dragger,
+     * or a handle's root button (docs/HandsOnQueue.md entry 135): its
+     * release is the grabber's, not a click to select what is behind it.
+     * This root handles an event before its children, so a release would
+     * otherwise select the face behind the handle and never reach it.
+     */
+    bool pressGrabbedBelow = false;
 
     // -1 = not handled, 0 = not selected, 1 = selected
     int32_t preSelection;
@@ -1962,11 +1970,39 @@ SoFCUnifiedSelection::handleEvent(SoHandleEventAction * action)
     // before, and remove from the session's instance the preselection
     // the mode had just made. The event still goes on to the children,
     // for the draggers that live in the scene.
+    const bool press = SoMouseButtonEvent::isButtonPressEvent(action->getEvent(),
+                                                              SoMouseButtonEvent::BUTTON1);
+    if (press) {
+        pimpl->pressGrabbedBelow = false;
+    }
     if (selectionRole.getValue() && pimpl->pcViewer) {
         pimpl->handleEvent(action);
     }
 
     inherited::handleEvent(action);
+
+    // A press a handle's button grabbed, or one on a dragger: its release is
+    // theirs. A dragger takes the press and grabs only once the pointer
+    // moves (SoDragger::handleEvent), so a plain click on one grabs nothing;
+    // and the editing root with the gizmos is this node's sibling, after it,
+    // so whether the dragger took the press is not known here yet. What it
+    // goes by is: the press's pick, the one the dragger takes it by.
+    if (press && action->getGrabber()) {
+        pimpl->pressGrabbedBelow = true;
+    }
+    else if (press) {
+        if (const SoPickedPoint* picked = action->getPickedPoint()) {
+            // The whole path: an SoPath hides what is inside a node kit, and
+            // a gizmo's dragger is a part of its container
+            const auto* path = static_cast<const SoFullPath*>(picked->getPath());
+            for (int i = path->getLength() - 1; i >= 0; --i) {
+                if (path->getNode(i)->isOfType(SoDragger::getClassTypeId())) {
+                    pimpl->pressGrabbedBelow = true;
+                    break;
+                }
+            }
+        }
+    }
 }
 
 void
@@ -2024,7 +2060,13 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
 
         if (event->isOfType(SoMouseButtonEvent::getClassTypeId())) {
             const SoMouseButtonEvent* e = static_cast<const SoMouseButtonEvent *>(event);
-            if (SoMouseButtonEvent::isButtonReleaseEvent(e,SoMouseButtonEvent::BUTTON1)) {
+            if (SoMouseButtonEvent::isButtonReleaseEvent(e,SoMouseButtonEvent::BUTTON1)
+                    && pressGrabbedBelow) {
+                // the release of a press a handle took: the handle's, it goes
+                // on to the children unhandled
+                pressGrabbedBelow = false;
+            }
+            else if (SoMouseButtonEvent::isButtonReleaseEvent(e,SoMouseButtonEvent::BUTTON1)) {
                 // check to see if the mouse is over a geometry...
                 auto infos = this->getPickedList(action,!Selection().needPickedList());
                 // What the selection gate refuses is not there to be
