@@ -367,6 +367,10 @@ public:
         bool there {false};
         std::string a;
         std::string b;
+        /// The rows whose states the two are of, where known: a shape the
+        /// log let go is read from that state's own document (sec 32.33)
+        int64_t aRow {0};
+        int64_t bRow {0};
     };
     /// Property `prop` of object `cid`, and its values for each pair. With
     /// `document`, of the object in that open document and not in the one
@@ -484,6 +488,9 @@ public:
         const std::string name = doc ? doc->getName() : std::string();
         if (name == _home)
             return;
+        hideAll();
+        closeStates({}, true);
+        _held.clear();
         _home = name;
         _chosen.clear();
         pick(NotPicking);
@@ -503,6 +510,7 @@ public:
     ~TransactionDiffBar() override
     {
         hideAll();
+        closeStates({}, true);
     }
 
     /// What pair `index` is called: the panel's one pair is a row's before
@@ -522,6 +530,7 @@ public:
                    const QString& note = QString())
     {
         _values.clear();
+        _held.clear();
         if (doc)
             setDocument(doc);
         _chosenOnly = chosenOnly;
@@ -727,6 +736,9 @@ private:
         if (chosen.size() != _chosen.size())
             showChosen();   // one of them is gone
         std::set<App::DocumentObject*> changed;
+        // The states read for what the log let go, and what of it there is
+        std::set<int64_t> rows;
+        LetGo letGo;
         for (const auto& value : _values) {
             if (index < 0 || index >= static_cast<int>(value.pairs.size())
                     || !value.pairs[index].there)
@@ -743,8 +755,25 @@ private:
             if (!view || views.count(view))
                 continue;
             const Pair& pair = value.pairs[index];
-            if (!view->showValueDiff(value.prop.c_str(), pair.a, pair.b,
-                                     _position->value() / 100.f, _only->isChecked(), mode))
+            const bool shape = view->showsValueDiffOf(value.prop.c_str());
+            std::string a = shape ? heldRef(pair.a, pair.aRow, rows, letGo, false) : pair.a;
+            std::string b = shape ? heldRef(pair.b, pair.bRow, rows, letGo, false) : pair.b;
+            auto show = [&]() {
+                return view->showValueDiff(value.prop.c_str(), a, b,
+                                           _position->value() / 100.f, _only->isChecked(),
+                                           mode);
+            };
+            bool ok = show();
+            if (!ok && shape) {
+                // Read, and not shown all the same: the value is there and
+                // the geometry it names is not
+                const std::string wasA = a;
+                const std::string wasB = b;
+                a = heldRef(a, pair.aRow, rows, letGo, true);
+                b = heldRef(b, pair.bRow, rows, letGo, true);
+                ok = (a != wasA || b != wasB) && show();
+            }
+            if (!ok)
                 continue;
             views.insert(view);
             shown.push_back(value.object);
@@ -757,6 +786,8 @@ private:
                 view->hideValueDiff();
         }
         _shown = std::move(shown);
+        // What is shown has its shapes: a state no longer asked for goes
+        closeStates(rows);
 
         QString text;
         if (!_shown.empty()) {
@@ -814,11 +845,90 @@ private:
             _pending.stop();
         if (_picking != NotPicking)
             text = QObject::tr("Pick an object in the tree or the view");
+        if (letGo.again > 0)
+            text += (text.isEmpty() ? QString() : QStringLiteral("; "))
+                  + QObject::tr("%n shape(s) the log let go, computed again at their row", "",
+                                letGo.again);
+        if (letGo.lost > 0)
+            text += (text.isEmpty() ? QString() : QStringLiteral("; "))
+                  + QObject::tr("%n shape(s) the log let go, which nothing here has", "",
+                                letGo.lost);
         auto own = _pairNotes.find(index);
         const QString note = own != _pairNotes.end() ? own->second : _note;
         if (!note.isEmpty() && index >= 0 && index < _pair->count() - 1)
             text += (text.isEmpty() ? QString() : QStringLiteral("; ")) + note;
         _said->setText(text);
+    }
+
+    /// Of what update() asked for: shapes the log no longer holds, read from
+    /// their state's document, and those with no state to read them from.
+    struct LetGo
+    {
+        int again {0};
+        int lost {0};
+    };
+
+    /** Ref `ref`, of a value at the state at row `row`, as showValueDiff()
+     * takes it (docs/TransactionLog.md sec 32.33). A value a recompute wrote
+     * is a cache, which a file's copy of the log does not carry: where the
+     * log no longer holds it, it is what the object has in that state's own
+     * document, opened once (App::Document::openRowState()) and kept while
+     * it is asked for. `rows` gets the row; `letGo` counts what was let go.
+     * With `gone` it is not asked whether the log reads it: the view could
+     * not.
+     */
+    std::string heldRef(const std::string& ref, int64_t row, std::set<int64_t>& rows,
+                        LetGo& letGo, bool gone)
+    {
+        if (ref.empty() || ref == NoValue || ref.compare(0, 4, "doc:") == 0)
+            return ref;
+        auto doc = App::GetApplication().getDocument(_home.c_str());
+        auto log = doc ? doc->getTransactionLog() : nullptr;
+        if (!log)
+            return ref;
+        auto known = gone ? _held.end() : _held.find(ref);
+        if (!gone && known == _held.end()) {
+            // Read as the view reads it: the entity may be there and not
+            // all it needs
+            App::CapturedValue value;
+            known = _held.emplace(ref, log->readValue(ref, value) && value.ok).first;
+        }
+        if (!gone && known->second)
+            return ref;
+        auto state = row > 0 ? _states.find(row) : _states.end();
+        if (row > 0 && state == _states.end()) {
+            std::string name;
+            try {
+                name = doc->openRowState(row)->getName();
+            }
+            catch (const Base::Exception& e) {
+                FC_WARN("the state at row " << row << " of " << _home << ": " << e.what());
+            }
+            state = _states.emplace(row, name).first;
+        }
+        if (state == _states.end() || state->second.empty()) {
+            ++letGo.lost;
+            return ref;
+        }
+        rows.insert(row);
+        ++letGo.again;
+        return "doc:" + state->second;
+    }
+
+    /// The states read for heldRef() but those of `keep` closed. One that
+    /// could not be read is not tried again until `all`.
+    void closeStates(const std::set<int64_t>& keep, bool all = false)
+    {
+        for (auto it = _states.begin(); it != _states.end();) {
+            if (keep.count(it->first) || (!all && it->second.empty())) {
+                ++it;
+                continue;
+            }
+            const std::string name = it->second;
+            it = _states.erase(it);
+            if (!name.empty() && App::GetApplication().getDocument(name.c_str()))
+                App::GetApplication().closeDocument(name.c_str());
+        }
     }
 
     QComboBox* _pair {nullptr};
@@ -841,6 +951,11 @@ private:
     std::map<int, QString> _pairNotes;
     std::function<void(int)> _pairChosen;
     std::vector<App::DocumentObjectT> _shown;
+    /// Of the document's log, by ref: whether it still holds the value
+    std::map<std::string, bool> _held;
+    /// The states of rows read for what the log let go: the document's
+    /// name, empty where it could not be read
+    std::map<int64_t, std::string> _states;
 };
 
 const char* TransactionDiffBar::NoValue = "-";
@@ -1640,7 +1755,11 @@ QString TransactionLogView::valueText(const QString& label, const QString& ref) 
                         .arg(QString::fromStdString(a.name)).arg(a.bytes.size());
     }
     else {
-        text += tr("(value not in store)\n");
+        // Sec 32.33: what a recompute wrote is a cache, and a file's copy of
+        // the log carries none of it
+        text += tr("(not in the log any more: a value a recompute made is a cache, which the "
+                   "file's copy of the log does not carry; the 3D view computes a shape "
+                   "again in its row's state)\n");
     }
     text += QLatin1Char('\n');
     return text;
@@ -1853,6 +1972,10 @@ void TransactionLogView::showRowDiff(int64_t seq)
         std::vector<TransactionDiffBar::Value> values;
         std::map<std::pair<long, std::string>, size_t> at;
         std::set<long> absent;
+        // The states the two are of: the row's parent's, and the row's
+        int64_t parent = 0;
+        for (const auto& t : l->store().transactions(seq, 1))
+            parent = t.seq == seq ? t.parent : parent;
         for (const auto& op : l->store().ops(seq)) {
             if (op.ckind != "obj" || op.op != "set" || op.vafter.empty())
                 continue;
@@ -1863,7 +1986,8 @@ void TransactionLogView::showRowDiff(int64_t seq)
                 at[{op.cid, op.prop}] = values.size();
                 values.push_back({op.cid, op.prop,
                                   {{true, op.vbefore.empty() ? TransactionDiffBar::NoValue
-                                                             : op.vbefore, op.vafter}}});
+                                                             : op.vbefore, op.vafter,
+                                    parent, seq}}});
             }
             else {
                 values[found->second].pairs[0].b = op.vafter;
@@ -1936,7 +2060,7 @@ void TransactionLogView::showVersionDiff(int64_t seq)
             // Now is what the object has: the empty ref
             values.push_back({c.cid, c.prop,
                               {{true, c.a.empty() ? TransactionDiffBar::NoValue : c.a,
-                                std::string()}}});
+                                std::string(), seq}}});
         }
         for (int c = 0; c < ChgColumns; ++c) {
             if (c != ChgObject)
@@ -1969,10 +2093,12 @@ void TransactionLogView::onChangeSelected()
     const QString prop = item->text(ChgProp);
     _diffBar->clear();
     if (cid && !prop.isEmpty() && !now.isEmpty()) {
+        const auto versions = _versions->selectedItems();
+        const int64_t seq = versions.isEmpty() ? 0 : versions.front()->text(VerSeq).toLongLong();
         _diffBar->setPairLabel(0, tr("the version against now"));
         _diffBar->setValue(_doc, cid, prop.toStdString(),
                            {{true, there.isEmpty() ? TransactionDiffBar::NoValue
-                                                   : there.toStdString(), std::string()}});
+                                                   : there.toStdString(), std::string(), seq}});
     }
     _value->setPlainText(valueText(tr("now"), now) + valueText(tr("at the version"), there));
 }
@@ -2041,9 +2167,15 @@ void TransactionLogView::onOpSelected()
     // with no value before made the property, and has nothing to be against.
     const long cid = static_cast<long>(item->data(OpContainer, Qt::UserRole).toLongLong());
     if (cid && !before.isEmpty() && !after.isEmpty()) {
+        // Of the row selected: its parent's state, and its own
+        const auto rows = _transactions->selectedItems();
+        const int64_t seq = rows.isEmpty() ? 0 : rows.front()->data(TxnSeq, Qt::UserRole)
+                                                     .toLongLong();
+        const int64_t parent = rows.isEmpty() ? 0 : rows.front()->data(TxnParent, RoleParent)
+                                                        .toLongLong();
         _diffBar->setPairLabel(0, tr("before against after"));
         _diffBar->setValue(_doc, cid, item->text(OpProp).toStdString(),
-                           {{true, before.toStdString(), after.toStdString()}});
+                           {{true, before.toStdString(), after.toStdString(), parent, seq}});
     }
     QString meta = item->data(OpProp, Qt::UserRole).toString();
     QString text;
@@ -2397,6 +2529,9 @@ public:
                 Outcome outcome = Outcome())
         : QDialog(parent)
         , _outcome(std::move(outcome))
+        , _rows(rows)
+        , _base(preview.base)
+        , _theirs(preview.theirs)
     {
         setObjectName(QStringLiteral("TransactionMergeDialog"));
         setWindowTitle((rows ? QObject::tr("Apply %1 to %2") : QObject::tr("Merge %1 into %2"))
@@ -2573,10 +2708,14 @@ public:
             // has one: what the object of this id has in its document. Of
             // a fast-forward the result is theirs.
             auto pairsOf = [this](const App::Document::MergeChange& c) {
+                // The base and theirs are states of their rows: of a merge.
+                // Rows picked are not one state, and have none.
+                const int64_t base = _rows ? 0 : _base;
+                const int64_t theirs = _rows ? 0 : _theirs;
                 std::vector<TransactionDiffBar::Pair> pairs {
-                    {!c.theirs.empty(), std::string(), c.theirs},
-                    {!c.base.empty(), c.base, std::string()},
-                    {!c.base.empty() && !c.theirs.empty(), c.base, c.theirs}};
+                    {!c.theirs.empty(), std::string(), c.theirs, 0, theirs},
+                    {!c.base.empty(), c.base, std::string(), base},
+                    {!c.base.empty() && !c.theirs.empty(), c.base, c.theirs, base, theirs}};
                 if (_resultIsTheirs)
                     pairs.push_back(pairs.front());
                 else
@@ -2955,6 +3094,10 @@ private:
     std::map<long, std::string> _there;
     std::string _resultRef;
     bool _resultIsTheirs {false};
+    /// Of rows picked, and not a branch merged; the base's row and theirs'
+    bool _rows {false};
+    int64_t _base {0};
+    int64_t _theirs {0};
     bool _made {false};
     bool _making {false};
     bool _isStale {false};
