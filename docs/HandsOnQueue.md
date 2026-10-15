@@ -160,6 +160,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:33: NEW ENTRY 144 -- a hover highlight on the on-view arrow, by
+the same logic as a normal mesh's: an outline and the automatic colour.**
+Under the entry.
+
 **2026-10-15 15:32: entries 141 to 143 -- the CHAMFER too, ADDED by the
 reporter; its arrow direction perpendicular to the chamfer face.** The
 chamfer's two sizes against one normal arrow: a point under entry 142.
@@ -2924,6 +2928,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face") |
 | 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry |
 | 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same |
+| 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19688,6 +19693,37 @@ shape is invalid"); nothing per edge.
 (point l answered): skip missing or failed edges, keep their old preview,
 stay in error, the stop cursor on a failing drag.
 
+## 144. A hover highlight on the on-view arrow, as a normal mesh is highlighted: outline and automatic colour (a change request) -- OPEN
+
+**2026-10-15 15:33, the reporter:** "also request, show hover highlight for
+the arrow. also use the same logic of highlight for normal mesh, i.e.
+outline and auto color"
+
+The note-taker's reading:
+- The on-view ARROW (the fillet's, and by the note-taker's reading every
+  Gizmo handle -- the chamfer's too, as in entries 141 to 143) gets a
+  HIGHLIGHT while the pointer is OVER it (pre-selection, before a press).
+- The highlight follows the SAME LOGIC as the pre-selection highlight of
+  an ordinary shape in the 3D view: the OUTLINE drawn around it, and the
+  AUTOMATIC highlight colour (chosen against the object's own colour),
+  not a fixed one.
+NOT said:
+a. the handles it covers -- every handle (arrows, the chamfer's rotation
+   handle), by the note-taker's reading;
+b. whether the arrow's value label is lit with it -- not said;
+c. whether it follows the user's pre-selection settings (the outline on or
+   off, the colour) or always uses outline + auto colour -- by the
+   note-taker's reading it follows them, "the same logic";
+d. edge groups (entry 117 step 3): a group's arrows are lit together on
+   the menu today -- whether hover lights one arrow or its whole group;
+   one arrow, by the note-taker's reading.
+Related: entry 141 (the tooltip on hovering the same arrow); entry 135
+point 4 (a highlight on the root button, dropped with the button 11:30).
+READ in the source, nothing run: the pre-selection outline is the setting
+`ShowPreSelectedFaceOutline` and the colour `HighlightColor`
+(`src/Gui/ViewParams.h` 235 to 242, 463 to 470); where the AUTOMATIC
+colour is chosen NOT found by this short reading.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -19699,5 +19735,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 143
+the build session, 131 and 132 found by it; entries 134 to 144
 are of 2026-10-15, 134 said to the build session)
