@@ -160,6 +160,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:50: NEW ENTRY 150 (a defect) -- wheel zoom stops under a
+transparent overlaid task panel when wheeling on while moving onto it; back
+only after leaving and returning without wheeling.** Under the entry; a
+reading of the overlay's wheel delay there.
+
 **2026-10-15 16:47: entry 148 ANSWERED -- not known whether it ever worked; the
 unselectable edges maybe the missing faces' borders (TechDraw overlaps
 edges): the false face's lower arc selects, the upper not; and faces too:
@@ -2995,6 +3000,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept |
 | 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face |
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN |
+| 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20237,6 +20243,45 @@ in `QGIView*`, so Qt picks the view by its whole bounding rectangle (Qt's
 default shape is the bounding rect) -- by the note-taker's reading, the
 opaque pick.
 
+## 150. Wheel zoom stops under a transparent overlaid task panel when the wheel turns while the pointer moves onto it (a defect) -- OPEN
+
+**2026-10-15 16:50, the reporter:** "new defect, wheel zoom under transparent
+overlay task panel sometimes does not work. one sequence is when I am
+wheel continuously while move my mouse to the task panel overlay
+transparent area, the zoom stop. and further wheel got no response. it
+only come back to work if my mouse left the area, and come back to the
+area while not wheeling, and only start wheeling in the area, it'll work"
+
+The note-taker's reading:
+- The task panel overlaid on the 3D view in TRANSPARENT mode: a wheel
+  turn over its see-through area normally passes to the view and ZOOMS.
+- The failing sequence: the user keeps WHEELING while moving the pointer
+  from the view ONTO the panel's transparent area -- the zoom STOPS there,
+  and further wheeling over it does NOTHING (neither zoom nor, by the
+  note-taker's reading, a scroll of the panel).
+- It comes back only this way: the pointer LEAVES the area, comes back
+  WITHOUT wheeling, and the wheel is STARTED there -- then it zooms.
+- "sometimes": the sequence above is one way to get it; others not
+  known.
+NOT said:
+a. whether the panel scrolls (its own scroll bar moves) when the zoom
+   stops -- "no response", so nothing at all, by the note-taker's reading;
+b. the other overlaid panels (tree, property view) in transparent mode --
+   the same or not;
+c. the copy -- the STAGED one of 14:47, by the note-taker's reading.
+READ in the source, nothing run: `src/Gui/OverlayManager.cpp` 1992 to
+2000 (the wheel's pass-through, the setting `DockOverlayWheelPassThrough`)
+and 2060 to 2105: a WHEEL DELAY -- once a wheel event has gone to a panel,
+the next wheel events within `DockOverlayWheelDelay` ms, or NEAR the last
+wheel position, are left to the PANEL (`return false`), and EACH such
+event RENEWS the delay and the position (2070 to 2077). By the
+note-taker's reading -- a guess, not checked: wheeling on continuously
+never lets the delay run out, and the position follows the pointer, so
+the wheel stays with the panel for as long as it turns; only a pause
+(leaving, coming back without wheeling) ends it -- matching the
+reporter's way back. Over a transparent area the panel has nothing to
+scroll, hence "no response".
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20248,5 +20293,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 149
+the build session, 131 and 132 found by it; entries 134 to 150
 are of 2026-10-15, 134 said to the build session)
