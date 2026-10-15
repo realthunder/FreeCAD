@@ -128,6 +128,81 @@ class TestFillet(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(byRef, fillet.Shape.Volume, places=6)
 
+    def testFailedEdgesLeftOut(self):
+        # docs/HandsOnQueue.md entry 143: an edge whose fillet fails is left
+        # out, the result holds the others' fillets, the feature is in error
+        # still, and the faces the failed one had when last made are kept
+        body = self.Doc.addObject('PartDesign::Body', 'PartialBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'PartialBox')
+        box.Length = box.Width = 10.0
+        box.Height = 2.0
+        self.Doc.recompute()
+        shape = box.Shape
+        # a vertical edge, 2 long, between two faces 10 wide; and an edge on
+        # the top, between the top and a side 2 high, away from it
+        vertical = top = None
+        for i, e in enumerate(shape.Edges):
+            d = e.Vertexes[1].Point - e.Vertexes[0].Point
+            if abs(d.z) > 1e-7:
+                vertical = vertical or (i + 1, e)
+        for i, e in enumerate(shape.Edges):
+            d = e.Vertexes[1].Point - e.Vertexes[0].Point
+            if abs(d.z) < 1e-7 and all(abs(v.Point.z - 2.0) < 1e-7 for v in e.Vertexes) \
+                    and not any(v.isSame(w) for v in e.Vertexes for w in vertical[1].Vertexes):
+                top = top or (i + 1, e)
+        self.assertTrue(vertical and top)
+        vertical, top = 'Edge%d' % vertical[0], 'Edge%d' % top[0]
+        fillet = body.newObject('PartDesign::Fillet', 'PartialFillet')
+        fillet.Base = (box, [vertical, top])
+        fillet.Radius = 0.5
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        self.assertEqual(list(fillet.FailedEdges), [])
+        self.assertTrue(fillet.FailedShape.isNull())
+        whole = fillet.Shape.Volume
+
+        # 3 rounds the vertical edge; the top one's side is 2 high
+        fillet.Radius = 3.0
+        self.Doc.recompute()
+        self.assertFalse(fillet.isValid())
+        self.assertEqual(list(fillet.FailedEdges), [top])
+        self.assertTrue(fillet.Shape.isValid())
+        self.assertEqual(len(fillet.Shape.Solids), 1)
+        # the vertical fillet made, the top one not
+        self.assertAlmostEqual(fillet.Shape.Volume, 200.0 - (1 - pi / 4) * 9 * 2, places=3)
+        self.assertGreater(len(fillet.FailedShape.Faces), 0)
+        # the top edge's faces as made at 0.5: along the edge, 10 long, 0.5
+        # high
+        bound = fillet.FailedShape.BoundBox
+        self.assertAlmostEqual(max(bound.XLength, bound.YLength), 10.0, places=3)
+        self.assertAlmostEqual(bound.ZLength, 0.5, places=3)
+
+        # it fails again: the faces stay
+        fillet.Radius = 3.5
+        self.Doc.recompute()
+        self.assertEqual(list(fillet.FailedEdges), [top])
+        self.assertGreater(len(fillet.FailedShape.Faces), 0)
+
+        fillet.Radius = 0.5
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        self.assertEqual(list(fillet.FailedEdges), [])
+        self.assertTrue(fillet.FailedShape.isNull())
+        self.assertAlmostEqual(fillet.Shape.Volume, whole, places=6)
+
+    def testMissingEdgeLeftOut(self):
+        # entry 143: a reference that is gone is left out too
+        body = self.Doc.addObject('PartDesign::Body', 'MissingBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'MissingBox')
+        self.Doc.recompute()
+        fillet = body.newObject('PartDesign::Fillet', 'MissingFillet')
+        fillet.Base = (box, ['Edge1', 'Edge50'])
+        fillet.Radius = 1
+        self.Doc.recompute()
+        self.assertFalse(fillet.isValid())
+        self.assertEqual(list(fillet.FailedEdges), ['Edge50'])
+        self.assertLess(fillet.Shape.Volume, 1000.0 - 1e-6)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestFillet")

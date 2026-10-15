@@ -94,10 +94,16 @@ App::DocumentObjectExecReturn *Fillet::execute()
     }
     baseShape.setTransform(Base::Matrix4D());
 
+    // As many fillets as can be made: an edge whose reference is gone or
+    // whose fillet fails is left out, the result holds the others', and the
+    // feature is in error still (docs/HandsOnQueue.md entry 143)
+    std::vector<std::string> missing;
     auto edges = UseAllEdges.getValue() ? baseShape.getSubTopoShapes(TopAbs_EDGE)
-                                        : getContinuousEdges(baseShape);
-    if (edges.empty())
+                                        : getContinuousEdges(baseShape, &missing);
+    if (edges.empty()) {
+        setFailedEdges(missing);
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Fillet not possible on selected shapes"));
+    }
 
     double radius = Radius.getValue();
 
@@ -124,9 +130,16 @@ App::DocumentObjectExecReturn *Fillet::execute()
                 conf.emplace_back(segment.param, segment.radius, segment.length);
         }
 
-        shape.makEFillet(baseShape,edges,segmentList,Radius.getValue(),nullptr,getCorners(baseShape));
+        Part::TopoShape::FilletPartial partial;
+        shape.makEFillet(baseShape,edges,segmentList,Radius.getValue(),nullptr,
+                         getCorners(baseShape),&partial);
         if (shape.isNull())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Resulting shape is null"));
+
+        // The faces of each edge's fillet, kept for when it fails later; the
+        // failed ones' as last made
+        std::vector<std::string> failedNames;
+        setFailedEdges(baseShape, edges, partial, missing, failedNames);
 
         TopTools_ListOfShape aLarg;
         aLarg.Append(baseShape.getShape());
@@ -157,6 +170,8 @@ App::DocumentObjectExecReturn *Fillet::execute()
 
         if (failed)
             return new App::DocumentObjectExecReturn("Resulting shape is invalid");
+        if (auto ret = failedEdgesError("Fillet failed on", failedNames))
+            return ret;
         return App::DocumentObject::StdReturn;
     }
     catch (Standard_Failure& e) {

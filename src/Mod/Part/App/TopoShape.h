@@ -2164,6 +2164,21 @@ public:
         return TopoShape(0,Hasher).makEFillet(*this,edges,radius1,radius2,op,corners);
     }
 
+    /** What a fillet or a chamfer that leaves out its failed edges tells
+     * (makEFillet's and makEChamfer's \a partial), docs/HandsOnQueue.md
+     * entry 143. A fillet's failed contours OCCT names
+     * (BRepFilletAPI_MakeFillet::NbFaultyContours); a chamfer's it does not
+     * tell, and when the whole fails each edge is tried by itself. Those left
+     * out, the rest is built again.
+     */
+    struct FilletPartial {
+        /// Indices into the edges of those left out, their fillet failed
+        std::vector<int> failed;
+        /// Per edge, the faces its fillet made, a compound; null for a
+        /// failed one
+        std::vector<TopoDS_Shape> faces;
+    };
+
     /// Describes a segment of an edge for fillet operation
     struct FilletSegment {
         /// The [0, 1] parameter that specifies a point on an edge.
@@ -2213,7 +2228,8 @@ public:
                           const std::vector<FilletSegments> &segments,
                           double defaultRadius=0.0,
                           const char *op=nullptr,
-                          const FilletCorners &corners = FilletCorners());
+                          const FilletCorners &corners = FilletCorners(),
+                          FilletPartial *partial = nullptr);
 
     /* Make fillet shape with variable radius per edge
      *
@@ -2310,7 +2326,8 @@ public:
     TopoShape &makEChamfer(const TopoShape &source,
                            const std::vector<TopoShape> &edges,
                            const std::vector<ChamferInfo> &edgeInfo,
-                           const char *op=nullptr);
+                           const char *op=nullptr,
+                           FilletPartial *partial=nullptr);
 
     /* Make chamfer shape with per edge configuration
      *

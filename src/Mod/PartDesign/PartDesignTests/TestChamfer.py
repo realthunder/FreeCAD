@@ -157,6 +157,55 @@ class TestChamfer(unittest.TestCase):
         finally:
             FreeCAD.closeDocument(doc.Name)
 
+    def testFailedEdgesLeftOut(self):
+        # docs/HandsOnQueue.md entry 143, the chamfer as the fillet: an edge
+        # whose chamfer fails is left out, the result holds the others', the
+        # feature is in error still, the failed one's faces as last made kept
+        body = self.Doc.addObject('PartDesign::Body', 'PartialBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'PartialBox')
+        box.Length = box.Width = 10.0
+        box.Height = 2.0
+        self.Doc.recompute()
+        shape = box.Shape
+        # a vertical edge, 2 long, between faces 10 wide; and an edge on the
+        # top away from it, its side 2 high
+        vertical = top = None
+        for i, e in enumerate(shape.Edges):
+            d = e.Vertexes[1].Point - e.Vertexes[0].Point
+            if abs(d.z) > 1e-7:
+                vertical = vertical or (i + 1, e)
+        for i, e in enumerate(shape.Edges):
+            d = e.Vertexes[1].Point - e.Vertexes[0].Point
+            if abs(d.z) < 1e-7 and all(abs(v.Point.z - 2.0) < 1e-7 for v in e.Vertexes) \
+                    and not any(v.isSame(w) for v in e.Vertexes for w in vertical[1].Vertexes):
+                top = top or (i + 1, e)
+        self.assertTrue(vertical and top)
+        vertical, top = 'Edge%d' % vertical[0], 'Edge%d' % top[0]
+        chamfer = body.newObject('PartDesign::Chamfer', 'PartialChamfer')
+        chamfer.Base = (box, [vertical, top])
+        chamfer.Size = 0.5
+        self.Doc.recompute()
+        self.assertTrue(chamfer.isValid())
+        self.assertEqual(list(chamfer.FailedEdges), [])
+        whole = chamfer.Shape.Volume
+
+        chamfer.Size = 3.0
+        self.Doc.recompute()
+        self.assertFalse(chamfer.isValid())
+        self.assertEqual(list(chamfer.FailedEdges), [top])
+        self.assertTrue(chamfer.Shape.isValid())
+        # the vertical chamfer made, the top one not: a 3 by 3 corner off,
+        # 2 high
+        self.assertAlmostEqual(chamfer.Shape.Volume, 200.0 - 4.5 * 2.0, places=3)
+        self.assertGreater(len(chamfer.FailedShape.Faces), 0)
+
+        chamfer.Size = 0.5
+        self.Doc.recompute()
+        self.assertTrue(chamfer.isValid())
+        self.assertEqual(list(chamfer.FailedEdges), [])
+        self.assertTrue(chamfer.FailedShape.isNull())
+        self.assertAlmostEqual(chamfer.Shape.Volume, whole, places=6)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestChamfer")
