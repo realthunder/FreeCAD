@@ -7102,3 +7102,43 @@ first time.
 889 of 957 in the full run, the other 68 (ExpressionImage/Routing) failed only
 for want of FCX_PYODIDE, which that chain set after ctest -- rerun with it,
 91/91 of those groups pass. So 957/957.
+
+## Entry 117 step 4: the chamfer (2026-10-15)
+
+The reporter's "Do chamfer". Built r42 and r43; committed `e2e0bc20ae`
+(Part), `39146aafd0` (Gui), `aaeed0a498` (PD). Draft and thickness not
+done: the word was the chamfer.
+
+**Part.** `PropertyChamferEdges` has groups as the fillet's segments: an id
+per customised edge, sizes and angle mirrored to the group in the same
+change, the flip each edge's own (docs 6.5), saved as `group="N"`, older
+files a group each, the path `ChamferInfo.EdgeN.Group`. Its Python value
+gave the angle as a boolean and the setter refused four and five items --
+fixed.
+
+**Gui.** The handle interface `OnViewValueSet` uses is `Gizmo`'s now, so a
+`RotationGizmo` carries an angle: highlighted, activated by a click, typed.
+`RotationGizmo` disconnects from its box when deleted.
+
+**PD.** Labels at the top middle: Size, and Size 2 or Angle by the type.
+Handles on every edge: an equal size one arrow in the face toward the
+camera; two sizes an arrow in each face; an angle a rotation handle below
+the size's arrow. Menu: Default size / Own size / Own two sizes / Own size
+and angle, Flip direction, Group, Remove. Group column in the panel. The
+panel now follows every recompute of the chamfer (its own type combo
+recomputed past `finishedRecomputeFeature()`, so before this no handle
+followed a type change). Clear cleared every edge whatever was selected --
+fixed.
+
+**My choices:** all four modes offered whatever the chamfer's type (the
+doc's "by ChamferType" read as naming each own mode); "Own size" keeps no
+second size (0, as the panel always wrote it); a default edge's "Flip
+direction" flips the chamfer's FlipDirection.
+
+**Also:** `4677a9d715` (pushed) had written `TaskFilletParameters.cpp` with
+LF line endings; `0d91bca173` puts CRLF back, no content change. Checked
+every file changed since 2026-10-12: no other.
+
+**Tests.** `chamfer-values-in-view` 17/17 offscreen; TestChamfer 10 (7 new
+`TestChamferGroups`); TestFillet 21; the four fillet GUI tests pass after
+the Gizmo change. Suites on r42: ctest 957/957, Python 3770 OK.
