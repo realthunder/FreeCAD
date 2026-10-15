@@ -1012,6 +1012,13 @@ public:
             "key: the OCCT source code file name.\n"
             "enable: Enalbe/disable showing of the shape generated in the corresponding file.\n"
         );
+        add_varargs_method("hasOCCTFunction", &Module::hasOCCTFunction,
+            "hasOCCTFunction(toolkit: str, name: str) -> bool\n"
+            "Whether the OCCT loaded at run time has the C function name in toolkit\n"
+            "(\"TKFillet\", \"TKBRep\", ...): the realthunder OCCT fork's extensions are\n"
+            "C functions of its toolkits, which upstream's do not have. FreeCAD finds\n"
+            "them the same way. TKBRep's SetFuncShowTopoShape marks the fork itself.\n"
+        );
         initialize("This is a module working with shapes."); // register with Python
 
         PyModule_AddObject(m_module, "BRepFeat", brepFeat.module().ptr());
@@ -3140,6 +3147,15 @@ private:
             joiner.getOpenWires(openWires, op, PyObject_IsTrue(no_open_original));
             return Py::TupleN(shape2pyshape(result), shape2pyshape(openWires));
         } _PY_CATCH_OCC(throw Py::Exception())
+    }
+
+    Py::Object hasOCCTFunction(const Py::Tuple& args)
+    {
+        const char *toolkit;
+        const char *name;
+        if (!PyArg_ParseTuple(args.ptr(), "ss", &toolkit, &name))
+            throw Py::Exception();
+        return Py::Boolean(lookUpOCCT(toolkit, name) != nullptr);
     }
 
     Py::Object showShapeOCCT(const Py::Tuple& args)
