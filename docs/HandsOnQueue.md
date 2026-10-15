@@ -160,6 +160,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:38: NEW ENTRY 148 (a defect) -- TechDraw on scanner.FCStd Page009,
+Front010: the inner hole found as a face, the outer faces missing; edges
+hover but do not select; the reporter asks if WireJoiner for the faces is
+too much work.** Under the entry.
+
 **2026-10-15 16:34: entry 147 ALL POINTS ANSWERED -- the shared icon for both
 commands, one icon for both themes, the fills kept.** Under the entry.
 
@@ -2979,6 +2984,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter |
 | 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open |
 | 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept |
+| 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20097,6 +20103,62 @@ b. the SAME icon under both themes, checked under both;
 c. the body FILLS are kept; the outer and inner edges get darker.
 Nothing left open on 147, by the note-taker's reading.
 
+## 148. TechDraw picking on scanner.FCStd Page009, Front010: faces found wrong (the inner hole a face, the outer faces missing); edges hover but do not select; WireJoiner for the faces? (a defect) -- OPEN
+
+**2026-10-15 16:38, the reporter:** "new defect. Techdraw picking got some
+problem. scanner file Page009. Front010 face segmentation are wrong. The
+big inner hole in recognized as face, while almost none of the outer
+faces is recognized. Maybe as a consequence, many edges are not
+selectable. They response to hover, but selecting them got no response,
+no error either. Check if it is too much work to use WireJoiner for face
+segmentation"
+
+The note-taker's reading -- three things:
+1. A DEFECT in TechDraw's FACE finding: in `scanner.FCStd` (the
+   reporter's file, `d:\Zheng.Lei\mech\scanner.FCStd` by earlier
+   entries), page Page009, view Front010: the BIG INNER HOLE is found as
+   a face, while almost NONE of the faces around it (the "outer" faces,
+   the part's own faces in the view) are found.
+2. A DEFECT in picking, the reporter's guess a consequence of 1: many
+   EDGES of that view light up on HOVER, but a CLICK selects nothing --
+   no selection, no message.
+3. A QUESTION for the build session, by the note-taker's reading: is it
+   too much work to find TechDraw's faces with Part's `WireJoiner` (the
+   fork's own wire builder, the one the Sketcher uses for its faces) in
+   place of TechDraw's `EdgeWalker`? An estimate asked, not yet an order
+   to do it, by the note-taker's reading.
+NOT said:
+a. the copy -- the STAGED one of 14:47 (`1df007d0f2`), by the
+   note-taker's reading; and whether it ever worked on this view (a
+   regression, or always so);
+b. for 2: whether the edges that do not select are the ones that border
+   the missing faces, or others too; and whether a click on them selects
+   in a view whose faces are right;
+c. the view's settings (CoarseView, HardHidden and the like) -- not
+   said; a coarse view finds NO faces at all (below), so by the
+   note-taker's reading it is not coarse.
+READ in the source, nothing run:
+- `src/Mod/TechDraw/App/DrawViewPart.cpp` 640 to 700: `extractFaces`
+  runs `findFacesNew` (or `findFacesOld` by a preference,
+  `newFaceFinder()`); `findFacesNew` cleans the edges
+  (`DrawProjectSplit::scrubEdges`), makes wires with `EdgeWalker`
+  (`src/Mod/TechDraw/App/EdgeWalker.cpp`, 583 lines, "include outer
+  wire"), adds the closed edges as wires and sorts them by size; faces
+  are found only when `handleFaces()` and the view is not coarse (448,
+  586).
+- `src/Mod/Part/App/WireJoiner.h` 32 to 62: `WireJoiner` takes edges
+  (`addShape`), splits and merges them (`setSplitEdges`,
+  `setMergeEdges`), has a tolerance, an angle traversal for planar input
+  and an outline mode, and gives the wires (`getResultWires`);
+  `WireJoiner.cpp` is 3839 lines.
+- The Sketcher already finds its faces this way:
+  `src/Mod/Sketcher/App/SketchObject.cpp` 478 to 500 (`buildInternals`:
+  WireJoiner with tight bound and merged edges, then `makEFace` with
+  `Part::FaceMakerRing`) -- a pattern TechDraw's could follow, by the
+  note-taker's reading. `FaceMakerBullseye` uses it too.
+- TechDraw links Part already (it is a Part-based module) -- not checked
+  for WireJoiner's export beyond `PartExport` on the class.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20108,5 +20170,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 147
+the build session, 131 and 132 found by it; entries 134 to 148
 are of 2026-10-15, 134 said to the build session)
