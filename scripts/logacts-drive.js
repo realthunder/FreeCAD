@@ -44,7 +44,7 @@ const HELPERS = () => {
   const first = (el) => (el ? [...el.childNodes].filter((n) => n.nodeType === 3)
     .map((n) => n.textContent).join('').trim() : '');
   window.__fcRows = () => [...document.querySelectorAll('.fc-log-rows:not(.fc-log-versions) tbody tr')]
-    .map((tr) => ({seq: Number(tr.dataset.seq), what: first(tr.querySelectorAll('td')[1]),
+    .map((tr) => ({seq: Number(tr.dataset.seq), what: first(tr.querySelector('td.fc-log-what')),
                    sel: tr.classList.contains('fc-log-sel'),
                    away: tr.classList.contains('fc-log-away'),
                    before: tr.classList.contains('fc-log-before')}));
@@ -57,7 +57,7 @@ const HELPERS = () => {
   // A click on the row of that name, with the keys held
   window.__fcClickRow = (name, keys) => {
     const tr = [...document.querySelectorAll('.fc-log-rows:not(.fc-log-versions) tbody tr')]
-      .find((r) => first(r.querySelectorAll('td')[1]) === name);
+      .find((r) => first(r.querySelector('td.fc-log-what')) === name);
     if (tr) tr.dispatchEvent(new MouseEvent('click', Object.assign({bubbles: true}, keys || {})));
     return !!tr;
   };

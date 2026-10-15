@@ -413,6 +413,16 @@ def verify():
               long.get("ok") is True and long.get("truncated") is True
               and 0 < len(long.get("text", "")) <= 200 and long.get("bytes", 0) > 200,
               (len(long.get("text", "")), long.get("bytes"), long.get("truncated")))
+        # Sec 32.35: a shape's text is the start of its geometry's file, and
+        # it says what it is: the cut, 10 x 10 x 16 with the hole through it
+        facts = long.get("facts") or {}
+        check("a shape says what it is: its kind, its counts, its volume, its size",
+              long.get("summary", "").startswith("Compound: 1 solid, 1 shell, 7 faces")
+              and facts.get("faces") == 7 and facts.get("solids") == 1
+              and abs(facts.get("volume", 0) - (1600 - math.pi * 4 * 16)) < 1e-6
+              and abs(facts.get("dz", 0) - 16) < 1e-6,
+              (long.get("summary"), facts))
+        check("a length says nothing more than its text", "summary" not in value, value)
         check("a ref the log has no value of is said so",
               (got.get("novalue") or {}).get("code") == "UnknownValue", got.get("novalue"))
         check("none of the reading wrote a row", got.get("host_read") == host,

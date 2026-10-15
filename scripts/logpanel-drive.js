@@ -60,8 +60,13 @@ const HELPERS = () => {
   };
   window.__fcLogRows = () => [...document.querySelectorAll('.fc-log-rows tbody tr')].map(
     (tr) => {
-      const td = [...tr.querySelectorAll('td')].map((c) => c.innerText.trim());
-      return {seq: Number(tr.dataset.seq), what: td[1], who: td[2], when: td[3],
+      // The rows' cells after the graph's, and of the name what it says
+      // itself: not the labels of the branch heads before it (sec 32.35)
+      const td = [...tr.querySelectorAll('td:not(.fc-log-graph)')].map((c) => c.innerText.trim());
+      const what = tr.querySelector('td.fc-log-what');
+      const own = what ? [...what.childNodes].filter((n) => n.nodeType === 3)
+        .map((n) => n.textContent).join('').trim() : '';
+      return {seq: Number(tr.dataset.seq), what: own + '\n' + td[1], who: td[2], when: td[3],
               record: tr.classList.contains('fc-log-record'),
               away: tr.classList.contains('fc-log-away')};
     });
@@ -71,7 +76,8 @@ const HELPERS = () => {
               show: !!el.querySelector('.fc-log-show')}));
   window.__fcLogClickRow = (name) => {
     const tr = [...document.querySelectorAll('.fc-log-rows tbody tr')].find(
-      (r) => r.querySelectorAll('td')[1].innerText.trim().split('\n')[0].trim() === name);
+      (r) => window.__fcLogRows().find((x) => x.seq === Number(r.dataset.seq))
+        .what.split('\n')[0].trim() === name);
     if (tr) tr.click();
     return !!tr;
   };
@@ -180,6 +186,22 @@ async function waitFor(page, fn, ms, ...args) {
     await sleep(1500);
     out.valueBefore = await page.evaluate(
       () => (document.querySelector('pre.fc-log-value') || {}).innerText || null);
+    // The graph (sec 32.35): on every row a node and its lanes, the
+    // branch the document is on named at its head
+    out.graph = await page.evaluate(
+      () => [...document.querySelectorAll('.fc-log-rows tbody tr')].map((tr) => {
+        const svg = tr.querySelector('svg.fc-log-graphsvg');
+        return svg ? [svg.querySelectorAll('circle').length, svg.querySelectorAll('line').length,
+                      svg.getAttribute('data-lane')] : null;
+      }));
+    out.heads = await page.evaluate(
+      () => [...document.querySelectorAll('.fc-log-headtag')].map((h) => h.innerText.trim()));
+    // A shape's value says what it is, in a line (sec 32.35)
+    out.choseShape = await page.evaluate(() => window.__fcLogClickOp('Cut: Shape', false));
+    out.summaryInTime = await waitFor(
+      page, () => !!document.querySelector('.fc-log-summary'), 15000);
+    out.summary = await page.evaluate(
+      () => (document.querySelector('.fc-log-summary') || {}).innerText || null);
     await shot(page, 'log');
 
     // A row's change, shown as the edit it is

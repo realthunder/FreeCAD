@@ -322,6 +322,17 @@ def verify():
               and ["After", True] in (out.get("sides") or []),
               (out.get("valueAfter"), out.get("valueBefore"), out.get("sides")))
 
+        graph = out.get("graph") or []
+        check("the graph: on every row a node, all of them on the one lane of the one branch, "
+              "named at its head (sec 32.35)",
+              len(graph) == len(now) and all(g and g[0] == 1 and g[2] == "0" for g in graph)
+              and out.get("heads") == [out.get("branch")],
+              (graph, out.get("heads"), out.get("branch")))
+        check("a shape's value says what it is, in a line (sec 32.35)",
+              out.get("choseShape") is True and out.get("summaryInTime") is True
+              and (out.get("summary") or "").startswith("Compound: 1 solid, 1 shell, 7 faces"),
+              out.get("summary"))
+
         taller = [r[0] for r in listed.get("rows", []) if r[1] == "taller"]
         check("Show enters the edit on the host, of that row and not of the last",
               out.get("asked") is True and out.get("entered") is True

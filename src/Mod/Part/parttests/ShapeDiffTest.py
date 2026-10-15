@@ -751,6 +751,74 @@ class MergedResultTest(unittest.TestCase):
         self.assertAlmostEqual(res.Cut.Shape.Volume, 14 * 11 * 10 - math.pi * 4 * 10)
         self.assertEqual(self.state(), before)
 
+    def testMadeAgainInTheSameDocument(self):
+        # Sec 32.34: a result made before, handed back with other sides, has
+        # what was written to it taken back and the merge written again --
+        # and is what a result made afresh is.
+        doc = self.doc
+        doc.openTransaction("a cone")
+        cone = doc.addObject("Part::Cone", "Cone").ID
+        doc.recompute()
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        self.edit("side: longer", Length=14)
+        doc.openTransaction("side: a ball, no cone")
+        doc.addObject("Part::Sphere", "Ball")
+        doc.removeObject("Cone")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        self.edit("main: shorter", Length=8)
+        before = self.state()
+
+        def seen(res):
+            return (
+                sorted((o.Name, o.ID, tuple(o.State)) for o in res.Objects),
+                res.Box.Length.Value,
+                res.Cut.Shape.Volume,
+                dict(res.Cut.Shape.ElementReverseMap),
+            )
+
+        theirs = self.result({"Box.Length": "theirs"})
+        name = theirs["document"].Name
+        self.assertFalse(theirs["reused"])
+        self.assertEqual(theirs["removed"], [cone])
+        first = seen(theirs["document"])
+        self.assertEqual(first[1], 14)
+        self.assertIsNotNone(theirs["document"].getObject("Ball"))
+        self.assertIsNone(theirs["document"].getObject("Cone"))
+        ours = self.result({"Box.Length": "ours"}, "", 0, name)
+        self.assertTrue(ours["reused"])
+        self.assertEqual(ours["document"].Name, name)
+        self.assertEqual(ours["removed"], [cone])
+        # The same as one read afresh, to the touched bits and every name
+        fresh = self.result({"Box.Length": "ours"})
+        self.assertFalse(fresh["reused"])
+        self.assertNotEqual(fresh["document"].Name, name)
+        self.assertEqual(seen(ours["document"]), seen(fresh["document"]))
+        self.assertAlmostEqual(seen(ours["document"])[2], 8 * 10 * 10 - math.pi * 4 * 10)
+        self.assertEqual(
+            {(v["object"], v["prop"]) for v in ours["values"]},
+            {(v["object"], v["prop"]) for v in fresh["values"]},
+        )
+        App.closeDocument(fresh["document"].Name)
+        # Back to theirs: what the first was
+        again = self.result({"Box.Length": "theirs"}, "", 0, name)
+        self.assertTrue(again["reused"])
+        self.assertEqual(seen(again["document"]), first)
+        # Theirs' ball left out: not made there
+        left = self.result({"Box.Length": "theirs", "Ball": "ours"}, "", 0, name)
+        self.assertTrue(left["reused"])
+        self.assertIsNone(left["document"].getObject("Ball"))
+        self.assertEqual(self.state(), before)
+        # The document changed: the one handed back is of another, closed,
+        # and the result is read anew
+        self.edit("main: wider", Width=11)
+        changed = self.result({"Box.Length": "theirs"}, "", 0, name)
+        self.assertFalse(changed["reused"])
+        self.assertNotIn(name, App.listDocuments())
+        self.assertEqual(changed["document"].Box.Width.Value, 11)
+
     def testNotWhileAChangeIsBeingMade(self):
         doc = self.doc
         doc.createTransactionBranch("side")

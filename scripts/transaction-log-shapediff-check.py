@@ -1171,10 +1171,11 @@ def run():
                   and len(theirs2[2]) == 1)
             ours2 = seen.get("side ours") or ({}, "", [])
             check("result: the side changed, it is made again -- ours kept, and the cut "
-                  "is what it was (%r)" % (ours2[1],),
+                  "is what it was -- in the document it was made in (sec 32.34) (%r)"
+                  % (ours2[1],),
                   ours2[0].get("volume.removed", -1) == 0
                   and ours2[0].get("volume.added", -1) == 0
-                  and len(ours2[2]) == 1 and ours2[2] != theirs2[2])
+                  and len(ours2[2]) == 1 and ours2[2] == theirs2[2])
             check("result: gone with the dialog",
                   [n for n in App.listDocuments() if "_merged" in n] == [])
             check("dialog closed: nothing left in the view",
