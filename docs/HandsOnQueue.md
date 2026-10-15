@@ -156,6 +156,13 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 14:22: ENTRIES 135, 136 (the fillet) AND 137 DONE, COMMITTED
+`14201accd6`, `50bed5f8ab`, `bd51427d8e`, `58242c9b8c`, LOCAL, not pushed, not staged; tested on
+r54, suites green (ctest 957/957, Python 3770 OK). The build session asks
+the reporter to CONFIRM THE PUSH directly. 138 NOT reproduced (a
+screenshot asked); 140's cause read, plan given, not started; 139 after
+140.** Under each entry.
+
 **2026-10-15 13:58: NEW ENTRY 140 -- in a non-transparent overlay, the selection
 view's background the same as the Python console's and the report
 view's.** Under the entry; five points not said.
@@ -2886,12 +2893,12 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE found and FIXED by the build session (18:38), COMMITTED `d9c3193856`, LOCAL, not pushed, not staged: a TechDraw page view answered "Undo"/"Redo" from its document without checking it was there -- a page view with no document; guarded as the general view does. Reproduced a second time in its native print run. WHY the view had no document NOT found. the GUARD PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage"; why no document not found |
 | 133 | 2026-10-14 | TechDraw printing: open the print with LANDSCAPE as the default (a change request, said to the build session) | OPEN; DONE by the build session, written, NOT committed, building r32: "Print All Pages" and "Print Selected Pages" open their print box on landscape (were the printer's default, portrait); each page still laid out in its own template's orientation; the single page's Print already took the template's. Not testable by a script (the Windows print box) -- the REPORTER'S LOOK. COMMITTED `560022c91b`, LOCAL, not pushed, not staged, built in r32; the REPORTER'S LOOK still owed. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
-| 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles. CHANGED BY THE REPORTER 11:30: the ROOT BUTTON (the pressable item at the arrow's tail) is DROPPED -- point 4 (button at the edge's middle with its own highlight) falls away; instead a TOOLTIP on hovering an arrow hints that a RIGHT CLICK opens its context menu (the menu the button opened). ANSWERED 11:35: the tooltip ALSO names drag to change and click to type; NO right click on the value label. "THE REST AGREE" 11:35: the chamfer's handles change the same way, Space still opens the menu, and arrows show on the edges that still exist while a reference is missing (the note-taker's readings, now the reporter's). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): root button gone; right click on any handle opens its menu; hover tooltip; arrows show on the edges still there; point 2 REPRODUCED by mouse and fixed (a button-1 press picked through an SoDragger keeps its release from the selection) |
-| 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter. THE REPORTER 11:57: "once all done, including entry 136, push and restage" -- a PUSH and a RESTAGE are authorised once 135, 137 and 136 are done |
-| 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice) |
-| 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header |
-| 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged) |
-| 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN |
+| 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles. CHANGED BY THE REPORTER 11:30: the ROOT BUTTON (the pressable item at the arrow's tail) is DROPPED -- point 4 (button at the edge's middle with its own highlight) falls away; instead a TOOLTIP on hovering an arrow hints that a RIGHT CLICK opens its context menu (the menu the button opened). ANSWERED 11:35: the tooltip ALSO names drag to change and click to type; NO right click on the value label. "THE REST AGREE" 11:35: the chamfer's handles change the same way, Space still opens the menu, and arrows show on the edges that still exist while a reference is missing (the note-taker's readings, now the reporter's). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): root button gone; right click on any handle opens its menu; hover tooltip; arrows show on the edges still there; point 2 REPRODUCED by mouse and fixed (a button-1 press picked through an SoDragger keeps its release from the selection). DONE 14:22, COMMITTED `14201accd6` (point 2), `50bed5f8ab` (the change: right click, tooltip), `bd51427d8e` (point 1), LOCAL, not pushed, not staged; tested on r54 |
+| 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter. THE REPORTER 11:57: "once all done, including entry 136, push and restage" -- a PUSH and a RESTAGE are authorised once 135, 137 and 136 are done. DONE 14:22 for the FILLET, COMMITTED `50bed5f8ab` (drags as undo steps, the label keys), `bd51427d8e` (the fillet's fine undo), LOCAL, not pushed, not staged; tested on r54. The PUSH AND RESTAGE: the build session asks the reporter to CONFIRM directly before it pushes (the word came only by relay) |
+| 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice). DONE 14:22, COMMITTED `58242c9b8c`, LOCAL, not pushed, not staged; tested on r54 (print 12) |
+| 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header. NOT REPRODUCED 14:22 by the build session: offscreen the selection view's header and the property editor's read the SAME ground; it asks the reporter for a SCREENSHOT and the panel layout |
+| 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140 |
+| 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18993,6 +19000,18 @@ modified in the tree SEEN by `git status`, nothing run:
 `src/Gui/Inventor/Draggers/Gizmo.cpp/.h`, `src/Gui/OnViewValue.cpp/.h`,
 `src/Gui/SoFCUnifiedSelection.cpp`, the fillet and chamfer task panels.
 
+**2026-10-15 14:22, the build session: DONE, COMMITTED, LOCAL, not pushed, not staged.** From its message, written here 14:22.
+- "14201accd6 Gui: the selection leaves a dragger's release alone (135
+  point 2)."
+- "50bed5f8ab Gui: the handles: right-click menu, tooltip, drags as undo
+  steps, and the label keys (135 changed, 136)."
+- "bd51427d8e PD: fillet fine undo; handles shown with a missing reference
+  and following an undo (136, 135 point 1)."
+- "Log: bdf54e0613."
+- "Tests on r54: GUI: chamfer 17, fillet 15/10/6/21, click 11, page state
+  18, print 12, undo steps 16. Suites: ctest 957/957, Python 3770 OK."
+The commits SEEN in `git log`, nothing run.
+
 ## 136. Fine-grained undo inside the fillet's edit, and in every PartDesign edit task; Cancel restores the state before the edit (a change request) -- OPEN; ANSWERED 2026-10-15 09:58 (fillet first, redo, a drag one step, Esc or another button cancels a drag); typing keys ANSWERED 10:07 and 10:13
 
 **2026-10-15 09:47, the reporter** (while entry 135 was being written): "also
@@ -19146,6 +19165,23 @@ x. whether the push waits for the suites to pass -- by the note-taker's
    reading yes, as at every push before;
 y. whether the build session tries the staged copy after restaging (it
    did not at 08:21).
+
+**2026-10-15 14:22, the build session: DONE for the fillet, COMMITTED, LOCAL, not pushed, not staged.**
+From its message, written here 14:22. The commits: `50bed5f8ab` (drags as undo steps, the label keys) and
+`bd51427d8e` (the fillet's fine undo) -- see entry 135 for the list and
+the tests (r54: undo steps 16; ctest 957/957, Python 3770 OK).
+- "Found on the way: After an Undo inside the edit, the handles stayed
+  where the undone drag had left them. Fixed: the panels re-place their
+  handles on refresh."
+- "Cancel from a script-started edit undid nothing (the opening
+  transaction was empty). Fixed: Cancel falls back to the panel's first
+  step."
+- "Push and restage: the reporter's word came to me only through you.
+  Pushing is outward-facing, so I'm asking the reporter to confirm it
+  directly before I push."
+The note-taker's note: the reporter's word of 11:57 ("once all done,
+including entry 136, push and restage") is under this entry; the build
+session waits for it from the reporter directly. NOT pushed, NOT staged.
 
 ## 137. TechDraw: Print All Pages and Print Selected Pages combined into one command, TechDraw_Print (a change request) -- OPEN; CHANGED 2026-10-15 10:20: a dialog to pick the pages; ANSWERED 11:27 (PDF export, an ordered list of the checked pages, menu text); ALL POINTS ANSWERED 11:33
 
@@ -19307,6 +19343,10 @@ the one-command request of 10:03, by the note-taker's reading. Seen in
 `tests/gui/techdraw-print-selected.py` deleted (staged by the build
 session).
 
+**2026-10-15 14:22, the build session: DONE, COMMITTED `58242c9b8c`, LOCAL, not pushed, not staged.**
+From its message, written here 14:22. "58242c9b8c TD: Print pages (137)." Tested on r54: "print 12";
+suites as under entry 135.
+
 ## 138. The selection view in a transparent overlay: its column header has no background; asked to be as the property editor's (a defect) -- OPEN
 
 **2026-10-15 11:58, the reporter:** "new defect, selection view column header
@@ -19341,6 +19381,14 @@ READ in the source, nothing run:
   148 to 175 (both lists); nothing there paints a header. Why the property
   editor's header shows a background and the selection view's not is NOT
   found by this reading.
+
+**2026-10-15 14:22, the build session: NOT REPRODUCED.** From its message, written here 14:22. "138:
+measured, not reproduced. Offscreen, the selection view's header and the
+property editor's read the same ground: Dark (51,51,51) at alpha 10,
+Light (128,128,128) at alpha 50. I'm asking the reporter for a screenshot
+and their panel layout."
+The note-taker's note: measured OFFSCREEN (memory: a claim failing on one
+platform only is the platform's); the reporter's screen not seen.
 
 ## 139. The Python console's and the report view's text colours, to stand out on the overlay background, in both themes, Classic included (a change request) -- OPEN; ALL POINTS ANSWERED 13:26
 
@@ -19394,6 +19442,8 @@ d. a colour the user set is KEPT; the theme's defaults change;
 e. the text's ground and outline (entries 87 and 98) are unchanged.
 Nothing left unanswered on 139, by the note-taker's reading.
 
+**2026-10-15 14:22, the build session:** From its message, written here 14:22. "139: queued after 140."
+
 ## 140. The selection view in a non-transparent overlay: its background the same as the Python console's and the report view's (a change request) -- OPEN
 
 **2026-10-15 13:58, the reporter:** "new request, make selection view
@@ -19430,6 +19480,12 @@ READ in the source, nothing run:
   overlay style sheets `src/Gui/Stylesheets/overlay/*.qss`, the built-in
   sheet in `src/Gui/OverlayManager.cpp` ~320 to 360) -- NOT read through;
   why the selection view's differs NOT found by this reading.
+
+**2026-10-15 14:22, the build session: the cause read, NOT STARTED.** From its message, written here 14:22.
+"140: in a non-transparent overlay the selection lists take the overlay
+sheet's tree grey (100,100,100 under Dark). The text views keep the
+theme's ground (entry 121). Plan: give the lists the report view's ground
+at runtime while they're overlaid and not see-through. Not started."
 
 ## Inbox
 
