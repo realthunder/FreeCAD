@@ -38,17 +38,25 @@
 // save writes though no kept version reaches them -- each kept by itself,
 // each object kept -- and an op's value, an object, or the objects selected
 // as they are at a version are kept, or let go, from here.
+//
+// The host's alone (sec 32.30): a trim and a squash at a version, which take
+// rows out for good, and the requests a file sent or an import made -- the
+// files brought in or let go unread, the branches merged or deleted. A
+// client is listed the files it sent, and withdraws them. Nothing here opens
+// a document of its own. A branch the asker does not read is listed greyed.
 
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
 import {
-  logApply, logBranches, logCloseRequest, logDeleteBranch, logKeep, logKeepObject, logKept,
-  logMergeRequest, logNameVersion, logNewBranch, logOps, logPreview, logRelease, logRenameBranch,
-  logRequest, logRequests, logRestore, logRollBack, logRows, logSnapshot, logSwitchBranch,
-  logUndoRows, logValue, logVersions, onConnection, onLogChanged, showKeptValue, showRowChange,
-  type LogBranch, type LogChange, type LogOp, type LogOpsReply, type LogReach, type LogRequest,
-  type LogRow, type LogSides, type LogValueReply, type LogVersion,
+  logApply, logBranches, logBring, logCloseRequest, logDeleteBranch, logDropFile, logKeep,
+  logKeepObject, logKept, logMergeImport, logMergeRequest, logNameVersion, logNewBranch, logOps,
+  logPreview, logRelease, logRenameBranch, logRequest, logRequests, logRestore, logRollBack,
+  logRows, logSnapshot, logSquash, logSwitchBranch, logTrim, logUndoRows, logValue, logVersions,
+  onConnection, onLogChanged, showKeptValue, showRowChange,
+  type LogBranch, type LogChange, type LogImport, type LogOp, type LogOpsReply, type LogReach,
+  type LogRequest, type LogRow, type LogSentFile, type LogSides, type LogValueReply,
+  type LogVersion,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
 import {
@@ -60,6 +68,7 @@ import {
   previewText, requestActs, requestProblem, requestState, requestText, rowBranchWhy,
   rowUndoable, rowUndoWhy, rowsAppliable, sortChanges, sortRequests, switchable, undoLabel,
   unpickedConflicts, versionText, versionWhy, type KeptLine,
+  branchRead, bringWhy, importText, importWho, sentFileText, squashChoices, trimWhy, UNREAD,
 } from './logmodel.ts';
 
 const POS_KEY = 'fcviewer.log.pos';
@@ -92,6 +101,9 @@ interface Ask {
   other?: { label: string; run: () => Promise<string> };
   /// A third, which is no act: it opens something more to answer
   more?: { label: string; open: () => void };
+  /// The text is one of these, chosen from a list: the value is what `run`
+  /// is given
+  choices?: Array<{ value: string; label: string }>;
 }
 
 type Side = 'ours' | 'theirs';
@@ -130,6 +142,10 @@ export function LogPanel(props: LogPanelProps) {
   const [keptValue, setKeptValue] = createSignal<LogValueReply | null>(null);
   const [requests, setRequests] = createSignal<LogRequest[]>([]);
   const [request, setRequest] = createSignal<number | null>(null);
+  const [files, setFiles] = createSignal<LogSentFile[]>([]);
+  const [imports, setImports] = createSignal<LogImport[]>([]);
+  /// The file sent, or the import, chosen: `file:<id>`, `import:<branch>`
+  const [sent, setSent] = createSignal<string | null>(null);
   const [reqSource, setReqSource] = createSignal('');
   const [reqTarget, setReqTarget] = createSignal('');
   const [reqNote, setReqNote] = createSignal('');
@@ -168,7 +184,10 @@ export function LogPanel(props: LogPanelProps) {
   const chosenVersion = () => versions().find((v) => v.num === version()) ?? null;
   const chosenRow = () => rows().find((r) => r.seq === selected()) ?? null;
   const chosenRequest = () => requests().find((r) => r.id === request()) ?? null;
-  const openRequests = () => requests().filter((r) => r.state === 'open').length;
+  const openRequests = () => requests().filter((r) => r.state === 'open').length
+    + files().length + imports().length;
+  const chosenFile = () => files().find((f) => `file:${f.id}` === sent()) ?? null;
+  const chosenImport = () => imports().find((i) => `import:${i.branch}` === sent()) ?? null;
   const chosenKept = () => kept().find((k) => k.key === keptKey()) ?? null;
   const selectedObjects = () => props.selected?.() ?? [];
   /// Why the document is not the asker's to move
@@ -226,6 +245,9 @@ export function LogPanel(props: LogPanelProps) {
       const q = await logRequests(props.doc());
       setRequests(sortRequests(q.requests));
       if (request() !== null && !q.requests.some((x) => x.id === request())) setRequest(null);
+      setFiles(q.files ?? []);
+      setImports(q.imports ?? []);
+      if (sent() !== null && !chosenFile() && !chosenImport()) setSent(null);
     } catch { /* said by the rows */ }
     if (tab() === 'versions') {
       try {
@@ -348,12 +370,12 @@ export function LogPanel(props: LogPanelProps) {
   };
 
   const question = (q: Ask) => {
-    setAskText(q.text ?? '');
+    setAskText(q.choices?.length ? q.choices[0].value : (q.text ?? ''));
     setAsk(q);
   };
   const askProblem = () => {
     const q = ask();
-    return q?.problem && q.text !== undefined ? q.problem(askText()) : '';
+    return q?.problem && (q.text !== undefined || q.choices) ? q.problem(askText()) : '';
   };
   const answer = () => {
     const q = ask();
@@ -377,7 +399,8 @@ export function LogPanel(props: LogPanelProps) {
 
   /// The list of what it would do, asked of the host; a side picked for
   /// each conflict, the act goes on with them
-  const openPicker = (of: { rows: number[] } | { request: number }, title: string, yes: string,
+  const openPicker = (of: { rows: number[] } | { request: number } | { import: string },
+                      title: string, yes: string,
                       run: (sides: LogSides) => Promise<string>) => {
     if (busy()) return;
     setBusy(true);
@@ -421,7 +444,7 @@ export function LogPanel(props: LogPanelProps) {
   /// side is picked for each.
   interface Sided {
     run: (sides?: LogSides) => Promise<string>;
-    of: { rows: number[] } | { request: number };
+    of: { rows: number[] } | { request: number } | { import: string };
     title: string;
     yes: string;
   }
@@ -516,6 +539,85 @@ export function LogPanel(props: LogPanelProps) {
     await logCloseRequest(r.id, state, props.doc());
     return `Request ${r.id} ${state}`;
   });
+
+  // The requests of sec 30.20, and what takes rows out for good: the host's
+  const bringFile = (f: LogSentFile) => void act(async () => {
+    const r = await logBring(f.id, props.doc());
+    if (r.stopped) return `${r.name}: ${r.rows} rows came to branch ${r.into}, then one could `
+                          + `not be applied: ${r.why ?? ''}`;
+    return r.rows ? `${r.name} brought in: ${r.rows} rows on branch ${r.into}, not merged`
+                  : `${r.name}: nothing in it to bring`;
+  });
+  const dropFile = (f: LogSentFile) => question({
+    label: f.mine ? `Withdraw ${f.name}? It goes unread.`
+                  : `Delete ${f.name}, unread? Whoever sent it is not told.`,
+    yes: f.mine ? 'Withdraw' : 'Delete',
+    run: async () => {
+      await logDropFile(f.id, props.doc());
+      setSent(null);
+      return f.mine ? `${f.name} withdrawn, unread` : `${f.name} deleted, unread`;
+    },
+  });
+  const mergeImport = (i: LogImport) => actWithSides({
+    of: { import: i.branch },
+    title: `Merge ${i.branch}`,
+    yes: 'Merge',
+    run: async (sides) => {
+      const m = await logMergeImport(i.branch, sides, props.doc());
+      return m.forwarded ? `Merged ${i.branch}: ${m.forwarded} rows taken as they are`
+                         : `Merged ${i.branch} as row ${m.row}`;
+    },
+  });
+  const previewImport = (i: LogImport) => openPicker(
+    { import: i.branch }, `Merge ${i.branch}`, 'Merge',
+    async (sides) => {
+      const m = await logMergeImport(i.branch, sides, props.doc());
+      return m.forwarded ? `Merged ${i.branch}: ${m.forwarded} rows taken as they are`
+                         : `Merged ${i.branch} as row ${m.row}`;
+    });
+  const deleteImport = (i: LogImport) => question({
+    label: `Delete branch ${i.branch}, and with it what was brought in from ${i.file}? This `
+           + 'cannot be undone.',
+    yes: 'Delete',
+    run: async () => {
+      const r = await logDeleteBranch(i.branch, props.doc());
+      setSent(null);
+      return `Request ${i.branch} deleted: ${r.rows} rows gone`;
+    },
+  });
+  const trimTo = (v: LogVersion) => question({
+    label: `Remove the history of ${v.branchName} before ${versionText(v)}, but what another `
+           + 'branch holds and the named versions? This cannot be undone.',
+    yes: 'Trim',
+    run: async () => {
+      const r = await logTrim(v.branchName, v.num, props.doc());
+      return `${v.branchName} trimmed to ${versionText(v)}: ${r.rows} rows gone`;
+    },
+  });
+  /// The versions it may start from are asked first: the card offers them
+  const squashTo = (v: LogVersion) => {
+    if (busy()) return;
+    setStatus(null);
+    logSquash(v.num, undefined, props.doc()).then((r) => {
+      const behind = r.behind ?? [];
+      if (!behind.length) {
+        setStatus({ text: `No version behind ${versionText(v)} to squash from`, bad: true });
+        return;
+      }
+      question({
+        label: `Fold the rows from a version to ${versionText(v)} into one row of their net `
+               + 'change? The unnamed versions between go. This cannot be undone. From:',
+        choices: squashChoices(behind),
+        yes: 'Squash',
+        run: async (text) => {
+          const from = Number(text);
+          const done = await logSquash(v.num, from, props.doc());
+          return `Squashed ${done.rows ?? 0} rows from version ${from} into row `
+                 + `${done.row ?? v.seq}`;
+        },
+      });
+    }, (e: any) => setStatus({ text: actRefusal(e), bad: true }));
+  };
 
   const undoPicked = () => {
     const seqs = [...picked()].sort((a, b) => a - b);
@@ -672,6 +774,9 @@ export function LogPanel(props: LogPanelProps) {
     setVersion(null);
     setRequests([]);
     setRequest(null);
+    setFiles([]);
+    setImports([]);
+    setSent(null);
     setKept([]);
     setKeptCount(0);
     // (not chooseKept: it reads the list, which this effect must not follow)
@@ -739,7 +844,9 @@ export function LogPanel(props: LogPanelProps) {
                     }}>
               <For each={branches()}>
                 {(b) => (
-                  <option value={b.name} selected={b.current} disabled={!switchable(b, reach())}>
+                  <option value={b.name} selected={b.current} disabled={!switchable(b, reach())}
+                          title={branchRead(b) ? undefined : UNREAD}
+                          classList={{ 'fc-log-unread': !branchRead(b) }}>
                     {b.closed ? `${b.name} (closed)` : b.name}
                   </option>
                 )}
@@ -804,7 +911,15 @@ export function LogPanel(props: LogPanelProps) {
         <Show when={ask()}>
           <form class="fc-log-ask" onSubmit={(e) => { e.preventDefault(); answer(); }}>
             <span class="fc-log-asklabel">{ask()!.label}</span>
-            <Show when={ask()!.text !== undefined}>
+            <Show when={ask()!.choices}>
+              <select class="fc-log-act fc-log-askchoice" value={askText()}
+                      onChange={(e) => setAskText(e.currentTarget.value)}>
+                <For each={ask()!.choices!}>
+                  {(c) => <option value={c.value}>{c.label}</option>}
+                </For>
+              </select>
+            </Show>
+            <Show when={ask()!.text !== undefined && !ask()!.choices}>
               <input class="fc-log-askinput" type="text" value={askText()}
                      ref={(el) => setTimeout(() => el.focus(), 0)}
                      onInput={(e) => setAskText(e.currentTarget.value)}
@@ -1126,7 +1241,10 @@ export function LogPanel(props: LogPanelProps) {
                         {v.name || 'unnamed'}
                         <Show when={v.head}><span class="fc-log-kind">now</span></Show>
                       </td>
-                      <td>{v.branchName}</td>
+                      <td classList={{ 'fc-log-unread': v.branchRead === false }}
+                          title={v.branchRead === false ? UNREAD : undefined}>
+                        {v.branchName}
+                      </td>
                       <td class="fc-log-num">{v.seq || ''}</td>
                       <td>{logWhen(v.time)}</td>
                     </tr>
@@ -1190,6 +1308,23 @@ export function LogPanel(props: LogPanelProps) {
                       title="let go of the objects selected as they are here"
                       onClick={() => keepSelectedAt(chosenVersion()!, false)}>
                 Let go of selected
+              </button>
+              <button class="fc-log-act" data-act="trim"
+                      disabled={busy() || !!trimWhy(reach(), chosenVersion()!)}
+                      title={trimWhy(reach(), chosenVersion()!)
+                             || (`remove the history of ${chosenVersion()!.branchName} before `
+                                 + 'this version, but what another branch holds and the named '
+                                 + 'versions')}
+                      onClick={() => trimTo(chosenVersion()!)}>
+                Trim to here...
+              </button>
+              <button class="fc-log-act" data-act="squash"
+                      disabled={busy() || !reach().host}
+                      title={!reach().host ? trimWhy(reach(), chosenVersion()!)
+                             : ('fold the rows between an older version and this one into one row '
+                                + 'of their net change; both versions stay')}
+                      onClick={() => squashTo(chosenVersion()!)}>
+                Squash to here...
               </button>
             </div>
           </Show>
@@ -1313,13 +1448,19 @@ export function LogPanel(props: LogPanelProps) {
             <select class="fc-log-act fc-log-reqsource" value={reqSource()}
                     onChange={(e) => setReqSource(e.currentTarget.value)}>
               <option value="">a branch...</option>
-              <For each={branches()}>{(b) => <option value={b.name}>{b.name}</option>}</For>
+              <For each={branches()}>
+                {(b) => <option value={b.name} disabled={!branchRead(b)}
+                                title={branchRead(b) ? undefined : UNREAD}>{b.name}</option>}
+              </For>
             </select>
             <span>into</span>
             <select class="fc-log-act fc-log-reqtarget" value={reqTarget()}
                     onChange={(e) => setReqTarget(e.currentTarget.value)}>
               <option value="">a branch...</option>
-              <For each={branches()}>{(b) => <option value={b.name}>{b.name}</option>}</For>
+              <For each={branches()}>
+                {(b) => <option value={b.name} disabled={!branchRead(b)}
+                                title={branchRead(b) ? undefined : UNREAD}>{b.name}</option>}
+              </For>
             </select>
             <input class="fc-log-askinput fc-log-reqnote" type="text" placeholder="a note"
                    value={reqNote()} onInput={(e) => setReqNote(e.currentTarget.value)} />
@@ -1389,6 +1530,86 @@ export function LogPanel(props: LogPanelProps) {
                       disabled={busy() || !requestActs(chosenRequest()!).withdraw}
                       onClick={() => closeRequest(chosenRequest()!, 'withdrawn')}>
                 Withdraw
+              </button>
+            </div>
+          </Show>
+
+          <Show when={files().length || imports().length}>
+            <div class="fc-log-rows fc-log-sentlist">
+              <table>
+                <thead>
+                  <tr><th>Sent, or brought in</th><th>Who</th><th>When</th></tr>
+                </thead>
+                <tbody>
+                  <For each={files()}>
+                    {(f) => (
+                      <tr classList={{ 'fc-log-sel': sent() === `file:${f.id}` }}
+                          data-file={f.id}
+                          title={'nothing of it has been opened: bringing it in reads it, as a '
+                                 + 'file handed over any other way would be read'}
+                          onClick={() => setSent(`file:${f.id}`)}>
+                        <td>{sentFileText(f)}</td>
+                        <td>{logAuthor({ author: f.by, authorKind: f.byKind })}</td>
+                        <td>{logWhen(f.time)}</td>
+                      </tr>
+                    )}
+                  </For>
+                  <For each={imports()}>
+                    {(i) => (
+                      <tr classList={{ 'fc-log-sel': sent() === `import:${i.branch}` }}
+                          data-import={i.branch}
+                          title={`brought in from ${i.file} and not merged into this branch`}
+                          onClick={() => setSent(`import:${i.branch}`)}>
+                        <td>{importText(i)}</td>
+                        <td>{importWho(i)}</td>
+                        <td>{logWhen(i.time)}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
+
+          <Show when={chosenFile()}>
+            <div class="fc-log-rowacts">
+              <button class="fc-log-act" data-act="file-bring"
+                      disabled={busy() || !!bringWhy(reach())}
+                      title={bringWhy(reach())
+                             || 'read it into a branch of its own, to be merged from this list'}
+                      onClick={() => bringFile(chosenFile()!)}>
+                Bring in
+              </button>
+              <button class="fc-log-act" data-act="file-drop"
+                      disabled={busy() || !(reach().host || chosenFile()!.mine)}
+                      title={reach().host || chosenFile()!.mine ? 'let it go, unread'
+                                                                : bringWhy(reach())}
+                      onClick={() => dropFile(chosenFile()!)}>
+                {chosenFile()!.mine && !reach().host ? 'Withdraw' : 'Delete, unread'}
+              </button>
+            </div>
+          </Show>
+
+          <Show when={chosenImport()}>
+            <div class="fc-log-rowacts">
+              <button class="fc-log-act" data-act="import-merge"
+                      disabled={busy() || !!bringWhy(reach())}
+                      title={bringWhy(reach()) || 'merge it into the branch the document is on'}
+                      onClick={() => mergeImport(chosenImport()!)}>
+                Merge
+              </button>
+              <button class="fc-log-act" data-act="import-preview"
+                      disabled={busy() || !!bringWhy(reach())}
+                      title={bringWhy(reach())
+                             || 'what it would merge, a side picked for each conflict'}
+                      onClick={() => previewImport(chosenImport()!)}>
+                Look first...
+              </button>
+              <button class="fc-log-act" data-act="import-delete"
+                      disabled={busy() || !!bringWhy(reach())}
+                      title={bringWhy(reach()) || 'delete the branch, and what was brought in'}
+                      onClick={() => deleteImport(chosenImport()!)}>
+                Delete
               </button>
             </div>
           </Show>

@@ -897,6 +897,8 @@ html.fc-split-forbidden * {
 .fc-log-num { text-align: right; color: #a8b4c4; }
 .fc-log-record { color: #8a8f98; }
 .fc-log-away { font-style: italic; color: #9aa0aa; }
+/* A branch the one at the page does not read: its name, greyed (sec 32.30) */
+.fc-log-unread { color: #9aa0aa; }
 .fc-log-under td:first-child { padding-left: 18px; }
 .fc-log-kept { color: #7fc29b; }
 /* from before the point the branch is the asker's to write from (sec

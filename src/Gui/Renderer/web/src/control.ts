@@ -618,6 +618,7 @@ export interface LogVersion {
   name: string;
   branch: number;
   branchName: string;
+  branchRead?: boolean;      // false: of a branch the one who asks does not read
   seq: number;               // the row it was taken at; 0: at none
   time: number;
   here: boolean;             // of the history the document is at the head of
@@ -625,9 +626,12 @@ export interface LogVersion {
   within: boolean;           // a document may be moved to it by the one who asks
 }
 
+/// A branch of the log. One the asker does not read is listed by its name
+/// alone, `read` false, to be shown greyed (docs/TransactionLog.md sec 32.30).
 export interface LogBranch {
   id: number;
   name: string;
+  read: boolean;
   head: number;
   fromVersion: number;
   fromSeq: number;
@@ -754,6 +758,31 @@ export interface LogChange {
   note?: string;
 }
 
+/// A file a client sent to be merged, not read yet (sec 30.20): the host's
+/// all are listed to it, a client's own to the client.
+export interface LogSentFile {
+  id: number;
+  name: string;
+  size: number;
+  by: string;
+  byKind: string;
+  time: number;
+  mine: boolean;             // sent by the one who asks: its to withdraw
+}
+
+/// A branch an import made that the branch the document is on has not
+/// taken (sec 30.20 H1).
+export interface LogImport {
+  branch: string;
+  file: string;              // the file it came from
+  authors: string[];         // who made its rows
+  by?: string;               // who sent the file, when someone did
+  time: number;
+  rows: number;              // the operations it has to give
+  independent: boolean;      // it shares no history with this file
+  stopped: boolean;          // the import stopped at a row
+}
+
 export interface LogPreviewReply extends LogPlace {
   what: 'rows' | 'merge';
   request?: number;
@@ -769,7 +798,7 @@ export interface LogPreviewReply extends LogPlace {
 /// What an apply of `rows`, or the merge `request` asks, would do: nothing
 /// changes. Refused as the act would be.
 export function logPreview(
-  of: { rows: number[] } | { request: number }, doc?: string,
+  of: { rows: number[] } | { request: number } | { import: string }, doc?: string,
 ): Promise<LogPreviewReply> {
   return sendOp('log.preview', withDoc(doc, of));
 }
@@ -785,8 +814,56 @@ export function logRollBack(
 
 export function logRequests(
   doc?: string,
-): Promise<LogPlace & LogReach & { requests: LogRequest[] }> {
+): Promise<LogPlace & LogReach & { requests: LogRequest[]; files?: LogSentFile[];
+                                   imports?: LogImport[] }> {
   return sendOp('log.requests', withDoc(doc, {}));
+}
+
+/// A file sent, read into a branch of its own: the host's.
+export function logBring(
+  file: number, doc?: string,
+): Promise<LogPlace & { name: string; into: string; rows: number; stopped?: boolean;
+                       why?: string }> {
+  return sendOp('log.bring', withDoc(doc, { file }));
+}
+
+/// A file sent, let go unread: the host's, or withdrawn by its sender.
+export function logDropFile(file: number, doc?: string): Promise<LogPlace & { name: string }> {
+  return sendOp('log.dropFile', withDoc(doc, { file }));
+}
+
+/// A branch an import made, merged into the one the document is on: the
+/// host's. `Conflicts` and the sides as for logApply.
+export function logMergeImport(
+  branch: string, sides?: LogSides, doc?: string,
+): Promise<LogPlace & { row: number; forwarded: number; failed: number }> {
+  return sendOp('log.mergeImport', withDoc(doc, { branch, ...sidesOf(sides) }));
+}
+
+/// A branch's history before one of its versions taken out, but what
+/// another branch holds and the named versions: the host's, for good.
+export function logTrim(
+  branch: string, version: number, doc?: string,
+): Promise<LogPlace & { rows: number }> {
+  return sendOp('log.trim', withDoc(doc, { branch, version }));
+}
+
+/// A version an older one may be squashed to it from, newest first, with
+/// the rows it would fold.
+export interface LogBehind {
+  num: number;
+  name: string;
+  seq: number;
+  rows: number;
+}
+
+/// The rows between version `from` and `version` folded into one row of
+/// their net change: the host's, for good. With no `from`, the versions it
+/// may start from.
+export function logSquash(
+  version: number, from?: number, doc?: string,
+): Promise<LogPlace & { version: number; behind?: LogBehind[]; rows?: number; row?: number }> {
+  return sendOp('log.squash', withDoc(doc, from ? { version, from } : { version }));
 }
 
 /// Ask for `source` to be merged into `target`: for one who reads both.

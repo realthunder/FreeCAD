@@ -4,8 +4,8 @@
 // (widgets/gate.ts).
 
 import type {
-  LogBranch, LogChange, LogKeptObject, LogKeptValue, LogOp, LogReach, LogRequest, LogRow,
-  LogVersion,
+  LogBehind, LogBranch, LogChange, LogImport, LogKeptObject, LogKeptValue, LogOp, LogReach,
+  LogRequest, LogRow, LogSentFile, LogVersion,
 } from './control';
 
 /// What a refusal says, in the card's words.
@@ -105,10 +105,19 @@ export function deletable(branches: LogBranch[], reach: LogReach): LogBranch[] {
   return branches.filter((b) => !b.current && (reach.host || b.made));
 }
 
+/// A branch the asker reads. One it does not is listed greyed, by its name
+/// alone (docs/TransactionLog.md sec 32.30).
+export function branchRead(b: { read?: boolean }): boolean {
+  return b.read !== false;
+}
+
+export const UNREAD = 'a branch this connection does not read: the host gives that';
+
 /// The branches offered to be switched to: for all but the host, those the
 /// asker writes -- and none where it does not write the one it is on.
 export function switchable(b: LogBranch, reach: LogReach): boolean {
   if (b.current) return true;
+  if (!branchRead(b)) return false;
   if (b.closed) return false;
   return reach.host || (reach.write && b.write);
 }
@@ -407,4 +416,58 @@ export function keepText(values: number, keep: boolean, where: string): string {
   const many = values === 1 ? '1 value' : `${values} values`;
   return keep ? `${many} ${where} kept: a save writes ${values === 1 ? 'it' : 'them'} into the file`
               : `${many} ${where} let go`;
+}
+
+// What takes rows out for good, and the requests of sec 30.20 -- a file
+// sent, a branch an import made: the host's (docs/TransactionLog.md sec
+// 32.30).
+
+const HOST_TRIMS = "that takes rows out of the log for good, which is the host's";
+const HOST_BRINGS = "a file sent, or a branch an import made, is the host's to bring in and merge";
+
+/// Why a trim or a squash at a version is not offered; empty when it is.
+export function trimWhy(reach: LogReach, v: { branchName?: string }): string {
+  if (!reach.host) return HOST_TRIMS;
+  return v.branchName ? '' : 'the version names no branch';
+}
+
+/// Why bringing in, or merging, a request of sec 30.20 is not offered.
+export function bringWhy(reach: LogReach): string {
+  return reach.host ? '' : HOST_BRINGS;
+}
+
+/// A size in words.
+export function sizeText(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/// A file sent, in words: its name and size, and that nothing read it.
+export function sentFileText(f: LogSentFile): string {
+  return `${f.name}, ${sizeText(f.size)}, sent and not read`;
+}
+
+/// A branch an import made, in words.
+export function importText(i: LogImport): string {
+  let what = `${i.branch}: ${i.rows === 1 ? '1 operation' : `${i.rows} operations`}`;
+  if (i.independent) what += ', shares no history';
+  if (i.stopped) what += ', stopped at a row';
+  return what;
+}
+
+/// Who made an import's rows, and who sent the file.
+export function importWho(i: LogImport): string {
+  const made = i.authors.join(', ');
+  return i.by ? (made ? `${made}; sent by ${i.by}` : `sent by ${i.by}`) : made;
+}
+
+/// The versions a squash may start from, as the choices the card offers:
+/// the value is the version's number.
+export function squashChoices(behind: LogBehind[]): Array<{ value: string; label: string }> {
+  return behind.map((b) => ({
+    value: String(b.num),
+    label: `version ${b.num}${b.name ? ` (${b.name})` : ''}: `
+           + `${b.rows === 1 ? '1 row' : `${b.rows} rows`}`,
+  }));
 }

@@ -36,7 +36,8 @@ import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefu
          changeName, changePicked, changeTakes, picksOf, previewText, sortChanges,
          unpickedConflicts, keepText, keptCountText, keptLines, keptObjectText, keptRowText,
          keptTabText, opKeepable, opKeptText, changeLeavable, changeLeftOut, keeperText,
-         keepWhy } from '../logmodel.ts';
+         keepWhy, branchRead, bringWhy, importText, importWho, sentFileText, sizeText,
+         squashChoices, trimWhy } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -817,6 +818,39 @@ function checkLog(): void {
         === 'now');
   check(t, 'the host to any that is open',
         names(all.filter((b) => switchable(b, host))) === 'main,given,try,now');
+  // Sec 32.30: a branch not read is listed by its name, greyed, and offered
+  // for nothing
+  const unread = br('theirs', { read: false });
+  check(t, 'a branch not read is listed greyed, and switched to by no one but the host',
+        !branchRead(unread) && branchRead(br('main')) && branchRead(br('x', { read: true }))
+        && !switchable(unread, writes) && !switchable(unread, reads)
+        && names(deletable([unread], writes)) === '');
+  check(t, 'a trim and a squash are the host\'s; a version with no branch is trimmed by none',
+        trimWhy(host, { branchName: 'main' }) === ''
+        && trimWhy(writes, { branchName: 'main' }).includes("host's")
+        && trimWhy(host, { branchName: '' }) !== '');
+  check(t, 'a squash offers the versions behind, newest first as the host lists them',
+        JSON.stringify(squashChoices([{ num: 4, name: 'b', seq: 9, rows: 3 },
+                                      { num: 2, name: '', seq: 5, rows: 1 }]))
+        === JSON.stringify([{ value: '4', label: 'version 4 (b): 3 rows' },
+                            { value: '2', label: 'version 2: 1 row' }]),
+        JSON.stringify(squashChoices([{ num: 4, name: 'b', seq: 9, rows: 3 }])));
+  check(t, 'a file sent and an import are the host\'s to bring in and merge',
+        bringWhy(host) === '' && bringWhy(writes).includes("host's"));
+  check(t, 'a file sent says its name and size, and that nothing read it',
+        sentFileText({ id: 3, name: 'mine.FCStd', size: 36780, by: 'lei', byKind: 'invited',
+                       time: 0, mine: true }) === 'mine.FCStd, 35.9 KB, sent and not read'
+        && sizeText(12) === '12 bytes' && sizeText(3 * 1024 * 1024) === '3.0 MB');
+  const imp = (extra: Record<string, unknown> = {}): any => ({
+    branch: 'mine', file: 'mine.FCStd', authors: ['lei'], time: 0, rows: 2,
+    independent: false, stopped: false, ...extra });
+  check(t, 'an import says its operations, and who made and sent it',
+        importText(imp()) === 'mine: 2 operations'
+        && importText(imp({ rows: 1, independent: true, stopped: true }))
+          === 'mine: 1 operation, shares no history, stopped at a row'
+        && importWho(imp()) === 'lei' && importWho(imp({ by: 'bob' })) === 'lei; sent by bob'
+        && importWho(imp({ authors: [], by: 'bob' })) === 'sent by bob',
+        importText(imp()));
   const ver = (extra: Record<string, unknown> = {}): any => ({
     num: 2, named: true, name: 'kept', branch: 1, branchName: 'main', seq: 5, time: 0,
     here: true, head: false, within: true, ...extra });
