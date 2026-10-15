@@ -269,6 +269,31 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     connect(onViewValues.get(), &Gui::OnViewValueSet::cameraChanged, this, [this]() {
         placeEdgeHandles(false);
     });
+
+    // Every operation an undo step of its own (docs/HandsOnQueue.md entry
+    // 136, "fillet first"): a drag or a label open for typing one step, a
+    // cancelled drag rolled back, the radius box one step while it has the
+    // focus
+    fineUndo = true;
+    connect(onViewValues.get(), &Gui::OnViewValueSet::stepBegun, this, [this]() {
+        beginHeldStep();
+    });
+    connect(onViewValues.get(), &Gui::OnViewValueSet::stepEnded, this, [this](bool abort) {
+        endHeldStep(abort);
+    });
+    for (auto* pool : {&cornerGizmos, &faceGizmos}) {
+        for (auto& cornerGizmo : *pool) {
+            cornerGizmo.gizmo->setDragCallback([this](Gui::Gizmo::DragEvent event) {
+                if (event == Gui::Gizmo::DragEvent::Started) {
+                    beginHeldStep();
+                }
+                else {
+                    endHeldStep(event == Gui::Gizmo::DragEvent::Cancelled);
+                }
+            });
+        }
+    }
+    holdStepWhileFocused(ui->filletRadius);
     attachOnViewValues();
     // The view is told of the edit after the panel is made
     QTimer::singleShot(0, this, [this]() {
@@ -1045,7 +1070,10 @@ void TaskFilletParameters::setGizmoPositions()
 
     auto DressUpView = getDressUpView();
     auto fillet = DressUpView ? dynamic_cast<PartDesign::Fillet*>(DressUpView->getObject()) : nullptr;
-    if (!fillet || fillet->isError()) {
+    // Not hidden when the fillet fails: a reference that is gone fails it,
+    // and the arrows of the edges that are there are how it is fixed (entry
+    // 135); an edge that is not there has none (updateEdgeHandles)
+    if (!fillet) {
         gizmoContainer->visible = false;
         return;
     }
@@ -1328,6 +1356,11 @@ void TaskFilletParameters::refresh()
         while (j > item->childCount())
             delete item->child(item->childCount()-1);
     }
+    // The handles follow what the feature holds now -- after an undo or a
+    // redo too, which put the boxes back without telling the handles
+    // (entry 136): placed again, each arrow as long as its box says
+    if (gizmoContainer)
+        setGizmoPositions();
 }
 
 void TaskFilletParameters::updateSegment(QTreeWidgetItem *item, int column)

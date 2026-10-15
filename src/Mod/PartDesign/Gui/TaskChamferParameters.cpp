@@ -346,8 +346,9 @@ void TaskChamferParameters::setGizmoPositions()
     if (!gizmoContainer) {
         return;
     }
-    auto chamfer = getChamfer();
-    gizmoContainer->visible = chamfer && !chamfer->isError() && !edgeHandles.empty();
+    // Not hidden when the chamfer fails: a reference that is gone fails it,
+    // and the handles of the edges that are there stay (entry 135)
+    gizmoContainer->visible = !edgeHandles.empty();
 }
 
 namespace {
@@ -1090,7 +1091,11 @@ void TaskChamferParameters::refresh()
             item->setIcon(GroupColumn, QIcon());
         }
     }
-    // The view's handles follow what the rows say
+    // The view's handles follow what the feature holds now -- after an undo
+    // or a redo too, which put the boxes back without telling the handles
+    if (gizmoContainer) {
+        setGizmoPositions();
+    }
     if (onViewValues) {
         onViewValues->refresh();
     }

@@ -907,7 +907,8 @@ bool TaskDressUpParameters::eventFilter(QObject *o, QEvent *e)
             break;
         }
     }
-    return Gui::TaskView::TaskBox::eventFilter(o,e);
+    // the base's: a panel box holding an undo step while it has the focus
+    return TaskFeatureParameters::eventFilter(o,e);
 }
 
 //**************************************************************************
@@ -928,6 +929,8 @@ TaskDlgDressUpParameters::~TaskDlgDressUpParameters() = default;
 
 bool TaskDlgDressUpParameters::accept()
 {
+    // OK's own undo step, the Base set below in it (entry 136)
+    parameter->beginAcceptStep();
     std::vector<std::string> refs = parameter->getReferences();
     std::stringstream str;
     str << Gui::Command::getObjectCmd(vp->getObject()) << ".Base = ("
@@ -942,8 +945,16 @@ bool TaskDlgDressUpParameters::accept()
 bool TaskDlgDressUpParameters::reject()
 {
     auto editDoc = Gui::Application::Instance->editDocument();
-    if(editDoc && parameter->getTransactionID())
-        editDoc->getDocument()->undo(parameter->getTransactionID());
+    if (editDoc) {
+        App::Document* doc = editDoc->getDocument();
+        // Down to the transaction open when the edit began; when that one
+        // was left empty (and so dropped), to the first step the panel
+        // opened (entry 136: a step per operation)
+        bool undone = parameter->getTransactionID()
+            && doc->undo(parameter->getTransactionID());
+        if (!undone && parameter->getFirstStepID())
+            doc->undo(parameter->getFirstStepID());
+    }
 
     return TaskDlgFeatureParameters::reject();
 }

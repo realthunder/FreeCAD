@@ -154,6 +154,11 @@ def type_into_box(text):
     pump(5)
     seen = box.text()
     real_key(box, Qt.Key_Return)
+    # Enter leaves the label open (entry 136); the focus going to the view
+    # closes it, as a click away does
+    pump(20)
+    viewer_widget().setFocus()
+    pump(20)
     pump(60)
     return seen
 

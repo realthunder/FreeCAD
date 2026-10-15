@@ -138,7 +138,7 @@ private:
      * One arrow on every edge, in whichever of its two faces is turned more
      * toward the camera. An edge that takes the default radius has one, a
      * handle of the default's value; a customised edge one per point of its
-     * own, each a value of its own. Each arrow's root button opens the edge's
+     * own, each a value of its own. A right click on an arrow opens the edge's
      * menu: its mode (default, one radius, two radii) and Remove.
      */
     //@{

@@ -124,8 +124,8 @@ private:
      * in a face: an equal size in whichever face is turned more toward the
      * camera, the first of two sizes in the face the flip names and the
      * second in the other; an angle is a rotation handle below the size's
-     * arrow. The root button of a size's arrow opens the edge's menu: its
-     * mode, its flip, its group, Remove.
+     * arrow. A right click on a handle opens the edge's menu: its mode, its
+     * flip, its group, Remove.
      */
     //@{
     /// Arrows at most; edges past them have none

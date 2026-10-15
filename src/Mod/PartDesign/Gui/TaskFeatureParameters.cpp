@@ -26,6 +26,10 @@
 #include <QMessageBox>
 #include <QCheckBox>
 #endif
+#include <algorithm>
+#include <QEvent>
+#include <QKeyEvent>
+#include <QTimer>
 
 #include <App/PropertyGeo.h>
 #include <App/PropertyLinks.h>
@@ -386,16 +390,157 @@ void TaskFeatureParameters::setupTransaction()
 
     int tid = 0;
     const char *name = App::GetApplication().getActiveTransaction(&tid);
-    if(tid && tid == transactionID)
-        return;
 
     std::string n("Edit ");
     n += obj->getNameInDocument();
+
+    if (fineUndo) {
+        // A step of its own for what this event changes (entry 136), unless
+        // one is open already -- this event's, or a held one's
+        if (!tid || tid != stepTid) {
+            stepTid = App::GetApplication().setActiveTransaction(n.c_str());
+            if (!transactionID)
+                transactionID = stepTid;
+            if (!firstStepTid)
+                firstStepTid = stepTid;
+        }
+        if (!heldSteps && !stepCloseQueued) {
+            stepCloseQueued = true;
+            QTimer::singleShot(0, this, [this]() {
+                stepCloseQueued = false;
+                closeStep();
+            });
+        }
+        return;
+    }
+
+    if(tid && tid == transactionID)
+        return;
+
     if(!name || n!=name)
         tid = App::GetApplication().setActiveTransaction(n.c_str());
 
     if(!transactionID)
         transactionID = tid;
+}
+
+void TaskFeatureParameters::closeStep()
+{
+    if (heldSteps || !stepTid)
+        return;
+    // The recompute the change scheduled goes in its step: an undo then
+    // takes the shape back with the value
+    if (updateViewTimer && updateViewTimer->isActive()) {
+        if (!stepCloseQueued) {
+            stepCloseQueued = true;
+            QTimer::singleShot(updateViewTimer->remainingTime() + 1, this, [this]() {
+                stepCloseQueued = false;
+                closeStep();
+            });
+        }
+        return;
+    }
+    int tid = 0;
+    App::GetApplication().getActiveTransaction(&tid);
+    if (tid && tid == stepTid)
+        App::GetApplication().closeActiveTransaction(false, tid);
+    stepTid = 0;
+}
+
+void TaskFeatureParameters::beginHeldStep()
+{
+    if (!fineUndo)
+        return;
+    ++heldSteps;
+}
+
+void TaskFeatureParameters::endHeldStep(bool abort)
+{
+    if (!fineUndo || heldSteps <= 0)
+        return;
+    if (--heldSteps)
+        return;
+    if (abort) {
+        // A cancelled drag: its step rolled back, the shapes its recomputes
+        // made with it; a recompute still to come is not wanted
+        if (updateViewTimer)
+            updateViewTimer->stop();
+        int tid = 0;
+        App::GetApplication().getActiveTransaction(&tid);
+        if (tid && tid == stepTid)
+            App::GetApplication().closeActiveTransaction(true, tid);
+        stepTid = 0;
+        // No refresh: the dragged box is put back by its handle, and a
+        // refresh writes the panel's boxes back to the feature -- a step of
+        // its own for nothing
+        return;
+    }
+    closeStep();
+}
+
+void TaskFeatureParameters::holdStepWhileFocused(QWidget* box)
+{
+    if (!box)
+        return;
+    box->installEventFilter(this);
+    focusHeldBoxes.emplace_back(box);
+}
+
+bool TaskFeatureParameters::eventFilter(QObject* watched, QEvent* event)
+{
+    const bool held = std::find_if(focusHeldBoxes.begin(), focusHeldBoxes.end(),
+                                   [watched](const QPointer<QWidget>& box) {
+                                       return box.data() == watched;
+                                   })
+        != focusHeldBoxes.end();
+    if (fineUndo && held) {
+        auto box = static_cast<QWidget*>(watched);
+        if (event->type() == QEvent::KeyPress) {
+            const int key = static_cast<QKeyEvent*>(event)->key();
+            if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+                // the box takes the value first, then the step closes
+                if (typingBox == box) {
+                    typingBox = nullptr;
+                    QTimer::singleShot(0, this, [this]() {
+                        endHeldStep(false);
+                    });
+                }
+            }
+            else if (typingBox != box) {
+                if (typingBox)
+                    endHeldStep(false);
+                typingBox = box;
+                beginHeldStep();
+            }
+        }
+        else if (event->type() == QEvent::FocusOut && typingBox == box) {
+            typingBox = nullptr;
+            endHeldStep(false);
+        }
+    }
+    return Gui::TaskView::TaskBox::eventFilter(watched, event);
+}
+
+void TaskFeatureParameters::beginAcceptStep()
+{
+    if (!fineUndo || !vp || !vp->getObject() || acceptStepOpen)
+        return;
+    acceptStepOpen = true;
+    // Whatever is held is done; OK's recompute is a step of its own (the
+    // reporter, 09:58: "Ok would be separate as it normally triggers the
+    // recompute")
+    heldSteps = 0;
+    if (updateViewTimer)
+        updateViewTimer->stop();
+    int tid = 0;
+    App::GetApplication().getActiveTransaction(&tid);
+    if (tid && tid == stepTid)
+        App::GetApplication().closeActiveTransaction(false, tid);
+    std::string n("Edit ");
+    n += vp->getObject()->getNameInDocument();
+    stepTid = App::GetApplication().setActiveTransaction(n.c_str());
+    if (!transactionID)
+        transactionID = stepTid;
 }
 
 void TaskFeatureParameters::addOperationCombo(QBoxLayout *layout)
@@ -440,6 +585,14 @@ bool TaskDlgFeatureParameters::accept() {
         return true;
 
     App::DocumentObject* feature = vp->getObject();
+
+    // A panel with an undo step per operation: OK's work a step of its own
+    // (entry 136)
+    for (QWidget* wgt : Content) {
+        if (auto param = qobject_cast<TaskFeatureParameters*>(wgt)) {
+            param->beginAcceptStep();
+        }
+    }
 
     try {
         // Iterate over parameter dialogs and apply all parameters from them

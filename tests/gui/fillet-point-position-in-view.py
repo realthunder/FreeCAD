@@ -177,6 +177,10 @@ def run():
         if box_ is not None:
             real_key(box_, Qt.Key_Return)
             pump(80)
+            # Enter leaves the label open (entry 136); the focus going to the
+            # view closes it, as a click away does
+            viewer_widget().setFocus()
+            pump(20)
         check("7, Enter: the middle point is at 0.7, its radius kept",
               segments(fillet) == [[(0.0, 1.0, 0.0), (0.7, 2.0, 0.0), (1.0, 1.0, 0.0)]],
               (typed, segments(fillet)))

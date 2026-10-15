@@ -5,15 +5,22 @@ the default radius's label always at the top middle of the view; its arrow
 the handle that takes typing once active (made so by Tab or a click on it);
 keys while it is active -- a digit opens its label with that digit, Enter
 opens it with the value selected, Escape leaves no handle active; a click on
-the label opens it too.
+the label opens it too. In the open label (entry 136, the reporter 10:07 and
+10:13): Enter commits and leaves it open, Escape drops what was typed since
+and closes it, Tab commits and closes it, the focus going elsewhere commits
+and closes it.
 
 A 10 mm PartDesign box, a fillet on Edge1 at 1 mm, in edit. Claims:
   - the view has one label of the text-only kind reading "Radius 1 mm", at
     the top middle of the view;
-  - Tab in the view, then 3 and Enter: Radius is 3 mm, the label reads so;
-  - Enter (the handle still active), 2.5 and Enter: Radius is 2.5 mm;
+  - Tab in the view, then 3 and Enter: Radius is 3 mm, the label still open;
+  - 8 typed, then Escape: Radius stays 3 mm, the label closed and reading so;
+  - Enter (the handle still active), 2.5 and Tab: Radius is 2.5 mm, the label
+    closed;
+  - 9 then Escape in the label: Radius stays 2.5 mm, still in edit;
   - Escape, then 7: no box opens and Radius stays 2.5 mm;
-  - a click on the label, 4 and Enter: Radius is 4 mm;
+  - a click on the label, 4 and Enter: Radius is 4 mm; 5 typed and the focus
+    taken away: Radius is 5 mm, the label closed;
   - Radius driven by an expression: the label shows it, and Tab then 6
     opens no box.
 
@@ -229,15 +236,33 @@ def run():
         check("Tab, 3, Enter: the label opened with the digit", typed is not None
               and typed.strip().startswith("3"), typed)
         check("and Radius is 3 mm", radius(fillet) == 3.0, radius(fillet))
+        check("Enter leaves the label open", open_box() is not None)
+
+        # Typed and not entered: Escape drops it and closes the label
+        opened = open_box()
+        if opened is not None:
+            opened.selectAll()
+            QtTest.QTest.keyClicks(opened, "8")
+            pump(5)
+            real_key(opened, Qt.Key_Escape)
+            pump(20)
+        check("8 then Escape: Radius stays 3 mm, the label closed",
+              radius(fillet) == 3.0 and open_box() is None, (radius(fillet), open_box()))
         labels = text_labels()
         check("the label reads 'Radius 3 mm'", labels and labels[0][0] == "Radius 3 mm",
               labels and labels[0][0])
 
-        # Enter with the handle still active: the value selected, replaced
+        # Enter with the handle still active: the value selected, replaced;
+        # Tab commits and closes
         key(Qt.Key_Return)
-        typed = type_into_box("2.5", enter=True)
-        check("Enter, 2.5, Enter: Radius is 2.5 mm", radius(fillet) == 2.5,
-              (typed, radius(fillet)))
+        opened = open_box()
+        if opened is not None:
+            QtTest.QTest.keyClicks(opened, "2.5")
+            pump(5)
+            real_key(opened, Qt.Key_Tab)
+            pump(40)
+        check("Enter, 2.5, Tab: Radius is 2.5 mm, the label closed",
+              radius(fillet) == 2.5 and open_box() is None, (radius(fillet), open_box()))
 
         # Still active after a commit: a digit opens the label; Escape in the
         # label restores the value and keeps the handle active
@@ -274,6 +299,15 @@ def run():
         typed = type_into_box("4", enter=True)
         check("a click on the label, 4, Enter: Radius is 4 mm", radius(fillet) == 4.0,
               (typed, radius(fillet)))
+        opened = open_box()
+        if opened is not None:
+            opened.selectAll()
+            QtTest.QTest.keyClicks(opened, "5")
+            pump(5)
+            viewer_widget().setFocus()
+            pump(40)
+        check("5 typed, the focus taken away: Radius is 5 mm, the label closed",
+              radius(fillet) == 5.0 and open_box() is None, (radius(fillet), open_box()))
 
         # Driven by an expression: shown, not typed
         gdoc.resetEdit()
