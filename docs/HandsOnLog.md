@@ -7207,11 +7207,13 @@ PUSHED 14:45 (`580e54f0b6..1df007d0f2`) and STAGED 14:47 on the user's
 word, before these; built through r59; committed `e9a5143778`,
 `ba8fab9ccc`, `340d03f023`, `1f31e03f49`, `ffa839b1b6`. LOCAL.
 
-**140, the selection view's list, overlaid.** Its list had no ground of its
-own in the overlay's transparent mode, the report view's had. The overlay's
-style rule now gives `Gui--DockWnd--SelectionView QTreeView` the background
-the report view's text uses (TextEditFieldBackgroundColor, the palette's
-base without one). Test `overlay-selection-ground.py`: Dark measured, the
+**140, the selection view's list, overlaid.** In the NON-transparent
+overlay mode (eye off) its list wore the overlay sheet's grey for trees
+(100,100,100 under Dark), the report view and the console the theme's text
+ground (25,25,25). The overlay's style rule now gives
+`Gui--DockWnd--SelectionView QTreeView` the background the report view's
+text uses (TextEditFieldBackgroundColor, the palette's base without one);
+the transparent mode is as it was, its grounds are not painted. Test `overlay-selection-ground.py`: Dark measured, the
 two lists read the same (25,25,25); offscreen the Light pass reads both
 clear, so it proves nothing there. `overlay-header-grounds.py` (entry 138)
 committed with it.
