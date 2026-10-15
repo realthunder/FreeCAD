@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import traceback
+import zlib
 
 import FreeCAD
 import FreeCADGui
@@ -82,7 +83,15 @@ def run():
         data = open(spool, "rb").read()
         os.replace(spool, os.path.join(OUT, "page.pdf"))
         images = len(re.findall(rb"/Subtype\s*/Image", data))
-        texts = data.count(b"Tj") + data.count(b"TJ")
+        # the page's operators are in its content streams, compressed or not
+        texts = 0
+        for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
+            stream = m.group(1)
+            try:
+                stream = zlib.decompress(stream)
+            except zlib.error:
+                pass
+            texts += len(re.findall(rb"\bT[jJ]\b", stream))
         check("the printed page has no image: lines, not pixels", images == 0,
               "%d images, %d bytes" % (images, len(data)))
         check("and text runs: the template's text came through as text", texts > 1,
