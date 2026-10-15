@@ -156,6 +156,13 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 11:58 and 12:00: NEW ENTRIES 138 and 139.** 138 (a defect): the
+selection view's column header has no background in a transparent overlay,
+asked to be as the property editor's -- the earlier request not found,
+nearest entry 123. 139 (a change request): the Python console's and the
+report view's text colours to stand out on the overlay, in Dark, Light and
+Classic.
+
 **2026-10-15 11:57: the reporter -- "once all done, including entry 136, push and
 restage".** A push and a restage authorised once 135, 137 and 136 are
 done. Under entry 136.
@@ -2874,6 +2881,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles. CHANGED BY THE REPORTER 11:30: the ROOT BUTTON (the pressable item at the arrow's tail) is DROPPED -- point 4 (button at the edge's middle with its own highlight) falls away; instead a TOOLTIP on hovering an arrow hints that a RIGHT CLICK opens its context menu (the menu the button opened). ANSWERED 11:35: the tooltip ALSO names drag to change and click to type; NO right click on the value label. "THE REST AGREE" 11:35: the chamfer's handles change the same way, Space still opens the menu, and arrows show on the edges that still exist while a reference is missing (the note-taker's readings, now the reporter's). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): root button gone; right click on any handle opens its menu; hover tooltip; arrows show on the edges still there; point 2 REPRODUCED by mouse and fixed (a button-1 press picked through an SoDragger keeps its release from the selection) |
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter. THE REPORTER 11:57: "once all done, including entry 136, push and restage" -- a PUSH and a RESTAGE are authorised once 135, 137 and 136 are done |
 | 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice) |
+| 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header |
+| 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -19288,6 +19297,73 @@ the one-command request of 10:03, by the note-taker's reading. Seen in
 `git status`, nothing run: new `src/Mod/TechDraw/Gui/DlgPrintPages.cpp/.h`;
 `tests/gui/techdraw-print-selected.py` deleted (staged by the build
 session).
+
+## 138. The selection view in a transparent overlay: its column header has no background; asked to be as the property editor's (a defect) -- OPEN
+
+**2026-10-15 11:58, the reporter:** "new defect, selection view column header
+still has no background (all transparent) in overlay transparent mode. I
+remember asked for the same as property editor column header"
+
+The note-taker's reading:
+- In an overlay in TRANSPARENT mode, the selection view's COLUMN HEADER
+  (Label / Element / Path) is drawn with no background at all -- fully
+  see-through.
+- The reporter wants it backed as the PROPERTY EDITOR's column header is
+  in the same mode, and remembers having asked for that before ("still").
+- The earlier request: NOT FOUND by the note-taker -- a search of this
+  queue, the build log and this session's transcript for a column header
+  finds nothing. The nearest is ENTRY 123 (2026-10-14 15:49, "for
+  selection view in overlay mode, set the same background color and alpha
+  for its list column as the property editor"; built `7d9b32b296`, staged
+  2026-10-14 22:59) -- it names the LIST column, not the header; by the
+  note-taker's reading the reporter took the header to be part of it.
+NOT said:
+a. the selection view's PICK LIST (its second list, with a header of its
+   own) -- the same, by the note-taker's reading;
+b. which theme (the property editor's header may differ by theme), and
+   whether it is the staged copy (`580e54f0b6`, 08:21).
+READ in the source, nothing run:
+- The overlay style sheets back every header section the same way:
+  `src/Gui/Stylesheets/overlay/Dark.qss` 59 to 65 and `Light.qss` 59 on
+  (`QHeaderView { background:transparent }`, `QHeaderView::section`
+  at alpha 50); the built-in sheet in `src/Gui/OverlayManager.cpp` 329 to
+  333 (alpha 50), and 349 on the TREE's header hidden (height 0).
+- The selection view's headers: `src/Gui/Selection/SelectionView.cpp`
+  148 to 175 (both lists); nothing there paints a header. Why the property
+  editor's header shows a background and the selection view's not is NOT
+  found by this reading.
+
+## 139. The Python console's and the report view's text colours, to stand out on the overlay background, in both themes, Classic included (a change request) -- OPEN
+
+**2026-10-15 12:00, the reporter:** "new request, revise the python console and
+report view colors on its text to be more standout in overlay background
+on both theme"
+
+**2026-10-15 12:00, the reporter, straight after:** "including classic which is
+basically light theme"
+
+The note-taker's reading:
+- In an OVERLAY, the TEXT COLOURS of the Python console and the report
+  view are to be revised so the text stands out more against the overlay
+  background.
+- In BOTH themes -- Dark and Light -- and Classic, which the reporter
+  counts as a light theme.
+NOT said:
+a. which colours: all of each panel's text colours (the console's
+   syntax colours, its output and error; the report view's message, log,
+   warning and error), or only some;
+b. the overlay's mode: transparent only, or every overlay (by the
+   note-taker's reading transparent, where the 3D view shows through);
+c. docked (not overlaid): unchanged, by the note-taker's reading;
+d. a value the user set for a colour: kept, by the note-taker's reading;
+   the theme's defaults change;
+e. the text's ground and outline (entries 87 and 98): unchanged, by the
+   note-taker's reading.
+READ in the source, nothing run:
+- Each line's text ground in a see-through overlay:
+  `src/Gui/ReportView.cpp` 801 to 816 and `src/Gui/TextEdit.cpp` 82 to
+  104 (the Python console), both `OverlayManager::overlayTextGround`
+  (entry 98; under Dark the ground dark since entry 111).
 
 ## Inbox
 
