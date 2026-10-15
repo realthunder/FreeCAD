@@ -43,6 +43,7 @@
 #include <App/DocumentObject.h>
 #include <App/FileHistory.h>
 #include <App/TransactionLog.h>
+#include <App/ValueSummary.h>
 #include <App/TransactionStore.h>
 #include <App/TransactionValue.h>
 #include <Base/Console.h>
@@ -833,6 +834,16 @@ QJsonObject valueOp(const QJsonObject& req, const std::string& boundDoc, uint64_
             attachments.append(item);
         }
         reply[QLatin1String("attachments")] = attachments;
+        // A value whose text says nothing to a reader -- a shape's, the start
+        // of the geometry's file -- says what it is (sec 32.35)
+        App::ValueSummary summary;
+        if (App::summariseValue(*doc, value, summary)) {
+            reply[QLatin1String("summary")] = QString::fromStdString(summary.text);
+            QJsonObject facts;
+            for (const auto& kv : summary.facts)
+                facts[QString::fromStdString(kv.first)] = kv.second;
+            reply[QLatin1String("facts")] = facts;
+        }
     }
     catch (const Base::Exception& e) {
         return sceneControlError(id, "LogError", QString::fromUtf8(e.what()));

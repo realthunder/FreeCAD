@@ -72,7 +72,9 @@
 #include <App/DocumentParams.h>
 #include <App/FileBlobManager.h>
 #include <App/FileHistory.h>
+#include <App/GeoFeature.h>
 #include <App/TransactionLog.h>
+#include <App/ValueSummary.h>
 #include <Base/Console.h>
 #include <Base/Quantity.h>
 #include <Base/Tools.h>
@@ -578,6 +580,15 @@ public:
     void clear()
     {
         setValues(nullptr, {}, false);
+    }
+
+    /// Draw again what is shown: the values a ref names have changed under
+    /// it -- a result made again in the document it was made in (sec 32.34),
+    /// whose ref is that document's name
+    void redraw()
+    {
+        hideAll();
+        update();
     }
 
 private:
@@ -1747,6 +1758,11 @@ QString TransactionLogView::valueText(const QString& label, const QString& ref) 
     App::CapturedValue v;
     auto l = log();
     if (l && l->readValue(ref.toStdString(), v)) {
+        // What a shape is, where its text is the start of the geometry's
+        // file (sec 32.35)
+        App::ValueSummary summary;
+        if (_doc && App::summariseValue(*_doc, v, summary))
+            text += QString::fromStdString(summary.text) + QStringLiteral("\n");
         text += QString::fromStdString(v.fragment);
         if (!text.endsWith(QLatin1Char('\n')))
             text += QLatin1Char('\n');
@@ -2516,9 +2532,11 @@ class MergeDialog: public QDialog
 public:
     enum Column { Kind, Object, Property, Base, Ours, Theirs, Takes, Columns };
 
-    /// What the merge would make, with the sides given (sec 32.17)
+    /// What the merge would make, with the sides given (sec 32.17), and the
+    /// document of a result made before handed back to be made again in
+    /// (sec 32.34)
     using Outcome = std::function<App::Document::MergeOutcome(
-        const std::map<std::string, std::string>&)>;
+        const std::map<std::string, std::string>&, const std::string&)>;
     /// The pairs of the bar, by their place
     enum Pair { OursTheirs, BaseOurs, BaseTheirs, OursResult };
 
@@ -2723,6 +2741,17 @@ public:
                                      _resultRef});
                 return pairs;
             };
+            // What theirs removes, and the merge with it: the object as it
+            // is here, all of it gone (sec 32.34)
+            auto goneThere = [this, doc](long cid, bool theirs) {
+                std::vector<TransactionDiffBar::Pair> pairs {
+                    {theirs, std::string(), TransactionDiffBar::NoValue}, {}, {}};
+                pairs.push_back(_resultIsTheirs ? pairs.front()
+                                                : TransactionDiffBar::Pair {
+                                                      _removed.count(cid) > 0, std::string(),
+                                                      TransactionDiffBar::NoValue});
+                return TransactionDiffBar::Value {cid, geometryOf(doc, cid), pairs, std::string()};
+            };
             // What the result has and the document has not -- theirs made
             // it: all of it new, drawn by the view the result's document
             // has of it
@@ -2736,6 +2765,9 @@ public:
                 const auto* c = _changes[items.front()->data(Object, Qt::UserRole).toInt()];
                 if (c->ckind == "obj" && c->prop.empty() && _there.count(c->cid))
                     _diff->setValues(doc, {madeThere(c->cid, _there[c->cid])}, false);
+                else if (c->ckind == "obj" && c->prop.empty() && c->op == "remove"
+                         && !geometryOf(doc, c->cid).empty())
+                    _diff->setValues(doc, {goneThere(c->cid, true)}, false);
                 else if (c->ckind != "obj" || c->prop.empty())
                     _diff->clear();
                 else
@@ -2746,12 +2778,16 @@ public:
             // (sec 32.10). What theirs made has no object here.
             std::vector<TransactionDiffBar::Value> values;
             std::set<std::pair<long, std::string>> listed;
+            std::set<long> gone;
             int made = 0;
             for (const auto* c : _changes) {
                 if (c->ckind != "obj")
                     continue;
                 if (c->prop.empty()) {
                     made += c->op == "create" ? 1 : 0;
+                    if (c->op == "remove" && !geometryOf(doc, c->cid).empty()
+                            && gone.insert(c->cid).second)
+                        values.push_back(goneThere(c->cid, true));
                 }
                 else {
                     values.push_back({c->cid, c->prop, pairsOf(*c), std::string()});
@@ -2760,6 +2796,11 @@ public:
             }
             for (const auto& made : _there)
                 values.push_back(madeThere(made.first, made.second));
+            // What the result removes that no line says theirs does
+            for (long cid : _removed) {
+                if (!geometryOf(doc, cid).empty() && gone.insert(cid).second)
+                    values.push_back(goneThere(cid, false));
+            }
             // The result reaches further than the changes: what is made of
             // what changed is computed again, and no line here says so
             for (const auto& value : _result) {
@@ -2784,6 +2825,8 @@ public:
         //NOLINTBEGIN
         _resultGone = Application::Instance->signalDeleteDocument.connect(
             [this](const Gui::Document& gone) {
+                if (gone.getDocument() && _kept == gone.getDocument()->getName())
+                    _kept.clear();
                 if (_resultRef.empty() || !gone.getDocument()
                         || resultDocument() != gone.getDocument()->getName())
                     return;
@@ -2836,6 +2879,7 @@ public:
     ~MergeDialog() override
     {
         dropResult();
+        closeKept();
     }
 
     /// What exec would not return: the preview is to be made again
@@ -2851,6 +2895,7 @@ public:
         _isStale = true;
         allowMerge();
         dropResult();
+        closeKept();
         _diff->setPairNote(OursResult, QObject::tr("the document has changed: preview again"));
         _show();
     }
@@ -2946,15 +2991,44 @@ private:
         _there.clear();
     }
 
-    /// Close the document the result was made in, and forget its values
-    void dropResult()
+    /// The geometry of object `cid` of `doc`, by its property's name; empty
+    /// where it has none
+    static std::string geometryOf(App::Document* doc, long cid)
+    {
+        auto geo = doc ? Base::freecad_dynamic_cast<App::GeoFeature>(doc->getObjectByID(cid))
+                       : nullptr;
+        auto prop = geo ? geo->getPropertyOfGeometry() : nullptr;
+        return prop && prop->hasName() ? std::string(prop->getName()) : std::string();
+    }
+
+    /// Forget the result's values. Its document is closed, or with `keep`
+    /// kept to be made again in (sec 32.34): what a merge reads first is
+    /// the document, and that is the same until it changes.
+    void dropResult(bool keep = false)
     {
         _result.clear();
+        _removed.clear();
         _resultIsTheirs = false;
         _made = false;
         takeOutViewsThere();
         const std::string name = resultDocument();
         _resultRef.clear();
+        if (name.empty() || !App::GetApplication().getDocument(name.c_str()))
+            return;
+        if (keep) {
+            closeKept();
+            _kept = name;
+        }
+        else {
+            App::GetApplication().closeDocument(name.c_str());
+        }
+    }
+
+    /// Close the result's document kept to be made again in
+    void closeKept()
+    {
+        const std::string name = std::move(_kept);
+        _kept.clear();
         if (!name.empty() && App::GetApplication().getDocument(name.c_str()))
             App::GetApplication().closeDocument(name.c_str());
     }
@@ -2983,7 +3057,7 @@ private:
         allowMerge();
         if (_settingAll || !_made)
             return;
-        dropResult();
+        dropResult(true);
         if (_diff->pair() == OursResult)
             makeResult();
         else
@@ -2991,18 +3065,27 @@ private:
     }
 
     /// What the merge would make, with the sides as they are picked now
-    /// (sec 32.17): made once, and again when a side changes.
+    /// (sec 32.17): made once, and again when a side changes -- in the
+    /// document it was made in before, where there is one (sec 32.34).
     void makeResult()
     {
         if (!_outcome || _made || _isStale || _making)
             return;
         Base::StateLocker guard(_making);
-        dropResult();
+        dropResult(true);
         QString note;
         try {
             Gui::WaitCursor wait;
-            const auto outcome = _outcome(picks());
+            // The document handed back is the merge's from here, whatever
+            // it does with it
+            const std::string again = std::move(_kept);
+            _kept.clear();
+            const auto outcome = _outcome(picks(), again);
             _made = true;
+            _reused = outcome.reused;
+            if (!again.empty() && !(outcome.document && again == outcome.document->getName())
+                    && App::GetApplication().getDocument(again.c_str()))
+                App::GetApplication().closeDocument(again.c_str());
             if (outcome.theirs) {
                 _resultIsTheirs = true;
                 note = QObject::tr("a fast-forward: the result is theirs");
@@ -3040,6 +3123,7 @@ private:
                     parts << QObject::tr("the result is the document as it is");
                 if (made)
                     parts << QObject::tr("%n object(s) made by the merge", "", made);
+                _removed.insert(outcome.removed.begin(), outcome.removed.end());
                 if (!outcome.removed.empty())
                     parts << QObject::tr("%n object(s) are removed", "",
                                          static_cast<int>(outcome.removed.size()));
@@ -3065,6 +3149,7 @@ private:
             note = QObject::tr("no result: %1").arg(QString::fromUtf8(e.what()));
         }
         _diff->setPairNote(OursResult, note);
+        _diff->redraw();
         _show();
     }
 
@@ -3094,6 +3179,12 @@ private:
     std::map<long, std::string> _there;
     std::string _resultRef;
     bool _resultIsTheirs {false};
+    /// The objects of the document the result removes: drawn as gone
+    std::set<long> _removed;
+    /// The result's document kept, while the sides change, to be made again
+    /// in; and whether the last result was made so (sec 32.34)
+    std::string _kept;
+    bool _reused {false};
     /// Of rows picked, and not a branch merged; the base's row and theirs'
     bool _rows {false};
     int64_t _base {0};
@@ -3537,8 +3628,10 @@ void TransactionLogView::mergeBranch(const QString& name)
             App::Document* doc = _doc;
             QPointer<MergeDialog> dialog(new MergeDialog(
                 preview, QString::fromStdString(mine.name), l, _doc, this, false,
-                [doc, name](const std::map<std::string, std::string>& sides) {
-                    return doc->previewMergeResult(name.toStdString(), sides);
+                [doc, name](const std::map<std::string, std::string>& sides,
+                            const std::string& again) {
+                    return doc->previewMergeResult(name.toStdString(), sides, std::string(), 0,
+                                                   again);
                 }));
             const int answer = askBeside(
                 *dialog, MergeDialog::said(preview),
@@ -3636,8 +3729,9 @@ void TransactionLogView::applyRows(const QString& seqs)
             App::Document* doc = _doc;
             QPointer<MergeDialog> dialog(new MergeDialog(
                 preview, QString::fromStdString(mine.name), l, _doc, this, true,
-                [doc, rows](const std::map<std::string, std::string>& sides) {
-                    return doc->previewPickResult(rows, sides);
+                [doc, rows](const std::map<std::string, std::string>& sides,
+                            const std::string& again) {
+                    return doc->previewPickResult(rows, sides, std::string(), again);
                 }));
             const int answer = askBeside(
                 *dialog, MergeDialog::said(preview),
