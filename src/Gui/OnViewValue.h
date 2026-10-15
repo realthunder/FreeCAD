@@ -43,7 +43,7 @@ namespace Gui
 {
 
 class EditableDatumLabel;
-class LinearGizmo;
+class Gizmo;
 class QuantitySpinBox;
 class ViewerContext;
 
@@ -52,7 +52,8 @@ class ViewerContext;
  * docs/OnViewValueEditing.md, sections 3.1 and 3.2. Each value is held by a
  * QuantitySpinBox -- the panel's own, or a hidden one -- which brings its
  * unit, its limits, its expression and the code that writes the property; a
- * handle (a LinearGizmo) may drive the same box. The set adds a label showing
+ * handle (a LinearGizmo, or a RotationGizmo for an angle) may drive the same
+ * box. The set adds a label showing
  * the value, and the ACTIVE value: made so by a click on its handle or its
  * label, or by Tab in the view; its handle is highlighted, and while it is
  * active a key typed in the view goes to it:
@@ -84,7 +85,7 @@ public:
     };
 
     /// Fills the menu of a handle of a value
-    using MenuProvider = std::function<void(QMenu& menu, LinearGizmo* handle)>;
+    using MenuProvider = std::function<void(QMenu& menu, Gizmo* handle)>;
 
     explicit OnViewValueSet(QObject* parent = nullptr);
     ~OnViewValueSet() override;
@@ -95,14 +96,14 @@ public:
      * appendGizmo): its root button is set up here.
      */
     int addValue(QuantitySpinBox* box, const QString& title, Place place,
-                 LinearGizmo* handle = nullptr);
+                 Gizmo* handle = nullptr);
     /// One more handle of the value at \a index
-    void addHandle(int index, LinearGizmo* handle);
+    void addHandle(int index, Gizmo* handle);
     /// Let go of the handles of the value at \a index, which the caller
     /// deletes after; the value stays
     void clearHandles(int index);
     /// Where a handle stands, in world coordinates: its label goes beside it
-    void setHandleAnchor(LinearGizmo* handle, const Base::Vector3d& world);
+    void setHandleAnchor(Gizmo* handle, const Base::Vector3d& world);
     /// What the menu of the value at \a index offers
     void setMenu(int index, MenuProvider provider);
     /** The group of the value at \a index, 0 for none: while a value is
@@ -116,13 +117,13 @@ public:
     void truncate(int count);
     int count() const;
     /// The value \a handle belongs to, or -1
-    int valueOf(const LinearGizmo* handle) const;
+    int valueOf(const Gizmo* handle) const;
 
     /// Open the menu of \a handle, of the active handle when null; at the
     /// pointer, or at the handle
-    void openMenu(LinearGizmo* handle = nullptr, bool atPointer = false);
+    void openMenu(Gizmo* handle = nullptr, bool atPointer = false);
     /// The handle made active last, if its value is still the active one
-    LinearGizmo* getActiveHandle() const;
+    Gizmo* getActiveHandle() const;
 
     /// Show the values in \a view; null takes them out of the view it had.
     void attach(ViewerContext* view);
@@ -133,7 +134,7 @@ public:
 
     /// Make the value at \a index the active one; -1 for none. \a handle,
     /// one of its handles, is the one its label goes beside.
-    void setActive(int index, LinearGizmo* handle = nullptr);
+    void setActive(int index, Gizmo* handle = nullptr);
     int getActive() const;
 
     /** Open the label of the value at \a index for typing. \a first, a key
@@ -165,7 +166,7 @@ private:
     void showLabels();
     void updateLabel(int index);
     void highlight();
-    void setupHandle(int index, LinearGizmo* handle);
+    void setupHandle(int index, Gizmo* handle);
     void onCamera();
     void onLabelClicked(EditableDatumLabel* label);
     void commit(int index, double value);
@@ -183,7 +184,7 @@ private:
     /// on some releases (Escape leaves the edit, ViewProvider::eventCallback)
     std::vector<int> takenKeys;
     int active = -1;
-    LinearGizmo* activeHandle = nullptr;
+    Gizmo* activeHandle = nullptr;
     int typing = -1;
 };
 

@@ -536,6 +536,10 @@ RotationGizmo::RotationGizmo(QuantitySpinBox* property)
 
 RotationGizmo::~RotationGizmo()
 {
+    // Lets go of its spin box, as a linear one does: a box may outlive a
+    // gizmo taken out early
+    QuantitySpinBox::disconnect(quantityChangedConnection);
+    QuantitySpinBox::disconnect(formulaDialogConnection);
     translationSensor.detach();
     translationSensor.setData(nullptr);
     translationSensor.setFunction(nullptr);
@@ -591,8 +595,42 @@ void RotationGizmo::updateColorTheme()
     Base::Color baseColor = styleParameterManager->resolve(StyleParameters::RotationGizmoBaseColor);
     Base::Color activeColor = styleParameterManager->resolve(StyleParameters::RotationGizmoActiveColor);
 
-    dragger->color = baseColor.asValue<SbColor>();
+    // a handle of its own colour (a customised edge's) keeps it, and the
+    // active one wears the colour of one being dragged
+    if (ownColor) {
+        baseColor = *ownColor;
+    }
+    dragger->color = (highlighted ? activeColor : baseColor).asValue<SbColor>();
     dragger->activeColor = activeColor.asValue<SbColor>();
+}
+
+void RotationGizmo::setHighlighted(bool highlighted)
+{
+    if (this->highlighted == highlighted) {
+        return;
+    }
+    this->highlighted = highlighted;
+    if (dragger) {
+        updateColorTheme();
+    }
+}
+
+void RotationGizmo::setColor(const std::optional<Base::Color>& color)
+{
+    ownColor = color;
+    if (dragger) {
+        updateColorTheme();
+    }
+}
+
+void RotationGizmo::setReleaseCallback(ReleaseCallback callback)
+{
+    releaseCallback = std::move(callback);
+}
+
+void RotationGizmo::setFocusBoxOnRelease(bool focus)
+{
+    focusBoxOnRelease = focus;
 }
 
 GizmoPlacement RotationGizmo::getDraggerPlacement()
@@ -712,8 +750,14 @@ void RotationGizmo::draggingFinished()
         clickCallback();
     }
 
-    property->setFocus();
-    property->selectAll();
+    if (focusBoxOnRelease) {
+        property->setFocus();
+        property->selectAll();
+    }
+    // Last: it may make the handle the active one, which takes the focus
+    if (releaseCallback) {
+        releaseCallback(hasDragged);
+    }
 }
 
 void RotationGizmo::draggingContinued()

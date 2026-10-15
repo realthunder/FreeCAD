@@ -262,7 +262,7 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     onViewValues = std::make_unique<Gui::OnViewValueSet>();
     onViewValues->addValue(ui->filletRadius, tr("Radius"),
                            Gui::OnViewValueSet::Place::TopMiddle);
-    onViewValues->setMenu(DefaultValue, [this](QMenu& menu, Gui::LinearGizmo* handle) {
+    onViewValues->setMenu(DefaultValue, [this](QMenu& menu, Gui::Gizmo* handle) {
         fillEdgeMenu(menu, handle);
     });
     setupGizmos(DressUpView);
@@ -414,36 +414,6 @@ bool edgeHandlePlacement(Part::TopoShape& edge, TopoDS_Face& face, double fracti
     }
     return true;
 }
-
-/** The colour of a group's handles (docs/OnViewValueEditing.md 3.3, the
- * reporter 2026-10-14 13:54: "each group show its own color. choose color
- * from a set of distinct ones (auto generated)"). A hue stepped by the golden
- * ratio from the id -- the same id keeps its colour from session to session
- * -- passing over the hues of the default handles (the theme's red) and of
- * the highlight (yellow).
- */
-Base::Color groupColor(int group)
-{
-    double hue = std::fmod(0.08 + group * 0.618033988749895, 1.0);
-    auto near = [&hue](double other) {
-        double d = std::fabs(hue - other);
-        return std::min(d, 1.0 - d) < 0.07;
-    };
-    for (int i = 0; i < 4 && (near(0.0) || near(0.15)); ++i) {
-        hue = std::fmod(hue + 0.11, 1.0);
-    }
-    QColor color = QColor::fromHsvF(float(hue), 0.75F, 0.95F);
-    return Base::Color(float(color.redF()), float(color.greenF()), float(color.blueF()));
-}
-
-/// A swatch of a group's colour for its menu item
-QIcon groupIcon(int group)
-{
-    const Base::Color color = groupColor(group);
-    QPixmap pixmap(12, 12);
-    pixmap.fill(QColor::fromRgbF(color.r, color.g, color.b));
-    return QIcon(pixmap);
-}
 } // namespace
 
 std::vector<std::string> TaskFilletParameters::getFilletEdges() const
@@ -556,7 +526,7 @@ void TaskFilletParameters::updateEdgeHandles()
                 const int value = onViewValues->addValue(
                     box, title, Gui::OnViewValueSet::Place::AtHandle, handle.gizmo);
                 onViewValues->setGroup(value, group);
-                onViewValues->setMenu(value, [this](QMenu& menu, Gui::LinearGizmo* gizmo) {
+                onViewValues->setMenu(value, [this](QMenu& menu, Gui::Gizmo* gizmo) {
                     fillEdgeMenu(menu, gizmo);
                 });
                 gizmoContainer->appendGizmo(handle.gizmo);
@@ -591,7 +561,7 @@ void TaskFilletParameters::updateEdgeHandles()
                     alongBox, QStringLiteral("%1  %2").arg(group).arg(tr("P%1").arg(point + 1)),
                     Gui::OnViewValueSet::Place::AtHandle, along.gizmo);
                 onViewValues->setGroup(place, group);
-                onViewValues->setMenu(place, [this](QMenu& menu, Gui::LinearGizmo* gizmo) {
+                onViewValues->setMenu(place, [this](QMenu& menu, Gui::Gizmo* gizmo) {
                     fillEdgeMenu(menu, gizmo);
                 });
                 gizmoContainer->appendGizmo(along.gizmo);
@@ -771,7 +741,7 @@ void TaskFilletParameters::setEdgePointRadius(const std::string& edge, int point
     recompute();
 }
 
-TaskFilletParameters::EdgeHandle* TaskFilletParameters::findEdgeHandle(const Gui::LinearGizmo* gizmo)
+TaskFilletParameters::EdgeHandle* TaskFilletParameters::findEdgeHandle(const Gui::Gizmo* gizmo)
 {
     for (auto& handle : edgeHandles) {
         if (handle.gizmo == gizmo) {
@@ -781,7 +751,7 @@ TaskFilletParameters::EdgeHandle* TaskFilletParameters::findEdgeHandle(const Gui
     return nullptr;
 }
 
-void TaskFilletParameters::fillEdgeMenu(QMenu& menu, Gui::LinearGizmo* gizmo)
+void TaskFilletParameters::fillEdgeMenu(QMenu& menu, Gui::Gizmo* gizmo)
 {
     auto vp = getDressUpView();
     auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;

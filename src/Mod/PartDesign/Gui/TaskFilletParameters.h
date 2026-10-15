@@ -181,8 +181,8 @@ private:
     void placeEdgeHandles(bool force);
     /// From the gizmos' frame to the world's
     Base::Matrix4D gizmoToWorld() const;
-    EdgeHandle* findEdgeHandle(const Gui::LinearGizmo* gizmo);
-    void fillEdgeMenu(QMenu& menu, Gui::LinearGizmo* gizmo);
+    EdgeHandle* findEdgeHandle(const Gui::Gizmo* gizmo);
+    void fillEdgeMenu(QMenu& menu, Gui::Gizmo* gizmo);
     /// 0 default radius, 1 one radius, 2 two radii, VaryingMode otherwise
     static int edgeMode(const Part::PropertyFilletSegments::Segments& segments);
     void setEdgeMode(const std::string& edge, int mode, double radius);

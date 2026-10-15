@@ -55,7 +55,7 @@ struct OnViewValueSet::Entry
     QPointer<QuantitySpinBox> box;
     QString title;
     Place place = Place::TopMiddle;
-    std::vector<LinearGizmo*> handles;
+    std::vector<Gizmo*> handles;
     /// Where each handle stands, in world coordinates; by the handle's place
     std::vector<Base::Vector3d> anchors;
     MenuProvider menu;
@@ -112,7 +112,7 @@ OnViewValueSet::~OnViewValueSet()
     truncate(0);
 }
 
-void OnViewValueSet::setupHandle(int index, LinearGizmo* handle)
+void OnViewValueSet::setupHandle(int index, Gizmo* handle)
 {
     // The view keeps the focus: a value is typed at the handle, not in the
     // panel's box
@@ -130,7 +130,7 @@ void OnViewValueSet::setupHandle(int index, LinearGizmo* handle)
 }
 
 int OnViewValueSet::addValue(QuantitySpinBox* box, const QString& title, Place place,
-                             LinearGizmo* handle)
+                             Gizmo* handle)
 {
     auto entry = std::make_unique<Entry>();
     entry->box = box;
@@ -154,7 +154,7 @@ int OnViewValueSet::addValue(QuantitySpinBox* box, const QString& title, Place p
     return index;
 }
 
-void OnViewValueSet::addHandle(int index, LinearGizmo* handle)
+void OnViewValueSet::addHandle(int index, Gizmo* handle)
 {
     if (index < 0 || index >= count() || !handle) {
         return;
@@ -172,7 +172,7 @@ void OnViewValueSet::clearHandles(int index)
         return;
     }
     auto& entry = entries[index];
-    for (LinearGizmo* handle : entry->handles) {
+    for (Gizmo* handle : entry->handles) {
         if (handle == activeHandle) {
             activeHandle = nullptr;
         }
@@ -184,7 +184,7 @@ void OnViewValueSet::clearHandles(int index)
     entry->anchors.clear();
 }
 
-void OnViewValueSet::setHandleAnchor(LinearGizmo* handle, const Base::Vector3d& world)
+void OnViewValueSet::setHandleAnchor(Gizmo* handle, const Base::Vector3d& world)
 {
     for (auto& entry : entries) {
         for (std::size_t i = 0; i < entry->handles.size(); ++i) {
@@ -240,7 +240,7 @@ int OnViewValueSet::count() const
     return static_cast<int>(entries.size());
 }
 
-int OnViewValueSet::valueOf(const LinearGizmo* handle) const
+int OnViewValueSet::valueOf(const Gizmo* handle) const
 {
     for (int i = 0; i < count(); ++i) {
         const auto& handles = entries[i]->handles;
@@ -442,7 +442,7 @@ void OnViewValueSet::highlight()
     const int group = active >= 0 ? entries[active]->group : 0;
     for (int i = 0; i < count(); ++i) {
         const bool lit = i == active || (group > 0 && entries[i]->group == group);
-        for (LinearGizmo* handle : entries[i]->handles) {
+        for (Gizmo* handle : entries[i]->handles) {
             handle->setHighlighted(lit);
         }
     }
@@ -464,7 +464,7 @@ void OnViewValueSet::onCamera()
     Q_EMIT cameraChanged();
 }
 
-void OnViewValueSet::setActive(int index, LinearGizmo* handle)
+void OnViewValueSet::setActive(int index, Gizmo* handle)
 {
     if (index < -1 || index >= count()) {
         index = -1;
@@ -504,7 +504,7 @@ int OnViewValueSet::getActive() const
     return active;
 }
 
-LinearGizmo* OnViewValueSet::getActiveHandle() const
+Gizmo* OnViewValueSet::getActiveHandle() const
 {
     return active >= 0 ? activeHandle : nullptr;
 }
@@ -514,7 +514,7 @@ int OnViewValueSet::getTyping() const
     return typing;
 }
 
-void OnViewValueSet::openMenu(LinearGizmo* handle, bool atPointer)
+void OnViewValueSet::openMenu(Gizmo* handle, bool atPointer)
 {
     if (!handle) {
         handle = getActiveHandle();

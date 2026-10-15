@@ -30,6 +30,10 @@
 # include <QKeyEvent>
 # include <QPushButton>
 # include <QCheckBox>
+# include <QColor>
+# include <QIcon>
+# include <QPixmap>
+# include <cmath>
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -542,6 +546,31 @@ void TaskDressUpParameters::createAddAllEdgesAction(QTreeWidget* parentList)
     addAllEdgesAction->setEnabled(false);
     addAllEdgesAction->setStatusTip(tr("Adds all edges to the list box (active only when in add selection mode)."));
     parentList->setContextMenuPolicy(Qt::ActionsContextMenu);
+}
+
+Base::Color TaskDressUpParameters::groupColor(int group)
+{
+    // A hue stepped by the golden ratio from the id -- the same id keeps its
+    // colour from session to session -- passing over the hues of the default
+    // handles (the theme's red) and of the highlight (yellow)
+    double hue = std::fmod(0.08 + group * 0.618033988749895, 1.0);
+    auto near = [&hue](double other) {
+        double d = std::fabs(hue - other);
+        return std::min(d, 1.0 - d) < 0.07;
+    };
+    for (int i = 0; i < 4 && (near(0.0) || near(0.15)); ++i) {
+        hue = std::fmod(hue + 0.11, 1.0);
+    }
+    QColor color = QColor::fromHsvF(float(hue), 0.75F, 0.95F);
+    return Base::Color(float(color.redF()), float(color.greenF()), float(color.blueF()));
+}
+
+QIcon TaskDressUpParameters::groupIcon(int group)
+{
+    const Base::Color color = groupColor(group);
+    QPixmap pixmap(12, 12);
+    pixmap.fill(QColor::fromRgbF(color.r, color.g, color.b));
+    return QIcon(pixmap);
 }
 
 void TaskDressUpParameters::showMessage(const char *msg) {

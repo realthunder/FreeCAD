@@ -94,6 +94,28 @@ public:
 
     bool getVisibility();
 
+    /** @name What a value in the view asks of its handle
+     * (Gui::OnViewValueSet, docs/OnViewValueEditing.md 3.1 to 3.3). A kind
+     * of handle without one of these ignores it.
+     */
+    //@{
+    /// Called when the pointer lets go of the handle, dragged or only clicked
+    using ReleaseCallback = std::function<void(bool dragged)>;
+    using ButtonCallback = std::function<void()>;
+    /// Draw the handle in its active colour while not dragged
+    virtual void setHighlighted([[maybe_unused]] bool highlighted) {}
+    virtual void setReleaseCallback([[maybe_unused]] ReleaseCallback callback) {}
+    /** Whether letting go of the handle puts the focus in its spin box, the
+     * way upstream has it (the default). A handle whose value is typed in
+     * the view keeps the focus in the view instead.
+     */
+    virtual void setFocusBoxOnRelease([[maybe_unused]] bool focus) {}
+    /// A knob at the handle's root whose click calls \a callback
+    virtual void setRootButton([[maybe_unused]] ButtonCallback callback) {}
+    /// The handle's own colour; none for the theme's
+    virtual void setColor([[maybe_unused]] const std::optional<Base::Color>& color) {}
+    //@}
+
 protected:
     double multFactor = 1.0f;
     double addFactor = 0.0f;
@@ -114,8 +136,6 @@ class GuiExport LinearGizmo: public Gizmo
 {
 public:
     using ClickCallback = std::function<void()>;
-    /// Called when the pointer lets go of the handle, dragged or only clicked
-    using ReleaseCallback = std::function<void(bool dragged)>;
 
     LinearGizmo(QuantitySpinBox* property);
     /// Lets go of its spin box: a box may outlive a gizmo taken out early
@@ -140,30 +160,25 @@ public:
     void setAddFactor(const double val);
     void setDraggerStyle(LinearDraggerStyle style);
     void setClickCallback(ClickCallback callback);
-    void setReleaseCallback(ReleaseCallback callback);
+    void setReleaseCallback(ReleaseCallback callback) override;
     void setVisibility(bool visible);
     /** Draw the handle in its active colour while not dragged: the handle
      * that takes typed values (docs/OnViewValueEditing.md 3.2).
      */
-    void setHighlighted(bool highlighted);
-    /** Whether letting go of the handle puts the focus in its spin box, the
-     * way upstream has it (the default). A handle whose value is typed in
-     * the view keeps the focus in the view instead.
-     */
-    void setFocusBoxOnRelease(bool focus);
+    void setHighlighted(bool highlighted) override;
+    void setFocusBoxOnRelease(bool focus) override;
 
     /** @name The root button (docs/OnViewValueEditing.md 3.3)
      * A small knob at the root of the arrow; a click on it, apart from the
      * arrow, calls \a callback -- which opens the handle's menu.
      */
     //@{
-    using ButtonCallback = std::function<void()>;
-    void setRootButton(ButtonCallback callback);
+    void setRootButton(ButtonCallback callback) override;
     SoNode* getExtraNode() override;
     //@}
 
     /// The handle's own colour, and its root button's; none for the theme's
-    void setColor(const std::optional<Base::Color>& color);
+    void setColor(const std::optional<Base::Color>& color) override;
 
 private:
     void buildRootButton();
@@ -230,6 +245,14 @@ public:
     void setClickCallback(ClickCallback callback);
     void setVisibility(bool visible);
 
+    /// As a linear handle's (an angle typed in the view, a chamfer's), but
+    /// with no root button: its value's menu is opened from another handle
+    /// of its edge, or by Space
+    void setHighlighted(bool highlighted) override;
+    void setReleaseCallback(ReleaseCallback callback) override;
+    void setFocusBoxOnRelease(bool focus) override;
+    void setColor(const std::optional<Base::Color>& color) override;
+
 private:
     SoRotationDragger* dragger = nullptr;
     SoRotationDraggerContainer* draggerContainer = nullptr;
@@ -239,7 +262,11 @@ private:
     QMetaObject::Connection formulaDialogConnection;
     double lastDragOffset = 0.0;
     bool hasDragged = false;
+    bool highlighted = false;
+    bool focusBoxOnRelease = true;
+    std::optional<Base::Color> ownColor;
     ClickCallback clickCallback;
+    ReleaseCallback releaseCallback;
 
     void draggingStarted();
     void draggingFinished();
