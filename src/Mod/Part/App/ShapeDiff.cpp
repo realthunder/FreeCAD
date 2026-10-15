@@ -52,6 +52,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -63,6 +64,7 @@
 #include <App/StringHasher.h>
 #include <App/TransactionLog.h>
 #include <App/TransactionValue.h>
+#include <App/ValueSummary.h>
 #include <Base/Exception.h>
 
 #include "PropertyTopoShape.h"
@@ -1240,6 +1242,14 @@ bool ShapeDiff::valueShape(const App::Document& doc, const std::string& ref, lon
     App::CapturedValue value;
     if (!log->readValue(ref, value) || !value.ok)
         return false;
+    return valueShape(doc, value, tag, shape);
+}
+
+bool ShapeDiff::valueShape(const App::Document& doc, const App::CapturedValue& value, long tag,
+                           TopoShape& shape)
+{
+    if (!value.ok)
+        return false;
     // Only a shape: the fragment of one opens with its Part element
     if (value.fragment.compare(0, 6, "<Part ") != 0)
         return false;
@@ -1265,5 +1275,76 @@ bool ShapeDiff::valueShape(const App::Document& doc, const std::string& ref, lon
     shape.Tag = tag;
     return true;
 }
+
+void ShapeDiff::summary(const TopoShape& shape, App::ValueSummary& out)
+{
+    out = App::ValueSummary();
+    if (shape.isNull()) {
+        out.text = "no shape";
+        return;
+    }
+    std::ostringstream text;
+    text.precision(6);
+    text << shape.shapeName(true) << ":";
+    const char* sep = " ";
+    for (auto kind : {std::make_pair(TopAbs_SOLID, "solid"), std::make_pair(TopAbs_SHELL, "shell"),
+                      std::make_pair(TopAbs_FACE, "face"), std::make_pair(TopAbs_EDGE, "edge"),
+                      std::make_pair(TopAbs_VERTEX, "vertex")}) {
+        const auto n = shape.countSubShapes(kind.first);
+        const std::string name = kind.second;
+        out.facts[name == "vertex" ? "vertices" : name + "s"] = double(n);
+        if (!n)
+            continue;
+        text << sep << n << " "
+             << (n == 1 ? name : name == "vertex" ? std::string("vertices") : name + "s");
+        sep = ", ";
+    }
+    // How much of it there is, by the most of what it has
+    GProp_GProps props;
+    try {
+        if (out.facts["solids"] > 0) {
+            BRepGProp::VolumeProperties(shape.getShape(), props);
+            out.facts["volume"] = props.Mass();
+            text << "; volume " << props.Mass() << " mm^3";
+        }
+        else if (out.facts["faces"] > 0) {
+            BRepGProp::SurfaceProperties(shape.getShape(), props);
+            out.facts["area"] = props.Mass();
+            text << "; area " << props.Mass() << " mm^2";
+        }
+        else if (out.facts["edges"] > 0) {
+            BRepGProp::LinearProperties(shape.getShape(), props);
+            out.facts["length"] = props.Mass();
+            text << "; length " << props.Mass() << " mm";
+        }
+    }
+    catch (const Standard_Failure&) {
+    }
+    const Base::BoundBox3d box = shape.getBoundBox();
+    if (box.IsValid()) {
+        out.facts["dx"] = box.LengthX();
+        out.facts["dy"] = box.LengthY();
+        out.facts["dz"] = box.LengthZ();
+        text << "; " << box.LengthX() << " x " << box.LengthY() << " x " << box.LengthZ()
+             << " mm";
+    }
+    out.text = text.str();
+}
+
+namespace
+{
+// A shape the transaction log holds says what it is (sec 32.35), where the
+// log's text of it is the start of the geometry's file
+[[maybe_unused]] const bool summarised = (App::registerValueSummary([](const App::Document& doc,
+                                                      const App::CapturedValue& value,
+                                                      App::ValueSummary& out) {
+                             TopoShape shape;
+                             if (!ShapeDiff::valueShape(doc, value, 0, shape))
+                                 return false;
+                             ShapeDiff::summary(shape, out);
+                             return true;
+                         }),
+                         true);
+}  // namespace
 
 }  // namespace Part

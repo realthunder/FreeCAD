@@ -37,6 +37,8 @@
 namespace App
 {
 class Document;
+struct CapturedValue;
+struct ValueSummary;
 }
 
 namespace Part
@@ -224,6 +226,15 @@ public:
      */
     static bool valueShape(const App::Document& doc, const std::string& ref, long tag,
                            TopoShape& shape);
+    /// The same of a value already read; false where it is no shape.
+    static bool valueShape(const App::Document& doc, const App::CapturedValue& value, long tag,
+                           TopoShape& shape);
+    /** What \a shape is, in a line (docs/TransactionLog.md sec 32.35): its
+     * kind, how many solids, shells, faces, edges and vertices it has, its
+     * volume, area or length, and the size of its bounding box -- for a value
+     * of the log, whose text is the start of the geometry's file.
+     */
+    static void summary(const TopoShape& shape, App::ValueSummary& out);
 
 private:
     bool _same = false;

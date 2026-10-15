@@ -33,6 +33,7 @@
 #include <Base/Writer.h>
 
 #include "TransactionValue.h"
+#include "ValueSummary.h"
 #include "Application.h"
 #include "Document.h"
 #include "DocumentObject.h"
@@ -563,4 +564,34 @@ const std::string* App::CaptureNames::find(const DocumentObject* obj)
 std::string App::hashBytes(const std::string& bytes)
 {
     return FileBlobManager::hashBytes(bytes);
+}
+
+namespace
+{
+std::vector<App::ValueSummariser>& summarisers()
+{
+    static std::vector<App::ValueSummariser> all;
+    return all;
+}
+} // namespace
+
+void App::registerValueSummary(ValueSummariser fn)
+{
+    summarisers().push_back(std::move(fn));
+}
+
+bool App::summariseValue(const Document& doc, const CapturedValue& value, ValueSummary& out)
+{
+    if (!value.ok)
+        return false;
+    for (const auto& fn : summarisers()) {
+        try {
+            if (fn(doc, value, out))
+                return true;
+        }
+        catch (...) {
+        }
+        out = ValueSummary();
+    }
+    return false;
 }
