@@ -18552,9 +18552,11 @@ the length cyan and the ball cyan.
   (docs/ComputeBoundaries.md).
 - *Made again whole when a side changes*: a read of the document each
   time. The document could be kept and the sides written over it.
+  *(Built since: 32.34.)*
 - *Closing the result's document clears the selection*, as closing any
   document does (`Gui::Application::slotDeleteDocument`).
-- *What the merge removes* is counted, and not drawn as gone.
+- *What the merge removes* is counted, and not drawn as gone. *(Drawn
+  since: 32.34.)*
 - *Only geometry.* A length that would differ is not listed: the
   dialog's lines say it.
 - *A view opened while the result is shown* does not have what theirs
@@ -18912,7 +18914,8 @@ rows went, the list starts over.
 versions, branches); the merge in the browser, which waits for the
 open question of 32.20; kept values and requests. Of this stage: the
 graph of branches is not drawn -- a row says its branch in words; a
-value is shown as the log's text, a shape's as the start of it.
+value is shown as the log's text, a shape's as the start of it. *(Both
+built since: 32.35.)*
 
 *Seen, not chased.* Where the row shown is not the last, the two states
 are smaller or elsewhere than the object as it is now, which the
@@ -20002,6 +20005,149 @@ written. `parttests.ShapeDiffTest.ShapeAtAStateTest.testAShapeTheLogLetGoIsCompu
 (new): the row's and its parent's states have the shapes, untouched,
 with no log, the document and its cursor unmoved; a row there is not is
 refused.
+
+### 32.34 The merge's result: what it removes drawn, and made again in place (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "do merge preview first, then 6. I don't want
+item 4" -- item 5 of the list given after 32.33, the merge preview's own
+Left of 32.17: what the merge removes is not drawn, a side changed reads the
+document whole again, and the result is made on the main thread. Item 4, a
+closed file's kept values, is not wanted.
+
+**What the merge removes, drawn.** An object theirs removes was a line of
+the dialog with nothing to show, and the result said "N object(s) are
+removed" and drew nothing. Now the object as it is here is shown against no
+value -- all of it gone, as what theirs made is all of it new (32.17):
+
+- its line selected, in **ours against theirs**, and in **ours against the
+  result** where the result has it removed (`MergeOutcome::removed`, or the
+  other branch whole in a fast-forward);
+- with no line selected, for the objects chosen, the same; and an object the
+  result removes that no line says theirs removed.
+
+The base pairs show nothing of it: the base's value of a removed object is
+no ref the line carries.
+
+**Made again in place.** A side picked, or a change ticked or unticked,
+read the document into a new one each time and recomputed the merge there
+-- 2.1 s of the scale model's 3.2 s first result is that read (32.17). The
+result's document is now kept and written again:
+
+- `previewMergeResult()` and `previewPickResult()` take `again`, the name of
+  a result made before, handed back; Python `again=` after the other
+  arguments, and `reused` in what they answer.
+- What the merge writes to the result's document is one step, held open in
+  it (a `Transaction` of that document's own, which nothing commits: it has
+  no log, and its id is no application transaction's). Asked again, where
+  the document is of this one as it is still -- the same version of the tip
+  -- the step is aborted, which puts back every value, object and property
+  it changed, the touched state of each object as read is set again, and
+  the merge is written anew in a new step. That is the same code on the same
+  state, so the result is what a read anew makes, to the touched bits and
+  every element name (tested).
+- Otherwise -- the document changed, so its tip is another version; or the
+  name is of no result of this one -- the document handed back is closed,
+  and the result read anew. The record of what was made (`previewsMade`) is
+  by name, and a name is never given twice.
+- The dialog keeps the document while the sides change, also when another
+  pair is looked at, and hands it back the next time the result is asked
+  for; stale, or closed, it closes it.
+
+The view of what theirs made is taken out of this document's views before
+the step is taken back, as before a close. And the dialog's bar draws again
+what it shows once a result is made: a value of the result is known by its
+document's name (32.17), which made in place no longer changes -- the first
+run of the checks below showed the result before the side was picked.
+
+**Measured** (`~/.cache/lv-merge/mr/scale/scale2.py`, the scanner model of
+32.17, 615 objects, a pad made longer on each side): the first result 3.16
+s, the tip's version taken; made again in place with the same sides 1.19
+s and 1.21 s, 86 values, the body's tip the same volume to the last digit;
+with both changes left out 0.01 s -- nothing written, nothing computed, the
+document as it is; read anew for comparison 2.07 s. So a side changed costs
+the merge's write and recompute, and no longer the read.
+
+**Left.**
+
+- *On the main thread, and waited for*, as 32.17 says: a recompute is not
+  handed to a thread. It is the out-of-process kernel's
+  (docs/ComputeBoundaries.md), and the reuse above only takes the read out
+  of what is waited for.
+- *Closing the result's document clears the selection*: now once per
+  dialog, not once per side.
+- *Only geometry*, *a view opened while the result is shown*, and *the
+  string table* stand as 32.17 says.
+
+**Tests.** `parttests.ShapeDiffTest.MergedResultTest.testMadeAgainInTheSameDocument`
+(new): theirs' length, a ball theirs made and a cone theirs removed; ours
+picked, handed back: reused, the same document, and equal to one read anew
+-- objects, ids, touched state, length, volume, every element name, the
+values listed; back to theirs, what the first was; the ball left out, not
+there; the document changed, the one handed back closed and the result read
+anew. `scripts/transaction-log-mergeresult-check.py` (14, new, gate tag
+`mr`): the cone's line, every face of it gone against theirs and against the
+result, and chosen with no line selected; the result with theirs' length,
+ours picked in the same document, a side changed under another pair keeping
+it, its pair chosen again making it there, the ball unticked left out of it;
+gone with the dialog, nothing merged, nothing left drawn.
+`scripts/transaction-log-shapediff-check.py` (133): a side changed is made
+again in the document it was made in.
+
+**Gates** (`~/.cache/lv-merge/gates-lv.sh`, both freezes, with 32.35): the
+24 Gui checks clean; Python 3685, OK, frozen and not; gtest entries 950 of
+950 both; driven 280 of 282, the two the golden raster pictures (33.14).
+
+### 32.35 The page's rows as a graph, and a shape said in a line (2026-10-15)
+
+**Asked** with 32.34 ("then 6"): item 6 of the same list, the two things
+the first stage of the page left (32.21) -- the graph of branches is not
+drawn, and a shape's value is the start of its text.
+
+**The graph.** The page's list of rows has the desktop's graph (sec 26) as
+its first column: `layoutGraph()` in `web/src/logmodel.ts` lays it out as
+`TransactionLogView::layoutGraph()` does -- newest first, a node on a lane,
+each lane waiting for the parent of the row above it, lanes converging on a
+fork, a merge's second parent a lane from its node down to the row merged
+in, the desktop's colours by branch, a record hollow -- and each branch's
+head is labelled before the row's name, the one the document is on in
+bold. Two things are the page's own: a parent that is not loaded -- an
+older page -- is waited for to the foot of the list, so the lane goes on
+below; and the rows left out ("Records" not ticked) are passed through, the
+graph joining a row to its nearest ancestor listed. The cell is drawn the
+height of its row in percent, so the joins are straight where the
+desktop's are curves. A row of another branch that is that branch's head
+is named by its label and not again beside it.
+
+![the rows as a graph: main, for-web and try, each head named](images/transaction-log/16-log-browser-graph.png)
+
+**A value said in a line.** A shape's value as the log holds it is the
+start of its geometry's file, which says nothing to a reader, on the page
+and on the desktop alike. `App::ValueSummary` (`App/ValueSummary.h`) is a
+value's line and its numbers, said by the module whose value it is:
+`registerValueSummary()` takes a way to say it, and `summariseValue()` asks
+each in turn. Part registers one for a shape (`ShapeDiff::summary`): its
+kind, how many solids, shells, faces, edges and vertices, its volume -- or
+area, or length, by the most it has -- and the size of its bounding box, as
+"Compound: 1 solid, 1 shell, 7 faces, 15 edges, 10 vertices; volume
+1398.94 mm^3; 10 x 10 x 16 mm" -- a cut's shape is a compound holding its
+solid, and says so.
+
+- `log.value` answers `summary` and `facts` where there is one; the page
+  shows the line, with the log's text under "as the log holds it" to open.
+  The Kept list's value the same.
+- The desktop's value pane puts the line under the ref, above the text.
+
+![a shape's value said in a line](images/transaction-log/16-log-browser-summary.png)
+
+**Tests.** `web/src/widgets/gate.ts` (281, +9): the graph of a fork and a
+merge -- two lanes, the merge's lane, the fork converging, the first row
+ending its lane, the heads; a row left out; a record hollow; a parent not
+loaded; the colours. `tests/gui/serve-log.py` (27, +2): the cut's shape
+says it is a compound of one solid of 7 faces, its volume and height; a length says
+nothing more. `tests/gui/serve-log-browser.py` (15, +2): every row a node
+on the one lane, the branch named at its head; the shape's value said in a
+line. The browser drives read a row's name by its cell's class now, the
+graph's column being first.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
