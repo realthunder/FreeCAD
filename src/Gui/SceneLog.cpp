@@ -41,6 +41,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/FileHistory.h>
 #include <App/TransactionLog.h>
 #include <App/TransactionStore.h>
 #include <App/TransactionValue.h>
@@ -287,8 +288,10 @@ struct Authors
  *   from it -- from a point on, and deals with the requests to merge into
  *   it.
  *
- * What it has is said in the log's store, by user and branch (LogAccess).
- * Where nothing is said: the branch of the document it is in is read, which
+ * What it has is said in the log's store, by user and branch (LogAccess),
+ * or of a group the user is in (App::kLogGroupKind, sec 32.32): of each
+ * branch, what is said of the user itself, else of the nearest group it is
+ * in. Where nothing is said: the branch of the document it is in is read, which
  * is every client of a shared document; a document opened from a branch to
  * be served (Gui.serveBranch) is written by whoever joins it, from where
  * that branch forks, and the branch it was made from is read. A branch it
@@ -423,13 +426,34 @@ Reach reachOf(App::Document* doc, App::TransactionLog* log)
     for (const App::LogBranch& b : store.branches())
         byId[b.id] = b;
 
-    // What is said of this user
+    // What is said of this user -- or, of a branch nothing is said of it
+    // for, of the nearest group it is in (sec 32.32)
     const auto who = asker();
-    std::set<int64_t> said;
-    for (const App::LogAccess& a : store.accesses()) {
-        auto b = byId.find(a.branch);
-        if (a.kind != who.first || a.name != who.second || b == byId.end())
+    const auto chain = doc->userGroups(who.first, who.second);
+    auto rank = [&](const App::LogAccess& a) {
+        for (size_t i = 0; i < chain.size(); ++i) {
+            if (chain[i].first == a.kind && chain[i].second == a.name)
+                return int(i);
+        }
+        return -1;
+    };
+    std::map<int64_t, const App::LogAccess*> nearest;
+    std::map<int64_t, int> nearestRank;
+    const auto accesses = store.accesses();
+    for (const App::LogAccess& a : accesses) {
+        const int r = rank(a);
+        if (r < 0 || !byId.count(a.branch))
             continue;
+        auto at = nearestRank.find(a.branch);
+        if (at == nearestRank.end() || r < at->second) {
+            nearestRank[a.branch] = r;
+            nearest[a.branch] = &a;
+        }
+    }
+    std::set<int64_t> said;
+    for (const auto& entry : nearest) {
+        const App::LogAccess& a = *entry.second;
+        auto b = byId.find(a.branch);
         said.insert(a.branch);
         Reach::Of& o = reach.of[a.branch];
         o.read = true;
@@ -2629,14 +2653,58 @@ bool Gui::serveLogBranch(App::Document* doc)
     return true;
 }
 
+std::vector<Gui::ServedLogBranch> Gui::servedLogBranches()
+{
+    std::vector<ServedLogBranch> out;
+    for (const auto& entry : servedBranches()) {
+        App::Document* doc = App::GetApplication().getDocument(entry.first.c_str());
+        App::TransactionLog* log = doc ? doc->getTransactionLog() : nullptr;
+        App::LogBranch branch;
+        if (!log || !log->store().getBranch(entry.second, branch))
+            continue;
+        ServedLogBranch served;
+        served.document = entry.first;
+        served.branch = branch.name;
+        out.push_back(std::move(served));
+    }
+    return out;
+}
+
 App::Document* Gui::serveBranchOf(App::Document* doc, const std::string& name, int port)
 {
-    App::Document* branch = doc ? doc->openNewBranch(name, false) : nullptr;
-    if (!branch)
+    App::TransactionLog* log = doc ? doc->getTransactionLog() : nullptr;
+    if (!log)
         throw Base::RuntimeError("the document keeps no transaction log");
+    App::Document* branch = nullptr;
+    App::LogBranch existing;
+    if (!name.empty() && log->store().findBranch(name, existing)) {
+        // A branch there is already is served as it is (2026-10-15): in the
+        // document that serves it already, or opened at its head in one of
+        // its own. Not where another document is on it -- the one the host
+        // works in, say: that one is shared as it is, or not at all
+        for (App::Document* other : log->documents()) {
+            App::TransactionLog* theirs = other->getTransactionLog();
+            if (!theirs || theirs->branch() != existing.id)
+                continue;
+            if (servedBranches().count(other->getName()))
+                return other;
+            throw Base::RuntimeError("branch '" + name + "' is the one "
+                                     + std::string(other->Label.getValue())
+                                     + " is on: share that document instead");
+        }
+        if (existing.closed)
+            throw Base::RuntimeError("branch '" + name + "' is closed");
+        branch = App::Document::openFileBranch(doc->getFileHistory().shared_from_this(), name,
+                                               0, false);
+    }
+    else {
+        branch = doc->openNewBranch(name, false);
+    }
+    if (!branch)
+        throw Base::RuntimeError("the branch could not be opened");
     Gui::Document* gdoc = Application::Instance->getDocument(branch);
     if (!gdoc || !SceneServeSource::serve(gdoc, port) || !serveLogBranch(branch)) {
-        // The branch is made and stays in the log; its document goes
+        // The branch stays in the log; its document goes
         App::GetApplication().closeDocument(branch->getName());
         throw Base::RuntimeError("the branch could not be served");
     }

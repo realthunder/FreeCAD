@@ -89,7 +89,10 @@ namespace Gui
  * switch, a branch made, renamed or deleted, a version's name -- from a
  * point on, and the requests to merge into it are dealt with
  * (`log.mergeRequest`, `log.closeRequest`). It is said in the log's store,
- * by user and branch (App::Document::setBranchAccess). Where nothing is
+ * by user and branch (App::Document::setBranchAccess) -- or of a group, a
+ * user that nobody logs in as, which a user is put in
+ * (App::Document::setUserGroup) and has what is said of where nothing is
+ * said of itself (sec 32.32). Where nothing is
  * said the branch of the document a connection is in is read -- there it
  * takes back its own rows (sec 30.10) and takes versions, as every client
  * of a shared document -- and a document opened from a branch to be served
@@ -167,10 +170,22 @@ GuiExport bool serveLogBranch(App::Document* doc);
 /** Serve a branch of `doc` in a document of its own (sec 32.23, 32.25): a
  * branch is made where `doc` is -- `name`, or `<branch>~<n>` -- opened in a
  * second document of the file with no window, served as a document is and
- * said to be one opened to be served. Returns that document. Throws when
- * the name is taken, `doc` keeps no log or the branch cannot be served.
+ * said to be one opened to be served. Returns that document. A branch
+ * `name` there is already is served as it is (sec 32.31): opened at its
+ * head, or the document that serves it already. Throws where another
+ * document is on that branch -- that one is shared as it is -- where it is
+ * closed, `doc` keeps no log or the branch cannot be served.
  */
 GuiExport App::Document* serveBranchOf(App::Document* doc, const std::string& name, int port = 0);
+
+/// A document opened from a branch to be served, by name, and the branch
+struct ServedLogBranch
+{
+    std::string document;
+    std::string branch;
+};
+/// The documents serving a branch each (serveBranchOf), while they are open
+GuiExport std::vector<ServedLogBranch> servedLogBranches();
 
 }  // namespace Gui
 

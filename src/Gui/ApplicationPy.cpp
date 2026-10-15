@@ -318,8 +318,11 @@ PyMethodDef Application::Methods[] = {
    "where it is. Where the branch forks is the serving point: from it\n"
    "on the clients of the new document restore, switch, and make,\n"
    "rename and delete branches there; nothing before it. Its work\n"
-   "comes back by a merge of the branch. Raises when the name is\n"
-   "taken, the document keeps no log, or it cannot be served."},
+   "comes back by a merge of the branch. A branch `name` there is\n"
+   "already is served as it is, opened at its head (sec 32.31) -- or\n"
+   "the document serving it already is returned. Raises where another\n"
+   "document is on that branch, it is closed, the document keeps no\n"
+   "log, or it cannot be served."},
   {"serveRequests",           (PyCFunction) Application::sServeRequests, METH_VARARGS,
    "serveRequests(doc='') -> list\n"
    "\n"

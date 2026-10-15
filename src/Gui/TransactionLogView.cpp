@@ -2967,11 +2967,21 @@ void TransactionLogView::onServeBranch()
 {
     if (!_doc)
         return;
+    // A branch there is is served as it is; a new name makes one from here
+    // (sec 32.31). Not the one this document is on, nor a closed one
+    QStringList names {QString()};
+    if (auto l = log()) {
+        for (const auto& b : l->store().branches()) {
+            if (b.id != l->branch() && !b.closed)
+                names << QString::fromStdString(b.name);
+        }
+    }
     bool ok = false;
-    const QString text = QInputDialog::getText(
+    const QString text = QInputDialog::getItem(
         this, tr("Serve a branch"),
-        tr("Name of the branch to serve from here (empty for one made up):"),
-        QLineEdit::Normal, QString(), &ok);
+        tr("A branch to serve as it is, or the name of a new one made from here "
+           "(empty for one made up):"),
+        names, 0, true, &ok);
     if (!ok)
         return;
     QString said;
@@ -3015,7 +3025,8 @@ public:
                         "can also restore, switch and branch there from a point on, and deals "
                         "with the requests to merge into it. With nothing said here, a client "
                         "reads the branch of the document it joined, and writes a branch "
-                        "served to it."),
+                        "served to it. A group is said of as a user is: who is in it has what "
+                        "is said of the group, where nothing is said of themselves."),
             this);
         note->setWordWrap(true);
         layout->addWidget(note);
@@ -3048,6 +3059,21 @@ public:
         row->addWidget(set);
         layout->addLayout(row);
 
+        // Groups (sec 32.32): a user put in one, by its name -- a new name
+        // makes the group, none takes the user out
+        auto groups = new QHBoxLayout;
+        _group = new QComboBox(this);
+        _group->setObjectName(QStringLiteral("TransactionAccessGroup"));
+        _group->setEditable(true);
+        _group->setToolTip(QObject::tr("A group there is, or the name of a new one; empty "
+                                       "for none"));
+        auto putIn = new QPushButton(QObject::tr("Put in Group"), this);
+        putIn->setObjectName(QStringLiteral("TransactionAccessPutIn"));
+        groups->addWidget(new QLabel(QObject::tr("The user chosen is in group"), this));
+        groups->addWidget(_group, 1);
+        groups->addWidget(putIn);
+        layout->addLayout(groups);
+
         auto buttons = new QHBoxLayout;
         auto remove = new QPushButton(QObject::tr("Remove"), this);
         remove->setObjectName(QStringLiteral("TransactionAccessRemove"));
@@ -3060,6 +3086,9 @@ public:
         connect(close, &QPushButton::clicked, this, &QDialog::accept);
         connect(set, &QPushButton::clicked, this, [this]() { setOne(); });
         connect(remove, &QPushButton::clicked, this, [this]() { removeOne(); });
+        connect(putIn, &QPushButton::clicked, this, [this]() { putInGroup(); });
+        connect(_user, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this](int) { showGroup(); });
         connect(_branch, qOverload<int>(&QComboBox::currentIndexChanged), this,
                 [this](int) { fillFrom(); });
         connect(_level, qOverload<int>(&QComboBox::currentIndexChanged), this,
@@ -3078,6 +3107,9 @@ private:
     void fill()
     {
         auto l = log();
+        // (the user chosen stays chosen: by kind and name, its line says
+        // its group too)
+        const QStringList chosen = _user->currentData().toStringList();
         _list->clear();
         _user->clear();
         _branch->clear();
@@ -3092,15 +3124,32 @@ private:
         for (const auto& v : l->store().versions())
             versions[v.num] = v;
         // Those the log knows that are not the desktop's own: who came to
-        // the shared document, and who wrote a row
-        for (const auto& u : l->store().users()) {
+        // the shared document, who wrote a row, and the groups -- each with
+        // the group it is in
+        const auto users = l->store().users();
+        std::map<int64_t, std::string> names;
+        for (const auto& u : users)
+            names[u.id] = u.name;
+        _group->clear();
+        _group->addItem(QString());
+        _groupOf.clear();
+        for (const auto& u : users) {
             if (u.kind == "local" || u.name.empty())
                 continue;
-            _user->addItem(QStringLiteral("%1 (%2)").arg(QString::fromStdString(u.name),
-                                                         QString::fromStdString(u.kind)),
-                           QStringList {QString::fromStdString(u.kind),
-                                        QString::fromStdString(u.name)});
+            const QString name = QString::fromStdString(u.name);
+            const QString group = u.parent ? QString::fromStdString(names[u.parent]) : QString();
+            _user->addItem(group.isEmpty()
+                               ? QStringLiteral("%1 (%2)").arg(name, QString::fromStdString(u.kind))
+                               : QObject::tr("%1 (%2), in %3")
+                                     .arg(name, QString::fromStdString(u.kind), group),
+                           QStringList {QString::fromStdString(u.kind), name});
+            _groupOf.push_back(group);
+            if (u.kind == App::kLogGroupKind)
+                _group->addItem(name);
         }
+        if (_user->findData(chosen) >= 0)
+            _user->setCurrentIndex(_user->findData(chosen));
+        showGroup();
         for (const auto& a : l->store().accesses()) {
             auto item = new QTreeWidgetItem(_list);
             item->setText(0, QStringLiteral("%1 (%2)").arg(QString::fromStdString(a.name),
@@ -3168,6 +3217,29 @@ private:
         fill();
     }
 
+    /// The group the user chosen is in, to change
+    void showGroup()
+    {
+        const int at = _user->currentIndex();
+        _group->setCurrentText(at >= 0 && at < int(_groupOf.size()) ? _groupOf[size_t(at)]
+                                                                    : QString());
+    }
+
+    void putInGroup()
+    {
+        const QStringList who = _user->currentData().toStringList();
+        if (!_doc || who.size() != 2)
+            return;
+        try {
+            _doc->setUserGroup(who[0].toStdString(), who[1].toStdString(),
+                               _group->currentText().trimmed().toStdString());
+        }
+        catch (Base::Exception& e) {
+            QMessageBox::warning(this, windowTitle(), QString::fromUtf8(e.what()));
+        }
+        fill();
+    }
+
     void removeOne()
     {
         auto item = _list->currentItem();
@@ -3191,6 +3263,9 @@ private:
     QComboBox* _branch {nullptr};
     QComboBox* _level {nullptr};
     QComboBox* _from {nullptr};
+    QComboBox* _group {nullptr};
+    /// Of each user listed, the group it is in
+    std::vector<QString> _groupOf;
 };
 
 } // namespace
