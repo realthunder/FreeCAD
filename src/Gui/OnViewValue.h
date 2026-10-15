@@ -208,6 +208,9 @@ private:
     int typing = -1;
     /// The handle being dragged, between its drag's start and end
     Gizmo* dragHandle = nullptr;
+    /// The value whose handle the pointer is over, -1 for none: its handles
+    /// and its group's lit as a shape under the pointer is (entry 144)
+    int preselected = -1;
     /// A mouse button that cancelled a drag: its release is taken too
     int cancelButton = 0;
     /// The handle a right press was over: its release opens its menu. Taken

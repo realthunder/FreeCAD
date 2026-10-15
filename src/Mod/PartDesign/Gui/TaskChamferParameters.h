@@ -102,6 +102,7 @@ protected:
     bool getFlipDirection() const;
     void onNewItem(QTreeWidgetItem *item);
     void finishedRecomputeFeature() override;
+    void heldStepRolledBack() override;
     
 private:
     void setUpUI(PartDesign::Chamfer* pcChamfer);
@@ -120,11 +121,11 @@ private:
      * size, and the second size or the angle by the chamfer's type), and
      * handles on every edge. An edge that takes the defaults has handles of
      * the default values; a customised edge (ChamferInfo) handles of its own
-     * values, whose labels show beside them while active. A size is an arrow
-     * in a face: an equal size in whichever face is turned more toward the
-     * camera, the first of two sizes in the face the flip names and the
-     * second in the other; an angle is a rotation handle below the size's
-     * arrow. A right click on a handle opens the edge's menu: its mode, its
+     * values, whose labels show beside them while active. An equal size is
+     * one arrow across the chamfer's face, standing on it; of two sizes, the
+     * first an arrow in the face the flip names and the second in the other;
+     * an angle a rotation handle below its size's arrow, which lies in the
+     * face the flip names (docs/HandsOnQueue.md entry 142). A right click on a handle opens the edge's menu: its mode, its
      * flip, its group, Remove.
      */
     //@{
@@ -144,12 +145,12 @@ private:
         Gui::Gizmo* gizmo = nullptr;
         /// Hidden, bound to the edge's own value; none for a default's
         Gui::QuantitySpinBox* box = nullptr;
-        /// In each of the edge's two faces, the first the flip names first
+        /// In each of the edge's two faces, the first the flip names first;
+        /// an equal size's first is across the chamfer's face
         HandlePlacement placements[2];
-        int face = 0;
         bool placed = false;
-        /// An equal size: in the face turned more toward the camera
-        bool followsCamera = false;
+        /// An equal size: one arrow across the chamfer's face
+        bool equal = false;
         /// An angle's handle: the size's arrow it stands below
         Gui::LinearGizmo* sizeGizmo = nullptr;
     };
@@ -161,11 +162,13 @@ private:
     /// Make the handles when the edges or their modes changed; place them
     void updateEdgeHandles();
     void clearEdgeHandles();
-    /// Put each equal size's arrow in the face turned more toward the camera
-    void placeEdgeHandles(bool force);
+    /// Put each handle at its placement, its label beside it
+    void placeEdgeHandles();
     /// From the gizmos' frame to the world's
     Base::Matrix4D gizmoToWorld() const;
     EdgeHandle* findEdgeHandle(const Gui::Gizmo* gizmo);
+    /// The dragged value's edges among the chamfer's failed ones
+    bool isDragFailing() const override;
     void fillEdgeMenu(QMenu& menu, Gui::Gizmo* gizmo);
     /// The values an edge is chamfered with: its own, or the defaults
     Part::TopoShape::ChamferInfo edgeInfo(const std::string& edge) const;

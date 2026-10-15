@@ -146,6 +146,17 @@ protected:
     /// abort rolls it back (a cancelled drag)
     void beginHeldStep();
     void endHeldStep(bool abort);
+    /// After a held step was rolled back (a cancelled drag): the handles of
+    /// a value put back where the feature has it (entry 145)
+    virtual void heldStepRolledBack() {}
+    /** Whether the recompute of a drag failed for what the drag changes:
+     * the pointer is then the stop sign until a recompute succeeds again
+     * or the drag ends (docs/HandsOnQueue.md entry 143). By default, the
+     * feature in error.
+     */
+    virtual bool isDragFailing() const;
+    /// The stop sign shown or taken away as isDragFailing() says
+    void updateFailCursor();
     /// Holds a step from the first key typed in \a box until Enter or the
     /// focus leaving it: what is typed in a panel box is one step, not one
     /// per key
@@ -199,6 +210,8 @@ private:
     std::vector<QPointer<QWidget>> focusHeldBoxes;
     /// The box being typed in, its step held
     QPointer<QWidget> typingBox;
+    /// The stop sign is the pointer's (updateFailCursor)
+    bool failCursor = false;
 
     /// The feature's input values at the last full recompute, by name
     std::vector<std::pair<std::string, std::unique_ptr<App::Property>>> computedInput;

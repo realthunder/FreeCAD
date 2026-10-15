@@ -224,6 +224,22 @@ public:
                    " QScrollBar::handle:horizontal:pressed, QScrollBar::handle:vertical:pressed {"
                    " border-color: transparent; background-color: %3; }\n")
             .arg(rgba(top), rgba(bottom), rgba(hover));
+
+        // The selection view's lists on the ground the report view and the
+        // console have overlaid -- the theme's for text views, as docked
+        // (entry 121) -- and not the sheets' grey for trees, where the panel
+        // is not see-through; see-through, a sheet's grounds are not painted
+        // (docs/HandsOnQueue.md entry 140, the reporter 2026-10-15 13:58:
+        // "make selection view background the same as others (python
+        // console/report view) in non-transparent overlay mode")
+        const QColor text = themeColour("TextEditFieldBackgroundColor",
+                                        palette.color(QPalette::Base));
+        rules += QStringLiteral(
+                   "Gui--DockWnd--SelectionView QTreeView {"
+                   " background-color: rgb(%1,%2,%3); }\n")
+            .arg(text.red())
+            .arg(text.green())
+            .arg(text.blue());
         return rules;
     }
 
@@ -561,6 +577,11 @@ public:
     bool updateStyle = false;
     QTime wheelDelay;
     QPoint wheelPos;
+    /// Where the wheel went while wheelDelay holds: to the view, under a
+    /// panel or beside one (true), or to a panel (false). A wheel that goes
+    /// on stays there wherever the pointer moves (docs/HandsOnQueue.md
+    /// entry 150).
+    bool wheelThrough = false;
 
     std::map<QString, OverlayTabWidget*> _dockWidgetNameMap;
 
@@ -2058,7 +2079,16 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
             d->wheelDelay = QTime::currentTime().addMSecs(
                     OverlayParams::getDockOverlayWheelDelay());
             d->wheelPos = pos;
-            return false;
+            // A wheel that goes on goes where it went: a panel's scrolling
+            // stays in the panel over its clear spots, and a zoom of the view
+            // goes on over a panel -- it stopped there, and the tree under
+            // the pointer scrolled instead (docs/HandsOnQueue.md entry 150)
+            if (!d->wheelThrough)
+                return false;
+            activeTabWidget = findTabWidget(qApp->widgetAt(pos));
+            if (!activeTabWidget)
+                return false;
+            hit = OverlayParams::getDockOverlayAutoMouseThrough();
         } else {
             for(auto widget=qApp->widgetAt(pos); widget ; widget=widget->parentWidget()) {
                 int type = widget->windowType();
@@ -2108,6 +2138,9 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
             if (ev->type() == QEvent::Wheel) {
                 d->wheelDelay = QTime::currentTime().addMSecs(OverlayParams::getDockOverlayWheelDelay());
                 d->wheelPos = pos;
+                // to a panel, or to whatever is under the pointer beside the
+                // panels -- the view, for one
+                d->wheelThrough = !findTabWidget(qApp->widgetAt(pos));
             }
             return false;
         }
@@ -2137,6 +2170,13 @@ bool OverlayManager::eventFilter(QObject *o, QEvent *ev)
         if (ev->type() == QEvent::MouseButtonRelease)
             return false;
 
+        if (ev->type() == QEvent::Wheel) {
+            // passed on to the view: the wheel stays the view's while it goes
+            // on (entry 150)
+            d->wheelDelay = QTime::currentTime().addMSecs(OverlayParams::getDockOverlayWheelDelay());
+            d->wheelPos = pos;
+            d->wheelThrough = true;
+        }
         ev->accept();
         d->interceptEvent(hitWidget, ev);
         if (ev->isAccepted() && ev->type() == QEvent::MouseButtonPress) {

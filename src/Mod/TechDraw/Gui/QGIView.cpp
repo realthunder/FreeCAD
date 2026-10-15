@@ -25,6 +25,7 @@
 # include <QGraphicsSceneHoverEvent>
 # include <QGraphicsSceneMouseEvent>
 # include <QPainter>
+# include <QPainterPathStroker>
 # include <QStyleOptionGraphicsItem>
 # include <QTransform>
 #endif
@@ -627,6 +628,27 @@ QRectF QGIView::customChildrenBoundingRect() const
 QRectF QGIView::boundingRect() const
 {
     return m_border->rect().adjusted(-2., -2., 2., 2.);     //allow for border line width  //TODO: fiddle brect if border off?
+}
+
+QPainterPath QGIView::shape() const
+{
+    if (!passesClicks()) {
+        return inherited::shape();
+    }
+    // A band along the frame's line, 2 mm on the page
+    QPainterPath frame;
+    frame.addRect(m_border->rect());
+    QPainterPathStroker stroker;
+    stroker.setWidth(Rez::guiX(2.0));
+    QPainterPath path = stroker.createStroke(frame);
+    path.setFillRule(Qt::WindingFill);
+    for (QGraphicsItem* item : {static_cast<QGraphicsItem*>(m_label),
+                                static_cast<QGraphicsItem*>(m_caption)}) {
+        if (item && item->isVisible()) {
+            path.addRect(mapFromItem(item, item->boundingRect()).boundingRect());
+        }
+    }
+    return path;
 }
 
 QGIView* QGIView::getQGIVByName(std::string name)

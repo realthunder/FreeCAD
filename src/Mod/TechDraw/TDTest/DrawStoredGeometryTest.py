@@ -117,6 +117,80 @@ class DrawStoredGeometryTest(unittest.TestCase):
         self.wait(1000)
         self.assertEqual(silhouettes(doc.getObject("View")), before)
 
+    def plateWithHole(self):
+        """the view onto a 10 by 10 plate, 2 thick, with a hole through it"""
+        plate = FreeCAD.ActiveDocument.addObject("Part::Box", "Plate")
+        plate.Length = plate.Width = 10.0
+        plate.Height = 2.0
+        hole = FreeCAD.ActiveDocument.addObject("Part::Cylinder", "Hole")
+        hole.Radius = 2.0
+        hole.Height = 2.0
+        hole.Placement.Base = FreeCAD.Vector(5.0, 5.0, 0.0)
+        cut = FreeCAD.ActiveDocument.addObject("Part::Cut", "Holed")
+        cut.Base = plate
+        cut.Tool = hole
+        self.view.Source = [cut]
+        self.view.Direction = (0.0, 0.0, 1.0)
+        FreeCAD.ActiveDocument.recompute()
+        self.wait()
+
+    def testFacesByWireJoiner(self):
+        """docs/HandsOnQueue.md entry 148: the WireJoiner finder makes the
+        plate one face, the hole its hole; the finder of before made a face
+        of each loop, the hole's too"""
+        self.assertTrue(self.view.UseWireJoiner, "a new view finds its faces the new way")
+        self.plateWithHole()
+        joined = len(self.view.getFaceNames())
+        self.view.UseWireJoiner = False
+        FreeCAD.ActiveDocument.recompute()
+        self.wait()
+        former = len(self.view.getFaceNames())
+        self.assertEqual(joined, 1)
+        self.assertGreater(former, joined)
+
+    def testAnOlderViewKeepsTheFormerFinder(self):
+        """a view from a file without the property keeps the finder of
+        before; one saved with it keeps its value"""
+        import re
+        import zipfile
+
+        import ArchiveMembers
+
+        self.page.KeepUpdated = False
+        FreeCAD.ActiveDocument.saveAs(self.file)
+        FreeCAD.closeDocument(self.docName)
+        doc = FreeCAD.openDocument(self.file)
+        self.wait(500)
+        self.assertTrue(doc.getObject("View").UseWireJoiner)
+        name = doc.Name
+        FreeCAD.closeDocument(name)
+
+        old = os.path.join(tempfile.gettempdir(), "TDStoredGeometryOld.FCStd")
+        prop = re.compile(
+            r'<Property name="UseWireJoiner" type="App::PropertyBool"[^>]*>.*?</Property>\s*', re.S)
+        count = re.compile(r'<Properties Count="(\d+)"')
+        with zipfile.ZipFile(old, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item, data in ArchiveMembers.members(self.file):
+                if item.filename == "Document.xml":
+                    xml = data.decode("utf-8")
+                    found = list(prop.finditer(xml))
+                    self.assertEqual(len(found), 1)
+                    m = found[0]
+                    # the object's property count, one less
+                    heads = list(count.finditer(xml, 0, m.start()))
+                    head = heads[-1]
+                    xml = (xml[:head.start(1)] + str(int(head.group(1)) - 1)
+                           + xml[head.end(1):m.start()] + xml[m.end():])
+                    data = xml.encode("utf-8")
+                zout.writestr(item, data)
+        try:
+            doc = FreeCAD.openDocument(old)
+            self.wait(500)
+            self.assertFalse(doc.getObject("View").UseWireJoiner)
+            FreeCAD.closeDocument(doc.Name)
+        finally:
+            os.remove(old)
+
 
 if __name__ == "__main__":
     unittest.main()

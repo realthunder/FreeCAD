@@ -51,6 +51,8 @@ public:
 
     enum {Type = QGraphicsItem::UserType + 113};
     int type() const override { return Type;}
+    /// A click between its views goes through (entry 149)
+    bool passesClicks() const override { return true; }
 
     void alignTo(QGIProjGroup *, const QString &alignment);
 

@@ -22,7 +22,9 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <algorithm>
 #include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
 #include <BRep_Tool.hxx>
 #include <TopExp.hxx>
 #include <TopoDS.hxx>
@@ -64,6 +66,64 @@ DressUp::DressUp()
 
     AddSubType.setStatus(App::Property::Hidden, true);
     AddSubType.setStatus(App::Property::ReadOnly, true);
+
+    const auto failedType = static_cast<App::PropertyType>(
+        App::Prop_NoPersist | App::Prop_Output | App::Prop_Hidden | App::Prop_ReadOnly);
+    ADD_PROPERTY_TYPE(FailedEdges, (), "Base", failedType,
+            "The edges whose dress-up failed in the last recompute, or whose reference is\n"
+            "gone: the result holds the others'.");
+    ADD_PROPERTY_TYPE(FailedShape, (TopoDS_Shape()), "Base", failedType,
+            "The faces the failed edges' dress-ups had when they last were made.");
+}
+
+void DressUp::setFailedEdges(const std::vector<std::string> &names)
+{
+    BRep_Builder builder;
+    TopoDS_Compound comp;
+    builder.MakeCompound(comp);
+    bool any = false;
+    for (const auto &name : names) {
+        auto it = madeFaces.find(name);
+        if (it != madeFaces.end() && !it->second.IsNull()) {
+            builder.Add(comp, it->second);
+            any = true;
+        }
+    }
+    FailedEdges.setValues(names);
+    FailedShape.setValue(any ? TopoDS_Shape(comp) : TopoDS_Shape());
+}
+
+void DressUp::setFailedEdges(const TopoShape &baseShape, const std::vector<TopoShape> &edges,
+                             const Part::TopoShape::FilletPartial &partial,
+                             const std::vector<std::string> &missing,
+                             std::vector<std::string> &failedNames)
+{
+    failedNames = missing;
+    for (std::size_t k = 0; k < edges.size(); ++k) {
+        int index = baseShape.findShape(edges[k].getShape());
+        if (index <= 0)
+            continue;
+        std::string name = "Edge" + std::to_string(index);
+        if (std::find(partial.failed.begin(), partial.failed.end(), static_cast<int>(k))
+                != partial.failed.end())
+            failedNames.push_back(name);
+        else if (k < partial.faces.size() && !partial.faces[k].IsNull())
+            madeFaces[name] = partial.faces[k];
+    }
+    setFailedEdges(failedNames);
+}
+
+App::DocumentObjectExecReturn *DressUp::failedEdgesError(const char *what,
+                                                         const std::vector<std::string> &names)
+{
+    if (names.empty())
+        return nullptr;
+    std::string why = what;
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        why += i ? ", " : " ";
+        why += names[i];
+    }
+    return new App::DocumentObjectExecReturn(why);
 }
 
 short DressUp::mustExecute() const
@@ -121,7 +181,8 @@ static bool isVertexReference(const std::string &ref)
     return boost::starts_with(element, "Vertex");
 }
 
-std::vector<TopoShape> DressUp::getContinuousEdges(const TopoShape &shape) {
+std::vector<TopoShape> DressUp::getContinuousEdges(const TopoShape &shape,
+                                                   std::vector<std::string> *missing) {
     std::vector<TopoShape> ret;
     std::unordered_set<TopoDS_Shape, Part::ShapeHasher, Part::ShapeHasher> shapeSet;
 
@@ -156,8 +217,13 @@ std::vector<TopoShape> DressUp::getContinuousEdges(const TopoShape &shape) {
         if (isVertexReference(v.second))
             continue;
         subshape = shape.getSubShape(ref.c_str(), true);
-        if(subshape.IsNull())
+        if(subshape.IsNull()) {
+            if (missing) {
+                missing->push_back(v.second);
+                continue;
+            }
             FC_THROWM(Base::CADKernelError, "Invalid edge link: " << v.second);
+        }
 
         if (subshape.ShapeType() == TopAbs_EDGE)
             addEdge(subshape, ref);

@@ -73,7 +73,13 @@ struct GizmoPlacement
 class GuiExport Gizmo
 {
 public:
-    virtual ~Gizmo() = default;
+    virtual ~Gizmo()
+    {
+        // a timer still to fire finds the handle gone, and the tool tip
+        // forgets it
+        *alive = false;
+        dropTip();
+    }
     virtual SoInteractionKit* initDragger() = 0;
     virtual void uninitDragger() = 0;
 
@@ -111,6 +117,18 @@ public:
     virtual void setFocusBoxOnRelease([[maybe_unused]] bool focus) {}
     /// The handle's own colour; none for the theme's
     virtual void setColor([[maybe_unused]] const std::optional<Base::Color>& color) {}
+    /** Lit as a shape is under the pointer: View/HighlightColor, made
+     * distinct from the handle's own colour where the two are close
+     * (docs/HandsOnQueue.md entry 144); the highlighted state above,
+     * View/SelectionColor, the same way, wins over it
+     */
+    virtual void setPreselected([[maybe_unused]] bool preselected) {}
+    /// Told when the pointer comes onto the handle and leaves it
+    using HoverCallback = std::function<void(bool over)>;
+    void setHoverCallback(HoverCallback callback)
+    {
+        hoverCallback = std::move(callback);
+    }
     /** A right click on the handle calls \a callback -- which opens its
      * value's menu -- and the pointer over it shows \a toolTip (entry 135,
      * the reporter 2026-10-15 11:30: "show tooltip on hover the arrow to
@@ -121,6 +139,11 @@ public:
     bool isHovered() const
     {
         return hovered;
+    }
+    /// The hint the pointer over the handle shows
+    const QString& getMenuToolTip() const
+    {
+        return menuToolTip;
     }
     /// The menu's callback, for a right click taken before the scene sees it
     void openMenu()
@@ -171,6 +194,16 @@ protected:
     QString menuToolTip;
     bool menuPressed = false;
     bool hovered = false;
+    HoverCallback hoverCallback;
+    /// Bumped at each change of hovered: a timer of an older one does nothing
+    int hoverSerial = 0;
+    std::shared_ptr<bool> alive = std::make_shared<bool>(true);
+    /// The pointer over the handle or not: Qt's tool tip shows its hint
+    /// while it is, and a moment after it is off, as a thin arrow's pick
+    /// misses now and then (entry 141)
+    void setHovered(bool over);
+    /// No longer the handle whose hint shows; its tip hidden
+    void dropTip();
 
     DragCallback dragCallback;
     bool dragging = false;
@@ -236,11 +269,13 @@ public:
     void setHighlighted(bool highlighted) override;
     void setFocusBoxOnRelease(bool focus) override;
     void cancelDrag() override;
+    void setPreselected(bool preselected) override;
 
     /// The handle's own colour; none for the theme's
     void setColor(const std::optional<Base::Color>& color) override;
 
 private:
+    bool preselected = false;
     SoLinearDragger* dragger = nullptr;
     SoLinearDraggerContainer* draggerContainer = nullptr;
     std::optional<Base::Color> ownColor;
@@ -306,8 +341,10 @@ public:
     void setFocusBoxOnRelease(bool focus) override;
     void cancelDrag() override;
     void setColor(const std::optional<Base::Color>& color) override;
+    void setPreselected(bool preselected) override;
 
 private:
+    bool preselected = false;
     SoRotationDragger* dragger = nullptr;
     SoRotationDraggerContainer* draggerContainer = nullptr;
     SoFieldSensor translationSensor;

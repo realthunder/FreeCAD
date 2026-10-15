@@ -27,8 +27,10 @@
 #include <utility>
 #include <numbers>
 #include <QApplication>
+#include <QStyle>
 
 #include <QCursor>
+#include <QHelpEvent>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QToolTip>
@@ -69,6 +71,7 @@
 #include <Gui/QuantitySpinBox.h>
 #include <Gui/Utilities.h>
 #include <Gui/ViewerContext.h>
+#include <Gui/ViewParams.h>
 
 #include "SoLinearDragger.h"
 #include "SoLinearDraggerGeometry.h"
@@ -201,10 +204,90 @@ SoNode* Gizmo::getExtraNode()
     return eventNode;
 }
 
+// Gui/Inventor/SoFCRenderCache.cpp: a highlight made distinct from what it
+// lights, where the two are closer than View/SelectionColorDifference
+bool makeDistinctColor(SbColor& res, const SbColor& color, const SbColor& other);
+
+/// The colour a handle of \a own colour wears: the selection's while it is
+/// selected, the pre-selection's while the pointer is over it, each made
+/// distinct from \a own where the two are close, as a shape's highlight is
+/// (SoFCRenderCache.cpp's makeDistinctColor; docs/HandsOnQueue.md entry 144)
+static SbColor litColor(const SbColor& own, bool selected, bool preselected)
+{
+    if (!selected && !preselected) {
+        return own;
+    }
+    float transparency = 0.0F;
+    SbColor lit;
+    lit.setPackedValue(static_cast<uint32_t>(selected ? ViewParams::getSelectionColor()
+                                                      : ViewParams::getHighlightColor()),
+                       transparency);
+    makeDistinctColor(lit, lit, own);
+    return lit;
+}
+
+namespace
+{
+/// The handle the pointer is over, whose hint Qt's tool tip shows
+Gizmo* tipHandle = nullptr;
+
+/** Answers Qt's own tool tip request -- the QEvent::ToolTip it sends to the
+ * widget under a pointer that rests, after the style's delay, and again at
+ * once on each move while a tip shows -- with the hint of the handle the
+ * pointer is over (docs/HandsOnQueue.md entry 141). A tip of its own on a
+ * timer of its own was taken down by Qt's request coming at the same moment:
+ * a request nobody answers hides the tip that shows.
+ */
+class HandleTipFilter: public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (event->type() != QEvent::ToolTip || !tipHandle || !watched->isWidgetType()) {
+            return false;
+        }
+        // only a request in a 3D view, the one whose handle it is
+        bool inView = false;
+        for (auto w = static_cast<QWidget*>(watched); w; w = w->parentWidget()) {
+            if (w->inherits("Gui::View3DInventorViewer")) {
+                inView = true;
+                break;
+            }
+        }
+        const QString text = tipHandle->getMenuToolTip();
+        if (!inView || text.isEmpty()) {
+            return false;
+        }
+        auto help = static_cast<QHelpEvent*>(event);
+        QToolTip::showText(help->globalPos(), text, static_cast<QWidget*>(watched));
+        return true;
+    }
+};
+}  // namespace
+
 void Gizmo::setMenu(MenuCallback callback, const QString& toolTip)
 {
     menuCallback = std::move(callback);
     menuToolTip = toolTip;
+    static bool filtered = false;
+    if (!filtered && !toolTip.isEmpty() && qApp) {
+        filtered = true;
+        qApp->installEventFilter(new HandleTipFilter(qApp));
+    }
+}
+
+void Gizmo::dropTip()
+{
+    if (tipHandle != this) {
+        return;
+    }
+    tipHandle = nullptr;
+    if (QToolTip::isVisible() && QToolTip::text() == menuToolTip) {
+        QToolTip::hideText();
+    }
 }
 
 void Gizmo::buildEventNode(SoNode* own)
@@ -219,16 +302,47 @@ void Gizmo::buildEventNode(SoNode* own)
 
 void Gizmo::releaseEventNode()
 {
-    if (hovered) {
-        QToolTip::hideText();
-    }
+    dropTip();
     hovered = false;
+    ++hoverSerial;
     menuPressed = false;
     ownNode = nullptr;
     if (eventNode) {
         eventNode->unref();
         eventNode = nullptr;
     }
+}
+
+void Gizmo::setHovered(bool over)
+{
+    if (over == hovered) {
+        return;
+    }
+    hovered = over;
+    if (hoverCallback) {
+        hoverCallback(over);
+    }
+    const int serial = ++hoverSerial;
+    std::weak_ptr<bool> life = alive;
+    if (over) {
+        // "have a timer and before showing the tooltip check if still hitting
+        // the arrow" (the reporter, 2026-10-15 15:29): Qt's tool tip request
+        // is that timer, and it is answered while this handle is the one
+        // (HandleTipFilter)
+        if (!menuToolTip.isEmpty()) {
+            tipHandle = this;
+        }
+        return;
+    }
+    // "any repeated hitting do not hide tooltip": gone only when the pointer
+    // stays off the handle
+    QTimer::singleShot(250, [this, life, serial]() {
+        auto still = life.lock();
+        if (!still || !*still || serial != hoverSerial || hovered) {
+            return;
+        }
+        dropTip();
+    });
 }
 
 void Gizmo::eventNodeCallback(void* data, SoEventCallback* cb)
@@ -240,23 +354,18 @@ void Gizmo::eventNodeCallback(void* data, SoEventCallback* cb)
     const SoPickedPoint* picked = cb->getPickedPoint();
     const bool over = picked && picked->getPath()->containsNode(self->ownNode);
     if (cb->getEvent()->isOfType(SoLocation2Event::getClassTypeId())) {
-        // The hint, while the pointer is over the handle (entry 135)
-        if (over != self->hovered) {
-            self->hovered = over;
-            if (over && !self->menuToolTip.isEmpty()) {
-                QToolTip::showText(QCursor::pos(), self->menuToolTip);
-            }
-            else if (!over) {
-                QToolTip::hideText();
-            }
-        }
+        // The hint, while the pointer is over the handle (entries 135, 141)
+        self->setHovered(over);
         return;
     }
     const auto* event = static_cast<const SoMouseButtonEvent*>(cb->getEvent());
     if (SoMouseButtonEvent::isButtonPressEvent(event, SoMouseButtonEvent::BUTTON2)) {
         self->menuPressed = over;
         if (over) {
-            QToolTip::hideText();
+            // no hint over the menu
+            if (QToolTip::isVisible() && QToolTip::text() == self->menuToolTip) {
+                QToolTip::hideText();
+            }
             cb->setHandled();
             // the release comes back here, not to the view
             cb->grabEvents();
@@ -360,8 +469,8 @@ void LinearGizmo::updateColorTheme()
     if (ownColor) {
         baseColor = *ownColor;
     }
-    // the active handle wears the colour of one being dragged
-    dragger->color = (highlighted ? activeColor : baseColor).asValue<SbColor>();
+    // lit as a shape is: selected, or under the pointer (entry 144)
+    dragger->color = litColor(baseColor.asValue<SbColor>(), highlighted, preselected);
     dragger->activeColor = activeColor.asValue<SbColor>();
 
     auto baseGeom = SO_GET_PART(dragger, "baseGeom", SoArrowBase);
@@ -380,6 +489,17 @@ void LinearGizmo::setHighlighted(bool highlighted)
         return;
     }
     this->highlighted = highlighted;
+    if (dragger) {
+        updateColorTheme();
+    }
+}
+
+void LinearGizmo::setPreselected(bool preselected)
+{
+    if (this->preselected == preselected) {
+        return;
+    }
+    this->preselected = preselected;
     if (dragger) {
         updateColorTheme();
     }
@@ -544,13 +664,16 @@ void LinearGizmo::cancelDrag()
         return;
     }
     dragCancelled = true;
-    // The owner first: it rolls the drag's step back, the property with it
-    notifyDrag(DragEvent::Cancelled);
+    // The box back first, then the owner told: it rolls the drag's step back
+    // and puts every handle of the value where the box says -- the others a
+    // default value drives too (entry 145), which the blocked box does not
+    // tell
     {
         const QSignalBlocker blocker(property);
         property->setValue(initialValue);
     }
     setDragLength(initialValue);
+    notifyDrag(DragEvent::Cancelled);
 }
 
 void LinearGizmo::draggingContinued()
@@ -650,13 +773,24 @@ void RotationGizmo::updateColorTheme()
     Base::Color baseColor = styleParameterManager->resolve(StyleParameters::RotationGizmoBaseColor);
     Base::Color activeColor = styleParameterManager->resolve(StyleParameters::RotationGizmoActiveColor);
 
-    // a handle of its own colour (a customised edge's) keeps it, and the
-    // active one wears the colour of one being dragged
+    // a handle of its own colour (a customised edge's) keeps it; lit as a
+    // shape is, selected or under the pointer (entry 144)
     if (ownColor) {
         baseColor = *ownColor;
     }
-    dragger->color = (highlighted ? activeColor : baseColor).asValue<SbColor>();
+    dragger->color = litColor(baseColor.asValue<SbColor>(), highlighted, preselected);
     dragger->activeColor = activeColor.asValue<SbColor>();
+}
+
+void RotationGizmo::setPreselected(bool preselected)
+{
+    if (this->preselected == preselected) {
+        return;
+    }
+    this->preselected = preselected;
+    if (dragger) {
+        updateColorTheme();
+    }
 }
 
 void RotationGizmo::setHighlighted(bool highlighted)
@@ -833,12 +967,13 @@ void RotationGizmo::cancelDrag()
         return;
     }
     dragCancelled = true;
-    notifyDrag(DragEvent::Cancelled);
+    // the box back first, then the owner told (as a linear handle's)
     {
         const QSignalBlocker blocker(property);
         property->setValue(initialValue);
     }
     setRotAngle(initialValue);
+    notifyDrag(DragEvent::Cancelled);
 }
 
 void RotationGizmo::draggingContinued()

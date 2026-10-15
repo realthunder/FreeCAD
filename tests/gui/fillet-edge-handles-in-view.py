@@ -9,6 +9,9 @@ the active handle's menu as the root does.
 
 A 10 mm PartDesign box, a fillet on Edge1 and Edge2 at 1 mm, in edit. Claims:
   - two arrows are shown, one per edge;
+  - entry 142: each lies between its edge's two faces, along the sum of the
+    directions into them -- at 45 deg to both faces of the box, square to
+    the edge -- and points into the solid, the fillet's arc crossing it;
   - Tab, Space: the menu offers the three modes, "Default radius" checked,
     and Remove;
   - "Two radii" from it: Edge1 has two points at 0 and 1, both 1 mm, and
@@ -22,6 +25,7 @@ A 10 mm PartDesign box, a fillet on Edge1 and Edge2 at 1 mm, in edit. Claims:
 Runs with QT_QPA_PLATFORM=offscreen; menus are answered from a timer. With
 GT_PICTURE set it also saves the view with the two radii's arrows.
 """
+import math
 import os
 import time
 import traceback
@@ -93,6 +97,31 @@ def shown_arrows():
         if field_text(p.getTail(), "visible") in ("TRUE", "1"):
             count += 1
     return count
+
+
+def arrow_frames():
+    """(where, which way) of every shown linear dragger container, in the
+    gizmos' frame"""
+    from pivy import coin
+
+    root = view().getViewer().getSoRenderManager().getSceneGraph()
+    search = coin.SoSearchAction()
+    search.setType(coin.SoType.fromName("SoLinearDraggerContainer"))
+    search.setInterest(coin.SoSearchAction.ALL)
+    search.setSearchingAll(True)
+    search.apply(root)
+    frames = []
+    for p in search.getPaths():
+        node = p.getTail()
+        if field_text(node, "visible") not in ("TRUE", "1"):
+            continue
+        pos = FreeCAD.Vector(*[float(v) for v in field_text(node, "translation").split()[:3]])
+        # an SoSFRotation reads "axis angle"; the arrow is the dragger's +Y
+        x, y, z, angle = [float(v) for v in field_text(node, "rotation").split()[:4]]
+        way = FreeCAD.Rotation(FreeCAD.Vector(x, y, z), math.degrees(angle)).multVec(
+            FreeCAD.Vector(0, 1, 0))
+        frames.append((pos, way))
+    return frames
 
 
 def text_labels():
@@ -215,6 +244,18 @@ def run():
         pump(80)
         check("the fillet is in edit", gdoc.getInEdit() is not None)
         check("two arrows, one per edge", shown_arrows() == 2, shown_arrows())
+        frames = arrow_frames()
+        note("INFO arrows (where, which way): %s" % [(tuple(round(c, 3) for c in p),
+                                                      tuple(round(c, 3) for c in w))
+                                                     for p, w in frames])
+        # Square to the edge: one component 0 (the edge runs along an axis),
+        # the other two of 1/sqrt(2) -- between the faces, not in one
+        between = all([round(v, 4) for v in sorted(abs(c) for c in (w.x, w.y, w.z))]
+                      == [0.0, 0.7071, 0.7071] for _, w in frames)
+        check("entry 142: each arrow between its edge's faces, at 45 deg to both",
+              len(frames) == 2 and between, frames)
+        inside = all(all(0.0 < c < 10.0 for c in (p + w * 0.5)) for p, w in frames)
+        check("entry 142: each arrow points into the solid", len(frames) == 2 and inside, frames)
 
         viewer_widget().setFocus()
         pump(5)

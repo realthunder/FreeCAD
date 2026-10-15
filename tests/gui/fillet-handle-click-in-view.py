@@ -11,9 +11,12 @@ an arrow are found by picking the scene (a ray pick at each pixel near the
 edge's middle; the one with the most of the arrow around it), then clicked
 through the window, as a hand would. Claims:
   - there is no button at the arrows' roots any more;
-  - the pointer over an arrow shows a tool tip naming the right click;
+  - entry 144: the pointer over an arrow lights its value's arrows alike;
+  - entry 141: the tool tip waits for the style's delay, then names the
+    right click, and stays while the pointer rests and while it moves over
+    the arrow;
   - a click on an arrow selects nothing behind it, and makes its value
-    active (the arrow lit);
+    active (the arrow lit, not as hovered);
   - a right click on an arrow opens its menu (the edge's modes), not the
     view's, and selects nothing;
   - a fillet with a reference that is gone (Edge99): in edit, an arrow on
@@ -27,7 +30,7 @@ import traceback
 
 import FreeCAD
 import FreeCADGui
-from PySide import QtCore, QtWidgets
+from PySide import QtCore, QtGui, QtWidgets
 from PySide.QtCore import Qt
 
 try:
@@ -269,12 +272,41 @@ def run():
 
         if "arrow" in found:
             QtWidgets.QToolTip.hideText()
+            idle = arrow_colours()
             move_to(*found["arrow"])
-            pump(40)
+            pump(5)
+            hovered = arrow_colours()
+            note("INFO arrows idle %s, the pointer over one %s" % (idle, hovered))
+            check("the pointer over an arrow lights its value's arrows alike (entry 144)",
+                  len(set(hovered)) == 1 and hovered != idle, (idle, hovered))
+            check("the tool tip waits for its delay (entry 141)",
+                  not QtWidgets.QToolTip.isVisible())
+            # sampled while the pointer rests: once shown the tip stays. Qt's
+            # own tool tip request, which nobody answered, took it down a
+            # moment after it showed (r64)
+            samples = []
+            for _ in range(12):
+                pump(10)
+                samples.append(QtWidgets.QToolTip.isVisible())
+            note("INFO the tip shown, every 100 ms of the rest: %s" % samples)
+            shown = samples.index(True) if True in samples else len(samples)
+            check("the tool tip stays while the pointer rests on the arrow (entry 141)",
+                  shown < len(samples) and all(samples[shown:]), samples)
             tip = QtWidgets.QToolTip.text()
             note("INFO the tool tip over the arrow: %r" % tip)
             check("the pointer over an arrow shows a tool tip naming the right click",
                   QtWidgets.QToolTip.isVisible() and "right" in tip.lower(), tip)
+            # moving over the arrow, a pixel at a time: the tool tip stays
+            x, y = found["arrow"]
+            trail = []
+            for dx in (1, 2, 1, 0, -1):
+                move_to(x + dx, y)
+                trail.append((dx, QtWidgets.QToolTip.isVisible(), arrow_colours()[0]))
+            pump(40)
+            note("INFO moving over the arrow (dx, tip shown, an arrow's colour): %s; the cursor at %s"
+                 % (trail, QtGui.QCursor.pos()))
+            check("moving over the arrow keeps the tool tip (entry 141)",
+                  QtWidgets.QToolTip.isVisible(), trail)
 
             FreeCADGui.Selection.clearSelection()
             before = arrow_colours()
@@ -282,7 +314,8 @@ def run():
             check("a click on an arrow selects nothing behind it", selection() == [], selection())
             lit = arrow_colours()
             note("INFO arrows before %s, after the click %s" % (before, lit))
-            check("the arrow clicked is lit", "1 1 0" in lit and lit != before, (before, lit))
+            check("the arrow clicked is lit, its value's arrows alike, not as hovered",
+                  len(set(lit)) == 1 and lit != idle and lit != hovered, (idle, hovered, lit))
 
             FreeCADGui.Selection.clearSelection()
             seen = {"items": None}

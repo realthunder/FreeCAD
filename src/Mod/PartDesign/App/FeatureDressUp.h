@@ -24,6 +24,8 @@
 #ifndef PARTDESIGN_DressUp_H
 #define PARTDESIGN_DressUp_H
 
+#include <map>
+
 #include "FeatureAddSub.h"
 
 namespace PartDesign
@@ -44,6 +46,14 @@ public:
     App::PropertyLinkSub Base;
     App::PropertyBool SupportTransform;
     Part::PropertyPartShape   DressUpShape;
+    /** The edges of the last recompute whose fillet or chamfer failed or
+     * whose reference is gone, left out of the result (docs/HandsOnQueue.md
+     * entry 143); not saved
+     */
+    App::PropertyStringList FailedEdges;
+    /// The faces those edges' fillets or chamfers had when they last were
+    /// made; not saved
+    Part::PropertyPartShape FailedShape;
 
     short mustExecute() const override;
     /// updates the Placement property from the Placement of the BaseFeature
@@ -58,7 +68,12 @@ public:
     Part::Feature* getBaseObject(bool silent=false) const override;
     /// extracts all edges from the subshapes (including face edges) and furthermore adds
     /// all C0 continuous edges to the vector
-    std::vector<TopoShape> getContinuousEdges(const TopoShape &shape);
+    /** The edges of Base in \a shape. A reference that is gone throws,
+     * or, given \a missing, is added to it and left out (docs/HandsOnQueue.md
+     * entry 143).
+     */
+    std::vector<TopoShape> getContinuousEdges(const TopoShape &shape,
+                                              std::vector<std::string> *missing = nullptr);
 
     std::vector<TopoShape> getFaces(const TopoShape &shape);
 
@@ -74,6 +89,25 @@ public:
 
 protected:
     void onChanged(const App::Property* prop) override;
+
+    /** After a build that left out what failed: \a failedNames gets the
+     * names of the edges left out -- \a missing, then the failed in
+     * \a baseShape's names -- and FailedEdges and FailedShape are set; the
+     * faces of the edges made are kept for when they fail later.
+     */
+    void setFailedEdges(const TopoShape &baseShape, const std::vector<TopoShape> &edges,
+                        const Part::TopoShape::FilletPartial &partial,
+                        const std::vector<std::string> &missing,
+                        std::vector<std::string> &failedNames);
+    /// FailedEdges set to \a names, FailedShape to their faces as last made
+    void setFailedEdges(const std::vector<std::string> &names);
+    /// The error of a result that left \a names out, nullptr for none
+    static App::DocumentObjectExecReturn *failedEdgesError(const char *what,
+                                                           const std::vector<std::string> &names);
+
+private:
+    /// The faces of each edge's dress-up as last made, by the edge's name
+    std::map<std::string, TopoDS_Shape> madeFaces;
 };
 
 } //namespace PartDesign

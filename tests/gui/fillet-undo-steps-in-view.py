@@ -15,7 +15,8 @@ A 10 mm PartDesign box, a fillet on Edge1 and Edge2 at 1 mm, in edit. Claims:
     the default; Redo: "One radius" again;
   - a drag of an arrow: one more step, the radius changed; Undo: back;
   - a drag with Escape before the release: the radius as before the drag,
-    no step;
+    no step; every arrow back where it was -- Edge3's too, the other edge
+    taking the default (entry 145);
   - OK: one more step, the edit closed;
   - the edit again, the default radius set to 4, Cancel: 1 mm again.
 
@@ -95,6 +96,26 @@ def open_box():
         if parent is None:
             return w
     return None
+
+
+def arrow_offsets():
+    """Each shown arrow's drag offset, as text"""
+    from pivy import coin
+
+    root = view().getViewer().getSoRenderManager().getSceneGraph()
+    search = coin.SoSearchAction()
+    search.setType(coin.SoType.fromName("SoLinearDraggerContainer"))
+    search.setInterest(coin.SoSearchAction.ALL)
+    search.setSearchingAll(True)
+    search.apply(root)
+    offsets = []
+    for p in search.getPaths():
+        container = p.getTail()
+        dragger = container.getPart("dragger", False)
+        if dragger is not None:
+            value = dragger.getField("translation").get()
+            offsets.append(value.getString() if hasattr(value, "getString") else str(value))
+    return offsets
 
 
 def undos():
@@ -230,7 +251,7 @@ def run():
         box.Length = box.Width = box.Height = 10
         doc.recompute()
         fillet = body.newObject("PartDesign::Fillet", "Fillet")
-        fillet.Base = (box, ["Edge1", "Edge2"])
+        fillet.Base = (box, ["Edge1", "Edge2", "Edge3"])
         fillet.Radius = 1
         doc.recompute()
         FreeCADGui.SendMsgToActiveView("ViewFit")
@@ -303,11 +324,14 @@ def run():
                   abs(fillet.Radius.Value - radius) < 1e-6, fillet.Radius.Value)
 
             before = undos()
+            offsets = arrow_offsets()
             drag(arrow, (40, 20), escape=True)
             check("a drag with Escape: the radius as before it, no step",
                   abs(fillet.Radius.Value - radius) < 1e-6 and undos() == before,
                   (fillet.Radius.Value, undos() - before))
             check("Escape in the drag left the edit alone", gdoc.getInEdit() is not None)
+            check("every arrow back where it was, the other default edge's too",
+                  arrow_offsets() == offsets, (arrow_offsets(), offsets))
 
         before = undos()
         accept = None

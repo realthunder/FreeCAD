@@ -368,6 +368,9 @@ public:
     SoPath *pathAboveRoot() const;
 
     void onPreselectTimer();
+    /// While an object is in edit: whether the event's pick runs through a
+    /// dragger, a handle of the edit
+    bool isOverEditHandle(SoHandleEventAction * action) const;
 
     SoFCUnifiedSelection * master;
     SoFCRenderCacheManager manager;
@@ -2030,6 +2033,26 @@ void SoFCUnifiedSelection::notify(SoNotList * l)
 }
 
 bool
+SoFCUnifiedSelection::Private::isOverEditHandle(SoHandleEventAction * action) const
+{
+    // Only in an edit: the action's pick is one more per move, which a large
+    // model is not to pay for nothing
+    if (!pcDocument || !pcDocument->getInEdit())
+        return false;
+    const SoPickedPoint* picked = action->getPickedPoint();
+    if (!picked)
+        return false;
+    // The whole path: an SoPath hides what is inside a node kit, and a
+    // gizmo's dragger is a part of its container
+    const auto* path = static_cast<const SoFullPath*>(picked->getPath());
+    for (int i = path->getLength() - 1; i >= 0; --i) {
+        if (path->getNode(i)->isOfType(SoDragger::getClassTypeId()))
+            return true;
+    }
+    return false;
+}
+
+bool
 SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
 {
     bool res = false;
@@ -2150,6 +2173,17 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
     // If this is a mouseMotion event, then check for locate highlighting
     //
     if (doPick || event->isOfType(SoLocation2Event::getClassTypeId())) {
+        // The pointer over a handle of the edit -- a gizmo's dragger, in the
+        // editing root beside this one: nothing behind it is preselected.
+        // The face behind the handle was lit, and every move over it told
+        // the selection the pointer's place, which hides every tool tip, the
+        // handle's own among them (docs/HandsOnQueue.md entries 141, 144).
+        if (!doPick && isOverEditHandle(action)) {
+            preselTimer.unschedule();
+            if (Selection().hasPreselection())
+                Selection().rmvPreselect();
+            return res;
+        }
         // NOTE: If preselection is off then we do not check for a picked point because otherwise this search may slow
         // down extremely the system on really big data sets. In this case we just check for a picked point if the data
         // set has been selected.

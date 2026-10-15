@@ -164,6 +164,11 @@ public:
     void setViewPartFeature(TechDraw::DrawViewDimension *obj);
     int type() const override { return Type;}
     QRectF boundingRect() const override;
+    /** Where it draws -- its label, its lines and its arrows -- and not the
+     * whole rectangle around them: that lay over the view's edges, which
+     * then took no click (docs/HandsOnQueue.md entry 148)
+     */
+    QPainterPath shape() const override;
     void paint( QPainter * painter,
                         const QStyleOptionGraphicsItem * option,
                         QWidget * widget = nullptr ) override;

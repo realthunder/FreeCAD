@@ -120,11 +120,17 @@ App::DocumentObjectExecReturn *Chamfer::execute()
     }
     baseShape.setTransform(Base::Matrix4D());
 
+    // As many chamfers as can be made: an edge whose reference is gone or
+    // whose chamfer fails is left out, the result holds the others', and the
+    // feature is in error still (docs/HandsOnQueue.md entry 143)
+    std::vector<std::string> missing;
     auto edges = UseAllEdges.getValue() ? baseShape.getSubTopoShapes(TopAbs_EDGE)
-                                        : getContinuousEdges(baseShape);
+                                        : getContinuousEdges(baseShape, &missing);
 
-    if (edges.empty())
+    if (edges.empty()) {
+        setFailedEdges(missing);
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "No edges specified"));
+    }
 
     const int chamferType = ChamferType.getValue();
     const double size = Size.getValue();
@@ -162,9 +168,15 @@ App::DocumentObjectExecReturn *Chamfer::execute()
     this->positionByBaseFeature();
     try {
         TopoShape shape(0,getDocument()->getStringHasher());
-        shape.makEChamfer(baseShape, edges, chamferInfo);
+        Part::TopoShape::FilletPartial partial;
+        shape.makEChamfer(baseShape, edges, chamferInfo, nullptr, &partial);
         if (shape.isNull())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Failed to create chamfer"));
+
+        // The faces of each edge's chamfer, kept for when it fails later; the
+        // failed ones' as last made
+        std::vector<std::string> failedNames;
+        setFailedEdges(baseShape, edges, partial, missing, failedNames);
 
         TopTools_ListOfShape aLarg;
         aLarg.Append(baseShape.getShape());
@@ -193,6 +205,8 @@ App::DocumentObjectExecReturn *Chamfer::execute()
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Resulting shape is not a solid"));
         if (failed)
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Resulting shape is invalid"));
+        if (auto ret = failedEdgesError("Chamfer failed on", failedNames))
+            return ret;
         return App::DocumentObject::StdReturn;
     }
     catch (Standard_Failure& e) {

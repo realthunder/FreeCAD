@@ -93,6 +93,9 @@ protected:
     void populateOtherItems() override;
     void onRefDeleted() override;
     void finishedRecomputeFeature() override;
+    void heldStepRolledBack() override;
+    /// The dragged value's edges among the fillet's failed ones
+    bool isDragFailing() const override;
 
     void removeSegments();
     void clearSegments();
@@ -135,8 +138,11 @@ private:
     void attachOnViewValues();
 
     /** @name The radii in the view (docs/OnViewValueEditing.md 3.3)
-     * One arrow on every edge, in whichever of its two faces is turned more
-     * toward the camera. An edge that takes the default radius has one, a
+     * One arrow on every edge, between its two faces: along the sum of the
+     * directions into them, standing where the fillet's arc crosses that
+     * line, so that a drag along it makes the radius larger on an edge that
+     * is cut and on one that is filled alike (docs/HandsOnQueue.md entry
+     * 142). An edge that takes the default radius has one, a
      * handle of the default's value; a customised edge one per point of its
      * own, each a value of its own. A right click on an arrow opens the edge's
      * menu: its mode (default, one radius, two radii) and Remove.
@@ -159,9 +165,8 @@ private:
         Gui::LinearGizmo* gizmo = nullptr;
         /// Hidden, bound to the point's radius; none for the default's
         Gui::QuantitySpinBox* box = nullptr;
-        /// In each of the edge's two faces
-        HandlePlacement placements[2];
-        int face = 0;
+        /// Where it stands and where it points
+        HandlePlacement placement;
         bool placed = false;
         /// A knob sliding along the edge for the point's place, not an arrow
         /// for its radius; its box holds the distance along the chord
@@ -177,8 +182,8 @@ private:
     /// Make the arrows when the edges or their points changed; place them
     void updateEdgeHandles();
     void clearEdgeHandles();
-    /// Put each arrow in the face turned more toward the camera
-    void placeEdgeHandles(bool force);
+    /// Put each arrow at its placement, its label beside it
+    void placeEdgeHandles();
     /// From the gizmos' frame to the world's
     Base::Matrix4D gizmoToWorld() const;
     EdgeHandle* findEdgeHandle(const Gui::Gizmo* gizmo);

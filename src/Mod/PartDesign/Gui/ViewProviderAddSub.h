@@ -100,6 +100,18 @@ public:
     void highlightPreviewFace(int face);
 
 protected:
+    /** The preview's faces' own colours, by face, for a preview of \a count
+     * faces; empty for its colour alike on all (a dress-up's failed fillets
+     * are red, docs/HandsOnQueue.md entry 143)
+     */
+    virtual std::vector<App::Color> previewFaceColors(int count) const
+    {
+        (void)count;
+        return {};
+    }
+    /// Puts previewFaceColors() on the preview, with the face lit if any
+    void applyPreviewFaceColors();
+
     virtual void setAddSubColor(const App::Color &color, float t);
     /// Colours the preview \a color, translucent or not as the user chose
     void applyPreviewColor(const App::Color &color);

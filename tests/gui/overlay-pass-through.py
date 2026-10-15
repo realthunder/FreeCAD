@@ -19,7 +19,10 @@ Claims, two plates under the whole view, all docks overlaid:
     wheel zooms the view (the camera's height changes);
   - the same over the clear part of the Tasks panel, no panel shown in it;
   - with the transparent mode OFF a move over the tree's clear part
-    preselects nothing new: the panel takes it, as it is meant to.
+    preselects nothing new: the panel takes it, as it is meant to;
+  - entry 150: a wheel begun over the view and going on over a painted row
+    of the tree goes on zooming the view; begun over the row, it is the
+    tree's.
 """
 import os
 import traceback
@@ -198,6 +201,79 @@ def through(name, tab, spot, plate):
     FreeCADGui.Selection.clearSelection()
 
 
+def notch(gpos):
+    """One notch of the wheel at a point of the screen, the pointer moved there
+    first, sent to the widget under it; no waiting after"""
+    QtGui.QCursor.setPos(gpos)
+    under = QtWidgets.QApplication.widgetAt(gpos)
+    if under is None:
+        return
+    if cls(under) == "QOpenGLWidget":
+        # the 3D view's own surface: a wheel sent there from a script does not
+        # zoom, one sent to the viewer does -- OverlayManager's interceptEvent
+        # aims at the viewer for the same reason
+        w = under
+        while w is not None and cls(w) != "Gui::View3DInventorViewer":
+            w = w.parentWidget()
+        under = w or under
+    local = QtCore.QPointF(under.mapFromGlobal(gpos))
+    ev = QtGui.QWheelEvent(local, QtCore.QPointF(gpos), QtCore.QPoint(), QtCore.QPoint(0, 120),
+                           QtCore.Qt.NoButton, QtCore.Qt.NoModifier,
+                           QtCore.Qt.NoScrollPhase, False)
+    QtWidgets.QApplication.sendEvent(under, ev)
+
+
+def wheel_goes_on(tab, tree, row):
+    """Entry 150: "when move to the tree view while wheeling, the zoom stopped,
+    but the tree view starts to scroll, even if its over the transparent area.
+    enter without wheeling can zoom". A wheel that goes on goes where it went:
+    begun over the view, it zooms on over a painted row of the tree; begun
+    there, it is the tree's."""
+    rect = tree.visualRect(row)
+    spot = tree.viewport().mapToGlobal(QtCore.QPoint(rect.left() + 30, rect.center().y()))
+    if not check("entry 150: the tree's first row is painted where the wheel goes onto it",
+                 not clear_at(tab, spot, 4)):
+        return
+    # the 3D view's own middle: the window's may be over something else
+    graphics = FreeCADGui.ActiveDocument.ActiveView.graphicsView()
+    middle = graphics.mapToGlobal(graphics.rect().center())
+    note("INFO entry 150: the wheel starts at %s over %s" % (
+        middle, cls(QtWidgets.QApplication.widgetAt(middle))
+        if QtWidgets.QApplication.widgetAt(middle) else None))
+    away()
+    settle(1500)
+    before = camera_height()
+    notch(middle)
+    # the view zooms a moment after the notch; well inside the wheel's
+    # delay of 1 s
+    settle(250)
+    started = camera_height()
+    for i in range(3):
+        # moving onto the row while the wheel goes on, a notch every 250 ms
+        t = (i + 1) / 3.0
+        notch(QtCore.QPoint(int(middle.x() + (spot.x() - middle.x()) * t),
+                            int(middle.y() + (spot.y() - middle.y()) * t)))
+        settle(250)
+    after = camera_height()
+    check("entry 150: the wheel begun over the view zooms it", abs(started - before) > 1e-6 * abs(before),
+          "%.4f -> %.4f" % (before, started))
+    check("entry 150: going on over the tree's painted row it still zooms",
+          abs(after - started) > 1e-6 * abs(started), "%.4f -> %.4f" % (started, after))
+    # the wheel stopped long enough, and begun again elsewhere on the row --
+    # where the last notch was, a wheel goes on where it went, as long as
+    # the pointer stays: over the row it is the tree's
+    settle(2000)
+    other = spot + QtCore.QPoint(20, 0)
+    QtGui.QCursor.setPos(other)
+    settle(300)
+    before = camera_height()
+    notch(other)
+    settle(300)
+    check("entry 150: a wheel begun over the tree's painted row is the tree's",
+          abs(camera_height() - before) <= 1e-6 * abs(before),
+          "%.4f -> %.4f" % (before, camera_height()))
+
+
 def start():
     platform = QtGui.QGuiApplication.platformName()
     if platform != "offscreen":
@@ -261,6 +337,8 @@ def run():
 
     if check("the tree's overlay has its transparent mode on", eye(left, True)):
         through("the tree's panel", left, tree_spot, "LeftPlate")
+        if shown:
+            wheel_goes_on(left, tree, shown[0])
 
     tasks = None
     for tab in overlays().values():

@@ -266,9 +266,6 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
         fillEdgeMenu(menu, handle);
     });
     setupGizmos(DressUpView);
-    connect(onViewValues.get(), &Gui::OnViewValueSet::cameraChanged, this, [this]() {
-        placeEdgeHandles(false);
-    });
 
     // Every operation an undo step of its own (docs/HandsOnQueue.md entry
     // 136, "fillet first"): a drag or a label open for typing one step, a
@@ -310,7 +307,7 @@ void TaskFilletParameters::attachOnViewValues()
     if (auto view = vp->getEditViewer()) {
         if (view != onViewValues->getView()) {
             onViewValues->attach(view);
-            placeEdgeHandles(true);
+            placeEdgeHandles();
         }
     }
     onViewValues->refresh();
@@ -332,56 +329,21 @@ Base::Matrix4D TaskFilletParameters::gizmoToWorld() const
     return mat;
 }
 
-void TaskFilletParameters::placeEdgeHandles(bool force)
+void TaskFilletParameters::placeEdgeHandles()
 {
-    Gui::ViewerContext* view = onViewValues ? onViewValues->getView() : nullptr;
     const Base::Matrix4D toWorld = gizmoToWorld();
-    Base::Vector3d dir;
-    if (view) {
-        // The view's direction where the arrows are
-        Base::Matrix4D toGizmo = toWorld;
-        toGizmo.inverse();
-        const SbVec3f v = view->getViewDirection();
-        dir = toGizmo * Base::Vector3d(v[0], v[1], v[2]) - toGizmo * Base::Vector3d();
-        if (dir.Length() > Precision::Confusion()) {
-            dir.Normalize();
-        }
-        else {
-            dir = Base::Vector3d();
-        }
-    }
     bool moved = false;
     for (auto& handle : edgeHandles) {
         if (!handle.placed) {
             continue;
         }
-        int face = handle.face;
-        if (dir.Length() > 0.5) {
-            // An arrow in the face turned toward the camera lies flat on the
-            // screen; the other one points into it. A little either way of
-            // even does not move it, so that it does not flicker.
-            constexpr double hysteresis = 0.05;
-            double along[2];
-            for (int i = 0; i < 2; ++i) {
-                Base::Vector3d d = handle.placements[i].dir;
-                d.Normalize();
-                along[i] = std::fabs(d * dir);
-            }
-            if (along[1 - face] + hysteresis < along[face]) {
-                face = 1 - face;
-            }
-        }
-        if (face == handle.face && !force) {
-            continue;
-        }
-        handle.face = face;
-        handle.gizmo->Gizmo::setDraggerPlacement(handle.placements[face].position,
-                                                 handle.placements[face].dir);
+        handle.gizmo->Gizmo::setDraggerPlacement(handle.placement.position,
+                                                 handle.placement.dir);
         if (onViewValues) {
             // a knob's label by the knob, which stands its distance along
-            Base::Vector3d anchor = handle.placements[face].position;
+            Base::Vector3d anchor = handle.placement.position;
             if (handle.position && handle.box) {
-                anchor += handle.placements[face].dir * handle.box->rawValue();
+                anchor += handle.placement.dir * handle.box->rawValue();
             }
             onViewValues->setHandleAnchor(handle.gizmo, toWorld * anchor);
         }
@@ -599,8 +561,8 @@ void TaskFilletParameters::updateEdgeHandles()
         }
     }
 
-    // Placed: each point at its place along the edge, each arrow in both
-    // faces to choose from
+    // Placed: each point at its place along the edge, each arrow between
+    // the edge's faces
     Part::TopoShape baseShape = fillet->getBaseShape(true);
     for (auto& handle : edgeHandles) {
         handle.placed = false;
@@ -630,6 +592,7 @@ void TaskFilletParameters::updateEdgeHandles()
                 handle.box->setValue(segments[handle.point].radius);
             }
         }
+        HandlePlacement inFace[2];
         try {
             Part::TopoShape edge = baseShape.getSubTopoShape(handle.edge.c_str(), true);
             if (edge.isNull()) {
@@ -637,10 +600,9 @@ void TaskFilletParameters::updateEdgeHandles()
                 continue;
             }
             auto [face1, face2] = getAdjacentFacesFromEdge(edge, baseShape);
-            if (!edgeHandlePlacement(edge, face1, fraction, handle.placements[0].position,
-                                     handle.placements[0].dir)
-                || !edgeHandlePlacement(edge, face2, fraction, handle.placements[1].position,
-                                        handle.placements[1].dir)) {
+            if (!edgeHandlePlacement(edge, face1, fraction, inFace[0].position, inFace[0].dir)
+                || !edgeHandlePlacement(edge, face2, fraction, inFace[1].position,
+                                        inFace[1].dir)) {
                 handle.gizmo->setVisibility(false);
                 continue;
             }
@@ -653,14 +615,27 @@ void TaskFilletParameters::updateEdgeHandles()
             handle.gizmo->setVisibility(false);
             continue;
         }
-        // The dragger length won't be equal to the radius if the two faces
-        // are not orthogonal so this correction is needed
-        double angle = handle.placements[0].dir.GetAngle(handle.placements[1].dir);
-        handle.gizmo->setMultFactor(1 / std::tan(angle / 2));
+        // One arrow between the faces, along the sum of the directions into
+        // them -- into the solid on an edge that is cut, into the air on one
+        // that is filled -- where the fillet's arc crosses that line: r (1 /
+        // sin(a/2) - 1) from the edge for faces a apart. A drag along it
+        // makes the radius larger either way (docs/HandsOnQueue.md entry 142;
+        // the arrow used to lie in the face turned toward the camera).
+        const double angle = inFace[0].dir.GetAngle(inFace[1].dir);
+        Base::Vector3d dir = inFace[0].dir + inFace[1].dir;
+        const double factor = 1.0 / std::sin(angle / 2) - 1.0;
+        if (dir.Length() < Precision::Confusion() || !(factor > Precision::Confusion())) {
+            // faces meeting flat: there is nothing to round
+            handle.gizmo->setVisibility(false);
+            continue;
+        }
+        dir.Normalize();
+        handle.placement = {inFace[0].position, dir};
+        handle.gizmo->setMultFactor(factor);
         handle.gizmo->setVisibility(true);
         handle.placed = true;
     }
-    placeEdgeHandles(true);
+    placeEdgeHandles();
 }
 
 void TaskFilletParameters::placeAlongHandle(EdgeHandle& handle, Part::TopoShape& baseShape,
@@ -694,10 +669,8 @@ void TaskFilletParameters::placeAlongHandle(EdgeHandle& handle, Part::TopoShape&
         const double fraction = segment.length > 0.0
             ? std::min(1.0, segment.length / length) : segment.param;
         chord.Normalize();
-        for (auto& placement : handle.placements) {
-            placement.position = Base::Vector3d(start.X(), start.Y(), start.Z());
-            placement.dir = Base::Vector3d(chord.X(), chord.Y(), chord.Z());
-        }
+        handle.placement.position = Base::Vector3d(start.X(), start.Y(), start.Z());
+        handle.placement.dir = Base::Vector3d(chord.X(), chord.Y(), chord.Z());
         {
             QSignalBlocker blocker(handle.box);
             handle.box->setValue(fraction * handle.chord);
@@ -1079,7 +1052,7 @@ void TaskFilletParameters::setGizmoPositions()
     }
     gizmoContainer->visible = true;
 
-    // An arrow on every edge, in the face turned more toward the camera
+    // An arrow on every edge, between its faces
     updateEdgeHandles();
 
     setCornerGizmoPositions();
@@ -1273,6 +1246,48 @@ void TaskFilletParameters::setCornerFaceGizmoPositions(PartDesign::Fillet *fille
         faceGizmo.gizmo->setDragLength(value);
         faceGizmo.gizmo->setVisibility(true);
     }
+}
+
+bool TaskFilletParameters::isDragFailing() const
+{
+    auto vp = getDressUpView();
+    auto fillet = vp ? dynamic_cast<PartDesign::Fillet*>(vp->getObject()) : nullptr;
+    if (!fillet || !fillet->isError())
+        return false;
+    const auto& failed = fillet->FailedEdges.getValues();
+    // Nothing named: the fillet as a whole failed
+    if (failed.empty())
+        return true;
+    auto isFailed = [&failed](const std::string& edge) {
+        return std::find(failed.begin(), failed.end(), edge) != failed.end();
+    };
+    Gui::Gizmo* active = onViewValues ? onViewValues->getActiveHandle() : nullptr;
+    for (const auto& handle : edgeHandles) {
+        if (handle.gizmo != active) {
+            continue;
+        }
+        if (handle.point >= 0) {
+            // a point of the edge's own
+            return isFailed(handle.edge);
+        }
+        // the default radius: every edge that takes it
+        for (const auto& edge : getFilletEdges()) {
+            if (fillet->Segments.getValue(edge).empty() && isFailed(edge)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    // a corner's handle, or none known
+    return true;
+}
+
+void TaskFilletParameters::heldStepRolledBack()
+{
+    // A cancelled drag: every handle where the feature, rolled back,
+    // has its value -- the default's other arrows too (entry 145)
+    if (gizmoContainer)
+        setGizmoPositions();
 }
 
 void TaskFilletParameters::finishedRecomputeFeature()

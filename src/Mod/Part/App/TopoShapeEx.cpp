@@ -5295,7 +5295,8 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape,
                                  const std::vector<FilletSegments> &segments,
                                  double defaultRadius,
                                  const char *op,
-                                 const FilletCorners &corners)
+                                 const FilletCorners &corners,
+                                 FilletPartial *partial)
 {
     if(!op) op = Part::OpCodes::Fillet;
     if(shape.isNull())
@@ -5365,6 +5366,59 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape,
         mkFillet.Add(UandR, TopoDS::Edge(edge));
     }
     setFilletCorners(mkFillet, shape, corners);
+    if (partial) {
+        partial->failed.clear();
+        partial->faces.assign(edges.size(), TopoDS_Shape());
+        // Built; the contours whose fillet failed are left out and the rest
+        // built again, until it is done or none is left
+        for (std::size_t round = 0; ; ++round) {
+            mkFillet.Build();
+            if (mkFillet.IsDone() || mkFillet.NbFaultyContours() == 0
+                    || round >= edges.size())
+                break;
+            std::vector<TopoDS_Edge> dropped;
+            for (int i = 1; i <= mkFillet.NbFaultyContours(); ++i) {
+                const int contour = mkFillet.FaultyContour(i);
+                for (int j = 1; j <= mkFillet.NbEdges(contour); ++j)
+                    dropped.push_back(mkFillet.Edge(contour, j));
+            }
+            for (const auto &e : dropped) {
+                for (std::size_t k = 0; k < edges.size(); ++k) {
+                    if (edges[k].getShape().IsSame(e)
+                            && std::find(partial->failed.begin(), partial->failed.end(),
+                                         static_cast<int>(k)) == partial->failed.end())
+                        partial->failed.push_back(static_cast<int>(k));
+                }
+            }
+            for (const auto &e : dropped)
+                mkFillet.Remove(e);
+            mkFillet.Reset();
+            if (mkFillet.NbContours() == 0)
+                break;
+        }
+        std::sort(partial->failed.begin(), partial->failed.end());
+        if (mkFillet.NbContours() == 0) {
+            // every fillet failed: the shape as it was
+            *this = shape;
+            return *this;
+        }
+        if (mkFillet.IsDone()) {
+            for (std::size_t k = 0; k < edges.size(); ++k) {
+                if (std::binary_search(partial->failed.begin(), partial->failed.end(),
+                                       static_cast<int>(k)))
+                    continue;
+                const TopTools_ListOfShape &made = mkFillet.Generated(edges[k].getShape());
+                if (made.IsEmpty())
+                    continue;
+                BRep_Builder builder;
+                TopoDS_Compound comp;
+                builder.MakeCompound(comp);
+                for (const auto &face : made)
+                    builder.Add(comp, face);
+                partial->faces[k] = comp;
+            }
+        }
+    }
     return makEShape(mkFillet,shape,op);
 }
 
@@ -5420,7 +5474,8 @@ TopoShape &TopoShape::makEChamfer(const TopoShape &shape, const std::vector<Topo
 TopoShape &TopoShape::makEChamfer(const TopoShape &shape,
                                   const std::vector<TopoShape> &edges,
                                   const std::vector<ChamferInfo> &edgeInfo,
-                                  const char *op)
+                                  const char *op,
+                                  FilletPartial *partial)
 {
     if(!op) op = Part::OpCodes::Chamfer;
     if(shape.isNull())
@@ -5432,11 +5487,10 @@ TopoShape &TopoShape::makEChamfer(const TopoShape &shape,
     if (edges.size() > edgeInfo.size())
         FC_THROWM(Base::CADKernelError,"Not enough chamfer edge configuration");
 
-    BRepFilletAPI_MakeChamfer mkChamfer(shape.getShape());
-    std::size_t i = 0;
-    for(auto &e : edges) {
+    auto add = [&](BRepFilletAPI_MakeChamfer &mk, std::size_t i) {
+        const auto &e = edges[i];
         const auto &edge = e.getShape();
-        const auto &info = edgeInfo[i++];
+        const auto &info = edgeInfo[i];
         if(e.isNull())
             HANDLE_NULL_INPUT;
         if(!shape.findShape(edge))
@@ -5444,13 +5498,69 @@ TopoShape &TopoShape::makEChamfer(const TopoShape &shape,
         //Add edge to fillet algorithm
         TopoDS_Face face = chamferFace(shape, edge, info.flip);
         if(info.angle > 0.0)
-            mkChamfer.AddDA(info.size, Base::toRadians(info.angle), TopoDS::Edge(edge), face);
+            mk.AddDA(info.size, Base::toRadians(info.angle), TopoDS::Edge(edge), face);
         else if (info.size2 > 0.0)
-            mkChamfer.Add(info.size, info.size2, TopoDS::Edge(edge), face);
+            mk.Add(info.size, info.size2, TopoDS::Edge(edge), face);
         else
-            mkChamfer.Add(info.size, info.size, TopoDS::Edge(edge), face);
+            mk.Add(info.size, info.size, TopoDS::Edge(edge), face);
+    };
+    auto built = [](BRepFilletAPI_MakeChamfer &mk) {
+        try {
+            mk.Build();
+            return mk.IsDone();
+        }
+        catch (Standard_Failure &) {
+            return false;
+        }
+    };
+
+    auto mkChamfer = std::make_unique<BRepFilletAPI_MakeChamfer>(shape.getShape());
+    for (std::size_t i = 0; i < edges.size(); ++i)
+        add(*mkChamfer, i);
+    if (partial) {
+        partial->failed.clear();
+        partial->faces.assign(edges.size(), TopoDS_Shape());
+        if (!built(*mkChamfer)) {
+            // OCCT's chamfer does not tell which contour failed: each edge
+            // by itself, those that fail alone left out, the rest again
+            std::vector<std::size_t> kept;
+            for (std::size_t i = 0; i < edges.size(); ++i) {
+                BRepFilletAPI_MakeChamfer one(shape.getShape());
+                add(one, i);
+                if (built(one))
+                    kept.push_back(i);
+                else
+                    partial->failed.push_back(static_cast<int>(i));
+            }
+            if (kept.empty()) {
+                // every chamfer failed: the shape as it was
+                *this = shape;
+                return *this;
+            }
+            mkChamfer = std::make_unique<BRepFilletAPI_MakeChamfer>(shape.getShape());
+            for (std::size_t i : kept)
+                add(*mkChamfer, i);
+            if (!partial->failed.empty())
+                built(*mkChamfer);
+        }
+        if (mkChamfer->IsDone()) {
+            for (std::size_t k = 0; k < edges.size(); ++k) {
+                if (std::find(partial->failed.begin(), partial->failed.end(),
+                              static_cast<int>(k)) != partial->failed.end())
+                    continue;
+                const TopTools_ListOfShape &made = mkChamfer->Generated(edges[k].getShape());
+                if (made.IsEmpty())
+                    continue;
+                BRep_Builder builder;
+                TopoDS_Compound comp;
+                builder.MakeCompound(comp);
+                for (const auto &face : made)
+                    builder.Add(comp, face);
+                partial->faces[k] = comp;
+            }
+        }
     }
-    return makEShape(mkChamfer,shape,op);
+    return makEShape(*mkChamfer,shape,op);
 }
 
 TopoShape &TopoShape::makEGeneralFuse(const std::vector<TopoShape> &_shapes,
