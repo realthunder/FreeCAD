@@ -156,6 +156,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 10:07: entry 136, TYPING ANSWERED -- a typed value is a step when
+the editing finishes; Enter commits and recomputes the fillet but keeps
+the edit box open; Esc, Tab or a click away finish and close it.** A
+change to step 1's keys (Enter closed the box, Esc restored); four points
+under the entry.
+
 **2026-10-15 10:03: NEW ENTRY 137 -- TechDraw's Print All and Print Selected
 combined into one command, TechDraw_Print: the selected pages, or all when
 none is selected, its tooltip saying so.** Under the entry, four points
@@ -2812,7 +2818,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 133 | 2026-10-14 | TechDraw printing: open the print with LANDSCAPE as the default (a change request, said to the build session) | OPEN; DONE by the build session, written, NOT committed, building r32: "Print All Pages" and "Print Selected Pages" open their print box on landscape (were the printer's default, portrait); each page still laid out in its own template's orientation; the single page's Print already took the template's. Not testable by a script (the Windows print box) -- the REPORTER'S LOOK. COMMITTED `560022c91b`, LOCAL, not pushed, not staged, built in r32; the REPORTER'S LOOK still owed. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
 | 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles |
-| 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said |
+| 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value) |
 | 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -18872,6 +18878,37 @@ NOT said: e. whether Esc after a cancelled drag goes on to do what Esc
 does today in the edit (by entry 117's step 1 account the view leaves the
 edit on Esc's release, and Esc deactivates an active handle) -- by the
 note-taker's reading, the Esc that cancels a drag does nothing more.
+
+**2026-10-15 10:07, the reporter on typing:** "entry 136. record as a step
+when user finish editing. Press enter, commit change and trigger fillet
+partial recompute, but shall not dismiss the edit box, i.e. not counted as
+finish edit. either ESC, TAB, click away is counted as finishing edit and
+dismiss the edit box"
+
+The note-taker's reading -- the typing half of point a, and a change to
+the keys of an on-view value's edit box:
+- A typed value becomes ONE undo step when the user FINISHES editing it
+  (by the drag rule of 09:58, only if it changed something -- the
+  note-taker's reading).
+- ENTER: commits the value and triggers the fillet's PARTIAL recompute
+  (the preview), but the edit box STAYS OPEN -- not a finish, so no step
+  of its own; the user can go on typing and press Enter again.
+- ESC, TAB, or a CLICK AWAY: each FINISHES the editing and closes the
+  box (and so makes the step).
+This CHANGES what entry 117's step 1 built (the build session's account,
+2026-10-15 00:09): "in the label Enter commits, Escape restores,
+Ctrl+Enter commits and accepts the edit" -- Enter closed the label, and
+Esc put the old value back.
+NOT said:
+f. Esc: does it KEEP what was typed since the last Enter (commit it as it
+   finishes), or drop it back to the last committed value -- "finishing"
+   by the reporter's word, so by the note-taker's reading the value is
+   kept; Esc no longer restores the value from before the edit box opened;
+g. Tab: finishes this box -- and moves to the NEXT handle, as Tab does in
+   the view today (step 1), or only closes;
+h. Ctrl+Enter (commit and accept the whole edit, step 1) -- kept;
+i. a value typed and never committed with Enter, then a click away --
+   committed as it finishes (the note-taker's reading), or dropped.
 
 ## 137. TechDraw: Print All Pages and Print Selected Pages combined into one command, TechDraw_Print (a change request) -- OPEN
 
