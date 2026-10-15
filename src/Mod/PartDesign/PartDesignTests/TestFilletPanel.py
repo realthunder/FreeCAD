@@ -118,7 +118,9 @@ class TestFilletPanel(unittest.TestCase):
         return found[0]
 
     def testRows(self):
-        self.assertEqual(self.Tree.columnCount(), 5)
+        # the setback column, then the edge's group
+        self.assertEqual(self.Tree.columnCount(), 6)
+        self.assertEqual(self.Tree.headerItem().text(5), "Group")
         corner = self.row(self.Vertex)
         self.assertEqual(corner.text(4), "2.00 mm")
         # a fillet's own setback, and the corner's it inherits in brackets
