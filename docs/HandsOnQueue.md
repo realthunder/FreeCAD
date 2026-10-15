@@ -160,6 +160,9 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 16:40: NEW ENTRY 149 -- a TechDraw view's transparent background
+should let a click through; the border stays pickable.** Under the entry.
+
 **2026-10-15 16:38: NEW ENTRY 148 (a defect) -- TechDraw on scanner.FCStd Page009,
 Front010: the inner hole found as a face, the outer faces missing; edges
 hover but do not select; the reporter asks if WireJoiner for the faces is
@@ -2985,6 +2988,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open |
 | 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept |
 | 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN |
+| 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20159,6 +20163,42 @@ READ in the source, nothing run:
 - TechDraw links Part already (it is a Part-based module) -- not checked
   for WireJoiner's export beyond `PartExport` on the class.
 
+## 149. A TechDraw view takes a click anywhere inside its frame; let it through the transparent background, keep the border pickable (a change request) -- OPEN
+
+**2026-10-15 16:40, the reporter:** "New request, right now Techdraw view is
+opaque on picking, even they have transparent background. Try make the
+pick ignore transparent background. but border should be pickable"
+
+The note-taker's reading:
+- Today a click ANYWHERE inside a TechDraw view's frame picks the VIEW
+  itself, even where nothing is drawn and the background shows through
+  -- so what lies under it (another view, a dimension, an annotation,
+  the page) cannot be clicked there.
+- Wanted: a click on the view's TRANSPARENT background passes THROUGH to
+  whatever is under it; the view is picked only on what it draws -- and
+  on its BORDER (the frame), which stays pickable, so the view can still
+  be selected and dragged by it.
+NOT said:
+a. the border when frames are HIDDEN (the page's "show frames" off) --
+   still pickable along its invisible line, or not pickable then (the
+   view picked by its lines only);
+b. the view's LABEL and CAPTION -- pickable, by the note-taker's reading
+   (they are drawn);
+c. the pick width of the border -- a few pixels' band around the line,
+   by the note-taker's reading;
+d. which views -- every kind (part views, sections, details,
+   annotations, symbols, images), by the note-taker's reading; an image
+   view's picture is opaque content, so it stays pickable over the
+   picture.
+Related: entry 148 (picking on the same page type -- edges hover but do
+not select); by the note-taker's reading a separate cause, not said.
+READ in the source, nothing run: `src/Mod/TechDraw/Gui/QGIView.cpp` 83
+(the view item `ItemIsSelectable`) and 627 to 630: `boundingRect()` is
+the border's rectangle widened by 2 -- and no `shape()` override found
+in `QGIView*`, so Qt picks the view by its whole bounding rectangle (Qt's
+default shape is the bounding rect) -- by the note-taker's reading, the
+opaque pick.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20170,5 +20210,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 148
+the build session, 131 and 132 found by it; entries 134 to 149
 are of 2026-10-15, 134 said to the build session)
