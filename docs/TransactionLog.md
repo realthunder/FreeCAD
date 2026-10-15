@@ -17861,7 +17861,8 @@ not:
 - *A value the log let go.* A shape is a derived value, in the cache
   tier, and one evicted from it is no value: the answer is `None`. The
   state's document -- `openTransactionVersion`, `openTransactionBranch`
-  -- has it; asking that is for the caller that knows the state, step 4.
+  -- has it; asking that is for the caller that knows the state, step 4. *(Built
+  since: 32.33.)*
 - *Ours.* A preview's `ours` for a derived value is the base's (32.1):
   ours is the live object's shape.
 
@@ -19936,6 +19937,71 @@ Python. `Document.TransactionBranchCases.testUsersInGroups` (new): a user
 in a group made by naming it, the group in another, a group not put in
 itself, an unknown kind refused, a group said of as a user, a user taken
 out.
+
+### 32.33 A shape the log let go, read from its row's state (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "continue" -- after 32.31 and 32.32, the
+next of what was left: 32.8's *A value the log let go*. A row, a version
+or a merge's preview showed nothing of a shape the log no longer held,
+and did not say why.
+
+**Measured first: it is every file opened again.** A shape is a derived
+value, in the cache tier, and the copy of the log a save writes into the
+file carries no cache tier (13.3, `dropTier("cache")`). The history's
+own store lives in the document's transient directory and goes when the
+document closes, so a file opened again has its log from that copy: no
+row's shape, only those a version's manifest reaches (the versions keep
+their files whole) and those kept (32.11). The value pane said "(value
+not in store)", the bar nothing.
+
+**The state's document.** `Document::openRowState(seq)` (Python
+`openTransactionState(seq)`) opens the state at a row as a document of
+its own: the newest version the row's chain reaches -- or, with none on
+it, the one whose chain meets it latest, the search an import's replay
+makes (31.15), now `versionReaching()` for both -- is read as a merge's
+result is (32.17), joined to the file's history, with no log and no
+view (`_openReadVersion`), and the rows from there to the row are folded
+into it. `_moveAlongLog` takes the log to read them from (`through`):
+the document moved has none. A value the log does not have touches its
+object, as for an import (31.19), and those objects -- only those: one
+touched at the row is as the row left it -- are computed again. Nothing
+of the document or its log moves, and the caller closes it.
+
+**The bar** (the panel's, and the merge dialog's) is told of each pair
+the rows its two states are of: a row's parent and the row, an op's the
+same, a version's its row, a merge's base and theirs. Rows picked
+(31.12) are not one state and have none. A shape's ref (only of a
+property its view shows, `showsValueDiffOf`) the log no longer reads is
+given to the view as `doc:` and the state's document, opened once and
+kept while it is asked for; a ref the log reads and the view could not
+show all the same -- the value is there and the geometry it names is
+not -- is tried again the same way. The states no pair asks for are
+closed at each update, and all of them when the bar goes or its document
+changes; one that could not be opened is not tried again until then.
+The bar says what it did: "N shape(s) the log let go, computed again at
+their row", or "N shape(s) the log let go, which nothing here has" where
+there is no row. The value pane says why one is not there.
+
+**The page** reads a shape as its ref, never its geometry (32.21), and
+already said "the log does not hold this value any more"; nothing there
+changes.
+
+**Left.** A shape computed again is the kernel's today, not
+necessarily the bytes the row once had: the same where the inputs and
+the kernel are. Rows picked show what the log reads and say what it
+does not.
+
+**Tests.** `scripts/transaction-log-letgo-check.py` (17, new, gate tag
+`lg`): a file saved, closed and opened again has none of its rows'
+shapes; a row's before against after shows the slab it added (174.87
+mm^3) from the two states, by the material and by the faces, and says
+so; its op the same; the row the file was saved at is read from the log
+and opens nothing; the states close when nothing shows them; the merge
+dialog's three pairs each from their states (120 and 480 mm^3); no row
+written. `parttests.ShapeDiffTest.ShapeAtAStateTest.testAShapeTheLogLetGoIsComputedAtItsRow`
+(new): the row's and its parent's states have the shapes, untouched,
+with no log, the document and its cursor unmoved; a row there is not is
+refused.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
