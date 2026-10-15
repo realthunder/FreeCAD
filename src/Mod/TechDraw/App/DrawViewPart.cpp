@@ -41,7 +41,9 @@
 #ifndef _PreComp_
 #include <Standard_Version.hxx>
 #include <BRepAlgo_NormalProjection.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -75,6 +77,7 @@
 #include <Base/Exception.h>
 #include <Base/Parameter.h>
 #include <Base/Sequencer.h>
+#include <Mod/Part/App/WireJoiner.h>
 
 #include "Cosmetic.h"
 #include "CenterLine.h"
@@ -127,6 +130,10 @@ DrawViewPart::DrawViewPart(void)
     //properties that control HLR algo
     ADD_PROPERTY_TYPE(CoarseView, (Preferences::coarseView()),
         sgroup, App::Prop_None, "Coarse View on/off");
+    ADD_PROPERTY_TYPE(UseWireJoiner, (true), sgroup, App::Prop_None,
+                      "Find the faces with Part's WireJoiner: each region a face, a closed\n"
+                      "loop inside it a hole. False: the face finder of before, which a view\n"
+                      "from an older file keeps.");
     ADD_PROPERTY_TYPE(SmoothVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothViz", TechDraw::TechDrawParams::defaultSmoothViz())),
         sgroup, App::Prop_None, "Show Visible Smooth lines");
     ADD_PROPERTY_TYPE(SeamVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamViz", TechDraw::TechDrawParams::defaultSeamViz())),
@@ -302,6 +309,7 @@ short DrawViewPart::mustExecute() const
         || SmoothVisible.isTouched() || SeamVisible.isTouched() || IsoVisible.isTouched()
         || HardHidden.isTouched() || SmoothHidden.isTouched() || SeamHidden.isTouched()
         || IsoHidden.isTouched() || IsoCount.isTouched() || CoarseView.isTouched()
+        || UseWireJoiner.isTouched()
         || CosmeticVertexes.isTouched() || CosmeticEdges.isTouched() || CenterLines.isTouched()) {
         return 1;
     }
@@ -309,8 +317,25 @@ short DrawViewPart::mustExecute() const
     return TechDraw::DrawView::mustExecute();
 }
 
+void DrawViewPart::Restore(Base::XMLReader& reader)
+{
+    wireJoinerRestored = false;
+    DrawView::Restore(reader);
+    // A view of a file written before the property finds its faces as it
+    // did (docs/HandsOnQueue.md entry 148): their numbers are what the file's
+    // hatches and dimensions refer to
+    if (!wireJoinerRestored) {
+        UseWireJoiner.setValue(false);
+        UseWireJoiner.purgeTouched();
+    }
+}
+
 void DrawViewPart::onChanged(const App::Property* prop)
 {
+    if (prop == &UseWireJoiner && isRestoring()) {
+        wireJoinerRestored = true;
+    }
+
     // If the user has set PropertyVector Direction to zero, set it along the default value instead (Front View).
     // Otherwise bad things will happen because there'll be a normalization for direction calculations later.
     Base::Vector3d dir = Direction.getValue();
@@ -468,6 +493,7 @@ void DrawViewPart::onHlrFinished(GeometryObjectPtr geometryObject)
         params.goEdges = geometryObject->getVisibleFaceEdges(
                 SmoothVisible.getValue(), SeamVisible.getValue());
         params.faces = faces;
+        params.wireJoiner = UseWireJoiner.getValue();
 
         waitingForFaces(true);
         m_faceWatcher->setFuture(QtConcurrent::run(
@@ -649,7 +675,9 @@ void DrawViewPart::extractFaces(const ExtractFaceParams &params)
         return;
     }
 
-    if (newFaceFinder()) {
+    if (params.wireJoiner) {
+        findFacesJoined(params, goEdges);
+    } else if (newFaceFinder()) {
         findFacesNew(params, goEdges);
     } else {
         findFacesOld(params, goEdges);
@@ -719,6 +747,111 @@ void DrawViewPart::findFacesNew(const ExtractFaceParams &params,
             f->wires.push_back(new TechDraw::Wire(wire));
             params.faces->push_back(f);
         }
+    }
+}
+
+// The faces found by Part's WireJoiner (docs/HandsOnQueue.md entry 148).
+// The edges are cleaned first as for the other finders: OCCT's fuse, with
+// TechDraw's fuzzy tolerance, splits them where they cross and merges what
+// overlaps within it -- the joiner finds an overlap only within 1e-10 -- and
+// the joiner drops what the fuse hands back twice. It then finds the
+// smallest closed wires, and each is a face with the wires directly inside
+// it as its holes; a wire inside a hole is a face again. The old finders
+// made a face of every wire alone, a hole's too, and none had holes.
+void DrawViewPart::findFacesJoined(const ExtractFaceParams &params,
+                                   const std::vector<BaseGeomPtr> &goEdges)
+{
+    std::vector<TopoDS_Edge> closedEdges;
+    std::vector<TopoDS_Edge> cleanEdges = DrawProjectSplit::scrubEdges(goEdges, closedEdges);
+    std::vector<TopoDS_Shape> edges(cleanEdges.begin(), cleanEdges.end());
+    edges.insert(edges.end(), closedEdges.begin(), closedEdges.end());
+    if (edges.empty()) {
+        return;
+    }
+    params.progress->setProgress(5);
+
+    Part::TopoShape wires;
+    try {
+        Part::WireJoiner joiner;
+        joiner.setTightBound(true);
+        joiner.setSplitEdges(true);
+        joiner.setMergeEdges(true);
+        joiner.setTolerance(EWTOLERANCE);
+        joiner.addShape(edges);
+        if (joiner.Shape().IsNull() || !joiner.getResultWires(wires)) {
+            return;
+        }
+    }
+    catch (Standard_Failure& e) {
+        THROWM(Base::RuntimeError, e.GetMessageString())
+    }
+    params.progress->setProgress(20);
+
+    constexpr double minWireArea = 0.000001;//arbitrary very small face size
+    struct Loop {
+        TopoDS_Wire wire;
+        TopoDS_Face face;
+        Bnd_Box box;
+        gp_Pnt probe;
+        double area = 0.0;
+        int depth = 0;
+        int parent = -1;
+    };
+    std::vector<Loop> loops;
+    for (const auto& w : wires.getSubTopoShapes(TopAbs_WIRE)) {
+        const TopoDS_Wire& wire = TopoDS::Wire(w.getShape());
+        if (!BRep_Tool::IsClosed(wire)) {
+            continue;
+        }
+        Loop loop;
+        loop.area = std::fabs(ShapeAnalysis::ContourArea(wire));
+        if (loop.area <= minWireArea) {
+            continue;
+        }
+        BRepBuilderAPI_MakeFace mkFace(wire, true);
+        TopExp_Explorer xp(wire, TopAbs_EDGE);
+        if (!mkFace.IsDone() || !xp.More()) {
+            continue;
+        }
+        loop.wire = wire;
+        loop.face = mkFace.Face();
+        BRepBndLib::Add(wire, loop.box);
+        // a point of the wire: the middle of its first edge
+        BRepAdaptor_Curve curve(TopoDS::Edge(xp.Current()));
+        loop.probe = curve.Value((curve.FirstParameter() + curve.LastParameter()) / 2.0);
+        loops.push_back(std::move(loop));
+    }
+    // biggest first: a wire's parent, the smallest wire around it, comes
+    // before it
+    std::stable_sort(loops.begin(), loops.end(),
+                     [](const Loop& a, const Loop& b) { return a.area > b.area; });
+    for (std::size_t i = 0; i < loops.size(); ++i) {
+        for (std::size_t j = i; j-- > 0;) {
+            if (loops[j].box.IsOut(loops[i].probe)) {
+                continue;
+            }
+            BRepClass_FaceClassifier classifier(loops[j].face, loops[i].probe, EWTOLERANCE);
+            if (classifier.State() == TopAbs_IN) {
+                loops[i].parent = static_cast<int>(j);
+                loops[i].depth = loops[j].depth + 1;
+                break;
+            }
+        }
+    }
+    params.progress->setProgress(40);
+
+    for (std::size_t i = 0; i < loops.size(); ++i) {
+        if (loops[i].depth % 2) {
+            continue;   // a hole
+        }
+        TechDraw::FacePtr f(std::make_shared<TechDraw::Face>());
+        f->wires.push_back(new TechDraw::Wire(loops[i].wire));
+        for (const auto& hole : loops) {
+            if (hole.parent == static_cast<int>(i)) {
+                f->wires.push_back(new TechDraw::Wire(hole.wire));
+            }
+        }
+        params.faces->push_back(f);
     }
 }
 

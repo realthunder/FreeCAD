@@ -112,6 +112,11 @@ public:
     App::PropertyDistance Focus;
 
     App::PropertyBool CoarseView;
+    /** The faces found by Part's WireJoiner, holes and all; false for the
+     * face finder of before, which a view from a file without the property
+     * keeps (docs/HandsOnQueue.md entry 148)
+     */
+    App::PropertyBool UseWireJoiner;
     App::PropertyBool SeamVisible;
     App::PropertyBool SmoothVisible;
     //App::PropertyBool   OutlinesVisible;
@@ -303,6 +308,7 @@ protected:
     void onChanged(const App::Property* prop) override;
     void unsetupObject() override;
     void onDocumentRestored() override;
+    void Restore(Base::XMLReader& reader) override;
 
     void buildGeometryObject(const Part::TopoShape& shape, const gp_Ax2& viewAxis);
     void makeGeometryForShape(const Part::TopoShape& shape);//const??
@@ -313,6 +319,8 @@ protected:
         std::shared_ptr<Base::SequencerLauncher> progress;
         std::vector<BaseGeomPtr> goEdges;
         std::shared_ptr<std::vector<FacePtr>> faces;
+        /// UseWireJoiner's value: the face finder to use
+        bool wireJoiner = false;
     };
     static void extractFaces(const ExtractFaceParams &params);
 
@@ -322,6 +330,10 @@ protected:
                              const std::vector<TechDraw::BaseGeomPtr>& goEdges);
     static void findFacesOld(const ExtractFaceParams &params,
                              const std::vector<TechDraw::BaseGeomPtr>& goEdges);
+    static void findFacesJoined(const ExtractFaceParams &params,
+                                const std::vector<TechDraw::BaseGeomPtr>& goEdges);
+    /// UseWireJoiner was read from the file being restored
+    bool wireJoinerRestored = false;
 
     Base::Vector3d shapeCentroid;
 
