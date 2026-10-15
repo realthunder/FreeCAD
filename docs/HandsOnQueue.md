@@ -156,6 +156,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 09:46: NEW ENTRY 135 -- the fillet's on-view editing on the
+copy staged 08:21: no arrow while a reference is missing (older than 117);
+an arrow's click released through to the face behind; the root button
+opens no menu; the root button asked at the edge's middle with its own
+highlight.** Under the entry, four points not answered.
+
 **2026-10-15 08:34: entry 117 STEP 4 (THE CHAMFER) STARTED on the reporter's
 "Do chamfer" to the build session; draft and thickness not in that word.**
 Under the entry.
@@ -2783,6 +2789,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE found and FIXED by the build session (18:38), COMMITTED `d9c3193856`, LOCAL, not pushed, not staged: a TechDraw page view answered "Undo"/"Redo" from its document without checking it was there -- a page view with no document; guarded as the general view does. Reproduced a second time in its native print run. WHY the view had no document NOT found. the GUARD PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage"; why no document not found |
 | 133 | 2026-10-14 | TechDraw printing: open the print with LANDSCAPE as the default (a change request, said to the build session) | OPEN; DONE by the build session, written, NOT committed, building r32: "Print All Pages" and "Print Selected Pages" open their print box on landscape (were the printer's default, portrait); each page still laid out in its own template's orientation; the single page's Print already took the template's. Not testable by a script (the Windows print box) -- the REPORTER'S LOOK. COMMITTED `560022c91b`, LOCAL, not pushed, not staged, built in r32; the REPORTER'S LOOK still owed. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
+| 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18696,6 +18703,55 @@ older file and falls under the once-at-load rule.
 page in it opens once at load, as it did before. From the first save with
 this build, the saved layout decides."
 
+## 135. The fillet's on-view editing: no arrow while a reference is missing; an arrow's click released through to the face behind; the root button shows no menu; the root button asked at the edge's middle with a highlight of its own -- OPEN
+
+**2026-10-15 09:46, the reporter:** "new defect. regarding the fillet on view
+edit. if the the fillet has missing reference, no arrow is shown. This
+happens before the new fillet on view edit work. now is still the same.
+then when I remove all the missing references, the arrow shows up. but
+when I click the arrow, it registered, but when I release, the click pass
+through to select the face behind. Also I would expect the tail button to
+sit in the center of the refereced geometry (edge). But button shall have
+a separate highlight to give visual hint of pressable. the button click
+does not show the menu, presumable because of the click passing through
+bug."
+
+The note-taker's reading -- four things, on the copy STAGED 08:21
+(`580e54f0b6`, entry 117's steps 1 to 3), by the note-taker's reading:
+1. A DEFECT, OLDER than entry 117: while a fillet has a reference that
+   no longer exists (an edge gone), NO arrow is shown at all; it was so
+   with the old manipulator and is so now. Removing every missing
+   reference brings the arrows back.
+2. A DEFECT: a click on an arrow -- the press is taken ("it registered"),
+   the RELEASE goes through to the model: the face behind the arrow gets
+   selected.
+3. A DEFECT: a click on the root button (the "tail button") opens NO
+   menu; the reporter's guess -- the same pass-through.
+4. A CHANGE asked: the root button sits at the MIDDLE of its referenced
+   edge (not at the arrow's root), and has a HIGHLIGHT of its own (on
+   the pointer passing over it, by the note-taker's reading of
+   "pressable"), as a hint that it can be pressed.
+NOT said:
+a. which file and fillet; how the reference went missing (an edge lost
+   to a change upstream, by the note-taker's guess);
+b. for 1: whether the wish is arrows on the edges that still exist while
+   others are missing -- the note-taker's reading, not said;
+c. for 2: a plain click (press and release in place) or a drag; the
+   Default radius arrow, a customised one, or both;
+d. for 4: an edge with two radii or more has an arrow per point (step 2)
+   -- one button at the edge's middle for all of them, or one per arrow;
+   and what the highlight is (a colour, a size, a ring).
+READ in the source, nothing run:
+- The root button: `src/Gui/Inventor/Draggers/Gizmo.cpp` 248 to 281 --
+  a sphere in the arrow's own frame, "a little behind the root" (0.9 of
+  the dragger's screen size back from the root), not on the edge; its
+  colour one SoBaseColor, no hover change seen. Its mouse handling 283
+  on: the press handled when over the button, the menu run on the
+  release from a timer.
+- The step 2 account (the build session): an arrow sits "in the face
+  beside the first edge turned more toward the camera", its root a knob
+  of the arrow's colour.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -18707,5 +18763,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entry 134 is of
-2026-10-15, said to the build session)
+the build session, 131 and 132 found by it; entries 134 and 135
+are of 2026-10-15, 134 said to the build session)
