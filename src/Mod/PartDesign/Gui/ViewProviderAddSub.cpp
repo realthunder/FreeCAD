@@ -188,28 +188,39 @@ void ViewProviderAddSub::highlightPreviewFace(int face)
     if (!view || face == previewLitFace)
         return;
     previewLitFace = face;
-    if (face <= 0) {
-        view->unsetHighlightedFaces();
+    applyPreviewFaceColors();
+}
+
+void ViewProviderAddSub::applyPreviewFaceColors()
+{
+    auto view = getAddSubView();
+    if (!view)
         return;
-    }
     auto feat = getObject();
     // (the shape the preview's view draws, which a dress-up names itself)
     auto prop = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
             feat ? feat->getPropertyByName(view->getShapePropertyName()) : nullptr);
     const int count = prop ? static_cast<int>(prop->getShape().countSubShapes(TopAbs_FACE)) : 0;
-    if (face > count) {
+    if (previewLitFace > count)
         previewLitFace = 0;
+    std::vector<App::Color> colors = previewFaceColors(count);
+    if (previewLitFace <= 0 && colors.empty()) {
         view->unsetHighlightedFaces();
         return;
     }
-    // every face as the preview has it, see-through or not, but the one
-    App::Color own = view->ShapeColor.getValue();
-    own.setTransparency(view->Transparency.getValue() / 100.0f);
-    std::vector<App::Color> colors(count, own);
-    App::Color lit;
-    lit.setPackedValue(static_cast<uint32_t>(Gui::ViewParams::getHighlightColor()));
-    lit.setTransparency(0.0f);
-    colors[face - 1] = lit;
+    if (static_cast<int>(colors.size()) != count) {
+        // every face as the preview has it, see-through or not
+        App::Color own = view->ShapeColor.getValue();
+        own.setTransparency(view->Transparency.getValue() / 100.0f);
+        colors.assign(count, own);
+    }
+    // but the one lit
+    if (previewLitFace > 0) {
+        App::Color lit;
+        lit.setPackedValue(static_cast<uint32_t>(Gui::ViewParams::getHighlightColor()));
+        lit.setTransparency(0.0f);
+        colors[previewLitFace - 1] = lit;
+    }
     view->setHighlightedFaces(colors);
 }
 

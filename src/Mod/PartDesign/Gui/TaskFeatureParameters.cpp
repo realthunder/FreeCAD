@@ -78,6 +78,30 @@ TaskFeatureParameters::TaskFeatureParameters(PartDesignGui::ViewProvider *vp, QW
 TaskFeatureParameters::~TaskFeatureParameters()
 {
     hideDraggerHints();
+    if (failCursor)
+        QApplication::restoreOverrideCursor();
+}
+
+bool TaskFeatureParameters::isDragFailing() const
+{
+    auto obj = vp ? vp->getObject() : nullptr;
+    return obj && obj->isError();
+}
+
+void TaskFeatureParameters::updateFailCursor()
+{
+    // While a drag recomputes the feature: a held step and the left button
+    // down
+    const bool dragging = heldSteps > 0
+        && (QApplication::mouseButtons() & Qt::LeftButton);
+    const bool fail = dragging && isDragFailing();
+    if (fail == failCursor)
+        return;
+    failCursor = fail;
+    if (fail)
+        QApplication::setOverrideCursor(Qt::ForbiddenCursor);
+    else
+        QApplication::restoreOverrideCursor();
 }
 
 void TaskFeatureParameters::showDraggerHints()
@@ -237,12 +261,15 @@ void TaskFeatureParameters::recomputeFeature(bool delay)
             interval /= 3;
         updateViewTimer->start(interval);
     } else {
-        Gui::WaitCursor cursor;
-        setupTransaction();
-        App::DocumentObject* obj = vp->getObject ();
-        obj->getDocument()->recomputeFeature ( obj );
-        saveComputedInput();
-        finishedRecomputeFeature();
+        {
+            Gui::WaitCursor cursor;
+            setupTransaction();
+            App::DocumentObject* obj = vp->getObject ();
+            obj->getDocument()->recomputeFeature ( obj );
+            saveComputedInput();
+            finishedRecomputeFeature();
+        }
+        updateFailCursor();
     }
 }
 
@@ -460,6 +487,8 @@ void TaskFeatureParameters::endHeldStep(bool abort)
         return;
     if (--heldSteps)
         return;
+    // the drag is over: no stop sign
+    updateFailCursor();
     if (abort) {
         // A cancelled drag: its step rolled back, the shapes its recomputes
         // made with it; a recompute still to come is not wanted

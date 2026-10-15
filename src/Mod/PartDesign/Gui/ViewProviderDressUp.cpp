@@ -137,9 +137,20 @@ void ViewProviderDressUp::updateAddSubShapeIndicator()
         std::vector<int> edges;
         std::vector<int> vertices;
         pcDressUp->getGeneratedIndices(faces,edges,vertices);
-        if (faces.empty()) {
+        // The faces the failed fillets had when they last were made, after
+        // the new ones: shown red beside them (docs/HandsOnQueue.md entry
+        // 143)
+        std::vector<TopoDS_Shape> failed;
+        if (auto prop = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
+                    pcDressUp->getPropertyByName("FailedShape"))) {
+            for (auto &face : prop->getShape().getSubTopoShapes(TopAbs_FACE))
+                failed.push_back(face.getShape());
+        }
+        failedPreviewFaces = static_cast<int>(failed.size());
+        if (faces.empty() && failed.empty()) {
             pcDressUp->DressUpShape.setValue(TopoDS_Shape());
             getAddSubView()->updateVisual();
+            applyPreviewFaceColors();
             return;
         }
 
@@ -150,11 +161,32 @@ void ViewProviderDressUp::updateAddSubShapeIndicator()
         shape.setPlacement(Base::Placement());
         for (int idx : faces)
             builder.Add(comp, shape.getSubShape(TopAbs_FACE, idx+1));
+        for (auto &face : failed)
+            builder.Add(comp, face);
         Part::TopoShape dressupShape(comp);
         dressupShape.mapSubElement(shape);
         pcDressUp->DressUpShape.setValue(dressupShape);
         getAddSubView()->updateVisual();
+        applyPreviewFaceColors();
     }
+}
+
+std::vector<App::Color> ViewProviderDressUp::previewFaceColors(int count) const
+{
+    if (failedPreviewFaces <= 0 || failedPreviewFaces > count)
+        return {};
+    // the preview's view, made by the first call: there is one by now
+    auto view = const_cast<ViewProviderDressUp*>(this)->getAddSubView();
+    if (!view)
+        return {};
+    App::Color own = view->ShapeColor.getValue();
+    own.setTransparency(view->Transparency.getValue() / 100.0f);
+    std::vector<App::Color> colors(count, own);
+    App::Color red(1.0f, 0.0f, 0.0f);
+    red.setTransparency(own.transparency());
+    for (int i = count - failedPreviewFaces; i < count; ++i)
+        colors[i] = red;
+    return colors;
 }
 
 void ViewProviderDressUp::attach(App::DocumentObject* obj) {

@@ -64,8 +64,12 @@ public:
 
 protected:
     bool setEdit(int ModNum) override;
+    /// The faces the failed fillets had, the preview's last ones, red
+    std::vector<App::Color> previewFaceColors(int count) const override;
 
 private:
+    /// How many of the preview's faces, at its end, are failed fillets'
+    int failedPreviewFaces = 0;
     std::vector<App::Color> originalFaceColors;
     std::vector<App::Color> originalLineColors;
 

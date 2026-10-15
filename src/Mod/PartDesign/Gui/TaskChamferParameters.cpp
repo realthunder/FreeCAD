@@ -267,9 +267,6 @@ TaskChamferParameters::TaskChamferParameters(ViewProviderDressUp *DressUpView,QW
     // labels show beside the handle while it is active
     onViewValues = std::make_unique<Gui::OnViewValueSet>();
     setupGizmos(DressUpView);
-    connect(onViewValues.get(), &Gui::OnViewValueSet::cameraChanged, this, [this]() {
-        placeEdgeHandles(false);
-    });
     connRecomputed = pcChamfer->getDocument()->signalRecomputedObject.connect(
         [this, self = QPointer<TaskChamferParameters>(this)](const App::DocumentObject& obj) {
             if (&obj != getChamfer()) {
@@ -305,7 +302,7 @@ void TaskChamferParameters::attachOnViewValues()
     if (auto view = vp->getEditViewer()) {
         if (view != onViewValues->getView()) {
             onViewValues->attach(view);
-            placeEdgeHandles(true);
+            placeEdgeHandles();
         }
     }
     onViewValues->refresh();
@@ -501,12 +498,12 @@ void TaskChamferParameters::updateEdgeHandles()
             Part::TopoShape::ChamferInfo info;
             const bool own = chamfer->ChamferInfo.getValue(edge, info);
             if (!own) {
-                // drives the defaults: an equal size's arrow follows the
-                // camera, two sizes' are one in each face
+                // drives the defaults: an equal size's arrow across the
+                // chamfer's face, two sizes' one in each face
                 EdgeHandle size;
                 size.edge = edge;
                 size.field = SizeField;
-                size.followsCamera = type == 0;
+                size.equal = type == 0;
                 auto sizeGizmo = new Gui::LinearGizmo(ui->chamferSize);
                 size.gizmo = sizeGizmo;
                 onViewValues->addHandle(sizeValue, sizeGizmo);
@@ -602,7 +599,7 @@ void TaskChamferParameters::updateEdgeHandles()
                 }
                 default: {
                     EdgeHandle size = ownValue(SizeField, tr("S"));
-                    size.followsCamera = true;
+                    size.equal = true;
                     edgeHandles.push_back(size);
                     break;
                 }
@@ -613,9 +610,9 @@ void TaskChamferParameters::updateEdgeHandles()
     if (!gizmoContainer) {
         return;
     }
-    // Placed: each size's arrow in both faces, the first in the face the
-    // flip names (upstream's two-gizmo chamfer did it so), the second size's
-    // in the other
+    // Placed: an equal size's arrow across the chamfer's face; of two sizes
+    // the first in the face the flip names (upstream's two-gizmo chamfer did
+    // it so), the second size's in the other
     Part::TopoShape baseShape = chamfer->getBaseShape(true);
     for (auto& handle : edgeHandles) {
         handle.placed = false;
@@ -642,6 +639,30 @@ void TaskChamferParameters::updateEdgeHandles()
             }
             handle.placements[0] = {first.position, first.dir};
             handle.placements[1] = {second.position, second.dir};
+            if (handle.equal) {
+                // Along the sum of the directions into the faces, which is
+                // the chamfer face's normal for an equal size: its middle is
+                // s cos(a/2) from the edge for faces a apart, and a drag
+                // along the arrow makes the size larger on an edge that is
+                // cut and on one that is filled alike (docs/HandsOnQueue.md
+                // entry 142; it used to lie in the face turned toward the
+                // camera)
+                Base::Vector3d d0 = first.dir;
+                Base::Vector3d d1 = second.dir;
+                d0.Normalize();
+                d1.Normalize();
+                Base::Vector3d dir = d0 + d1;
+                const double factor = std::cos(d0.GetAngle(d1) / 2);
+                if (dir.Length() < Precision::Confusion() || !(factor > Precision::Confusion())) {
+                    showHandle(handle.gizmo, false);
+                    continue;
+                }
+                dir.Normalize();
+                handle.placements[0] = {first.position, dir};
+                if (auto linear = dynamic_cast<Gui::LinearGizmo*>(handle.gizmo)) {
+                    linear->setMultFactor(factor);
+                }
+            }
         }
         catch (Standard_Failure&) {
             showHandle(handle.gizmo, false);
@@ -654,27 +675,12 @@ void TaskChamferParameters::updateEdgeHandles()
         showHandle(handle.gizmo, true);
         handle.placed = true;
     }
-    placeEdgeHandles(true);
+    placeEdgeHandles();
 }
 
-void TaskChamferParameters::placeEdgeHandles(bool force)
+void TaskChamferParameters::placeEdgeHandles()
 {
-    Gui::ViewerContext* view = onViewValues ? onViewValues->getView() : nullptr;
     const Base::Matrix4D toWorld = gizmoToWorld();
-    Base::Vector3d dir;
-    if (view) {
-        // The view's direction where the arrows are
-        Base::Matrix4D toGizmo = toWorld;
-        toGizmo.inverse();
-        const SbVec3f v = view->getViewDirection();
-        dir = toGizmo * Base::Vector3d(v[0], v[1], v[2]) - toGizmo * Base::Vector3d();
-        if (dir.Length() > Precision::Confusion()) {
-            dir.Normalize();
-        }
-        else {
-            dir = Base::Vector3d();
-        }
-    }
     bool moved = false;
     for (auto& handle : edgeHandles) {
         if (!handle.placed) {
@@ -684,7 +690,7 @@ void TaskChamferParameters::placeEdgeHandles(bool force)
             // Below its size's arrow, turning in the plane of the two faces'
             // directions; its arrow is placed before it
             auto rotation = dynamic_cast<Gui::RotationGizmo*>(handle.gizmo);
-            if (force && rotation && handle.sizeGizmo) {
+            if (rotation && handle.sizeGizmo) {
                 rotation->placeBelowLinearGizmo(handle.sizeGizmo);
                 rotation->getDraggerContainer()->setArcNormalDirection(Base::convertTo<SbVec3f>(
                     -handle.placements[0].dir.Cross(handle.placements[1].dir)));
@@ -696,39 +702,49 @@ void TaskChamferParameters::placeEdgeHandles(bool force)
             }
             continue;
         }
-        int face = handle.face;
-        if (handle.followsCamera && dir.Length() > 0.5) {
-            // An arrow in the face turned toward the camera lies flat on the
-            // screen; the other one points into it. A little either way of
-            // even does not move it, so that it does not flicker.
-            constexpr double hysteresis = 0.05;
-            double along[2];
-            for (int i = 0; i < 2; ++i) {
-                Base::Vector3d d = handle.placements[i].dir;
-                d.Normalize();
-                along[i] = std::fabs(d * dir);
-            }
-            if (along[1 - face] + hysteresis < along[face]) {
-                face = 1 - face;
-            }
-        }
-        else if (!handle.followsCamera) {
-            face = 0;
-        }
-        if (face == handle.face && !force) {
-            continue;
-        }
-        handle.face = face;
-        handle.gizmo->Gizmo::setDraggerPlacement(handle.placements[face].position,
-                                                 handle.placements[face].dir);
+        handle.gizmo->Gizmo::setDraggerPlacement(handle.placements[0].position,
+                                                 handle.placements[0].dir);
         if (onViewValues) {
-            onViewValues->setHandleAnchor(handle.gizmo, toWorld * handle.placements[face].position);
+            onViewValues->setHandleAnchor(handle.gizmo, toWorld * handle.placements[0].position);
         }
         moved = true;
     }
     if (moved && gizmoContainer) {
         gizmoContainer->calculateScaleAndOrientation();
     }
+}
+
+bool TaskChamferParameters::isDragFailing() const
+{
+    auto chamfer = getChamfer();
+    if (!chamfer || !chamfer->isError())
+        return false;
+    const auto& failed = chamfer->FailedEdges.getValues();
+    // Nothing named: the chamfer as a whole failed
+    if (failed.empty())
+        return true;
+    auto isFailed = [&failed](const std::string& edge) {
+        return std::find(failed.begin(), failed.end(), edge) != failed.end();
+    };
+    Gui::Gizmo* active = onViewValues ? onViewValues->getActiveHandle() : nullptr;
+    for (const auto& handle : edgeHandles) {
+        if (handle.gizmo != active) {
+            continue;
+        }
+        if (handle.box) {
+            // a value of the edge's own
+            return isFailed(handle.edge);
+        }
+        // a default: every edge that takes it
+        for (const auto& edge : getChamferEdges()) {
+            Part::TopoShape::ChamferInfo info;
+            if (!chamfer->ChamferInfo.getValue(edge, info) && isFailed(edge)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return true;
 }
 
 TaskChamferParameters::EdgeHandle* TaskChamferParameters::findEdgeHandle(const Gui::Gizmo* gizmo)
