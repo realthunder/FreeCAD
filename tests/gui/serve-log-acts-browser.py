@@ -52,6 +52,8 @@ Chrome do it through scripts/logacts-drive.js. Asserted:
     the op then says so, the tab counts it and the host keeps it; it is
     listed with its object and property as the page's user's, its text
     read, and let go from there (sec 32.27);
+  - a copy the page's user sent, waiting unread, is listed to it as its
+    own: not its to bring in, its to withdraw, which it does (sec 32.30);
   - none of it moved the document the branch was served from.
 
 Needs the built viewer (build/wasm/fcviewer.html; `ninja -C build/wasm`),
@@ -252,6 +254,13 @@ def at_phase(name):
         doc.getObject("Box").Width = 33
         doc.recompute()
         doc.commitTransaction()
+    elif name == "rolled back":
+        # A copy the page's user sent, waiting in the log unread (sec 32.30)
+        served = state["served"]
+        served.keepTransactionSentFile(state["doc"].FileName, "mine.FCStd", CLIENT, "invited")
+    elif name == "withdrawn":
+        state["sent_after"] = [f["name"] for f in state["served"].getTransactionSentFiles()
+                               if not f.get("branch")]
     elif name == "asked":
         doc = state["doc"]
         state["asked"] = [(r["source"], r["target"], r["by"], r["by_kind"], r["state"],
@@ -634,6 +643,18 @@ def verify():
               and "undo" not in kinds(rolled)[-1:]
               and rolled.get("box") == undid.get("box"),
               (rb, out.get("rbSaid"), rolled.get("box"), kinds(rolled)[-3:]))
+        sent_rows = out.get("sentRows") or []
+        bring, drop = (list(out.get("sentActs") or []) + [None, None])[:2]
+        check("a copy the page's user sent is listed to it, unread; not its to bring in, its "
+              "to withdraw, which it does",
+              out.get("sentListed") is True and len(sent_rows) == 1
+              and sent_rows[0][0].startswith("mine.FCStd") and "not read" in sent_rows[0][0]
+              and (bring or {}).get("disabled") is True
+              and "host" in (bring or {}).get("title", "")
+              and (drop or {}).get("text") == "Withdraw" and (drop or {}).get("disabled") is False
+              and out.get("withdrawAnswered") is True
+              and said(out.get("withdrawSaid"), "withdrawn") and state.get("sent_after") == [],
+              (sent_rows, out.get("sentActs"), out.get("withdrawSaid"), state.get("sent_after")))
         before_main = s.get("restored", {})
         check("nothing the page did moved the document the branch was served from",
               before_main.get("main") == listed.get("main")

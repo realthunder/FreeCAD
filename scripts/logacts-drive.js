@@ -507,6 +507,26 @@ async function answer(page, text) {
     await waitFor(page, () => /rolled back/.test((window.__fcStatus() || {}).text || ''), 20000);
     out.rbSaid = await page.evaluate(() => window.__fcStatus());
     await phase('rolled back');
+
+    // A file of its own the page's user sent waits in the host's log (sec
+    // 32.30): listed to it under the merges asked for, its to withdraw and
+    // not to bring in. The host keeps it at the phase before.
+    await page.evaluate(() => window.__fcTab('requests'));
+    out.sentListed = await waitFor(
+      page, () => document.querySelectorAll('.fc-log-sentlist tbody tr').length > 0, 20000);
+    out.sentRows = await page.evaluate(() => [...document.querySelectorAll(
+      '.fc-log-sentlist tbody tr')].map((tr) => [...tr.querySelectorAll('td')]
+      .map((td) => td.innerText.trim())));
+    await page.evaluate(() => document.querySelector('.fc-log-sentlist tbody tr').click());
+    await sleep(300);
+    out.sentActs = await page.evaluate(
+      () => ['file-bring', 'file-drop'].map((a) => window.__fcActSays(a)));
+    await shot(page, 'sent');
+    out.withdrawClicked = await page.evaluate(() => window.__fcClickAct('file-drop'));
+    out.withdrawAnswered = await answer(page);
+    await waitFor(page, () => /withdrawn/.test((window.__fcStatus() || {}).text || ''), 20000);
+    out.withdrawSaid = await page.evaluate(() => window.__fcStatus());
+    await phase('withdrawn');
   }
   catch (e) {
     out.failure = String((e && e.stack) || e);

@@ -452,6 +452,42 @@ def run():
             withMenu("17-asked-merge-menu", requests, asked, tabs, requests)
         else:
             said.append("asked merge: not listed")
+
+        # 18: a branch served in a document of its own, which has no window:
+        # closing the last window that has one says so (sec 32.30)
+        for name in App.listDocuments():
+            if name != doc.Name:
+                App.closeDocument(name)
+        settle()
+        if not Gui.serveDocument(doc, 0):
+            said.append("hidden: not served")
+        Gui.serveBranch(doc, "for-ann")
+        Gui.getDocument(doc.Name).save()
+        settle()
+        wait(0.5)
+        tries = [0]
+
+        def grabHidden():
+            box = QtWidgets.QApplication.activeModalWidget()
+            if box is None and tries[0] < 20:
+                tries[0] += 1
+                QtCore.QTimer.singleShot(200, grabHidden)
+                return
+            if box is None or box.objectName() != "HiddenDocuments":
+                said.append("hidden: no question (%r)" % (box and box.objectName(),))
+                if box is not None:
+                    box.reject()
+                return
+            shotWidget("18-hidden-close", box)
+            box.reject()
+
+        QtCore.QTimer.singleShot(300, grabHidden)
+        area = mw.findChild(QtWidgets.QMdiArea)
+        for sub in area.subWindowList():
+            if sub.windowTitle().startswith(doc.Label):
+                sub.close()
+                break
+        settle()
     except Exception:
         said.append(traceback.format_exc())
     with open(os.path.join(OUT, "shots.txt"), "w") as f:

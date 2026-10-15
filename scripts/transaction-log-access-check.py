@@ -362,6 +362,35 @@ def run():
               seen.get("listed") == [[ALICE, "main", "writes",
                                       "version %d (handover)" % handover]])
 
+        # -- A group (sec 32.32) -------------------------------------------
+        def grouped(dialog, seen):
+            who = named(dialog, QtWidgets.QComboBox, "TransactionAccessUser")
+            group = named(dialog, QtWidgets.QComboBox, "TransactionAccessGroup")
+            who.setCurrentIndex(who.findText(BOB))
+            settle()
+            seen["before"] = group.currentText()
+            group.setCurrentText("team")
+            named(dialog, QtWidgets.QPushButton, "TransactionAccessPutIn").click()
+            settle()
+            seen["users"] = [who.itemText(i) for i in range(who.count())]
+            seen["chosen"] = (who.currentText(), group.currentText())
+            seen["groups"] = [group.itemText(i) for i in range(group.count())]
+
+        seen = withAccess(dock, grouped)
+        users = {(u["kind"], u["name"]): u["group"] for u in doc.getTransactionUsers()}
+        check("a user put in a group by a new name: the group is made, and listed among the "
+              "users; the user's line says its group, and stays chosen (%r)" % (seen,),
+              seen.get("before") == "" and "team (group)" in seen.get("users", [])
+              and "bob (invited), in team" in seen.get("users", [])
+              and seen.get("chosen") == ("bob (invited), in team", "team")
+              and "team" in seen.get("groups", [])
+              and users.get(("invited", "bob")) == "team"
+              and users.get(("group", "team")) == "")
+        doc.setTransactionUserGroup("invited", "bob", "")
+        check("and taken out again, from Python",
+              {(u["kind"], u["name"]): u["group"]
+               for u in doc.getTransactionUsers()}.get(("invited", "bob")) == "")
+
         # -- Serve branch... ----------------------------------------------
         served = Gui.serveDocument(doc, 0)
         settle(300)
@@ -390,9 +419,11 @@ def run():
               and any("handed served in " + other.Name in t for t in told(dock)))
         count = len(App.listDocuments())
         seen = serveBranch(dock, "handed")
-        check("a name taken serves nothing, and says so (%r)" % (told(dock),),
-              len(App.listDocuments()) == count
-              and any(t.startswith("No branch served") for t in told(dock)))
+        check("the branch named again is the one served already: no document more, and the "
+              "panel says where (%r)" % (told(dock),),
+              len(App.listDocuments()) == count and other is not None
+              and any(t.startswith("Branch handed is served in document " + other.Name)
+                      for t in told(dock)))
 
         # -- The merges asked for -----------------------------------------
         if other is not None:

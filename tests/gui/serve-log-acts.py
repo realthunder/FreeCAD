@@ -59,6 +59,10 @@ shared document:
   - with an edit open the document is not switched nor branched from
     elsewhere, and is once the edit is left;
   - the host deletes a branch, but not the one the document is on;
+  - a group (sec 32.32): the client in a group said to read a branch it
+    did not read reads it, said to write writes it; what is said of the
+    client itself comes first; a group in a group passes on what is said
+    of the outer one; taken out, the branch is greyed again;
   - the host's alone (sec 32.30): a squash and a trim are refused A, and
     the host squashes the rows between two versions and trims a branch;
     a file A sends is listed to A and to the host, and A withdraws it; sent
@@ -215,6 +219,26 @@ def grant(branch, write=False):
         doc.setTransactionAccess("verified", wsclient.IDENTITY, branch, write)
         return [(a["kind"], a["name"], a["branch"], a["write"])
                 for a in doc.getTransactionAccess()]
+    return run
+
+
+def group_says(steps):
+    """The host puts the test's client in groups, and says what they may
+    (sec 32.32): `steps` are ('in', group, parent) -- the client itself
+    where group is None -- ('may', kind, name, branch, write) and ('clear',
+    kind, name, branch)."""
+    def run():
+        doc = FreeCAD.getDocument(DOC)
+        for step in steps:
+            if step[0] == "in":
+                kind, name = ("verified", wsclient.IDENTITY) if step[1] is None \
+                    else ("group", step[1])
+                doc.setTransactionUserGroup(kind, name, step[2])
+            elif step[0] == "may":
+                doc.setTransactionAccess(step[1], step[2], step[3], step[4])
+            else:
+                doc.clearTransactionAccess(step[1], step[2], step[3])
+        return True
     return run
 
 
@@ -592,6 +616,22 @@ class Client(threading.Thread):
                                          "name": "hosts-own"})
         got["ungranted"] = on_host(ungrant(first))
         got["host_maker"] = on_host(host())
+
+        # A group (sec 32.32): what is said of it is the client's, where
+        # nothing is said of the client itself -- the nearest group's
+        got["g_unread"] = self.do(ws, "log.branches")
+        on_host(group_says([("in", None, "team"), ("may", "group", "team", "older", False)]))
+        got["g_read"] = self.do(ws, "log.branches")
+        on_host(group_says([("may", "group", "team", "older", True)]))
+        got["g_write"] = self.do(ws, "log.branches")
+        on_host(group_says([("may", "verified", wsclient.IDENTITY, "older", False)]))
+        got["g_own"] = self.do(ws, "log.branches")
+        on_host(group_says([("clear", "verified", wsclient.IDENTITY, "older"),
+                            ("clear", "group", "team", "older"),
+                            ("in", "team", "all"), ("may", "group", "all", "older", False)]))
+        got["g_nested"] = self.do(ws, "log.branches")
+        on_host(group_says([("in", None, ""), ("clear", "group", "all", "older")]))
+        got["g_out"] = self.do(ws, "log.branches")
 
         # The host's alone (sec 32.30): a squash and a trim, on a branch of
         # their own
@@ -1194,11 +1234,34 @@ def verify_shared(got, watcher):
           (got.get("a_branch_own"), own.get("a-own"), got.get("said_own"),
            got.get("a_delete_own"), got.get("said_deleted"), hk.get("branches")))
 
+    verify_groups(got)
     verify_hosts(got)
 
     check("the client that may only look is refused all twenty",
           all(code(watcher.got.get(op)) == "ViewOnly" for op in ACTS),
           {op: code(watcher.got.get(op)) for op in ACTS})
+
+
+def verify_groups(got):
+    """Sec 32.32: a group is a user nobody logs in as; who is in it has what
+    is said of it, where nothing is said of themselves."""
+    def older(key):
+        return {b["name"]: b for b in (got.get(key) or {}).get("branches", [])}.get("older", {})
+    check("a branch nothing is said of for the client, nor of a group it is in, is greyed",
+          older("g_unread").get("read") is False, older("g_unread"))
+    check("in a group said to read it, the client reads it",
+          older("g_read").get("read") is True and older("g_read").get("write") is False,
+          older("g_read"))
+    check("the group said to write it, the client writes it",
+          older("g_write").get("write") is True, older("g_write"))
+    check("what is said of the client itself comes before its group's",
+          older("g_own").get("read") is True and older("g_own").get("write") is False,
+          older("g_own"))
+    check("a group in a group: what is said of the outer one reaches the client",
+          older("g_nested").get("read") is True and older("g_nested").get("write") is False,
+          older("g_nested"))
+    check("out of the group, it is greyed again", older("g_out").get("read") is False,
+          older("g_out"))
 
 
 def verify_hosts(got):
