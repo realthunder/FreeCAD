@@ -118,6 +118,39 @@ def arrow_offsets():
     return offsets
 
 
+def arrow_drag(near, length=1.0):
+    """The viewport offset of a drag `length` mm out along the arrow based
+    nearest `near`: a fixed pixel offset is rounded away in a big window when
+    it runs across the arrow, since the dragger's step grows with the zoom"""
+    from pivy import coin
+
+    viewer = view().getViewer()
+    region = viewer.getSoRenderManager().getViewportRegion()
+    search = coin.SoSearchAction()
+    search.setType(coin.SoType.fromName("SoLinearDraggerContainer"))
+    search.setInterest(coin.SoSearchAction.ALL)
+    search.setSearchingAll(True)
+    search.apply(viewer.getSoRenderManager().getSceneGraph())
+    best = None
+    for p in search.getPaths():
+        container = p.getTail()
+        if not container.visible.getValue():
+            continue
+        matrix = coin.SoGetMatrixAction(region)
+        matrix.apply(p)
+        m = matrix.getMatrix()
+        t = container.translation.getValue()
+        axis = container.rotation.getValue().multVec(coin.SbVec3f(0, 1, 0))
+        base = m.multVecMatrix(t)
+        tip = m.multVecMatrix(t + axis * length)
+        b = view().getPointOnViewport(FreeCAD.Vector(base[0], base[1], base[2]))
+        e = view().getPointOnViewport(FreeCAD.Vector(tip[0], tip[1], tip[2]))
+        distance = (b[0] - near[0]) ** 2 + (b[1] - near[1]) ** 2
+        if best is None or distance < best[0]:
+            best = (distance, (int(e[0] - b[0]), int(e[1] - b[1])))
+    return best[1] if best else (40, 20)
+
+
 def undos():
     return len(FreeCAD.getDocument(DOC).UndoNames)
 
@@ -229,6 +262,7 @@ def drag(start, offset, escape=False):
                 focus.metaObject().className() if focus else None,
                 viewer_widget().metaObject().className()))
 
+    dragged = doc.getObject("Fillet").Radius.Value
     if escape:
         where("in the drag, before Escape")
         real_key(viewer_widget(), Qt.Key_Escape)
@@ -238,6 +272,7 @@ def drag(start, offset, escape=False):
     pump(80)
     if escape:
         where("after the release")
+    return dragged
 
 
 def run():
@@ -309,11 +344,12 @@ def run():
         edge = box.Shape.getElement("Edge2")
         middle = edge.valueAt((edge.FirstParameter + edge.LastParameter) / 2)
         arrow = pick_arrow(view().getPointOnViewport(middle))
-        note("INFO the arrow at %s" % (arrow,))
+        along = arrow_drag(view().getPointOnViewport(middle))
+        note("INFO the arrow at %s, a drag of %s" % (arrow, along))
         if check("an arrow is found to drag", arrow is not None):
             before = undos()
             radius = fillet.Radius.Value
-            drag(arrow, (40, 20))
+            drag(arrow, along)
             note("INFO after the drag: Radius %.4f, steps %d" % (fillet.Radius.Value, undos() - before))
             check("a drag: the radius changed, one more step",
                   abs(fillet.Radius.Value - radius) > 1e-6 and undos() == before + 1,
@@ -325,7 +361,8 @@ def run():
 
             before = undos()
             offsets = arrow_offsets()
-            drag(arrow, (40, 20), escape=True)
+            dragged = drag(arrow, along, escape=True)
+            check("the drag moved the radius before Escape", abs(dragged - radius) > 1e-6, dragged)
             check("a drag with Escape: the radius as before it, no step",
                   abs(fillet.Radius.Value - radius) < 1e-6 and undos() == before,
                   (fillet.Radius.Value, undos() - before))
