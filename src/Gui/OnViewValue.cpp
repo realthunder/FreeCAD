@@ -26,6 +26,7 @@
 #include <QCursor>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QTimer>
 #include <QWidget>
 #include <Inventor/nodes/SoCamera.h>
@@ -120,12 +121,36 @@ void OnViewValueSet::setupHandle(int index, Gizmo* handle)
     handle->setReleaseCallback([this, index, handle](bool) {
         setActive(index, handle);
     });
-    handle->setRootButton([self = QPointer<OnViewValueSet>(this), index, handle]() {
-        if (!self || index >= self->count()) {
+    // A right click on the handle opens its menu, and the pointer over it
+    // says so (entry 135, the reporter 2026-10-15 11:30 and 11:35)
+    handle->setMenu(
+        [self = QPointer<OnViewValueSet>(this), index, handle]() {
+            if (!self || index >= self->count()) {
+                return;
+            }
+            self->setActive(index, handle);
+            self->openMenu(handle, true);
+        },
+        tr("Drag to change the value; click to type it.\n"
+           "Right click for the menu."));
+    // A drag is one undo step (entry 136)
+    handle->setDragCallback([self = QPointer<OnViewValueSet>(this), handle](Gizmo::DragEvent event) {
+        if (!self) {
             return;
         }
-        self->setActive(index, handle);
-        self->openMenu(handle, true);
+        switch (event) {
+            case Gizmo::DragEvent::Started:
+                self->dragHandle = handle;
+                Q_EMIT self->stepBegun();
+                break;
+            case Gizmo::DragEvent::Finished:
+            case Gizmo::DragEvent::Cancelled:
+                if (self->dragHandle == handle) {
+                    self->dragHandle = nullptr;
+                }
+                Q_EMIT self->stepEnded(event == Gizmo::DragEvent::Cancelled);
+                break;
+        }
     });
 }
 
@@ -177,7 +202,16 @@ void OnViewValueSet::clearHandles(int index)
             activeHandle = nullptr;
         }
         handle->setReleaseCallback(nullptr);
-        handle->setRootButton(nullptr);
+        handle->setMenu(nullptr);
+        handle->setDragCallback(nullptr);
+        if (handle == rightPressHandle) {
+            rightPressHandle = nullptr;
+        }
+        // taken away in its drag: the drag's step ends here
+        if (handle == dragHandle) {
+            dragHandle = nullptr;
+            Q_EMIT stepEnded(false);
+        }
         handle->setFocusBoxOnRelease(true);
     }
     entry->handles.clear();
@@ -560,7 +594,11 @@ bool OnViewValueSet::startTyping(int index, QKeyEvent* first)
     typing = index;
     EditableDatumLabel* label = entry->label.get();
     const Base::Quantity value = entry->box->value();
-    label->startEdit(value.getValue());
+    // An open label is one undo step, however often Enter commits in it
+    Q_EMIT stepBegun();
+    // This set's filter on the label's box, ahead of the label's own: Enter,
+    // Tab and Escape are handled here (takeLabelKey)
+    label->startEdit(value.getValue(), this);
     label->setSpinboxValue(value.getValue(), value.getUnit());
     // Setting the value again unselected the number; selected, the first key
     // replaces it
@@ -576,50 +614,24 @@ bool OnViewValueSet::startTyping(int index, QKeyEvent* first)
             }
         }
     };
-    typingConnections.push_back(
-        connect(label, &EditableDatumLabel::editingFinished, this, [this, index, closedBy](double v) {
-            closedBy({Qt::Key_Return, Qt::Key_Enter, Qt::Key_Tab});
-            commit(index, v);
-        }));
     // Emptied: a default has no "no value of its own", the box keeps it
     typingConnections.push_back(
         connect(label, &EditableDatumLabel::parameterUnset, this, [this, closedBy]() {
             closedBy({Qt::Key_Return, Qt::Key_Enter, Qt::Key_Tab});
             endTyping(false);
         }));
-    // Escape: the label has put its value back and closed already
-    typingConnections.push_back(
-        connect(label, &EditableDatumLabel::editingCanceled, this, [this, closedBy]() {
-            closedBy({Qt::Key_Escape});
-            endTyping(false);
-        }));
     typingConnections.push_back(
         connect(label, &EditableDatumLabel::focusLost, this, [this]() {
-            // Later: the box losing the focus to Enter's own handling must
-            // not end what that handling is about to commit
+            // Later: the focus may be going to what Enter or Tab opens. The
+            // focus going elsewhere commits what was typed and closes the
+            // label (the reporter, 10:13: "typed then click away without
+            // enter will commit and dismiss").
             QTimer::singleShot(0, this, [this]() {
                 if (typing >= 0) {
-                    endTyping(false);
+                    writeTyped();
+                    endTyping(true);
                 }
             });
-        }));
-    // Ctrl+Enter: commit and leave the edit
-    typingConnections.push_back(
-        connect(label, &EditableDatumLabel::finishEditingOnAllOVPs, this, [this, index, label]() {
-            Base::Quantity quantity;
-            if (label->getQuantity(quantity)) {
-                commit(index, quantity.getValue());
-            }
-            else {
-                endTyping(false);
-            }
-            Gui::Document* gdoc = view ? view->getDocument() : nullptr;
-            App::Document* doc = gdoc ? gdoc->getDocument() : nullptr;
-            if (doc) {
-                QTimer::singleShot(0, [doc]() {
-                    Gui::Control().accept(doc);
-                });
-            }
         }));
 
     if (first) {
@@ -631,16 +643,79 @@ bool OnViewValueSet::startTyping(int index, QKeyEvent* first)
 void OnViewValueSet::commit(int index, double value)
 {
     QPointer<QuantitySpinBox> box = entries[index]->box;
-    endTyping(true);
+    // Written while the label is open: inside its step
     if (box) {
         value = std::clamp(value, box->minimum(), box->maximum());
         // The box's owner writes the property from here, as from the panel
         box->setValue(value);
     }
+    endTyping(true);
     if (index < count()) {
         updateLabel(index);
     }
     focusView();
+}
+
+void OnViewValueSet::writeTyped()
+{
+    if (typing < 0 || typing >= count()) {
+        return;
+    }
+    auto& entry = entries[typing];
+    // What the label's box parsed as it was typed (isSet: something valid
+    // was), in the value's own unit -- its text read again lost the unit
+    if (!entry->label || !entry->box || !entry->label->isSet) {
+        return;
+    }
+    const double value = std::clamp(entry->label->value, entry->box->minimum(),
+                                    entry->box->maximum());
+    if (value != entry->box->rawValue()) {
+        // The box's owner writes the property from here, as from the panel
+        entry->box->setValue(value);
+    }
+}
+
+bool OnViewValueSet::takeLabelKey(QKeyEvent* event)
+{
+    if (typing < 0 || typing >= count()) {
+        return false;
+    }
+    const int key = event->key();
+    auto taken = [this](int k) {
+        if (std::find(takenKeys.begin(), takenKeys.end(), k) == takenKeys.end()) {
+            takenKeys.push_back(k);
+        }
+    };
+    if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+        // Committed, the label left open, its number selected for the next
+        // (the reporter, 10:07: "Press enter, commit change and trigger
+        // fillet partial recompute, but shall not dismiss the edit box")
+        writeTyped();
+        taken(key);
+        auto& label = entries[typing]->label;
+        if (label && entries[typing]->box) {
+            const Base::Quantity value = entries[typing]->box->value();
+            label->setSpinboxValue(value.getValue(), value.getUnit());
+            label->setFocusToSpinbox();
+        }
+        return true;
+    }
+    if (key == Qt::Key_Escape) {
+        // What was typed since the last Enter goes; what Enter committed stays
+        taken(key);
+        endTyping(false);
+        return true;
+    }
+    if (key == Qt::Key_Tab || key == Qt::Key_Backtab) {
+        // Committed, closed, and on to the next value (10:13)
+        const bool back = key == Qt::Key_Backtab || (event->modifiers() & Qt::ShiftModifier);
+        taken(key);
+        writeTyped();
+        endTyping(true);
+        moveActive(back);
+        return true;
+    }
+    return false;
 }
 
 void OnViewValueSet::endTyping(bool keep)
@@ -651,7 +726,12 @@ void OnViewValueSet::endTyping(bool keep)
     typingConnections.clear();
     const int index = typing;
     typing = -1;
-    if (index < 0 || index >= count()) {
+    if (index < 0) {
+        return;
+    }
+    // the label's step ends, open since startTyping()
+    Q_EMIT stepEnded(false);
+    if (index >= count()) {
         return;
     }
     if (auto& label = entries[index]->label) {
@@ -690,6 +770,25 @@ void OnViewValueSet::onLabelClicked(EditableDatumLabel* label)
     }
 }
 
+void OnViewValueSet::moveActive(bool back)
+{
+    // from none to the first or the last; each value an expression drives is
+    // passed over
+    int index = active;
+    for (int tries = 0; tries < count(); ++tries) {
+        if (index < 0) {
+            index = back ? count() - 1 : 0;
+        }
+        else {
+            index = (index + (back ? count() - 1 : 1)) % count();
+        }
+        if (entries[index]->box && !entries[index]->box->hasExpression()) {
+            setActive(index);
+            return;
+        }
+    }
+}
+
 bool OnViewValueSet::takeKey(QKeyEvent* event, bool overrideOnly)
 {
     // An open label's box has the keys itself
@@ -703,22 +802,7 @@ bool OnViewValueSet::takeKey(QKeyEvent* event, bool overrideOnly)
         if (overrideOnly) {
             return true;
         }
-        const bool back = key == Qt::Key_Backtab || (event->modifiers() & Qt::ShiftModifier);
-        // from none to the first or the last; each value an expression drives
-        // is passed over
-        int index = active;
-        for (int tries = 0; tries < count(); ++tries) {
-            if (index < 0) {
-                index = back ? count() - 1 : 0;
-            }
-            else {
-                index = (index + (back ? count() - 1 : 1)) % count();
-            }
-            if (entries[index]->box && !entries[index]->box->hasExpression()) {
-                setActive(index);
-                return true;
-            }
-        }
+        moveActive(key == Qt::Key_Backtab || (event->modifiers() & Qt::ShiftModifier));
         return true;
     }
     if (active < 0) {
@@ -736,7 +820,7 @@ bool OnViewValueSet::takeKey(QKeyEvent* event, bool overrideOnly)
         }
         return true;
     }
-    // Space: the menu of the active handle, as its root button opens it.
+    // Space: the menu of the active handle, as a right click on it opens it.
     // Otherwise Space keeps its own meaning (toggling visibility).
     if (key == Qt::Key_Space && plain && entries[active]->menu) {
         if (!overrideOnly) {
@@ -758,6 +842,77 @@ bool OnViewValueSet::takeKey(QKeyEvent* event, bool overrideOnly)
 
 bool OnViewValueSet::eventFilter(QObject* watched, QEvent* event)
 {
+    // The open label's box: Enter, Tab and Escape are this set's, ahead of
+    // the label (it is the only box this set watches)
+    if (watched != keyWidget && typing >= 0 && qobject_cast<QuantitySpinBox*>(watched)) {
+        if (event->type() == QEvent::ShortcutOverride) {
+            const int key = static_cast<QKeyEvent*>(event)->key();
+            if (key == Qt::Key_Return || key == Qt::Key_Enter || key == Qt::Key_Escape
+                || key == Qt::Key_Tab || key == Qt::Key_Backtab) {
+                event->accept();
+                return true;
+            }
+        }
+        else if (event->type() == QEvent::KeyPress
+                 && takeLabelKey(static_cast<QKeyEvent*>(event))) {
+            return true;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+    if (watched == keyWidget && dragHandle) {
+        // During a drag Esc or another mouse button cancels it, the value back
+        // to where it began (entry 136); the key and the button are taken,
+        // so neither leaves the edit nor opens a menu
+        if (event->type() == QEvent::KeyPress
+            && static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+            if (std::find(takenKeys.begin(), takenKeys.end(), int(Qt::Key_Escape))
+                == takenKeys.end()) {
+                takenKeys.push_back(Qt::Key_Escape);
+            }
+            dragHandle->cancelDrag();
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonPress
+            && static_cast<QMouseEvent*>(event)->button() != Qt::LeftButton) {
+            cancelButton = static_cast<QMouseEvent*>(event)->button();
+            dragHandle->cancelDrag();
+            return true;
+        }
+    }
+    if (watched == keyWidget && cancelButton && event->type() == QEvent::MouseButtonRelease
+        && static_cast<QMouseEvent*>(event)->button() == cancelButton) {
+        cancelButton = 0;
+        return true;
+    }
+    // A right click on a handle: its menu (entry 135), not the view's
+    if (watched == keyWidget && !dragHandle && event->type() == QEvent::MouseButtonPress
+        && static_cast<QMouseEvent*>(event)->button() == Qt::RightButton) {
+        rightPressHandle = nullptr;
+        for (const auto& entry : entries) {
+            for (Gizmo* handle : entry->handles) {
+                if (handle->isHovered()) {
+                    rightPressHandle = handle;
+                }
+            }
+        }
+        if (rightPressHandle) {
+            return true;
+        }
+    }
+    if (watched == keyWidget && rightPressHandle && event->type() == QEvent::MouseButtonRelease
+        && static_cast<QMouseEvent*>(event)->button() == Qt::RightButton) {
+        Gizmo* handle = rightPressHandle;
+        rightPressHandle = nullptr;
+        if (valueOf(handle) >= 0 && handle->isHovered()) {
+            // after the event: the menu runs a loop of its own
+            QTimer::singleShot(0, this, [this, handle]() {
+                if (valueOf(handle) >= 0) {
+                    handle->openMenu();
+                }
+            });
+        }
+        return true;
+    }
     if (watched == keyWidget) {
         switch (event->type()) {
             case QEvent::ShortcutOverride:

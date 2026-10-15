@@ -28,9 +28,16 @@
 #include <numbers>
 #include <QApplication>
 
+#include <QCursor>
+#include <QSignalBlocker>
 #include <QTimer>
+#include <QToolTip>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoRenderManager.h>
+#include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/draggers/SoDragger.h>
+#include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/events/SoLocation2Event.h>
 #include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/nodes/SoBaseColor.h>
 #include <Inventor/nodes/SoEventCallback.h>
@@ -158,6 +165,122 @@ bool Gizmo::getVisibility()
     return visible;
 }
 
+void Gizmo::otherDragEvent(void* data, SoDragger* dragger)
+{
+    // While the dragger holds the pointer, the events that are no motion and
+    // no release of its button: Esc, or another mouse button, cancels
+    auto self = static_cast<Gizmo*>(data);
+    const SoEvent* event = dragger->getEvent();
+    if (!self || !event || !self->dragging) {
+        return;
+    }
+    bool cancel = false;
+    if (event->isOfType(SoKeyboardEvent::getClassTypeId())) {
+        const auto* key = static_cast<const SoKeyboardEvent*>(event);
+        cancel = key->getKey() == SoKeyboardEvent::ESCAPE;
+    }
+    else if (event->isOfType(SoMouseButtonEvent::getClassTypeId())) {
+        const auto* button = static_cast<const SoMouseButtonEvent*>(event);
+        cancel = button->getButton() != SoMouseButtonEvent::BUTTON1;
+    }
+    if (!cancel) {
+        return;
+    }
+    // Taken: Escape would leave the edit, another button open a menu
+    if (SoHandleEventAction* action = dragger->getHandleEventAction()) {
+        action->setHandled();
+    }
+    // On the press; its release is only taken
+    if (static_cast<const SoButtonEvent*>(event)->getState() == SoButtonEvent::DOWN) {
+        self->cancelDrag();
+    }
+}
+
+SoNode* Gizmo::getExtraNode()
+{
+    return eventNode;
+}
+
+void Gizmo::setMenu(MenuCallback callback, const QString& toolTip)
+{
+    menuCallback = std::move(callback);
+    menuToolTip = toolTip;
+}
+
+void Gizmo::buildEventNode(SoNode* own)
+{
+    releaseEventNode();
+    ownNode = own;
+    eventNode = new SoEventCallback;
+    eventNode->ref();
+    eventNode->addEventCallback(SoMouseButtonEvent::getClassTypeId(), eventNodeCallback, this);
+    eventNode->addEventCallback(SoLocation2Event::getClassTypeId(), eventNodeCallback, this);
+}
+
+void Gizmo::releaseEventNode()
+{
+    if (hovered) {
+        QToolTip::hideText();
+    }
+    hovered = false;
+    menuPressed = false;
+    ownNode = nullptr;
+    if (eventNode) {
+        eventNode->unref();
+        eventNode = nullptr;
+    }
+}
+
+void Gizmo::eventNodeCallback(void* data, SoEventCallback* cb)
+{
+    auto self = static_cast<Gizmo*>(data);
+    if (!self->ownNode || !self->menuCallback) {
+        return;
+    }
+    const SoPickedPoint* picked = cb->getPickedPoint();
+    const bool over = picked && picked->getPath()->containsNode(self->ownNode);
+    if (cb->getEvent()->isOfType(SoLocation2Event::getClassTypeId())) {
+        // The hint, while the pointer is over the handle (entry 135)
+        if (over != self->hovered) {
+            self->hovered = over;
+            if (over && !self->menuToolTip.isEmpty()) {
+                QToolTip::showText(QCursor::pos(), self->menuToolTip);
+            }
+            else if (!over) {
+                QToolTip::hideText();
+            }
+        }
+        return;
+    }
+    const auto* event = static_cast<const SoMouseButtonEvent*>(cb->getEvent());
+    if (SoMouseButtonEvent::isButtonPressEvent(event, SoMouseButtonEvent::BUTTON2)) {
+        self->menuPressed = over;
+        if (over) {
+            QToolTip::hideText();
+            cb->setHandled();
+            // the release comes back here, not to the view
+            cb->grabEvents();
+        }
+        return;
+    }
+    if (SoMouseButtonEvent::isButtonReleaseEvent(event, SoMouseButtonEvent::BUTTON2)) {
+        const bool pressed = self->menuPressed;
+        self->menuPressed = false;
+        if (pressed) {
+            cb->releaseEvents();
+            cb->setHandled();
+            if (over) {
+                // After the event: the menu runs a loop of its own, and what
+                // it does may take this handle away
+                auto callback = self->menuCallback;
+                QTimer::singleShot(0, [callback]() {
+                    callback();
+                });
+            }
+        }
+    }
+}
+
 LinearGizmo::LinearGizmo(QuantitySpinBox* property)
 {
     this->property = property;
@@ -167,12 +290,7 @@ LinearGizmo::~LinearGizmo()
 {
     QuantitySpinBox::disconnect(quantityChangedConnection);
     QuantitySpinBox::disconnect(formulaDialogConnection);
-    if (rootButton) {
-        rootButton->unref();
-    }
-    if (rootButtonColor) {
-        rootButtonColor->unref();
-    }
+    releaseEventNode();
 }
 
 SoInteractionKit* LinearGizmo::initDragger()
@@ -193,6 +311,7 @@ SoInteractionKit* LinearGizmo::initDragger()
         [](void* data, SoDragger*) { static_cast<LinearGizmo*>(data)->draggingContinued(); },
         this
     );
+    dragger->addOtherEventCallback(&Gizmo::otherDragEvent, static_cast<Gizmo*>(this));
 
     dragger->labelVisible = false;
 
@@ -211,9 +330,7 @@ SoInteractionKit* LinearGizmo::initDragger()
 
     setProperty(property);
 
-    if (rootButtonCallback) {
-        buildRootButton();
-    }
+    buildEventNode(draggerContainer);
 
     return draggerContainer;
 }
@@ -222,98 +339,7 @@ void LinearGizmo::uninitDragger()
 {
     dragger = nullptr;
     draggerContainer = nullptr;
-    if (rootButton) {
-        rootButton->unref();
-        rootButton = nullptr;
-    }
-    if (rootButtonColor) {
-        rootButtonColor->unref();
-        rootButtonColor = nullptr;
-    }
-}
-
-void LinearGizmo::setRootButton(ButtonCallback callback)
-{
-    rootButtonCallback = std::move(callback);
-    if (rootButtonCallback && draggerContainer && !rootButton) {
-        buildRootButton();
-    }
-}
-
-SoNode* LinearGizmo::getExtraNode()
-{
-    return rootButton;
-}
-
-void LinearGizmo::buildRootButton()
-{
-    // At the root of the arrow, in the container's frame and the dragger's
-    // screen size, a little behind the root so that the arrow's own base
-    // stays the arrow's
-    rootButton = new SoSwitch;
-    rootButton->ref();
-    auto sep = new SoSeparator;
-    rootButton->addChild(sep);
-    auto transform = new SoTransform;
-    transform->translation.connectFrom(&draggerContainer->translation);
-    transform->rotation.connectFrom(&draggerContainer->rotation);
-    sep->addChild(transform);
-    auto scale = new SoScale;
-    scale->scaleFactor.connectFrom(&dragger->geometryScale);
-    sep->addChild(scale);
-    auto offset = new SoTranslation;
-    offset->translation.setValue(0, -0.9F, 0);
-    sep->addChild(offset);
-    auto lightModel = new SoLightModel;
-    lightModel->model = SoLightModel::BASE_COLOR;
-    sep->addChild(lightModel);
-    rootButtonColor = new SoBaseColor;
-    rootButtonColor->ref();
-    sep->addChild(rootButtonColor);
-    auto events = new SoEventCallback;
-    events->addEventCallback(SoMouseButtonEvent::getClassTypeId(), rootButtonEvent, this);
-    sep->addChild(events);
-    auto sphere = new SoSphere;
-    sphere->radius = 0.6F;
-    sep->addChild(sphere);
-    rootButton->whichChild = (visible && !property->hasExpression()) ? 0 : SO_SWITCH_NONE;
-    updateColorTheme();
-}
-
-void LinearGizmo::rootButtonEvent(void* data, SoEventCallback* cb)
-{
-    auto self = static_cast<LinearGizmo*>(data);
-    if (!self->rootButton || !self->rootButtonCallback) {
-        return;
-    }
-    const auto* event = static_cast<const SoMouseButtonEvent*>(cb->getEvent());
-    if (event->getButton() != SoMouseButtonEvent::BUTTON1) {
-        return;
-    }
-    const SoPickedPoint* picked = cb->getPickedPoint();
-    const bool over = picked && picked->getPath()->containsNode(self->rootButton);
-    if (SoMouseButtonEvent::isButtonPressEvent(event, SoMouseButtonEvent::BUTTON1)) {
-        self->rootButtonPressed = over;
-        if (over) {
-            cb->setHandled();
-        }
-        return;
-    }
-    if (SoMouseButtonEvent::isButtonReleaseEvent(event, SoMouseButtonEvent::BUTTON1)) {
-        const bool pressed = self->rootButtonPressed;
-        self->rootButtonPressed = false;
-        if (pressed) {
-            cb->setHandled();
-            if (over) {
-                // After the event: the menu runs a loop of its own, and what
-                // it does may take this handle away
-                auto callback = self->rootButtonCallback;
-                QTimer::singleShot(0, [callback]() {
-                    callback();
-                });
-            }
-        }
-    }
+    releaseEventNode();
 }
 
 void LinearGizmo::setColor(const std::optional<Base::Color>& color)
@@ -337,10 +363,6 @@ void LinearGizmo::updateColorTheme()
     // the active handle wears the colour of one being dragged
     dragger->color = (highlighted ? activeColor : baseColor).asValue<SbColor>();
     dragger->activeColor = activeColor.asValue<SbColor>();
-    // the root button is the colour of its handle
-    if (rootButtonColor) {
-        rootButtonColor->rgb = (highlighted ? activeColor : baseColor).asValue<SbColor>();
-    }
 
     auto baseGeom = SO_GET_PART(dragger, "baseGeom", SoArrowBase);
     if (!baseGeom) {
@@ -469,15 +491,15 @@ void LinearGizmo::setVisibility(bool visible)
 {
     this->visible = visible;
     getDraggerContainer()->visible = visible && !property->hasExpression();
-    if (rootButton) {
-        rootButton->whichChild = (visible && !property->hasExpression()) ? 0 : SO_SWITCH_NONE;
-    }
 }
 
 void LinearGizmo::draggingStarted()
 {
     initialValue = property->value().getValue();
     hasDragged = false;
+    dragging = true;
+    dragCancelled = false;
+    notifyDrag(DragEvent::Started);
     dragger->translationIncrementCount.setValue(0);
 
     if (isDelayedUpdateEnabled()) {
@@ -487,6 +509,15 @@ void LinearGizmo::draggingStarted()
 
 void LinearGizmo::draggingFinished()
 {
+    dragging = false;
+    if (dragCancelled) {
+        // put back at the cancel already; nothing to commit or activate
+        dragCancelled = false;
+        if (isDelayedUpdateEnabled()) {
+            property->blockSignals(false);
+        }
+        return;
+    }
     if (isDelayedUpdateEnabled()) {
         property->blockSignals(false);
         property->valueChanged(property->value().getValue());
@@ -504,10 +535,29 @@ void LinearGizmo::draggingFinished()
     if (releaseCallback) {
         releaseCallback(hasDragged);
     }
+    notifyDrag(DragEvent::Finished);
+}
+
+void LinearGizmo::cancelDrag()
+{
+    if (!dragging || dragCancelled) {
+        return;
+    }
+    dragCancelled = true;
+    // The owner first: it rolls the drag's step back, the property with it
+    notifyDrag(DragEvent::Cancelled);
+    {
+        const QSignalBlocker blocker(property);
+        property->setValue(initialValue);
+    }
+    setDragLength(initialValue);
 }
 
 void LinearGizmo::draggingContinued()
 {
+    if (dragCancelled) {
+        return;
+    }
     hasDragged = true;
     double value = initialValue + getDragLength();
 
@@ -540,6 +590,7 @@ RotationGizmo::~RotationGizmo()
     // gizmo taken out early
     QuantitySpinBox::disconnect(quantityChangedConnection);
     QuantitySpinBox::disconnect(formulaDialogConnection);
+    releaseEventNode();
     translationSensor.detach();
     translationSensor.setData(nullptr);
     translationSensor.setFunction(nullptr);
@@ -571,10 +622,13 @@ SoInteractionKit* RotationGizmo::initDragger()
         [](void* data, SoDragger*) { static_cast<RotationGizmo*>(data)->draggingContinued(); },
         this
     );
+    dragger->addOtherEventCallback(&Gizmo::otherDragEvent, static_cast<Gizmo*>(this));
 
     setProperty(property);
 
     updateColorTheme();
+
+    buildEventNode(draggerContainer);
 
     return draggerContainer;
 }
@@ -583,6 +637,7 @@ void RotationGizmo::uninitDragger()
 {
     dragger = nullptr;
     draggerContainer = nullptr;
+    releaseEventNode();
 
     translationSensor.detach();
     translationSensor.setData(nullptr);
@@ -732,6 +787,9 @@ void RotationGizmo::draggingStarted()
     initialValue = property->value().getValue();
     lastDragOffset = 0.0;
     hasDragged = false;
+    dragging = true;
+    dragCancelled = false;
+    notifyDrag(DragEvent::Started);
     dragger->rotationIncrementCount.setValue(0);
 
     if (isDelayedUpdateEnabled()) {
@@ -741,6 +799,14 @@ void RotationGizmo::draggingStarted()
 
 void RotationGizmo::draggingFinished()
 {
+    dragging = false;
+    if (dragCancelled) {
+        dragCancelled = false;
+        if (isDelayedUpdateEnabled()) {
+            property->blockSignals(false);
+        }
+        return;
+    }
     if (isDelayedUpdateEnabled()) {
         property->blockSignals(false);
         property->valueChanged(property->value().getValue());
@@ -758,10 +824,28 @@ void RotationGizmo::draggingFinished()
     if (releaseCallback) {
         releaseCallback(hasDragged);
     }
+    notifyDrag(DragEvent::Finished);
+}
+
+void RotationGizmo::cancelDrag()
+{
+    if (!dragging || dragCancelled) {
+        return;
+    }
+    dragCancelled = true;
+    notifyDrag(DragEvent::Cancelled);
+    {
+        const QSignalBlocker blocker(property);
+        property->setValue(initialValue);
+    }
+    setRotAngle(initialValue);
 }
 
 void RotationGizmo::draggingContinued()
 {
+    if (dragCancelled) {
+        return;
+    }
     hasDragged = true;
     const double period = getRotationPeriod(multFactor);
     double dragOffset = getClosestEquivalentAngle(getRotAngle(), lastDragOffset, period);

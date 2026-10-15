@@ -61,15 +61,21 @@ class ViewerContext;
  *   - Enter opens its label with the value selected;
  *   - Tab and Shift+Tab move to the next and the previous value;
  *   - Escape leaves no value active.
- *   - Space opens the active handle's menu, as its root button does.
- * In the open label Enter commits (the box gets the value, and with it the
- * property), Escape restores, Ctrl+Enter commits and accepts the edit.
+ *   - Space opens the active handle's menu, as a right click on it does.
+ * In the open label (entry 136, the reporter 2026-10-15 10:07 and 10:13):
+ * Enter commits (the box gets the value, and with it the property) and the
+ * label stays open; Escape drops what was typed since the last Enter and
+ * closes it; Tab commits, closes it and makes the next value active; the
+ * focus going elsewhere commits and closes it. An open label is one undo
+ * step, as a drag of a handle is; Esc or another mouse button during a drag
+ * cancels it, the value back to where it began (stepBegun/stepEnded).
  *
  * A value may have several handles -- a fillet's default radius has one on
  * every edge that takes it; making one active highlights them all. A label is
  * either always shown at the top middle of the view (a feature's default
  * value, which stands for no single place) or shown beside its active handle
- * only. A handle added here gets a root button, which opens the value's menu.
+ * only. A right click on a handle opens the value's menu, and the pointer over
+ * it shows a tool tip saying so.
  */
 class GuiExport OnViewValueSet: public QObject
 {
@@ -93,7 +99,7 @@ public:
     /** Add a value; returns its index, which is also its place in the Tab
      * order. \a title leads the label's text ("Radius 2 mm"). A handle is
      * to be added before its container makes it (GizmoContainer::
-     * appendGizmo): its root button is set up here.
+     * appendGizmo): its menu and tool tip are set up here.
      */
     int addValue(QuantitySpinBox* box, const QString& title, Place place,
                  Gizmo* handle = nullptr);
@@ -153,6 +159,13 @@ Q_SIGNALS:
     /// The view's camera moved: a handle that depends on it may move too.
     void cameraChanged();
     void activeChanged(int index);
+    /** A change that is one undo step however many writes it makes begins:
+     * a drag of a handle, or a label opened for typing (entry 136). Ended
+     * by stepEnded(); \a abort when a drag was cancelled, its changes to
+     * be rolled back.
+     */
+    void stepBegun();
+    void stepEnded(bool abort);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -171,6 +184,13 @@ private:
     void onLabelClicked(EditableDatumLabel* label);
     void commit(int index, double value);
     void endTyping(bool keep);
+    /// The keys of an open label's box, ahead of the label's own handling
+    bool takeLabelKey(QKeyEvent* event);
+    /// Make the next or the previous value active, as Tab does
+    void moveActive(bool back);
+    /// What is typed in the open label, written to its box if it is a value
+    /// and not the box's already
+    void writeTyped();
     void focusView();
     bool takeKey(QKeyEvent* event, bool overrideOnly);
 
@@ -186,6 +206,14 @@ private:
     int active = -1;
     Gizmo* activeHandle = nullptr;
     int typing = -1;
+    /// The handle being dragged, between its drag's start and end
+    Gizmo* dragHandle = nullptr;
+    /// A mouse button that cancelled a drag: its release is taken too
+    int cancelButton = 0;
+    /// The handle a right press was over: its release opens its menu. Taken
+    /// at the view widget, ahead of the navigation, which opens the view's
+    /// own menu on a right click in some styles before the scene sees it.
+    Gizmo* rightPressHandle = nullptr;
 };
 
 }  // namespace Gui

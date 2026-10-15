@@ -36,6 +36,7 @@
 #include <Inventor/nodekits/SoBaseKit.h>
 #include <Inventor/SbVec3f.h>
 #include <QMetaObject>
+#include <QString>
 
 #include <Base/Color.h>
 #include <Base/Placement.h>
@@ -50,6 +51,7 @@ class SoCamera;
 class SoEventCallback;
 class SoInteractionKit;
 class SoNode;
+class SoScale;
 class SoSwitch;
 
 namespace Gui
@@ -81,12 +83,9 @@ public:
 
     virtual void setGeometryScale(float scale) = 0;
     virtual void orientAlongCamera([[maybe_unused]] SoCamera* camera) {};
-    /// Geometry of the gizmo beside its dragger, put in the container after
-    /// it -- a handle's root button. Made by initDragger().
-    virtual SoNode* getExtraNode()
-    {
-        return nullptr;
-    }
+    /// What the gizmo has beside its dragger, put in the container after it:
+    /// the node that hears the pointer over the handle. Made by initDragger().
+    virtual SoNode* getExtraNode();
     bool isDelayedUpdateEnabled();
 
     double getMultFactor();
@@ -101,7 +100,7 @@ public:
     //@{
     /// Called when the pointer lets go of the handle, dragged or only clicked
     using ReleaseCallback = std::function<void(bool dragged)>;
-    using ButtonCallback = std::function<void()>;
+    using MenuCallback = std::function<void()>;
     /// Draw the handle in its active colour while not dragged
     virtual void setHighlighted([[maybe_unused]] bool highlighted) {}
     virtual void setReleaseCallback([[maybe_unused]] ReleaseCallback callback) {}
@@ -110,11 +109,80 @@ public:
      * the view keeps the focus in the view instead.
      */
     virtual void setFocusBoxOnRelease([[maybe_unused]] bool focus) {}
-    /// A knob at the handle's root whose click calls \a callback
-    virtual void setRootButton([[maybe_unused]] ButtonCallback callback) {}
     /// The handle's own colour; none for the theme's
     virtual void setColor([[maybe_unused]] const std::optional<Base::Color>& color) {}
+    /** A right click on the handle calls \a callback -- which opens its
+     * value's menu -- and the pointer over it shows \a toolTip (entry 135,
+     * the reporter 2026-10-15 11:30: "show tooltip on hover the arrow to
+     * hint right click for context menu"). Null for neither.
+     */
+    void setMenu(MenuCallback callback, const QString& toolTip = QString());
+    /// The pointer is over the handle, as the scene last said
+    bool isHovered() const
+    {
+        return hovered;
+    }
+    /// The menu's callback, for a right click taken before the scene sees it
+    void openMenu()
+    {
+        if (menuCallback) {
+            menuCallback();
+        }
+    }
     //@}
+
+    /** @name A drag as one undo step (entry 136)
+     * The handle says when a drag starts, finishes, or is cancelled -- by
+     * Esc or another mouse button while it lasts (the reporter, 2026-10-15
+     * 09:58: "when dragging, any other button click, or esc shall cancel and
+     * restore to before the drag"). The owner holds one transaction for it.
+     */
+    //@{
+    enum class DragEvent
+    {
+        Started,
+        Finished,
+        Cancelled,
+    };
+    using DragCallback = std::function<void(DragEvent)>;
+    void setDragCallback(DragCallback callback)
+    {
+        dragCallback = std::move(callback);
+    }
+    bool isDragging() const
+    {
+        return dragging && !dragCancelled;
+    }
+    /// The value back to where the drag began; the rest of the drag changes
+    /// nothing
+    virtual void cancelDrag() {}
+    //@}
+
+protected:
+    /// What the pointer is over or not: the handle's own geometry. Made by
+    /// initDragger(), and put in the container after the dragger.
+    void buildEventNode(SoNode* own);
+    void releaseEventNode();
+    static void eventNodeCallback(void* data, SoEventCallback* cb);
+
+    SoEventCallback* eventNode = nullptr;
+    SoNode* ownNode = nullptr;
+    MenuCallback menuCallback;
+    QString menuToolTip;
+    bool menuPressed = false;
+    bool hovered = false;
+
+    DragCallback dragCallback;
+    bool dragging = false;
+    bool dragCancelled = false;
+    void notifyDrag(DragEvent event)
+    {
+        if (dragCallback) {
+            dragCallback(event);
+        }
+    }
+    /// For the dragger's other events: Esc or another button cancels the drag
+    static void otherDragEvent(void* data, SoDragger* dragger);
 
 protected:
     double multFactor = 1.0f;
@@ -167,29 +235,14 @@ public:
      */
     void setHighlighted(bool highlighted) override;
     void setFocusBoxOnRelease(bool focus) override;
+    void cancelDrag() override;
 
-    /** @name The root button (docs/OnViewValueEditing.md 3.3)
-     * A small knob at the root of the arrow; a click on it, apart from the
-     * arrow, calls \a callback -- which opens the handle's menu.
-     */
-    //@{
-    void setRootButton(ButtonCallback callback) override;
-    SoNode* getExtraNode() override;
-    //@}
-
-    /// The handle's own colour, and its root button's; none for the theme's
+    /// The handle's own colour; none for the theme's
     void setColor(const std::optional<Base::Color>& color) override;
 
 private:
-    void buildRootButton();
-    static void rootButtonEvent(void* data, SoEventCallback* cb);
-
     SoLinearDragger* dragger = nullptr;
     SoLinearDraggerContainer* draggerContainer = nullptr;
-    ButtonCallback rootButtonCallback;
-    SoSwitch* rootButton = nullptr;
-    SoBaseColor* rootButtonColor = nullptr;
-    bool rootButtonPressed = false;
     std::optional<Base::Color> ownColor;
     QMetaObject::Connection quantityChangedConnection;
     QMetaObject::Connection formulaDialogConnection;
@@ -251,6 +304,7 @@ public:
     void setHighlighted(bool highlighted) override;
     void setReleaseCallback(ReleaseCallback callback) override;
     void setFocusBoxOnRelease(bool focus) override;
+    void cancelDrag() override;
     void setColor(const std::optional<Base::Color>& color) override;
 
 private:
