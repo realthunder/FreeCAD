@@ -7242,3 +7242,80 @@ Light tool bar (looked at rendered, both themes).
 **Tests on r59:** undo 17, text colours 6, editor colours 18, report
 settings 12, chamfer 17, fillet edges 15, groups 10, selection ground 8;
 ctest 957/957; Python 3770 OK (skipped=52, expected failures=6).
+
+## Entries 141 to 144, 146, 148 to 150 (2026-10-15, the evening)
+
+Built r60 to r70 (r61 stopped to take the chamfer half of 143, r62 and
+r63 failed to compile and were mended). Committed `cb161d69d3`,
+`a045ee97b7`, `9221363a5c`, `7c6d93ba5f`, `62a8af9234`, `c9417fada7`,
+`01ac931be2`, `5edea1ed83`, `eefc466af4`. LOCAL: nothing pushed or staged
+since `1df007d0f2`.
+
+**141, the arrow's hint.** Two causes, one after the other. With the
+pointer on an arrow the face behind it stayed preselected, and every move
+told the selection the pointer's place again, which hides every tool
+tip: now, in an edit, nothing behind a dragger is preselected. Then the
+hint vanished 0.3 s after it showed: Qt sends its own tool tip request
+after the same delay, and a request nobody answers hides the tip that
+shows (found by logging the events around the tip). The hint now answers
+that request (an application filter, in a 3D view, for the handle the
+pointer is over), so Qt's delay is the reporter's timer and Qt's request
+the check; it stays while the pointer rests and moves on the arrow.
+
+**142.** The fillet's arrow lies between the two faces, along the sum of
+the directions into them, on the fillet's arc (r (1/sin(a/2) - 1) from
+the edge); the equal chamfer's is square to the chamfer face (s
+cos(a/2)); the camera no longer chooses a face. A drag along the arrow
+makes the value larger on a cut edge and a filled one alike.
+
+**143, fillet and chamfer.** An edge whose reference is gone or whose
+fillet fails is left out, the result holds the rest, the feature is in
+error naming them. Fillet: OCCT's faulty contours, removed and the rest
+built again. Chamfer: OCCT does not tell, so only when the whole fails
+each edge is tried alone -- no OCCT change. The failed edges' faces as
+last made are kept (DressUp FailedEdges / FailedShape, not saved) and
+shown red at the end of the preview; while a drag fails the dragged
+value's edges the pointer is the stop sign, back at the next good
+recompute or the drag's end. My choice: the red faces in the preview
+only (the "Show preview" of 108).
+
+**144** hovered handles lit (View/HighlightColor, selected ones win); the
+outline part is NOT done -- it wants the screen under D3D11. **146** the
+navigation cube's menu outline under bgfx: not checkable offscreen.
+
+**148, faces.** DrawViewPart::UseWireJoiner: true for a new view, false
+for a view from a file without it (the old finder, whose face numbers the
+file's hatches and dimensions use). TechDraw's own fuse cleans the edges
+first (WireJoiner finds an overlap only within 1e-10), then WireJoiner
+gives the smallest loops, each a face with the loops inside it as holes.
+scanner.FCStd's views keep the old finder until the property is set.
+
+**148, clicks.** Reproduced on a copy of scanner.FCStd (a probe clicking
+each edge's middle; getEdgeByIndex gives +Y up, not down as its comment
+says -- the first runs clicked a mirror image). Cause, by a temporary
+trace of every item under a press (removed): a dimension is a child of
+its view above the edges, movable, and its shape was its whole bounding
+rectangle -- the press went to it and selected nothing. Its shape is now
+its label, lines and arrows: Front010's clicks selecting nothing went
+from at least 54 of 93 to 10. Left: clicks on a short edge next to a
+vertex select the vertex; where two edges overlap (Front010's Edge0-4 lie
+on Edge28) the one on top takes it; on Rear001 the image ActiveView017
+lies over the view and takes clicks (images keep their whole frame,
+149's rule); 10 of Front010's edges still select nothing -- not looked
+into. PageRendererVg on or off: the same.
+
+**149.** A part view and a projection group are picked by a 2 mm band
+along the frame (shown or not), the label and the caption; a click on
+the empty inside goes through. My choices: the band on a hidden frame,
+2 mm, other view kinds unchanged.
+
+**150.** A wheel that goes on goes where it went: a zoom goes on over an
+overlaid panel, a panel's scrolling stays in the panel.
+
+**Tests:** r64 ctest 957/957, Python 3773 OK (skipped=52, expected
+failures=6); GUI on r65/r66/r70: handle click 15, pass-through 18,
+fillet partial 12, chamfer 19, fillet edges 17, undo 17, typed 21, groups
+10, knob 6, TechDraw click-through 6, section-line click 10; TechDraw's
+DrawStoredGeometryTest (GUI module) 5 of 6 -- its silhouette test fails
+the same on the staged `1df007d0f2` (the silhouette is named from
+"Lateral", the test wants "Face1"), not this work's.
