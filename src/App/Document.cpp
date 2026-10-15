@@ -6014,6 +6014,47 @@ std::set<int64_t> chainPoints(TransactionStore& store, int64_t head)
     return points;
 }
 
+/** The version the state at row `seq` is reached from by the rows: the
+ * newest on the row's chain; with none there, the one whose chain meets it
+ * latest (sec 31.15). False where none does.
+ */
+bool versionReaching(TransactionStore& store, int64_t seq, LogVersion& anchor)
+{
+    const std::set<int64_t> onChain = chainPoints(store, seq);
+    bool haveAnchor = false;
+    for (const auto& v : store.versions()) {
+        if (!onChain.count(v.seq))
+            continue;
+        if (!haveAnchor || v.seq > anchor.seq || (v.seq == anchor.seq && v.num > anchor.num)) {
+            anchor = v;
+            haveAnchor = true;
+        }
+    }
+    if (!haveAnchor) {
+        // No version behind the row (sec 31.15): the file as found is not
+        // kept for good, and a row an earlier import replayed has only
+        // that behind it. The rows lead there from any version whose chain
+        // meets the row's -- back to where they meet, then forward -- so:
+        // the one that meets it latest, and of those the oldest.
+        int64_t best = -1;
+        for (const auto& v : store.versions()) {
+            int64_t meet = -1;
+            for (const auto& t : store.chain(v.seq)) {
+                if (onChain.count(t.seq))
+                    meet = std::max(meet, t.seq);
+            }
+            if (meet < 0)
+                continue;
+            if (!haveAnchor || meet > best || (meet == best && v.seq < anchor.seq)) {
+                anchor = v;
+                best = meet;
+                haveAnchor = true;
+            }
+        }
+    }
+    return haveAnchor;
+}
+
 } // namespace
 
 bool Document::recoverFromLog(const std::string& oldDir)
@@ -6516,6 +6557,58 @@ Document* Document::_openReadVersion(int64_t num, const std::string& stem, bool 
     if (!active)
         handBack();
     return version;
+}
+
+Document* Document::openRowState(int64_t seq)
+{
+    // Sec 32.33: what the log let go of a state, computed again where it was
+    // -- read as a merge's result is (sec 32.17), into a document of its own
+    // joined to this file's history, so a value it shares with the document
+    // is the one shape.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document has no transaction log");
+    log->resolvePending();
+    auto& store = log->store();
+    bool there = false;
+    for (const auto& t : store.transactions(seq, 1))
+        there = there || t.seq == seq;
+    if (seq <= 0 || !there)
+        THROWM(Base::RuntimeError, "no row " + std::to_string(seq) + " in the log");
+    LogVersion anchor;
+    if (!versionReaching(store, seq, anchor))
+        THROWM(Base::RuntimeError, "no version reaches row " + std::to_string(seq));
+    // Named as no other was: what shows its values knows them by it
+    static int made = 0;
+    Document* state = _openReadVersion(
+        anchor.num, "_row" + std::to_string(seq) + "_" + std::to_string(++made), false);
+    const std::string name = state->getName();
+    try {
+        std::set<long> letGo;
+        if (anchor.seq != seq) {
+            // A value the log does not have touches its object, as for an
+            // import's replay (sec 31.19), and is not refused
+            Base::FlagToggler<> replaying(state->d->replaying);
+            if (!state->_moveAlongLog(anchor.seq, seq, false, log, &letGo))
+                THROWM(Base::RuntimeError, "the rows from version " + std::to_string(anchor.num)
+                                               + " to row " + std::to_string(seq)
+                                               + " could not be folded");
+        }
+        // The version read has its values whole; of the rows' values, what
+        // was let go. Only those: one touched at the row is as the row left it.
+        std::vector<DocumentObject*> again;
+        for (long cid : letGo) {
+            if (auto obj = state->getObjectByID(cid))
+                again.push_back(obj);
+        }
+        if (!again.empty())
+            state->recompute(again);
+    }
+    catch (...) {
+        GetApplication().closeDocument(name.c_str());
+        throw;
+    }
+    return state;
 }
 
 void Document::_readVersion(int64_t num, const std::function<void(Document&)>& fn)
@@ -7408,7 +7501,8 @@ bool openRecordJumps(TransactionStore& store, const std::vector<LogVersion>& ver
 
 } // namespace
 
-bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
+bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views,
+                             TransactionLog* through, std::set<long>* letGo)
 {
     // docs/TransactionLog.md sec 27.25 item 1, 27.34. From the state at row
     // `fromHead` to the state at `toSeq` by the rows between them: those on
@@ -7422,7 +7516,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
     // does not have), or a row made the document other than its ops say --
     // an open's record of a file that is not its history's tip, which a
     // save to the log only leaves (sec 27.28).
-    TransactionLog* log = getTransactionLog();
+    TransactionLog* log = through ? through : getTransactionLog();
     if (!log || fromHead < 0 || toSeq < 0)
         return false;
     // The newest rows' values may still be pending (as for a cold undo).
@@ -7628,6 +7722,8 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
         if (auto obj = getObjectByID(cid))
             obj->touch();
     }
+    if (letGo)
+        letGo->insert(fold.touch.begin(), fold.touch.end());
     // 5. What is gone at the end.
     for (const auto& kv : fold.objects) {
         if (kv.second.exists)
@@ -12278,40 +12374,8 @@ Document* Document::_importReplay(int64_t base, const std::string& stem, LogBran
     LogTransaction at;
     for (const auto& t : store.transactions(base, 1))
         at = t;
-    const std::set<int64_t> onChain = chainPoints(store, base);
     LogVersion anchor;
-    bool haveAnchor = false;
-    for (const auto& v : store.versions()) {
-        if (!onChain.count(v.seq))
-            continue;
-        if (!haveAnchor || v.seq > anchor.seq || (v.seq == anchor.seq && v.num > anchor.num)) {
-            anchor = v;
-            haveAnchor = true;
-        }
-    }
-    if (!haveAnchor) {
-        // No version behind the row (sec 31.15): the file as found is not
-        // kept for good, and a row an earlier import replayed has only
-        // that behind it. The rows lead there from any version whose chain
-        // meets the row's -- back to where they meet, then forward -- so:
-        // the one that meets it latest, and of those the oldest.
-        int64_t best = -1;
-        for (const auto& v : store.versions()) {
-            int64_t meet = -1;
-            for (const auto& t : store.chain(v.seq)) {
-                if (onChain.count(t.seq))
-                    meet = std::max(meet, t.seq);
-            }
-            if (meet < 0)
-                continue;
-            if (!haveAnchor || meet > best || (meet == best && v.seq < anchor.seq)) {
-                anchor = v;
-                best = meet;
-                haveAnchor = true;
-            }
-        }
-    }
-    if (!haveAnchor)
+    if (!versionReaching(store, base, anchor))
         THROWM(Base::RuntimeError, "no version to reach the row both files hold from");
     replay = _openVersionDocument(d->history, anchor, false, this, false);
     scratch = true;

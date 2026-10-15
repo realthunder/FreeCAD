@@ -413,6 +413,18 @@ puts it on a branch: the one whose tip the version is if no document holds
 it, else a new one, `BRANCH@vN`.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="openTransactionState">
+      <Documentation>
+        <UserDocu>openTransactionState(seq) -> Document
+
+The state at log row `seq` as a document of its own (docs/TransactionLog.md
+sec 32.33), for what the log no longer holds of it: a value a recompute
+wrote is a cache, which a file's copy of the log does not carry. The newest
+version that reaches the row is read, with no log and no view, the rows to
+`seq` are folded into it, and what they name and the log let go is computed
+again. Nothing of this document moves. The caller closes it.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="saveVersionAsFile">
       <Documentation>
         <UserDocu>saveVersionAsFile() -> int

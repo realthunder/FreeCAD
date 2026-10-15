@@ -1213,6 +1213,16 @@ PyObject* DocumentPy::openTransactionVersion(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::openTransactionState(PyObject *args)
+{
+    long long seq;
+    if (!PyArg_ParseTuple(args, "L", &seq))
+        return nullptr;
+    PY_TRY {
+        return getDocumentPtr()->openRowState(seq)->getPyObject();
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::saveVersionAsFile(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

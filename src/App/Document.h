@@ -452,6 +452,17 @@ public:
     static Document* openFileBranch(const std::shared_ptr<FileHistory>& history,
                                     const std::string& branch, int64_t num,
                                     bool createView = true);
+    /** The state at log row `seq` as a document of its own
+     * (docs/TransactionLog.md sec 32.33), for what the log no longer holds
+     * of that state: a value a recompute wrote is a cache, which a file's
+     * copy of the log does not carry. The newest version the row's chain
+     * reaches is read, with no log and no view, the rows from there to
+     * `seq` are folded into it, and what they name and the log let go is
+     * computed again. Nothing of this document or its log moves. The
+     * caller's to close. Throws when there is no log, no such row, or no
+     * version reaches it.
+     */
+    Document* openRowState(int64_t seq);
 
     /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
      * branch `name` from version `version`, or else from log row `seq`, or
@@ -1860,8 +1871,13 @@ protected:
     void _checkoutHead(int64_t fromHead = -1);
     /// Move the document from the state at row `fromHead` to the state at
     /// row `toSeq` through the rows between them (sec 27.34); false when a
-    /// row cannot be reverted or applied, or the chains do not meet.
-    bool _moveAlongLog(int64_t fromHead, int64_t toSeq, bool views);
+    /// row cannot be reverted or applied, or the chains do not meet. The
+    /// rows and values are read from `through` where given, a log of the
+    /// same file: a document read with none (_openReadVersion) moved by
+    /// another's (sec 32.33). `letGo`, where given, gets the objects touched
+    /// because the log no longer has a value a recompute wrote of theirs.
+    bool _moveAlongLog(int64_t fromHead, int64_t toSeq, bool views,
+                       TransactionLog* through = nullptr, std::set<long>* letGo = nullptr);
     /// Sec 26: the undo stacks of the branch arrived on. The id counter is
     /// the file's and does not move (sec 27.40 item 1).
     void _arriveOnBranch();
