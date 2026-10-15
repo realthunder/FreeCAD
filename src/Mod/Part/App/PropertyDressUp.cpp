@@ -1292,6 +1292,8 @@ void PropertyChamferEdges::setValue(const std::string &id, const ChamferInfo &in
 {
     aboutToSetValue();
     chamferEdgeMap[id] = info;
+    fixGroups();
+    mirror(id);
     hasSetValue();
 }
 
@@ -1302,6 +1304,8 @@ void PropertyChamferEdges::removeValue(const std::string &id)
         return;
     aboutToSetValue();
     chamferEdgeMap.erase(it);
+    // back to the defaults: out of its group
+    groupMap.erase(id);
     hasSetValue();
 }
 
@@ -1309,6 +1313,7 @@ void PropertyChamferEdges::setValue(std::map<std::string, ChamferInfo> &&values)
 {
     aboutToSetValue();
     chamferEdgeMap = std::move(values);
+    fixGroups();
     hasSetValue();
 }
 
@@ -1316,6 +1321,102 @@ void PropertyChamferEdges::setValue(const std::map<std::string, ChamferInfo> &va
 {
     aboutToSetValue();
     chamferEdgeMap = values;
+    fixGroups();
+    hasSetValue();
+}
+
+void PropertyChamferEdges::fixGroups()
+{
+    for (auto it = groupMap.begin(); it != groupMap.end();) {
+        if (!chamferEdgeMap.count(it->first) || it->second <= 0)
+            it = groupMap.erase(it);
+        else
+            ++it;
+    }
+    for (const auto &v : chamferEdgeMap) {
+        if (!groupMap.count(v.first))
+            groupMap[v.first] = newGroup();
+    }
+}
+
+void PropertyChamferEdges::mirror(const std::string &source)
+{
+    auto it = groupMap.find(source);
+    auto iter = chamferEdgeMap.find(source);
+    if (it == groupMap.end() || iter == chamferEdgeMap.end())
+        return;
+    const ChamferInfo info = iter->second;
+    for (const auto &member : groupMap) {
+        if (member.first == source || member.second != it->second)
+            continue;
+        auto &target = chamferEdgeMap[member.first];
+        target.size = info.size;
+        target.size2 = info.size2;
+        target.angle = info.angle;
+    }
+}
+
+int PropertyChamferEdges::getGroup(const std::string &sub) const
+{
+    auto it = groupMap.find(sub);
+    return it == groupMap.end() ? 0 : it->second;
+}
+
+std::vector<std::string> PropertyChamferEdges::getGroupMembers(int group) const
+{
+    std::vector<std::string> members;
+    for (const auto &v : groupMap) {
+        if (v.second == group)
+            members.push_back(v.first);
+    }
+    return members;
+}
+
+std::vector<int> PropertyChamferEdges::getGroups() const
+{
+    std::set<int> groups;
+    for (const auto &v : groupMap)
+        groups.insert(v.second);
+    return {groups.begin(), groups.end()};
+}
+
+int PropertyChamferEdges::newGroup() const
+{
+    std::set<int> used;
+    for (const auto &v : groupMap)
+        used.insert(v.second);
+    int group = 1;
+    while (used.count(group))
+        ++group;
+    return group;
+}
+
+void PropertyChamferEdges::setGroup(const std::string &sub, int group)
+{
+    auto it = groupMap.find(sub);
+    if (it == groupMap.end() || it->second == group)
+        return;
+    // A member of the group to take the values from
+    std::string from;
+    for (const auto &v : groupMap) {
+        if (v.first != sub && v.second == group) {
+            from = v.first;
+            break;
+        }
+    }
+    aboutToSetValue();
+    if (from.empty()) {
+        // no such group yet: one of its own, by that id if it is free
+        it->second = group > 0 ? group : newGroup();
+    }
+    else {
+        it->second = group;
+        const auto &source = chamferEdgeMap[from];
+        auto &target = chamferEdgeMap[sub];
+        target.size = source.size;
+        target.size2 = source.size2;
+        target.angle = source.angle;
+    }
     hasSetValue();
 }
 
@@ -1339,6 +1440,8 @@ void PropertyChamferEdges::connectLinkProperty(App::PropertyLinkSub &links)
     connChanged = links.signalChanged.connect(
         [this](const App::Property &prop) {
             std::map<std::string, ChamferInfo> value;
+            // the groups follow their edges' new names as the values do
+            std::map<std::string, int> groups;
             auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
             std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
             for (const auto &sub : static_cast<const App::PropertyLinkSub&>(prop).getSubValues(false)) {
@@ -1364,9 +1467,18 @@ void PropertyChamferEdges::connectLinkProperty(App::PropertyLinkSub &links)
                                     App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent("Flip"));
                 }
                 value[sub] = iter->second;
+                auto group = groupMap.find(key);
+                if (group != groupMap.end())
+                    groups[sub] = group->second;
             }
-            if (value != chamferEdgeMap)
-                setValue(std::move(value));
+            if (value != chamferEdgeMap || groups != groupMap) {
+                // values and groups in one change, for the undo's copy
+                aboutToSetValue();
+                chamferEdgeMap = std::move(value);
+                groupMap = std::move(groups);
+                fixGroups();
+                hasSetValue();
+            }
             if (obj) {
                 obj->ExpressionEngine.renameExpressions(renames);
                 for (auto doc : App::GetApplication().getDocuments())
@@ -1387,36 +1499,50 @@ PyObject *PropertyChamferEdges::getPyObject(void)
     int i = 0;
     for (auto &v : chamferEdgeMap) {
         const auto &info = v.second;
+        // the angle a number (it was given as a boolean), and the group
         list[i++] = Py::TupleN(Py::String(v.first),
                                Py::Float(info.size),
                                Py::Float(info.size2),
-                               Py::Boolean(info.angle),
-                               Py::Boolean(info.flip));
+                               Py::Float(info.angle),
+                               Py::Boolean(info.flip),
+                               Py::Long(getGroup(v.first)));
     }
     return Py::new_reference_to(list);
 }
 
 void PropertyChamferEdges::setPyObject(PyObject *pyobj)
 {
-    const char *msg = "Expect the input to be type of Sequence(Tuple(element:String, size:Float, size2:Float, angle:Float, flip::Boolean))";
+    const char *msg = "Expect the input to be type of Sequence(Tuple(element:String, size:Float[, size2:Float[, angle:Float[, flip:Boolean[, group:Int]]]]))";
     try {
         std::map<std::string, ChamferInfo> value;
+        // the groups given; an edge given none keeps the one it has
+        std::map<std::string, int> groups = groupMap;
         Py::Sequence seq(pyobj);
         for (int i=0; i<seq.size(); ++i) {
             Py::Sequence item(seq[i].ptr());
-            if (item.size() <= 1 || item.size() >= 4)
+            // It took two or three items only, against its own message
+            if (item.size() < 2 || item.size() > 6)
                 THROWM(Base::TypeError, msg)
-            auto &info = value[Py::String(item[0].ptr())];
+            const std::string edge = Py::String(item[0].ptr());
+            auto &info = value[edge];
             info.size = Py::Float(item[1].ptr());
+            // no second size, 0: one size both ways (as the panel writes it)
             if (item.size() > 2)
                 info.size2 = Py::Float(item[2].ptr());
             if (item.size() > 3)
                 info.angle = Py::Float(item[3].ptr());
             if (item.size() > 4)
-                info.flip = Py::Boolean(item[4].ptr());
+                info.flip = Py::Object(item[4].ptr()).isTrue();
+            if (item.size() > 5)
+                groups[edge] = int(Py::Long(item[5].ptr()));
         }
-        if (value != chamferEdgeMap)
-            setValue(std::move(value));
+        if (value != chamferEdgeMap || groups != groupMap) {
+            aboutToSetValue();
+            chamferEdgeMap = std::move(value);
+            groupMap = std::move(groups);
+            fixGroups();
+            hasSetValue();
+        }
     } catch (Py::Exception &) {
         THROWM(Base::TypeError, msg)
     }
@@ -1441,6 +1567,9 @@ void PropertyChamferEdges::Save(Base::Writer &writer) const {
             writer.Stream() << "\" angle=\"" << info.angle;
         if (info.flip)
             writer.Stream() << "\" flip=\"1";
+        // its group; a build without groups reads past it
+        if (int group = getGroup(v.first))
+            writer.Stream() << "\" group=\"" << group;
         writer.Stream() << "\"/>\n";
     }
     writer.decInd();
@@ -1452,6 +1581,7 @@ void PropertyChamferEdges::Restore(Base::XMLReader &reader)
     reader.readElement("EdgeChamferInfo");
     unsigned count = reader.getAttributeAsUnsigned("count", "0");
     std::map<std::string, ChamferInfo> value;
+    std::map<std::string, int> groups;
     for (unsigned i=0; i<count; ++i) {
         reader.readElement("ChamferInfo");
         std::string id = reader.getAttribute("id");
@@ -1464,10 +1594,17 @@ void PropertyChamferEdges::Restore(Base::XMLReader &reader)
                 info.size2 = info.size;
             info.angle = reader.getAttributeAsFloat("angle", "0.0");
             info.flip = !!reader.getAttributeAsInteger("flip", "0");
+            // A file without groups gives each edge one of its own, below
+            if (reader.hasAttribute("group"))
+                groups[id] = int(reader.getAttributeAsInteger("group", "0"));
         }
     }
     reader.readEndElement("EdgeChamferInfo");
-    setValue(std::move(value));
+    aboutToSetValue();
+    chamferEdgeMap = std::move(value);
+    groupMap = std::move(groups);
+    fixGroups();
+    hasSetValue();
 }
 
 void PropertyChamferEdges::getPaths(std::vector<App::ObjectIdentifier> &paths) const
@@ -1509,24 +1646,38 @@ bool PropertyChamferEdges::setPyPathValue(const App::ObjectIdentifier & path, co
             setValue(c1.getName(), info);
             return true;
         }
-        aboutToSetValue();
-        auto &info = chamferEdgeMap[c1.getName()];
         const App::ObjectIdentifier::Component & c2 = path.getPropertyComponent(2);
         if (!c2.isSimple())
             FC_THROWM(Base::ValueError,"invalid path " << path.toString());
-        if (c2.getName() == "Size") {
-            if (info.size == info.size2)
-                info.size2 = Py::Float(value);
-            info.size = Py::Float(value);
+        // ChamferInfo.Edge12.Group: joins the group, takes its values
+        if (c2.getName() == "Group") {
+            setGroup(c1.getName(), int(std::lround(double(Py::Float(value)))));
+            return true;
         }
-        else if (c2.getName() == "Size2")
-            info.size2 = Py::Float(value);
-        else if (c2.getName() == "Angle")
-            info.angle = Py::Float(value);
-        else if (c2.getName() == "Flip")
-            info.flip = Py::Boolean(value);
-        else
+        const std::string &key = c2.getName();
+        // Named before the change starts: a throw after aboutToSetValue()
+        // left it open
+        if (key != "Size" && key != "Size2" && key != "Angle" && key != "Flip")
             FC_THROWM(Base::ValueError,"invalid path " << path.toString());
+        // read before the change too, a value of the wrong type throws
+        const bool flip = key == "Flip" && value.isTrue();
+        const double number = key == "Flip" ? 0.0 : double(Py::Float(value));
+        aboutToSetValue();
+        auto &info = chamferEdgeMap[c1.getName()];
+        if (key == "Size") {
+            if (info.size == info.size2)
+                info.size2 = number;
+            info.size = number;
+        }
+        else if (key == "Size2")
+            info.size2 = number;
+        else if (key == "Angle")
+            info.angle = number;
+        else
+            info.flip = flip;
+        // an expression writes here: the edge's group follows it
+        fixGroups();
+        mirror(c1.getName());
         hasSetValue();
     } catch (Py::Exception &) {
         FC_THROWM(Base::TypeError,"invalid value");
@@ -1551,9 +1702,10 @@ bool PropertyChamferEdges::getPyPathValue(const App::ObjectIdentifier &path, Py:
         return false;
 
     if (components.size() == 1) {
+        // the angle a number, as the setter takes it
         res = Py::TupleN(Py::Float(info->size),
                          Py::Float(info->size2),
-                         Py::Boolean(info->angle),
+                         Py::Float(info->angle),
                          Py::Boolean(info->flip));
         return true;
     }
@@ -1569,6 +1721,8 @@ bool PropertyChamferEdges::getPyPathValue(const App::ObjectIdentifier &path, Py:
         res = Py::Float(info->angle);
     else if (c2.getName() == "Flip")
         res = Py::Boolean(info->flip);
+    else if (c2.getName() == "Group")
+        res = Py::Long(getGroup(c1.getName()));
     else
         return false;
     return true;
@@ -1594,17 +1748,24 @@ App::Property *PropertyChamferEdges::Copy() const
 {
     PropertyChamferEdges *p= new PropertyChamferEdges();
     p->chamferEdgeMap = chamferEdgeMap;
+    p->groupMap = groupMap;
     return p;
 }
 
 void PropertyChamferEdges::Paste(const Property &from)
 {
-    setValue(dynamic_cast<const PropertyChamferEdges&>(from).chamferEdgeMap);
+    // the groups too: an undo puts them back with the values
+    const auto &other = dynamic_cast<const PropertyChamferEdges&>(from);
+    aboutToSetValue();
+    chamferEdgeMap = other.chamferEdgeMap;
+    groupMap = other.groupMap;
+    fixGroups();
+    hasSetValue();
 }
 
 unsigned int PropertyChamferEdges::getMemSize() const
 {
-    return sizeof(ChamferInfo) * chamferEdgeMap.size();
+    return sizeof(ChamferInfo) * chamferEdgeMap.size() + groupMap.size() * sizeof(int);
 }
 
 bool PropertyChamferEdges::isSame(const Property &other) const
@@ -1613,6 +1774,7 @@ bool PropertyChamferEdges::isSame(const Property &other) const
         return true;
     if (!other.isDerivedFrom(getClassTypeId()))
         return false;
-    return chamferEdgeMap == static_cast<const PropertyChamferEdges&>(other).chamferEdgeMap;
+    const auto &that = static_cast<const PropertyChamferEdges&>(other);
+    return chamferEdgeMap == that.chamferEdgeMap && groupMap == that.groupMap;
 }
 

@@ -64,7 +64,7 @@ from PartDesignTests.TestFillet import (
     TestDressUpNamesFollow,
     TestFilletGroups,
 )
-from PartDesignTests.TestChamfer import TestChamfer
+from PartDesignTests.TestChamfer import TestChamfer, TestChamferGroups
 from PartDesignTests.TestDraft import TestDraft
 from PartDesignTests.TestThickness import TestThickness
 from PartDesignTests.TestDefeaturing import TestDefeaturing

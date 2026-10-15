@@ -261,6 +261,32 @@ public:
     bool getValue(const std::string &sub, ChamferInfo &info) const;
     const std::map<std::string, ChamferInfo> &getValue() const;
 
+    /** @name Edge groups (docs/OnViewValueEditing.md section 6, 6.5)
+     *
+     * As the fillet's: every edge with values of its own carries a group id,
+     * a new one of its own when it first gets them, and a change to an
+     * edge's size, second size or angle is MIRRORED to every edge of its
+     * group in the same change. Its flip is its own: which face takes the
+     * first size is a matter of each edge's direction. Each member keeps its
+     * own copy, so a file read by a build without groups makes the same
+     * chamfer; a file without them restores every edge in a group of its own.
+     */
+    //@{
+    /// The group of \a sub, 0 when it has no values of its own
+    int getGroup(const std::string &sub) const;
+    /** Put \a sub in \a group, taking that group's values (not its flip)
+     * from a member; a group with no member yet, or 0, gives \a sub a new
+     * group of its own
+     */
+    void setGroup(const std::string &sub, int group);
+    /// The edges of \a group
+    std::vector<std::string> getGroupMembers(int group) const;
+    /// The groups in use, in order
+    std::vector<int> getGroups() const;
+    /// The lowest id no edge has
+    int newGroup() const;
+    //@}
+
     void connectLinkProperty(App::PropertyLinkSub &);
 
     virtual PyObject *getPyObject(void) override;
@@ -285,7 +311,15 @@ public:
     virtual bool isSame(const Property &other) const override;
 
 protected:
+    /// A group for every edge with values that has none
+    void fixGroups();
+    /// Copy the values of \a source, not its flip, to the other members of
+    /// its group
+    void mirror(const std::string &source);
+
     std::map<std::string, ChamferInfo> chamferEdgeMap;
+    /// The group of every edge with values of its own
+    std::map<std::string, int> groupMap;
     std::map<std::string, std::string> referenceUpdates;
     fastsignals::scoped_connection connUpdateReference;
     fastsignals::scoped_connection connChanged;
