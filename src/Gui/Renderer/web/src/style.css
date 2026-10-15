@@ -888,6 +888,25 @@ html.fc-split-forbidden * {
 }
 .fc-log-rows td { padding: 3px 8px; white-space: nowrap; }
 .fc-log-rows td:nth-child(2) { white-space: normal; width: 100%; }
+/* The rows' own list has the graph first (sec 32.35) */
+.fc-log-rows td.fc-log-num { white-space: nowrap; width: auto; }
+.fc-log-rows td.fc-log-what { white-space: normal; width: 100%; }
+/* The graph (sec 32.35): a column as wide as its lanes, drawn the height of
+   its row, with no padding so the lanes meet from one row to the next */
+.fc-log-rows td.fc-log-graph,
+.fc-log-rows th.fc-log-graph { padding: 0; position: relative; }
+.fc-log-graphsvg { display: block; position: absolute; top: 0; left: 0; height: 100%; }
+.fc-log-rows td.fc-log-graph { min-width: 16px; }
+.fc-log-headtag {
+  font-size: 11px;
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-right: 6px;
+}
+.fc-log-headtag.fc-log-headcur { font-weight: 700; }
+.fc-log-summary { padding: 4px 8px; }
+.fc-log-raw > summary { padding: 0 8px; color: #a8b4c4; cursor: pointer; }
 .fc-log-rows tbody tr,
 .fc-log-op { cursor: pointer; }
 .fc-log-rows tbody tr:hover,

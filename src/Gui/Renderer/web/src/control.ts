@@ -579,6 +579,11 @@ export interface LogValueReply {
   bytes: number;
   truncated: boolean;
   attachments: Array<{ name: string; bytes: number }>;
+  /// What a value whose text says nothing to a reader is, in a line -- a
+  /// shape's kind, its counts, volume and size -- and the same as numbers
+  /// (sec 32.35); where the host knows it
+  summary?: string;
+  facts?: Record<string, number>;
 }
 
 const withDoc = (doc: string | undefined, fields: Record<string, unknown>) =>

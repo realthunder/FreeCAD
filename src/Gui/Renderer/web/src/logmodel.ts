@@ -471,3 +471,132 @@ export function squashChoices(behind: LogBehind[]): Array<{ value: string; label
            + `${b.rows === 1 ? '1 row' : `${b.rows} rows`}`,
   }));
 }
+
+// The graph of the rows (docs/TransactionLog.md sec 32.35): the desktop's
+// (sec 26, TransactionLogView::layoutGraph), laid out the same way --
+// newest first as git draws it, every row a node on a lane, each lane
+// waiting for the parent of the row above it, lanes waiting for the same
+// row converging on it, a merge's second parent a lane from its node down
+// to the row merged in. Lanes are reused, never shifted.
+
+/// A lane through a row: `to` is where its top half ends, itself or the
+/// node it joins; and from a node, the lane it goes down to. `branch` is
+/// the colour.
+export interface GraphLane { lane: number; to: number; branch: number }
+
+export interface GraphRow {
+  lane: number;
+  branch: number;
+  record: boolean;
+  top: GraphLane[];          // lanes coming in from above
+  bottom: GraphLane[];       // lanes going on below
+  out: GraphLane[];          // from this node down to another lane: a merge
+  heads: string[];           // the branches whose head this is, the current first
+  current: boolean;          // the first of them is the one the document is on
+}
+
+export interface GraphLayout { rows: Map<number, GraphRow>; lanes: number }
+
+/** The graph of the rows `shown`, newest first, among all those `loaded`:
+ * a row's parent in the graph is its nearest ancestor shown, so a filter
+ * keeps it whole. A parent not loaded -- an older page -- is waited for to
+ * the foot of the list: the lane goes on below. `branches` labels the
+ * heads, as the desktop's does.
+ */
+export function layoutGraph(loaded: LogRow[], shown: LogRow[],
+                            branches: Array<{ name: string; head: number; current: boolean;
+                                              closed?: boolean; read?: boolean }> = []
+                           ): GraphLayout {
+  const parentOf = new Map<number, number>();
+  const branchOf = new Map<number, number>();
+  for (const r of loaded) {
+    parentOf.set(r.seq, r.parent);
+    branchOf.set(r.seq, r.branch);
+  }
+  const isShown = new Set(shown.map((r) => r.seq));
+  const visibleParent = (seq: number): number => {
+    for (let guard = 0; guard < 1000000; ++guard) {
+      const p = parentOf.get(seq);
+      if (p === undefined) return isShown.has(seq) ? 0 : seq;   // not loaded: below
+      if (p <= 0) return 0;
+      if (isShown.has(p) || !parentOf.has(p)) return p;
+      seq = p;
+    }
+    return 0;
+  };
+  const nearestShown = (seq: number): number => (isShown.has(seq) ? seq : visibleParent(seq));
+
+  const heads = new Map<number, string[]>();
+  const current = new Set<number>();
+  for (const b of branches) {
+    if (b.read === false) continue;
+    const at = nearestShown(b.head);
+    if (!at || !isShown.has(at)) continue;
+    const name = b.closed ? `${b.name} (closed)` : b.name;
+    const list = heads.get(at) ?? [];
+    if (b.current) {
+      list.unshift(name);
+      current.add(at);
+    }
+    else {
+      list.push(name);
+    }
+    heads.set(at, list);
+  }
+
+  const out: GraphLayout = { rows: new Map(), lanes: 0 };
+  const waiting: number[] = [];   // the row each lane waits for, 0: free
+  const colour: number[] = [];    // the branch that set it going
+  const freeLane = (but: number): number => {
+    for (let i = 0; i < waiting.length; ++i) {
+      if (!waiting[i] && i !== but) return i;
+    }
+    waiting.push(0);
+    colour.push(0);
+    return waiting.length - 1;
+  };
+  for (const r of shown) {
+    const row: GraphRow = { lane: 0, branch: r.branch, record: r.ops === 0, top: [], bottom: [],
+                            out: [], heads: heads.get(r.seq) ?? [], current: current.has(r.seq) };
+    let node = waiting.indexOf(r.seq);
+    if (node < 0) node = freeLane(-1);   // a head: the first free lane
+    row.lane = node;
+    for (let i = 0; i < waiting.length; ++i) {
+      if (!waiting[i]) continue;
+      row.top.push({ lane: i, to: waiting[i] === r.seq ? node : i, branch: colour[i] });
+      if (waiting[i] === r.seq) waiting[i] = 0;   // joined here
+    }
+    const parent = visibleParent(r.seq);
+    if (parent) {
+      waiting[node] = parent;
+      colour[node] = r.branch;
+    }
+    // A merge's second parent: the lane already waiting for it, where the
+    // branch went on after the merge, or a new one.
+    let started = -1;
+    const merged = r.merged ? nearestShown(r.merged) : 0;
+    if (merged && merged !== parent) {
+      let lane = waiting.findIndex((w, i) => w === merged && i !== node);
+      if (lane < 0) {
+        lane = freeLane(node);
+        waiting[lane] = merged;
+        colour[lane] = branchOf.get(merged) ?? 0;
+        started = lane;
+      }
+      row.out.push({ lane: node, to: lane, branch: colour[lane] });
+    }
+    for (let i = 0; i < waiting.length; ++i) {
+      if (waiting[i] && i !== started) row.bottom.push({ lane: i, to: i, branch: colour[i] });
+    }
+    out.lanes = Math.max(out.lanes, waiting.length);
+    out.rows.set(r.seq, row);
+  }
+  return out;
+}
+
+/// A branch's colour in the graph: the desktop's palette, by its number.
+export function branchColour(branch: number): string {
+  const palette = ['#1f77b4', '#d65f0e', '#2ca02c', '#9467bd', '#c23b5a', '#179ea8', '#8c6d2c',
+                   '#607080'];
+  return palette[(branch > 0 ? branch - 1 : 0) % palette.length];
+}

@@ -45,7 +45,7 @@
 // client is listed the files it sent, and withdraws them. Nothing here opens
 // a document of its own. A branch the asker does not read is listed greyed.
 
-import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
 import {
@@ -69,9 +69,62 @@ import {
   rowUndoable, rowUndoWhy, rowsAppliable, sortChanges, sortRequests, switchable, undoLabel,
   unpickedConflicts, versionText, versionWhy, type KeptLine,
   branchRead, bringWhy, importText, importWho, sentFileText, squashChoices, trimWhy, UNREAD,
+  branchColour, layoutGraph, type GraphRow,
 } from './logmodel.ts';
 
 const POS_KEY = 'fcviewer.log.pos';
+
+// The graph's measures, the desktop's (TransactionLogView.cpp)
+const LANE = 14;
+const LANE_MARGIN = 8;
+
+/// A value as the log holds it. One whose text says nothing to a reader --
+/// a shape's, which is the start of the geometry's file -- says what it is
+/// in a line (sec 32.35), with the text under it to open.
+function ValueText(props: { value: LogValueReply }) {
+  return (
+    <Show when={props.value.summary}
+          fallback={<pre class="fc-log-value">{props.value.text}</pre>}>
+      <div class="fc-log-summary" data-act="value-summary">{props.value.summary}</div>
+      <details class="fc-log-raw">
+        <summary>as the log holds it</summary>
+        <pre class="fc-log-value">{props.value.text}</pre>
+      </details>
+    </Show>
+  );
+}
+
+/// A row's part of the graph (sec 32.35): its lanes, from above and on
+/// below, a merge's lane down to the row merged in, and its node -- filled
+/// for a change, hollow for a record. The cell is as tall as its row, so
+/// the heights are in percent and the joins straight.
+function GraphCell(props: { row: GraphRow | undefined; lanes: number }) {
+  const x = (lane: number) => LANE_MARGIN + lane * LANE + 0.5;
+  return (
+    <Show when={props.row}>
+      {(row) => (
+        <svg class="fc-log-graphsvg" width={LANE_MARGIN * 2 + props.lanes * LANE}
+             data-lane={row().lane}>
+          <For each={row().top}>
+            {(l) => <line x1={x(l.lane)} y1="0%" x2={x(l.to)} y2="50%"
+                          stroke={branchColour(l.branch)} stroke-width="2" />}
+          </For>
+          <For each={row().bottom}>
+            {(l) => <line x1={x(l.lane)} y1="50%" x2={x(l.lane)} y2="100%"
+                          stroke={branchColour(l.branch)} stroke-width="2" />}
+          </For>
+          <For each={row().out}>
+            {(l) => <line class="fc-log-graphmerge" x1={x(l.lane)} y1="50%" x2={x(l.to)}
+                          y2="100%" stroke={branchColour(l.branch)} stroke-width="2" />}
+          </For>
+          <circle cx={x(row().lane)} cy="50%" r={row().record ? 3 : 4}
+                  stroke={branchColour(row().branch)} stroke-width="2"
+                  fill={row().record ? 'rgb(34, 36, 41)' : branchColour(row().branch)} />
+        </svg>
+      )}
+    </Show>
+  );
+}
 const RECORDS_KEY = 'fcviewer.log.records';
 
 export interface LogPanelProps {
@@ -177,6 +230,8 @@ export function LogPanel(props: LogPanelProps) {
   let oldest = 0;
 
   const shown = () => (records() ? rows() : rows().filter((r) => r.ops > 0));
+  // The graph of what is listed (sec 32.35), over every row loaded
+  const graph = createMemo(() => layoutGraph(rows(), shown(), branches()));
   /// The one row chosen, whose ops are listed; none where several are
   const selected = () => (picked().length === 1 ? picked()[0] : null);
   const current = () => branches().find((b) => b.current) ?? null;
@@ -1030,7 +1085,8 @@ export function LogPanel(props: LogPanelProps) {
           <div class="fc-log-rows">
             <table>
               <thead>
-                <tr><th class="fc-log-num">#</th><th>What</th><th>Who</th><th>When</th></tr>
+                <tr><th class="fc-log-graph" /><th class="fc-log-num">#</th><th>What</th>
+                  <th>Who</th><th>When</th></tr>
               </thead>
               <tbody>
                 <For each={shown()}>
@@ -1047,13 +1103,28 @@ export function LogPanel(props: LogPanelProps) {
                             ? 'from before the point this branch is yours to write from'
                             : undefined}
                         onClick={(e) => clickRow(row.seq, e)}>
+                      <td class="fc-log-graph"
+                          style={{ 'min-width': `${LANE_MARGIN * 2 + graph().lanes * LANE}px` }}>
+                        <GraphCell row={graph().rows.get(row.seq)} lanes={graph().lanes} />
+                      </td>
                       <td class="fc-log-num">{row.seq}</td>
-                      <td>
+                      <td class="fc-log-what">
+                        <For each={graph().rows.get(row.seq)?.heads ?? []}>
+                          {(head, i) => (
+                            <span class="fc-log-headtag"
+                                  classList={{ 'fc-log-headcur':
+                                    i() === 0 && !!graph().rows.get(row.seq)?.current }}
+                                  style={{ background: branchColour(row.branch) }}>
+                              {head}
+                            </span>
+                          )}
+                        </For>
                         {row.name || row.kind}
                         <Show when={row.name && row.kind !== 'user'}>
                           <span class="fc-log-kind">{row.kind}</span>
                         </Show>
-                        <Show when={!row.here}>
+                        <Show when={!row.here
+                                    && !graph().rows.get(row.seq)?.heads.includes(row.branchName)}>
                           <span class="fc-log-kind">{row.branchName}</span>
                         </Show>
                       </td>
@@ -1211,7 +1282,7 @@ export function LogPanel(props: LogPanelProps) {
               <div class="fc-log-empty">{valueError()}</div>
             </Show>
             <Show when={value()}>
-              <pre class="fc-log-value">{value()!.text}</pre>
+              <ValueText value={value()!} />
             </Show>
           </Show>
         </Show>
@@ -1437,7 +1508,7 @@ export function LogPanel(props: LogPanelProps) {
                     ? `, ${keptValue()!.attachments.length} attached` : ''}
                 </span>
               </div>
-              <pre class="fc-log-value">{keptValue()!.text}</pre>
+              <ValueText value={keptValue()!} />
             </Show>
           </Show>
         </Show>

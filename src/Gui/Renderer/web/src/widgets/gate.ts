@@ -37,7 +37,7 @@ import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefu
          unpickedConflicts, keepText, keptCountText, keptLines, keptObjectText, keptRowText,
          keptTabText, opKeepable, opKeptText, changeLeavable, changeLeftOut, keeperText,
          keepWhy, branchRead, bringWhy, importText, importWho, sentFileText, sizeText,
-         squashChoices, trimWhy } from '../logmodel.ts';
+         squashChoices, trimWhy, layoutGraph, branchColour } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -747,6 +747,45 @@ function checkLog(): void {
         && logWhen(dayBefore, noon).length > logWhen(sameDay, noon).length,
         `${logWhen(sameDay, noon)} | ${logWhen(dayBefore, noon)}`);
   check(t, 'a row with no time says nothing', logWhen(0, noon) === '');
+
+  // The graph (sec 32.35): main 1-2-3-6, side forked at 2 with 4-5, merged
+  // into main at 7
+  const g = [row(7, { parent: 6, merged: 5, kind: 'merge' }), row(6, { parent: 3 }),
+             row(5, { parent: 4, branch: 2, branchName: 'side', here: false }),
+             row(4, { parent: 2, branch: 2, branchName: 'side', here: false }),
+             row(3), row(2), row(1, { parent: 0 })];
+  const heads = [{ name: 'main', head: 7, current: true }, { name: 'side', head: 5, current: false }];
+  const at = (l: ReturnType<typeof layoutGraph>, seq: number) => l.rows.get(seq)!;
+  const lanes = (ls: Array<{ lane: number; to: number }>) =>
+    ls.map((x) => `${x.lane}>${x.to}`).join(',');
+  const whole = layoutGraph(g, g, heads);
+  check(t, 'graph: two lanes, the merge a lane from its node down to the row merged in',
+        whole.lanes === 2 && lanes(at(whole, 7).out) === '0>1' && at(whole, 7).out[0].branch === 2,
+        `${whole.lanes} ${lanes(at(whole, 7).out)}`);
+  check(t, "graph: the side's rows on their own lane, main's on the first",
+        at(whole, 5).lane === 1 && at(whole, 4).lane === 1 && at(whole, 6).lane === 0
+        && at(whole, 3).lane === 0, [7, 6, 5, 4, 3, 2, 1].map((s) => at(whole, s).lane).join(''));
+  check(t, 'graph: the fork, both lanes converging on the row they part from',
+        at(whole, 2).lane === 0 && lanes(at(whole, 2).top) === '0>0,1>0'
+        && lanes(at(whole, 2).bottom) === '0>0', lanes(at(whole, 2).top));
+  check(t, 'graph: the first row ends its lane', lanes(at(whole, 1).bottom) === ''
+        && lanes(at(whole, 1).top) === '0>0');
+  check(t, 'graph: each head labelled, the current one said',
+        at(whole, 7).heads.join() === 'main' && at(whole, 7).current
+        && at(whole, 5).heads.join() === 'side' && !at(whole, 5).current
+        && at(whole, 6).heads.length === 0);
+  const noRecord = g.map((r) => (r.seq === 3 ? { ...r, ops: 0 } : r));
+  const filtered = layoutGraph(noRecord, noRecord.filter((r) => r.ops > 0), heads);
+  check(t, 'graph: a row left out, the one above it goes on to its nearest shown ancestor',
+        !filtered.rows.has(3) && lanes(at(filtered, 2).top) === '0>0,1>0',
+        lanes(at(filtered, 2).top));
+  check(t, 'graph: a record is drawn hollow', layoutGraph(noRecord, noRecord).rows.get(3)!.record);
+  const firstPage = g.slice(0, 4);
+  const paged = layoutGraph(firstPage, firstPage, heads);
+  check(t, 'graph: a parent not loaded yet, the lane goes on below',
+        lanes(at(paged, 4).bottom) === '0>0,1>1', lanes(at(paged, 4).bottom));
+  check(t, "graph: a branch's colour is the desktop's",
+        branchColour(1) === '#1f77b4' && branchColour(2) === '#d65f0e' && branchColour(9) === '#1f77b4');
 
   const op = (extra: Record<string, unknown>): any => ({
     idx: 0, op: 'set', kind: 'obj', prop: 'Height', type: 'App::PropertyLength',
