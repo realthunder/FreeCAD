@@ -224,6 +224,22 @@ public:
                    " QScrollBar::handle:horizontal:pressed, QScrollBar::handle:vertical:pressed {"
                    " border-color: transparent; background-color: %3; }\n")
             .arg(rgba(top), rgba(bottom), rgba(hover));
+
+        // The selection view's lists on the ground the report view and the
+        // console have overlaid -- the theme's for text views, as docked
+        // (entry 121) -- and not the sheets' grey for trees, where the panel
+        // is not see-through; see-through, a sheet's grounds are not painted
+        // (docs/HandsOnQueue.md entry 140, the reporter 2026-10-15 13:58:
+        // "make selection view background the same as others (python
+        // console/report view) in non-transparent overlay mode")
+        const QColor text = themeColour("TextEditFieldBackgroundColor",
+                                        palette.color(QPalette::Base));
+        rules += QStringLiteral(
+                   "Gui--DockWnd--SelectionView QTreeView {"
+                   " background-color: rgb(%1,%2,%3); }\n")
+            .arg(text.red())
+            .arg(text.green())
+            .arg(text.blue());
         return rules;
     }
 
