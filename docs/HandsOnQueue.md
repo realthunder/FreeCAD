@@ -156,6 +156,13 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 11:42: entries 135 and 137 BUILT (r49) by the build session, tests
+running, nothing committed yet.** 135: root button gone, right click and
+a tooltip on every handle, arrows on the edges still there, the click
+passing through REPRODUCED and fixed. 137: one "Print pages" command with
+the page dialog, Print All and Print Selected removed; Cancel does not
+change the remembered choice (its own choice). Under each entry.
+
 **2026-10-15 11:35: entry 135, "the rest agree" -- the chamfer's handles change the
 same way, Space keeps opening the menu, arrows show on the edges that
 still exist while a reference is missing.** Under the entry.
@@ -2860,9 +2867,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 132 | 2026-10-14 | A CRASH while TechDraw pages are exported to PDF on the copy staged 15:22, found by the build session: a command's active test reaching a freed document (`App::Document::getAvailableRedos`, reading 0xcc8, under `MainWindow::_updateActions`) | OPEN; found by the build session, not entered by it; its dump and log kept. THE CAUSE found and FIXED by the build session (18:38), COMMITTED `d9c3193856`, LOCAL, not pushed, not staged: a TechDraw page view answered "Undo"/"Redo" from its document without checking it was there -- a page view with no document; guarded as the general view does. Reproduced a second time in its native print run. WHY the view had no document NOT found. the GUARD PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage"; why no document not found |
 | 133 | 2026-10-14 | TechDraw printing: open the print with LANDSCAPE as the default (a change request, said to the build session) | OPEN; DONE by the build session, written, NOT committed, building r32: "Print All Pages" and "Print Selected Pages" open their print box on landscape (were the printer's default, portrait); each page still laid out in its own template's orientation; the single page's Print already took the template's. Not testable by a script (the Windows print box) -- the REPORTER'S LOOK. COMMITTED `560022c91b`, LOCAL, not pushed, not staged, built in r32; the REPORTER'S LOOK still owed. PUSHED 2026-10-14 22:57 (origin `3e764d4566`) and STAGED 22:59 (`3e764d4566`, CLEAN), on the reporter's "Push and restage" |
 | 134 | 2026-10-15 | TechDraw PAGES: remember whether the page's view is open, as a spreadsheet does, and show NO EYE for a page in the tree (a change request; asked of the build session 2026-10-13, the reporter's question to the note-taker 2026-10-14 23:00, the word to do it 2026-10-15 to the build session) | OPEN; IN WORK by the build session since 2026-10-15 07:03, under its rule of 2026-10-13 (a page with its eye on and no saved record opens once at load; show()/hide() keep working); the reporter's word covers a PUSH AND RESTAGE when it is done. DONE `0d4125a132` (r41), PUSHED 2026-10-15 08:20 (origin `580e54f0b6`) and STAGED 08:21 (`580e54f0b6`, CLEAN), on the reporter's "Do 3. After done push and restage": a page has no eye and is not greyed when closed; whether its view reopens is the saved view layout's, not Visibility's; an older file opens a page that was visible once at load; show()/hide() still open and close it. Point c answered: TechDraw does not read a page's Visibility for updates. On the way: a page or sheet open as a plain tab (split views off) is now recorded and reopens; Show/Hide all and Space no longer touch objects with no eye ("Show all objects" opened every page). A KNOWN GAP: a file saved before this, split views off, a page open as a plain tab -- that page does not come back the first time. Its test 18/18; Python 3763 OK, ctest 957/957. The REPORTER'S LOOK owed |
-| 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles. CHANGED BY THE REPORTER 11:30: the ROOT BUTTON (the pressable item at the arrow's tail) is DROPPED -- point 4 (button at the edge's middle with its own highlight) falls away; instead a TOOLTIP on hovering an arrow hints that a RIGHT CLICK opens its context menu (the menu the button opened). ANSWERED 11:35: the tooltip ALSO names drag to change and click to type; NO right click on the value label. "THE REST AGREE" 11:35: the chamfer's handles change the same way, Space still opens the menu, and arrows show on the edges that still exist while a reference is missing (the note-taker's readings, now the reporter's) |
+| 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles. CHANGED BY THE REPORTER 11:30: the ROOT BUTTON (the pressable item at the arrow's tail) is DROPPED -- point 4 (button at the edge's middle with its own highlight) falls away; instead a TOOLTIP on hovering an arrow hints that a RIGHT CLICK opens its context menu (the menu the button opened). ANSWERED 11:35: the tooltip ALSO names drag to change and click to type; NO right click on the value label. "THE REST AGREE" 11:35: the chamfer's handles change the same way, Space still opens the menu, and arrows show on the edges that still exist while a reference is missing (the note-taker's readings, now the reporter's). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): root button gone; right click on any handle opens its menu; hover tooltip; arrows show on the edges still there; point 2 REPRODUCED by mouse and fixed (a button-1 press picked through an SoDragger keeps its release from the selection) |
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter |
-| 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out) |
+| 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -18940,6 +18947,30 @@ Points a (which file) and c (a plain click or a drag, which arrow) had no
 reading of the note-taker's to agree with -- by the note-taker's reading
 they are left to the build session's reproduction.
 
+**2026-10-15 11:42, the build session: BUILT in r49, tests running, NOTHING COMMITTED yet.** From its message, written here 11:42.
+- "The root button is gone."
+- "A right click on any handle opens its menu; that includes the
+  chamfer's angle handle."
+- "Hovering a handle shows a tooltip: 'Drag to change the value; click to
+  type it. Right click for the menu.' Space still opens the menu."
+- "Point 1: the fillet and chamfer panels no longer hide every handle
+  when the feature is in error. A missing edge has no handle; the rest
+  show."
+- "Point 2, reproduced by mouse: a plain click on an arrow took the press
+  but released through the selection, which selected the face behind.
+  The selection root runs before the gizmos' editing root, which is its
+  sibling, and Coin's dragger grabs only once the pointer moves."
+- "Fix: a button-1 press whose pick runs through an SoDragger keeps its
+  release from the selection. Found with a temporary trace, since
+  removed. The test clicks real pixels found by picking."
+The note-taker's notes: point c answered by the reproduction -- a PLAIN
+CLICK (press and release in place). The tooltip is on "any handle"
+(the reporter said "the arrow"; the chamfer's angle handle is a rotation
+handle, not an arrow) -- the build session's reading of s. The files
+modified in the tree SEEN by `git status`, nothing run:
+`src/Gui/Inventor/Draggers/Gizmo.cpp/.h`, `src/Gui/OnViewValue.cpp/.h`,
+`src/Gui/SoFCUnifiedSelection.cpp`, the fillet and chamfer task panels.
+
 ## 136. Fine-grained undo inside the fillet's edit, and in every PartDesign edit task; Cancel restores the state before the edit (a change request) -- OPEN; ANSWERED 2026-10-15 09:58 (fillet first, redo, a drag one step, Esc or another button cancels a drag); typing keys ANSWERED 10:07 and 10:13
 
 **2026-10-15 09:47, the reporter** (while entry 135 was being written): "also
@@ -19207,6 +19238,31 @@ n. the remembered choice: pages still there keep their remembered order,
 o. documents with NO pages are left out of the tree.
 (l and p answered 11:27: the side list's order is the print order; menu
 text "Print pages", the tooltip names selective print and PDF export.)
+
+**2026-10-15 11:42, the build session: BUILT in r49, tests running, NOTHING COMMITTED yet.** From its message, written here 11:42.
+- "TechDraw_Print: 'Print pages', the document-print icon, a tooltip
+  naming selective print and PDF export."
+- "TechDraw_PrintAll and TechDraw_PrintSelected are removed. Shortcuts.cfg
+  is updated, and the page view's menu has one 'Print pages...' entry."
+- "The dialog has a tree of documents (labels) with pages, both with
+  checkboxes; the document box is tristate."
+- "Beside it is an order list 'DocLabel#PageLabel', reordered by Move
+  up/down and by drag."
+- "Print... goes on to the printer dialog in landscape. Export PDF...
+  writes one PDF."
+- "Remembered for the session: the order, plus documents checked whole,
+  so a new page in one is checked."
+- "The remembered choice is kept only when the dialog is accepted
+  (Print/Export); Cancel keeps the previous choice. That is my choice."
+- "tests/gui/techdraw-print-selected.py is replaced by
+  techdraw-print-pages.py."
+The note-taker's notes: Cancel NOT remembering is the build session's
+choice, not put to the reporter. TechDraw_PrintSelected is removed as
+well as Print All -- by the reporter's 10:20 "drop printall command" and
+the one-command request of 10:03, by the note-taker's reading. Seen in
+`git status`, nothing run: new `src/Mod/TechDraw/Gui/DlgPrintPages.cpp/.h`;
+`tests/gui/techdraw-print-selected.py` deleted (staged by the build
+session).
 
 ## Inbox
 
