@@ -240,11 +240,13 @@ class PartDesignGuiTestCases(unittest.TestCase):
             Gui.Selection.addSelection(self.Doc.Name, body.Name, "Sketch.Edge1")
             buttons[0].click()
             pump()
-            # the box is outside the body: a binder of the face and the edge
+            # the box is outside the body: a binder of the face and the edge.
+            # In either order: setLinks() takes them in a map keyed by the
+            # objects' addresses
             binder = pad.Profile[0]
             self.assertTrue(binder.isDerivedFrom("PartDesign::SubShapeBinder"))
-            self.assertEqual([(o.Name, list(s)) for o, s in binder.Support],
-                             [(box.Name, ["Face6"]), (sketch.Name, ["Edge1"])])
+            self.assertEqual(sorted((o.Name, list(s)) for o, s in binder.Support),
+                             sorted([(box.Name, ["Face6"]), (sketch.Name, ["Edge1"])]))
         finally:
             Gui.Selection.clearSelection()
             Gui.Control.closeDialog()
