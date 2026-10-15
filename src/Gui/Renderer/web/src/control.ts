@@ -1060,8 +1060,8 @@ export function isBrowserSafeCommand(name: string): boolean {
 /// Bytes as base64, in chunks: `String.fromCharCode(...bytes)` over a whole
 /// file is one argument per byte, and a few hundred kilobytes overflows the
 /// call.
-function base64Of(bytes: ArrayBuffer): string {
-  const view = new Uint8Array(bytes);
+export function base64Of(bytes: ArrayBuffer | Uint8Array): string {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const CHUNK = 0x8000;
   let text = '';
   for (let at = 0; at < view.length; at += CHUNK) {
@@ -1083,6 +1083,55 @@ export interface SentRequest {
 /// taken. Needs a connection that may edit: a request becomes rows of the
 /// host's log. Rejects with `TooLarge` past the host's upload limit, and
 /// with `TooMany` when what already waits there leaves no room (sec 30.29).
-export function sendRequestFile(name: string, bytes: ArrayBuffer): Promise<SentRequest> {
-  return sendOp('requests.send', { name, data: base64Of(bytes) }, 120000);
+export function sendRequestFile(
+  name: string,
+  bytes: ArrayBuffer,
+  progress?: (sent: number, size: number) => void,
+): Promise<SentRequest> {
+  return sendFile('requests.send', name, bytes, progress, 120000);
+}
+
+/// What goes whole: a file this size or smaller is one message, as it
+/// always was. The host says what a piece of a larger one carries.
+const WHOLE_MOST = 4 * 1024 * 1024;
+
+/// A file to an op that takes one -- `requests.send`, `widgets.upload` --
+/// whole when it is small, in pieces when it is not (docs/TransactionLog.md
+/// sec 32.36): one message of the socket carries 46 MB once the bytes are
+/// base64, and a piece at a time lets the other traffic through and says
+/// how far it got. `upload.begin` gives the size first, so a file the
+/// host will not take is refused before a byte goes; the pieces follow in
+/// order; and the op names the upload instead of carrying the bytes.
+/// Rejects with what the host refused it as; an upload left half sent is
+/// cancelled.
+export async function sendFile(
+  op: string,
+  name: string,
+  bytes: ArrayBuffer,
+  progress?: (sent: number, size: number) => void,
+  timeoutMs = 10000,
+): Promise<any> {
+  const size = bytes.byteLength;
+  if (size <= WHOLE_MOST) {
+    const reply = await sendOp(op, { name, data: base64Of(bytes) }, timeoutMs);
+    progress?.(size, size);
+    return reply;
+  }
+  const begun = await sendOp('upload.begin', { size, for: op });
+  const upload = begun.upload as number;
+  const piece = Math.max(64 * 1024, Math.min((begun.piece as number) || WHOLE_MOST, WHOLE_MOST * 8));
+  const view = new Uint8Array(bytes);
+  try {
+    for (let at = 0; at < size; at += piece) {
+      const data = base64Of(view.subarray(at, Math.min(size, at + piece)));
+      await sendOp('upload.piece', { upload, at, data }, 60000);
+      progress?.(Math.min(size, at + piece), size);
+    }
+    return await sendOp(op, { name, upload }, timeoutMs);
+  } catch (e) {
+    // Whatever went wrong, the host need not hold what came: it lets an
+    // idle upload go anyway, this only says so sooner.
+    sendOp('upload.cancel', { upload }).catch(() => {});
+    throw e;
+  }
 }

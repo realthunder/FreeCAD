@@ -338,6 +338,11 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "Drop a sent file unread, by its id -- a row's number is one\n"
    "document's, so say which with doc. False when there is none."},
+  {"serveUploads",            (PyCFunction) Application::sServeUploads, METH_VARARGS,
+   "serveUploads() -> (count, bytes)\n"
+   "\n"
+   "The uploads whose pieces are arriving (docs/TransactionLog.md sec\n"
+   "32.36): how many, and the bytes they hold together."},
   {"serveClients",            (PyCFunction) Application::sServeClients, METH_VARARGS,
    "serveClients() -> list\n"
    "\n"
@@ -1350,6 +1355,15 @@ PyObject* Application::sServeDropRequest(PyObject * /*self*/, PyObject *args)
     if (!PyArg_ParseTuple(args, "K|s", &id, &doc))
         return nullptr;
     return Py::new_reference_to(Py::Boolean(SceneRequests::drop(id, false, doc)));
+}
+
+PyObject* Application::sServeUploads(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    qint64 bytes = 0;
+    const int count = SceneRequests::stagedUploads(&bytes);
+    return Py::new_reference_to(Py::TupleN(Py::Long(count), Py::Long(static_cast<long long>(bytes))));
 }
 
 PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)

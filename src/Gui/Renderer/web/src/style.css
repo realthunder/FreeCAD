@@ -2315,3 +2315,21 @@ select.fc-log-act option { color: #e8e8ea; background: rgb(34, 36, 41); }
 }
 
 .fc-panel-search:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+/* A copy being sent to merge, and how far it has got (sec 32.36). */
+.fc-sending {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(20, 22, 26, 0.88);
+  color: #e8e8e8;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}

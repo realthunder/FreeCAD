@@ -641,7 +641,7 @@ void Gui::installSceneWidgetOps()
     // session (8.11), and the bytes reach a directory of the host's
     // choosing rather than anywhere the serving user can write.
     registerSceneControlOp(QStringLiteral("widgets.upload"), true,
-                           [](const QJsonObject& req, const std::string&) {
+                           [](const QJsonObject& req, const std::string&, uint64_t client) {
         const QJsonValue id = req.value(QLatin1String("id"));
         const QString base =
             SceneRequests::sanitizedName(req.value(QLatin1String("name")).toString());
@@ -649,10 +649,11 @@ void Gui::installSceneWidgetOps()
             return sceneControlError(id, "BadRequest", QStringLiteral("name required"));
         // The most one upload may carry is a setting (SceneRequests::
         // uploadLimit, docs/TransactionLog.md sec 30.23): 16 MB unless set,
-        // a panel's file being a font, a hatch pattern, a symbol.
+        // a panel's file being a font, a hatch pattern, a symbol. A larger
+        // one comes in pieces and is named by its upload (sec 32.36).
         QByteArray bytes;
         QJsonObject tooMuch;
-        if (!SceneRequests::decode(req, bytes, tooMuch))
+        if (!SceneRequests::decode(req, bytes, tooMuch, client))
             return tooMuch;
         const QString dir = uploadDir();
         if (dir.isEmpty())

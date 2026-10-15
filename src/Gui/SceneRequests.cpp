@@ -26,6 +26,7 @@
 # include <algorithm>
 # include <chrono>
 # include <cstdlib>
+# include <map>
 # include <set>
 # include <QDir>
 # include <QFile>
@@ -51,9 +52,21 @@ using namespace Gui;
 namespace
 {
 
-/// What one frame of the socket carries (Render::SceneStreamServer reads
-/// messages of 64 MB at most), less the base64 and the envelope round it.
-constexpr qint64 kCeilingBytes = qint64(46) * 1024 * 1024;
+/// What no setting raises the limit past. One frame of the socket carries
+/// 46 MB once the bytes are base64 (Render::SceneStreamServer reads messages
+/// of 64 MB at most); a larger file comes in pieces (sec 32.36), held in
+/// memory until the op that takes it, so this bounds what one upload holds.
+constexpr qint64 kCeilingBytes = qint64(1024) * 1024 * 1024;
+/// What a client is told to send in one piece, before base64.
+constexpr qint64 kPieceBytes = qint64(4) * 1024 * 1024;
+/// What one piece may carry at most, before base64: whatever the client
+/// was told, a frame's worth.
+constexpr qint64 kPieceMost = qint64(46) * 1024 * 1024;
+/// Uploads arriving in pieces at once, all connections together: one per
+/// connection, a new one replacing that connection's last.
+constexpr size_t kStagedMost = 4;
+/// An upload no piece has come for in this long is let go.
+constexpr auto kStagedIdle = std::chrono::seconds(120);
 constexpr qint64 kDefaultMB = 16;
 constexpr qint64 kDefaultTotalMB = 64;
 /// A number of this process's, clear of any row a log numbers.
@@ -69,6 +82,37 @@ uint64_t& counter()
 {
     static uint64_t last = 0;
     return last;
+}
+
+/// One upload whose pieces are arriving (sec 32.36): what the connection
+/// said it would send, and what has come so far, in order.
+struct Staged
+{
+    uint64_t client {0};
+    qint64 size {0};
+    QByteArray bytes;
+    std::chrono::steady_clock::time_point last;
+};
+
+std::map<uint64_t, Staged>& staged()
+{
+    static std::map<uint64_t, Staged> uploads;
+    return uploads;
+}
+
+/// Let go of the uploads no piece has come for in a while: a connection
+/// that left in the middle sends no more, and says nothing.
+void purgeStaged()
+{
+    const auto now = std::chrono::steady_clock::now();
+    for (auto it = staged().begin(); it != staged().end();) {
+        if (now - it->second.last > kStagedIdle) {
+            FC_LOG("upload " << it->first << " let go, idle");
+            it = staged().erase(it);
+        }
+        else
+            ++it;
+    }
 }
 
 qint64& override()
@@ -222,6 +266,22 @@ qint64 SceneRequests::ceiling()
     return kCeilingBytes;
 }
 
+qint64 SceneRequests::pieceSize()
+{
+    return kPieceBytes;
+}
+
+int SceneRequests::stagedUploads(qint64* bytes)
+{
+    purgeStaged();
+    if (bytes) {
+        *bytes = 0;
+        for (const auto& [id, up] : staged())
+            *bytes += up.bytes.size();
+    }
+    return int(staged().size());
+}
+
 namespace
 {
 
@@ -340,15 +400,18 @@ QString SceneRequests::uniquePath(const QString& dir, const QString& base)
     return at.filePath(name);
 }
 
-bool SceneRequests::decode(const QJsonObject& req, QByteArray& bytes, QJsonObject& error)
+namespace
 {
-    const QJsonValue id = req.value(QLatin1String("id"));
-    const qint64 limit = uploadLimit();
-    const QString encoded = req.value(QLatin1String("data")).toString();
+
+/// The bytes of one base64 field, no more than `most` once decoded.
+bool decodeField(const QJsonValue& id, const QString& encoded, qint64 most, QByteArray& bytes,
+                 QJsonObject& error)
+{
     // Checked before decoding: base64 is 4 bytes per 3, so this bounds the
-    // allocation the decode would make.
-    if (qint64(encoded.size()) / 4 * 3 > limit) {
-        error = sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most").arg(limit));
+    // allocation the decode would make. Its last 4 may stand for 1 or 2,
+    // the rest being padding: a file of exactly `most` passes here.
+    if (qint64(encoded.size()) / 4 * 3 > most + 2) {
+        error = sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most").arg(most));
         return false;
     }
     const auto decoded = QByteArray::fromBase64Encoding(
@@ -359,11 +422,60 @@ bool SceneRequests::decode(const QJsonObject& req, QByteArray& bytes, QJsonObjec
         return false;
     }
     bytes = *decoded;
-    if (bytes.size() > limit) {
-        error = sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most").arg(limit));
+    if (bytes.size() > most) {
+        error = sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most").arg(most));
         return false;
     }
     return true;
+}
+
+/// The staged upload a request names, if it is this connection's.
+Staged* stagedFor(const QJsonObject& req, uint64_t client, uint64_t* key = nullptr)
+{
+    purgeStaged();
+    const uint64_t upload = uint64_t(req.value(QLatin1String("upload")).toDouble());
+    auto it = staged().find(upload);
+    // Another connection's upload is as unknown as one that never was: the
+    // number is no handle on someone else's bytes.
+    if (it == staged().end() || it->second.client != client)
+        return nullptr;
+    if (key)
+        *key = upload;
+    return &it->second;
+}
+
+}  // namespace
+
+bool SceneRequests::decode(const QJsonObject& req, QByteArray& bytes, QJsonObject& error,
+                           uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    const qint64 limit = uploadLimit();
+    if (req.contains(QLatin1String("upload"))) {
+        uint64_t key = 0;
+        Staged* up = stagedFor(req, client, &key);
+        if (!up) {
+            error = sceneControlError(id, "UnknownUpload", QStringLiteral("no such upload"));
+            return false;
+        }
+        if (up->bytes.size() != up->size) {
+            error = sceneControlError(
+                id, "BadRequest",
+                QStringLiteral("%1 of %2 bytes arrived").arg(up->bytes.size()).arg(up->size));
+            return false;
+        }
+        // The limit is read again: it may have been lowered while the
+        // pieces came.
+        if (up->size > limit) {
+            staged().erase(key);
+            error = sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most").arg(limit));
+            return false;
+        }
+        bytes = std::move(up->bytes);
+        staged().erase(key);
+        return true;
+    }
+    return decodeField(id, req.value(QLatin1String("data")).toString(), limit, bytes, error);
 }
 
 void SceneRequests::install()
@@ -391,6 +503,97 @@ void SceneRequests::install()
     // Mutating (H5): a request becomes rows of the log, so it is sent by
     // someone who may write. A view-only connection is refused before the
     // handler runs.
+    // A file larger than one frame carries comes in pieces (sec 32.36):
+    // `upload.begin` says how large it is and is answered with a number and
+    // the size of a piece; `upload.piece` brings the next bytes, in order;
+    // and the op that takes the file -- `requests.send`, `widgets.upload`
+    // -- names the upload instead of carrying `data`. Mutating, as those
+    // ops are: what may not be sent whole may not be sent in pieces either.
+    registerSceneControlOp(
+        QStringLiteral("upload.begin"), true,
+        [](const QJsonObject& req, const std::string& boundDoc, uint64_t client) {
+            const QJsonValue id = req.value(QLatin1String("id"));
+            const qint64 size = qint64(req.value(QLatin1String("size")).toDouble());
+            if (size <= 0)
+                return sceneControlError(id, "BadRequest", QStringLiteral("size required"));
+            // Refused before a byte travels, which is the point of saying
+            // the size first.
+            const qint64 limit = uploadLimit();
+            if (size > limit)
+                return sceneControlError(id, "TooLarge",
+                                         QStringLiteral("%1 bytes at most").arg(limit));
+            if (req.value(QLatin1String("for")).toString() == QLatin1String("requests.send")) {
+                App::Document* doc = sceneControlDocument(req, boundDoc);
+                if (!doc)
+                    return sceneControlError(id, "UnknownDocument", QStringLiteral("no document"));
+                const qint64 most = totalLimit();
+                if (heldBytes(doc->getName()) + size > most)
+                    return sceneControlError(
+                        id, "TooMany",
+                        QStringLiteral("%1 bytes may wait to be merged at most").arg(most));
+            }
+            purgeStaged();
+            // One at a time per connection: a new one replaces what the
+            // last left half sent.
+            for (auto it = staged().begin(); it != staged().end();) {
+                if (it->second.client == client)
+                    it = staged().erase(it);
+                else
+                    ++it;
+            }
+            if (staged().size() >= kStagedMost)
+                return sceneControlError(id, "Busy",
+                                         QStringLiteral("other uploads are arriving"));
+            static uint64_t uploads = 0;
+            const uint64_t upload = ++uploads;
+            Staged& up = staged()[upload];
+            up.client = client;
+            up.size = size;
+            up.last = std::chrono::steady_clock::now();
+            QJsonObject reply = okReply(id);
+            reply[QLatin1String("upload")] = double(upload);
+            reply[QLatin1String("piece")] = double(kPieceBytes);
+            return reply;
+        });
+    registerSceneControlOp(
+        QStringLiteral("upload.piece"), true,
+        [](const QJsonObject& req, const std::string&, uint64_t client) {
+            const QJsonValue id = req.value(QLatin1String("id"));
+            uint64_t key = 0;
+            Staged* up = stagedFor(req, client, &key);
+            if (!up)
+                return sceneControlError(id, "UnknownUpload", QStringLiteral("no such upload"));
+            // In order: a piece names where it starts, and a piece that
+            // does not start where the last ended is refused, not placed.
+            const qint64 at = qint64(req.value(QLatin1String("at")).toDouble(-1));
+            if (at != up->bytes.size())
+                return sceneControlError(
+                    id, "BadRequest",
+                    QStringLiteral("expected the piece at %1").arg(up->bytes.size()));
+            QByteArray piece;
+            QJsonObject error;
+            if (!decodeField(id, req.value(QLatin1String("data")).toString(),
+                             std::min(kPieceMost, up->size - at), piece, error)) {
+                staged().erase(key);
+                return error;
+            }
+            if (piece.isEmpty())
+                return sceneControlError(id, "BadRequest", QStringLiteral("an empty piece"));
+            up->bytes.append(piece);
+            up->last = std::chrono::steady_clock::now();
+            QJsonObject reply = okReply(id);
+            reply[QLatin1String("received")] = double(up->bytes.size());
+            return reply;
+        });
+    registerSceneControlOp(
+        QStringLiteral("upload.cancel"), true,
+        [](const QJsonObject& req, const std::string&, uint64_t client) {
+            uint64_t key = 0;
+            if (stagedFor(req, client, &key))
+                staged().erase(key);
+            return okReply(req.value(QLatin1String("id")));
+        });
+
     registerSceneControlOp(
         QStringLiteral("requests.send"), true,
         [](const QJsonObject& req, const std::string& boundDoc, uint64_t client) {
@@ -403,7 +606,7 @@ void SceneRequests::install()
                 return sceneControlError(id, "BadRequest", QStringLiteral("name required"));
             QByteArray bytes;
             QJsonObject error;
-            if (!decode(req, bytes, error))
+            if (!decode(req, bytes, error, client))
                 return error;
             if (bytes.isEmpty())
                 return sceneControlError(id, "BadRequest", QStringLiteral("an empty file"));

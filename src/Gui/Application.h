@@ -493,6 +493,7 @@ public:
     static PyObject* sServeClients             (PyObject *self,PyObject *args);
     static PyObject* sServeRequests            (PyObject *self,PyObject *args);
     static PyObject* sServeDropRequest         (PyObject *self,PyObject *args);
+    static PyObject* sServeUploads             (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientMode       (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientSelection  (PyObject *self,PyObject *args);
     static PyObject* sServeKickClient          (PyObject *self,PyObject *args);

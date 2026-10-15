@@ -160,6 +160,9 @@ const askName = () => {
 // A copy of the document, edited elsewhere, offered to whoever is sharing
 // it (docs/TransactionLog.md sec 30.23). The browser's own picker chooses
 // the file; the host keeps it unread until its owner brings it in.
+// How far a copy being sent has got, said while it goes: one larger than a
+// message carries goes in pieces (sec 32.36) and takes a while.
+const [sending, setSending] = createSignal<string | null>(null);
 const sendCopy = () => {
   const input = document.createElement('input');
   input.type = 'file';
@@ -167,11 +170,17 @@ const sendCopy = () => {
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
+    const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
     try {
-      const sent = await sendRequestFile(file.name, await file.arrayBuffer());
+      setSending(`Sending ${file.name}...`);
+      const sent = await sendRequestFile(file.name, await file.arrayBuffer(),
+        (done, size) => setSending(
+          `Sending ${file.name}: ${mb(done)} of ${mb(size)} MB`));
+      setSending(null);
       window.alert(`Sent ${sent.name}. Whoever is sharing the document `
                    + 'decides whether it is merged.');
     } catch (e: any) {
+      setSending(null);
       window.alert(e?.code === 'TooLarge'
         ? `That file is too large to send (${e.message}).`
         : e?.code === 'TooMany'
@@ -397,6 +406,7 @@ render(() => (
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
+    {sending() && <div class="fc-sending" role="status">{sending()}</div>}
     <NaviCubeMenu />
     <SceneContextMenu viewOnly={viewOnly} />
     <LauncherMenu

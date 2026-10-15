@@ -92,8 +92,10 @@ GuiExport fastsignals::signal<void()>& signalChanged();
  * (docs/TransactionLog.md sec 30.23): the preference `UploadLimitMB` of
  * `BaseApp/Preferences/SceneShare`, 16 unless set, which `FC_SERVE_UPLOAD_MB`
  * presets for a headless serve and setUploadLimit() overrides for the
- * life of the process. Never more than one frame of the socket carries
- * once the bytes are base64: ceiling().
+ * life of the process. Never more than ceiling(). A file larger than one
+ * frame of the socket carries is sent in pieces (`upload.begin`,
+ * `upload.piece`, docs/TransactionLog.md sec 32.36) and the op that takes
+ * it names the pieces' upload instead of carrying `data`.
  */
 GuiExport qint64 uploadLimit();
 /// Whether the preference is what decides: false while `FC_SERVE_UPLOAD_MB`
@@ -102,8 +104,12 @@ GuiExport qint64 uploadLimit();
 GuiExport bool uploadLimitIsPreference();
 /// Override the limit, in bytes; 0 goes back to the preference.
 GuiExport void setUploadLimit(qint64 bytes);
-/// What no setting raises the limit past.
+/// What no setting raises the limit past: 1 GB, held in memory while its
+/// pieces arrive.
 GuiExport qint64 ceiling();
+/// The most one piece carries, before base64: what the client is told at
+/// `upload.begin`, well inside one frame.
+GuiExport qint64 pieceSize();
 
 /** The most that may wait for one document, in bytes, all its sent files
  * together (docs/TransactionLog.md sec 30.28 J4, 30.29): a file that would
@@ -124,13 +130,20 @@ GuiExport void setTotalLimit(qint64 bytes);
 GuiExport QString sanitizedName(const QString& given);
 /// A path in `dir` nothing holds yet for a file named `base`.
 GuiExport QString uniquePath(const QString& dir, const QString& base);
-/** The bytes of an upload request's base64 `data`, checked against
+/** The bytes of an upload request: its base64 `data`, or, when it names
+ * an `upload`, what that upload's pieces brought -- all of it, sent on
+ * the same connection (`client`), which is then let go. Checked against
  * uploadLimit() before and after decoding. False with `error` the reply
- * to send -- `TooLarge`, `BadRequest` -- when they cannot be taken.
+ * to send -- `TooLarge`, `BadRequest`, `UnknownUpload` -- when they cannot
+ * be taken.
  */
-GuiExport bool decode(const QJsonObject& req, QByteArray& bytes, QJsonObject& error);
+GuiExport bool decode(const QJsonObject& req, QByteArray& bytes, QJsonObject& error,
+                      uint64_t client = 0);
+/// The uploads whose pieces are arriving, for a test: how many, and the
+/// bytes they hold together.
+GuiExport int stagedUploads(qint64* bytes = nullptr);
 
-/// Register `requests.send`. Idempotent.
+/// Register `requests.send` and the pieces' ops. Idempotent.
 GuiExport void install();
 
 }  // namespace SceneRequests

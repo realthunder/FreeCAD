@@ -23,7 +23,7 @@
 //     store applies it like any other, and the field shows what the
 //     document really holds.
 
-import { onPush, sendOp } from '../control.ts';
+import { onPush, sendFile, sendOp } from '../control.ts';
 import type { CompletionSet, ExpressionPreview } from './complete.ts';
 import { IconCache, iconKey, iconKind, imageKey } from './images.ts';
 import { WidgetStore, isPanelMirrorId } from './protocol.ts';
@@ -43,21 +43,6 @@ export interface BootState {
 }
 
 const EMPTY_BOOT: BootState = { panel: null, dialogs: [], theme: '', locale: 'C' };
-
-/// Bytes as base64, in chunks.
-///
-/// `String.fromCharCode(...bytes)` over a whole file throws: the spread
-/// becomes one argument per byte, and a few hundred kilobytes overflows
-/// the call. 32 KB at a time is well inside every engine's limit.
-function base64Of(bytes: ArrayBuffer): string {
-  const view = new Uint8Array(bytes);
-  const CHUNK = 0x8000;
-  let text = '';
-  for (let at = 0; at < view.length; at += CHUNK) {
-    text += String.fromCharCode(...view.subarray(at, at + CHUNK));
-  }
-  return btoa(text);
-}
 
 /// A monotonic clock where there is one. The figures below are worth a
 /// fallback rather than a crash: an embedder without `performance` gets
@@ -306,10 +291,11 @@ export class PanelClient {
   ///
   /// The bytes ride the control lane as base64 rather than a channel of
   /// their own: `sendOp` already carries this connection's token, its
-  /// access level and the request correlation, and a chooser's file is a
-  /// font or a hatch pattern. The host caps what it will write.
+  /// access level and the request correlation, and a chooser's file is
+  /// usually a font or a hatch pattern. One larger than a message carries
+  /// goes in pieces (sendFile). The host caps what it will write.
   async upload(name: string, bytes: ArrayBuffer): Promise<string> {
-    const reply = await sendOp('widgets.upload', { name, data: base64Of(bytes) });
+    const reply = await sendFile('widgets.upload', name, bytes, undefined, 60000);
     return (reply?.path as string) ?? '';
   }
 

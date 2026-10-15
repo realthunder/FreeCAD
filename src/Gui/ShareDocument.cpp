@@ -683,8 +683,9 @@ QSpinBox *uploadLimitSpin(QWidget *parent)
         "a file a task panel asks for, or their copy of the document, sent "
         "to be merged. A copy that was sent is kept unread until you bring "
         "it in from the transaction log panel.\n\n"
-        "%1 MB is the most one message carries. A larger file is handed "
-        "over some other way and brought in with \"Merge from file...\".")
+        "A file larger than one message carries is sent in pieces; %1 MB "
+        "is the most any setting allows. A copy sent to be merged must also "
+        "fit in what may wait.")
         .arg(most);
     if (!SceneRequests::uploadLimitIsPreference()) {
         spin->setEnabled(false);
