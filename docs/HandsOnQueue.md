@@ -160,6 +160,14 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-15 15:42: entries 142, 143 and 144 ANSWERED.** 142: the SUM (the
+bisector); the note-taker's PROPOSAL for the chamfer's arrows written,
+asked for by the reporter, not ruled. 143: the partial result kept, failed
+faces red, failed stays failed after release; OCCT's fillet CAN report
+which contours failed (MakeFillet NbFaultyContours / FaultyContour /
+StripeStatus), MakeChamfer does not expose it. 144: hover and selection
+light the whole group; the value label not lit. Under each entry.
+
 **2026-10-15 15:34: NEW ENTRY 145 (a defect) -- a drag of a default-radius arrow
 aborted by another click leaves the other default edges' arrows where
 the drag put them.** Under the entry.
@@ -2930,9 +2938,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140 |
 | 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED |
 | 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face") |
-| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry |
-| 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same |
-| 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN |
+| 142 | 2026-10-15 | a change request: the fillet's on-view ARROW DIRECTION -- not along one face (one tangent direction of the fillet face) but the DIFFERENCE of upstream's TWO arrow directions (one per face) | OPEN; which way it points, and whether "difference" is meant literally (across the corner) or as the corner's bisector, under the entry. ADDED 15:32: for the CHAMFER the arrow direction is PERPENDICULAR TO THE CHAMFER FACE (its normal) -- how that sits with the chamfer's two sizes, under the entry. ANSWERED 15:42: the SUM ("I guess it should be the sum then") -- the corner's bisector; the reporter ASKED the note-taker for a proposal for the chamfer's arrows (more than one for two distances or an angle) -- the note-taker's PROPOSAL under the entry, not yet ruled |
+| 143 | 2026-10-15 | a change request: the fillet's recompute SKIPS a missing or failed fillet edge and makes AS MANY FILLETS AS POSSIBLE; the PREVIOUS preview faces of the failed edges are KEPT for inspection beside the new preview; the object STILL MARKED in error; while DRAGGING, a recompute failing for the dragged fillet turns the CURSOR to a STOP SIGN | OPEN. ADDED 15:32: the CHAMFER the same. ANSWERED 15:42: the feature KEEPS the PARTIAL result (the reporter had meant so); the FAILED faces coloured RED if possible; a failed face STAYS failed after the drag's release; check the OCCT API for which contours failed -- READ by the note-taker: BRepFilletAPI_MakeFillet has NbFaultyContours / FaultyContour / StripeStatus / HasResult / BadShape; BRepFilletAPI_MakeChamfer does not expose them |
+| 144 | 2026-10-15 | a change request: a HOVER HIGHLIGHT on the on-view ARROW, by the same logic as the highlight of a normal mesh (shape) -- an OUTLINE and the AUTOMATIC colour | OPEN. ANSWERED 15:42: pre-selection AND selection light the arrow's whole GROUP; the value label NOT lit |
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -19647,6 +19655,56 @@ o. which chamfer face: the one the current result makes, or one computed
 READ in the source, nothing run: the chamfer takes both faces' arrows
 today, `src/Mod/PartDesign/Gui/TaskChamferParameters.cpp` 635 to 636.
 
+**2026-10-15 15:42, the reporter, one message on 142, 143 and 144:** "entry
+142. I guess it should be the sum then. what's your propose about the
+chamfer arrow (can be more than one for two distance or angle). entry
+143. yes keep the partial results I thought I already said that unless
+you mean something else. color the failed face red if possible. failed
+face stays failed after release. check occt api. I remember it can tell
+which ones failed. entry 144. preselect and select highlight group of
+arrows. value label no need highlight"
+
+The note-taker's reading (142):
+e. answered: the fillet arrow's direction is the SUM of upstream's two
+   arrow directions -- the corner's BISECTOR. Upstream's two arrows point
+   INTO their faces, so the sum points into the material; by the
+   note-taker's reading the arrow points the OTHER way, OUT of the corner
+   (d: the sign), so that dragging outward grows the radius -- not said.
+- The chamfer: the reporter asks the NOTE-TAKER for a proposal. Written
+  below; NOT ruled by the reporter.
+
+THE NOTE-TAKER'S PROPOSAL for the chamfer's arrows (asked for by the
+reporter; the note-taker's own, nothing built, nothing run):
+P1. EQUAL DISTANCE (one size): ONE arrow, PERPENDICULAR TO THE CHAMFER
+    FACE, pointing out of the material. With equal distances the chamfer
+    face's normal IS the corner's bisector -- the same direction as the
+    fillet's arrow (the sum, above), so the two features look alike.
+P2. TWO DISTANCES: TWO arrows, one per distance, each lying in ITS OWN
+    FACE and pointing into it (as step 4 has them now), the tip of each at
+    the chamfer's boundary line on that face -- each number is measured
+    along its face, so its arrow shows exactly the length the number says.
+    One arrow normal to the chamfer face cannot carry two independent
+    numbers; dragging it would have to change both sizes in proportion
+    (a third handle, a "scale" one), which the note-taker does NOT
+    propose.
+P3. DISTANCE AND ANGLE: ONE arrow for the distance, in the face it is
+    measured on (as P2), and the ROTATION handle of step 4 for the angle,
+    turning about the edge -- kept.
+P4. Where the chamfer face is not there to measure (the first time, or the
+    edge failed -- entry 143): its direction is computed from the two
+    faces' arrow directions at the point and the size(s), not from the
+    result: in the cross-section plane the chamfer line runs from the
+    point plus size1 along face 1's arrow to the point plus size2 along
+    face 2's arrow; its normal (out of the material) is the arrow of P1.
+P5. Flip (step 4: the default edge's Flip flips FlipDirection) swaps which
+    face carries which arrow in P2 and P3, as now.
+So only the one-size chamfer gets the perpendicular arrow; the two-number
+types keep one handle per number. For the reporter to rule.
+READ in the source, nothing run: the chamfer types `src/Mod/PartDesign/App/FeatureChamfer.cpp`
+54 ("Equal distance", "Two distances", "Distance and Angle"); the arrows
+now `src/Mod/PartDesign/Gui/TaskChamferParameters.cpp` 625 to 645 (both
+faces' arrows, swapped for Flip and for the second size).
+
 ## 143. The fillet's recompute: as many fillets as possible, failed edges skipped, their old preview kept, a stop cursor on a failing drag (a change request) -- OPEN; the chamfer too, ADDED 15:32
 
 **2026-10-15 15:29, the reporter** -- the third part of the message quoted
@@ -19698,6 +19756,55 @@ shape is invalid"); nothing per edge.
 (point l answered): skip missing or failed edges, keep their old preview,
 stay in error, the stop cursor on a failing drag.
 
+**2026-10-15 15:42, the reporter answers** (the message quoted under entry
+142): "entry 143. yes keep the partial results I thought I already said
+that unless you mean something else. color the failed face red if
+possible. failed face stays failed after release. check occt api. I
+remember it can tell which ones failed."
+
+The note-taker's reading:
+h. answered: the feature's result after the edit (its Shape) HOLDS THE
+   PARTIAL fillet -- the fillets that worked -- while it is marked in
+   error. The reporter had meant this already; the note-taker's point
+   only asked to be sure.
+j. answered: the kept preview faces of the FAILED edges are coloured RED,
+   if possible.
+k. answered in part: a face that failed STAYS marked failed (red) after
+   the drag is released -- the release does not clear it; it clears when
+   a later recompute makes that edge's fillet. (The cursor going back to
+   normal on the next good recompute: the note-taker's reading, not
+   ruled.)
+i. the reporter: "check occt api. I remember it can tell which ones
+   failed."
+READ by the note-taker in the OCCT fork (`~/works/sw/occt`, branch
+`LinkVibe-801`), nothing run:
+- `src/ModelingAlgorithms/TKFillet/BRepFilletAPI/BRepFilletAPI_MakeFillet.hxx`
+  372 to 410: YES -- after a build, `NbFaultyContours()` and
+  `FaultyContour(I)` give the index of each contour whose fillet FAILED
+  (its edges by `NbEdges(IC)` / `Edge(IC, ie)`); `StripeStatus(IC)` says
+  why (ChFiDS_StartsolFailure "perhaps the radius is too big",
+  TwistedSurface, WalkingFailure, Error); `NbFaultyVertices()` /
+  `FaultyVertex(IV)` the corners that failed; `HasResult()` and
+  `BadShape()` a PARTIAL result OCCT built itself -- "if the filling in a
+  corner failed a shape with a hole is returned", so not necessarily a
+  solid; `NbComputedSurfaces(IC)` / `ComputedSurface(IC, IS)` the
+  surfaces made on a contour.
+- `src/ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder.hxx` 145 to 169:
+  the same queries live in the common builder.
+- The CHAMFER: `BRepFilletAPI_MakeChamfer.hxx` does NOT expose them (its
+  `Builder()`, 273, is a TopOpeBRepBuild builder, not the ChFi3d one);
+  the chamfer's builder (`ChFi3d_ChBuilder`) has them by inheritance, so
+  the fork's OCCT would need an accessor on MakeChamfer -- the
+  note-taker's reading; an OCCT change, by memory "OCCT problems: report
+  first", for the build session to weigh.
+- The fork does not use them today: `src/Mod/Part/App/TopoShapeEx.cpp`
+  5270 to 5307 (`makEFillet`, one `BRepFilletAPI_MakeFillet`), no call of
+  `NbFaultyContours` in `src/`.
+The note-taker's note: one way, by this reading -- build; if it fails,
+read the faulty contours, drop their edges, build again with the rest;
+the dropped edges are the "failed" ones (red, old preview kept). OCCT's
+own `BadShape()` may be a shell with a hole and is not the same thing.
+
 ## 144. A hover highlight on the on-view arrow, as a normal mesh is highlighted: outline and automatic colour (a change request) -- OPEN
 
 **2026-10-15 15:33, the reporter:** "also request, show hover highlight for
@@ -19728,6 +19835,21 @@ READ in the source, nothing run: the pre-selection outline is the setting
 `ShowPreSelectedFaceOutline` and the colour `HighlightColor`
 (`src/Gui/ViewParams.h` 235 to 242, 463 to 470); where the AUTOMATIC
 colour is chosen NOT found by this short reading.
+
+**2026-10-15 15:42, the reporter answers** (the message quoted under entry
+142): "entry 144. preselect and select highlight group of arrows. value
+label no need highlight"
+
+The note-taker's reading:
+d. answered: both PRE-SELECTION (hover) and SELECTION light the WHOLE
+   GROUP of arrows the arrow belongs to (entry 117 step 3's edge groups)
+   -- the note-taker's reading "one arrow" REPLACED. By the note-taker's
+   reading, an arrow in no group (its own edge) lights alone, and
+   "select" means the arrow made active (by a click or Tab) -- not said.
+b. answered: the VALUE LABEL is NOT highlighted.
+Still open: a (every handle, the rotation handle included -- the
+note-taker's reading), c (follows the user's pre-selection settings --
+the note-taker's reading).
 
 ## 145. An aborted drag of a default-radius arrow: the other default edges' arrows not put back (a defect) -- OPEN
 
