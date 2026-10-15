@@ -133,8 +133,9 @@ public:
              " merge_from INTEGER DEFAULT 0, ord INTEGER DEFAULT 0)");
         exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
         // Sec 30.6: a session is one login of one user.
+        // (sec 32.32: `parent`, the group a user is in)
         exec("CREATE TABLE IF NOT EXISTS user(id INTEGER PRIMARY KEY, kind TEXT, name TEXT,"
-             " UNIQUE(kind, name))");
+             " parent INTEGER DEFAULT 0, UNIQUE(kind, name))");
         exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER,"
              " user INTEGER, host TEXT, access TEXT, opened REAL, closed REAL,"
              " uuid TEXT)");
@@ -1784,17 +1785,26 @@ public:
 
     std::vector<LogUser> users() override
     {
-        auto s = prepare("SELECT id,kind,name FROM user ORDER BY id");
+        auto s = prepare("SELECT id,kind,name,parent FROM user ORDER BY id");
         std::vector<LogUser> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogUser r;
             r.id = sqlite3_column_int64(s, 0);
             r.kind = text(s, 1);
             r.name = text(s, 2);
+            r.parent = sqlite3_column_int64(s, 3);
             out.push_back(std::move(r));
         }
         sqlite3_reset(s);
         return out;
+    }
+
+    void setUserParent(int64_t user, int64_t parent) override
+    {
+        auto s = prepare("UPDATE user SET parent=? WHERE id=?");
+        sqlite3_bind_int64(s, 1, parent);
+        sqlite3_bind_int64(s, 2, user);
+        step(s);
     }
 
     int64_t openSession(int64_t env, int64_t user, const std::string& host,

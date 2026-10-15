@@ -6937,7 +6937,14 @@ Document* Document::openFileBranch(const std::shared_ptr<FileHistory>& history,
     }
     if (!haveAnchor)
         THROWM(Base::RuntimeError, "branch '" + branch + "' has no version to open");
-    Document* doc = openFileVersion(history, anchor.num, createView, nullptr, false);
+    // The editable instance of that version, where one is open, is reused
+    // only while it is on no branch of its own: one that is another
+    // branch's tip is that branch's, and is not switched from under it
+    // (sec 32.31) -- a second instance is opened instead.
+    Document* doc = log.documentAt(anchor, false);
+    TransactionLog* open = doc ? doc->getTransactionLog() : nullptr;
+    if (!doc || (open && !open->detached()))
+        doc = _openVersionDocument(history, anchor, createView, nullptr, false);
     TransactionLog* dlog = doc->getTransactionLog();
     if (dlog && dlog->branch() != b.id)
         doc->switchBranch(branch);
@@ -8113,7 +8120,7 @@ void Document::setBranchAccess(const std::string& kind, const std::string& name,
     if (!store.findBranch(branchName, branch))
         THROWM(Base::ValueError, "no branch '" + branchName + "'");
     Actor::Kind known;
-    if (name.empty() || !Actor::kindFromName(kind, known))
+    if (name.empty() || (kind != kLogGroupKind && !Actor::kindFromName(kind, known)))
         THROWM(Base::ValueError, "no such user: a kind the log has, and a name");
     LogAccess access;
     access.kind = kind;
@@ -8146,6 +8153,67 @@ bool Document::clearBranchAccess(const std::string& kind, const std::string& nam
         return false;
     fileBranchesChanged(log);
     return true;
+}
+
+void Document::addUserGroup(const std::string& group)
+{
+    // docs/TransactionLog.md sec 32.32
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    if (group.empty())
+        THROWM(Base::ValueError, "a group needs a name");
+    log->store().user(kLogGroupKind, group);
+    fileBranchesChanged(log);
+}
+
+void Document::setUserGroup(const std::string& kind, const std::string& name,
+                            const std::string& group)
+{
+    // docs/TransactionLog.md sec 32.32: a group is a user, and a user is in
+    // one by naming it its parent
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    Actor::Kind known;
+    if (name.empty() || (kind != kLogGroupKind && !Actor::kindFromName(kind, known)))
+        THROWM(Base::ValueError, "no such user: a kind the log has, and a name");
+    auto& store = log->store();
+    const int64_t user = store.user(kind, name);
+    int64_t parent = 0;
+    if (!group.empty()) {
+        parent = store.user(kLogGroupKind, group);
+        // Not in itself, however far up
+        std::map<int64_t, int64_t> up;
+        for (const auto& u : store.users())
+            up[u.id] = u.parent;
+        for (int64_t at = parent, guard = 0; at && guard < 1000; at = up[at], ++guard) {
+            if (at == user)
+                THROWM(Base::ValueError, "group '" + group + "' is in '" + name + "' already");
+        }
+    }
+    store.setUserParent(user, parent);
+    fileBranchesChanged(log);
+}
+
+std::vector<std::pair<std::string, std::string>>
+Document::userGroups(const std::string& kind, const std::string& name)
+{
+    std::vector<std::pair<std::string, std::string>> out {{kind, name}};
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return out;
+    std::map<int64_t, LogUser> byId;
+    int64_t at = 0;
+    for (const auto& u : log->store().users()) {
+        byId[u.id] = u;
+        if (u.kind == kind && u.name == name)
+            at = u.parent;
+    }
+    std::set<int64_t> seen;
+    for (; at && byId.count(at) && seen.insert(at).second; at = byId[at].parent)
+        out.emplace_back(byId[at].kind, byId[at].name);
+    return out;
 }
 
 int64_t Document::requestMerge(const std::string& source, const std::string& target,

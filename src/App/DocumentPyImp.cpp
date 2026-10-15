@@ -1414,6 +1414,55 @@ PyObject* DocumentPy::getTransactionAccess(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::addTransactionGroup(PyObject *args)
+{
+    const char* name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+    PY_TRY {
+        getDocumentPtr()->addUserGroup(name);
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::setTransactionUserGroup(PyObject *args)
+{
+    const char* kind;
+    const char* name;
+    const char* group = "";
+    if (!PyArg_ParseTuple(args, "ss|s", &kind, &name, &group))
+        return nullptr;
+    PY_TRY {
+        getDocumentPtr()->setUserGroup(kind, name, group);
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionUsers(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        TransactionLog* log = getDocumentPtr()->getTransactionLog();
+        if (!log)
+            return Py::new_reference_to(list);
+        const auto users = log->store().users();
+        std::map<int64_t, std::string> names;
+        for (const auto& u : users)
+            names[u.id] = u.name;
+        for (const auto& u : users) {
+            Py::Dict d;
+            d.setItem("id", Py::Long(static_cast<long long>(u.id)));
+            d.setItem("kind", Py::String(u.kind));
+            d.setItem("name", Py::String(u.name));
+            d.setItem("group", Py::String(u.parent ? names[u.parent] : std::string()));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::requestTransactionMerge(PyObject *args)
 {
     const char* source;

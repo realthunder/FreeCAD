@@ -113,7 +113,17 @@ struct LogUser
     int64_t id {0};
     std::string kind;
     std::string name;
+    /// The group it is in (sec 32.32): the id of a user of kind
+    /// kLogGroupKind, 0 for none
+    int64_t parent {0};
 };
+
+/** The kind of a user that is a group (sec 32.32): no one who logs in, a
+ * name the host gives, said read or write of a branch as any user is. A
+ * user in it (LogUser::parent) has what is said of the group where nothing
+ * is said of itself; a group may be in a group.
+ */
+constexpr const char* kLogGroupKind = "group";
 
 /** What a user may do of one branch's history (sec 32.25). A user is who
  * the log says wrote a row: a kind and a name (LogUser), whichever login.
@@ -450,6 +460,8 @@ public:
     /// Id of the user row of `kind` and `name`, made if absent (sec 30.6).
     virtual int64_t user(const std::string& kind, const std::string& name) = 0;
     virtual std::vector<LogUser> users() = 0;
+    /// Put user `user` in group `parent` (a user's id; 0: in none)
+    virtual void setUserParent(int64_t user, int64_t parent) = 0;
     virtual int64_t openSession(int64_t env, int64_t user, const std::string& host,
                                 const std::string& access, const std::string& uuid,
                                 double opened) = 0;

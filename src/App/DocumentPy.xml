@@ -532,6 +532,35 @@ Take away what setTransactionAccess() said of this user and branch. False
 when nothing was said.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="addTransactionGroup">
+      <Documentation>
+        <UserDocu>addTransactionGroup(name)
+
+A group of users (docs/TransactionLog.md sec 32.32): a user of kind 'group'
+that nobody logs in as. setTransactionAccess('group', name, ...) says what
+it may of a branch, which every user in it has where nothing is said of the
+user itself.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="setTransactionUserGroup">
+      <Documentation>
+        <UserDocu>setTransactionUserGroup(kind, name, group='')
+
+Put the user of `kind` and `name` in `group`, made if there is none, or in
+no group where it is empty (docs/TransactionLog.md sec 32.32). A group may
+be put in a group; one is not put in itself. The user need not have come
+yet.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionUsers">
+      <Documentation>
+        <UserDocu>getTransactionUsers() -> list of dict
+
+The users the log knows (sec 30.6, 32.32): 'id', 'kind', 'name', and
+'group', the name of the group it is in, empty for none. A group is one of
+kind 'group'.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getTransactionAccess">
       <Documentation>
         <UserDocu>getTransactionAccess() -> list of dict

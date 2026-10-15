@@ -265,6 +265,8 @@ public:
     int64_t user(const std::string& kind, const std::string& name) override
     { return inner().user(kind, name); }
     std::vector<LogUser> users() override { return inner().users(); }
+    void setUserParent(int64_t user, int64_t parent) override
+    { inner().setUserParent(user, parent); }
     int64_t openSession(int64_t env, int64_t user, const std::string& host,
                         const std::string& access, const std::string& uuid,
                         double opened) override

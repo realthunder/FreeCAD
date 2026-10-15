@@ -502,6 +502,22 @@ public:
                          const std::string& branch, bool write, int64_t fromVersion = 0);
     bool clearBranchAccess(const std::string& kind, const std::string& name,
                            const std::string& branch);
+    /** Users in groups (docs/TransactionLog.md sec 32.32). A group is a
+     * user of kind kLogGroupKind, kept by its name: what is said of it
+     * (setBranchAccess) is had by every user in it where nothing is said
+     * of the user itself -- the nearest group's, a group being in a group
+     * too. addUserGroup() makes one, which setUserGroup() also does: it
+     * puts the user of `kind` and `name` in group `group`, or in none
+     * where that is empty. Both throw where there is no log, the user is
+     * of no kind the log has, or the group would be in itself.
+     */
+    void addUserGroup(const std::string& group);
+    void setUserGroup(const std::string& kind, const std::string& name,
+                      const std::string& group);
+    /// Of a user, by kind and name: itself, then the groups it is in,
+    /// nearest first
+    std::vector<std::pair<std::string, std::string>> userGroups(const std::string& kind,
+                                                                const std::string& name);
     /** Ask for branch `source` to be merged into `target` (sec 32.25): a
      * request kept in the log under whoever acts, for one who writes
      * `target` to deal with. Returns its id. Throws where there is no log,
