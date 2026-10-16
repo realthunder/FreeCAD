@@ -168,6 +168,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 09:49: NEW ENTRY 155 (a defect) -- TechDraw, an Active View still
+takes clicks over the views below although its background is
+transparent (by the note-taker's reading, the answer to 148 (g)).** Under
+the entry.
+
 **2026-10-16 09:47: NEW ENTRY 154 (a defect) -- TechDraw, a dragged view's
 geometry stays behind (frame and dimensions follow) until release, under
 bgfx only.** Under the entry.
@@ -3101,6 +3106,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
 | 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix |
 | 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN |
+| 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20829,6 +20835,32 @@ for the bgfx page, each under the item's `sceneTransform()`, e.g. 752,
 note-taker's reading, the geometry's records not refreshed while the view
 moves (the frame's and the dimensions' are) -- NOT checked.
 
+## 155. TechDraw: an Active View still takes clicks over the views it overlaps, its background transparent (a defect) -- OPEN
+
+**2026-10-16 09:49, the reporter:** "new defect, the techdraw view overlap
+passthrough is still not working on active view, even though the
+background does render as transparent"
+
+The note-taker's reading:
+- An ACTIVE VIEW (TechDraw's picture of the 3D view, an image view) laid
+  over another view: a click on its transparent background still goes to
+  it, not through to the view below -- the reporter expects it to pass,
+  as part views do since entry 149.
+- This is entry 148's open point (g): "on Rear001 the image view
+  ActiveView017 lies over the view and takes clicks (images keep their
+  whole frame under 149's rule -- the user may want images to pass clicks
+  too)" -- by the note-taker's reading the reporter now says YES, for the
+  Active View at least.
+NOT said:
+a. every image and symbol view, or the Active View only;
+b. what of the Active View stays pickable -- a band along its frame and
+   its label, as for part views (149), by the note-taker's guess;
+c. where the picture itself is NOT transparent (the drawn model): it
+   still takes the click, by the note-taker's reading.
+READ in the source, nothing run: `passesClicks()` -- `QGIView.h` 195
+(false by default), true only in `QGIViewPart.h` 77 and `QGIProjGroup.h`
+55; the image view (`QGIViewImage`) keeps the default.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20840,5 +20872,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 154
+the build session, 131 and 132 found by it; entries 134 to 155
 are of 2026-10-15, 134 said to the build session)
