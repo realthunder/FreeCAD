@@ -973,6 +973,7 @@ SET(View3D_CPP_SRCS
     SceneControl.cpp
     SceneContextMenu.cpp
     SceneWidgets.cpp
+    SceneLog.cpp
     SceneRequests.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
@@ -1012,6 +1013,7 @@ SET(View3D_SRCS
     SceneControl.h
     SceneContextMenu.h
     SceneWidgets.h
+    SceneLog.h
     SceneRequests.h
     SceneControlP.h
     View3DInventorRiftViewer.h

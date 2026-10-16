@@ -127,6 +127,7 @@
 #include <Base/Writer.h>
 #include <Gui/Application.h>
 #include <Gui/Document.h>
+#include <Gui/ViewerContext.h>
 #include <Gui/Action.h>
 #include <Gui/Selection.h>
 #include <Gui/View3DInventorViewer.h>
@@ -155,6 +156,7 @@
 
 #include "ViewProviderExt.h"
 #include "ShapeDiffView.h"
+#include "TaskShapeDiff.h"
 #include "MeshLevelSource.h"
 #include "PartParams.h"
 #include "PreMesh.h"
@@ -2784,7 +2786,9 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
                 ? std::string()
                 : std::string(obj->getDocument()->getName()) + ":" + ref;
         };
-        auto view = std::make_unique<ShapeDiffView>(*this);
+        // In its edit mode the two states are the session's, and outside
+        // it the document's scene has them (sec 32.19)
+        auto view = std::make_unique<ShapeDiffView>(*this, diffSession, diffWorld);
         if (!view->show(shapeA, shapeB, how, known(a), known(b)))
             return false;
         diffView = std::move(view);
@@ -2799,10 +2803,20 @@ bool ViewProviderPartExt::showValueDiff(const char *prop, const std::string &a,
 
 void ViewProviderPartExt::hideValueDiff()
 {
-    diffView.reset();
+    if (diffView) {
+        const bool session = diffView->inSession();
+        diffView.reset();
+        if (session)
+            ShapeDiffView::sceneChanged(*this);
+    }
     diffProp.clear();
     diffA.clear();
     diffB.clear();
+}
+
+bool ViewProviderPartExt::showsValueDiffOf(const char *prop) const
+{
+    return prop && !hasGivenShape && std::string(getShapePropertyName()) == prop;
 }
 
 std::map<std::string, double> ViewProviderPartExt::getValueDiff() const
@@ -4751,13 +4765,50 @@ void ViewProviderPartExt::setupContextMenu(QMenu* menu, QObject* receiver, const
     Gui::ViewProviderGeometryObject::setupContextMenu(menu, receiver, member);
     QAction* act = menu->addAction(iconObject, QObject::tr("Set colors..."), receiver, member);
     act->setData(QVariant((int)ViewProvider::Color));
+    // The last change of the shape, where the log has one: an edit mode as
+    // the colours are, so that it is the same entry in a browser's menu
+    // (docs/TransactionLog.md sec 32.19)
+    std::string before, after;
+    if (!hasGivenShape && lastValueChange(getShapePropertyName(), before, after)) {
+        QAction* diff = menu->addAction(QObject::tr("Show last change"), receiver, member);
+        diff->setData(QVariant((int)ViewProvider::ValueDiff));
+    }
 }
 
 void ViewProviderPartExt::setEditViewer(Gui::ViewerContext *viewer, int ModNum) {
     if (ModNum == ViewProvider::Color)
         Gui::Control().showDialog(new Gui::TaskElementColors(this,true));
+    else if (ModNum == ViewProvider::ValueDiff) {
+        // The two states are this edit's and no part of the document's
+        // scene: a node of the session, drawn by the views in it and
+        // published to a served document's clients as the session's
+        // overlay. One shown before, under the object's root, goes.
+        hideValueDiff();
+        Gui::Document *gdoc = getDocument();
+        diffSession = gdoc ? gdoc->editingRoot() : nullptr;
+        diffWorld = gdoc ? gdoc->getEditingTransform() : Base::Matrix4D();
+        // The states are in the frame of what the object is in: its own
+        // placement, which the editing transform ends with, taken off
+        if (auto geo = Base::freecad_dynamic_cast<App::GeoFeature>(getObject()))
+            diffWorld = diffWorld * geo->Placement.getValue().inverse().toMatrix();
+        // The object as it is would be drawn under its two states: hidden
+        // in the session's views, where a view can (render cache 3)
+        if (viewer)
+            viewer->hideEditedObject();
+        Gui::Control().showDialog(new TaskShapeDiff(this));
+    }
     else
         Gui::ViewProviderGeometryObject::setEditViewer(viewer,ModNum);
+}
+
+void ViewProviderPartExt::unsetEditViewer(Gui::ViewerContext *viewer) {
+    if (getEditingMode() == ViewProvider::ValueDiff) {
+        // Before the session ends and takes its nodes
+        hideValueDiff();
+        diffSession = nullptr;
+        return;
+    }
+    Gui::ViewProviderGeometryObject::unsetEditViewer(viewer);
 }
 
 bool ViewProviderPartExt::changeFaceColors()
@@ -4781,6 +4832,22 @@ bool ViewProviderPartExt::setEdit(int ModNum)
         // which has the editing context
         return true;
     }
+    else if (ModNum == ViewProvider::ValueDiff) {
+        // The last change of the shape the log has, or that of the row
+        // said (setValueChangeRow): nothing to show without one. The panel
+        // and the overlay are setEditViewer()'s.
+        diffEditProp = getShapePropertyName();
+        std::string before, after, what;
+        const bool found = valueChangeToShow(diffEditProp.c_str(), before, after, &what);
+        if (hasGivenShape || Gui::Control().activeDialog() || !found) {
+            diffEditProp.clear();
+            return false;
+        }
+        diffEditA = before;
+        diffEditB = after;
+        diffEditWhat = what;
+        return true;
+    }
     else {
         return Gui::ViewProviderGeometryObject::setEdit(ModNum);
     }
@@ -4790,6 +4857,15 @@ void ViewProviderPartExt::unsetEdit(int ModNum)
 {
     if (ModNum == ViewProvider::Color) {
         // Do nothing here
+    }
+    else if (ModNum == ViewProvider::ValueDiff) {
+        hideValueDiff();
+        diffSession = nullptr;
+        diffEditProp.clear();
+        diffEditA.clear();
+        diffEditB.clear();
+        diffEditWhat.clear();
+        Gui::Control().closeDialog();
     }
     else {
         Gui::ViewProviderGeometryObject::unsetEdit(ModNum);

@@ -278,6 +278,49 @@ class ShapeAtAStateTest(unittest.TestCase):
         finally:
             App.closeDocument(plain.Name)
 
+    def testAShapeTheLogLetGoIsComputedAtItsRow(self):
+        # Sec 32.33: a file's copy of the log carries no value a recompute
+        # wrote, so a file opened again has none of its rows' shapes. The
+        # state at a row, read as a document of its own, computes them again.
+        doc, cut = self.doc, self.cut
+        before = cut.Shape.copy()
+        after = self.edit("taller", Height=12)[0]
+        path = doc.FileName
+        doc.save()
+        App.closeDocument(doc.Name)
+        self.doc = doc = App.openDocument(path)
+        cid = doc.getObject("Cut").ID
+        row = [r for r in doc.getTransactionLog() if r["name"] == "taller"][-1]
+        op = [o for o in doc.getTransactionOps(row["seq"])
+              if o["prop"] == "Shape" and o["cid"] == cid][0]
+        self.assertIsNone(Part.getTransactionShape(doc, op["after"], cid))
+        self.assertIsNone(Part.getTransactionShape(doc, op["before"], cid))
+        rows, cursor = len(doc.getTransactionLog()), doc.getTransactionCursor()
+        active = App.ActiveDocument
+        states = []
+        try:
+            for seq, shape in ((row["seq"], after), (row["parent"], before)):
+                state = doc.openTransactionState(seq)
+                states.append(state.Name)
+                self.assertNotEqual(state.Name, doc.Name)
+                there = state.getObject("Cut")
+                self.assertEqual(there.ID, cid)
+                self.assertAlmostEqual(there.Shape.Volume, shape.Volume)
+                self.assertTrue(shape.diff(there.Shape)["same"])
+                self.assertNotIn("Touched", there.State)
+                # Of no log: nothing it does is a row
+                self.assertEqual(state.getTransactionLog(), [])
+            # Nothing of the document moved, and it is still the active one
+            self.assertEqual(len(doc.getTransactionLog()), rows)
+            self.assertEqual(doc.getTransactionCursor(), cursor)
+            self.assertIs(App.ActiveDocument, active)
+            self.assertAlmostEqual(doc.getObject("Cut").Shape.Volume, after.Volume)
+        finally:
+            for name in states:
+                App.closeDocument(name)
+        with self.assertRaises(Exception):
+            doc.openTransactionState(999999)
+
     def seq(self, name):
         return [r for r in self.doc.getTransactionLog() if r["name"] == name][-1]["seq"]
 
@@ -707,6 +750,74 @@ class MergedResultTest(unittest.TestCase):
         )
         self.assertAlmostEqual(res.Cut.Shape.Volume, 14 * 11 * 10 - math.pi * 4 * 10)
         self.assertEqual(self.state(), before)
+
+    def testMadeAgainInTheSameDocument(self):
+        # Sec 32.34: a result made before, handed back with other sides, has
+        # what was written to it taken back and the merge written again --
+        # and is what a result made afresh is.
+        doc = self.doc
+        doc.openTransaction("a cone")
+        cone = doc.addObject("Part::Cone", "Cone").ID
+        doc.recompute()
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        self.edit("side: longer", Length=14)
+        doc.openTransaction("side: a ball, no cone")
+        doc.addObject("Part::Sphere", "Ball")
+        doc.removeObject("Cone")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        self.edit("main: shorter", Length=8)
+        before = self.state()
+
+        def seen(res):
+            return (
+                sorted((o.Name, o.ID, tuple(o.State)) for o in res.Objects),
+                res.Box.Length.Value,
+                res.Cut.Shape.Volume,
+                dict(res.Cut.Shape.ElementReverseMap),
+            )
+
+        theirs = self.result({"Box.Length": "theirs"})
+        name = theirs["document"].Name
+        self.assertFalse(theirs["reused"])
+        self.assertEqual(theirs["removed"], [cone])
+        first = seen(theirs["document"])
+        self.assertEqual(first[1], 14)
+        self.assertIsNotNone(theirs["document"].getObject("Ball"))
+        self.assertIsNone(theirs["document"].getObject("Cone"))
+        ours = self.result({"Box.Length": "ours"}, "", 0, name)
+        self.assertTrue(ours["reused"])
+        self.assertEqual(ours["document"].Name, name)
+        self.assertEqual(ours["removed"], [cone])
+        # The same as one read afresh, to the touched bits and every name
+        fresh = self.result({"Box.Length": "ours"})
+        self.assertFalse(fresh["reused"])
+        self.assertNotEqual(fresh["document"].Name, name)
+        self.assertEqual(seen(ours["document"]), seen(fresh["document"]))
+        self.assertAlmostEqual(seen(ours["document"])[2], 8 * 10 * 10 - math.pi * 4 * 10)
+        self.assertEqual(
+            {(v["object"], v["prop"]) for v in ours["values"]},
+            {(v["object"], v["prop"]) for v in fresh["values"]},
+        )
+        App.closeDocument(fresh["document"].Name)
+        # Back to theirs: what the first was
+        again = self.result({"Box.Length": "theirs"}, "", 0, name)
+        self.assertTrue(again["reused"])
+        self.assertEqual(seen(again["document"]), first)
+        # Theirs' ball left out: not made there
+        left = self.result({"Box.Length": "theirs", "Ball": "ours"}, "", 0, name)
+        self.assertTrue(left["reused"])
+        self.assertIsNone(left["document"].getObject("Ball"))
+        self.assertEqual(self.state(), before)
+        # The document changed: the one handed back is of another, closed,
+        # and the result is read anew
+        self.edit("main: wider", Width=11)
+        changed = self.result({"Box.Length": "theirs"}, "", 0, name)
+        self.assertFalse(changed["reused"])
+        self.assertNotIn(name, App.listDocuments())
+        self.assertEqual(changed["document"].Box.Width.Value, 11)
 
     def testNotWhileAChangeIsBeingMade(self):
         doc = self.doc

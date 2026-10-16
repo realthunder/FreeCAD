@@ -1324,7 +1324,29 @@ void SubShapeBinder::onChanged(const App::Property *prop) {
         }
     }
 
+    // A colour picked ends the mapping of that colour: the binder shows the
+    // colour it was given and no longer its sources'. By the object's name
+    // as by the view provider's (PartGui::ViewProviderSubShapeBinder). Once
+    // the colour is taken: a flag changed makes the looks again, and the
+    // names take what the object has then.
+    const bool picked = isLookWrite(prop);
+
     inherited::onChanged(prop);
+
+    if(picked) {
+        auto end = [](App::PropertyBool &flag) {
+            if(flag.getValue())
+                flag.setValue(false);
+        };
+        if(prop == &ShapeColor)
+            end(MapFaceColor);
+        else if(prop == &LineColor)
+            end(MapLineColor);
+        else if(prop == &PointColor)
+            end(MapPointColor);
+        else if(prop == &Transparency)
+            end(MapTransparency);
+    }
 }
 
 void SubShapeBinder::slotLabelChanged()

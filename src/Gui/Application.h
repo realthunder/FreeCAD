@@ -485,6 +485,7 @@ public:
     static PyObject* sGetMainWindow            (PyObject *self,PyObject *args);
     static PyObject* sUpdateGui                (PyObject *self,PyObject *args);
     static PyObject* sServeDocument            (PyObject *self,PyObject *args);
+    static PyObject* sServeBranch              (PyObject *self,PyObject *args);
     static PyObject* sSetLiveImport            (PyObject *self,PyObject *args);
     static PyObject* sPumpLiveImport           (PyObject *self,PyObject *args);
     static PyObject* sIsLiveImport             (PyObject *self,PyObject *args);
@@ -492,6 +493,7 @@ public:
     static PyObject* sServeClients             (PyObject *self,PyObject *args);
     static PyObject* sServeRequests            (PyObject *self,PyObject *args);
     static PyObject* sServeDropRequest         (PyObject *self,PyObject *args);
+    static PyObject* sServeUploads             (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientMode       (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientSelection  (PyObject *self,PyObject *args);
     static PyObject* sServeKickClient          (PyObject *self,PyObject *args);

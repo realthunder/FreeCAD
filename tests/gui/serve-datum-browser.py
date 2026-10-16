@@ -40,7 +40,13 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtCore
 
+import wsclient
 from wsclient import free_port
+
+# The browser acts on the document, so it is someone: the holder of an
+# invitation issued to its name (docs/TransactionLog.md sec 30.6 U4, U6).
+TOKEN = "datum-browser-invite"
+CLIENT = "datum-browser"
 
 clock = time.perf_counter
 
@@ -196,8 +202,9 @@ def build():
             return
         http_port = serve_viewer()
         note("viewer on %d, scene on %d" % (http_port, port))
+        FreeCADGui.serveSetGrants(wsclient.invitation(TOKEN, CLIENT))
         url = ("http://127.0.0.1:%d/fcviewer.html?scene=http://127.0.0.1:%d"
-               % (http_port, port))
+               "&token=%s&client=%s" % (http_port, port, TOKEN, CLIENT))
         state["run"] = Run(url)
         state["t0"] = clock()
         state["run"].start()

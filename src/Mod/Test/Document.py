@@ -9151,6 +9151,60 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(sorted(o.Name for o in doc.Objects), ["Made", "Obj", "Theirs"])
         self.assertEqual(doc.Made.Integer, 7)
 
+    def testUsersInGroups(self):
+        # docs/TransactionLog.md sec 32.32: a group is a user of kind
+        # 'group'; a user is put in one by naming it, which makes it; a
+        # group may be in a group, and not in itself.
+        doc = self.track(FreeCAD.newDocument("Groups"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "groups.FCStd"))
+        doc.addTransactionGroup("all")
+        doc.setTransactionUserGroup("invited", "bob", "team")
+        doc.setTransactionUserGroup("group", "team", "all")
+        users = {(u["kind"], u["name"]): u["group"] for u in doc.getTransactionUsers()}
+        self.assertEqual(users[("invited", "bob")], "team")
+        self.assertEqual(users[("group", "team")], "all")
+        self.assertEqual(users[("group", "all")], "")
+        with self.assertRaises(ValueError):
+            doc.setTransactionUserGroup("group", "all", "team")
+        with self.assertRaises(ValueError):
+            doc.setTransactionUserGroup("nosuchkind", "bob", "team")
+        # What is said of a group is said as of any user
+        doc.setTransactionAccess("group", "team", "main", True)
+        self.assertIn(("group", "team", "main", True),
+                      [(a["kind"], a["name"], a["branch"], a["write"])
+                       for a in doc.getTransactionAccess()])
+        doc.setTransactionUserGroup("invited", "bob")
+        users = {(u["kind"], u["name"]): u["group"] for u in doc.getTransactionUsers()}
+        self.assertEqual(users[("invited", "bob")], "")
+
+    def testABranchOpenedByNameLeavesAnotherBranchsDocumentWhereItIs(self):
+        # docs/TransactionLog.md sec 32.31: the tip of a branch opened by its
+        # name, where the editable instance of the version it opens at is
+        # another branch's document -- that one is not switched from under
+        # it; a second instance is opened.
+        doc = self.track(FreeCAD.newDocument("ByName"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "byname.FCStd")
+        doc.saveAs(path)
+        one = self.track(doc.openTransactionBranch("one", False))
+        doc.createTransactionBranch("two")
+        doc.switchTransactionBranch("main")
+        two = self.track(FreeCAD.openDocument(path + "@two@", hidden=True))
+        names = {b["id"]: b["name"] for b in doc.getTransactionBranches()}
+        self.assertNotEqual(two.Name, one.Name)
+        self.assertEqual(names[one.getTransactionCursor()["branch"]], "one")
+        self.assertEqual(names[two.getTransactionCursor()["branch"]], "two")
+        self.assertEqual(names[doc.getTransactionCursor()["branch"]], "main")
+
     def testABranchIsMergedAcrossOpensOlderThanTheVersionsKept(self):
         # Sec 31.15, seen on the way: whether an open found the file its
         # history says was read off the version the open recorded, and an

@@ -133,8 +133,9 @@ public:
              " merge_from INTEGER DEFAULT 0, ord INTEGER DEFAULT 0)");
         exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
         // Sec 30.6: a session is one login of one user.
+        // (sec 32.32: `parent`, the group a user is in)
         exec("CREATE TABLE IF NOT EXISTS user(id INTEGER PRIMARY KEY, kind TEXT, name TEXT,"
-             " UNIQUE(kind, name))");
+             " parent INTEGER DEFAULT 0, UNIQUE(kind, name))");
         exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER,"
              " user INTEGER, host TEXT, access TEXT, opened REAL, closed REAL,"
              " uuid TEXT)");
@@ -169,16 +170,31 @@ public:
         exec("CREATE TABLE IF NOT EXISTS branch(id INTEGER PRIMARY KEY, name TEXT UNIQUE,"
              " from_version INTEGER, from_seq INTEGER, head_seq INTEGER, id_base INTEGER,"
              " last_id INTEGER DEFAULT 0, created REAL, closed REAL,"
-             " target INTEGER DEFAULT 0)");
+             " target INTEGER DEFAULT 0, joined INTEGER DEFAULT 0)");
         // Sec 30.29: the files of requests, held until they are dealt with.
         // By the row's identity, not its number: a fast-forward writes a
         // record again under a new one (sec 30.4 P1).
         exec("CREATE TABLE IF NOT EXISTS heldfile(session INTEGER, ord INTEGER, file BLOB,"
              " branch INTEGER DEFAULT 0, PRIMARY KEY(session, ord)) WITHOUT ROWID");
         // Sec 32.11: the values kept, one by one and by their object.
+        // The keeper (sec 32.27): empty for the host.
         exec("CREATE TABLE IF NOT EXISTS keepvalue(hash BLOB PRIMARY KEY, cid INTEGER,"
-             " prop TEXT, seq INTEGER) WITHOUT ROWID");
+             " prop TEXT, seq INTEGER, kind TEXT DEFAULT '', name TEXT DEFAULT '')"
+             " WITHOUT ROWID");
         exec("CREATE TABLE IF NOT EXISTS keepobject(cid INTEGER PRIMARY KEY)");
+        // Sec 32.25: what a user may do of a branch, and the requests to
+        // merge one branch into another.
+        exec("CREATE TABLE IF NOT EXISTS access(kind TEXT, name TEXT, branch INTEGER,"
+             " write INTEGER DEFAULT 0, from_seq INTEGER DEFAULT 0,"
+             " from_version INTEGER DEFAULT 0, made INTEGER DEFAULT 0,"
+             " PRIMARY KEY(kind, name, branch)) WITHOUT ROWID");
+        // AUTOINCREMENT: a request's number is never another's later, though
+        // the last one went with its branch
+        exec("CREATE TABLE IF NOT EXISTS mergerequest(id INTEGER PRIMARY KEY AUTOINCREMENT,"
+             " source INTEGER,"
+             " target INTEGER, kind TEXT, name TEXT, note TEXT, created REAL,"
+             " state TEXT DEFAULT 'open', closed REAL DEFAULT 0, closed_kind TEXT DEFAULT '',"
+             " closed_name TEXT DEFAULT '', result INTEGER DEFAULT 0)");
         if (!hasRow("SELECT 1 FROM branch WHERE id=1"))
             exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
                  "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
@@ -741,14 +757,20 @@ public:
         return out;
     }
 
-    void keepValue(const LogKept& kept) override
+    bool keepValue(const LogKept& kept) override
     {
-        auto s = prepare("INSERT OR REPLACE INTO keepvalue(hash,cid,prop,seq) VALUES(?,?,?,?)");
+        // Kept again: as it was, but the host's keep makes it the host's
+        auto s = prepare("INSERT INTO keepvalue(hash,cid,prop,seq,kind,name) VALUES(?,?,?,?,?,?)"
+                         " ON CONFLICT(hash) DO UPDATE SET kind='', name=''"
+                         " WHERE excluded.kind='' AND keepvalue.kind<>''");
         bindHash(s, 1, kept.hash);
         sqlite3_bind_int64(s, 2, kept.cid);
         bindText(s, 3, kept.prop);
         sqlite3_bind_int64(s, 4, kept.seq);
+        bindText(s, 5, kept.kind);
+        bindText(s, 6, kept.kind.empty() ? std::string() : kept.name);
         step(s);
+        return sqlite3_changes(db) > 0;
     }
 
     bool releaseValue(const std::string& hash) override
@@ -761,7 +783,8 @@ public:
 
     std::vector<LogKept> keptValues() override
     {
-        auto s = prepare("SELECT hash,cid,prop,seq FROM keepvalue ORDER BY seq, cid, prop");
+        auto s = prepare("SELECT hash,cid,prop,seq,kind,name FROM keepvalue"
+                         " ORDER BY seq, cid, prop");
         std::vector<LogKept> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogKept kept;
@@ -769,10 +792,112 @@ public:
             kept.cid = static_cast<long>(sqlite3_column_int64(s, 1));
             kept.prop = text(s, 2);
             kept.seq = sqlite3_column_int64(s, 3);
+            kept.kind = text(s, 4);
+            kept.name = text(s, 5);
             out.push_back(std::move(kept));
         }
         sqlite3_reset(s);
         return out;
+    }
+
+    std::vector<LogAccess> accesses() override
+    {
+        auto s = prepare("SELECT kind, name, branch, write, from_seq, from_version, made"
+                         " FROM access ORDER BY branch, kind, name");
+        std::vector<LogAccess> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogAccess a;
+            a.kind = text(s, 0);
+            a.name = text(s, 1);
+            a.branch = sqlite3_column_int64(s, 2);
+            a.write = sqlite3_column_int(s, 3) != 0;
+            a.fromSeq = sqlite3_column_int64(s, 4);
+            a.fromVersion = sqlite3_column_int64(s, 5);
+            a.made = sqlite3_column_int(s, 6) != 0;
+            out.push_back(std::move(a));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    void setAccess(const LogAccess& a) override
+    {
+        auto s = prepare("INSERT OR REPLACE INTO access(kind, name, branch, write, from_seq,"
+                         " from_version, made) VALUES(?,?,?,?,?,?,?)");
+        bindText(s, 1, a.kind);
+        bindText(s, 2, a.name);
+        sqlite3_bind_int64(s, 3, a.branch);
+        sqlite3_bind_int(s, 4, a.write ? 1 : 0);
+        sqlite3_bind_int64(s, 5, a.fromSeq);
+        sqlite3_bind_int64(s, 6, a.fromVersion);
+        sqlite3_bind_int(s, 7, a.made ? 1 : 0);
+        step(s);
+    }
+
+    bool clearAccess(const std::string& kind, const std::string& name, int64_t branch) override
+    {
+        auto s = prepare("DELETE FROM access WHERE kind=? AND name=? AND branch=?");
+        bindText(s, 1, kind);
+        bindText(s, 2, name);
+        sqlite3_bind_int64(s, 3, branch);
+        step(s);
+        return sqlite3_changes(db) > 0;
+    }
+
+    std::vector<LogMergeRequest> mergeRequests() override
+    {
+        auto s = prepare("SELECT id, source, target, kind, name, note, created, state, closed,"
+                         " closed_kind, closed_name, result FROM mergerequest ORDER BY id");
+        std::vector<LogMergeRequest> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogMergeRequest r;
+            r.id = sqlite3_column_int64(s, 0);
+            r.source = sqlite3_column_int64(s, 1);
+            r.target = sqlite3_column_int64(s, 2);
+            r.kind = text(s, 3);
+            r.name = text(s, 4);
+            r.note = text(s, 5);
+            r.created = sqlite3_column_double(s, 6);
+            r.state = text(s, 7);
+            r.closed = sqlite3_column_double(s, 8);
+            r.closedKind = text(s, 9);
+            r.closedName = text(s, 10);
+            r.result = sqlite3_column_int64(s, 11);
+            out.push_back(std::move(r));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    int64_t addMergeRequest(LogMergeRequest& r) override
+    {
+        auto s = prepare("INSERT INTO mergerequest(source, target, kind, name, note, created,"
+                         " state) VALUES(?,?,?,?,?,?,?)");
+        sqlite3_bind_int64(s, 1, r.source);
+        sqlite3_bind_int64(s, 2, r.target);
+        bindText(s, 3, r.kind);
+        bindText(s, 4, r.name);
+        bindText(s, 5, r.note);
+        sqlite3_bind_double(s, 6, r.created);
+        bindText(s, 7, r.state);
+        step(s);
+        r.id = sqlite3_last_insert_rowid(db);
+        return r.id;
+    }
+
+    bool updateMergeRequest(const LogMergeRequest& r) override
+    {
+        auto s = prepare("UPDATE mergerequest SET state=?, closed=?, closed_kind=?,"
+                         " closed_name=?, result=?, note=? WHERE id=?");
+        bindText(s, 1, r.state);
+        sqlite3_bind_double(s, 2, r.closed);
+        bindText(s, 3, r.closedKind);
+        bindText(s, 4, r.closedName);
+        sqlite3_bind_int64(s, 5, r.result);
+        bindText(s, 6, r.note);
+        sqlite3_bind_int64(s, 7, r.id);
+        step(s);
+        return sqlite3_changes(db) > 0;
     }
 
     void keepObject(long cid, bool keep) override
@@ -1660,17 +1785,26 @@ public:
 
     std::vector<LogUser> users() override
     {
-        auto s = prepare("SELECT id,kind,name FROM user ORDER BY id");
+        auto s = prepare("SELECT id,kind,name,parent FROM user ORDER BY id");
         std::vector<LogUser> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogUser r;
             r.id = sqlite3_column_int64(s, 0);
             r.kind = text(s, 1);
             r.name = text(s, 2);
+            r.parent = sqlite3_column_int64(s, 3);
             out.push_back(std::move(r));
         }
         sqlite3_reset(s);
         return out;
+    }
+
+    void setUserParent(int64_t user, int64_t parent) override
+    {
+        auto s = prepare("UPDATE user SET parent=? WHERE id=?");
+        sqlite3_bind_int64(s, 1, parent);
+        sqlite3_bind_int64(s, 2, user);
+        step(s);
     }
 
     int64_t openSession(int64_t env, int64_t user, const std::string& host,
@@ -1869,12 +2003,13 @@ public:
         b.created = sqlite3_column_double(s, 7);
         b.closed = sqlite3_column_double(s, 8);
         b.target = sqlite3_column_int64(s, 9);
+        b.joined = sqlite3_column_int64(s, 10);
     }
 
     std::vector<LogBranch> branches() override
     {
         auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
-                         "target FROM branch ORDER BY id");
+                         "target,joined FROM branch ORDER BY id");
         std::vector<LogBranch> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogBranch b;
@@ -1888,7 +2023,7 @@ public:
     bool getBranch(int64_t id, LogBranch& b) override
     {
         auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
-                         "target FROM branch WHERE id=?");
+                         "target,joined FROM branch WHERE id=?");
         sqlite3_bind_int64(s, 1, id);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         if (found)
@@ -1900,7 +2035,7 @@ public:
     bool findBranch(const std::string& name, LogBranch& b) override
     {
         auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
-                         "target FROM branch WHERE name=?");
+                         "target,joined FROM branch WHERE name=?");
         bindText(s, 1, name);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         if (found)
@@ -1923,7 +2058,7 @@ public:
             sqlite3_reset(m);
         }
         auto s = prepare("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,"
-                         "last_id,created,closed,target) VALUES(?,?,?,?,?,?,?,?,?,?)");
+                         "last_id,created,closed,target,joined) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
         sqlite3_bind_int64(s, 1, b.id);
         bindText(s, 2, b.name);
         sqlite3_bind_int64(s, 3, b.fromVersion);
@@ -1934,6 +2069,7 @@ public:
         sqlite3_bind_double(s, 8, b.created);
         sqlite3_bind_double(s, 9, b.closed);
         sqlite3_bind_int64(s, 10, b.target);
+        sqlite3_bind_int64(s, 11, b.joined);
         step(s);
         b.id = sqlite3_last_insert_rowid(db);
         return b.id;
@@ -1942,7 +2078,7 @@ public:
     bool updateBranch(const LogBranch& b) override
     {
         auto s = prepare("UPDATE branch SET name=?, from_version=?, from_seq=?, id_base=?,"
-                         " last_id=?, created=?, closed=?, target=? WHERE id=?");
+                         " last_id=?, created=?, closed=?, target=?, joined=? WHERE id=?");
         bindText(s, 1, b.name);
         sqlite3_bind_int64(s, 2, b.fromVersion);
         sqlite3_bind_int64(s, 3, b.fromSeq);
@@ -1951,7 +2087,8 @@ public:
         sqlite3_bind_double(s, 6, b.created);
         sqlite3_bind_double(s, 7, b.closed);
         sqlite3_bind_int64(s, 8, b.target);
-        sqlite3_bind_int64(s, 9, b.id);
+        sqlite3_bind_int64(s, 9, b.joined);
+        sqlite3_bind_int64(s, 10, b.id);
         step(s);
         return sqlite3_changes(db) > 0;
     }
@@ -1999,7 +2136,18 @@ public:
         auto s = prepare("DELETE FROM branch WHERE id=?");
         sqlite3_bind_int64(s, 1, id);
         step(s);
-        return sqlite3_changes(db) > 0;
+        const bool found = sqlite3_changes(db) > 0;
+        // What was said of the branch goes with it (sec 32.25): the access
+        // to it, and the requests to merge it or to merge into it that are
+        // still open -- one that ended is kept as what happened
+        s = prepare("DELETE FROM access WHERE branch=?");
+        sqlite3_bind_int64(s, 1, id);
+        step(s);
+        s = prepare("DELETE FROM mergerequest WHERE state='open' AND (source=? OR target=?)");
+        sqlite3_bind_int64(s, 1, id);
+        sqlite3_bind_int64(s, 2, id);
+        step(s);
+        return found;
     }
 
     bool renameBranch(int64_t id, const std::string& name) override

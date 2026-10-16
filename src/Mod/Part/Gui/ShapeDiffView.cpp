@@ -45,7 +45,9 @@
 #include <App/GeoFeature.h>
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
+#include <Gui/SceneServeSource.h>
 #include <Gui/SoFCUnifiedSelection.h>
+#include <Gui/ViewerContext.h>
 #include <Gui/WaitCursor.h>
 #include <Mod/Part/App/ShapeDiff.h>
 #include <Mod/Part/App/TopoShape.h>
@@ -333,8 +335,10 @@ const char* ShapeDiffView::name(Kind kind)
     }
 }
 
-ShapeDiffView::ShapeDiffView(ViewProviderPartExt& owner)
+ShapeDiffView::ShapeDiffView(ViewProviderPartExt& owner, Gui::EditingRoot* session,
+                             const Base::Matrix4D& world)
     : _owner(owner)
+    , _session(session)
 {
     _root = new Gui::SoFCPathAnnotation;
     _root->priority = -2;
@@ -346,14 +350,27 @@ ShapeDiffView::ShapeDiffView(ViewProviderPartExt& owner)
         sw->whichChild = SO_SWITCH_NONE;
         _root->addChild(sw);
     }
+    if (_session) {
+        // The session's: where the states are is said once, in the frame of
+        // whatever the object is in, and the session keeps it there
+        _session->addSessionNode(_root, world);
+        return;
+    }
     // Beside what the object shows of itself, so that it is there whether
     // the object is shown or not, and moves with what the object is in.
+    // That is the scene every view of the document draws and a served
+    // document publishes; this is what the one at the desktop is looking
+    // at in its log panel or its merge dialog, so it is the host's own to
+    // see (ruled 2026-10-13, docs/TransactionLog.md sec 32.24).
+    _root->hostOnly = TRUE;
     _owner.getRoot()->addChild(_root);
 }
 
 ShapeDiffView::~ShapeDiffView()
 {
     leave(this);
+    if (_session)
+        _session->removeSessionNode(_root);
     int index = _owner.getRoot()->findChild(_root);
     if (index >= 0)
         _owner.getRoot()->removeChild(index);
@@ -488,6 +505,9 @@ bool ShapeDiffView::build()
         // object's own shape has the object's looks, and every one set below
         // would be written to the object -- a change of the document.
         auto view = std::make_unique<ViewProviderPart>();
+        // Before anything of it is set: where the states are the host's
+        // own to see, a look of theirs is no change of the object's view
+        view->setStatus(Gui::HostOnlyView, !_session);
         view->setGivenShape(Part::TopoShape(shapes[kind]));
         view->forceUpdate();
         view->MapFaceColor.setValue(false);
@@ -528,6 +548,10 @@ void ShapeDiffView::setOptions(float position, bool differencesOnly)
 
 void ShapeDiffView::updatePlacement()
 {
+    // A session's node is placed by the session, in the frame the states
+    // are in
+    if (_session)
+        return;
     // The faces drawn are where each state had them, and this is drawn under
     // the object's own placement: taken out again.
     Base::Matrix4D matrix;
@@ -552,4 +576,22 @@ void ShapeDiffView::apply()
         _summary[std::string("shown.") + name(static_cast<Kind>(kind))] = shown ? 1 : 0;
         _summary[std::string("transparency.") + name(static_cast<Kind>(kind))] = transparency;
     }
+    // What the host alone sees is nothing to publish
+    if (_session)
+        sceneChanged(_owner);
+}
+
+void ShapeDiffView::sceneChanged(const ViewProviderPartExt& owner)
+{
+    // A served document is published when something of it changes, and it
+    // hears of that by its properties (Gui::SceneServeSource). What is
+    // drawn here changes with none: a kind switched off, and the whole of
+    // it taken away -- which a client then went on showing until something
+    // else was changed.
+    App::DocumentObject* obj = owner.getObject();
+    App::Document* doc = obj ? obj->getDocument() : nullptr;
+    if (!doc)
+        return;
+    if (Gui::SceneServeSource* source = Gui::SceneServeSource::sourceFor(doc))
+        source->schedulePublish();
 }

@@ -1031,22 +1031,25 @@ def run():
                     call("keepObject", QtCore.Q_ARG("qlonglong", cut.ID), QtCore.Q_ARG(bool, False))
                     check("the object no longer kept: the list is empty and nothing is shown",
                           tops() == [] and tabs.tabText(2) == "Kept" and view.getValueDiff() == {})
-                    # Kept from Python: no signal says so, the tab asks again
+                    # Kept from Python, or a served client's panel: the
+                    # document says so (signalLogKeptChanged, sec 32.27), and
+                    # the tab follows by itself, shown or not
                     tabs.setCurrentIndex(0)
                     settle()
                     refs = doc.keepTransactionValue(cut2, "Shape", wider)
+                    settle()
+                    check("kept from Python: counted with the tab not shown",
+                          len(refs) == 1 and tabs.tabText(2) == "Kept (1)")
                     tabs.setCurrentIndex(2)
                     settle()
-                    check("kept from Python: listed when the tab is shown",
-                          len(refs) == 1 and [t.text(what) for t in tops()] == ["one value"])
+                    check("and listed when it is",
+                          [t.text(what) for t in tops()] == ["one value"])
                     check("let go from Python by its ref, once",
                           doc.releaseTransactionValue(refs[0]) is True
                           and doc.releaseTransactionValue(refs[0]) is False)
-                    tabs.setCurrentIndex(0)
                     settle()
-                    tabs.setCurrentIndex(2)
-                    settle()
-                    check("and gone from the list", tops() == [])
+                    check("and gone from the list, the tab still shown",
+                          tops() == [] and tabs.tabText(2) == "Kept")
                     tabs.setCurrentIndex(0)
                     settle()
                 select("base")
@@ -1168,10 +1171,11 @@ def run():
                   and len(theirs2[2]) == 1)
             ours2 = seen.get("side ours") or ({}, "", [])
             check("result: the side changed, it is made again -- ours kept, and the cut "
-                  "is what it was (%r)" % (ours2[1],),
+                  "is what it was -- in the document it was made in (sec 32.34) (%r)"
+                  % (ours2[1],),
                   ours2[0].get("volume.removed", -1) == 0
                   and ours2[0].get("volume.added", -1) == 0
-                  and len(ours2[2]) == 1 and ours2[2] != theirs2[2])
+                  and len(ours2[2]) == 1 and ours2[2] == theirs2[2])
             check("result: gone with the dialog",
                   [n for n in App.listDocuments() if "_merged" in n] == [])
             check("dialog closed: nothing left in the view",

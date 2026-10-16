@@ -55,6 +55,7 @@
 #include "DlgPreferencesImp.h"
 #include "Document.h"
 #include "SceneServeSource.h"
+#include "SceneLog.h"
 #include "Renderer/SceneServer.h"
 #include "SceneRequests.h"
 #include "Renderer/CyclesRenderer.h"
@@ -327,6 +328,22 @@ PyMethodDef Application::Methods[] = {
    "display at all. A non-zero port starts the scene stream server\n"
    "there. Returns False when the configured render engine cannot\n"
    "publish without a graphics device."},
+  {"serveBranch",             (PyCFunction) Application::sServeBranch, METH_VARARGS,
+   "serveBranch(doc, name='', port=0) -> Document\n"
+   "\n"
+   "Serve a branch of a document to clients of its own\n"
+   "(docs/TransactionLog.md sec 32.23): a branch is made where the\n"
+   "document is -- `name`, or `<branch>~<n>` -- and opened in a second\n"
+   "document of the file, with no window, which is served as\n"
+   "serveDocument() serves one and returned. The first document stays\n"
+   "where it is. Where the branch forks is the serving point: from it\n"
+   "on the clients of the new document restore, switch, and make,\n"
+   "rename and delete branches there; nothing before it. Its work\n"
+   "comes back by a merge of the branch. A branch `name` there is\n"
+   "already is served as it is, opened at its head (sec 32.31) -- or\n"
+   "the document serving it already is returned. Raises where another\n"
+   "document is on that branch, it is closed, the document keeps no\n"
+   "log, or it cannot be served."},
   {"serveRequests",           (PyCFunction) Application::sServeRequests, METH_VARARGS,
    "serveRequests(doc='') -> list\n"
    "\n"
@@ -342,6 +359,11 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "Drop a sent file unread, by its id -- a row's number is one\n"
    "document's, so say which with doc. False when there is none."},
+  {"serveUploads",            (PyCFunction) Application::sServeUploads, METH_VARARGS,
+   "serveUploads() -> (count, bytes)\n"
+   "\n"
+   "The uploads whose pieces are arriving (docs/TransactionLog.md sec\n"
+   "32.36): how many, and the bytes they hold together."},
   {"serveClients",            (PyCFunction) Application::sServeClients, METH_VARARGS,
    "serveClients() -> list\n"
    "\n"
@@ -1266,6 +1288,23 @@ PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
     return Py::new_reference_to(Py::Boolean(ok));
 }
 
+PyObject* Application::sServeBranch(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *pyDoc = nullptr;
+    const char *name = "";
+    int port = 0;
+    if (!PyArg_ParseTuple(args, "O!|si", &App::DocumentPy::Type, &pyDoc, &name, &port))
+        return nullptr;
+    App::Document *appDoc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+
+    PY_TRY {
+        // A branch made where the document is, opened in a document of its
+        // own with no window: where it forks is the serving point
+        return Gui::serveBranchOf(appDoc, name, port)->getPyObject();
+    }
+    PY_CATCH
+}
+
 PyObject* Application::sCyclesDevices(PyObject * /*self*/, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))
@@ -1337,6 +1376,15 @@ PyObject* Application::sServeDropRequest(PyObject * /*self*/, PyObject *args)
     if (!PyArg_ParseTuple(args, "K|s", &id, &doc))
         return nullptr;
     return Py::new_reference_to(Py::Boolean(SceneRequests::drop(id, false, doc)));
+}
+
+PyObject* Application::sServeUploads(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    qint64 bytes = 0;
+    const int count = SceneRequests::stagedUploads(&bytes);
+    return Py::new_reference_to(Py::TupleN(Py::Long(count), Py::Long(static_cast<long long>(bytes))));
 }
 
 PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)

@@ -102,6 +102,7 @@
 #include "SoFCRenderCacheManager.h"
 #include "ScenePublishDelta.h"
 #include "SoFCZoomOffsetElement.h"
+#include "SoFCOwnDisplayModeElement.h"
 
 using namespace Gui;
 
@@ -710,6 +711,8 @@ public:
   int traversedepth;
   SoFCRenderer *renderer;
   int annotation;
+  /// What the captured mode was above each host-only annotation open
+  std::vector<uint16_t> hostonly;
   /// Nesting depth of Gui::SoSkipBoundingGroup in the traversal. The
   /// group can nest (a gizmo built out of gizmos), so the flag is
   /// cleared by the outermost close, not by the first one.
@@ -2112,6 +2115,10 @@ SoFCRenderCacheManagerP::postPathAnnotation(void *userdata,
     self->stack.back()->decreaseRenderingOrder(action->getState(), annotation->priority.getValue());
   else if (annotation->getPath() && --self->annotation == 0)
     self->stack.back()->decreaseRenderingOrder(action->getState());
+  if (annotation->hostOnly.getValue() && !self->hostonly.empty()) {
+    SoFCCapturedModeElement::set(action->getState(), self->hostonly.back());
+    self->hostonly.pop_back();
+  }
   return SoCallbackAction::CONTINUE;
 }
 
@@ -2144,6 +2151,14 @@ SoFCRenderCacheManagerP::prePathAnnotation(void *userdata,
       sensor.master = self;
       sensor.attachedPath = path->copy();
     }
+  }
+
+  // Everything captured below is tagged as the host's own to see: the
+  // views draw it, a snapshot for the served leaves it out. Set and set
+  // back, as the display mode switch tags its mode copies.
+  if (annotation->hostOnly.getValue()) {
+    self->hostonly.push_back(SoFCCapturedModeElement::get(action->getState()));
+    SoFCCapturedModeElement::set(action->getState(), Render::hostOnlyModeId());
   }
   return SoCallbackAction::CONTINUE;
 }

@@ -207,6 +207,10 @@ public:
     /// (docs/TransactionLog.md sec 26): a switch, a new branch, a trim or a
     /// deleted branch
     fastsignals::signal<void (const App::Document&)> signalBranchesChanged;
+    /// signal after what the log keeps in the file changed (docs/TransactionLog.md
+    /// sec 32.11, 32.27): a value kept or let go, an object kept or no longer.
+    /// No row says so, so nothing else does
+    fastsignals::signal<void (const App::Document&)> signalLogKeptChanged;
     /// signal on a frozen version document opened for a pin when the last
     /// link pinned to it lets go (docs/TransactionLog.md sec 27.21 Q5, 27.30):
     /// unpinned, deleted, re-pinned, or its document closed. What becomes of
@@ -448,6 +452,17 @@ public:
     static Document* openFileBranch(const std::shared_ptr<FileHistory>& history,
                                     const std::string& branch, int64_t num,
                                     bool createView = true);
+    /** The state at log row `seq` as a document of its own
+     * (docs/TransactionLog.md sec 32.33), for what the log no longer holds
+     * of that state: a value a recompute wrote is a cache, which a file's
+     * copy of the log does not carry. The newest version the row's chain
+     * reaches is read, with no log and no view, the rows from there to
+     * `seq` are folded into it, and what they name and the log let go is
+     * computed again. Nothing of this document or its log moves. The
+     * caller's to close. Throws when there is no log, no such row, or no
+     * version reaches it.
+     */
+    Document* openRowState(int64_t seq);
 
     /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
      * branch `name` from version `version`, or else from log row `seq`, or
@@ -483,6 +498,50 @@ public:
      * branch the document is on. Returns the rows removed.
      */
     size_t deleteBranch(const std::string& name);
+    /** What a user may do of a branch's history (docs/TransactionLog.md sec
+     * 32.25), kept in the log by the user's kind and name and the branch.
+     * Read: the branch is listed to the user, who applies its rows to the
+     * one it works on and asks for merges of it. With `write` the user
+     * also moves a document that is on the branch -- from version
+     * `fromVersion` on, or from where the branch forks when that is 0 --
+     * and deals with the requests to merge into it. clearBranchAccess()
+     * takes what was said away, false when nothing was. Both throw where
+     * there is no log, no such branch, no such kind of user or no such
+     * version.
+     */
+    void setBranchAccess(const std::string& kind, const std::string& name,
+                         const std::string& branch, bool write, int64_t fromVersion = 0);
+    bool clearBranchAccess(const std::string& kind, const std::string& name,
+                           const std::string& branch);
+    /** Users in groups (docs/TransactionLog.md sec 32.32). A group is a
+     * user of kind kLogGroupKind, kept by its name: what is said of it
+     * (setBranchAccess) is had by every user in it where nothing is said
+     * of the user itself -- the nearest group's, a group being in a group
+     * too. addUserGroup() makes one, which setUserGroup() also does: it
+     * puts the user of `kind` and `name` in group `group`, or in none
+     * where that is empty. Both throw where there is no log, the user is
+     * of no kind the log has, or the group would be in itself.
+     */
+    void addUserGroup(const std::string& group);
+    void setUserGroup(const std::string& kind, const std::string& name,
+                      const std::string& group);
+    /// Of a user, by kind and name: itself, then the groups it is in,
+    /// nearest first
+    std::vector<std::pair<std::string, std::string>> userGroups(const std::string& kind,
+                                                                const std::string& name);
+    /** Ask for branch `source` to be merged into `target` (sec 32.25): a
+     * request kept in the log under whoever acts, for one who writes
+     * `target` to deal with. Returns its id. Throws where there is no log,
+     * a branch is unknown, the two are one, or the same is asked already
+     * and not yet dealt with.
+     */
+    int64_t requestMerge(const std::string& source, const std::string& target,
+                         const std::string& note = std::string());
+    /** End request `id` under whoever acts: `rejected`, `withdrawn`, or
+     * `merged` with the row the merge wrote. False where there is no such
+     * request still open; throws on another word.
+     */
+    bool closeMergeRequest(int64_t id, const std::string& state, int64_t result = 0);
     /// What compactFileState() dropped.
     struct CompactResult
     {
@@ -677,10 +736,15 @@ public:
     /** Keep the value property `prop` of object `cid` has at row `seq`, or
      * with `keep` false let it go. With no `prop`, every property of the
      * object a recompute wrote. Returns the refs kept or let go: none where
-     * the log holds no such value.
+     * the log holds no such value. `keeperKind` and `keeperName` say who
+     * keeps it, as the log names a user (sec 32.27): none for the host. A
+     * value kept already stays as it was kept, but for the host's keep,
+     * which makes it the host's.
      */
     std::vector<std::string> keepLogValue(long cid, const std::string& prop = std::string(),
-                                          int64_t seq = 0, bool keep = true);
+                                          int64_t seq = 0, bool keep = true,
+                                          const std::string& keeperKind = std::string(),
+                                          const std::string& keeperName = std::string());
     struct KeptValue
     {
         std::string ref;
@@ -688,6 +752,8 @@ public:
         std::string object;   ///< the object's name, where the document has it
         std::string prop;
         int64_t seq {0};      ///< the row it was asked for at
+        std::string kind;     ///< who kept it: empty for the host
+        std::string name;
     };
     std::vector<KeptValue> keptLogValues();
     /// Let go of the kept value `ref`, whether a row still names it or not:
@@ -768,6 +834,9 @@ public:
         std::vector<std::string> failed;   ///< objects whose recompute failed there
         std::vector<MergeChange> unresolved;
         MergePreview preview;
+        /// The document of a result made before was rolled back and written
+        /// again, and not read anew (sec 32.34)
+        bool reused {false};
     };
     /** What mergeBranch() with these arguments would make, in a document
      * of its own (docs/TransactionLog.md sec 32.17). Nothing of this
@@ -775,21 +844,30 @@ public:
      * version, unnamed, where it is none already -- what the merge itself
      * takes first. Throws as mergeBranch() does, and where a transaction
      * is open.
+     *
+     * `again` names the document of a result made before with other sides
+     * (sec 32.34), handed back: where it is of this document as it is still,
+     * what was written to it is rolled back and the merge written again,
+     * which spares reading the document; otherwise it is closed and the
+     * document read anew. Either way it is no longer the caller's.
      */
     MergeOutcome previewMergeResult(const std::string& branch,
                                     const std::map<std::string, std::string>& picks = {},
                                     const std::string& fallback = std::string(),
-                                    int64_t version = 0);
+                                    int64_t version = 0, const std::string& again = {});
     /// The same of pickRows().
     MergeOutcome previewPickResult(const std::vector<int64_t>& rows,
                                    const std::map<std::string, std::string>& picks = {},
-                                   const std::string& fallback = std::string());
+                                   const std::string& fallback = std::string(),
+                                   const std::string& again = {});
     /// mergeBranch() and pickRows(): `rows` for the second. With `outcome`
-    /// it is previewMergeResult(): written to a document of its own.
+    /// it is previewMergeResult(): written to a document of its own, or to
+    /// `again` rolled back.
     MergeResult _merge(const std::string& branch,
                        const std::map<std::string, std::string>& picks,
                        const std::string& fallback, int64_t version,
-                       const std::vector<int64_t>* rows, MergeOutcome* outcome = nullptr);
+                       const std::vector<int64_t>* rows, MergeOutcome* outcome = nullptr,
+                       const std::string& again = {});
 
     /// A merge undone at the head of this branch, with nothing since
     /// (docs/TransactionLog.md sec 31.21).
@@ -962,6 +1040,12 @@ public:
     int64_t keepSentFile(const std::string& bytes, const std::string& name,
                          const std::string& sender = std::string(),
                          const std::string& senderKind = std::string());
+    /// The same for a file already on disk at `path`, copied into the
+    /// store without being read into memory: one that came in pieces
+    /// (docs/TransactionLog.md sec 32.37). `path` is left as it is.
+    int64_t keepSentFileAt(const std::string& path, const std::string& name,
+                           const std::string& sender = std::string(),
+                           const std::string& senderKind = std::string());
     /// The sent files the log holds, oldest first.
     std::vector<SentFile> sentFiles();
     /// Let the file of row `seq` go unread, with a record saying so. False
@@ -1805,8 +1889,13 @@ protected:
     void _checkoutHead(int64_t fromHead = -1);
     /// Move the document from the state at row `fromHead` to the state at
     /// row `toSeq` through the rows between them (sec 27.34); false when a
-    /// row cannot be reverted or applied, or the chains do not meet.
-    bool _moveAlongLog(int64_t fromHead, int64_t toSeq, bool views);
+    /// row cannot be reverted or applied, or the chains do not meet. The
+    /// rows and values are read from `through` where given, a log of the
+    /// same file: a document read with none (_openReadVersion) moved by
+    /// another's (sec 32.33). `letGo`, where given, gets the objects touched
+    /// because the log no longer has a value a recompute wrote of theirs.
+    bool _moveAlongLog(int64_t fromHead, int64_t toSeq, bool views,
+                       TransactionLog* through = nullptr, std::set<long>* letGo = nullptr);
     /// Sec 26: the undo stacks of the branch arrived on. The id counter is
     /// the file's and does not move (sec 27.40 item 1).
     void _arriveOnBranch();

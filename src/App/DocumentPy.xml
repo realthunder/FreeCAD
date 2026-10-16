@@ -413,6 +413,18 @@ puts it on a branch: the one whose tip the version is if no document holds
 it, else a new one, `BRANCH@vN`.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="openTransactionState">
+      <Documentation>
+        <UserDocu>openTransactionState(seq) -> Document
+
+The state at log row `seq` as a document of its own (docs/TransactionLog.md
+sec 32.33), for what the log no longer holds of it: a value a recompute
+wrote is a cache, which a file's copy of the log does not carry. The newest
+version that reaches the row is read, with no log and no view, the rows to
+`seq` are folded into it, and what they name and the log let go is computed
+again. Nothing of this document moves. The caller closes it.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="saveVersionAsFile">
       <Documentation>
         <UserDocu>saveVersionAsFile() -> int
@@ -479,6 +491,8 @@ again. False if there is no log or no such version.</UserDocu>
 
 The branches of the transaction log (docs/TransactionLog.md sec 17, 26):
 id, name, from_version, from_seq, head, id_base, last_id, created, closed,
+target, joined -- for one a client made in a document served from a branch,
+that branch's id: everyone who joins that document writes it (sec 32.25) --
 and current -- whether the document is on it. Empty without a log.</UserDocu>
       </Documentation>
     </Methode>
@@ -506,6 +520,97 @@ opened. False without a log.</UserDocu>
 
 Rename a branch. False without a log; no such branch, or a new name that
 is empty or taken, raises.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="setTransactionAccess">
+      <Documentation>
+        <UserDocu>setTransactionAccess(kind, name, branch, write=False, version=0)
+
+Say what a user may do of a branch's history (docs/TransactionLog.md sec
+32.25). The user is who the log says wrote a row: `kind` ('verified',
+'invited', 'enrolled', ...) and `name`. Read: the branch is listed to the
+user, who applies its rows to the one it works on and asks for merges of
+it. With `write` the user also moves a document that is on the branch --
+restores, switches, branches, deletes what was branched from it -- from
+version `version` on, or from where the branch forks when that is 0, and
+deals with the requests to merge into it. Replaces what was said before.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="clearTransactionAccess">
+      <Documentation>
+        <UserDocu>clearTransactionAccess(kind, name, branch) -> bool
+
+Take away what setTransactionAccess() said of this user and branch. False
+when nothing was said.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="addTransactionGroup">
+      <Documentation>
+        <UserDocu>addTransactionGroup(name)
+
+A group of users (docs/TransactionLog.md sec 32.32): a user of kind 'group'
+that nobody logs in as. setTransactionAccess('group', name, ...) says what
+it may of a branch, which every user in it has where nothing is said of the
+user itself.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="setTransactionUserGroup">
+      <Documentation>
+        <UserDocu>setTransactionUserGroup(kind, name, group='')
+
+Put the user of `kind` and `name` in `group`, made if there is none, or in
+no group where it is empty (docs/TransactionLog.md sec 32.32). A group may
+be put in a group; one is not put in itself. The user need not have come
+yet.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionUsers">
+      <Documentation>
+        <UserDocu>getTransactionUsers() -> list of dict
+
+The users the log knows (sec 30.6, 32.32): 'id', 'kind', 'name', and
+'group', the name of the group it is in, empty for none. A group is one of
+kind 'group'.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionAccess">
+      <Documentation>
+        <UserDocu>getTransactionAccess() -> list of dict
+
+What is said of users and branches (docs/TransactionLog.md sec 32.25):
+'kind', 'name', 'branch' (its name), 'write', and for a write the point it
+starts at, 'from_seq' and 'from_version' -- both 0 for where the branch
+forks. 'made': the user made the branch, as a client of a served document,
+and it is the user's to delete.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="requestTransactionMerge">
+      <Documentation>
+        <UserDocu>requestTransactionMerge(source, target, note='') -> int
+
+Ask for branch `source` to be merged into `target` (docs/TransactionLog.md
+sec 32.25): kept in the log under whoever acts, for one who writes `target`
+to deal with. Returns the request's id. Raises when the same is asked
+already and not yet dealt with.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionMergeRequests">
+      <Documentation>
+        <UserDocu>getTransactionMergeRequests() -> list of dict
+
+The requests to merge a branch into another, oldest first: 'id', 'source'
+and 'target' (the branches' names, empty for one that is gone), 'by' and
+'by_kind' (who asked), 'note', 'created', 'state' ('open', 'merged',
+'rejected', 'withdrawn'), and of one that ended 'closed', 'closed_by' and
+'result' -- the row the merge wrote.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="closeTransactionMergeRequest">
+      <Documentation>
+        <UserDocu>closeTransactionMergeRequest(id, state, result=0) -> bool
+
+End a request under whoever acts: 'rejected', 'withdrawn', or 'merged' with
+the row the merge wrote. False when there is no such request still open.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="trimTransactionBranch" Keyword="true">
@@ -669,7 +774,8 @@ False lets it go again. Returns the refs kept, or let go.</UserDocu>
         <UserDocu>getKeptTransactionValues() -> list of dict
 
 The values keepTransactionValue() keeps: {'ref', 'cid', 'object', 'prop',
-'seq'}, the row being the one it was asked for at.</UserDocu>
+'seq'}, the row being the one it was asked for at. One a served client kept
+says who, as the log names a user: 'kind' and 'name'.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="releaseTransactionValue">
@@ -722,7 +828,7 @@ nothing -- a 'take', a 'merge' -- and it is left out.</UserDocu>
     </Methode>
     <Methode Name="previewTransactionMergeResult">
       <Documentation>
-        <UserDocu>previewTransactionMergeResult(branch, picks={}, fallback='', version=0) -> dict
+        <UserDocu>previewTransactionMergeResult(branch, picks={}, fallback='', version=0, again='') -> dict
 
 What mergeTransactionBranch() with these arguments would make
 (docs/TransactionLog.md sec 32.17): this document as it is, read into a
@@ -730,7 +836,7 @@ document of its own with no log and no view, what the merge takes written
 to it, and recomputed. Nothing of this document moves -- no step, no row
 but its tip as an unnamed version where it is none, no redo lost.
 {'document', 'theirs', 'values', 'removed', 'failed', 'unresolved',
-'preview'}: 'document' is that document, the caller's to close with
+'preview', 'reused'}: 'document' is that document, the caller's to close with
 App.closeDocument(), its objects under the ids this document's have; None
 where the merge would be refused ('unresolved'), brings nothing, or is a
 fast-forward -- 'theirs': what it makes is the other branch. 'values' is
@@ -738,12 +844,17 @@ the geometry of every object the merge made, wrote or computed, each
 {'cid', 'object', 'prop', 'here'} -- 'here' says this document has the
 object; 'removed' the ids of the objects it removes; 'failed' the names
 of those whose recompute failed there. Raises as the merge does, and
-where a transaction is open.</UserDocu>
+where a transaction is open.
+`again` names the document of a result made before (sec 32.34), handed
+back: where it is of this document as it is still, what was written to it
+is taken back and the merge written again -- 'reused' says so -- which
+spares reading the document; otherwise it is closed. Either way the
+caller no longer closes it.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="previewTransactionPickResult">
       <Documentation>
-        <UserDocu>previewTransactionPickResult(rows, picks={}, fallback='') -> dict
+        <UserDocu>previewTransactionPickResult(rows, picks={}, fallback='', again='') -> dict
 
 What pickTransactions() with these arguments would make, as
 previewTransactionMergeResult() says it.</UserDocu>

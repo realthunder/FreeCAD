@@ -122,6 +122,48 @@ public:
     virtual void hideValueDiff();
     /// What showValueDiff() shows now, as numbers by name; empty where nothing is
     virtual std::map<std::string, double> getValueDiff() const;
+    /** The newest change of property \a prop of this object that the log
+     * holds on the branch the document is on: the refs of the value before
+     * it and after, as showValueDiff() takes them -- "-" for none before,
+     * the object having been made with it, and empty after where the log
+     * holds no ref and the value is the object's own. \a what is given the
+     * row's name and number, for whoever is told.
+     * @return false with no log, or no change of that property in it.
+     */
+    bool lastValueChange(const char *prop, std::string &before, std::string &after,
+                         std::string *what = nullptr) const;
+    /** What row \a row of the log made of property \a prop of this object:
+     * the value before the first time the row set it and after the last, as
+     * lastValueChange() gives them.
+     * @return false with no log, or where the row did not set the property.
+     */
+    bool valueChangeAt(long long row, const char *prop, std::string &before,
+                       std::string &after, std::string *what = nullptr) const;
+    /** The row whose change the next ViewProvider::ValueDiff edit of this
+     * object shows, in place of the last one; 0 for the last. Said by
+     * whoever starts the edit from a row of the log, and spent by the edit
+     * that is started next, entered or refused.
+     */
+    void setValueChangeRow(long long row) { _valueChangeRow = row; }
+    /** The value the next ViewProvider::ValueDiff edit of this object shows
+     * against what the object has now, in place of a row's change: a value
+     * the log keeps in the file, by its ref (docs/TransactionLog.md sec
+     * 32.12, 32.27), with the row it was kept at. Spent as
+     * setValueChangeRow() is; it goes before a row.
+     */
+    void setValueChangeRef(const std::string &ref, long long row = 0)
+    {
+        _valueChangeRef = ref;
+        _valueChangeRefRow = row;
+    }
+    /** The change a ViewProvider::ValueDiff edit that starts now is of:
+     * the row setValueChangeRow() named, else the last. The row named is
+     * spent by the asking.
+     */
+    bool valueChangeToShow(const char *prop, std::string &before, std::string &after,
+                           std::string *what = nullptr);
+    /// Whether showValueDiff() shows anything of property \a prop
+    virtual bool showsValueDiffOf(const char *prop) const;
     //@}
     /// Re-read DisplayModeInView from \a view's ObjectDisplayModes
     /// entry for this object (null = no active 3D view, shows "Use
@@ -391,6 +433,11 @@ private:
     bool _Busy = false;
     bool _Showable = true;
     bool _VisibilityRestored = false;
+    /// setValueChangeRow()
+    long long _valueChangeRow = 0;
+    /// setValueChangeRef()
+    std::string _valueChangeRef;
+    long long _valueChangeRefRow = 0;
 
     std::vector<App::DocumentObject*> claimedChildren;
     std::set<App::DocumentObject*> childSet;

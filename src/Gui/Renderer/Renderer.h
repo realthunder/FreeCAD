@@ -3010,6 +3010,13 @@ struct VisibilitySet {
 /// it as the object's own, untagged draw.
 RendererExport uint16_t perViewShownModeId();
 
+/// The captured-mode id tagging what is drawn for the host's own views
+/// and for nobody served the document: what the host is looking at of
+/// its own accord, hung in the scene every client shares
+/// (SoFCPathAnnotation::hostOnly; docs/TransactionLog.md sec 32.24). A
+/// view draws it as an untagged draw; a snapshot leaves it out.
+RendererExport uint16_t hostOnlyModeId();
+
 /// Process-lifetime intern table for display mode NAMES outside the
 /// four Class-A styles (docs/CoinRetirement.md 5.9 "Non-standard
 /// modes"). A name's id is stable for the life of the process and

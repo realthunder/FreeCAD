@@ -92,8 +92,10 @@ GuiExport fastsignals::signal<void()>& signalChanged();
  * (docs/TransactionLog.md sec 30.23): the preference `UploadLimitMB` of
  * `BaseApp/Preferences/SceneShare`, 16 unless set, which `FC_SERVE_UPLOAD_MB`
  * presets for a headless serve and setUploadLimit() overrides for the
- * life of the process. Never more than one frame of the socket carries
- * once the bytes are base64: ceiling().
+ * life of the process. Never more than ceiling(). A file larger than one
+ * frame of the socket carries is sent in pieces (`upload.begin`,
+ * `upload.piece`, docs/TransactionLog.md sec 32.36) and the op that takes
+ * it names the pieces' upload instead of carrying `data`.
  */
 GuiExport qint64 uploadLimit();
 /// Whether the preference is what decides: false while `FC_SERVE_UPLOAD_MB`
@@ -102,8 +104,12 @@ GuiExport qint64 uploadLimit();
 GuiExport bool uploadLimitIsPreference();
 /// Override the limit, in bytes; 0 goes back to the preference.
 GuiExport void setUploadLimit(qint64 bytes);
-/// What no setting raises the limit past.
+/// What no setting raises the limit past: 1 GB, written to disk as its
+/// pieces arrive.
 GuiExport qint64 ceiling();
+/// The most one piece carries, before base64: what the client is told at
+/// `upload.begin`, well inside one frame.
+GuiExport qint64 pieceSize();
 
 /** The most that may wait for one document, in bytes, all its sent files
  * together (docs/TransactionLog.md sec 30.28 J4, 30.29): a file that would
@@ -129,8 +135,19 @@ GuiExport QString uniquePath(const QString& dir, const QString& base);
  * to send -- `TooLarge`, `BadRequest` -- when they cannot be taken.
  */
 GuiExport bool decode(const QJsonObject& req, QByteArray& bytes, QJsonObject& error);
+/** What the pieces of the `upload` a request names brought: all of it, sent
+ * on the connection `client` holds it for, checked against uploadLimit()
+ * again. The bytes are in the file at `path` (sec 32.37), which is the
+ * caller's from here -- to move into place or to remove. False with `error`
+ * the reply to send -- `UnknownUpload`, `BadRequest`, `TooLarge`.
+ */
+GuiExport bool takeUpload(const QJsonObject& req, uint64_t client, QString& path, qint64& size,
+                          QJsonObject& error);
+/// The uploads whose pieces are arriving, for a test: how many, and the
+/// bytes come for them together.
+GuiExport int stagedUploads(qint64* bytes = nullptr);
 
-/// Register `requests.send`. Idempotent.
+/// Register `requests.send` and the pieces' ops. Idempotent.
 GuiExport void install();
 
 }  // namespace SceneRequests

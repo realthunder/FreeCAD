@@ -88,6 +88,10 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
         Render::DrawCallList out;
         out.reserve(src.size());
         for (const auto &d : src) {
+            // The host's own to see: in the scene every client shares, and
+            // not for them
+            if (d.capturedMode && d.capturedMode == Render::hostOnlyModeId())
+                continue;
             if (mainStyle.visibilityHidesObject(d))
                 continue;
             if (!resolving || mainStyle.styleAdmits(d))

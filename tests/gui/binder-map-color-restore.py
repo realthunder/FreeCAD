@@ -17,7 +17,9 @@ face colour mapped, as the user file's were. The flags are the object's
 over them, so both are read. Claims, per open mode (ProgressiveLoad off,
 then on): the binder's MapFaceColor, MapLineColor, MapPointColor and
 MapTransparency are the saved ones, by either name. And after the opens,
-setting the colour still turns the mapping off, as it did.
+setting the colour still turns the mapping off, as it did -- by the view
+provider's name and by the object's (docs/TransactionLog.md sec 33.16) --
+and the binder is drawn in the colour set.
 
 Scored against the tree before the fix: the eager open reads
 MapFaceColor false. And against the tree as first merged with the looks
@@ -102,12 +104,45 @@ def run():
               got == saved and flags(obj) == saved,
               "view provider %s, object %s" % (dict(zip(FLAGS, got)),
                                               dict(zip(FLAGS, flags(obj)))))
+        def near(color, want):
+            return all(abs(a - b) < 0.01 for a, b in zip(color[:3], want))
+
+        def faces():
+            """The colour of each face as the object draws it"""
+            ea = obj.ElementAppearance
+            if ea.Faces.Count == 0:
+                return [ea.Face.DiffuseColor]
+            if ea.Faces.Count == 1:
+                return [ea.Faces.Base.DiffuseColor]
+            return [ea.Faces[i].DiffuseColor for i in range(len(obj.Shape.Faces))]
+
+        def drawn_in(want):
+            return all(near(c, want) for c in faces())
+
         if progressive:
-            vp.ShapeColor = (0.9, 0.9, 0.1)
+            picked = (0.9, 0.9, 0.1)
+            vp.ShapeColor = picked
             wait(0.2)
             check("a colour set after the open still turns its mapping off",
                   not vp.MapFaceColor and not obj.MapFaceColor,
                   "view provider %s, object %s" % (vp.MapFaceColor, obj.MapFaceColor))
+        else:
+            # By the object's name, which is what a script with no view and
+            # the property editor's Data tab write (sec 33.16)
+            picked = (0.1, 0.9, 0.1)
+            obj.ShapeColor = picked
+            wait(0.2)
+            check("a colour set by the object's name turns its mapping off as well",
+                  not vp.MapFaceColor and not obj.MapFaceColor,
+                  "view provider %s, object %s" % (vp.MapFaceColor, obj.MapFaceColor))
+        check("%s open: and the binder is the colour picked, by both names and drawn" % mode,
+              near(vp.ShapeColor, picked) and near(obj.ShapeColor, picked) and drawn_in(picked),
+              "view provider %s, object %s, drawn %s"
+              % (vp.ShapeColor[:3], obj.ShapeColor[:3],
+                 sorted({tuple(round(v, 2) for v in c[:3]) for c in faces()})))
+        check("%s open: the other mappings are as they were" % mode,
+              flags(obj)[1:] == saved[1:] and flags(vp)[1:] == saved[1:],
+              "view provider %s, object %s" % (flags(vp), flags(obj)))
         FreeCAD.closeDocument(doc.Name)
         wait(0.5)
 

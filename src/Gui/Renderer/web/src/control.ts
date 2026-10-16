@@ -156,6 +156,18 @@ window.addEventListener('fc:control', (e: Event) => {
   else p.resolve(d);
 });
 
+// A socket that drops takes its answers with it: an op still waiting is
+// answered on that connection or never, so it is told now rather than at
+// its timeout (sec 32.37) -- a send in pieces waits for the next one.
+window.addEventListener('fc:connection', (e: Event) => {
+  if ((e as CustomEvent).detail) return;
+  for (const [id, p] of [...pending]) {
+    pending.delete(id);
+    clearTimeout(p.timer);
+    p.reject({ code: 'Offline', message: 'scene socket down' });
+  }
+});
+
 /// Send one operation; resolves with the correlated answer. Rejects
 /// immediately with code 'Offline' while the socket is down (no
 /// queueing — the caller shows its offline state), and with 'Timeout'
@@ -496,6 +508,500 @@ export function onSheetChanged(
   return onPush('sheet.changed', fn);
 }
 
+// ---- The transaction log (docs/TransactionLog.md sec 32.21) ----
+
+/// One row of the log as the host lists it (Gui/SceneLog.cpp).
+export interface LogRow {
+  seq: number;
+  parent: number;
+  kind: string;              // user, implicit, recompute, undo, redo, merge, ...
+  origin: string;
+  name: string;
+  time: number;              // seconds since the epoch
+  author: string;
+  authorKind: string;        // local, verified, invited, declared, enrolled
+  branch: number;
+  branchName: string;
+  inverts?: number;          // the row an undo or a redo is the inverse of
+  merged?: number;           // a merge's second parent
+  ops: number;               // 0: a record, which changed nothing
+  here: boolean;             // of the history the document is at the head of
+  mine: boolean;             // made by the one who asks
+  within: boolean;           // a document may be moved from it by the one who asks
+}
+
+/// What the one who asks may (docs/TransactionLog.md sec 32.25): the host
+/// all of it; anyone else by branch, and `write` says the branch the
+/// document is on is one it writes -- which is what lets it move the
+/// document: restore, switch, branch.
+export interface LogReach {
+  host: boolean;
+  write: boolean;
+}
+
+export interface LogRowsReply extends LogReach {
+  doc: string;
+  floor?: number;            // the row the branch the document is on is written from
+  oldest?: number;           // the oldest row the page was read to: rows of branches
+                             // that are not read are left out of it
+  rows: LogRow[];            // newest first
+  more: boolean;             // older ones than these exist
+  reset?: boolean;           // more came than a page: start over from these
+  last: number;
+  head: number;
+  branch: number;
+  branchName: string;
+}
+
+/// One op of a row.
+export interface LogOp {
+  idx: number;
+  op: string;                // create, remove, set, addprop, delprop
+  kind: string;              // doc, obj, view
+  prop: string;
+  type: string;
+  before?: string;           // the refs of the value before and after
+  after?: string;
+  derived?: boolean;
+  followed?: boolean;
+  cid?: number;
+  obj?: string;
+  label?: string;
+  here?: boolean;            // the object is in the document now
+  shows?: boolean;           // its view can show the two states
+  keptValue?: boolean;       // the value after is kept in the file by itself
+  keptObject?: boolean;      // every value of the object is kept in the file
+}
+
+export interface LogOpsReply {
+  doc: string;
+  row: number;
+  name: string;
+  script?: string;
+  ops: LogOp[];
+  count: number;             // how many the row has; `ops` may be fewer
+  keep?: boolean;            // the asker may keep a value at the row
+  keepWhy?: string;          // and why not
+  keepObject?: boolean;      // the asker may keep every value of an object: the host
+}
+
+export interface LogValueReply {
+  ref: string;
+  text: string;
+  bytes: number;
+  truncated: boolean;
+  attachments: Array<{ name: string; bytes: number }>;
+  /// What a value whose text says nothing to a reader is, in a line -- a
+  /// shape's kind, its counts, volume and size -- and the same as numbers
+  /// (sec 32.35); where the host knows it
+  summary?: string;
+  facts?: Record<string, number>;
+}
+
+const withDoc = (doc: string | undefined, fields: Record<string, unknown>) =>
+  (doc ? { doc, ...fields } : fields);
+
+/// A page of rows, newest first: the newest, those before `before`, or
+/// what came after `after`. Asking is also what subscribes this connection
+/// to `log.changed` for the document. For those who may edit: a viewer is
+/// answered ViewOnly.
+export function logRows(
+  doc?: string,
+  range: { before?: number; after?: number; limit?: number } = {},
+): Promise<LogRowsReply> {
+  return sendOp('log.rows', withDoc(doc, range));
+}
+
+export function logOps(row: number, doc?: string): Promise<LogOpsReply> {
+  return sendOp('log.ops', withDoc(doc, { row }));
+}
+
+export function logValue(ref: string, doc?: string): Promise<LogValueReply> {
+  return sendOp('log.value', withDoc(doc, { ref }));
+}
+
+/// Where the document is in its log: what every act on it answers with.
+export interface LogPlace {
+  doc: string;
+  last: number;
+  head: number;
+  branch: number;
+  branchName: string;
+}
+
+export interface LogVersion {
+  num: number;
+  named: boolean;            // a named one is never evicted
+  name: string;
+  branch: number;
+  branchName: string;
+  branchRead?: boolean;      // false: of a branch the one who asks does not read
+  seq: number;               // the row it was taken at; 0: at none
+  time: number;
+  here: boolean;             // of the history the document is at the head of
+  head: boolean;             // the document as it stands
+  within: boolean;           // a document may be moved to it by the one who asks
+}
+
+/// A branch of the log. One the asker does not read is listed by its name
+/// alone, `read` false, to be shown greyed (docs/TransactionLog.md sec 32.30).
+export interface LogBranch {
+  id: number;
+  name: string;
+  read: boolean;
+  head: number;
+  fromVersion: number;
+  fromSeq: number;
+  time: number;
+  closed: boolean;           // not switched to
+  current: boolean;          // the one the document is on
+  write: boolean;            // the one who asks writes it
+  floor?: number;            // and from which row
+  made: boolean;             // made by the asker's own doing: its to delete
+}
+
+/// A request to merge one branch into another.
+export interface LogRequest {
+  id: number;
+  source: string;            // the branch to merge
+  target: string;            // the branch to merge it into
+  by: string;
+  byKind: string;
+  note: string;
+  time: number;
+  state: string;             // open, merged, rejected, withdrawn
+  closed?: number;
+  closedBy?: string;
+  result?: number;           // the row the merge wrote
+  mine: boolean;             // asked by the one who asks: its to withdraw
+  handles: boolean;          // the asker writes the target: its to merge or reject
+  here: boolean;             // the document is on the target, where it is merged
+}
+
+/// Rows taken back as one step though none is the last: all of them or
+/// none, and a refusal (`Refused`) says which is in the way. Below the host
+/// a connection takes back its own rows (`NotYours`).
+export function logUndoRows(rows: number[], doc?: string): Promise<LogPlace> {
+  return sendOp('log.undo', withDoc(doc, { rows }));
+}
+
+export function logVersions(
+  doc?: string,
+): Promise<LogPlace & LogReach & { versions: LogVersion[] }> {
+  return sendOp('log.versions', withDoc(doc, {}));
+}
+
+export function logBranches(
+  doc?: string,
+): Promise<LogPlace & LogReach & { branches: LogBranch[] }> {
+  return sendOp('log.branches', withDoc(doc, {}));
+}
+
+/// A version of the document as it stands, named where a name is given.
+export function logSnapshot(name?: string, doc?: string): Promise<LogPlace & { version: number }> {
+  return sendOp('log.snapshot', withDoc(doc, name ? { name } : {}));
+}
+
+/// Name a version; with no name, make it unnamed again.
+export function logNameVersion(version: number, name: string, doc?: string): Promise<LogPlace> {
+  return sendOp('log.nameVersion', withDoc(doc, { version, name }));
+}
+
+/// The document made what a version was, as one step that undo takes back.
+export function logRestore(version: number, doc?: string): Promise<LogPlace> {
+  return sendOp('log.restore', withDoc(doc, { version }));
+}
+
+/// A new branch, switched to: from a version, or a row, or where the
+/// document is.
+export function logNewBranch(
+  name: string, from: { version?: number; row?: number } = {}, doc?: string,
+): Promise<LogPlace & { made: number }> {
+  return sendOp('log.branch', withDoc(doc, { name, ...from }));
+}
+
+export function logSwitchBranch(name: string, doc?: string): Promise<LogPlace> {
+  return sendOp('log.switch', withDoc(doc, { name }));
+}
+
+export function logRenameBranch(name: string, to: string, doc?: string): Promise<LogPlace> {
+  return sendOp('log.renameBranch', withDoc(doc, { name, to }));
+}
+
+export function logDeleteBranch(name: string, doc?: string): Promise<LogPlace & { rows: number }> {
+  return sendOp('log.deleteBranch', withDoc(doc, { name }));
+}
+
+/// Rows of a branch that is read, applied to the one the document is on as
+/// a step of the asker's own. Where they meet what was set here since, the
+/// host answers `Conflicts` with how many, and `fallback` says a side for
+/// them all.
+export function logApply(
+  rows: number[], sides?: LogSides, doc?: string,
+): Promise<LogPlace & { row: number; failed: number }> {
+  return sendOp('log.apply', withDoc(doc, { rows, ...sidesOf(sides) }));
+}
+
+/// A side for each conflict, by its key (LogChange.key), and one for the
+/// rest: what an apply or a merge that meets conflicts goes on with
+/// (docs/TransactionLog.md sec 32.26)
+export interface LogSides {
+  fallback?: 'ours' | 'theirs';
+  picks?: Record<string, 'ours' | 'theirs'>;
+}
+
+function sidesOf(sides?: LogSides): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (sides?.fallback) out.fallback = sides.fallback;
+  if (sides?.picks && Object.keys(sides.picks).length) out.picks = sides.picks;
+  return out;
+}
+
+/// One change a merge or an apply would make (Document::MergeChange):
+/// `conflict` asks a side, `view` keeps ours unless picked; the values are
+/// text, at the base, ours and theirs.
+export interface LogChange {
+  key: string;               // what a pick names it by
+  kind: string;              // take, same, conflict, view, derived, unit, merge, name
+  op: string;                // set, addprop, delprop, create, remove, revive, unit
+  ckind: string;             // doc, obj, view
+  object: string;
+  label?: string;
+  prop: string;
+  derived: boolean;
+  base?: string;
+  ours?: string;
+  theirs?: string;
+  note?: string;
+}
+
+/// A file a client sent to be merged, not read yet (sec 30.20): the host's
+/// all are listed to it, a client's own to the client.
+export interface LogSentFile {
+  id: number;
+  name: string;
+  size: number;
+  by: string;
+  byKind: string;
+  time: number;
+  mine: boolean;             // sent by the one who asks: its to withdraw
+}
+
+/// A branch an import made that the branch the document is on has not
+/// taken (sec 30.20 H1).
+export interface LogImport {
+  branch: string;
+  file: string;              // the file it came from
+  authors: string[];         // who made its rows
+  by?: string;               // who sent the file, when someone did
+  time: number;
+  rows: number;              // the operations it has to give
+  independent: boolean;      // it shares no history with this file
+  stopped: boolean;          // the import stopped at a row
+}
+
+export interface LogPreviewReply extends LogPlace {
+  what: 'rows' | 'merge';
+  request?: number;
+  source?: string;           // the branch a request merges
+  base: number;              // the newest row both histories hold
+  forward: number;           // rows taken as they are, where nothing here moved
+  fastForward: boolean;
+  conflicts: number;
+  changes: LogChange[];
+  count: number;             // how many there are; `changes` may be fewer
+}
+
+/// What an apply of `rows`, or the merge `request` asks, would do: nothing
+/// changes. Refused as the act would be.
+export function logPreview(
+  of: { rows: number[] } | { request: number } | { import: string }, doc?: string,
+): Promise<LogPreviewReply> {
+  return sendOp('log.preview', withDoc(doc, of));
+}
+
+/// The merge undone at the head taken out of the log; with `dry`, only
+/// what it would take out and whether the asker may.
+export function logRollBack(
+  dry: boolean, doc?: string,
+): Promise<LogPlace & { merge: number; source: string; rows: number; may?: boolean;
+                       why?: string }> {
+  return sendOp('log.rollBack', withDoc(doc, dry ? { dry: true } : {}));
+}
+
+export function logRequests(
+  doc?: string,
+): Promise<LogPlace & LogReach & { requests: LogRequest[]; files?: LogSentFile[];
+                                   imports?: LogImport[] }> {
+  return sendOp('log.requests', withDoc(doc, {}));
+}
+
+/// A file sent, read into a branch of its own: the host's.
+export function logBring(
+  file: number, doc?: string,
+): Promise<LogPlace & { name: string; into: string; rows: number; stopped?: boolean;
+                       why?: string }> {
+  return sendOp('log.bring', withDoc(doc, { file }));
+}
+
+/// A file sent, let go unread: the host's, or withdrawn by its sender.
+export function logDropFile(file: number, doc?: string): Promise<LogPlace & { name: string }> {
+  return sendOp('log.dropFile', withDoc(doc, { file }));
+}
+
+/// A branch an import made, merged into the one the document is on: the
+/// host's. `Conflicts` and the sides as for logApply.
+export function logMergeImport(
+  branch: string, sides?: LogSides, doc?: string,
+): Promise<LogPlace & { row: number; forwarded: number; failed: number }> {
+  return sendOp('log.mergeImport', withDoc(doc, { branch, ...sidesOf(sides) }));
+}
+
+/// A branch's history before one of its versions taken out, but what
+/// another branch holds and the named versions: the host's, for good.
+export function logTrim(
+  branch: string, version: number, doc?: string,
+): Promise<LogPlace & { rows: number }> {
+  return sendOp('log.trim', withDoc(doc, { branch, version }));
+}
+
+/// A version an older one may be squashed to it from, newest first, with
+/// the rows it would fold.
+export interface LogBehind {
+  num: number;
+  name: string;
+  seq: number;
+  rows: number;
+}
+
+/// The rows between version `from` and `version` folded into one row of
+/// their net change: the host's, for good. With no `from`, the versions it
+/// may start from.
+export function logSquash(
+  version: number, from?: number, doc?: string,
+): Promise<LogPlace & { version: number; behind?: LogBehind[]; rows?: number; row?: number }> {
+  return sendOp('log.squash', withDoc(doc, from ? { version, from } : { version }));
+}
+
+/// Ask for `source` to be merged into `target`: for one who reads both.
+export function logRequest(
+  source: string, target: string, note: string, doc?: string,
+): Promise<LogPlace & { request: number }> {
+  return sendOp('log.request', withDoc(doc, { source, target, note }));
+}
+
+/// End a request without merging: `withdrawn` by who asked, `rejected` by
+/// who writes its target.
+export function logCloseRequest(
+  request: number, state: 'withdrawn' | 'rejected', doc?: string,
+): Promise<LogPlace> {
+  return sendOp('log.closeRequest', withDoc(doc, { request, state }));
+}
+
+/// Do what a request asks, in a document that is on its target. `Conflicts`
+/// and the sides as for logApply.
+export function logMergeRequest(
+  request: number, sides?: LogSides, doc?: string,
+): Promise<LogPlace & { row: number; forwarded: number; failed: number }> {
+  return sendOp('log.mergeRequest', withDoc(doc, { request, ...sidesOf(sides) }));
+}
+
+// What a save writes into the file though no kept version reaches it: the
+// values a recompute wrote -- shapes -- kept (docs/TransactionLog.md sec
+// 32.11, 32.27).
+
+/// A value kept by itself: it stays when its row goes.
+export interface LogKeptValue {
+  ref: string;
+  cid: number;
+  obj?: string;              // where the document has the object
+  label?: string;
+  here: boolean;             // the object is in the document
+  prop: string;
+  seq: number;               // the row it was kept at
+  row: boolean;              // that row is still in the log
+  release: boolean;          // the asker may let it go
+  why?: string;              // and why not
+  keeper?: string;           // who kept it, where not the host
+  keeperKind?: string;
+  mine?: boolean;            // the asker kept it
+}
+
+/// An object every value of which is kept, and those the log has of it.
+export interface LogKeptObject {
+  cid: number;
+  obj?: string;
+  label?: string;
+  here: boolean;
+  /// `release`, `why` and the keeper of one kept by itself too, as for
+  /// LogKeptValue; `keep`: whether the asker may keep it by itself
+  values: Array<{ ref: string; prop: string; seq: number; alone: boolean; release?: boolean;
+                  why?: string; keeper?: string; mine?: boolean; keep?: boolean;
+                  keepWhy?: string }>;
+  release: boolean;          // the asker may stop keeping it
+  why?: string;
+}
+
+export function logKept(
+  doc?: string,
+): Promise<LogPlace & LogReach & { values: LogKeptValue[]; objects: LogKeptObject[];
+                                   count: number; keepObject?: boolean }> {
+  return sendOp('log.kept', withDoc(doc, {}));
+}
+
+/// Keep, or let go of, the value of an object at a row (0: where the
+/// document is); with no `prop` every value of it a recompute wrote. One
+/// object by name or id, or several by name. `values` is how many moved.
+/// Keeping is the host's, and of one who writes the row's branch since the
+/// point; letting go is also the keeper's.
+export function logKeep(
+  what: { obj?: string; cid?: number; objects?: string[]; prop?: string; row?: number },
+  keep: boolean, doc?: string,
+): Promise<LogPlace & { row: number; values: number }> {
+  return sendOp('log.keep', withDoc(doc, { ...what, keep }));
+}
+
+/// Keep every value of an object the log has and will have, or stop: the
+/// host's alone, both.
+export function logKeepObject(
+  what: { obj?: string; cid?: number }, keep: boolean, doc?: string,
+): Promise<LogPlace & { cid: number; changed: boolean }> {
+  return sendOp('log.keepObject', withDoc(doc, { ...what, keep }));
+}
+
+/// Let go of a value kept by itself, by its ref: one whose row is gone too.
+export function logRelease(ref: string, doc?: string): Promise<LogPlace & { ref: string }> {
+  return sendOp('log.release', withDoc(doc, { ref }));
+}
+
+/// The host's "this document's log has other rows now": the document's
+/// name and nothing of the log.
+export function onLogChanged(fn: (msg: { doc: string }) => void): () => void {
+  return onPush('log.changed', fn);
+}
+
+/// Gui::ViewProvider::ValueDiff: the edit that shows a change of an
+/// object's value as its two states.
+export const EDIT_VALUE_DIFF = 6;
+
+/// Show what row `row` made of object `obj`, as the edit it is: the
+/// host's panel of it is mirrored, and comes up by itself (main.tsx).
+///
+/// An edit runs in the view this connection stated, and a page nobody has
+/// clicked in has stated none (docs/ThinClient.md sec 8.10b): the camera
+/// goes up first, as the viewer's own ask for an edit sends it.
+export function showRowChange(obj: string, row: number, doc?: string): Promise<any> {
+  window.fcviewerStateCamera?.();
+  return sendOp('edit', withDoc(doc, { obj, mode: EDIT_VALUE_DIFF, row }));
+}
+
+/// The same edit, of a value the log keeps in the file (its ref) against
+/// what the object has now (docs/TransactionLog.md sec 32.27).
+export function showKeptValue(obj: string, kept: string, doc?: string): Promise<any> {
+  window.fcviewerStateCamera?.();
+  return sendOp('edit', withDoc(doc, { obj, mode: EDIT_VALUE_DIFF, kept }));
+}
+
 // ---- The streamed desktop tool bars (docs/ThinClient.md 8.11 item 4) ----
 
 /// Listen for the scene socket going up or down. Returns the unsubscribe.
@@ -566,8 +1072,8 @@ export function isBrowserSafeCommand(name: string): boolean {
 /// Bytes as base64, in chunks: `String.fromCharCode(...bytes)` over a whole
 /// file is one argument per byte, and a few hundred kilobytes overflows the
 /// call.
-function base64Of(bytes: ArrayBuffer): string {
-  const view = new Uint8Array(bytes);
+export function base64Of(bytes: ArrayBuffer | Uint8Array): string {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const CHUNK = 0x8000;
   let text = '';
   for (let at = 0; at < view.length; at += CHUNK) {
@@ -589,6 +1095,105 @@ export interface SentRequest {
 /// taken. Needs a connection that may edit: a request becomes rows of the
 /// host's log. Rejects with `TooLarge` past the host's upload limit, and
 /// with `TooMany` when what already waits there leaves no room (sec 30.29).
-export function sendRequestFile(name: string, bytes: ArrayBuffer): Promise<SentRequest> {
-  return sendOp('requests.send', { name, data: base64Of(bytes) }, 120000);
+export function sendRequestFile(
+  name: string,
+  bytes: ArrayBuffer,
+  progress?: (sent: number, size: number, waiting?: boolean) => void,
+): Promise<SentRequest> {
+  return sendFile('requests.send', name, bytes, progress, 120000);
+}
+
+/// What goes whole: a file this size or smaller is one message, as it
+/// always was. The host says what a piece of a larger one carries.
+const WHOLE_MOST = 4 * 1024 * 1024;
+
+/// How long a send in pieces waits for a dropped connection to come back
+/// before it gives up: inside the two minutes the host keeps what came.
+const RESUME_WAIT_MS = 90000;
+
+/// Whether a refusal is the connection's and not the host's: what a send
+/// in pieces waits out and takes up again.
+function connectionLost(e: any): boolean {
+  return e?.code === 'Offline' || e?.code === 'Timeout';
+}
+
+/// A file to an op that takes one -- `requests.send`, `widgets.upload` --
+/// whole when it is small, in pieces when it is not (docs/TransactionLog.md
+/// sec 32.36): one message of the socket carries 46 MB once the bytes are
+/// base64, and a piece at a time lets the other traffic through and says
+/// how far it got. `upload.begin` gives the size first, so a file the
+/// host will not take is refused before a byte goes; the pieces follow in
+/// order; and the op names the upload instead of carrying the bytes.
+///
+/// A connection that drops in the middle is waited for (sec 32.37): when
+/// it is back, the upload is taken up again with the token the host gave
+/// at the start, and the pieces go on from what the host says it has --
+/// what came before the drop does not travel again. `progress` is told
+/// `waiting` meanwhile. Rejects with what the host refused it as; an
+/// upload left half sent for any other reason is cancelled.
+export async function sendFile(
+  op: string,
+  name: string,
+  bytes: ArrayBuffer,
+  progress?: (sent: number, size: number, waiting?: boolean) => void,
+  timeoutMs = 10000,
+): Promise<any> {
+  const size = bytes.byteLength;
+  if (size <= WHOLE_MOST) {
+    const reply = await sendOp(op, { name, data: base64Of(bytes) }, timeoutMs);
+    progress?.(size, size);
+    return reply;
+  }
+  const begun = await sendOp('upload.begin', { size, for: op });
+  let upload = begun.upload as number;
+  const resume = begun.resume as string;
+  const piece = Math.max(64 * 1024, Math.min((begun.piece as number) || WHOLE_MOST, WHOLE_MOST * 8));
+  const view = new Uint8Array(bytes);
+  let at = 0;
+  // Back on a connection, the upload taken up again: where to go on from.
+  const takeUp = async (): Promise<void> => {
+    const until = Date.now() + RESUME_WAIT_MS;
+    for (;;) {
+      progress?.(at, size, true);
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const again = await sendOp('upload.begin', { resume });
+        upload = again.upload as number;
+        at = again.received as number;
+        return;
+      } catch (e) {
+        if (!connectionLost(e) || Date.now() > until) throw e;
+      }
+    }
+  };
+  try {
+    while (at < size) {
+      const end = Math.min(size, at + piece);
+      try {
+        const reply = await sendOp('upload.piece',
+          { upload, at, data: base64Of(view.subarray(at, end)) }, 60000);
+        at = (reply.received as number) ?? end;
+      } catch (e) {
+        if (!connectionLost(e)) throw e;
+        await takeUp();
+      }
+      progress?.(at, size);
+    }
+    for (;;) {
+      try {
+        return await sendOp(op, { name, upload }, timeoutMs);
+      } catch (e) {
+        // Lost on the way: taken up again, the host says whether it still
+        // holds it all -- when it took it before the drop, it has let the
+        // upload go, and this rejects as unknown.
+        if (!connectionLost(e)) throw e;
+        await takeUp();
+      }
+    }
+  } catch (e) {
+    // Whatever went wrong, the host need not hold what came: it lets an
+    // idle upload go anyway, this only says so sooner.
+    sendOp('upload.cancel', { upload }).catch(() => {});
+    throw e;
+  }
 }

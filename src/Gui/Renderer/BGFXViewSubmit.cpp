@@ -86,6 +86,12 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
             return false;
         captured = 0;
     }
+    // What is the host's own to see (Render::hostOnlyModeId): no mode copy
+    // either. A view draws it as it is; it is the snapshot that leaves it
+    // out (BGFXScene.cpp).
+    else if (captured && captured == Render::hostOnlyModeId()) {
+        captured = 0;
+    }
     return styleAdmitsAs(draw, captured);
 }
 
@@ -715,16 +721,17 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     // slots); set on every mesh submit because bgfx uniforms are
     // global per program. Overlays (NaviCube, axis cross, …) are UI
     // chrome and must not flicker with the scene's effect lights,
-    // so they get a zeroed array.
-    if (overlayView >= 0) {
+    // so they get a zeroed array. What an overlay draws with the scene's
+    // camera is the scene's (overlayInScene) and has its lights.
+    if (overlayView >= 0 && !overlayInScene) {
         static const float noLights[kLocalLights][4] = {};
         bgfx::setUniform(u_localLight, noLights, kLocalLights);
     }
     else {
         bgfx::setUniform(u_localLight, localLightView, kLocalLights);
     }
-    // The ordinary Coin lights. Overlays are UI chrome shaded flat
-    // (params.y = 0 below), so they never reach the lighting loop and
+    // The ordinary Coin lights. Overlays that are UI chrome are shaded
+    // flat (params.y = 0 below), so they never reach the lighting loop and
     // do not need the zeroed-array treatment the effect lights get.
     bgfx::setUniform(u_viewLight, viewLightView, kViewLights);
     bgfx::setUniform(u_viewLightColor, viewLightColorI, kViewLights);
@@ -816,7 +823,10 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
         || (lightFrame && (mat.shadowstyle & 2));
     // UI overlays (NaviCube faces, etc.) are flat chrome with baked
     // textures: light them uniformly so faces don't darken by angle.
-    if (overlayView >= 0)
+    // An overlay drawn with the scene's camera is not chrome: the two
+    // states of a shape in an edit (docs/TransactionLog.md sec 32.19), a
+    // feature's preview, a dragger -- lit as Coin lights them.
+    if (overlayView >= 0 && !overlayInScene)
         shaded = false;
     // Light-source bodies render unshaded at their diffuse color (a
     // glowing bulb face is its own light, not a lit surface).
@@ -1415,8 +1425,9 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // of the light model.
     bool shaded = mat.lighting
         || (lightFrame && (mat.shadowstyle & 2));
-    // UI overlays render unlit (see the instanced path above).
-    if (overlayView >= 0)
+    // UI overlays render unlit (see the instanced path above); what is
+    // drawn with the scene's camera is lit.
+    if (overlayView >= 0 && !overlayInScene)
         shaded = false;
     // Light-source bodies render unshaded at their diffuse color (a
     // glowing bulb face is its own light, not a lit surface).

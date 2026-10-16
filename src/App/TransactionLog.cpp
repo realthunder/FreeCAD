@@ -220,7 +220,7 @@ public:
     std::vector<long> objectIdsInOps() override { return inner().objectIdsInOps(); }
     void removeObjectState(const std::vector<long>& ids) override
     { inner().removeObjectState(ids); }
-    void keepValue(const LogKept& kept) override { inner().keepValue(kept); }
+    bool keepValue(const LogKept& kept) override { return inner().keepValue(kept); }
     bool releaseValue(const std::string& hash) override { return inner().releaseValue(hash); }
     std::vector<LogKept> keptValues() override { return inner().keptValues(); }
     void keepObject(long cid, bool keep) override { inner().keepObject(cid, keep); }
@@ -265,6 +265,8 @@ public:
     int64_t user(const std::string& kind, const std::string& name) override
     { return inner().user(kind, name); }
     std::vector<LogUser> users() override { return inner().users(); }
+    void setUserParent(int64_t user, int64_t parent) override
+    { inner().setUserParent(user, parent); }
     int64_t openSession(int64_t env, int64_t user, const std::string& host,
                         const std::string& access, const std::string& uuid,
                         double opened) override
@@ -311,6 +313,15 @@ public:
     { return inner().renameBranch(id, name); }
     bool updateBranch(const LogBranch& branch) override { return inner().updateBranch(branch); }
     bool removeBranch(int64_t id) override { return inner().removeBranch(id); }
+    std::vector<LogAccess> accesses() override { return inner().accesses(); }
+    void setAccess(const LogAccess& access) override { inner().setAccess(access); }
+    bool clearAccess(const std::string& kind, const std::string& name, int64_t branch) override
+    { return inner().clearAccess(kind, name, branch); }
+    std::vector<LogMergeRequest> mergeRequests() override { return inner().mergeRequests(); }
+    int64_t addMergeRequest(LogMergeRequest& request) override
+    { return inner().addMergeRequest(request); }
+    bool updateMergeRequest(const LogMergeRequest& request) override
+    { return inner().updateMergeRequest(request); }
     bool forwardBranch(int64_t id, int64_t head, const std::vector<int64_t>& seqs) override
     { return inner().forwardBranch(id, head, seqs); }
     void anchorVersions(const std::vector<int64_t>& seqs, int64_t to) override
@@ -1467,6 +1478,13 @@ int64_t TransactionLog::login(const Actor& actor)
 bool TransactionLog::logout(const Actor& actor)
 {
     return _c.closeLogin(actor);
+}
+
+std::pair<std::string, std::string> TransactionLog::userOf(const Actor* actor) const
+{
+    if (!actor || actor->kind == Actor::Local)
+        return {Actor::kindName(Actor::Local), _c._localName};
+    return {Actor::kindName(actor->kind), actor->name};
 }
 
 int64_t TransactionLog::importSession(const LogSession& session, const LogUser& user,

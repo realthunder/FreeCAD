@@ -26,8 +26,18 @@ import { fileURLToPath } from 'node:url';
 import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilter,
          cssColor, dialogClickOp, dialogRejectOp, fileSelectedOp, isDarkColor,
          isDialogRoot, isPanelMirrorId, itemClickOp, itemEditOp, itemExpandOp,
-         layoutRefs, refId, selectionWrite } from './protocol.ts';
+         layoutRefs, panelButtonOp, refId, selectionWrite,
+         BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_OK } from './protocol.ts';
 import type { Frame } from './protocol.ts';
+import { actRefusal, branchNameProblem, deletable, logAuthor, logOpText, logRefusal, logWhen,
+         mayMove, mergeNewest, moveWhy, pickRows, requestActs, requestProblem, requestState,
+         requestText, rowBranchWhy, rowUndoable, rowUndoWhy, rowsAppliable, sortRequests,
+         switchable, undoLabel, versionText, versionWhy,
+         changeName, changePicked, changeTakes, picksOf, previewText, sortChanges,
+         unpickedConflicts, keepText, keptCountText, keptLines, keptObjectText, keptRowText,
+         keptTabText, opKeepable, opKeptText, changeLeavable, changeLeftOut, keeperText,
+         keepWhy, branchRead, bringWhy, importText, importWho, sentFileText, sizeText,
+         squashChoices, trimWhy, layoutGraph, branchColour } from '../logmodel.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
@@ -251,6 +261,20 @@ function checkDialogs(): void {
         JSON.stringify(dialogClickOp(YES)) === '{"event":"clicked","args":[16384]}',
         JSON.stringify(dialogClickOp(YES)));
   check(t, 'Escape rejects', JSON.stringify(dialogRejectOp()) === '{"event":"reject"}');
+
+  // a TASK PANEL's box: its own buttons, each asking what its flag means
+  const asks = (flag: number): string => JSON.stringify(panelButtonOp(flag));
+  check(t, "a task's OK accepts",
+        asks(BUTTON_OK) === '{"op":{"event":"accept"},"leaves":false}', asks(BUTTON_OK));
+  check(t, "a task's Close leaves, and a viewer may press it",
+        asks(BUTTON_CLOSE) === '{"op":{"event":"reject"},"leaves":true}', asks(BUTTON_CLOSE));
+  check(t, "a task's Cancel leaves",
+        asks(BUTTON_CANCEL) === '{"op":{"event":"reject"},"leaves":true}', asks(BUTTON_CANCEL));
+  check(t, "a task's Apply is clicked by its flag",
+        asks(0x2000000) === '{"op":{"event":"clicked","args":[33554432]},"leaves":false}',
+        asks(0x2000000));
+  check(t, 'a button with no flag is its own click',
+        panelButtonOp(0).op === undefined && !panelButtonOp(0).leaves);
 
   // and what the close leaves behind
   const after = upto(closeAt + 1);
@@ -686,4 +710,388 @@ function checkImages(): void {
   check(t, 'another size is another fetch', themed.asked === 3, `asked ${themed.asked}`);
 }
 
+/// The transaction log's panel (logpanel.tsx, docs/TransactionLog.md sec
+/// 32.21): what it says of a row and an op, and which rows it keeps when
+/// the host answers again.
+function checkLog(): void {
+  const t = 'log panel';
+  const row = (seq: number, extra: Record<string, unknown> = {}): any => ({
+    seq, parent: seq - 1, kind: 'user', origin: 'gui', name: `row ${seq}`, time: 0,
+    author: 'host', authorKind: 'local', branch: 1, branchName: 'main', ops: 1,
+    here: true, mine: true, within: true, ...extra });
+  const seqs = (rows: Array<{ seq: number }>): string => rows.map((r) => r.seq).join(',');
+
+  // the newest page again, with older ones loaded under it
+  const old = [row(9), row(8), row(7), row(6), row(5), row(4)];
+  const page = [row(11), row(10), row(9), row(8)];
+  check(t, 'the newest page goes on top, the older ones stay under it',
+        seqs(mergeNewest(old, page, true)) === '11,10,9,8,7,6,5,4',
+        seqs(mergeNewest(old, page, true)));
+  check(t, 'on another branch the older ones are not kept',
+        seqs(mergeNewest(old, page, false)) === '11,10,9,8',
+        seqs(mergeNewest(old, page, false)));
+  check(t, 'a page with no rows is no rows', mergeNewest(old, [], true).length === 0);
+  check(t, "what the page says of a row replaces what was said of it",
+        mergeNewest([row(9, { here: true })], [row(9, { here: false })], true)[0].here === false);
+
+  check(t, "the desktop's user stands alone", logAuthor(row(1)) === 'host', logAuthor(row(1)));
+  check(t, 'a name nothing verified says so',
+        logAuthor(row(1, { author: 'ann', authorKind: 'invited' })) === 'ann (invited)');
+  check(t, 'a verified name stands alone',
+        logAuthor(row(1, { author: 'ann', authorKind: 'verified' })) === 'ann');
+
+  const noon = new Date(2026, 9, 13, 12, 0, 0);
+  const sameDay = new Date(2026, 9, 13, 9, 5, 7).getTime() / 1000;
+  const dayBefore = new Date(2026, 9, 12, 9, 5, 7).getTime() / 1000;
+  check(t, 'a row of today says its time', logWhen(sameDay, noon).length > 0
+        && logWhen(dayBefore, noon).length > logWhen(sameDay, noon).length,
+        `${logWhen(sameDay, noon)} | ${logWhen(dayBefore, noon)}`);
+  check(t, 'a row with no time says nothing', logWhen(0, noon) === '');
+
+  // The graph (sec 32.35): main 1-2-3-6, side forked at 2 with 4-5, merged
+  // into main at 7
+  const g = [row(7, { parent: 6, merged: 5, kind: 'merge' }), row(6, { parent: 3 }),
+             row(5, { parent: 4, branch: 2, branchName: 'side', here: false }),
+             row(4, { parent: 2, branch: 2, branchName: 'side', here: false }),
+             row(3), row(2), row(1, { parent: 0 })];
+  const heads = [{ name: 'main', head: 7, current: true }, { name: 'side', head: 5, current: false }];
+  const at = (l: ReturnType<typeof layoutGraph>, seq: number) => l.rows.get(seq)!;
+  const lanes = (ls: Array<{ lane: number; to: number }>) =>
+    ls.map((x) => `${x.lane}>${x.to}`).join(',');
+  const whole = layoutGraph(g, g, heads);
+  check(t, 'graph: two lanes, the merge a lane from its node down to the row merged in',
+        whole.lanes === 2 && lanes(at(whole, 7).out) === '0>1' && at(whole, 7).out[0].branch === 2,
+        `${whole.lanes} ${lanes(at(whole, 7).out)}`);
+  check(t, "graph: the side's rows on their own lane, main's on the first",
+        at(whole, 5).lane === 1 && at(whole, 4).lane === 1 && at(whole, 6).lane === 0
+        && at(whole, 3).lane === 0, [7, 6, 5, 4, 3, 2, 1].map((s) => at(whole, s).lane).join(''));
+  check(t, 'graph: the fork, both lanes converging on the row they part from',
+        at(whole, 2).lane === 0 && lanes(at(whole, 2).top) === '0>0,1>0'
+        && lanes(at(whole, 2).bottom) === '0>0', lanes(at(whole, 2).top));
+  check(t, 'graph: the first row ends its lane', lanes(at(whole, 1).bottom) === ''
+        && lanes(at(whole, 1).top) === '0>0');
+  check(t, 'graph: each head labelled, the current one said',
+        at(whole, 7).heads.join() === 'main' && at(whole, 7).current
+        && at(whole, 5).heads.join() === 'side' && !at(whole, 5).current
+        && at(whole, 6).heads.length === 0);
+  const noRecord = g.map((r) => (r.seq === 3 ? { ...r, ops: 0 } : r));
+  const filtered = layoutGraph(noRecord, noRecord.filter((r) => r.ops > 0), heads);
+  check(t, 'graph: a row left out, the one above it goes on to its nearest shown ancestor',
+        !filtered.rows.has(3) && lanes(at(filtered, 2).top) === '0>0,1>0',
+        lanes(at(filtered, 2).top));
+  check(t, 'graph: a record is drawn hollow', layoutGraph(noRecord, noRecord).rows.get(3)!.record);
+  const firstPage = g.slice(0, 4);
+  const paged = layoutGraph(firstPage, firstPage, heads);
+  check(t, 'graph: a parent not loaded yet, the lane goes on below',
+        lanes(at(paged, 4).bottom) === '0>0,1>1', lanes(at(paged, 4).bottom));
+  check(t, "graph: a branch's colour is the desktop's",
+        branchColour(1) === '#1f77b4' && branchColour(2) === '#d65f0e' && branchColour(9) === '#1f77b4');
+
+  const op = (extra: Record<string, unknown>): any => ({
+    idx: 0, op: 'set', kind: 'obj', prop: 'Height', type: 'App::PropertyLength',
+    cid: 7, obj: 'Box', label: 'The box', ...extra });
+  check(t, 'a set names the object by its label and the property',
+        logOpText(op({})) === 'The box: Height', logOpText(op({})));
+  check(t, 'an object made', logOpText(op({ op: 'create', prop: '' })) === 'The box made');
+  check(t, 'an object that is gone is known by the name the log has',
+        logOpText(op({ op: 'remove', prop: '', label: undefined })) === 'Box removed');
+  check(t, 'one with no name by its number',
+        logOpText(op({ label: undefined, obj: undefined })) === '#7: Height');
+  check(t, "the document's own", logOpText(op({ kind: 'doc', prop: 'Comment' }))
+        === 'document: Comment');
+
+  check(t, 'a viewer is told why', logRefusal({ code: 'ViewOnly' }).includes('right to edit'));
+  check(t, 'a document with no log says so', logRefusal({ code: 'NoLog' }).includes('no history'));
+  check(t, 'anything else says what the host said',
+        logRefusal({ code: 'LogError', message: 'boom' }) === 'boom');
+
+  // acting on what is listed (sec 32.22)
+  const host = { host: true, write: false };
+  const reads = { host: false, write: false };
+  const writes = { host: false, write: true };
+  check(t, 'a row made by hand, here, that changed something can be taken back',
+        rowUndoable(row(5), host));
+  check(t, 'a record cannot', !rowUndoable(row(5, { ops: 0 }), host));
+  check(t, 'a recompute cannot', !rowUndoable(row(5, { kind: 'recompute' }), host));
+  check(t, "another branch's row cannot", !rowUndoable(row(5, { here: false }), host));
+  check(t, 'an undo can be, as any step', rowUndoable(row(5, { kind: 'undo' }), host));
+
+  // what the one who asks may (sec 32.25)
+  const theirs = row(5, { mine: false, author: 'ann' });
+  check(t, "the host takes back anyone's row", rowUndoable(theirs, host));
+  check(t, 'a client its own, whether it writes the branch or reads it',
+        rowUndoable(row(5), reads) && rowUndoable(row(5), writes));
+  check(t, "not another's, and is told whose it is",
+        !rowUndoable(theirs, reads) && !rowUndoable(theirs, writes)
+        && rowUndoWhy(theirs, reads).includes('ann'), rowUndoWhy(theirs, reads));
+  const before = row(3, { within: false });
+  check(t, 'its own from before the point it writes from is still its own to take back',
+        rowUndoable(before, writes) && rowUndoWhy(before, writes) === '');
+  check(t, 'a row that is no step says nothing of who',
+        rowUndoWhy(row(5, { ops: 0 }), reads) === '');
+  check(t, 'the host may move the document, and one who writes its branch',
+        mayMove(host) && mayMove(writes) && !mayMove(reads));
+  check(t, 'one who reads is told what it needs',
+        moveWhy(reads).includes('write access') && moveWhy(host) === ''
+        && moveWhy(writes) === '');
+  check(t, 'one who writes, not from before the point',
+        moveWhy(writes, false).includes('before') && moveWhy(host, false) === '');
+  check(t, 'a branch is made from a row the document may be moved from',
+        rowBranchWhy(row(5), writes) === '' && rowBranchWhy(before, writes) !== ''
+        && rowBranchWhy(row(5), reads) !== '' && rowBranchWhy(before, host) === '');
+  const br = (name: string, extra: Record<string, unknown> = {}): any => ({
+    id: 1, name, head: 1, fromVersion: 0, fromSeq: 0, time: 0, closed: false, current: false,
+    write: false, made: false, ...extra });
+  const all = [br('main'), br('given', { write: true }), br('try', { write: true, made: true }),
+               br('shut', { write: true, closed: true }),
+               br('now', { current: true, write: true })];
+  const names = (list: Array<{ name: string }>): string => list.map((b) => b.name).join(',');
+  check(t, 'the host deletes any branch but the one the document is on',
+        names(deletable(all, host)) === 'main,given,try,shut', names(deletable(all, host)));
+  check(t, 'anyone else those of its own making, not one it was given',
+        names(deletable(all, writes)) === 'try', names(deletable(all, writes)));
+  check(t, 'one who writes switches to the branches it writes, not to a closed one',
+        names(all.filter((b) => switchable(b, writes))) === 'given,try,now',
+        names(all.filter((b) => switchable(b, writes))));
+  check(t, 'one who reads switches to none', names(all.filter((b) => switchable(b, reads)))
+        === 'now');
+  check(t, 'the host to any that is open',
+        names(all.filter((b) => switchable(b, host))) === 'main,given,try,now');
+  // Sec 32.30: a branch not read is listed by its name, greyed, and offered
+  // for nothing
+  const unread = br('theirs', { read: false });
+  check(t, 'a branch not read is listed greyed, and switched to by no one but the host',
+        !branchRead(unread) && branchRead(br('main')) && branchRead(br('x', { read: true }))
+        && !switchable(unread, writes) && !switchable(unread, reads)
+        && names(deletable([unread], writes)) === '');
+  check(t, 'a trim and a squash are the host\'s; a version with no branch is trimmed by none',
+        trimWhy(host, { branchName: 'main' }) === ''
+        && trimWhy(writes, { branchName: 'main' }).includes("host's")
+        && trimWhy(host, { branchName: '' }) !== '');
+  check(t, 'a squash offers the versions behind, newest first as the host lists them',
+        JSON.stringify(squashChoices([{ num: 4, name: 'b', seq: 9, rows: 3 },
+                                      { num: 2, name: '', seq: 5, rows: 1 }]))
+        === JSON.stringify([{ value: '4', label: 'version 4 (b): 3 rows' },
+                            { value: '2', label: 'version 2: 1 row' }]),
+        JSON.stringify(squashChoices([{ num: 4, name: 'b', seq: 9, rows: 3 }])));
+  check(t, 'a file sent and an import are the host\'s to bring in and merge',
+        bringWhy(host) === '' && bringWhy(writes).includes("host's"));
+  check(t, 'a file sent says its name and size, and that nothing read it',
+        sentFileText({ id: 3, name: 'mine.FCStd', size: 36780, by: 'lei', byKind: 'invited',
+                       time: 0, mine: true }) === 'mine.FCStd, 35.9 KB, sent and not read'
+        && sizeText(12) === '12 bytes' && sizeText(3 * 1024 * 1024) === '3.0 MB');
+  const imp = (extra: Record<string, unknown> = {}): any => ({
+    branch: 'mine', file: 'mine.FCStd', authors: ['lei'], time: 0, rows: 2,
+    independent: false, stopped: false, ...extra });
+  check(t, 'an import says its operations, and who made and sent it',
+        importText(imp()) === 'mine: 2 operations'
+        && importText(imp({ rows: 1, independent: true, stopped: true }))
+          === 'mine: 1 operation, shares no history, stopped at a row'
+        && importWho(imp()) === 'lei' && importWho(imp({ by: 'bob' })) === 'lei; sent by bob'
+        && importWho(imp({ authors: [], by: 'bob' })) === 'sent by bob',
+        importText(imp()));
+  const ver = (extra: Record<string, unknown> = {}): any => ({
+    num: 2, named: true, name: 'kept', branch: 1, branchName: 'main', seq: 5, time: 0,
+    here: true, head: false, within: true, ...extra });
+  check(t, 'a version is restored by the host, and by one who writes, since the point',
+        versionWhy(ver(), host) === '' && versionWhy(ver(), writes) === ''
+        && versionWhy(ver({ within: false }), writes) !== '' && versionWhy(ver(), reads) !== '');
+
+  // rows of a branch that is read, applied here
+  check(t, 'rows of another branch that set something can be applied here',
+        rowsAppliable([row(7, { here: false }), row(8, { here: false })]));
+  check(t, "not this branch's own, nor a record, nor none",
+        !rowsAppliable([row(7, { here: false }), row(8)])
+        && !rowsAppliable([row(7, { here: false, ops: 0 })]) && !rowsAppliable([]));
+
+  // the requests to merge
+  const rq = (extra: Record<string, unknown> = {}): any => ({
+    id: 3, source: 'try', target: 'main', by: 'ann', byKind: 'invited', note: '', time: 0,
+    state: 'open', mine: false, handles: false, here: false, ...extra });
+  check(t, 'a request says what it asks', requestText(rq()) === 'merge try into main');
+  check(t, 'of a branch that is gone, that it is',
+        requestText(rq({ source: '' })).includes('gone'));
+  check(t, 'how it stands, and who ended it',
+        requestState(rq()) === 'open'
+        && requestState(rq({ state: 'merged', closedBy: 'host' })) === 'merged by host');
+  check(t, 'who asked withdraws it and does nothing else of it',
+        JSON.stringify(requestActs(rq({ mine: true })))
+        === '{"merge":false,"reject":false,"withdraw":true,"mergeWhy":""}',
+        JSON.stringify(requestActs(rq({ mine: true }))));
+  check(t, 'who writes the target rejects it, and merges it where the document is on it',
+        requestActs(rq({ handles: true, here: true })).merge
+        && requestActs(rq({ handles: true, here: true })).reject
+        && !requestActs(rq({ handles: true })).merge
+        && requestActs(rq({ handles: true })).mergeWhy.includes('main'),
+        requestActs(rq({ handles: true })).mergeWhy);
+  check(t, 'one that ended has nothing to do',
+        JSON.stringify(requestActs(rq({ state: 'merged', mine: true, handles: true, here: true })))
+        === '{"merge":false,"reject":false,"withdraw":false,"mergeWhy":""}');
+  check(t, 'the open ones are listed first, then the newest',
+        sortRequests([rq({ id: 1, state: 'merged' }), rq({ id: 2 }), rq({ id: 5, state: 'rejected' }),
+                      rq({ id: 4 })]).map((r) => r.id).join(',') === '4,2,5,1');
+  check(t, 'a merge is asked of two branches that differ',
+        requestProblem('try', 'main') === '' && requestProblem('try', 'try') !== ''
+        && requestProblem('', 'main') !== '');
+
+  const listed = [9, 8, 7, 6, 5];
+  const pick = (picked: number[], anchor: number | null, seq: number, how = {}): string => {
+    const r = pickRows(listed, picked, anchor, seq, how);
+    return `${r.picked.join(',')}@${r.anchor}`;
+  };
+  check(t, 'a click chooses the row alone', pick([9, 8], 9, 6) === '6@6', pick([9, 8], 9, 6));
+  check(t, 'with the others where it is held', pick([9], 9, 6, { toggle: true }) === '9,6@6',
+        pick([9], 9, 6, { toggle: true }));
+  check(t, 'and it goes if it was one of them',
+        pick([9, 6], 6, 9, { toggle: true }) === '6@6', pick([9, 6], 6, 9, { toggle: true }));
+  check(t, 'those between, as listed, with shift',
+        pick([8], 8, 5, { range: true }) === '8,7,6,5@8', pick([8], 8, 5, { range: true }));
+  check(t, 'upward the same', pick([6], 6, 9, { range: true }) === '9,8,7,6@6',
+        pick([6], 6, 9, { range: true }));
+  check(t, 'with nothing chosen before, shift is a click',
+        pick([], null, 7, { range: true }) === '7@7', pick([], null, 7, { range: true }));
+  check(t, 'a range added to what was chosen',
+        pick([9, 6], 6, 5, { range: true, toggle: true }) === '9,6,5@6',
+        pick([9, 6], 6, 5, { range: true, toggle: true }));
+
+  check(t, 'one row to undo is named by its number', undoLabel(1, 12) === 'Undo row 12');
+  check(t, 'several by how many', undoLabel(3, 12) === 'Undo 3 rows');
+
+  check(t, 'a branch needs a name', branchNameProblem('  ', ['main']) !== '');
+  check(t, 'not one that is taken', branchNameProblem(' main ', ['main']).includes('main'));
+  check(t, 'a new one is fine', branchNameProblem('try', ['main']) === '');
+
+  check(t, 'a version is its name', versionText({ num: 4, name: 'first cut' }) === 'first cut');
+  check(t, 'or its number', versionText({ num: 4, name: '' }) === 'Version 4');
+
+  check(t, "a refused act says the host's reason",
+        actRefusal({ code: 'Refused', message: 'row 7 changed Box.Height since' })
+        === 'row 7 changed Box.Height since');
+  check(t, "what is the host's to do says so, in the host's words where it gave them",
+        actRefusal({ code: 'Forbidden' }).includes('host')
+        && actRefusal({ code: 'Forbidden', message: 'before the serving point' })
+           === 'before the serving point');
+  check(t, 'what meets what was set here says how, in the host\'s words',
+        actRefusal({ code: 'Conflicts', message: '2 of what it sets was also set here' })
+        .startsWith('2 of'));
+  check(t, "a row that is another's says so",
+        actRefusal({ code: 'NotYours', message: "row 5 is ann's" }) === "row 5 is ann's");
+  check(t, 'an edit in the way says to leave it',
+        actRefusal({ code: 'Editing' }).includes('leave it'));
+  check(t, 'a viewer is told why of an act too',
+        actRefusal({ code: 'ViewOnly' }).includes('right to edit'));
+
+  // the merge's own list (sec 32.26): conflicts first, a side for each
+  const change = (key: string, kind: string, extra: Record<string, unknown> = {}): any => ({
+    key, kind, op: 'set', ckind: 'obj', object: key.split('.')[0], prop: key.split('.')[1] ?? '',
+    derived: false, ours: '1', theirs: '2', base: '0', ...extra });
+  const sorted = sortChanges([change('Box.Width', 'take'), change('Box.Shape', 'derived'),
+                              change('view:Box.Color', 'view'), change('Box.Height', 'conflict')]);
+  check(t, 'a preview lists the conflicts first, what goes in, the view, the derived',
+        sorted.map((c) => c.kind).join(',') === 'conflict,take,view,derived',
+        sorted.map((c) => c.kind).join(','));
+  check(t, 'a change is named by the object\'s label and the property',
+        changeName(change('Box.Height', 'conflict', { label: 'Bracket' })) === 'Bracket.Height'
+        && changeName(change('.Label', 'take', { ckind: 'doc', object: '' })) === '(document).Label',
+        changeName(change('Box.Height', 'conflict', { label: 'Bracket' })));
+  check(t, 'a conflict and a view are given a side; the rest say what goes in',
+        changePicked(change('a.b', 'conflict')) && changePicked(change('a.b', 'view'))
+        && !changePicked(change('a.b', 'take'))
+        && changeTakes(change('a.b', 'take'), {}) === 'theirs'
+        && changeTakes(change('a.b', 'merge'), {}) === 'both'
+        && changeTakes(change('a.b', 'view'), {}) === 'ours'
+        && changeTakes(change('a.b', 'conflict'), {}) === 'pick a side'
+        && changeTakes(change('a.b', 'conflict'), { 'a.b': 'theirs' }) === 'theirs');
+  const two = [change('Box.Height', 'conflict'), change('Box.Length', 'conflict'),
+               change('view:Box.Color', 'view'), change('Box.Width', 'take')];
+  check(t, 'the act waits for a side for each conflict, not for a view',
+        unpickedConflicts(two, {}) === 2
+        && unpickedConflicts(two, { 'Box.Height': 'ours' }) === 1
+        && unpickedConflicts(two, { 'Box.Height': 'ours', 'Box.Length': 'theirs' }) === 0);
+  const sent = picksOf(two, { 'Box.Height': 'ours', 'Box.Length': 'theirs', 'Box.Width': 'theirs',
+                              'gone.Key': 'theirs' });
+  check(t, 'the picks sent are of the changes that ask a side, and of no other',
+        JSON.stringify(sent) === '{"Box.Height":"ours","Box.Length":"theirs"}',
+        JSON.stringify(sent));
+  check(t, 'the line says how much, or that nothing here moved',
+        previewText({ what: 'rows', count: 3, conflicts: 1, forward: 0 }, 'Apply row 7')
+          === 'Apply row 7: 3 changes, 1 conflict'
+        && previewText({ what: 'merge', count: 0, conflicts: 0, forward: 2 }, 'Merge a into b')
+          === 'Merge a into b: nothing here moved since, 2 rows taken as they are');
+
+  // a change of theirs left out, as the desktop unticks it
+  check(t, 'what goes in of theirs can be left out; a conflict, a view, a derived cannot',
+        changeLeavable(change('a.b', 'take')) && changeLeavable(change('a.b', 'merge'))
+        && !changeLeavable(change('a.b', 'conflict')) && !changeLeavable(change('a.b', 'view'))
+        && !changeLeavable(change('a.b', 'derived')));
+  const outs = [change('Sketch.Geometry', 'merge'), change('Sketch.Constraints', 'merge',
+                { key: 'Sketch.Geometry' }), change('Box.Width', 'take'),
+                change('Box.Height', 'conflict')];
+  const leftSides: Record<string, 'ours' | 'theirs'> = { 'Sketch.Geometry': 'ours',
+                                                         'Box.Height': 'theirs' };
+  check(t, 'left out it says so, with every change of its key, and is sent as ours',
+        changeLeftOut(outs[0], leftSides) && changeLeftOut(outs[1], leftSides)
+        && !changeLeftOut(outs[2], leftSides)
+        && changeTakes(outs[0], leftSides) === 'left out'
+        && changeTakes(outs[2], leftSides) === 'theirs'
+        && JSON.stringify(picksOf(outs, leftSides))
+          === '{"Sketch.Geometry":"ours","Box.Height":"theirs"}',
+        JSON.stringify(picksOf(outs, leftSides)));
+
+  // what is kept in the file (sec 32.27)
+  const lines = keptLines(
+    [{ ref: 'aa', cid: 3, obj: 'Cut', label: 'Cut', here: true, prop: 'Shape', seq: 7, row: true,
+       release: true },
+     { ref: 'bb', cid: 9, here: false, prop: 'Shape', seq: 2, row: false, release: false,
+       why: 'the host lets it go', keeper: 'ann~1a2b3c', keeperKind: 'invited' }],
+    [{ cid: 1, obj: 'Box', label: 'Bracket', here: true, release: false, why: 'host',
+       values: [{ ref: 'cc', prop: 'Shape', seq: 4, alone: false, keep: false,
+                  keepWhy: 'before' },
+                { ref: 'aa', prop: 'Shape', seq: 7, alone: true, mine: true, keeper: 'me',
+                  release: true }] }]);
+  check(t, 'the kept are listed values first, then each object with its values under it',
+        lines.map((l) => l.kind).join(',') === 'value,value,object,under,under'
+        && lines[2].count === 2 && lines[4].alone && !lines[3].alone,
+        lines.map((l) => l.kind).join(','));
+  check(t, 'an object is named by its label, or said to be gone',
+        keptObjectText({ cid: 1, obj: 'Box', label: 'Bracket', here: true }) === 'Bracket (Box)'
+        && keptObjectText({ cid: 3, obj: 'Cut', label: 'Cut', here: true }) === 'Cut'
+        && keptObjectText({ cid: 9, here: false }) === 'obj:9, not in the document');
+  check(t, 'a value kept by a client says who, or that it was the asker; the host\'s says nothing',
+        keeperText(lines[0]) === '' && keeperText(lines[1]) === 'by ann~1a2b3c'
+        && keeperText(lines[4]) === 'by you' && keeperText(lines[2]) === '',
+        lines.map(keeperText).join('|'));
+  check(t, 'a value under an object carries whether the asker may keep it by itself',
+        !lines[3].keep && lines[3].keepWhy === 'before' && !lines[4].keep && lines[4].release);
+  check(t, 'keeping at a version: the host, or one who writes from before it',
+        keepWhy({ host: true, write: false }, false) === ''
+        && keepWhy({ host: false, write: true }, true) === ''
+        && keepWhy({ host: false, write: true }, false).includes('before the point')
+        && keepWhy({ host: false, write: false }, false).includes('write access'));
+  check(t, 'a row gone says so; an object has no row',
+        keptRowText(lines[0]) === '7' && keptRowText(lines[1]) === '2, gone'
+        && keptRowText(lines[2]) === '');
+  check(t, 'every key is its own, so a line stays chosen across a refresh',
+        new Set(lines.map((l) => l.key)).size === lines.length);
+  check(t, 'the tab carries the count; an object how many values',
+        keptTabText(0) === 'Kept' && keptTabText(3) === 'Kept (3)'
+        && keptCountText(1) === '1 value' && keptCountText(2) === '2 values');
+  const keptOp = (extra: Record<string, unknown>): any => ({ idx: 0, op: 'set', kind: 'obj',
+    prop: 'Shape', type: '', after: 'aa', obj: 'Cut', here: true, ...extra });
+  check(t, 'an op says its value is kept, by itself or with its object',
+        opKeptText(keptOp({})) === '' && opKeptText(keptOp({ keptValue: true })) === 'kept'
+        && opKeptText(keptOp({ keptObject: true })) === 'all of it kept'
+        && opKeptText(keptOp({ keptValue: true, keptObject: true })) === 'kept, and all of it');
+  check(t, "a value is kept from an op that set one, of an object still here",
+        opKeepable(keptOp({})) && !opKeepable(keptOp({ after: undefined }))
+        && !opKeepable(keptOp({ kind: 'doc' })) && !opKeepable(keptOp({ here: false }))
+        && !opKeepable(keptOp({ op: 'create' })));
+  check(t, 'a keep says how many, and nothing where the log has none',
+        keepText(1, true, 'of Cut at row 7') === '1 value of Cut at row 7 kept: a save writes it '
+          + 'into the file'
+        && keepText(2, false, 'of Cut') === '2 values of Cut let go'
+        && keepText(0, true, '').startsWith('Nothing kept'));
+}
+
+checkLog();
 main();

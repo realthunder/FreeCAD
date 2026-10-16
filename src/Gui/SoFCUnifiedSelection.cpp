@@ -4337,6 +4337,7 @@ SoFCPathAnnotation::SoFCPathAnnotation(ViewProvider *vp, const char *sub, View3D
     SO_NODE_CONSTRUCTOR(SoFCPathAnnotation);
     SO_NODE_ADD_FIELD(priority, (0));
     SO_NODE_ADD_FIELD(pickThrough, (FALSE));
+    SO_NODE_ADD_FIELD(hostOnly, (FALSE));
 
     path = nullptr;
     det = false;

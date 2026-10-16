@@ -32,7 +32,8 @@ import { iconKind, localeTag, mouseArgs, parseLocaleNumber, pictureAt, wheelArgs
   from './images.ts';
 import { CHECK_OFF, CHECK_ON, CHOOSER_DIRECTORY, ITEM_ENABLED, acceptFromFilter,
          cssColor, dialogClickOp, dialogRejectOp, fileSelectedOp, isDarkColor,
-         isDialogRoot, itemEditOp, itemExpandOp, selectionWrite } from './protocol.ts';
+         isDialogRoot, itemEditOp, itemExpandOp, panelButtonOp, selectionWrite,
+         BUTTON_OK } from './protocol.ts';
 import type { ItemCell, ItemRow, WidgetModel } from './protocol.ts';
 
 const POS_KEY = 'fcviewer.taskpanel.pos';
@@ -507,6 +508,18 @@ export function TaskPanelCard(props: {
             <span>{str(w, 'text')}</span>
           </label>
         );
+      case 'QSliderModel': {
+        // A slider is its value between two ends, written as it is
+        // dragged: the host's widget takes it as its own handle moved.
+        const lo = () => num(w, 'minimum');
+        const hi = () => (num(w, 'maximum') > lo() ? num(w, 'maximum') : lo() + 99);
+        return (
+          <input type="range" class="fc-panel-slider" title={title()} disabled={disabled()}
+                 min={lo()} max={hi()} step={num(w, 'singleStep') || 1}
+                 value={num(w, 'value')}
+                 onInput={(e) => write(w.id, { value: Number(e.currentTarget.value) })} />
+        );
+      }
       case 'QComboBoxModel': {
         const items = (): unknown[] => {
           const value = st(w).items;
@@ -560,8 +573,10 @@ export function TaskPanelCard(props: {
         // built with -- because the flag each one carries IS the answer.
         //
         // The TASK PANEL's box keeps W1's accept/reject on the root: that
-        // is the path the W1 and W2 screen proofs exercise, and nothing in
-        // W4 needs it changed.
+        // is the path the W1 and W2 screen proofs exercise. Its buttons
+        // are the host's too, each asking what its flag means
+        // (panelButtonOp): a task with Close alone shows Close. A box
+        // that came with no buttons has the OK and Cancel of W1.
         const owner = () => ownerRoot(w);
         const buttons = () => planLayout(lay(w)).items
           .map((it) => (it.kind === 'widget' && it.id ? model(it.id) : undefined))
@@ -570,16 +585,41 @@ export function TaskPanelCard(props: {
           <Show when={isDialogRoot(owner())}
                 fallback={
                   <div class="fc-panel-buttons">
-                    <button class="fc-panel-btn fc-panel-ok" disabled={props.viewOnly()}
-                            onClick={() => void client?.custom(rootId() ?? w.id,
-                                                               { event: 'accept' })}>
-                      OK
-                    </button>
-                    <button class="fc-panel-btn"
-                            onClick={() => void client?.custom(rootId() ?? w.id,
-                                                               { event: 'reject' })}>
-                      Cancel
-                    </button>
+                    <Show when={buttons().length}
+                          fallback={<>
+                            <button class="fc-panel-btn fc-panel-ok"
+                                    disabled={props.viewOnly()}
+                                    onClick={() => void client?.custom(rootId() ?? w.id,
+                                                                       { event: 'accept' })}>
+                              OK
+                            </button>
+                            <button class="fc-panel-btn"
+                                    onClick={() => void client?.custom(rootId() ?? w.id,
+                                                                       { event: 'reject' })}>
+                              Cancel
+                            </button>
+                          </>}>
+                      <For each={buttons()}>
+                        {(b: WidgetModel) => {
+                          const asked = () => panelButtonOp(num(b, 'standardButton'));
+                          return (
+                            <button class="fc-panel-btn"
+                                    classList={{ 'fc-panel-ok':
+                                      num(b, 'standardButton') === BUTTON_OK }}
+                                    disabled={(props.viewOnly() && !asked().leaves)
+                                              || st(b).enabled === false}
+                                    title={str(b, 'toolTip') || undefined}
+                                    onClick={() => {
+                                      const op = asked().op;
+                                      void client?.custom(op ? rootId() ?? w.id : b.id,
+                                                          op ?? { event: 'click' });
+                                    }}>
+                              {qtLabel(str(b, 'text'))}
+                            </button>
+                          );
+                        }}
+                      </For>
+                    </Show>
                   </div>
                 }>
             <div class="fc-panel-buttons">

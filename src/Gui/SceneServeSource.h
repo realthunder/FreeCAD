@@ -33,6 +33,7 @@
 #include <Inventor/SbBox.h>
 #include <Inventor/SbViewportRegion.h>
 
+#include <fastsignals/signal.h>
 #include <FCGlobal.h>
 
 class SoFCRenderCacheManager;
@@ -124,6 +125,10 @@ public:
     /// with no publisher behind it, and serving one document says
     /// nothing about another.
     static bool serving(App::Document *doc);
+    /// A document began to be served, or is served no more: for what
+    /// offers something only of a served document (the log panel's
+    /// "Serve branch...", docs/TransactionLog.md sec 32.25).
+    static fastsignals::signal<void()> &signalServed();
 
     /*!
      * Take back \a client's foreign highlight from every other client.

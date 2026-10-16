@@ -161,6 +161,50 @@ fc_add_gui_test(GuiPdPreviewPerView_tests_run pd-preview-per-view.py
 fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
                 --timeout 240)
 
+# A shape diff shown on a served document is in the scene its clients are
+# sent, and so is its being taken away -- which changes no property and
+# was not published: a client went on drawing it.
+fc_add_gui_test(GuiServeShapeDiff_tests_run serve-shape-diff.py
+                --timeout 240)
+
+# An object's last change is an editing task: the mode ViewProvider::
+# ValueDiff, the two states a node of the edit session and not of the
+# document's scene, the task's panel with the slider -- on the desktop,
+# for a served client by its `edit` op and the mirrored panel, and in a
+# real browser, which skips where there is no viewer or no browser.
+fc_add_gui_test(GuiShapeDiffEdit_tests_run shape-diff-edit.py
+                --timeout 240)
+fc_add_gui_test(GuiServeShapeDiffEdit_tests_run serve-shape-diff-edit.py
+                --timeout 240)
+fc_add_gui_test(GuiServeShapeDiffBrowser_tests_run serve-shape-diff-browser.py
+                --timeout 600)
+
+# The transaction log read by a served client (Gui/SceneLog.cpp): the rows
+# a page at a time, the ops of one, a value, the cue that there are more;
+# refused to a client that may only look; a row's change shown as the edit
+# it is, by the `edit` op with the row named. And the page's own panel of
+# it in a real browser, which skips where there is no viewer or no browser.
+fc_add_gui_test(GuiServeLog_tests_run serve-log.py
+                --timeout 240)
+fc_add_gui_test(GuiServeLogBrowser_tests_run serve-log-browser.py
+                --timeout 600)
+# What the panel does with what it lists (docs/TransactionLog.md sec 32.22):
+# rows taken back, versions, branches, each asked of the host by an editor,
+# a viewer and the host; and the same from the page in a real browser.
+fc_add_gui_test(GuiServeLogActs_tests_run serve-log-acts.py
+                --timeout 300)
+fc_add_gui_test(GuiServeLogActsBrowser_tests_run serve-log-acts-browser.py
+                --timeout 600)
+# A copy larger than one message of the socket carries, sent from the page
+# in pieces (docs/TransactionLog.md sec 32.36): the progress it says, and
+# the host's copy byte for byte.
+fc_add_gui_test(GuiServeRequestBrowser_tests_run serve-request-browser.py
+                --timeout 600)
+# What is kept in the file (sec 32.27): values a recompute wrote kept, and
+# let go, by an editor, the host and one who writes the branch.
+fc_add_gui_test(GuiServeLogKept_tests_run serve-log-kept.py
+                --timeout 240)
+
 # The preference PerViewEdit: an edit runs in the one view it is started
 # in. The other 3D windows of the document do not join -- they keep the
 # document as it is, and answer "not in edit" -- and with it off every

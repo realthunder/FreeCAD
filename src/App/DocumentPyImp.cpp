@@ -1213,6 +1213,16 @@ PyObject* DocumentPy::openTransactionVersion(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::openTransactionState(PyObject *args)
+{
+    long long seq;
+    if (!PyArg_ParseTuple(args, "L", &seq))
+        return nullptr;
+    PY_TRY {
+        return getDocumentPtr()->openRowState(seq)->getPyObject();
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::saveVersionAsFile(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))
@@ -1315,6 +1325,7 @@ PyObject* DocumentPy::getTransactionBranches(PyObject *args)
             d.setItem("created", Py::Float(b.created));
             d.setItem("closed", Py::Float(b.closed));
             d.setItem("target", Py::Long(static_cast<long long>(b.target)));
+            d.setItem("joined", Py::Long(static_cast<long long>(b.joined)));
             d.setItem("current", Py::Boolean(b.id == log->branch()));
             list.append(d);
         }
@@ -1354,6 +1365,168 @@ PyObject* DocumentPy::renameTransactionBranch(PyObject *args)
         return nullptr;
     PY_TRY {
         return Py::new_reference_to(Py::Boolean(getDocumentPtr()->renameBranch(name, newName)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::setTransactionAccess(PyObject *args)
+{
+    const char* kind;
+    const char* name;
+    const char* branch;
+    PyObject* write = Py_False;
+    long long version = 0;
+    if (!PyArg_ParseTuple(args, "sss|O!L", &kind, &name, &branch, &PyBool_Type, &write,
+                          &version))
+        return nullptr;
+    PY_TRY {
+        getDocumentPtr()->setBranchAccess(kind, name, branch, PyObject_IsTrue(write), version);
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::clearTransactionAccess(PyObject *args)
+{
+    const char* kind;
+    const char* name;
+    const char* branch;
+    if (!PyArg_ParseTuple(args, "sss", &kind, &name, &branch))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            Py::Boolean(getDocumentPtr()->clearBranchAccess(kind, name, branch)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionAccess(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        TransactionLog* log = getDocumentPtr()->getTransactionLog();
+        if (!log)
+            return Py::new_reference_to(list);
+        std::map<int64_t, std::string> branches;
+        for (const auto& b : log->store().branches())
+            branches[b.id] = b.name;
+        for (const auto& a : log->store().accesses()) {
+            Py::Dict d;
+            d.setItem("kind", Py::String(a.kind));
+            d.setItem("name", Py::String(a.name));
+            d.setItem("branch", Py::String(branches[a.branch]));
+            d.setItem("write", Py::Boolean(a.write));
+            d.setItem("from_seq", Py::Long(static_cast<long long>(a.fromSeq)));
+            d.setItem("from_version", Py::Long(static_cast<long long>(a.fromVersion)));
+            d.setItem("made", Py::Boolean(a.made));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::addTransactionGroup(PyObject *args)
+{
+    const char* name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+    PY_TRY {
+        getDocumentPtr()->addUserGroup(name);
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::setTransactionUserGroup(PyObject *args)
+{
+    const char* kind;
+    const char* name;
+    const char* group = "";
+    if (!PyArg_ParseTuple(args, "ss|s", &kind, &name, &group))
+        return nullptr;
+    PY_TRY {
+        getDocumentPtr()->setUserGroup(kind, name, group);
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionUsers(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        TransactionLog* log = getDocumentPtr()->getTransactionLog();
+        if (!log)
+            return Py::new_reference_to(list);
+        const auto users = log->store().users();
+        std::map<int64_t, std::string> names;
+        for (const auto& u : users)
+            names[u.id] = u.name;
+        for (const auto& u : users) {
+            Py::Dict d;
+            d.setItem("id", Py::Long(static_cast<long long>(u.id)));
+            d.setItem("kind", Py::String(u.kind));
+            d.setItem("name", Py::String(u.name));
+            d.setItem("group", Py::String(u.parent ? names[u.parent] : std::string()));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::requestTransactionMerge(PyObject *args)
+{
+    const char* source;
+    const char* target;
+    const char* note = "";
+    if (!PyArg_ParseTuple(args, "ss|s", &source, &target, &note))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Long(static_cast<long long>(
+            getDocumentPtr()->requestMerge(source, target, note))));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionMergeRequests(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        TransactionLog* log = getDocumentPtr()->getTransactionLog();
+        if (!log)
+            return Py::new_reference_to(list);
+        std::map<int64_t, std::string> branches;
+        for (const auto& b : log->store().branches())
+            branches[b.id] = b.name;
+        for (const auto& r : log->store().mergeRequests()) {
+            Py::Dict d;
+            d.setItem("id", Py::Long(static_cast<long long>(r.id)));
+            d.setItem("source", Py::String(branches[r.source]));
+            d.setItem("target", Py::String(branches[r.target]));
+            d.setItem("by", Py::String(r.name));
+            d.setItem("by_kind", Py::String(r.kind));
+            d.setItem("note", Py::String(r.note));
+            d.setItem("created", Py::Float(r.created));
+            d.setItem("state", Py::String(r.state));
+            d.setItem("closed", Py::Float(r.closed));
+            d.setItem("closed_by", Py::String(r.closedName));
+            d.setItem("result", Py::Long(static_cast<long long>(r.result)));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::closeTransactionMergeRequest(PyObject *args)
+{
+    long long id;
+    const char* state;
+    long long result = 0;
+    if (!PyArg_ParseTuple(args, "Ls|L", &id, &state, &result))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            Py::Boolean(getDocumentPtr()->closeMergeRequest(id, state, result)));
     } PY_CATCH;
 }
 
@@ -1675,6 +1848,11 @@ PyObject* DocumentPy::getKeptTransactionValues(PyObject *args)
             d.setItem("object", Py::String(v.object));
             d.setItem("prop", Py::String(v.prop));
             d.setItem("seq", Py::Long(static_cast<long long>(v.seq)));
+            // Who kept it: none for the host (sec 32.27)
+            if (!v.kind.empty()) {
+                d.setItem("kind", Py::String(v.kind));
+                d.setItem("name", Py::String(v.name));
+            }
             list.append(d);
         }
         return Py::new_reference_to(list);
@@ -1792,6 +1970,7 @@ Py::Dict mergeOutcomeToPy(const App::Document::MergeOutcome& outcome)
         unresolved.append(mergeChangeToPy(c));
     d.setItem("unresolved", unresolved);
     d.setItem("preview", mergePreviewToPy(outcome.preview));
+    d.setItem("reused", Py::Boolean(outcome.reused));
     return d;
 }
 }
@@ -1802,11 +1981,13 @@ PyObject* DocumentPy::previewTransactionMergeResult(PyObject *args)
     PyObject* pyPicks = nullptr;
     const char* fallback = "";
     long long version = 0;
-    if (!PyArg_ParseTuple(args, "s|O!sL", &branch, &PyDict_Type, &pyPicks, &fallback, &version))
+    const char* again = "";
+    if (!PyArg_ParseTuple(args, "s|O!sLs", &branch, &PyDict_Type, &pyPicks, &fallback, &version,
+                          &again))
         return nullptr;
     PY_TRY {
         return Py::new_reference_to(mergeOutcomeToPy(getDocumentPtr()->previewMergeResult(
-            branch, pickedSides(pyPicks), fallback, version)));
+            branch, pickedSides(pyPicks), fallback, version, again)));
     } PY_CATCH;
 }
 
@@ -1815,11 +1996,12 @@ PyObject* DocumentPy::previewTransactionPickResult(PyObject *args)
     PyObject* pyRows = nullptr;
     PyObject* pyPicks = nullptr;
     const char* fallback = "";
-    if (!PyArg_ParseTuple(args, "O|O!s", &pyRows, &PyDict_Type, &pyPicks, &fallback))
+    const char* again = "";
+    if (!PyArg_ParseTuple(args, "O|O!ss", &pyRows, &PyDict_Type, &pyPicks, &fallback, &again))
         return nullptr;
     PY_TRY {
         return Py::new_reference_to(mergeOutcomeToPy(getDocumentPtr()->previewPickResult(
-            pickedRows(pyRows), pickedSides(pyPicks), fallback)));
+            pickedRows(pyRows), pickedSides(pyPicks), fallback, again)));
     } PY_CATCH;
 }
 

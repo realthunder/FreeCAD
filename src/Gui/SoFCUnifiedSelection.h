@@ -317,6 +317,10 @@ public:
     /// in front of them, as they are drawn: a pick that ends on a face asks
     /// these nodes by themselves (SoFCRenderCacheManager::doThroughPick())
     SoSFBool pickThrough;
+    /// What is under it is the host's own to see: drawn by the views of
+    /// the document, and left out of what a served document publishes
+    /// (Render::hostOnlyModeId; docs/TransactionLog.md sec 32.24)
+    SoSFBool hostOnly;
 
     static void initClass();
     static void finish();

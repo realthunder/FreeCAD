@@ -271,6 +271,21 @@ public:
      * @param values: one colour is the kind's own; more are one an element
      */
     void writeColors(int kind, const std::vector<App::Color> &values);
+    /** Whether \a prop is a look being written by its name, now
+     *
+     * True for ShapeColor, Transparency, LineColor, PointColor and
+     * ShapeAppearance of this object while the change of one is told
+     * (onChanged()) and somebody wrote it: a script, the property editor.
+     * Not while the name is given what the object has (mirrorLooks()), a
+     * document is read, or an undo or a redo runs -- and not when a view
+     * provider is handed every property to bring itself up to date, which
+     * is no change. What a view provider makes of a colour picked for its
+     * object asks this: a sketch's automatic colours turned off.
+     */
+    bool isWritingLook(const App::Property *prop) const
+    {
+        return prop && prop == _lookWritten;
+    }
     //@}
 
     PyObject* getPyObject() override;
@@ -471,6 +486,9 @@ protected:
     void onAppearanceChanged(const App::Property* prop);
     /// Whether \a prop is one of the names over ElementAppearance
     bool isLookName(const App::Property* prop) const;
+    /// Whether a change of \a prop told now is somebody's write to that
+    /// name: not the name taking what the object has, a file read, an undo
+    bool isLookWrite(const App::Property* prop) const;
     /// The names take what ElementAppearance has now
     void mirrorLooks();
 
@@ -552,6 +570,8 @@ private:
     bool _updatingAppearance {false};
     /// Inside mirrorLooks(): what it sets is no write to the looks
     bool _mirroringLooks {false};
+    /// The name whose write is being told (isWritingLook())
+    const App::Property* _lookWritten {nullptr};
 };
 
 class FilletBase : public Part::Feature

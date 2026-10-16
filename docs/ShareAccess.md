@@ -236,8 +236,11 @@ lists a directory, reads a host file or takes a path from a client.
 Both are for a connection that may edit (sec 2.3), and both are under one
 limit: **the preference `UploadLimitMB`** of `BaseApp/Preferences/SceneShare`,
 16 unless set, preset for a headless serve by **`FC_SERVE_UPLOAD_MB`**. It is
-read at each upload. It cannot be raised past 46 MB, which is what one
-frame of the socket carries once the bytes are base64.
+read at each upload. It cannot be raised past 1 GB. One frame of the
+socket carries 46 MB once the bytes are base64; a larger file is sent in
+pieces (`upload.begin`, `upload.piece`, then the op naming the upload,
+docs/TransactionLog.md sec 32.36), held for the connection that began it
+until the op takes it.
 
 The dialog that starts a share and the sharing panel both have the control
 ("Clients may send up to"); the panel's holds from the next upload. While

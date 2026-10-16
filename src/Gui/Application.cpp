@@ -1331,7 +1331,7 @@ void Application::switchActiveDocument()
     for(auto &v : d->documents) {
         if(v.second->getDocument()->testStatus(App::Document::TempDoc))
             continue;
-        else if (!gdoc)
+        else if (!gdoc && !v.second->getMDIViews().empty())
             gdoc = v.second;
         Gui::MDIView* view = v.second->getActiveView();
         if(view) {
@@ -1340,6 +1340,10 @@ void Application::switchActiveDocument()
             return;
         }
     }
+    // A document with no window -- a branch served in a document of its
+    // own -- is not given one for being left: closing the last window says
+    // what has none and offers to show it (docs/TransactionLog.md sec
+    // 32.30). With none that has a window, no document is active.
     if(gdoc) {
         setActiveDocument(gdoc);
         activateView(View3DInventor::getClassTypeId(),true);

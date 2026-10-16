@@ -1975,7 +1975,17 @@ void Feature::onChanged(const App::Property* prop)
         }
     }
 
-    GeoFeature::onChanged(prop);
+    {
+        // Whoever is told of the change can ask whether it is a look
+        // written by its name (isWritingLook())
+        struct Written {
+            const App::Property *&slot;
+            const App::Property *was;
+            ~Written() { slot = was; }
+        } written {_lookWritten, _lookWritten};
+        _lookWritten = isLookWrite(prop) ? prop : nullptr;
+        GeoFeature::onChanged(prop);
+    }
 
     // GeoFeature::onChanged(Shape) has just re-resolved every reference
     // into this feature; the generations can now be kept or let go.

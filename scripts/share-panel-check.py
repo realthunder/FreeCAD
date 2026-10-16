@@ -2,7 +2,10 @@
 # and 4; docs/TransactionLog.md sec 30.26): the most a client may send, as a
 # control in the dialog that starts a share and in the sharing panel; an
 # invitation by name where no door signs anyone in, with the link that
-# carries it; and the header a sign-in door names its user in.
+# carries it; and the header a sign-in door names its user in. And the
+# branches served in documents of their own (docs/TransactionLog.md sec
+# 32.31): listed in the panel with their documents, shown and closed from
+# there; a branch there is already served as it is.
 # One GUI run in a fresh user home, given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
@@ -11,7 +14,7 @@
 #     ~/works/sw/fcad/scripts/share-panel-check.py
 #
 # It writes PASS/FAIL lines to $SHARECHECK_OUT and exits.
-import base64, json, os, sys, threading, time, traceback
+import base64, json, os, shutil, sys, tempfile, threading, time, traceback
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -215,6 +218,105 @@ def invite(panel, who, mode=0):
     return seen
 
 
+def answer_yes(seen):
+    box = QtWidgets.QApplication.activeModalWidget()
+    if isinstance(box, QtWidgets.QMessageBox):
+        seen["text"] = box.text()
+        box.button(QtWidgets.QMessageBox.Yes).click()
+
+
+def branch_rows(panel):
+    tree = panel.findChild(QtWidgets.QTreeWidget, "shareBranches")
+    if tree is None or tree.isHidden():
+        return []
+    return [tuple(tree.topLevelItem(i).text(c) for c in range(3))
+            for i in range(tree.topLevelItemCount())]
+
+
+def branch_button(panel, row, name):
+    tree = panel.findChild(QtWidgets.QTreeWidget, "shareBranches")
+    cell = tree.itemWidget(tree.topLevelItem(row), 3)
+    return cell.findChild(QtWidgets.QPushButton, name) if cell else None
+
+
+def served_branches(panel):
+    """Sec 32.31: a branch served in a document of its own is listed in the
+    panel, shown and closed from there; one there is already is served as
+    it is."""
+    p = App.ParamGet("User parameter:BaseApp/Preferences/Document")
+    mode = p.GetInt("TransactionLog", 0)
+    where = tempfile.mkdtemp(prefix="fc-share-branches-")
+    try:
+        p.SetInt("TransactionLog", 2)
+        logged = App.newDocument("Logged")
+        logged.addObject("Part::Box", "Box")
+        logged.recompute()
+        logged.saveAs(os.path.join(where, "logged.FCStd"))
+        first = [b["name"] for b in logged.getTransactionBranches()
+                 if b["id"] == logged.getTransactionCursor()["branch"]][0]
+        check("no branch served, the panel lists none %r" % (branch_rows(panel),),
+              branch_rows(panel) == [])
+        away = Gui.serveBranch(logged, "away")
+        settle(1500)
+        rows = branch_rows(panel)
+        check("a branch served is listed with its document and no one in it %r" % (rows,),
+              rows == [("away", away.Name, "0")])
+        show = branch_button(panel, 0, "shareBranchShow")
+        views = lambda d: len(Gui.getDocument(d.Name).mdiViewsOfType("Gui::View3DInventor"))
+        check("its document has no window, and Show is offered %r" % (views(away),),
+              views(away) == 0 and show is not None and show.isEnabled())
+        show.click()
+        settle(1500)
+        check("Show gives it one %r" % (views(away),), views(away) == 1)
+
+        # A branch there is, served as it is
+        logged.createTransactionBranch("there")
+        logged.switchTransactionBranch(first)
+        before = sorted(b["name"] for b in logged.getTransactionBranches())
+        there = Gui.serveBranch(logged, "there")
+        again = Gui.serveBranch(logged, "there")
+        on = {b["id"]: b["name"] for b in logged.getTransactionBranches()}
+        check("a branch there is is served as it is: no branch made, and asked again the "
+              "same document %r" % ((before, there.Name, again.Name),),
+              sorted(on.values()) == before and again.Name == there.Name
+              and on.get(there.getTransactionCursor()["branch"]) == "there")
+        try:
+            Gui.serveBranch(logged, first)
+            said = ""
+        except Exception as e:
+            said = str(e)
+        check("the branch the first document is on is refused: that one is shared as it is "
+              "%r" % (said,), "share that document" in said)
+        settle(1500)
+        rows = branch_rows(panel)
+        check("both are listed %r" % (rows,),
+              sorted(r[0] for r in rows) == ["away", "there"])
+
+        there_name = there.Name
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: answer_yes(seen))
+        index = [r[0] for r in rows].index("there")
+        branch_button(panel, index, "shareBranchClose").click()
+        settle(1500)
+        check("Close asks, and closes its document; the branch stays %r"
+              % ((seen.get("text"), branch_rows(panel)),),
+              "there" not in [r[0] for r in branch_rows(panel)]
+              and there_name not in App.listDocuments()
+              and "there" in [b["name"] for b in logged.getTransactionBranches()])
+        check("and the one served first is still on its own branch %r"
+              % (away.getTransactionCursor(),),
+              on.get(away.getTransactionCursor()["branch"]) == "away")
+        for name in (away.Name, logged.Name):
+            if name in App.listDocuments():
+                App.closeDocument(name)
+        settle(1500)
+        check("its documents closed, none is listed %r" % (branch_rows(panel),),
+              branch_rows(panel) == [])
+    finally:
+        p.SetInt("TransactionLog", mode)
+        shutil.rmtree(where, ignore_errors=True)
+
+
 def stored_doors(share):
     out = {}
     doors = share.GetGroup("Doors")
@@ -238,9 +340,9 @@ def run():
         seen = start("LAN", port, limit=24)
         check("the dialog that starts a share came up %r" % (seen.get("doors"),),
               seen["found"] and "LAN" in seen.get("doors", []))
-        check("it has the upload limit, 16 MB unless set, 46 at most %r"
+        check("it has the upload limit, 16 MB unless set, 1024 at most %r"
               % ((seen.get("limit"), seen.get("limit_most"), seen.get("limit_enabled")),),
-              seen.get("limit") == 16 and seen.get("limit_most") == 46
+              seen.get("limit") == 16 and seen.get("limit_most") == 1024
               and seen.get("limit_enabled") is True)
         check("a LAN door shows no identity header", seen.get("header_shown") is False)
         check("accepted, the limit is the preference %r" % (share.GetInt("UploadLimitMB", 0),),
@@ -287,6 +389,7 @@ def run():
         for r in Gui.serveRequests():
             Gui.serveDropRequest(r["id"], r["doc"])
         check("nothing waits", Gui.serveRequests() == [])
+        served_branches(panel)
 
         edit = panel.findChild(QtWidgets.QLineEdit, "shareInvite")
         modes = panel.findChild(QtWidgets.QComboBox, "shareInviteMode")

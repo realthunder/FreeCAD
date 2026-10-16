@@ -155,12 +155,22 @@ def run():
               (tuple(round(c, 3) for c in a.ShapeColor[:3]), a.Transparency) == own,
               "%s, was %s" % ((tuple(round(c, 3) for c in a.ShapeColor[:3]), a.Transparency), own))
 
-        vb.AutoColor = False
+        # A face colour set by hand turns AutoColor off, by either name
+        # (docs/TransactionLog.md sec 33.16).
         vb.ShapeColor = ORANGE[0]
+        settle(0.2)
+        check("a face colour set under AutoColor turns it off", vb.AutoColor is False)
         vb.Transparency = ORANGE[1]
         settle(0.2)
+        check("and is drawn", same(vb, ORANGE), face(vb))
         check("turned off, the face colour is for the property editor again",
               "Hidden" not in vb.getPropertyStatus("ShapeColor"))
+        dv = d.ViewObject
+        d.Transparency = ORANGE[1]
+        settle(0.2)
+        check("a transparency set by the object's name turns it off as well",
+              dv.AutoColor is False and face(dv)[1] == ORANGE[1],
+              "%s %s" % (dv.AutoColor, face(dv)))
         set_pref(RED40)
         check("a preference change leaves a face with AutoColor off alone", same(vb, ORANGE),
               face(vb))

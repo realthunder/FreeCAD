@@ -72,7 +72,9 @@
 #include <App/DocumentParams.h>
 #include <App/FileBlobManager.h>
 #include <App/FileHistory.h>
+#include <App/GeoFeature.h>
 #include <App/TransactionLog.h>
+#include <App/ValueSummary.h>
 #include <Base/Console.h>
 #include <Base/Quantity.h>
 #include <Base/Tools.h>
@@ -82,7 +84,9 @@
 #include "Application.h"
 #include "Document.h"
 #include "FileDialog.h"
+#include "SceneLog.h"
 #include "SceneRequests.h"
+#include "SceneServeSource.h"
 #include "Selection.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -365,6 +369,10 @@ public:
         bool there {false};
         std::string a;
         std::string b;
+        /// The rows whose states the two are of, where known: a shape the
+        /// log let go is read from that state's own document (sec 32.33)
+        int64_t aRow {0};
+        int64_t bRow {0};
     };
     /// Property `prop` of object `cid`, and its values for each pair. With
     /// `document`, of the object in that open document and not in the one
@@ -482,6 +490,9 @@ public:
         const std::string name = doc ? doc->getName() : std::string();
         if (name == _home)
             return;
+        hideAll();
+        closeStates({}, true);
+        _held.clear();
         _home = name;
         _chosen.clear();
         pick(NotPicking);
@@ -501,6 +512,7 @@ public:
     ~TransactionDiffBar() override
     {
         hideAll();
+        closeStates({}, true);
     }
 
     /// What pair `index` is called: the panel's one pair is a row's before
@@ -520,6 +532,7 @@ public:
                    const QString& note = QString())
     {
         _values.clear();
+        _held.clear();
         if (doc)
             setDocument(doc);
         _chosenOnly = chosenOnly;
@@ -567,6 +580,15 @@ public:
     void clear()
     {
         setValues(nullptr, {}, false);
+    }
+
+    /// Draw again what is shown: the values a ref names have changed under
+    /// it -- a result made again in the document it was made in (sec 32.34),
+    /// whose ref is that document's name
+    void redraw()
+    {
+        hideAll();
+        update();
     }
 
 private:
@@ -725,6 +747,9 @@ private:
         if (chosen.size() != _chosen.size())
             showChosen();   // one of them is gone
         std::set<App::DocumentObject*> changed;
+        // The states read for what the log let go, and what of it there is
+        std::set<int64_t> rows;
+        LetGo letGo;
         for (const auto& value : _values) {
             if (index < 0 || index >= static_cast<int>(value.pairs.size())
                     || !value.pairs[index].there)
@@ -741,8 +766,25 @@ private:
             if (!view || views.count(view))
                 continue;
             const Pair& pair = value.pairs[index];
-            if (!view->showValueDiff(value.prop.c_str(), pair.a, pair.b,
-                                     _position->value() / 100.f, _only->isChecked(), mode))
+            const bool shape = view->showsValueDiffOf(value.prop.c_str());
+            std::string a = shape ? heldRef(pair.a, pair.aRow, rows, letGo, false) : pair.a;
+            std::string b = shape ? heldRef(pair.b, pair.bRow, rows, letGo, false) : pair.b;
+            auto show = [&]() {
+                return view->showValueDiff(value.prop.c_str(), a, b,
+                                           _position->value() / 100.f, _only->isChecked(),
+                                           mode);
+            };
+            bool ok = show();
+            if (!ok && shape) {
+                // Read, and not shown all the same: the value is there and
+                // the geometry it names is not
+                const std::string wasA = a;
+                const std::string wasB = b;
+                a = heldRef(a, pair.aRow, rows, letGo, true);
+                b = heldRef(b, pair.bRow, rows, letGo, true);
+                ok = (a != wasA || b != wasB) && show();
+            }
+            if (!ok)
                 continue;
             views.insert(view);
             shown.push_back(value.object);
@@ -755,6 +797,8 @@ private:
                 view->hideValueDiff();
         }
         _shown = std::move(shown);
+        // What is shown has its shapes: a state no longer asked for goes
+        closeStates(rows);
 
         QString text;
         if (!_shown.empty()) {
@@ -812,11 +856,90 @@ private:
             _pending.stop();
         if (_picking != NotPicking)
             text = QObject::tr("Pick an object in the tree or the view");
+        if (letGo.again > 0)
+            text += (text.isEmpty() ? QString() : QStringLiteral("; "))
+                  + QObject::tr("%n shape(s) the log let go, computed again at their row", "",
+                                letGo.again);
+        if (letGo.lost > 0)
+            text += (text.isEmpty() ? QString() : QStringLiteral("; "))
+                  + QObject::tr("%n shape(s) the log let go, which nothing here has", "",
+                                letGo.lost);
         auto own = _pairNotes.find(index);
         const QString note = own != _pairNotes.end() ? own->second : _note;
         if (!note.isEmpty() && index >= 0 && index < _pair->count() - 1)
             text += (text.isEmpty() ? QString() : QStringLiteral("; ")) + note;
         _said->setText(text);
+    }
+
+    /// Of what update() asked for: shapes the log no longer holds, read from
+    /// their state's document, and those with no state to read them from.
+    struct LetGo
+    {
+        int again {0};
+        int lost {0};
+    };
+
+    /** Ref `ref`, of a value at the state at row `row`, as showValueDiff()
+     * takes it (docs/TransactionLog.md sec 32.33). A value a recompute wrote
+     * is a cache, which a file's copy of the log does not carry: where the
+     * log no longer holds it, it is what the object has in that state's own
+     * document, opened once (App::Document::openRowState()) and kept while
+     * it is asked for. `rows` gets the row; `letGo` counts what was let go.
+     * With `gone` it is not asked whether the log reads it: the view could
+     * not.
+     */
+    std::string heldRef(const std::string& ref, int64_t row, std::set<int64_t>& rows,
+                        LetGo& letGo, bool gone)
+    {
+        if (ref.empty() || ref == NoValue || ref.compare(0, 4, "doc:") == 0)
+            return ref;
+        auto doc = App::GetApplication().getDocument(_home.c_str());
+        auto log = doc ? doc->getTransactionLog() : nullptr;
+        if (!log)
+            return ref;
+        auto known = gone ? _held.end() : _held.find(ref);
+        if (!gone && known == _held.end()) {
+            // Read as the view reads it: the entity may be there and not
+            // all it needs
+            App::CapturedValue value;
+            known = _held.emplace(ref, log->readValue(ref, value) && value.ok).first;
+        }
+        if (!gone && known->second)
+            return ref;
+        auto state = row > 0 ? _states.find(row) : _states.end();
+        if (row > 0 && state == _states.end()) {
+            std::string name;
+            try {
+                name = doc->openRowState(row)->getName();
+            }
+            catch (const Base::Exception& e) {
+                FC_WARN("the state at row " << row << " of " << _home << ": " << e.what());
+            }
+            state = _states.emplace(row, name).first;
+        }
+        if (state == _states.end() || state->second.empty()) {
+            ++letGo.lost;
+            return ref;
+        }
+        rows.insert(row);
+        ++letGo.again;
+        return "doc:" + state->second;
+    }
+
+    /// The states read for heldRef() but those of `keep` closed. One that
+    /// could not be read is not tried again until `all`.
+    void closeStates(const std::set<int64_t>& keep, bool all = false)
+    {
+        for (auto it = _states.begin(); it != _states.end();) {
+            if (keep.count(it->first) || (!all && it->second.empty())) {
+                ++it;
+                continue;
+            }
+            const std::string name = it->second;
+            it = _states.erase(it);
+            if (!name.empty() && App::GetApplication().getDocument(name.c_str()))
+                App::GetApplication().closeDocument(name.c_str());
+        }
     }
 
     QComboBox* _pair {nullptr};
@@ -839,6 +962,11 @@ private:
     std::map<int, QString> _pairNotes;
     std::function<void(int)> _pairChosen;
     std::vector<App::DocumentObjectT> _shown;
+    /// Of the document's log, by ref: whether it still holds the value
+    std::map<std::string, bool> _held;
+    /// The states of rows read for what the log let go: the document's
+    /// name, empty where it could not be read
+    std::map<int64_t, std::string> _states;
 };
 
 const char* TransactionDiffBar::NoValue = "-";
@@ -916,6 +1044,18 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
                                "file; this one stays where it is, and either is merged into "
                                "the other with Merge... (sec 30)"));
     branchBar->addWidget(_openBranch);
+    _serveBranch = new QPushButton(tr("Serve branch..."), this);
+    _serveBranch->setObjectName(QStringLiteral("TransactionServeBranch"));
+    _serveBranch->setToolTip(tr("Make a branch here and serve it in a document of its own, "
+                                "with no window: whoever joins it works there, and moves it "
+                                "about its history from this point on, while this document "
+                                "stays where it is. For a document that is shared (sec 32.23)"));
+    branchBar->addWidget(_serveBranch);
+    _access = new QPushButton(tr("Access..."), this);
+    _access->setObjectName(QStringLiteral("TransactionAccess"));
+    _access->setToolTip(tr("What each user of the shared document may do of a branch: read "
+                           "it, or write it from a point on (sec 32.25)"));
+    branchBar->addWidget(_access);
     _allBranches = new QCheckBox(tr("All branches"), this);
     _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
     branchBar->addWidget(_allBranches);
@@ -1134,6 +1274,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_mergeBranch, &QPushButton::clicked, this, &TransactionLogView::onMergeBranch);
     connect(_importFile, &QPushButton::clicked, this, &TransactionLogView::onImportFile);
     connect(_openBranch, &QPushButton::clicked, this, &TransactionLogView::onOpenBranch);
+    connect(_serveBranch, &QPushButton::clicked, this, &TransactionLogView::onServeBranch);
+    connect(_access, &QPushButton::clicked, this, &TransactionLogView::onAccess);
     connect(_requests, &QTreeWidget::itemActivated, this,
             [this](QTreeWidgetItem* item, int) { onRequestActivated(item); });
     connect(_requests, &QTreeWidget::customContextMenuRequested, this,
@@ -1149,6 +1291,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
 
     //NOLINTBEGIN
     _connRequests = SceneRequests::signalChanged().connect([this]() { scheduleRefresh(); });
+    // "Serve branch..." is for a document that is served (sec 32.25)
+    _connServed = SceneServeSource::signalServed().connect([this]() { scheduleRefresh(); });
     _connActiveDoc = Application::Instance->signalActiveDocument.connect(
         [this](const Gui::Document& doc) {
             attach(doc.getDocument());
@@ -1211,6 +1355,11 @@ void TransactionLogView::attach(App::Document* doc)
     // Rows can go as well as come (a trim, a deleted branch): rebuilt whole.
     _connections.emplace_back(_doc->signalBranchesChanged.connect(
         [this](const App::Document&) { reload(); }));
+    // What is kept, from Python or a served client's panel (sec 32.27):
+    // no row says so. After the act that kept it, which may be this panel's
+    _connections.emplace_back(_doc->signalLogKeptChanged.connect([this](const App::Document&) {
+        QTimer::singleShot(0, this, &TransactionLogView::keptChanged);
+    }));
     //NOLINTEND
     reload();
 }
@@ -1404,7 +1553,12 @@ void TransactionLogView::refreshKept()
             return !rows.empty() && rows.front().seq == seq;
         };
         for (const auto& value : store.keptValues()) {
-            lines.push_back({false, tr("one value"), value.cid, QString::fromStdString(value.prop),
+            // One a served client kept says who (sec 32.27): its keeper may
+            // let it go
+            const QString what = value.kind.empty()
+                ? tr("one value")
+                : tr("one value, by %1").arg(QString::fromStdString(value.name));
+            lines.push_back({false, what, value.cid, QString::fromStdString(value.prop),
                              value.seq, rowThere(value.seq), value.hash, shortRef(value.hash)});
             ++kept;
         }
@@ -1437,8 +1591,8 @@ void TransactionLogView::refreshKept()
     };
     QString said;
     for (const auto& line : lines) {
-        said += QStringLiteral("%1|%2|%3|%4|%5|%6\n")
-                    .arg(line.under ? 1 : 0).arg(objectText(line.cid), line.prop)
+        said += QStringLiteral("%1|%2|%3|%4|%5|%6|%7\n")
+                    .arg(line.under ? 1 : 0).arg(line.what, objectText(line.cid), line.prop)
                     .arg(line.seq).arg(line.rowThere ? 1 : 0)
                     .arg(QString::fromStdString(line.ref) + line.value);
     }
@@ -1604,6 +1758,11 @@ QString TransactionLogView::valueText(const QString& label, const QString& ref) 
     App::CapturedValue v;
     auto l = log();
     if (l && l->readValue(ref.toStdString(), v)) {
+        // What a shape is, where its text is the start of the geometry's
+        // file (sec 32.35)
+        App::ValueSummary summary;
+        if (_doc && App::summariseValue(*_doc, v, summary))
+            text += QString::fromStdString(summary.text) + QStringLiteral("\n");
         text += QString::fromStdString(v.fragment);
         if (!text.endsWith(QLatin1Char('\n')))
             text += QLatin1Char('\n');
@@ -1612,7 +1771,11 @@ QString TransactionLogView::valueText(const QString& label, const QString& ref) 
                         .arg(QString::fromStdString(a.name)).arg(a.bytes.size());
     }
     else {
-        text += tr("(value not in store)\n");
+        // Sec 32.33: what a recompute wrote is a cache, and a file's copy of
+        // the log carries none of it
+        text += tr("(not in the log any more: a value a recompute made is a cache, which the "
+                   "file's copy of the log does not carry; the 3D view computes a shape "
+                   "again in its row's state)\n");
     }
     text += QLatin1Char('\n');
     return text;
@@ -1825,6 +1988,10 @@ void TransactionLogView::showRowDiff(int64_t seq)
         std::vector<TransactionDiffBar::Value> values;
         std::map<std::pair<long, std::string>, size_t> at;
         std::set<long> absent;
+        // The states the two are of: the row's parent's, and the row's
+        int64_t parent = 0;
+        for (const auto& t : l->store().transactions(seq, 1))
+            parent = t.seq == seq ? t.parent : parent;
         for (const auto& op : l->store().ops(seq)) {
             if (op.ckind != "obj" || op.op != "set" || op.vafter.empty())
                 continue;
@@ -1835,7 +2002,8 @@ void TransactionLogView::showRowDiff(int64_t seq)
                 at[{op.cid, op.prop}] = values.size();
                 values.push_back({op.cid, op.prop,
                                   {{true, op.vbefore.empty() ? TransactionDiffBar::NoValue
-                                                             : op.vbefore, op.vafter}}});
+                                                             : op.vbefore, op.vafter,
+                                    parent, seq}}});
             }
             else {
                 values[found->second].pairs[0].b = op.vafter;
@@ -1908,7 +2076,7 @@ void TransactionLogView::showVersionDiff(int64_t seq)
             // Now is what the object has: the empty ref
             values.push_back({c.cid, c.prop,
                               {{true, c.a.empty() ? TransactionDiffBar::NoValue : c.a,
-                                std::string()}}});
+                                std::string(), seq}}});
         }
         for (int c = 0; c < ChgColumns; ++c) {
             if (c != ChgObject)
@@ -1941,10 +2109,12 @@ void TransactionLogView::onChangeSelected()
     const QString prop = item->text(ChgProp);
     _diffBar->clear();
     if (cid && !prop.isEmpty() && !now.isEmpty()) {
+        const auto versions = _versions->selectedItems();
+        const int64_t seq = versions.isEmpty() ? 0 : versions.front()->text(VerSeq).toLongLong();
         _diffBar->setPairLabel(0, tr("the version against now"));
         _diffBar->setValue(_doc, cid, prop.toStdString(),
                            {{true, there.isEmpty() ? TransactionDiffBar::NoValue
-                                                   : there.toStdString(), std::string()}});
+                                                   : there.toStdString(), std::string(), seq}});
     }
     _value->setPlainText(valueText(tr("now"), now) + valueText(tr("at the version"), there));
 }
@@ -2013,9 +2183,15 @@ void TransactionLogView::onOpSelected()
     // with no value before made the property, and has nothing to be against.
     const long cid = static_cast<long>(item->data(OpContainer, Qt::UserRole).toLongLong());
     if (cid && !before.isEmpty() && !after.isEmpty()) {
+        // Of the row selected: its parent's state, and its own
+        const auto rows = _transactions->selectedItems();
+        const int64_t seq = rows.isEmpty() ? 0 : rows.front()->data(TxnSeq, Qt::UserRole)
+                                                     .toLongLong();
+        const int64_t parent = rows.isEmpty() ? 0 : rows.front()->data(TxnParent, RoleParent)
+                                                        .toLongLong();
         _diffBar->setPairLabel(0, tr("before against after"));
         _diffBar->setValue(_doc, cid, item->text(OpProp).toStdString(),
-                           {{true, before.toStdString(), after.toStdString()}});
+                           {{true, before.toStdString(), after.toStdString(), parent, seq}});
     }
     QString meta = item->data(OpProp, Qt::UserRole).toString();
     QString text;
@@ -2245,6 +2421,8 @@ void TransactionLogView::refreshBranches()
         _mergeBranch->setEnabled(false);
         _importFile->setEnabled(false);
         _openBranch->setEnabled(false);
+        _serveBranch->setEnabled(false);
+        _access->setEnabled(false);
         return;
     }
     int current = -1;
@@ -2269,6 +2447,10 @@ void TransactionLogView::refreshBranches()
     _mergeBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
     _importFile->setEnabled(_doc != nullptr && !l->detached());
     _openBranch->setEnabled(_doc != nullptr && !l->detached());
+    // A branch is served beside a document that is: there is a door then
+    _serveBranch->setEnabled(_doc != nullptr && !l->detached()
+                             && SceneServeSource::sourceFor(_doc) != nullptr);
+    _access->setEnabled(_doc != nullptr);
     _renameBranch->setEnabled(_doc != nullptr && _branch->currentIndex() >= 0);
 }
 
@@ -2350,9 +2532,11 @@ class MergeDialog: public QDialog
 public:
     enum Column { Kind, Object, Property, Base, Ours, Theirs, Takes, Columns };
 
-    /// What the merge would make, with the sides given (sec 32.17)
+    /// What the merge would make, with the sides given (sec 32.17), and the
+    /// document of a result made before handed back to be made again in
+    /// (sec 32.34)
     using Outcome = std::function<App::Document::MergeOutcome(
-        const std::map<std::string, std::string>&)>;
+        const std::map<std::string, std::string>&, const std::string&)>;
     /// The pairs of the bar, by their place
     enum Pair { OursTheirs, BaseOurs, BaseTheirs, OursResult };
 
@@ -2363,6 +2547,9 @@ public:
                 Outcome outcome = Outcome())
         : QDialog(parent)
         , _outcome(std::move(outcome))
+        , _rows(rows)
+        , _base(preview.base)
+        , _theirs(preview.theirs)
     {
         setObjectName(QStringLiteral("TransactionMergeDialog"));
         setWindowTitle((rows ? QObject::tr("Apply %1 to %2") : QObject::tr("Merge %1 into %2"))
@@ -2539,16 +2726,31 @@ public:
             // has one: what the object of this id has in its document. Of
             // a fast-forward the result is theirs.
             auto pairsOf = [this](const App::Document::MergeChange& c) {
+                // The base and theirs are states of their rows: of a merge.
+                // Rows picked are not one state, and have none.
+                const int64_t base = _rows ? 0 : _base;
+                const int64_t theirs = _rows ? 0 : _theirs;
                 std::vector<TransactionDiffBar::Pair> pairs {
-                    {!c.theirs.empty(), std::string(), c.theirs},
-                    {!c.base.empty(), c.base, std::string()},
-                    {!c.base.empty() && !c.theirs.empty(), c.base, c.theirs}};
+                    {!c.theirs.empty(), std::string(), c.theirs, 0, theirs},
+                    {!c.base.empty(), c.base, std::string(), base},
+                    {!c.base.empty() && !c.theirs.empty(), c.base, c.theirs, base, theirs}};
                 if (_resultIsTheirs)
                     pairs.push_back(pairs.front());
                 else
                     pairs.push_back({_result.count({c.cid, c.prop}) > 0, std::string(),
                                      _resultRef});
                 return pairs;
+            };
+            // What theirs removes, and the merge with it: the object as it
+            // is here, all of it gone (sec 32.34)
+            auto goneThere = [this, doc](long cid, bool theirs) {
+                std::vector<TransactionDiffBar::Pair> pairs {
+                    {theirs, std::string(), TransactionDiffBar::NoValue}, {}, {}};
+                pairs.push_back(_resultIsTheirs ? pairs.front()
+                                                : TransactionDiffBar::Pair {
+                                                      _removed.count(cid) > 0, std::string(),
+                                                      TransactionDiffBar::NoValue});
+                return TransactionDiffBar::Value {cid, geometryOf(doc, cid), pairs, std::string()};
             };
             // What the result has and the document has not -- theirs made
             // it: all of it new, drawn by the view the result's document
@@ -2563,6 +2765,9 @@ public:
                 const auto* c = _changes[items.front()->data(Object, Qt::UserRole).toInt()];
                 if (c->ckind == "obj" && c->prop.empty() && _there.count(c->cid))
                     _diff->setValues(doc, {madeThere(c->cid, _there[c->cid])}, false);
+                else if (c->ckind == "obj" && c->prop.empty() && c->op == "remove"
+                         && !geometryOf(doc, c->cid).empty())
+                    _diff->setValues(doc, {goneThere(c->cid, true)}, false);
                 else if (c->ckind != "obj" || c->prop.empty())
                     _diff->clear();
                 else
@@ -2573,12 +2778,16 @@ public:
             // (sec 32.10). What theirs made has no object here.
             std::vector<TransactionDiffBar::Value> values;
             std::set<std::pair<long, std::string>> listed;
+            std::set<long> gone;
             int made = 0;
             for (const auto* c : _changes) {
                 if (c->ckind != "obj")
                     continue;
                 if (c->prop.empty()) {
                     made += c->op == "create" ? 1 : 0;
+                    if (c->op == "remove" && !geometryOf(doc, c->cid).empty()
+                            && gone.insert(c->cid).second)
+                        values.push_back(goneThere(c->cid, true));
                 }
                 else {
                     values.push_back({c->cid, c->prop, pairsOf(*c), std::string()});
@@ -2587,6 +2796,11 @@ public:
             }
             for (const auto& made : _there)
                 values.push_back(madeThere(made.first, made.second));
+            // What the result removes that no line says theirs does
+            for (long cid : _removed) {
+                if (!geometryOf(doc, cid).empty() && gone.insert(cid).second)
+                    values.push_back(goneThere(cid, false));
+            }
             // The result reaches further than the changes: what is made of
             // what changed is computed again, and no line here says so
             for (const auto& value : _result) {
@@ -2611,6 +2825,8 @@ public:
         //NOLINTBEGIN
         _resultGone = Application::Instance->signalDeleteDocument.connect(
             [this](const Gui::Document& gone) {
+                if (gone.getDocument() && _kept == gone.getDocument()->getName())
+                    _kept.clear();
                 if (_resultRef.empty() || !gone.getDocument()
                         || resultDocument() != gone.getDocument()->getName())
                     return;
@@ -2663,6 +2879,7 @@ public:
     ~MergeDialog() override
     {
         dropResult();
+        closeKept();
     }
 
     /// What exec would not return: the preview is to be made again
@@ -2678,6 +2895,7 @@ public:
         _isStale = true;
         allowMerge();
         dropResult();
+        closeKept();
         _diff->setPairNote(OursResult, QObject::tr("the document has changed: preview again"));
         _show();
     }
@@ -2773,15 +2991,44 @@ private:
         _there.clear();
     }
 
-    /// Close the document the result was made in, and forget its values
-    void dropResult()
+    /// The geometry of object `cid` of `doc`, by its property's name; empty
+    /// where it has none
+    static std::string geometryOf(App::Document* doc, long cid)
+    {
+        auto geo = doc ? Base::freecad_dynamic_cast<App::GeoFeature>(doc->getObjectByID(cid))
+                       : nullptr;
+        auto prop = geo ? geo->getPropertyOfGeometry() : nullptr;
+        return prop && prop->hasName() ? std::string(prop->getName()) : std::string();
+    }
+
+    /// Forget the result's values. Its document is closed, or with `keep`
+    /// kept to be made again in (sec 32.34): what a merge reads first is
+    /// the document, and that is the same until it changes.
+    void dropResult(bool keep = false)
     {
         _result.clear();
+        _removed.clear();
         _resultIsTheirs = false;
         _made = false;
         takeOutViewsThere();
         const std::string name = resultDocument();
         _resultRef.clear();
+        if (name.empty() || !App::GetApplication().getDocument(name.c_str()))
+            return;
+        if (keep) {
+            closeKept();
+            _kept = name;
+        }
+        else {
+            App::GetApplication().closeDocument(name.c_str());
+        }
+    }
+
+    /// Close the result's document kept to be made again in
+    void closeKept()
+    {
+        const std::string name = std::move(_kept);
+        _kept.clear();
         if (!name.empty() && App::GetApplication().getDocument(name.c_str()))
             App::GetApplication().closeDocument(name.c_str());
     }
@@ -2810,7 +3057,7 @@ private:
         allowMerge();
         if (_settingAll || !_made)
             return;
-        dropResult();
+        dropResult(true);
         if (_diff->pair() == OursResult)
             makeResult();
         else
@@ -2818,18 +3065,27 @@ private:
     }
 
     /// What the merge would make, with the sides as they are picked now
-    /// (sec 32.17): made once, and again when a side changes.
+    /// (sec 32.17): made once, and again when a side changes -- in the
+    /// document it was made in before, where there is one (sec 32.34).
     void makeResult()
     {
         if (!_outcome || _made || _isStale || _making)
             return;
         Base::StateLocker guard(_making);
-        dropResult();
+        dropResult(true);
         QString note;
         try {
             Gui::WaitCursor wait;
-            const auto outcome = _outcome(picks());
+            // The document handed back is the merge's from here, whatever
+            // it does with it
+            const std::string again = std::move(_kept);
+            _kept.clear();
+            const auto outcome = _outcome(picks(), again);
             _made = true;
+            _reused = outcome.reused;
+            if (!again.empty() && !(outcome.document && again == outcome.document->getName())
+                    && App::GetApplication().getDocument(again.c_str()))
+                App::GetApplication().closeDocument(again.c_str());
             if (outcome.theirs) {
                 _resultIsTheirs = true;
                 note = QObject::tr("a fast-forward: the result is theirs");
@@ -2867,6 +3123,7 @@ private:
                     parts << QObject::tr("the result is the document as it is");
                 if (made)
                     parts << QObject::tr("%n object(s) made by the merge", "", made);
+                _removed.insert(outcome.removed.begin(), outcome.removed.end());
                 if (!outcome.removed.empty())
                     parts << QObject::tr("%n object(s) are removed", "",
                                          static_cast<int>(outcome.removed.size()));
@@ -2892,6 +3149,7 @@ private:
             note = QObject::tr("no result: %1").arg(QString::fromUtf8(e.what()));
         }
         _diff->setPairNote(OursResult, note);
+        _diff->redraw();
         _show();
     }
 
@@ -2921,6 +3179,16 @@ private:
     std::map<long, std::string> _there;
     std::string _resultRef;
     bool _resultIsTheirs {false};
+    /// The objects of the document the result removes: drawn as gone
+    std::set<long> _removed;
+    /// The result's document kept, while the sides change, to be made again
+    /// in; and whether the last result was made so (sec 32.34)
+    std::string _kept;
+    bool _reused {false};
+    /// Of rows picked, and not a branch merged; the base's row and theirs'
+    bool _rows {false};
+    int64_t _base {0};
+    int64_t _theirs {0};
     bool _made {false};
     bool _making {false};
     bool _isStale {false};
@@ -2928,6 +3196,321 @@ private:
 };
 
 } // namespace
+
+void TransactionLogView::onServeBranch()
+{
+    if (!_doc)
+        return;
+    // A branch there is is served as it is; a new name makes one from here
+    // (sec 32.31). Not the one this document is on, nor a closed one
+    QStringList names {QString()};
+    if (auto l = log()) {
+        for (const auto& b : l->store().branches()) {
+            if (b.id != l->branch() && !b.closed)
+                names << QString::fromStdString(b.name);
+        }
+    }
+    bool ok = false;
+    const QString text = QInputDialog::getItem(
+        this, tr("Serve a branch"),
+        tr("A branch to serve as it is, or the name of a new one made from here "
+           "(empty for one made up):"),
+        names, 0, true, &ok);
+    if (!ok)
+        return;
+    QString said;
+    try {
+        App::Document* served = serveBranchOf(_doc, text.trimmed().toStdString());
+        auto l = served->getTransactionLog();
+        App::LogBranch branch;
+        if (l)
+            l->store().getBranch(l->branch(), branch);
+        said = tr("Branch %1 is served in document %2: a client joins it by that name (?doc=%2)")
+                   .arg(QString::fromStdString(branch.name), QString::fromUtf8(served->getName()));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("serve a branch of " << _doc->getName() << ": " << e.what());
+        said = tr("No branch served: %1").arg(QString::fromUtf8(e.what()));
+    }
+    // Said after the refresh, which writes the line: and the line of every
+    // refresh after names the branch and its document (updateStatus)
+    refresh();
+    _status->setText(said);
+}
+
+namespace {
+
+/** Who may what of a branch (docs/TransactionLog.md sec 32.25): what is
+ * said in the log, one line each, and a line to say more.
+ */
+class AccessDialog : public QDialog
+{
+public:
+    AccessDialog(App::Document* doc, QWidget* parent)
+        : QDialog(parent)
+        , _doc(doc)
+    {
+        setWindowTitle(QObject::tr("Access to branches"));
+        setObjectName(QStringLiteral("TransactionAccessDialog"));
+        auto layout = new QVBoxLayout(this);
+        auto note = new QLabel(
+            QObject::tr("Who reads a branch sees its history, can apply its steps to the "
+                        "branch they work on, and can ask for it to be merged. Who writes it "
+                        "can also restore, switch and branch there from a point on, and deals "
+                        "with the requests to merge into it. With nothing said here, a client "
+                        "reads the branch of the document it joined, and writes a branch "
+                        "served to it. A group is said of as a user is: who is in it has what "
+                        "is said of the group, where nothing is said of themselves."),
+            this);
+        note->setWordWrap(true);
+        layout->addWidget(note);
+        _list = new QTreeWidget(this);
+        _list->setObjectName(QStringLiteral("TransactionAccessList"));
+        _list->setRootIsDecorated(false);
+        _list->setHeaderLabels({QObject::tr("User"), QObject::tr("Branch"), QObject::tr("May"),
+                                QObject::tr("From")});
+        layout->addWidget(_list, 1);
+
+        auto row = new QHBoxLayout;
+        _user = new QComboBox(this);
+        _user->setObjectName(QStringLiteral("TransactionAccessUser"));
+        _user->setEditable(false);
+        _branch = new QComboBox(this);
+        _branch->setObjectName(QStringLiteral("TransactionAccessBranch"));
+        _level = new QComboBox(this);
+        _level->setObjectName(QStringLiteral("TransactionAccessLevel"));
+        _level->addItem(QObject::tr("reads"));
+        _level->addItem(QObject::tr("writes"));
+        _from = new QComboBox(this);
+        _from->setObjectName(QStringLiteral("TransactionAccessFrom"));
+        auto set = new QPushButton(QObject::tr("Set"), this);
+        set->setObjectName(QStringLiteral("TransactionAccessSet"));
+        row->addWidget(_user, 2);
+        row->addWidget(_level);
+        row->addWidget(_branch, 1);
+        row->addWidget(new QLabel(QObject::tr("from"), this));
+        row->addWidget(_from, 2);
+        row->addWidget(set);
+        layout->addLayout(row);
+
+        // Groups (sec 32.32): a user put in one, by its name -- a new name
+        // makes the group, none takes the user out
+        auto groups = new QHBoxLayout;
+        _group = new QComboBox(this);
+        _group->setObjectName(QStringLiteral("TransactionAccessGroup"));
+        _group->setEditable(true);
+        _group->setToolTip(QObject::tr("A group there is, or the name of a new one; empty "
+                                       "for none"));
+        auto putIn = new QPushButton(QObject::tr("Put in Group"), this);
+        putIn->setObjectName(QStringLiteral("TransactionAccessPutIn"));
+        groups->addWidget(new QLabel(QObject::tr("The user chosen is in group"), this));
+        groups->addWidget(_group, 1);
+        groups->addWidget(putIn);
+        layout->addLayout(groups);
+
+        auto buttons = new QHBoxLayout;
+        auto remove = new QPushButton(QObject::tr("Remove"), this);
+        remove->setObjectName(QStringLiteral("TransactionAccessRemove"));
+        auto close = new QPushButton(QObject::tr("Close"), this);
+        buttons->addWidget(remove);
+        buttons->addStretch(1);
+        buttons->addWidget(close);
+        layout->addLayout(buttons);
+
+        connect(close, &QPushButton::clicked, this, &QDialog::accept);
+        connect(set, &QPushButton::clicked, this, [this]() { setOne(); });
+        connect(remove, &QPushButton::clicked, this, [this]() { removeOne(); });
+        connect(putIn, &QPushButton::clicked, this, [this]() { putInGroup(); });
+        connect(_user, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this](int) { showGroup(); });
+        connect(_branch, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this](int) { fillFrom(); });
+        connect(_level, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this](int index) { _from->setEnabled(index == 1); });
+        _from->setEnabled(false);
+        fill();
+        resize(620, 360);
+    }
+
+private:
+    App::TransactionLog* log() const
+    {
+        return _doc ? _doc->getTransactionLog() : nullptr;
+    }
+
+    void fill()
+    {
+        auto l = log();
+        // (the user chosen stays chosen: by kind and name, its line says
+        // its group too)
+        const QStringList chosen = _user->currentData().toStringList();
+        _list->clear();
+        _user->clear();
+        _branch->clear();
+        if (!l)
+            return;
+        std::map<int64_t, std::string> branches;
+        for (const auto& b : l->store().branches()) {
+            branches[b.id] = b.name;
+            _branch->addItem(QString::fromStdString(b.name));
+        }
+        std::map<int64_t, App::LogVersion> versions;
+        for (const auto& v : l->store().versions())
+            versions[v.num] = v;
+        // Those the log knows that are not the desktop's own: who came to
+        // the shared document, who wrote a row, and the groups -- each with
+        // the group it is in
+        const auto users = l->store().users();
+        std::map<int64_t, std::string> names;
+        for (const auto& u : users)
+            names[u.id] = u.name;
+        _group->clear();
+        _group->addItem(QString());
+        _groupOf.clear();
+        for (const auto& u : users) {
+            if (u.kind == "local" || u.name.empty())
+                continue;
+            const QString name = QString::fromStdString(u.name);
+            const QString group = u.parent ? QString::fromStdString(names[u.parent]) : QString();
+            _user->addItem(group.isEmpty()
+                               ? QStringLiteral("%1 (%2)").arg(name, QString::fromStdString(u.kind))
+                               : QObject::tr("%1 (%2), in %3")
+                                     .arg(name, QString::fromStdString(u.kind), group),
+                           QStringList {QString::fromStdString(u.kind), name});
+            _groupOf.push_back(group);
+            if (u.kind == App::kLogGroupKind)
+                _group->addItem(name);
+        }
+        if (_user->findData(chosen) >= 0)
+            _user->setCurrentIndex(_user->findData(chosen));
+        showGroup();
+        for (const auto& a : l->store().accesses()) {
+            auto item = new QTreeWidgetItem(_list);
+            item->setText(0, QStringLiteral("%1 (%2)").arg(QString::fromStdString(a.name),
+                                                           QString::fromStdString(a.kind)));
+            item->setData(0, Qt::UserRole, QStringList {QString::fromStdString(a.kind),
+                                                        QString::fromStdString(a.name),
+                                                        QString::fromStdString(
+                                                            branches[a.branch])});
+            item->setText(1, QString::fromStdString(branches[a.branch]));
+            // One the user made, as a client, is the user's own to delete
+            item->setText(2, a.made ? QObject::tr("writes, made it")
+                             : a.write ? QObject::tr("writes") : QObject::tr("reads"));
+            if (a.write) {
+                auto v = versions.find(a.fromVersion);
+                item->setText(3, a.fromVersion == 0 ? QObject::tr("where it forks")
+                                 : v == versions.end()
+                                     ? QObject::tr("version %1").arg(a.fromVersion)
+                                     : v->second.name.empty()
+                                         ? QObject::tr("version %1").arg(a.fromVersion)
+                                         : QObject::tr("version %1 (%2)")
+                                               .arg(a.fromVersion)
+                                               .arg(QString::fromStdString(v->second.name)));
+            }
+        }
+        for (int c = 0; c < _list->columnCount(); ++c)
+            _list->resizeColumnToContents(c);
+        fillFrom();
+    }
+
+    /// The points a write of the branch chosen can start at: its fork, or
+    /// a version taken on it
+    void fillFrom()
+    {
+        _from->clear();
+        _from->addItem(QObject::tr("where it forks"), 0);
+        auto l = log();
+        App::LogBranch branch;
+        if (!l || !l->store().findBranch(_branch->currentText().toStdString(), branch))
+            return;
+        for (const auto& v : l->store().versions()) {
+            if (v.branch != branch.id)
+                continue;
+            _from->addItem(v.name.empty() ? QObject::tr("version %1").arg(v.num)
+                                          : QObject::tr("version %1 (%2)")
+                                                .arg(v.num)
+                                                .arg(QString::fromStdString(v.name)),
+                           static_cast<qlonglong>(v.num));
+        }
+    }
+
+    void setOne()
+    {
+        const QStringList who = _user->currentData().toStringList();
+        if (!_doc || who.size() != 2 || _branch->currentText().isEmpty())
+            return;
+        try {
+            const bool write = _level->currentIndex() == 1;
+            _doc->setBranchAccess(who[0].toStdString(), who[1].toStdString(),
+                                  _branch->currentText().toStdString(), write,
+                                  write ? _from->currentData().toLongLong() : 0);
+        }
+        catch (Base::Exception& e) {
+            QMessageBox::warning(this, windowTitle(), QString::fromUtf8(e.what()));
+        }
+        fill();
+    }
+
+    /// The group the user chosen is in, to change
+    void showGroup()
+    {
+        const int at = _user->currentIndex();
+        _group->setCurrentText(at >= 0 && at < int(_groupOf.size()) ? _groupOf[size_t(at)]
+                                                                    : QString());
+    }
+
+    void putInGroup()
+    {
+        const QStringList who = _user->currentData().toStringList();
+        if (!_doc || who.size() != 2)
+            return;
+        try {
+            _doc->setUserGroup(who[0].toStdString(), who[1].toStdString(),
+                               _group->currentText().trimmed().toStdString());
+        }
+        catch (Base::Exception& e) {
+            QMessageBox::warning(this, windowTitle(), QString::fromUtf8(e.what()));
+        }
+        fill();
+    }
+
+    void removeOne()
+    {
+        auto item = _list->currentItem();
+        const QStringList said = item ? item->data(0, Qt::UserRole).toStringList()
+                                      : QStringList();
+        if (!_doc || said.size() != 3)
+            return;
+        try {
+            _doc->clearBranchAccess(said[0].toStdString(), said[1].toStdString(),
+                                    said[2].toStdString());
+        }
+        catch (Base::Exception& e) {
+            QMessageBox::warning(this, windowTitle(), QString::fromUtf8(e.what()));
+        }
+        fill();
+    }
+
+    App::Document* _doc;
+    QTreeWidget* _list {nullptr};
+    QComboBox* _user {nullptr};
+    QComboBox* _branch {nullptr};
+    QComboBox* _level {nullptr};
+    QComboBox* _from {nullptr};
+    QComboBox* _group {nullptr};
+    /// Of each user listed, the group it is in
+    std::vector<QString> _groupOf;
+};
+
+} // namespace
+
+void TransactionLogView::onAccess()
+{
+    if (!_doc)
+        return;
+    AccessDialog dialog(_doc, this);
+    dialog.exec();
+}
 
 void TransactionLogView::onOpenBranch()
 {
@@ -3045,8 +3628,10 @@ void TransactionLogView::mergeBranch(const QString& name)
             App::Document* doc = _doc;
             QPointer<MergeDialog> dialog(new MergeDialog(
                 preview, QString::fromStdString(mine.name), l, _doc, this, false,
-                [doc, name](const std::map<std::string, std::string>& sides) {
-                    return doc->previewMergeResult(name.toStdString(), sides);
+                [doc, name](const std::map<std::string, std::string>& sides,
+                            const std::string& again) {
+                    return doc->previewMergeResult(name.toStdString(), sides, std::string(), 0,
+                                                   again);
                 }));
             const int answer = askBeside(
                 *dialog, MergeDialog::said(preview),
@@ -3144,8 +3729,9 @@ void TransactionLogView::applyRows(const QString& seqs)
             App::Document* doc = _doc;
             QPointer<MergeDialog> dialog(new MergeDialog(
                 preview, QString::fromStdString(mine.name), l, _doc, this, true,
-                [doc, rows](const std::map<std::string, std::string>& sides) {
-                    return doc->previewPickResult(rows, sides);
+                [doc, rows](const std::map<std::string, std::string>& sides,
+                            const std::string& again) {
+                    return doc->previewPickResult(rows, sides, std::string(), again);
                 }));
             const int answer = askBeside(
                 *dialog, MergeDialog::said(preview),
@@ -3282,6 +3868,8 @@ constexpr int RoleRequestId = Qt::UserRole + 20;       // a sent file's number
 constexpr int RoleRequestBranch = Qt::UserRole + 21;   // a branch's name
 constexpr int RoleRequestFrom = Qt::UserRole + 22;     // the copy's branch it came from
 constexpr int RoleRequestStopped = Qt::UserRole + 23;  // its import stopped at a row
+constexpr int RoleMergeRequest = Qt::UserRole + 24;    // an asked merge's id (sec 32.25)
+constexpr int RoleMergeTarget = Qt::UserRole + 25;     // and the branch it is to merge into
 
 QString whenText(double time)
 {
@@ -3312,6 +3900,35 @@ void TransactionLogView::refreshRequests()
         item->setToolTip(0, tr("Sent by %1. Nothing of it has been opened: bringing it in "
                                "reads it, as a file handed over any other way would be read")
                                 .arg(from));
+    }
+    // Sec 32.25: a merge someone asked for, of one branch of this file
+    // into another, not yet dealt with.
+    {
+        std::map<int64_t, std::string> names;
+        for (const auto& b : l->store().branches())
+            names[b.id] = b.name;
+        for (const auto& r : l->store().mergeRequests()) {
+            if (r.state != "open" || !names.count(r.source) || !names.count(r.target))
+                continue;
+            auto item = new QTreeWidgetItem(_requests);
+            item->setData(0, RoleMergeRequest, static_cast<qlonglong>(r.id));
+            item->setData(0, RoleRequestBranch, QString::fromStdString(names[r.source]));
+            item->setData(0, RoleMergeTarget, QString::fromStdString(names[r.target]));
+            item->setText(0, tr("merge %1 into %2")
+                                 .arg(QString::fromStdString(names[r.source]),
+                                      QString::fromStdString(names[r.target])));
+            QString from = QString::fromStdString(r.name);
+            if (r.kind != "verified" && r.kind != "local")
+                from += QStringLiteral(" (%1)").arg(QString::fromStdString(r.kind));
+            item->setText(1, from);
+            item->setText(2, whenText(r.created));
+            item->setText(3, r.note.empty() ? tr("asked") : QString::fromStdString(r.note));
+            item->setToolTip(0, r.target == l->branch()
+                                    ? tr("Asked by %1: Merge... does it, here").arg(from)
+                                    : tr("Asked by %1: it is merged in a document that is "
+                                         "on %2").arg(from, QString::fromStdString(
+                                                                names[r.target])));
+        }
     }
     // H1: a branch an import made that this branch has not taken.
     bool ask = false;
@@ -3393,10 +4010,28 @@ void TransactionLogView::onRequestActivated(QTreeWidgetItem* item)
     if (!item)
         return;
     const QString branch = item->data(0, RoleRequestBranch).toString();
+    // A merge that was asked for is done where the document is on the
+    // branch it is to go into
+    if (item->data(0, RoleMergeRequest).toLongLong() > 0) {
+        const QString target = item->data(0, RoleMergeTarget).toString();
+        if (target == currentBranchName())
+            mergeBranch(branch);
+        else
+            _status->setText(tr("That is to merge into %1: switch to it first").arg(target));
+        return;
+    }
     if (!branch.isEmpty())
         mergeBranch(branch);
     else
         bringRequest(item->data(0, RoleRequestId).toULongLong());
+}
+
+QString TransactionLogView::currentBranchName() const
+{
+    auto l = log();
+    App::LogBranch mine;
+    return l && l->store().getBranch(l->branch(), mine) ? QString::fromStdString(mine.name)
+                                                        : QString();
 }
 
 void TransactionLogView::onRequestContextMenu(const QPoint& pos)
@@ -3407,6 +4042,26 @@ void TransactionLogView::onRequestContextMenu(const QPoint& pos)
     const QString branch = item->data(0, RoleRequestBranch).toString();
     const qulonglong id = item->data(0, RoleRequestId).toULongLong();
     QMenu menu(this);
+    // Sec 32.25: a merge that was asked for
+    const qlonglong asked = item->data(0, RoleMergeRequest).toLongLong();
+    if (asked > 0) {
+        const QString target = item->data(0, RoleMergeTarget).toString();
+        const bool here = target == currentBranchName();
+        auto merge = menu.addAction(tr("Merge..."), this, [this, branch]() { mergeBranch(branch); });
+        merge->setEnabled(here);
+        if (!here)
+            merge->setText(tr("Merge... (switch to %1 first)").arg(target));
+        menu.addAction(tr("Reject"), this, [this, asked]() {
+            try {
+                _doc->closeMergeRequest(asked, "rejected");
+            }
+            catch (Base::Exception& e) {
+                FC_ERR("reject request " << asked << ": " << e.what());
+            }
+        });
+        menu.exec(_requests->viewport()->mapToGlobal(pos));
+        return;
+    }
     if (!branch.isEmpty()) {
         menu.addAction(tr("Merge..."), this, [this, branch]() { mergeBranch(branch); });
         // An import that stopped left the file it read held (sec 30.29):
@@ -3811,38 +4466,6 @@ void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& gl
     }
 }
 
-namespace {
-
-/// The versions a squash to `to` may start from (docs/TransactionLog.md
-/// sec 16.7): those behind it on its own history, oldest first.
-std::vector<App::LogVersion> versionsBehind(App::TransactionStore& store,
-                                            const App::LogVersion& to)
-{
-    std::vector<App::LogVersion> behind;
-    const auto chain = store.chain(to.seq);
-    if (chain.empty())
-        return behind;
-    std::set<int64_t> points;
-    for (const auto& t : chain) {
-        points.insert(t.seq);
-        points.insert(t.parent);
-    }
-    // A version taken at no row is behind only the history that starts
-    // from it: its own branch's, or that of a branch made from it.
-    App::LogBranch first;
-    store.getBranch(chain.front().branch, first);
-    for (const auto& v : store.versions()) {
-        if (v.seq >= to.seq || !points.count(v.seq))
-            continue;
-        if (v.seq == 0 && v.branch != first.id && v.num != first.fromVersion)
-            continue;
-        behind.push_back(v);
-    }
-    return behind;
-}
-
-} // namespace
-
 void TransactionLogView::squashTo(qlonglong version)
 {
     // docs/TransactionLog.md sec 16.7: the rows between an older version
@@ -3856,7 +4479,7 @@ void TransactionLogView::squashTo(qlonglong version)
         App::LogVersion to;
         if (!store.getVersion(version, to))
             return;
-        const auto behind = versionsBehind(store, to);
+        const auto behind = logVersionsBehind(store, to);
         if (behind.empty()) {
             _status->setText(tr("No version behind version %1 to squash from").arg(version));
             return;
@@ -4045,7 +4668,8 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     try {
         App::LogVersion to;
         if (auto l = log())
-            anyBehind = l->store().getVersion(num, to) && !versionsBehind(l->store(), to).empty();
+            anyBehind = l->store().getVersion(num, to)
+                && !logVersionsBehind(l->store(), to).empty();
     }
     catch (Base::Exception&) {
     }
@@ -4171,6 +4795,17 @@ void TransactionLogView::updateStatus()
                     modeText += QStringLiteral(", ")
                               + tr("%1 behind").arg(static_cast<qulonglong>(state.behind));
             }
+        }
+        // A branch of the file served in a document of its own (sec 32.25):
+        // the name a client joins it by
+        for (App::Document* other : l->documents()) {
+            auto theirs = other != _doc ? other->getTransactionLog() : nullptr;
+            App::LogBranch served;
+            if (theirs && SceneServeSource::serving(other)
+                    && theirs->store().getBranch(theirs->branch(), served))
+                modeText += QStringLiteral(", ")
+                          + tr("%1 served in %2").arg(QString::fromStdString(served.name),
+                                                      QString::fromUtf8(other->getName()));
         }
     }
     catch (Base::Exception&) {

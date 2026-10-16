@@ -27,6 +27,7 @@
 #include <memory>
 #include <string>
 
+#include <Base/Matrix.h>
 #include <Gui/InventorBase.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/PartGlobal.h>
@@ -36,6 +37,7 @@ class SoTransform;
 
 namespace Gui
 {
+class EditingRoot;
 class SoFCPathAnnotation;
 }
 
@@ -62,11 +64,22 @@ class ViewProviderPartExt;
  * the solid only B has, and thin and grey what both have. The faces say
  * which of them changed and this says where; it is what two solids have,
  * and of anything else the faces are drawn.
+ *
+ * Where it hangs says who sees it (sec 32.19). Under the object's root it
+ * is in the document's scene: every view of the document, and every client
+ * of a served one. Given an edit session's root it is the session's: drawn
+ * by the views in the session and no other, and published to a served
+ * document's clients as the session's overlay.
  */
 class PartGuiExport ShapeDiffView
 {
 public:
-    explicit ShapeDiffView(ViewProviderPartExt& owner);
+    /** Over \a owner's object, under its root; or, with \a session, as a
+     * node of that edit session, \a world the frame the two states are in:
+     * that of whatever the object is in.
+     */
+    explicit ShapeDiffView(ViewProviderPartExt& owner, Gui::EditingRoot* session = nullptr,
+                           const Base::Matrix4D& world = Base::Matrix4D());
     ~ShapeDiffView();
 
     ShapeDiffView(const ShapeDiffView&) = delete;
@@ -98,6 +111,15 @@ public:
     void setOptions(float position, bool differencesOnly);
     /// The object moved: the two states stay where they are
     void updatePlacement();
+    /// What is drawn over \a owner's object changed, with no property of
+    /// the document's changing: the clients of a served document are sent it
+    static void sceneChanged(const ViewProviderPartExt& owner);
+    /// The states hang in an edit session's root, which its clients are
+    /// shown; otherwise under the object's own, for the host's views alone
+    bool inSession() const
+    {
+        return _session != nullptr;
+    }
 
     /** What is shown. `material` is 1 where it is the material and 0 where
      * the faces; `material.none` is 1 where the material was asked for and
@@ -135,6 +157,7 @@ private:
     void apply();
 
     ViewProviderPartExt& _owner;
+    Gui::EditingRoot* _session {nullptr};
     Gui::CoinPtr<Gui::SoFCPathAnnotation> _root;
     Gui::CoinPtr<SoTransform> _transform;
     Gui::CoinPtr<SoSwitch> _switch[Kinds];

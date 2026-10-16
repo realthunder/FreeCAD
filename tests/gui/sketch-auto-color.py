@@ -262,6 +262,52 @@ def run():
         check("turning AutoColor on draws in the preference's at once",
               draws(vb, "Edge", GREEN) and draws(vb, "Vertex", RED),
               "%s %s" % (drawn(vb, "Edge"), drawn(vb, "Vertex")))
+
+        # A colour set by hand turns it off: the colour is to be seen.
+        a, b = doc.getObject("A"), doc.getObject("B")
+        PURPLE = (0.5, 0.0, 0.5)
+        doc.UndoMode = 1
+        doc.openTransaction("purple")
+        vb.LineColor = PURPLE
+        doc.commitTransaction()
+        settle(0.2)
+        check("a colour set under AutoColor turns it off", vb.AutoColor is False)
+        check("and is the object's, and is drawn",
+              same(b.LineColor, PURPLE) and draws(vb, "Edge", PURPLE),
+              "%s %s" % (rgb(b.LineColor), drawn(vb, "Edge")))
+        check("with the points, which nobody set, in the sketch's own colour",
+              draws(vb, "Vertex", rgb(vb.PointColor)) and not draws(vb, "Vertex", RED),
+              "%s, own %s" % (drawn(vb, "Vertex"), rgb(vb.PointColor)))
+        st = vb.getPropertyStatus("LineColor")
+        check("and the colours are for the property editor again", "Hidden" not in st, st)
+        doc.undo()
+        settle(0.2)
+        check("taken back, the colour is the one it was", same(b.LineColor, ORANGE),
+              rgb(b.LineColor))
+        check("and the sketch is automatic again, drawn in the preference's",
+              vb.AutoColor is True and draws(vb, "Edge", GREEN),
+              "%s %s" % (vb.AutoColor, drawn(vb, "Edge")))
+
+        # By the object's name, as the property editor has it under Data.
+        check("another sketch is still automatic", va.AutoColor is True
+              and draws(va, "Edge", GREEN), "%s %s" % (va.AutoColor, drawn(va, "Edge")))
+        a.PointColor = PURPLE
+        settle(0.2)
+        check("a colour set by the object's name turns it off as well", va.AutoColor is False)
+        check("and is drawn, the edges in the sketch's own white",
+              draws(va, "Vertex", PURPLE) and draws(va, "Edge", WHITE),
+              "%s %s" % (drawn(va, "Vertex"), drawn(va, "Edge")))
+        set_pref(BLUE, BLUE)
+        check("a preference change is nothing to either any more",
+              draws(va, "Edge", WHITE) and draws(va, "Vertex", PURPLE),
+              "%s %s" % (drawn(va, "Edge"), drawn(va, "Vertex")))
+        va.AutoColor = True
+        settle(0.2)
+        check("turned on by hand again, the preference's are drawn",
+              va.AutoColor is True and draws(va, "Edge", BLUE) and draws(va, "Vertex", BLUE),
+              "%s %s %s" % (va.AutoColor, drawn(va, "Edge"), drawn(va, "Vertex")))
+        check("and the sketch keeps the colour it was given", same(a.PointColor, PURPLE),
+              rgb(a.PointColor))
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()

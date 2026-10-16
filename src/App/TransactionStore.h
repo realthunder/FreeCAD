@@ -96,6 +96,11 @@ struct LogBranch
     /// of its own (sec 30.3 S.a): the default side of its merges. 0 for
     /// none.
     int64_t target {0};
+    /// The branch a document was opened on to be served (sec 32.25) where
+    /// one who joined that document made this one: everyone who joins it
+    /// writes this one too, from its fork. 0 for none -- the host's own,
+    /// and every branch made elsewhere.
+    int64_t joined {0};
 };
 
 /** A user row (sec 30.6 U1): who the author of a row is, known across
@@ -108,6 +113,59 @@ struct LogUser
     int64_t id {0};
     std::string kind;
     std::string name;
+    /// The group it is in (sec 32.32): the id of a user of kind
+    /// kLogGroupKind, 0 for none
+    int64_t parent {0};
+};
+
+/** The kind of a user that is a group (sec 32.32): no one who logs in, a
+ * name the host gives, said read or write of a branch as any user is. A
+ * user in it (LogUser::parent) has what is said of the group where nothing
+ * is said of itself; a group may be in a group.
+ */
+constexpr const char* kLogGroupKind = "group";
+
+/** What a user may do of one branch's history (sec 32.25). A user is who
+ * the log says wrote a row: a kind and a name (LogUser), whichever login.
+ *
+ * `read`: the branch's rows and versions are listed to the user, who may
+ * apply its rows to the branch it works on and ask for it to be merged
+ * into another it reads. `write`: the user also moves a document that is
+ * on the branch -- restores a version of it, switches to it, branches from
+ * it, deletes what was branched from it -- from a point on: `fromSeq` and
+ * `fromVersion`, the branch's own fork where both are 0. The host needs no
+ * entry. `made`: the user made the branch, by a branch it writes -- it is
+ * the user's own, and the user's to delete; one that was given is not.
+ */
+struct LogAccess
+{
+    std::string kind;
+    std::string name;
+    int64_t branch {0};
+    bool write {false};
+    int64_t fromSeq {0};
+    int64_t fromVersion {0};
+    bool made {false};
+};
+
+/** A request to merge one branch into another (sec 32.25): asked by a user
+ * who reads both, dealt with by one who writes the second, or the host.
+ */
+struct LogMergeRequest
+{
+    int64_t id {0};
+    int64_t source {0};     ///< the branch to merge
+    int64_t target {0};     ///< the branch to merge it into
+    std::string kind;       ///< who asks: the user's kind and name
+    std::string name;
+    std::string note;
+    double created {0};
+    /// `open`, or how it ended: `merged`, `rejected`, `withdrawn`
+    std::string state {"open"};
+    double closed {0};
+    std::string closedKind; ///< who ended it
+    std::string closedName;
+    int64_t result {0};     ///< the row the merge wrote, where it was merged
 };
 
 /** A session row (sec 11, 30.6): one login of one user -- the process's
@@ -181,12 +239,16 @@ struct LogRef
 
 /// A value kept by its hash (TransactionStore::keepValue()): whose it is,
 /// and the row it was asked for at -- what a list of the kept says of it.
+/// And who kept it, as the log names a user (sec 32.27): empty for the
+/// host. A keeper may let go of what it kept.
 struct LogKept
 {
     std::string hash;
     long cid {0};
     std::string prop;
     int64_t seq {0};
+    std::string kind;
+    std::string name;
 };
 
 /** A stored entity (table `entity`, sec 23.1): anything the log holds
@@ -398,6 +460,8 @@ public:
     /// Id of the user row of `kind` and `name`, made if absent (sec 30.6).
     virtual int64_t user(const std::string& kind, const std::string& name) = 0;
     virtual std::vector<LogUser> users() = 0;
+    /// Put user `user` in group `parent` (a user's id; 0: in none)
+    virtual void setUserParent(int64_t user, int64_t parent) = 0;
     virtual int64_t openSession(int64_t env, int64_t user, const std::string& host,
                                 const std::string& access, const std::string& uuid,
                                 double opened) = 0;
@@ -457,6 +521,29 @@ public:
      */
     virtual void anchorVersions(const std::vector<int64_t>& seqs, int64_t to) = 0;
 
+    /** The access users have of branches (sec 32.25), by user and branch.
+     * setAccess() writes the entry of its user and branch, replacing the
+     * one there; clearAccess() takes it away, false where there was none.
+     * A branch removed takes its entries, and the requests that name it,
+     * with it (removeBranch()).
+     */
+    //@{
+    virtual std::vector<LogAccess> accesses() = 0;
+    virtual void setAccess(const LogAccess& access) = 0;
+    virtual bool clearAccess(const std::string& kind, const std::string& name,
+                             int64_t branch) = 0;
+    //@}
+    /** The requests to merge a branch into another (sec 32.25), oldest
+     * first. addMergeRequest() assigns and returns the id;
+     * updateMergeRequest() writes how one ended, false where there is no
+     * such request.
+     */
+    //@{
+    virtual std::vector<LogMergeRequest> mergeRequests() = 0;
+    virtual int64_t addMergeRequest(LogMergeRequest& request) = 0;
+    virtual bool updateMergeRequest(const LogMergeRequest& request) = 0;
+    //@}
+
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;
     /// Every meta entry whose key starts with `prefix`, as (key, value).
@@ -491,9 +578,13 @@ public:
      * one object that was asked for; or as any value of an object all of
      * whose values are kept. A value kept by its hash is a root of its own
      * as well: it stays when its row goes.
+     *
+     * A value kept again stays as it was kept -- its row, its keeper --
+     * except that the host's keep makes it the host's. False where
+     * nothing moved: kept already, and as it stays.
      */
     //@{
-    virtual void keepValue(const LogKept& kept) = 0;
+    virtual bool keepValue(const LogKept& kept) = 0;
     /// False where `hash` was not kept.
     virtual bool releaseValue(const std::string& hash) = 0;
     virtual std::vector<LogKept> keptValues() = 0;

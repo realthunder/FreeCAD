@@ -542,9 +542,7 @@ void Feature::onAppearanceChanged(const App::Property *prop)
         // A write to a name is a write to what it names. Not what the name
         // is given of that, and nothing while a document is read: a name is
         // in no file, and one a file has all the same is not this
-        App::Document *doc = getDocument();
-        if (_mirroringLooks || !doc || !getNameInDocument()
-            || doc->testStatus(App::Document::Restoring) || doc->isPerformingTransaction()) {
+        if (!isLookWrite(prop)) {
             return;
         }
         try {
@@ -762,6 +760,16 @@ bool Feature::isLookName(const App::Property *prop) const
 {
     return prop == &ShapeAppearance || prop == &ShapeColor || prop == &Transparency
         || prop == &LineColor || prop == &PointColor;
+}
+
+bool Feature::isLookWrite(const App::Property *prop) const
+{
+    if (!isLookName(prop) || _mirroringLooks) {
+        return false;
+    }
+    const App::Document *doc = getDocument();
+    return doc && getNameInDocument() && !doc->testStatus(App::Document::Restoring)
+        && !doc->isPerformingTransaction();
 }
 
 void Feature::mirrorLooks()

@@ -24,9 +24,10 @@ again after the panel changes.
 9. [Branches](#9-branches)
 10. [Merging](#10-merging)
 11. [Requests: changes someone sends you](#11-requests-changes-someone-sends-you)
-12. [I want to...](#12-i-want-to)
-13. [The same from Python](#13-the-same-from-python)
-14. [Taking the pictures again](#14-taking-the-pictures-again)
+12. [The history in a browser](#12-the-history-in-a-browser)
+13. [I want to...](#13-i-want-to)
+14. [The same from Python](#14-the-same-from-python)
+15. [Taking the pictures again](#15-taking-the-pictures-again)
 
 ## 1. What the log is
 
@@ -266,6 +267,25 @@ its history.
 If the status says "No shape of what is chosen changed", the row changed
 other objects than the ones you chose.
 
+### The last change of one object, without the panel
+
+Right-click an object in the 3D view and choose **Show last change**. The
+entry is there when the log holds a change of the object's shape; an object
+made and never changed since shows its making, all of it new.
+
+The object goes into an edit, as it does for "Set colors...", and the task
+panel says which step it was and has the same controls as the bar: by the
+faces or by the material, the slider from **Before** to **After**,
+**Differences only**, and what was found in words. **Close** ends it.
+
+This one is not drawn in the document's own scene. In a document that is
+shared, the people connected see it only if they are in the edit with you;
+and someone looking at the document in a browser has the same entry in
+their own right-click menu, with the panel and its slider on their page.
+The panel there has the same **Close**:
+
+![The last change, asked for from a browser](images/transaction-log/13-stream-edit.png)
+
 ## 7. Versions: the document at a moment
 
 A **version** is the whole document as it was at one row. Every save takes
@@ -327,6 +347,8 @@ Or, for objects as they were at a version: select the objects, right-click
 the version, **Keep the selected objects as they are at version N**.
 
 An operation whose shape is kept reads `yes, kept` in the Derived column.
+Keeping or letting go marks the document as changed: the next save is what
+writes it into the file, or leaves it out.
 
 **The Kept tab** lists what is kept; its title carries the count.
 
@@ -473,17 +495,227 @@ above the tabs. It is hidden while there are none.
   unread*.
 - **Right-click a branch that was brought in** for: *Merge...*, *Open in a
   document of its own*, *Delete*.
+- **Right-click a merge that was asked for** (*merge A into B*, from
+  someone connected to the shared document, section 12) for: *Merge...*,
+  when the document is on the branch it goes into, and *Reject*.
+
+![A merge someone asked for, and its menu](images/transaction-log/17-asked-merge-menu.png)
 
 The Conflicts column says how many conflicts a merge would have, before you
-open it.
+open it. It is empty for a merge that was asked for: its preview says.
 
-## 12. I want to...
+## 12. The history in a browser
+
+Someone connected to a shared document in a browser has a panel of their
+own for its history: **History** in the page's menu (the three lines at the
+bottom left). It is offered to people who may edit; someone who may only
+look does not have it, and cannot read the history any other way.
+
+![The history in a browser: steps, the operations of one, a value](images/transaction-log/14-log-browser.png)
+
+It reads from top to bottom:
+
+- **The steps**, newest first: number, name, who made it, when. Steps
+  that changed nothing -- a recompute's record, someone connecting -- are
+  left out until **Records** is ticked. A step of another branch is in
+  italics, with the branch's name. **Load older** fetches the next hundred.
+  The list keeps itself up to date while the document is worked on.
+- **The operations** of the step you click: which object, which property.
+  An object that has since been removed is in italics.
+- **The value** of the operation you click, **After** or **Before**. A long
+  value, such as a shape, shows its start and says how long it is.
+
+An operation that changed a shape has a **Show** button. It does what
+"Show last change" does (section 6), for that step instead of the last one:
+the object goes into an edit, the panel with the slider comes up, and
+**Close** ends it.
+
+![A step's change, shown from the History panel](images/transaction-log/14-log-browser-shown.png)
+
+What the panel lets you do depends on what the sharer lets you do with
+each branch: **read** it, or **write** it. Whatever you ask is done by the
+computer that shares the document, and the panel says in one line what it
+did, or in red why it did not. A button that is greyed says in its tip
+whose it is to press. A branch you may not read is not in any list.
+
+**In a document shared as it is**, everybody is in the same document, and
+where it is in its history is for the person sharing it to decide: you
+read its branch. You can:
+
+- **Undo a step of your own that is not the last.** Click the step, then
+  **Undo row**. To undo several as one, hold Ctrl (or the command key)
+  while clicking, or Shift for all between two; on a phone tick **Several**
+  first. A step is refused when something later changed what it touched,
+  and the panel says what and by which step (section 5). Somebody else's
+  step is theirs to undo, or the sharer's.
+- **Take a version**: **Snapshot...**, with a name to keep it.
+
+Switching branch, making, renaming or deleting one, restoring a version
+and renaming one are the sharer's there.
+
+**In a branch served to you** you have a document of your own: the sharer
+made a branch where their document was and opened it for you, and theirs
+does not move with what you do. From that point on you write it:
+
+![Steps, branches and versions from the History panel](images/transaction-log/15-log-browser-acts.png)
+
+- **Branches.** The list beside the title is the branch the document is on;
+  choosing another switches to it. **Branch...** makes one from where the
+  document is, **Branch from here...** from the step or the version you
+  clicked, **Rename...** renames the one you are on, and **Delete...**
+  removes one you made -- for good. Switching waits until nobody has an
+  edit open. A branch you do not read is in the list in grey: you see its
+  name, and nothing of it.
+- **Versions**, the second list. Click a version to **Restore** the
+  document to it -- one step, which undo takes back -- or to name, rename
+  or unname it. **Trim to here...** and **Squash to here...** take steps
+  out of the history for good, and are the sharer's alone: for anyone else
+  they are greyed, and say so.
+- Undoing a step of your own and taking a version, as above.
+
+![The versions, from the History panel](images/transaction-log/15-log-browser-versions.png)
+
+What was there before the branch was served to you is listed in grey: you
+can read it, undo a step of your own in it, and go back to the point you
+were served from, but no further. The branch you were given is not yours
+to delete. The sharer's branch, the one yours was made from, is in the
+list too: you read it.
+
+Somebody else may join the same branch served to you. You share that
+document, and you both write the branch you were given and every branch
+either of you makes in it, so neither is left on a branch they cannot
+move from. Only whoever made a branch, or the sharer, deletes it.
+
+**A branch you read and are not on.** Its steps are in the list in
+italics, with its name. Two things can be done with it:
+
+![A step of another branch, and Apply row N here](images/transaction-log/15-log-browser-apply.png)
+
+- **Take a step of it.** Click the step, then **Apply row N here**: what
+  that step set is written to the branch you are on, as one step of your
+  own, which undo takes back. Several at once as for undo. Where a step
+  sets something that was also set here since the two branches parted,
+  the panel asks one question for all of them: **Take theirs**, **Keep
+  ours**, or **Pick each...**, which lists what it would do with a side
+  to pick for each conflict (below).
+- **Ask for a merge.** The third list, **Requests**, has a line at its
+  top: *Merge* a branch *into* another, a note if you like, **Ask**. Both
+  must be branches you read. This is how the work you did in a branch
+  served to you goes back: ask for your branch to be merged into the
+  sharer's.
+
+![The Requests list: a merge asked for, with its note](images/transaction-log/15-log-browser-requests.png)
+
+A request stays in the list, open ones first, with who asked and when,
+and the number of open ones is in the list's name. Click one to act on
+it: **Withdraw** takes back one of your own; **Merge** and **Reject** are
+for whoever writes the branch it is to go into -- and a merge is done in a
+document that is on that branch, so the button says so when yours is not.
+A merge that meets conflicts asks the same one question. **Look first...**
+opens the list before anything is merged.
+
+Under the merges asked for, a second list, **Sent, or brought in**: the
+copies of the file sent to be merged (with *Send my copy to merge...* in
+the viewer's menu) and not read yet, and the branches a copy was brought
+in as and not merged yet. You see the copies you sent, and **Withdraw** one
+to take it back, unread. The sharer sees them all: **Bring in** reads a
+copy into a branch of its own, which then shows in the same list with how
+many operations it has, who made them and who sent it; **Merge** and
+**Look first...** merge it as a request is merged, and **Delete** throws
+it away -- a copy unread, or a branch with what was brought in.
+
+![A copy you sent, waiting unread: yours to withdraw](images/transaction-log/15-log-browser-sent.png)
+
+![A side picked for each conflict](images/transaction-log/15-log-browser-picker.png)
+
+**The list of what it would do** takes the place of the panel's lists
+while it is open. The conflicts come first: each shows its value here
+(**ours**) and its value on the other branch (**theirs**) -- click the
+one that is to stay; the tip says what it was where the two branches
+parted. **All ours** and **All theirs** pick every one. The rest says
+what goes in of it, with a tick: untick one to leave it out, and what is
+here stays. **Apply** or **Merge** waits until every conflict has a side;
+**Cancel** leaves everything as it was.
+
+**A merge that was undone** can be taken out of the history altogether,
+as on the desktop (section 10): click the merge, or the undo of it, and
+**Roll back merge...**. Its steps leave the history, and a merge of that
+branch later asks everything again; the document does not change. It is
+the sharer's, or yours for a merge you made yourself on a branch you
+write.
+
+**Shapes kept in the file** (section 8). Click an operation that set a
+shape: **Keep** beside its value keeps that shape in the file, and the
+operation then says *kept*. A version has **Keep selected here**: the
+objects you selected, as they were at that version. The fourth list,
+**Kept**, shows what is kept -- its name carries how many, and a shape
+you kept says *by you* -- and a line of it shows its value, **Show** draws
+it over its object against what the object is now (as **Show** on an
+operation does), **Show row N** goes to its step, and **Let go** lets it
+go: the next save leaves it out of the file, for good. Everything kept
+makes every save bigger, so you keep a shape only at a step of a branch
+you write; you let it go if you kept it, or if it was kept at a step of a
+branch you write. Keeping every shape an object has had and will have --
+**Keep all of it** -- and stopping that, are the sharer's alone.
+
+![A shape kept, in the Kept list](images/transaction-log/15-log-browser-kept.png)
+
+**For the sharer**, in the Transaction Log panel on the desktop:
+
+- **Serve branch...** serves a branch in a document of its own, with no
+  window. Pick a branch there is, and it is served as it is; type a new
+  name, or none, and a branch is made where the document is. The status
+  line then says the document's name, which is what someone joins it by.
+  The button is there for a document that is shared. The branch the
+  document is on is not offered: share the document itself. The sharing
+  panel lists the branches served, each with its document and how many are
+  in it, and **Show** gives one a window, **Close** closes it -- the branch
+  stays. (`Gui.serveBranch(App.ActiveDocument, "name")` does the same from
+  the Python console.)
+- **Access...** says who may what, and lists what has been said: pick a
+  user -- anyone who has connected to the document -- **reads** or
+  **writes**, the branch, and for a write the version it starts from, or
+  where the branch forks. **Set** says it, **Remove** takes the chosen
+  line away. With nothing said for someone, they read the branch of the
+  document they joined and write a branch that was served to them, as
+  described above; a line here is in place of that, so a served branch can
+  be made read only for one person. **Groups:** choose a user and type a
+  group's name in the row below, **Put in Group** -- a new name makes the
+  group, and an empty one takes the user out. A group is in the list of
+  users too: say what it reads or writes as for anyone, and everyone in it
+  has that, unless something is said of them by name. A group can be put
+  in another group.
+
+  ![Access: who reads or writes which branch, and from where](images/transaction-log/17-access.png)
+- **The merges asked for** are in the panel's request list (section 11),
+  beside the files that were sent: *merge A into B*, who asked, the note.
+  Double-click one, or **Merge...** in its menu, to open the merge's
+  preview -- where each conflict is given its own side -- when the document
+  is on the branch it goes into; **Reject** ends it. However the merge is
+  done, the request is answered by it.
+
+Trimming and squashing can be done from the page too, by the sharer
+(**Trim to here...**, **Squash to here...** on a version; the squash asks
+which older version to start from); opening a version or a branch as a
+document of its own is done in the desktop's panel.
+
+**A served branch has no window.** If you close the last document that
+has a window while such a document is still open, FreeCAD says so and
+names it: **Show Them** gives it a window, **Leave Hidden** leaves it
+open and served with none, **Cancel** keeps the document you were
+closing. Saving it warns first that it is not the branch the file is
+checked out on, and names the one that is.
+
+![Closing the last window while a served branch has none](images/transaction-log/18-hidden-close.png)
+
+## 13. I want to...
 
 | I want to... | Where |
 |---|---|
 | see what a step changed | Transactions: select the row, read its operations |
 | see the old and new value of a property | select the operation; the value pane |
 | see how an object's shape changed in a step | select the row, then its `Shape` operation |
+| see the last thing that changed an object, quickly | right-click the object in the 3D view, **Show last change** |
 | see how much material a step added or removed | the same, with **Material** in the bar's second list; the status says the volumes |
 | see which faces a step changed | the same, with **Faces** |
 | follow one object through the history | add it to "Objects:", then step through the rows |
@@ -500,8 +732,12 @@ open it.
 | keep an old shape in the file | right-click its operation, **Keep this value in the file** |
 | see what is kept, and let it go | the **Kept** tab |
 | make the file's history shorter | Versions: **Trim...** or **Squash...** |
+| read the history from a browser | the page's menu, **History** (section 12) |
+| undo a step of your own, or take a version, from a browser | **History**: click the step, then **Undo row**; **Snapshot...** (section 12) |
+| give someone a branch of their own to work in from a browser | `Gui.serveBranch(doc, "name")`; they switch, branch and restore there (section 12) |
+| see what one step did to a shape, from a browser | **History**: click the step, then **Show** on its shape |
 
-## 13. The same from Python
+## 14. The same from Python
 
 Everything the panel does is a method of the document.
 
@@ -528,7 +764,7 @@ Everything the panel does is a method of the document.
 Each has its arguments and what it returns in its docstring:
 `help(doc.previewTransactionMerge)`.
 
-## 14. Taking the pictures again
+## 15. Taking the pictures again
 
 The pictures are taken by a script that builds a small document, edits,
 branches and merges it, and drives the panel through this guide. Run it
@@ -547,3 +783,11 @@ GUIDE_OUT=$PWD/../../docs/images/transaction-log \
 A fresh home and cache each time: the run ends abruptly, and the next one in
 the same cache would be offered the document to recover, over the pictures.
 `shots.txt` beside the pictures lists what was taken, and any error.
+
+The pictures of section 12 are a browser's, and that script does not take
+them. They are written by the two browser tests into their output directory
+-- `log.png` and `shown.png` by `tests/gui/serve-log-browser.py`, `acts.png`
+and `versions.png` by `tests/gui/serve-log-acts-browser.py`, with the rest of
+its shots (`sent.png` among them) -- and copied from there as
+`14-log-browser*.png` and `15-log-browser-*.png`. Both tests
+say in their first lines how they are run.

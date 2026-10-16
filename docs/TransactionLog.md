@@ -13475,7 +13475,7 @@ raised past what one frame of the socket carries**: the server reads
 messages of 64 MB at most and the bytes travel as base64, so the ceiling
 is 46 MB. A file larger than that does not come this way; it is handed
 over and brought in with "Merge from file...". Sending in pieces would
-lift that and is not built.
+lift that and is not built. (Built since: 32.36 -- the ceiling is 1 GB.)
 
 `widgets.upload` lost its constant and its copies of the name and path
 helpers to the same module; what it does is unchanged.
@@ -17871,7 +17871,8 @@ not:
 - *A value the log let go.* A shape is a derived value, in the cache
   tier, and one evicted from it is no value: the answer is `None`. The
   state's document -- `openTransactionVersion`, `openTransactionBranch`
-  -- has it; asking that is for the caller that knows the state, step 4.
+  -- has it; asking that is for the caller that knows the state, step 4. *(Built
+  since: 32.33.)*
 - *Ours.* A preview's `ours` for a derived value is the base's (32.1):
   ours is the live object's shape.
 
@@ -18091,7 +18092,7 @@ newest of its run; an object kept, every shape its recomputes make.
 - A kept object that is removed stays in `keepobject`. *(Let go from
   the list: 32.12.)*
 - The document is not marked modified by keeping; what is kept is
-  written by the next save all the same.
+  written by the next save all the same. *(Marked since: 32.30.)*
 - 32.9's "a value the log let go" stands: nothing says why nothing is
   shown, and the state's document is not asked.
 
@@ -18146,6 +18147,7 @@ again where it is still listed.
 **Left.**
 
 - The document is still not marked modified by keeping or letting go.
+  *(Marked since: 32.30.)*
 - The list is of the document the panel is on; nothing says what a file
   not open keeps.
 
@@ -18560,9 +18562,11 @@ the length cyan and the ball cyan.
   (docs/ComputeBoundaries.md).
 - *Made again whole when a side changes*: a read of the document each
   time. The document could be kept and the sides written over it.
+  *(Built since: 32.34.)*
 - *Closing the result's document clears the selection*, as closing any
   document does (`Gui::Application::slotDeleteDocument`).
-- *What the merge removes* is counted, and not drawn as gone.
+- *What the merge removes* is counted, and not drawn as gone. *(Drawn
+  since: 32.34.)*
 - *Only geometry.* A length that would differ is not listed: the
   dialog's lines say it.
 - *A view opened while the result is shown* does not have what theirs
@@ -18570,7 +18574,7 @@ the length cyan and the ball cyan.
 - *The file's string table grows by what the result's recompute
   named*: the result's document shares it (27.60), and what nothing
   holds goes at the next compaction (27.47). Not measured.
-- The browser: the stream, next.
+- The browser: the stream, 32.18.
 
 **Tests.** `parttests.ShapeDiffTest.MergedResultTest` (+6): the result
 is what the merge then makes, by volume and by every element name, with
@@ -18595,6 +18599,1691 @@ both; driven 271 of 273, the two the golden raster pictures that wait
 for their references (33.14).
 
 **Next (32.4):** the stream.
+
+### 32.18 Step 6, last part: the stream, measured (2026-10-13)
+
+What 32.2 left as "a step of its own" and Q7 as "later": the two states
+in a browser. Measured before anything was planned, on a document
+served to the browser's viewer (`Gui.serveDocument`, the WASM viewer in
+headless Chrome, `~/.cache/lv-merge/stream`): a box with a hole, made
+taller and its hole moved, the row's before against its after asked of
+the view provider on the host.
+
+**It is there already.** The overlay hangs under the object's root
+(32.9), the root is in the scene a served document publishes, and its
+faces are Part's own nodes: the render cache takes the annotation as it
+takes PartDesign's preview, and a client draws it -- by the faces and
+by the material, the slider's place, differences only -- as the host's
+own view does under the backend, with a window on the host or with
+none. Nothing was written for it.
+
+![the faces, in the browser](images/transaction-log/13-stream-faces.png)
+![the material, in the browser](images/transaction-log/13-stream-material.png)
+
+**What it costs.** One push to every client for the overlay shown, and
+one for each place of the slider: 2.5 to 3.1 kB each on the socket
+here; what a client fetches beside the push was not measured. The call
+on the host is 6 ms for the faces of this box and 19 ms for its
+material.
+
+**Two faults, fixed.**
+
+- *The browser's viewer did not build.* The backend's warm-up hands
+  its caller the GL context back (`bf4fb49bb5`, 2026-10-06) through
+  Qt's context classes, outside the guard that keeps Qt out of the
+  viewer's build (`FC_RENDERER_STANDALONE`). The viewer on this box
+  was a week old, spoke scene format 76 to a host at 87 and drew
+  nothing; the browser tests skip where they have no viewer or no
+  browser, so nothing said so. Guarded.
+- *The overlay taken away stayed on the client.* A served document is
+  published when the document says something changed, and it says so
+  by its properties. Showing the overlay changes some -- its own
+  views' -- and taking it away changes none: a client connected at
+  the time was sent nothing and drew the two states over the object
+  until something else changed: measured, no push in the three
+  seconds after it and one with the next change of another object.
+  The view asks the serving source for a publish when what it draws is
+  set and when it goes (`ShapeDiffView::sceneChanged`), which also
+  covers what it switches with no property -- the unchanged faces left
+  out -- not measured before the change.
+
+**What is not there**, and is the step proper:
+
+- *Whose it is.* The overlay is in the one scene every client shares:
+  what the host looks at in its merge dialog is drawn for everybody
+  connected, unasked, and each move of the host's slider is a publish
+  to all. PartDesign's preview was taken out of the shared scene for
+  that (docs/ThinClient.md sec 8.12, 2026-10-05) and made the edit
+  session's.
+- *A client cannot ask.* The browser has no panel of the log, no merge
+  dialog and no op for a diff: it sees one only when the host shows
+  it. What a merge would make (32.17) is in a document of its own,
+  which is not served: what theirs made is not in the client's picture.
+- *The numbers.* What became of each face (`getValueDiff()`) stays on
+  the host.
+
+**Test.** `tests/gui/serve-shape-diff.py` (10): a document served with
+no window and one client counting its scene pushes -- none while
+nothing changes; one for the overlay shown, for each place of the
+slider, for differences only, for the material, and for the overlay
+taken away, which before the change was none; no row of the log and no
+undo step by any of it.
+
+**The browser tests run by hand**, with a viewer of this tree for the
+first time since the merge (`~/.cache/lv-merge/stream/browser-tests.sh`,
+nine of `tests/gui/*-browser.py`; they are in no gate):
+
+- `serve-edit`, `serve-onview`, `serve-toolbar`, `split-view`: pass.
+- `serve-datum`, `serve-datum-measure`: every op refused as view-only.
+  Only someone known may write to a served document (30.6), the browser
+  tests of the time were given an invitation, and these two came from
+  another branch after it. Given one; they pass (21, 10).
+- **Not chased.** `camera-uplink`: the clicks arrive (4 picks) and the
+  selection it reads is empty -- it reads the room's, and a connection
+  starts on the route that selects for itself alone
+  (docs/ThinClient.md sec 8.11a), so the test may be the one that is
+  behind. `serve-client-visibility` and `serve-peer-selection`, the two
+  that drive two pages: the second page draws nothing and is told
+  nothing; whether that is the pages or the host is not known.
+
+### 32.19 The last change of an object, as an editing task (2026-10-13)
+
+**Ruled (user, 2026-10-13)**, on the two questions 32.18 left: whose
+the overlay is -- "consider shape diff as an editing task, overlay in
+the editing root" -- and how a browser asks -- an op and one small
+entry, "show the last change of this object", with the slider and the
+counts: agreed.
+
+**An edit mode.** `Gui::ViewProvider::ValueDiff` (6), beside
+`Transform` and `Color`: the last change of the object's value, shown
+as its two states. Part's view provider takes it as it takes the
+colours:
+
+- *Which change.* The newest op of the log that set the shape on the
+  branch the document is on (`TransactionStore::lastOpOn`, through
+  `ViewProviderDocumentObject::lastValueChange()`): its value before
+  and after. An object made with its shape and never changed since has
+  its making: nothing before, all of it new. No log, or no such op: the
+  edit is refused, and the entry is not offered.
+- *Where it is drawn.* `ShapeDiffView` given the document's
+  `EditingRoot` hangs its node there as a session node
+  (`addSessionNode`, as PartDesign's preview does, docs/ThinClient.md
+  sec 8.12) in the frame of whatever the object is in. So it is drawn
+  by the views in the session and by no other; for a served document it
+  is published in the session's tagged overlay and not in the scene
+  every client shares; and who is in the session is the edit's own
+  rule (every view of the document, or the one that started it,
+  `PerViewEdit`). The object as it is, which its two states stand in
+  for, is hidden in the session's views where a view can
+  (`hideEditedObject`).
+- *Its panel* (`PartGui::TaskShapeDiff`): which row, by the faces or by
+  the material, the slider from before to after, "Differences only",
+  and what was found in words. It asks the view provider
+  (`showValueDiff()`), which hangs what it shows in the session while
+  this edit runs and under the object's root otherwise. Plain widgets
+  only, so that the panel mirror sends a client the same one.
+- *The entry*: "Show last change" in the object's context menu, an
+  action that carries the mode as "Set colors..." does. A browser's
+  right-click menu is the host's (docs/ThinClient.md sec 8.11b), so the
+  entry is there too, and runs through the `edit` op.
+
+**What the browser needed.**
+
+- *A slider.* The panel mirror had the model (`Fw::QSlider`) and the
+  page no view of it: `widgets/panel.tsx` draws one, written back as it
+  is dragged.
+- *The panel by itself.* A page opens its task panel from the launcher.
+  The `edit` push now says the mode, and for this one the page opens
+  the card and takes it away again when the edit ends, if it opened it.
+- *The pointer.* In an edit a viewer sends its left button to the tool
+  and keeps the other two for the camera. Nothing in this edit is the
+  tool's to be clicked, so its push says `"pointer":false` and the left
+  button stays the camera's: a touch screen has no other.
+
+![in the browser: the panel, the slider at "before"](images/transaction-log/13-stream-edit.png)
+
+**Left.**
+
+- *The log's panel and the merge dialog still draw in the document's
+  scene.* What they show of rows, versions and merges is asked of
+  `showValueDiff()` outside any edit and hangs under each object's
+  root, as 32.9 built it: every view has it, and every client of a
+  served document. Putting those into a session is the same step for
+  several objects at once -- one of them in edit and the others the
+  session's nodes -- and it puts the document in an edit while the
+  merge's preview is open. Not built; to be ruled. (Said again, plainer,
+  in 32.20.)
+- *A view-only client cannot ask*: the `edit` op is an editor's.
+  (Ruled to stay so, 32.20.)
+- *The page's panel says OK and Cancel*, as it does of every task; the
+  desktop's has Close. Either leaves. (It says Close since 32.20.)
+- *In the session's overlay the state drawn full is flat*: the overlay
+  pass does not light it as the scene's pass did. (Lit since 32.20.)
+- The numbers reach a client as the panel's words, not as data of
+  their own.
+
+**Tests.** `tests/gui/shape-diff-edit.py` (20), a document with a
+window: outside the edit the two states under the object's root, in it
+under the session's editing root and gone from the object's; the panel,
+its row and counts; the slider, differences only, the material and its
+volume; the mirrored panel's slider and a client's write to it; left by
+the document and by the panel's Close; an object never changed; no row
+and no undo step. `serve-shape-diff-edit.py` (13), served with no
+window, two socket clients: the object's menu as the host sends it to
+a client has the entry, an edit's; run from there it is taken, the
+client with a view told the session and the other nothing, the two
+states a node of the session, the slider mirrored and written,
+published, `resetEdit`. `serve-shape-diff-browser.py` (12, by
+`scripts/shapediff-drive.js`), a real browser: the page's ask, the
+colour of a changed face counted on the canvas before, in and after the
+edit (0, 315 430, 0), the panel up by itself with its slider and its
+words, a left drag sending the edit nothing, the slider moved in the
+page read on the host, the leaving. The browser test is registered and
+skips where it has no viewer or no browser, as the gates run it; it and
+the six browser tests that passed before (32.18) were run by hand with
+both, and pass.
+
+### 32.20 The editing task, finished: Close, the light, and who may ask (2026-10-13)
+
+**Ruled (user, 2026-10-13)** on what 32.19 left: seeing the log needs
+the right to edit; the panel shows Close; the flat drawing is fixed. The
+first item, where the log's own panel and the merge dialog draw, was
+asked back and is still open -- it is said again below, plainer.
+
+- *Who may ask.* A client that may only look cannot ask for an object's
+  last change: `edit` is an op of those who may edit, and stays so. The
+  same rule is the whole log's (32.21).
+- *Close.* The page drew an OK and a Cancel under every task panel,
+  whatever buttons the task had. The panel mirror sends the box's own
+  buttons already, each with its standard flag
+  (`QDialogButtonBox::StandardButton`), so the page draws those
+  (`widgets/panel.tsx`, `panelButtonOp()` in `widgets/protocol.ts`): OK
+  asks the panel's root to accept and Cancel and Close to reject -- the
+  path it had -- and any other standard button is clicked by its flag.
+  A client that may not edit can still press the two that leave. A box
+  that came with no buttons keeps the OK and Cancel. This is every
+  task's panel, not this one's alone: a task with OK and Cancel shows
+  what it showed.
+- *The light.* The bgfx backend shades every overlay flat
+  (`BGFXViewSubmit.cpp`): overlays were the navigation cube and the
+  axis cross, chrome with a camera of its own, whose faces must not
+  darken by angle. The editing graph and the dimensions are overlays
+  too, but drawn with the scene's camera, and what they hold is the
+  scene's -- the two states of this edit, a feature's preview, a
+  dragger -- which Coin lights. The view now says which kind the
+  overlay being submitted is (`overlayInScene`, set from the feed's
+  anchor), and only the chrome is flat. This is the backend's, so the
+  desktop's views draw the same.
+
+![in the browser: lit, and left by Close](images/transaction-log/13-stream-edit.png)
+
+**Still open: where the log's panel and the merge dialog draw.**
+(*Ruled since, 2026-10-13: (b), built in 32.24.*) Said
+again, since the wording of 32.19 was not clear. There are three
+places that show a shape's two states, and they share one piece of
+code, `ShapeDiffView`:
+
+1. the edit of 32.19 ("Show last change");
+2. the bar at the foot of the desktop's log panel, which shows what
+   the row, the version or the merge chosen in the list changed, of
+   the objects chosen (32.9, 32.10, 32.13);
+3. the merge dialog's preview (32.15, 32.17).
+
+A view of an object is a Coin node, the object's *root*, which every 3D
+view of the document traverses, and which a served document publishes
+to every client as the shared scene. Places 2 and 3 add the two states
+as a child of that node, one per object shown. So while the host looks
+at a row in the log panel, or has the merge's preview open, **every
+view of the document and every connected browser sees the coloured
+states over the model**, wanted or not; nobody else can turn them off,
+and a client cannot tell them from the model. Place 1 does not: its
+states hang in the edit session's own root, which only the views in
+the session draw.
+
+The ruling "consider shape diff as an editing task, overlay in the
+editing root" was built for place 1. Applied to 2 and 3 it means that
+choosing a row in the log panel, or opening the merge's preview, puts
+the document in an edit: the model tree shows it, nothing else can be
+edited until it is left, and a second edit ends the first. For the
+merge dialog that fits -- it is a task already. For the log panel it
+changes how it feels: today a row is clicked through, one after the
+other, with nothing to leave. Two ways out, either of them small:
+
+- (a) *the bar only on asking*: the log panel's bar shows nothing by
+  itself; a "Show" on a row enters the edit of 32.19 for it (the
+  browser's panel does exactly this, 32.21), and the merge dialog is an
+  edit while it is open;
+- (b) *as it is on the desktop, hidden from clients*: places 2 and 3
+  keep drawing under the object's root, and the serving source leaves
+  those nodes out of what it publishes, so that a client sees them only
+  in an edit it is in.
+
+### 32.21 The log's panel in a browser, first stage: read it (2026-10-13)
+
+**Asked (user, 2026-10-13)**: "start on panel in browser", after the
+estimate of the same day -- a panel of the page's own over new ops, in
+four stages; this is the first, reading. **Ruled with it**: seeing the
+log needs the right to edit.
+
+**Why not the desktop's panel mirrored.** That dock is one widget of
+the host's window. Mirrored, every client and the desktop would share
+one selection and one tab; most of what it does is in context menus,
+which the mirror does not send; its graph column is painted. So the
+page has a card of its own and asks the host for what it lists.
+
+**The ops** (`Gui/SceneLog.cpp`), all three registered as ops that
+write, though they read -- which is what has the dispatch refuse a
+connection that may only look, `ViewOnly`, before a handler runs:
+
+| op | asks | answers |
+| --- | --- | --- |
+| `log.rows` | `before`, or `after`, and `limit` (100, at most 500) | `rows` newest first -- `seq`, `parent`, `kind`, `origin`, `name`, `time`, `author` and `authorKind`, `branch` and `branchName`, `inverts`, `merged`, `ops` (how many: 0 is a record), `here` (of the history the document is at the head of) -- and `more`, `last`, `head`, `branch`, `branchName` |
+| `log.ops` | `row` | the row's `name` and `script`, and `ops`: `idx`, `op`, `kind`, `prop`, `type`, the refs `before` and `after`, `derived`, `followed`, and of an object `cid`, `obj`, `label`, `here` (it is in the document now) and `shows` (its view can show the two states); at most 2000, `count` says how many there are |
+| `log.value` | `ref`, and `max` (64 KiB, at most 1 MiB) | the value's `text` as the log holds it, cut at `max` on a character -- `bytes` and `truncated` say so -- and the `attachments` by name and size |
+
+A page of rows is read back from the newest: rows go as well as come
+(a trim, a squash), so the numbers have gaps, and a page is read until
+it is full. With `after` the answer is all that came since; where that
+is more than a page, the newest of it and `reset`. An object that is
+gone is known by the name the log made it with.
+
+**The cue.** Asking for the rows of a document is what subscribes a
+connection: when the document commits, undoes, redoes, recomputes or
+changes its branches, those who asked are told `log.changed` with the
+document's name and nothing of the log, 150 ms after the first of a
+burst. It goes to the connections that may still edit; one that has
+gone, or may only look by then, is forgotten.
+
+**A row's change, shown.** The edit of 32.19 shows the last change of
+an object. The `edit` op now takes a `row` with the mode
+(`ViewProvider::ValueDiff`): the change that row made of the object's
+shape, its value before the first time the row set it and after the
+last (`ViewProviderDocumentObject::valueChangeAt()`), in the same panel
+and the same session overlay. The row is said to the view provider
+(`setValueChangeRow()`) and spent by the edit that starts next, entered
+or refused; a row that did not change the object is a refusal.
+
+**The page** (`web/src/logpanel.tsx`, what it says and keeps in
+`logmodel.ts`): "History" in the launcher, not offered to a client that
+may only look, and `?history` on load. A card with three lists, one
+under the other: the rows -- number, name, who, when; the rows that
+changed nothing left out until "Records" is ticked; a row of another
+branch in italics with the branch's name -- the ops of the row chosen,
+and the value of the op chosen, after or before. An op whose change
+can be shown has a "Show", which asks for the edit above: the host's
+panel of it comes up in the page by itself (32.19) and Close leaves
+(32.20). On the host's cue the newest page is asked for again and put
+on top of what was loaded of older rows; on another branch, or after
+rows went, the list starts over.
+
+![the log's card in a browser: rows, the ops of one, a value](images/transaction-log/14-log-browser.png)
+
+![a row's change shown from the card](images/transaction-log/14-log-browser-shown.png)
+
+**Left, the stages that follow.** Acting on rows (undo one or several,
+versions, branches); the merge in the browser, which waits for the
+open question of 32.20; kept values and requests. Of this stage: the
+graph of branches is not drawn -- a row says its branch in words; a
+value is shown as the log's text, a shape's as the start of it. *(Both
+built since: 32.35.)*
+
+*Seen, not chased.* Where the row shown is not the last, the two states
+are smaller or elsewhere than the object as it is now, which the
+session hides. In the browser one line of the hidden object then stays,
+one pixel wide and faint (about a fifth black): the edge nearest the
+camera, in the second picture above the short line under the box. It is
+not the object's own edge draw -- given a red line colour the object's
+edges are red before the edit and the line left is still grey -- and
+not the pointer's highlight. The same hiding serves PartDesign's
+preview (docs/ThinClient.md sec 8.12), so it is likely there too.
+
+**Tests.** `tests/gui/serve-log.py` (25), served with no window, a
+client that may edit and one that came by a link that may only look:
+the rows as the host has them, newest first, with name, kind, count of
+ops and author; a page of two at a time to the end, none twice and none
+missed; the ops of a row -- the property with its two refs, the shape
+with `shows`, an object gone since by its name, an unknown row; a value
+whole, the one before, the start of a long one, an unknown ref; the cue
+on a commit of the host's and the rows `after`; the viewer refused all
+three and told nothing; the `edit` op with a row that did not change
+the object refused, with none the last change, with a row that row's,
+left; none of it wrote a row. `serve-log-browser.py` (13, by
+`scripts/logpanel-drive.js`), a real browser: the card up on load with
+the rows that changed something; a row committed meanwhile coming in by
+itself; the records when asked for; the ops of a row and which have a
+Show; a value after and before; Show entering the edit of that row on
+the host, the host's panel in the page saying the row, Close and no OK,
+the two states drawn; Close ending it. The page's own words and which
+rows it keeps are checked in node (`web/src/widgets/gate.ts`, 17). The
+browser test is registered and skips where it has no viewer or no
+browser, as the gates run it; run by hand with both, it passes.
+
+### 32.22 The log's panel in a browser, second stage: act on it (2026-10-13)
+
+**Asked (user, 2026-10-13)**: "continue stage 2". The first stage reads
+(32.21); this one does what the desktop's panel does with a row, a
+version and a branch, from the page's own card.
+
+**The ops** (`Gui/SceneLog.cpp`), each one the call the desktop's panel
+makes, run as the connection that asked (30.3 S.b) -- the row it writes
+is that user's:
+
+| op | asks | does | refuses |
+| --- | --- | --- | --- |
+| `log.undo` | `rows` | the rows taken back as one step though none is the last (24.4, 33.13): all of them or none | `Refused` with the host's reason -- which row is in the way and what changed since; `NotHere` for a row of another branch's history; `NothingToUndo` for a record or a recompute; `UnknownRow` |
+| `log.versions` | | the versions as numbered: `num`, `named`, `name`, `branch` and `branchName`, `seq`, `time`, `here`, and `head` -- the document as it stands, which a version is while only records follow it | |
+| `log.snapshot` | `name`, or none | a version of the document as it stands (16.3), named where a name is given; answers `version` | `Refused` where the document cannot be snapshotted |
+| `log.nameVersion` | `version`, `name` | names it; with no name it is unnamed again | `UnknownVersion` |
+| `log.restore` | `version` | the document made what the version was, one step that undo takes back (24.5) | `UnknownVersion`; `Refused` with the reason |
+| `log.branches` | | the branches: `id`, `name`, `head`, `fromVersion`, `fromSeq`, `time`, `closed`, `current` -- and `mayDelete` | |
+| `log.branch` | `name`, and `version` or `row` or neither | a new branch from there, or from where the document is, switched to (17, 26); answers `made` | `Refused` -- a name taken, a row there is none of; `Editing` |
+| `log.switch` | `name` | the document made the head of that branch, in place | `UnknownBranch`; `Refused` -- a closed one; `Editing` |
+| `log.renameBranch` | `name`, `to` | | `UnknownBranch`; `Refused` -- a name taken |
+| `log.deleteBranch` | `name` | the branch and the rows only it holds, gone; answers `rows` | `Forbidden` to all but the host; `UnknownBranch`; `Refused` -- the one the document is on |
+
+Every act answers with where the document is in its log after it --
+`last`, `head`, `branch`, `branchName` -- so that the one who asked need
+not wait for the cue. The cue follows by itself (32.21); a snapshot and
+a name write no row a signal tells of, so those two say it themselves.
+All ten are ops that write: a connection that may only look is answered
+`ViewOnly` by the dispatch.
+
+**Three things decided here, each open to be ruled otherwise.**
+(*Ruled since, the same day: 32.23, which gives the first to a client in
+a document served to it from a branch, makes the rest of what moves a
+shared document the host's, and holds a client to its own rows.*)
+
+- *Deleting a branch is the host's.* Every other act is a row, or leaves
+  every row where it was: an undo, a restore and a switch are each taken
+  back. A branch deleted takes with it the rows only it held, and nothing
+  brings them back -- the desktop's panel asks "This cannot be undone"
+  first. A connection that may edit is answered `Forbidden`, and
+  `log.branches` says `mayDelete` so that a page does not offer it. The
+  same would hold of a trim and a squash, which are not in this stage.
+- *An edit open holds the document where it is.* A switch, and a branch
+  from anywhere but where the document is, check the whole document out;
+  the one in the edit may be another client, who did not ask. Both are
+  answered `Editing` until the edit is left. The desktop's panel has no
+  such guard -- there the one who switches is the one who edits. A
+  restore and an undo are steps like any and are not held.
+- *A row of another branch is not taken back from here.* The desktop's
+  menu offers it and lets the document refuse; the op says `NotHere`
+  before asking, and the card does not offer it.
+
+**The page** (`web/src/logpanel.tsx`; what it says and decides in
+`logmodel.ts`). The branch is a list in the card's head: choosing
+another switches, and the list shows what the host answered, not what
+was chosen. Under it a bar: the two lists the card has, "Rows" and
+"Versions", and the acts that need no row -- "Branch...", "Rename...",
+"Snapshot...", and "Delete..." for the host. A click chooses a row; with
+Ctrl or the command key it is added to those chosen, with Shift all
+between are, and "Several" makes a plain click add, for a screen with no
+keys. With rows chosen: "Undo row N" or "Undo N rows", offered where
+every one of them is this history's, made by hand and changed something;
+and "Branch from here..." of one row. A version chosen has "Restore",
+"Name..." or "Rename...", "Unname", "Branch from here...".
+
+An act that needs a name, or a yes to what nothing takes back, asks in
+the card itself, one question at a time -- a line, the text, the act's
+own word and "Cancel"; a name that will not do is said on the button
+before it is sent. What the host answered is one line in the card: what
+was done, or in red why not, in the host's words. The lists are asked
+again after every act, done or refused: a refusal is often that the card
+showed what is no longer so.
+
+![the card's acts: a row of another branch after switching back](images/transaction-log/15-log-browser-acts.png)
+
+![the versions of the log in the card](images/transaction-log/15-log-browser-versions.png)
+
+**Left.** "Apply row here" of another branch's row, and "Roll back the
+merge", which are the merge's (the third stage; the question of 32.20 it
+waited for is ruled, 32.24). Trim, squash, "Open version", "Branch to document": the first
+two take rows away for good, the others open a document the page is not
+joined to. Kept values and requests are the fourth stage. *(Ruled since,
+32.30: a trim and a squash are the host's; nothing opens a document from
+a page.)*
+
+**Tests.** `tests/gui/serve-log-acts.py` (37), served with no window: a
+client that may edit, one that may only look, and the host -- each act,
+each refusal, who may. `tests/gui/serve-log-acts-browser.py` (20,
+driver `scripts/logacts-drive.js`): Chrome takes back one row and two,
+is refused one, snapshots, branches, switches back, restores, renames,
+with the host read after each. `web/src/widgets/gate.ts`: 23 checks of
+the card's model. Registered as `GuiServeLogActs` and
+`GuiServeLogActsBrowser`.
+
+*Seen once, not chased.* In the gate run of this change
+`scripts/transaction-log-import-check.py` died of a segmentation fault
+before it wrote a result: PySide releasing a wrapper at a deferred
+delete (`Shiboken::BindingManager::releaseWrapper`), from the event
+loop. It serves nothing and asks none of these ops; alone, on the same
+build, it passed 12 runs of 12 with its 49 checks.
+
+### 32.23 Whose the document's place in its log is; a branch served in a document of its own (2026-10-13)
+
+**Asked (user, 2026-10-13)**, of 32.22: "We established that client can
+only undo its own step. Shall we apply the same in log panel. What does
+that imply." It implied more than the undo: a restore takes back what
+everyone did since a version, and a switch checks the whole document out
+under everyone in it -- a client that may not take back one row of
+another's could do either. **Ruled** the same day: "We shall have a new
+mode to serve a client from a new document loaded from a specific branch
+and he can create, restore or delete any branch from the serving point
+but not before it."
+
+So there are two kinds of served document, and the ops of 32.22 answer by
+which it is (`Reach`, `Gui/SceneLog.cpp`).
+(*Since, 2026-10-14: one rule by branch, of which these two are the
+defaults -- 32.25.*)
+
+**A shared document** is one served as it is: the desktop and every
+client are in it. Where it is in its log is the host's to move. Below
+the host a connection
+
+- takes back **its own rows** -- one, or several as one step. A step is
+  its author's (30.10 item 1): by the user, whichever login, as the Undo
+  button has it; the panel's "Undo row" is the same act for a row that is
+  not the last. Another's row is answered `NotYours`, with whose it is;
+  with one such among those chosen none is taken back;
+- takes a **snapshot**, named or not: it adds a version and moves
+  nothing;
+- and is answered `Forbidden` for the rest -- `log.restore`,
+  `log.branch`, `log.switch`, `log.renameBranch`, `log.deleteBranch`, and
+  `log.nameVersion`, a version's name being what keeps it and nothing
+  saying whose a version is.
+
+The host's connection, and the desktop's own panel, do all of it as
+before, any row included.
+
+**A document served from a branch** (`Gui.serveBranch(doc, name='',
+port=0)`). A branch is made where the document is and opened in a second
+document of the file, with no window (`Document::openNewBranch`, 30.3
+S.a), and that document is served as any is; a client joins it by its
+name (`?doc=`). The first document stays where it is. Where the branch
+forks is **the serving point**. From it on the document is its clients':
+
+- they restore a version, switch, and make, rename and delete branches
+  -- of *the branch served and whatever was branched from it since*,
+  the serving point itself included: a branch made from that row or that
+  version is one of theirs;
+- they do not of anything before: a version, a row to branch from, a
+  branch -- `Forbidden`, "that is before where this document was served
+  from". The rows, versions and branches from before are listed, and
+  said to be (`within`);
+- the branch the document was opened on is not theirs to delete: it is
+  what the reach is counted from;
+- a row is still taken back by who made it, and one from before the
+  serving point not at all, though the same user made it.
+
+*Which branches are theirs* is not kept anywhere: a branch says which it
+was made from (`LogBranch::target`), and theirs are the one served and
+those made from one of theirs. A branch made at the serving point is
+made from a row of the branch the document was served from, so the log
+would say that one; the op says instead the branch the document was on,
+which is what makes it theirs and is also the side its merges default
+to. The serving point is the fork of the branch served
+(`fromSeq`, `fromVersion`), so a branch served again after a restart of
+the host has the same one.
+
+What the client did comes back the way any branch does: the host merges
+it (28, 30.3), the first document being the side it was made from.
+
+**The replies say which.** `log.rows`, `log.versions` and `log.branches`
+carry `host` (the connection is the host's) and `own` (the document was
+served from a branch); a row says `mine` and `within`, a version and a
+branch `within`, the branch served `root`, and the rows' reply the
+`floor`, the row of the serving point. `mayDelete` of 32.22 is gone.
+
+**The page** offers what would be done and says of the rest why not
+(`logmodel.ts`): "Undo row" for rows that are the asker's own and not
+from before; the branch list, "Branch...", "Rename..." and a version's
+acts where the document's place is the asker's to move; "Delete..." for
+the branches that may be. What is from before the serving point is
+listed dimmed. A button that is not offered says in its tip whose it is
+to do.
+
+**This takes back two of the three decisions of 32.22.** Deleting a
+branch was the host's alone, and is now also a client's in a document
+of its own. A row of another branch is still not taken back from here.
+The wait for an open edit stands, for whoever asks.
+
+**Left.** The host starts it from Python; the sharing panel has no
+button for it yet, and says nothing of which document a branch is
+served in. A branch that exists already is not served as it is -- a new
+one is always made. *(Both since 32.31; the log panel's "Serve
+branch..." is the button, 32.25.)* The document opened for the branch has no window
+and is closed by closing it from Python or with the application.
+*(Since 32.30, closing the last window says so and offers to show it;
+saving it says first that it is not the branch the file is checked out
+on.)*
+
+**Tests.** `tests/gui/serve-log-acts.py` (64): the shared document with
+a client that may edit, one that may only look and the host -- what
+each may, each refusal -- and then a branch served, with a client in
+its document: what is its own, what is from before, and the first
+document unmoved. `tests/gui/serve-log-acts-browser.py` (26): Chrome in
+a document served from a branch. `web/src/widgets/gate.ts`: 14 checks
+of the card's model more.
+
+### 32.24 What the host looks at stays the host's (2026-10-13)
+
+**Ruled (user, 2026-10-13)**: "B for Where the log panel's bar and the
+merge dialog draw" -- the question 32.20 left open. The two states that
+the desktop's log panel and its merge dialog draw stay under the
+object's root, as they were, and are not for the clients of a served
+document.
+
+**How.** Under the object's root is the scene every view of the
+document draws and a served document publishes, and the caches of it
+are shared by all of them, so nothing can be left out while it is
+captured: what a view does not show is dropped where it draws (per-view
+visibility, docs/CoinRetirement.md 5.18). The same here. The overlay's
+node (`SoFCPathAnnotation`) has a `hostOnly` field; what is captured
+under one is tagged (`Render::hostOnlyModeId()`, the captured-mode tag
+that per-view shown draws use); a view draws a tagged draw as it is,
+and the snapshot a served document publishes leaves it out
+(`BGFXScene.cpp`). `ShapeDiffView` sets the field where it hangs under
+the object and not where it is an edit session's (32.19), which is
+unchanged: an edit is asked for, and the clients in it see it.
+
+**Seen in a browser**: with the overlay shown on the host by the faces,
+with differences only and by the material, the page draws the object
+and none of the overlay's colours (0 pixels, where 32.18 counted more
+than 20000).
+
+**What was still sent, and is not.** With the overlay no longer asking
+for a publish, "differences only" and taking it away sent nothing, and
+showing it, a place of the slider and the material still sent one push
+each -- 1.1 kB here, 1.8 kB the first -- with the object as it was in
+it. Chased the next day (user: "chase the residue push"). A view's
+change is said through the object it is a view of:
+`ViewProviderDocumentObject::onChanged` touches the object's
+`ViewObject` property, the document reports the object changed, and a
+served document publishes for that -- 99 times for the nine steps of
+the test, each look the overlay sets on its five views. A view that
+only the host's views draw is no view of the object's to anyone else:
+it has the status `Gui::HostOnlyView`, set before anything of it is,
+and does not say so. Nothing is pushed for any step now. PartDesign's
+preview is a second view of its object too and still says so; it is
+the edit session's, whose clients are sent it.
+
+**Tests.** `tests/gui/serve-shape-diff.py` (11), restated: nothing is
+sent for any step of it. `tests/gui/serve-shape-diff-browser.py` (13,
+one more): the host shows the overlay the desktop's way before the
+page asks for its own edit; it is on the host, under the object, and
+not in the page.
+
+### 32.25 Read and write by branch, rows applied, and requests to merge (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "I would like to change the log access
+model a bit. Each client can be assign a read and write permission of
+any branch. The read access allow the client to see what's in that
+branch and pick rows to apply on this working branch. Or if the client
+has only read access in his working branch, then he can only undoes his
+only row and take snapshot like a normal client. Those with write access
+can restore and switch, delete in that branch but only from a specific
+point, by default the serving point. Client with read access of a branch
+can also send merge request to merge of any other accessible branch to
+that branch. Client with write access can handle the merge. So i am
+thinking maybe store the merge request in the log database somewhere,
+and add some ui in log panel to work on it."
+
+**Agreed (user, the same day)** to the proposal as it stood, its defaults
+included, and built from it. This replaces the two kinds of served
+document of 32.23 with one rule, of which they are the two defaults.
+
+**What one may is by branch.** The host's connection, and the desktop,
+may all of it. Anyone else, of a branch:
+
+- **reads** it: its history is listed -- its rows, the versions taken
+  on it, the branch itself; its rows are applied to the branch the
+  document is on (`log.apply`); a merge of it into another branch that
+  is read, or of another into it, is asked for (`log.request`). In the
+  branch it works on, one who only reads does what a client of a shared
+  document does: edits, takes back its own rows (30.10), takes
+  versions;
+- **writes** it, from a point on: it also moves a document that is on
+  the branch -- restores a version, switches to the branch, branches
+  from it, names a version -- and deals with the requests to merge into
+  it (`log.mergeRequest`, `log.closeRequest`). The point is a version of
+  the branch, or where the branch forks when none is said: nothing
+  before it is restored to or branched from. A branch it makes
+  (`log.branch`) is its maker's own: written from its fork, and its to
+  delete. A branch that was given is not: the host deletes it.
+
+A branch that is not read is not listed, and is unknown to the one who
+asks: its rows are no rows, its name no branch -- nor are the versions
+taken on it versions, nor the requests of it requests. An op that names
+one answers as it does for none: `UnknownRow`, `UnknownVersion`,
+`UnknownBranch`, `UnknownRequest`. The edit that shows a row's change
+(`edit` with `row`, 32.21) is no op of the log and asks the same
+(`Gui::logRowListed`).
+
+**Where it is said.** In the log's store, table `access`: the user's
+kind and name -- who the log says wrote a row, whichever login -- the
+branch, read or write, the point (`from_seq`, `from_version`, both 0
+for the fork) and `made`. `Document::setBranchAccess()` /
+`clearBranchAccess()`,
+`doc.setTransactionAccess(kind, name, branch, write=False, version=0)`,
+`clearTransactionAccess`, `getTransactionAccess`. The point is a version
+of the branch itself; one of another branch is refused. A branch deleted
+takes what was said of it with it.
+
+**Who made a branch is said, not told from where it forks.** When a
+connection that is not the host's makes a branch, the op writes the line
+of it: that user, the branch, write from the fork, `made`. That line is
+all that makes the branch the user's. A branch the host makes off one a
+client writes is the host's, and unknown to the client; so is a branch
+an import made, and one another client of the same document made. The
+host saying something else of that user and branch is in place of the
+line, `made` with it.
+
+**Where nothing is said** (`Reach`, `Gui/SceneLog.cpp`):
+
+- the branch of the document a connection is in is read. That is every
+  client of a shared document, and is 32.23's first kind;
+- a document opened from a branch to be served (`Gui.serveBranch`) is
+  written by whoever joins it, from where that branch forks -- 32.23's
+  second kind -- and the branch it was made from is read, so that what
+  is done there can be asked back into it.
+
+What is said of a user for a branch is what holds for it, in place of
+these: a branch served to someone can be said to be read only.
+
+**Moving the document** -- a restore, a switch, a branch made -- needs
+the branch the document is on to be written, whatever is done it to: a
+document on a branch that is only read is not moved by one who writes
+some other branch.
+
+**Rows applied** (`log.apply`, `rows`, and `fallback`). The rows of
+another branch that is read, applied to the branch the document is on as
+one step of the asker's own (31.12, `Document::pickRows`). Where what
+they set meets what was set here since, each needs a side. The desktop's
+panel asks each; the op takes one side for them all, `fallback` (`ours`,
+`theirs`), and without it answers `Conflicts` with how many, and nothing
+moves. The page then asks which side. With no side said the op asks the
+preview, which changes nothing, and does the apply only where that finds
+no conflict: the apply itself begins by taking out a merge that was
+undone (31.21), rows and redo, before it finds what it cannot do.
+`log.mergeRequest` does the same.
+
+**Requests to merge.** Table `mergerequest` of the store: the branch to
+merge and the one to merge it into, who asked (kind and name), a note,
+when, and how it stands -- `open`, `merged`, `rejected`, `withdrawn` --
+with who ended it, when, and the row the merge wrote.
+`Document::requestMerge()` / `closeMergeRequest()`,
+`doc.requestTransactionMerge(source, target, note='')`,
+`getTransactionMergeRequests`, `closeTransactionMergeRequest`.
+
+| op | asks | for | answers |
+| --- | --- | --- | --- |
+| `log.requests` | | anyone who edits | those of branches the asker reads, and its own: `id`, `source`, `target`, `by`, `byKind`, `note`, `time`, `state`, `closed`, `closedBy`, `result`; `mine`, `handles` (the asker writes the target), `here` (the document is on the target) |
+| `log.request` | `source`, `target`, `note` | one who reads both | `request`; `Refused` where the same is asked already |
+| `log.closeRequest` | `request`, `state` | `withdrawn`: who asked; `rejected`: who writes the target | |
+| `log.mergeRequest` | `request`, `fallback` | who writes the target and reads the source, in a document that is on the target | `row`, `forwarded`, `failed`; `Conflicts` as for `log.apply`, the request staying open |
+
+A merge is into the branch a document is on (28), so a request is dealt
+with in a document that is on its target; asked elsewhere the op says
+so. A merge done answers the requests that asked for it by whichever
+way it was done -- the desktop's "Merge...", Python, the op
+(`Document::mergeBranch`). A request's number is never another's later
+(`AUTOINCREMENT`), so a page that still shows one that went with its
+branch does not act on the next.
+
+**The cue across documents.** The documents of one file have the one
+log: a row written in one is among what a client of another is listed.
+`log.changed` goes to those who watch any document of the file when
+one of them commits, undoes, redoes or recomputes, and when what is said
+of the file's branches changes.
+
+**The lists.** `log.rows` leaves out the rows of branches that are not
+read; a page can come out short of its limit for it, so the reply says
+how far back it was read (`oldest`), which is what the next page is
+asked before. Every list says `host` and `write` -- the asker writes the
+branch the document is on -- and `floor`, the row it writes it from; a
+row and a version say `within`, that a document may be moved from them;
+a branch says `write`, `floor` and `made`. `own`, `root` and a branch's
+`within` of 32.23 are gone. A version is listed where its branch is read
+and its row is listed -- one taken on another branch at a row both have
+is the other's -- and the point a branch is written from is listed
+though it be another branch's, unnamed as to which. A version is named
+by who writes its own branch since the point: the one a branch forks
+from is the other branch's, and its name is what keeps it (16.3).
+
+**The page.** A third list, "Requests", with how many are open in its
+name: a line to ask a merge -- the branch, the one to merge it into, a
+note -- the requests, those open first, and for the one chosen "Merge"
+(for who writes its target, where the document is on it), "Reject" and
+"Withdraw". Rows of another branch have "Apply row N here". Where a
+merge or an apply meets conflicts the card asks one question: take
+theirs for all of them, or keep ours.
+
+**The desktop.** The log's panel has "Serve branch...", for a document
+that is shared: the branch is named, made and served, and the status
+line says the document a client joins, and goes on saying it
+(`SceneServeSource::signalServed` has the panel look again when a
+document begins or ends being served). "Access..." lists what is said
+of users and branches -- "writes, made it" for a branch a client made --
+and says more: a user the log knows, reads or writes, the branch, and
+for a write the version it starts at. The
+requests list of the panel shows the merges asked for beside what an
+import brought: "Merge..." where the document is on the branch it is to
+go into, and "Reject".
+
+**What this changes of 32.23.** A row of the asker's own from before
+the point is its own to take back: taking back is what one who reads
+does, and the point is where writing starts. Deleting is of a branch
+the asker made, where it was of any but the one served. The branch a
+served one was made from is listed, to be asked back into. And two who
+join one served document are two: each writes the branch that was
+served, and a branch one of them makes is that one's. Where the
+document is left on it, the other reads it there and does not move the
+document -- "moving the document", above -- until its maker or the host
+does. *(Ruled otherwise since, 32.29: the others who join that document
+write it too; only its maker deletes it.)*
+
+**A branch another document is on is not deleted**
+(`Document::deleteBranch`): its rows would go from under that document.
+It was refused only for the branch of the document asked.
+
+**What reading it over found.** The first draft compiled and passed its
+own tests as written, and was then read by a second reader for what one
+may that the design forbids. What that found, each fixed and each now a
+case of the tests:
+
+- the draft told who made a branch from where it forked -- any branch
+  made off one the asker writes, since the point, by anyone. So a branch
+  the host made off a client's was the client's to delete, an import's
+  branch likewise, and two clients of one document each other's. It also
+  locked a client out three ways -- a branch made at the serving point
+  while on another, a branch between two deleted, a fast-forward of the
+  served branch moving its fork -- each leaving the document on a branch
+  its clients only read. Who made a branch is now said (above), and none
+  of the three can happen;
+- `edit` with `row` showed the change of any row, of any branch;
+- an apply or a merge refused for conflicts had already taken out an
+  undone merge;
+- an unread branch's row, version and request each answered other than
+  one that does not exist, and a request was merged by one who did not
+  read what it merged;
+- a write could be said from a version of another branch, by Python;
+- the version a branch forks from was its writer's to unname.
+
+**Left.** Each conflict picked by itself in the browser, which is the
+merge's own panel (the third stage of 32.21) -- built since, 32.26. The
+requests of 30.20 --
+a file sent, a branch an import made -- are another list of the same
+panel and are not asked through these ops. *(Listed since, 32.30.)* Access is said by user;
+there is no group, and no access of "everyone who edits" to a branch
+other than the two defaults.
+
+A branch that is not read is unknown by what an op answers of it, and
+not by every word listed of the branches that are read: the version a
+branch forks from is named `branch <name>` and is the parent's, a record
+of a switch or a merge names the other branch, and a new branch's name
+that is taken is refused as taken. `log.rows` says the log's last row
+number, whoever asks. None of it is a row, a value or a shape. *(Ruled
+since, 32.30: such a branch is listed by its name, greyed.)*
+
+A user is who the log says: for a browser its grant counts, a label and
+the first six digits of its key (30.32). *(Groups since, 32.32.)* What is said of that user is
+said of whoever shows that name; the door decides who may show it.
+
+**Tests.** `tests/gui/serve-log-acts.py` (89: clients A, B, the host
+and C as before, and D, another who joins the branch's document),
+`tests/gui/serve-log-acts-browser.py` (33, by hand: it skips where there
+is no browser), `web/src/widgets/gate.ts` (13 checks of the card's model
+more, 247), `scripts/transaction-log-access-check.py` (36, the desktop's
+panel: the "Access..." dialog, "Serve branch...", the merges asked for
+in the request list, and the two things of the log the ops lean on -- a
+point is a version of its branch, a refused apply leaves an undone merge
+to be redone, which fails with the op's question of the preview taken
+out).
+
+### 32.26 The log's panel in a browser, third stage: the merge's own (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "continue", after 32.25 was built with
+this stage named as what was left of it -- the third of the four stages
+of 32.21: what a merge would do, a side picked for each conflict, and a
+merge undone rolled back. Until now an apply or a merge from the page
+that met conflicts asked one side for all of them.
+
+**The ops** (`Gui/SceneLog.cpp`):
+
+| op | asks | for | answers |
+| --- | --- | --- | --- |
+| `log.preview` | `rows`, or `request` | as `log.apply`, or as `log.mergeRequest` short of writing: rows of a branch the asker reads; a request it is listed, its source read, in a document on its target | `what` (`rows`, `merge`), `source`, `base`, `forward`, `fastForward`, `conflicts`, `count`, and `changes` (at most 2000): `key`, `kind`, `op`, `ckind`, `object`, `label`, `prop`, `derived`, `note`, and the values at the `base`, `ours` and `theirs` as text |
+| `log.apply`, `log.mergeRequest` | and `picks`: a side by key | as before | as before |
+| `log.rollBack` | `dry` | the host; one who writes the branch the document is on, of a merge of its own since the point | `merge`, `source`, `rows`; with `dry`, `may` and `why` and nothing done |
+
+A change is what the desktop's merge dialog lists (`MergeChange`, sec
+28.2 item 10), and its key is what `picks` names (`Box.Height`,
+`view:Box.ShapeColor`). With `picks` an act counts as conflicts with no
+side only those not picked, and a key with `ours` of a change that asks
+nothing leaves it out, as on the desktop (`Document::pickRows`). A value
+is text as the desktop has it, the start of what the log holds, and a
+property saved as one element with its value -- a number, a length, a
+word -- is that value: `60`, not `<Float value="60.000000000000000"/>`.
+A derived value, a shape, is its ref: reading it would read geometry.
+
+**Roll back** is `Document::rollBackMerge` (31.21): the merge undone at
+the head, and its undoing, leave the log for good; the document does not
+change. It takes rows out, as deleting a branch does, so it is the
+host's, and of a client the roll back of a merge it made itself, on a
+branch it writes, since the point. Whether there is one is asked with
+`dry` when a merge or an undo is chosen, as the desktop asks when its
+menu opens: `Document::undoneMerge()` commits an edit left open and
+waits for the rows being written, which no list asked of every client
+on every change should do.
+
+**The page.** Where an apply or a merge meets conflicts the card's
+question has a third answer, **Pick each...**: the list of what it
+would do in place of the card's lists, the conflicts first and marked,
+each with its two values as buttons -- ours, theirs, the base in the
+tip -- and the rest with what goes in of them; **All ours**, **All
+theirs**; **Apply** or **Merge**, waiting while a conflict has no side,
+and **Cancel**. A request also has **Look first...**, the same list
+before anything is asked. A merge or an undo chosen in the rows has
+**Roll back merge...** where there is one undone at the head, greyed
+with the host's reason where it is not the asker's.
+
+![A side picked for each conflict, in the card](images/transaction-log/15-log-browser-picker.png)
+
+**Left.** Untick a change to leave it out, which the desktop's dialog
+has: the op takes it (`picks` with `ours`), the card does not offer it.
+*(Built since: 32.28.)*
+What a merge would make, drawn (32.17), is the desktop's. The fourth
+stage -- kept values -- is not started. *(Built since: 32.27.)*
+
+**Tests.** `tests/gui/serve-log-acts.py` (94): A's apply previewed, the
+conflict listed by its key with the value on each side, applied with
+`ours` picked; a request's merge previewed by the host, and refused C in
+a document not on its target; the host's own merge undone through its
+connection, refused another who reads the branch, rolled back by the
+host, and refused again. `tests/gui/serve-log-acts-browser.py` (35): a
+row of the branch the page's was made from, set on both sides, applied
+through **Pick each...** with theirs. `web/src/widgets/gate.ts` (253):
+six of the list's model.
+
+### 32.27 The log's panel in a browser, fourth stage: what is kept (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "continue as planned", after 32.26 named
+this as the last of the four stages of 32.21 -- the requests, the other
+half of that stage, were built with 32.25. What the desktop's panel does
+of 32.11 and 32.12, from the page: a value a recompute wrote kept in the
+file, every value of an object kept, the objects selected kept as they
+are at a version, the list of the kept, and each let go.
+
+**The ops** (`Gui/SceneLog.cpp`):
+
+| op | asks | for | answers |
+| --- | --- | --- | --- |
+| `log.kept` | | anyone listed the rows | `values`: each kept by itself -- `ref`, `cid`, `obj`, `label`, `here`, `prop`, `seq`, `row` (the row is still in the log), `release` and `why`; `objects`: each kept -- the same of the object, and `values` the log has of it (`ref`, `prop`, `seq`, `alone`); `count` |
+| `log.keep` | `obj` or `cid`, or `objects` by name; `prop`; `row` (0: where the document is); `keep` | keep: anyone listed the row; let go: see below | `row`, `values`: how many moved |
+| `log.keepObject` | `obj` or `cid`; `keep` | keep: an object of the document; stop: the host | `cid`, `changed` |
+| `log.release` | `ref` | see below | `ref` |
+
+`log.ops` says of an op whose value is kept `keptValue`, and of one whose
+object is kept `keptObject` -- the desktop's "yes, kept". Each is
+`Document::keepLogValue`, `keepLogValuesOf`, `releaseLogValue`; nothing
+of it is a row, so what is kept moving is told as `log.changed` to the
+editors of every document of the file, which share the store.
+
+**Who may** (chosen in the building; ruled otherwise since, 32.29: a value
+is kept by one who writes the row's branch, an object by the host alone,
+and a value is let go by its keeper too). Keeping takes nothing from anyone: it
+is anyone's who is listed the row. Letting a value go is not undone --
+the next save leaves it out of the file, and what a save leaves out is
+gone (13.3). So a value kept by itself is let go by the host, or by one
+who writes the branch of the row **it was kept at**, since the point
+(`Reach::row`); one whose row a trim or a squash took is the host's, as
+no branch is known of it. A value let go by naming another row is judged
+by the row it was kept at all the same: a value set before the point is
+the same value at a row after it, and would otherwise be let go by one
+who may not reach it. Stopping an object's being kept lets its values go
+on every branch, and is the host's -- the store says nothing of who kept
+it, so it cannot be its keeper's.
+
+What is listed follows what the rows are (32.25): a value by itself where
+its row is one the asker is listed, or -- the row gone -- where its object
+is in the document; an object where it is in the document, with the
+values of rows the asker is listed. An object the document no longer has
+is listed to the host alone, which is who may let it go.
+
+**The page.** A fourth list, **Kept**, its name carrying the count as the
+desktop's tab does: each value kept by itself (one value -- the object,
+the property, the row, "N, gone" where the row is), each object kept
+(every value, with how many) and its values under it. A line chosen
+reads its value's text; **Let go**, **Stop keeping all**, **Keep by
+itself** / **Not by itself** for a value under an object, **Show row N**.
+An op's value pane has **Keep** / **Let go** and **Keep all of it** /
+**Stop keeping all**, and the op says "kept" where it is. A version has
+**Keep selected here** and **Let go of selected**, of the objects
+selected in the page. What is not the asker's is greyed with the host's
+reason.
+
+![A value kept, in the Kept list](images/transaction-log/15-log-browser-kept.png)
+
+**Left.**
+
+- The desktop's Kept tab is asked again with the panel's own refresh;
+  a client keeping or letting go raises no signal of the document, so
+  the tab follows at the next commit, recompute or undo -- as for keeping
+  from Python (32.12). *(Built since: 32.28.)*
+- A kept value is read as its text, as an op's is; drawing it over the
+  object against what it has now (32.12) is the desktop's. *(Built
+  since: 32.28.)*
+- The document is still not marked modified by keeping (32.11).
+  *(Marked since: 32.30.)*
+
+**Tests.** `tests/gui/serve-log-kept.py` (33): nothing kept at first; A
+keeps the cut's shape at a row, its op says so, the host's document
+keeps it, A is told why it may not let it go and is refused both ways;
+A keeps every value of the box, a second time changes nothing, A may not
+stop it; the two objects kept as they are at the first row, the box's
+value there kept by itself too and not A's to let go from under the box;
+an object, a row and a ref there is none of; the host's keep is told to A; the host
+lets go by ref, stops the box, lets go of the two; A, given to write,
+lets go of what it kept; a value whose row a trim took is listed as gone
+and is the host's; B refused all four. `tests/gui/serve-log-acts-browser.py`
+(39): the box's shape kept from its op in the page, counted, listed,
+read and let go; its drive now waits for the versions it reads to be the
+host's answer, not the list of the last visit, a race the kept list's
+extra ask made show. `web/src/widgets/gate.ts` (261): eight of the list's
+model.
+
+### 32.28 What the four stages left (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "chase the left issues once you done here",
+after 32.27 was reported with four things left.
+
+**What is kept says so.** Keeping raised no signal: no row says it, so
+the desktop's Kept tab followed a keep from Python or a client's panel
+only at its next refresh (32.12, 32.27). `App::Document::
+signalLogKeptChanged` is raised by `keepLogValue` and `releaseLogValue`
+where they moved something, and by `keepLogValuesOf` where the object's
+being kept changed. The desktop's panel asks its list again on it, and a
+served document's watch tells its editors and the file's other documents
+(`log.changed`) -- so a keep from Python reaches a page too.
+
+**A kept value shown.** The page's Kept list has **Show** on a value: the
+edit a row's change is shown as (ViewProvider::ValueDiff, 32.19), with the
+kept value as the state before and the object as it is now as the state
+after -- the desktop's "the kept value against now" (32.12). The `edit` op
+takes `kept`, a ref, in place of `row`; it is a value of that object
+among those the asker is listed (`Gui::logKeptListed`), or `UnknownValue`.
+`ViewProviderDocumentObject::setValueChangeRef()` is spent as
+`setValueChangeRow()` is; its panel says "the value kept at row N".
+
+**A change left out.** The list of what an apply or a merge would do
+(32.26) has a tick on each change of theirs that goes in -- a `take`, a
+`merge` -- as the desktop's dialog has: unticked, it reads "left out" and
+is sent as `ours` (`Document::pickRows` leaves out a change that asks
+nothing picked ours), with every change of its key -- a sketch's
+properties merged together share one (31.10). **All ours** and **All
+theirs** leave what is left out so.
+
+**Roll back merge... driven in a browser.** The page's user asks for the
+branch its own was made from to be merged into it, merges it, undoes it
+on its own socket -- an undo step is its author's (30.10) -- and rolls it
+back from the card: offered, asked, said, and the merge and its undoing
+leave the log while the box stays as it was.
+
+**Tests.** `tests/gui/serve-log-kept.py` (37, +4): the kept value shown
+over the cut, the panel saying which, against what a later row made; the
+edit left; a value not kept, or of another object, refused.
+`tests/gui/serve-log-acts-browser.py` (42, +3): the roll back.
+`scripts/transaction-log-shapediff-check.py` (133): a keep from Python is
+counted in the tab not shown, and let go with it shown, with no refresh
+asked. `web/src/widgets/gate.ts` (263, +2): what is left out.
+
+### 32.29 Who keeps, and a branch made where two join: ruled (2026-10-14)
+
+**Asked (user, 2026-10-14)**: "32.27. rule 1, only host can keep
+object, other with write access can keep value. rule 2. record who other
+than host kept value, and allow them to let go. btw, I presume current
+log panel can list all kept values/objects? rule 3, answered by rule 1.
+32.25 (b)" -- after the choices 32.27 and 32.25 made in the building were
+laid out with their alternatives: who keeps (1), who lets a value go (2),
+who stops an object's being kept (3), and a branch one of two who join a
+served document makes ((a) its maker's, as built; (b) written by all who
+joined, deleted by its maker; (c) the access of the branch it was made
+from; (d) **Branch...** not switching a shared document).
+
+**Keeping.** What is kept grows the file every save writes; an object
+kept grows it with every recompute from then on. So:
+
+- a value is kept by the host, and by one who writes the branch of the
+  row, since the point -- `Reach::row`, as for a row a document is moved
+  from (`keepWhy`). One who only reads keeps nothing, and is told why;
+- every value of an object is kept, and no longer, by the host alone
+  (`log.keepObject`, both ways) -- which answers who stops it too.
+
+**Who kept it.** `keepvalue` has `kind` and `name`: who kept a value, as
+the log names a user (`LogKept`; the last two of
+`Document::keepLogValue`), empty for the host. A value kept again stays
+as it was kept -- its row, its keeper -- but for the host's keep, which
+makes it the host's: a client's keep takes over neither the host's nor
+another client's. A value is let go by its keeper, beside the host and
+one who writes the branch of the row it was kept at since the point;
+the keeper still may where that row is gone, and where its write has
+been taken back since. The column is added in place, as is
+`branch.joined` below: no release has the store (27.55).
+
+**Said.** `log.kept` says of a value a client kept `keeper`,
+`keeperKind`, and `mine` where it is the asker's; of a value under an
+object `keep` and `keepWhy`, whether the asker may keep it by itself; and
+`keepObject`, which only the host may. `log.ops` says of the row `keep`,
+`keepWhy` and `keepObject`. `getKeptTransactionValues()` gives `kind` and
+`name` of a value a client kept. The page's Kept list says "by you" or
+"by <name>"; **Keep**, **Keep all of it**, **Keep by itself** and **Keep
+selected here** are greyed with the reason where they are not the
+asker's. The desktop's Kept tab says "one value, by <name>".
+
+**What the panel lists** -- the question asked with the ruling. The
+desktop's Kept tab lists every value kept by itself and every object
+kept, with its values, whoever kept them: it is the host's. The page
+lists the same to the host's connection; to a client, what it is listed
+of the rows (32.27) -- a value whose row it is listed, or whose row is
+gone and whose object is in the document; an object in the document.
+
+**A branch made where two join** (32.25, (b)). A branch a client makes in
+a document opened from a branch to be served is written by everyone who
+joins that document, from its fork; only its maker, or the host,
+deletes it. `LogBranch::joined` (`branch.joined`) is the branch that
+document was opened on, set as the branch is made; `reachOf` gives each
+who joins that document write of every branch so marked, where nothing
+else is said of them. So one joiner's **Branch...** no longer leaves the
+other on a branch it only reads: it moves the document from there as the
+maker does. The host's own branches are as they were. Another joiner's
+delete is refused with "another who joined made that branch: its maker,
+or the host, deletes it". `getTransactionBranches()` gives `joined`.
+
+**Tests.** `tests/gui/serve-log-kept.py` (45, +8): the row says A, who
+reads, keeps nothing, and A is refused a value and an object; what the
+host keeps is listed to A with no keeper; a value under the box not A's
+to keep by itself; given to write, A is told it keeps at the row, keeps a
+value listed as its own and said so on the host, and is still refused an
+object; the host's keep makes it the host's; A's value and the host's,
+A's write taken back and their rows trimmed: A lets go of its own and is
+refused the host's. `tests/gui/serve-log-acts.py` (+1): D, who joins the
+document C made branches in, writes them, switches the document from
+one and back, and is refused deleting it. `tests/gui/serve-log-acts-
+browser.py`: **Keep all of it** greyed for the page's user, with the
+host's reason; the value it kept listed "by you". `web/src/widgets/
+gate.ts` (266, +3): the keeper said, a value under an object keepable or
+not, keeping at a version.
+
+### 32.30 What the browser's panel left, closed (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "Close all 5. 3, host only and no doc
+opening action. 4, when closing a document, if it is the last visible one
+and there'rs still hidden one left. Warn the user, and offer to show those
+documents. Also when saving, warn if it is not the current checked out
+branch, I. E. The outer document. 5, maybe just grayed out would do." --
+after five things were laid out as left by 32.11 to 32.29: (1) keeping
+does not mark the document modified; (2) the requests of 30.20 are not on
+the page; (3) trim, squash, "Open version" and "Branch to document" are
+not on the page; (4) a branch served in a document of its own has no
+window on the desktop; (5) the name of a branch a client does not read
+shows in the text of versions and records.
+
+**(1) A keep marks the document modified.** What is kept is written by
+the next save (32.11), so a keep is a change of the file like any other.
+`Gui::Document` marks itself modified on `App::Document::
+signalLogKeptChanged`. That signal is now raised only where something
+moved: `TransactionStore::keepValue()` says whether it did, and a value
+kept again as it is kept -- the same keeper, or a client's keep of the
+host's -- is no change, and marks nothing.
+
+**(2) The requests on the page.** `log.requests` lists, beside the merges
+asked for, the requests of 30.20 as the desktop's list has them:
+
+- `files`: the files sent and not read (`Gui::SceneRequests`) -- the
+  host's connection all of them, a client the ones it sent (`mine`);
+- `imports`: the branches an import made that the branch the document
+  is on has not taken (`Document::importRequests`), of those the asker
+  reads -- its file, who made its rows and who sent it, its operations,
+  and whether it shares no history or stopped at a row.
+
+What is done with them is the host's (30.20 H6: nothing a connection sent
+is read for its asking):
+
+- `log.bring`: a file sent brought in, as "Bring in only" brings it --
+  read into a branch of its own (`Document::importSentFile`), which is
+  then an import to merge;
+- `log.mergeImport`: an import merged into the branch the document is
+  on, as `log.mergeRequest` merges -- `picks`, `fallback`, `Conflicts`;
+  `log.preview` with `import` is its preview;
+- `log.dropFile`: a file let go unread -- by the host, or withdrawn by
+  the one who sent it, to whom another's file is unknown;
+- an import is deleted as a branch is, `log.deleteBranch`.
+
+A file arriving or going is said to the documents watched (`log.changed`,
+from `SceneRequests::signalChanged`). The page's Requests tab has a second
+list under the merges asked for, "Sent, or brought in": a file says its
+name and size and that nothing read it, with **Bring in** and **Delete,
+unread** -- **Withdraw** for its sender; an import says its operations and
+who made and sent it, with **Merge**, **Look first...** (the picker of
+32.26) and **Delete**. The tab's count is of all three kinds. A file is
+brought in and then merged, two steps, where the desktop's menu has "Bring
+in and merge..." as one: the page asks the host for each, and a file that
+imports nothing new says so at the first.
+
+**(3) A trim and a squash are the host's.** Both take rows out of the log
+for good. `log.trim` takes a branch's history before one of its versions
+out (`Document::trimBranch`, sec 16.7); `log.squash` folds the rows
+between an older version and one of its versions into one row
+(`Document::squashVersions`) -- asked with no `from`, it lists the
+versions a squash may start from, newest first, each with the rows it
+would fold (`Gui::logVersionsBehind`, which the desktop's panel now uses
+too), and a start that is not behind is refused. To anyone else both are
+`Forbidden`: "that takes rows out of the log for good, which is the
+host's". The page's Versions tab has **Trim to here...** and **Squash to
+here...**, greyed with that reason below the host; the squash asks where
+from in a list, its question carrying `choices`. "Open version", "Branch
+to document" and the desktop's "Open in a document of its own" of an
+import are not offered: each opens a document the page is not joined to.
+
+**(4) A document with no window.** A branch served in a document of its
+own (32.23) has no window on the desktop. Closing, of its own asking, the
+last document that has a window while such a document is open, the
+desktop says so (`Gui::Document::canClose`, `HiddenDocuments`): "Closing
+<it> leaves a document open with no window: <name>. It stays open, and
+served if it is, with nothing that shows it." -- **Show Them**, which
+gives each its window once the close is done, **Leave Hidden**, or
+Cancel. Not when everything closes (the application's exit, "Close all"),
+and not of a version pins show or a temporary document, which go with
+what holds them. Before this, closing the last window made the first
+document left active and gave it a window, unasked
+(`Application::switchActiveDocument`): a document with no window is no
+longer picked to be active, and with none that has a window none is.
+
+Saving such a document goes by the warning of 27.5 ruling 4, which now
+says first that it is not the file's own document: "This is branch <b> of
+<file>, not the branch the file is checked out on: that is <a>, in <the
+file's own document>." -- or, where the file's own document is on the
+same branch or is not open, that it is not the document the file is
+checked out as. **Save over File** and **Save to History** are as they
+were.
+
+**(5) A branch not read is listed greyed.** Its name was in the text
+already -- a version named `branch <name>`, a record of a switch, a name
+refused as taken (32.25 "Left") -- and is no longer hidden from the list
+either: `log.branches` lists every branch, one the asker does not read
+by its `id`, `name` and `read: false` alone; a version is listed with
+its branch's name and `branchRead: false` where that is not read. An op
+that names such a branch -- a switch, a rename, a delete, a request, a
+trim -- is refused as not read (`Forbidden`, "that branch is not one
+this connection reads") where it was `UnknownBranch`. Its rows, the
+versions taken on it and the requests of it are still not listed. The
+page greys it in the branch list and in the two lists a merge is asked
+from, offering it for nothing.
+
+**Tests.** `tests/gui/serve-log-acts.py` (105, +10): a branch not read
+is listed greyed, and a switch, a request and a delete of it refused as
+that; a squash and a trim refused A and moving nothing; the versions
+behind, newest first; a start ahead refused; the rows between folded
+into one; the other branch trimmed, the document where it was; a file A
+sends listed to A as its own and to the host, not A's to bring in, and
+withdrawn; sent again, brought in by the host as a branch listed as an
+import, which A is not listed nor may merge; looked at and merged by the
+host, the copy's change here; another file deleted unread by the host;
+B refused all twenty. `tests/gui/serve-log-kept.py` (46, +1): a keep
+marks the host's document modified, a keep of what is kept already
+does not. `tests/gui/serve-log-acts-browser.py` (44, +2): a branch of
+the host's the page's user does not read greyed in the list and offered
+for nothing; **Trim to here...** and **Squash to here...** greyed with
+the host's reason. `scripts/transaction-log-hidden-check.py` (8, new,
+`HIDDENCHECK_OUT`): the branch's document saved says it is not the
+branch the file is checked out on and which is; the outer document's
+window closed asks, by name; cancelled it stays; left hidden, the
+branch's document stays with no window; a window closed while another
+document has one asks nothing; the last closed again and shown, the
+branch's document has a window. `web/src/widgets/gate.ts` (272, +6).
+
+**Not pictured.** The guide has no picture of the page's second request
+list nor of the desktop's question. *(Both since, 32.31.)*
+
+### 32.31 A branch there is, served as it is; the sharing panel lists what is served (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "Do 2 first, then 1." -- of what 32.23 left:
+(2) a branch that exists is not served as it is, and the sharing panel
+says nothing of which document a branch is served in; (1) the two
+pictures 32.30 did not take.
+
+**A branch there is.** `Gui::serveBranchOf(doc, name)` (Python
+`Gui.serveBranch`) serves a branch `name` there is already as it is: no
+branch is made, and the document opened for it is at its head
+(`Document::openFileBranch`). Asked again, the document that serves it
+already is returned. Refused where another document is on that branch --
+the one the host works in, say, which is shared as it is, not served as a
+branch ("share that document instead") -- and where the branch is closed.
+A new name, or none, makes one where the document is, as before. The log
+panel's **Serve branch...** offers the branches there are in its list,
+but the one the document is on and the closed ones, and takes a new name
+typed over them.
+
+**Found on the way: a branch opened by its name took another's
+document.** `Document::openFileBranch` opens a branch's tip at the newest
+version of its history, and reused the editable instance of that version
+where one was open (`openFileVersion`, at most one of each, 27.22) --
+then switched it to the branch. That instance may be another branch's tip
+already: a branch served in a document of its own is one, opened at the
+same version. So serving a second branch moved the first one's document
+onto it, from under its clients. The open instance is reused now only
+while it is on no branch of its own (`detached`); otherwise a second
+instance is opened, as `openNewBranch()` opens one.
+
+**The sharing panel** lists the branches served in documents of their own
+(`Gui::servedLogBranches()`), under its clients, while there are any: the
+branch, the document a client joins it by (`?doc=`), and how many clients
+are in it. **Show** gives the document a window (32.30), **Close** closes
+it after asking -- whoever is in it is left with none; the branch stays in
+the log.
+
+**Pictured.** `15-log-browser-sent.png`, the page's "Sent, or brought in"
+list as a client sees a copy it sent (taken by
+`tests/gui/serve-log-acts-browser.py`), and `18-hidden-close.png`, the
+desktop's question (`scripts/transaction-log-guide-shots.py`, which now
+serves a branch at its end and closes the last window).
+
+**Tests.** `scripts/share-panel-check.py` (57, +10): no branch served,
+none listed; one served listed with its document and no one in it, with
+no window, **Show** giving it one; a branch there is served as it is --
+no branch made, asked again the same document -- the branch the first
+document is on refused; both listed; **Close** asking, closing its
+document, the branch staying; the one served first still on its own
+branch; their documents closed, none listed.
+`scripts/transaction-log-access-check.py` (36): the branch named again in
+**Serve branch...** is the one served already, no document more.
+`Document.TransactionBranchCases.testABranchOpenedByNameLeavesAnother
+BranchsDocumentWhereItIs` (new): a branch's tip opened by its name beside
+a document on another branch at the same version. `tests/gui/serve-log-
+acts-browser.py` (45, +1): a copy the page's user sent, listed to it
+unread, not its to bring in, withdrawn.
+
+### 32.32 A group is a user: what is said of it is its members' (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "Then work on user group, make it simple,
+maybe just a virtual user, each user can have an extra field of parent to
+act as group." -- of 32.25's "Access is said by user; there is no group".
+
+**A group is a user** of kind `group` (`App::kLogGroupKind`): a name the
+host gives, which nobody logs in as, kept in the log's `user` table as any
+user is. Each user has a `parent`, the group it is in (`LogUser::parent`,
+a column added in place: no release has the store, 27.55); a group has
+one too, so groups nest. Nothing else is new: what a group may of a
+branch is said as of a user (`setBranchAccess("group", name, ...)`, the
+Access dialog), and is had by every user in it.
+
+**Which is had.** Of each branch, what is said of the user itself; else
+what is said of the nearest group it is in, then of that group's group
+(`Document::userGroups`, the user and its groups nearest first; `Reach`
+in `Gui/SceneLog.cpp` takes the first of them said of the branch); else
+the defaults of 32.25 -- the branch of the document it is in is read, a
+branch served to it written. So a user said to read a branch its group
+writes reads it. `made`, a branch's maker's own to delete, is said of a
+user and not had through a group.
+
+**Said.** `Document::addUserGroup(name)` makes a group;
+`Document::setUserGroup(kind, name, group)` puts a user in one, making
+it where there is none, or in none where `group` is empty -- the user
+need not have come yet. A group is not put in itself, however far up
+(`ValueError`). Python: `addTransactionGroup(name)`,
+`setTransactionUserGroup(kind, name, group='')`, and
+`getTransactionUsers()` -- `id`, `kind`, `name` and `group`, the name of
+the group it is in. `setTransactionAccess` takes `group` as a kind. The
+Access dialog lists the groups among the users, each user with the group
+it is in, and has a row under its own: "The user chosen is in group",
+a group there is or a new name -- or none -- and **Put in Group**.
+
+**Tests.** `tests/gui/serve-log-acts.py` (111, +6): a branch the client
+reads nothing of is greyed; put in a group said to read it, the client
+reads it; the group said to write it, writes it; said of the client
+itself to read it, reads it only; a group in a group passes on what is
+said of the outer one; out of the group, greyed again.
+`scripts/transaction-log-access-check.py` (38, +2): a user put in a group
+by a new name in the dialog -- the group made and listed among the users,
+the user's line saying its group and staying chosen -- and taken out from
+Python. `Document.TransactionBranchCases.testUsersInGroups` (new): a user
+in a group made by naming it, the group in another, a group not put in
+itself, an unknown kind refused, a group said of as a user, a user taken
+out.
+
+### 32.33 A shape the log let go, read from its row's state (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "continue" -- after 32.31 and 32.32, the
+next of what was left: 32.8's *A value the log let go*. A row, a version
+or a merge's preview showed nothing of a shape the log no longer held,
+and did not say why.
+
+**Measured first: it is every file opened again.** A shape is a derived
+value, in the cache tier, and the copy of the log a save writes into the
+file carries no cache tier (13.3, `dropTier("cache")`). The history's
+own store lives in the document's transient directory and goes when the
+document closes, so a file opened again has its log from that copy: no
+row's shape, only those a version's manifest reaches (the versions keep
+their files whole) and those kept (32.11). The value pane said "(value
+not in store)", the bar nothing.
+
+**The state's document.** `Document::openRowState(seq)` (Python
+`openTransactionState(seq)`) opens the state at a row as a document of
+its own: the newest version the row's chain reaches -- or, with none on
+it, the one whose chain meets it latest, the search an import's replay
+makes (31.15), now `versionReaching()` for both -- is read as a merge's
+result is (32.17), joined to the file's history, with no log and no
+view (`_openReadVersion`), and the rows from there to the row are folded
+into it. `_moveAlongLog` takes the log to read them from (`through`):
+the document moved has none. A value the log does not have touches its
+object, as for an import (31.19), and those objects -- only those: one
+touched at the row is as the row left it -- are computed again. Nothing
+of the document or its log moves, and the caller closes it.
+
+**The bar** (the panel's, and the merge dialog's) is told of each pair
+the rows its two states are of: a row's parent and the row, an op's the
+same, a version's its row, a merge's base and theirs. Rows picked
+(31.12) are not one state and have none. A shape's ref (only of a
+property its view shows, `showsValueDiffOf`) the log no longer reads is
+given to the view as `doc:` and the state's document, opened once and
+kept while it is asked for; a ref the log reads and the view could not
+show all the same -- the value is there and the geometry it names is
+not -- is tried again the same way. The states no pair asks for are
+closed at each update, and all of them when the bar goes or its document
+changes; one that could not be opened is not tried again until then.
+The bar says what it did: "N shape(s) the log let go, computed again at
+their row", or "N shape(s) the log let go, which nothing here has" where
+there is no row. The value pane says why one is not there.
+
+**The page** reads a shape as its ref, never its geometry (32.21), and
+already said "the log does not hold this value any more"; nothing there
+changes.
+
+**Left.** A shape computed again is the kernel's today, not
+necessarily the bytes the row once had: the same where the inputs and
+the kernel are. Rows picked show what the log reads and say what it
+does not.
+
+**Tests.** `scripts/transaction-log-letgo-check.py` (17, new, gate tag
+`lg`): a file saved, closed and opened again has none of its rows'
+shapes; a row's before against after shows the slab it added (174.87
+mm^3) from the two states, by the material and by the faces, and says
+so; its op the same; the row the file was saved at is read from the log
+and opens nothing; the states close when nothing shows them; the merge
+dialog's three pairs each from their states (120 and 480 mm^3); no row
+written. `parttests.ShapeDiffTest.ShapeAtAStateTest.testAShapeTheLogLetGoIsComputedAtItsRow`
+(new): the row's and its parent's states have the shapes, untouched,
+with no log, the document and its cursor unmoved; a row there is not is
+refused.
+
+### 32.34 The merge's result: what it removes drawn, and made again in place (2026-10-15)
+
+**Asked (user, 2026-10-15)**: "do merge preview first, then 6. I don't want
+item 4" -- item 5 of the list given after 32.33, the merge preview's own
+Left of 32.17: what the merge removes is not drawn, a side changed reads the
+document whole again, and the result is made on the main thread. Item 4, a
+closed file's kept values, is not wanted.
+
+**What the merge removes, drawn.** An object theirs removes was a line of
+the dialog with nothing to show, and the result said "N object(s) are
+removed" and drew nothing. Now the object as it is here is shown against no
+value -- all of it gone, as what theirs made is all of it new (32.17):
+
+- its line selected, in **ours against theirs**, and in **ours against the
+  result** where the result has it removed (`MergeOutcome::removed`, or the
+  other branch whole in a fast-forward);
+- with no line selected, for the objects chosen, the same; and an object the
+  result removes that no line says theirs removed.
+
+The base pairs show nothing of it: the base's value of a removed object is
+no ref the line carries.
+
+**Made again in place.** A side picked, or a change ticked or unticked,
+read the document into a new one each time and recomputed the merge there
+-- 2.1 s of the scale model's 3.2 s first result is that read (32.17). The
+result's document is now kept and written again:
+
+- `previewMergeResult()` and `previewPickResult()` take `again`, the name of
+  a result made before, handed back; Python `again=` after the other
+  arguments, and `reused` in what they answer.
+- What the merge writes to the result's document is one step, held open in
+  it (a `Transaction` of that document's own, which nothing commits: it has
+  no log, and its id is no application transaction's). Asked again, where
+  the document is of this one as it is still -- the same version of the tip
+  -- the step is aborted, which puts back every value, object and property
+  it changed, the touched state of each object as read is set again, and
+  the merge is written anew in a new step. That is the same code on the same
+  state, so the result is what a read anew makes, to the touched bits and
+  every element name (tested).
+- Otherwise -- the document changed, so its tip is another version; or the
+  name is of no result of this one -- the document handed back is closed,
+  and the result read anew. The record of what was made (`previewsMade`) is
+  by name, and a name is never given twice.
+- The dialog keeps the document while the sides change, also when another
+  pair is looked at, and hands it back the next time the result is asked
+  for; stale, or closed, it closes it.
+
+The view of what theirs made is taken out of this document's views before
+the step is taken back, as before a close. And the dialog's bar draws again
+what it shows once a result is made: a value of the result is known by its
+document's name (32.17), which made in place no longer changes -- the first
+run of the checks below showed the result before the side was picked.
+
+**Measured** (`~/.cache/lv-merge/mr/scale/scale2.py`, the scanner model of
+32.17, 615 objects, a pad made longer on each side): the first result 3.16
+s, the tip's version taken; made again in place with the same sides 1.19
+s and 1.21 s, 86 values, the body's tip the same volume to the last digit;
+with both changes left out 0.01 s -- nothing written, nothing computed, the
+document as it is; read anew for comparison 2.07 s. So a side changed costs
+the merge's write and recompute, and no longer the read.
+
+**Left.**
+
+- *On the main thread, and waited for*, as 32.17 says: a recompute is not
+  handed to a thread. It is the out-of-process kernel's
+  (docs/ComputeBoundaries.md), and the reuse above only takes the read out
+  of what is waited for.
+- *Closing the result's document clears the selection*: now once per
+  dialog, not once per side.
+- *Only geometry*, *a view opened while the result is shown*, and *the
+  string table* stand as 32.17 says.
+
+**Tests.** `parttests.ShapeDiffTest.MergedResultTest.testMadeAgainInTheSameDocument`
+(new): theirs' length, a ball theirs made and a cone theirs removed; ours
+picked, handed back: reused, the same document, and equal to one read anew
+-- objects, ids, touched state, length, volume, every element name, the
+values listed; back to theirs, what the first was; the ball left out, not
+there; the document changed, the one handed back closed and the result read
+anew. `scripts/transaction-log-mergeresult-check.py` (14, new, gate tag
+`mr`): the cone's line, every face of it gone against theirs and against the
+result, and chosen with no line selected; the result with theirs' length,
+ours picked in the same document, a side changed under another pair keeping
+it, its pair chosen again making it there, the ball unticked left out of it;
+gone with the dialog, nothing merged, nothing left drawn.
+`scripts/transaction-log-shapediff-check.py` (133): a side changed is made
+again in the document it was made in.
+
+**Gates** (`~/.cache/lv-merge/gates-lv.sh`, both freezes, with 32.35): the
+24 Gui checks clean; Python 3685, OK, frozen and not; gtest entries 950 of
+950 both; driven 280 of 282, the two the golden raster pictures (33.14).
+
+### 32.35 The page's rows as a graph, and a shape said in a line (2026-10-15)
+
+**Asked** with 32.34 ("then 6"): item 6 of the same list, the two things
+the first stage of the page left (32.21) -- the graph of branches is not
+drawn, and a shape's value is the start of its text.
+
+**The graph.** The page's list of rows has the desktop's graph (sec 26) as
+its first column: `layoutGraph()` in `web/src/logmodel.ts` lays it out as
+`TransactionLogView::layoutGraph()` does -- newest first, a node on a lane,
+each lane waiting for the parent of the row above it, lanes converging on a
+fork, a merge's second parent a lane from its node down to the row merged
+in, the desktop's colours by branch, a record hollow -- and each branch's
+head is labelled before the row's name, the one the document is on in
+bold. Two things are the page's own: a parent that is not loaded -- an
+older page -- is waited for to the foot of the list, so the lane goes on
+below; and the rows left out ("Records" not ticked) are passed through, the
+graph joining a row to its nearest ancestor listed. The cell is drawn the
+height of its row in percent, so the joins are straight where the
+desktop's are curves. A row of another branch that is that branch's head
+is named by its label and not again beside it.
+
+![the rows as a graph: main, for-web and try, each head named](images/transaction-log/16-log-browser-graph.png)
+
+**A value said in a line.** A shape's value as the log holds it is the
+start of its geometry's file, which says nothing to a reader, on the page
+and on the desktop alike. `App::ValueSummary` (`App/ValueSummary.h`) is a
+value's line and its numbers, said by the module whose value it is:
+`registerValueSummary()` takes a way to say it, and `summariseValue()` asks
+each in turn. Part registers one for a shape (`ShapeDiff::summary`): its
+kind, how many solids, shells, faces, edges and vertices, its volume -- or
+area, or length, by the most it has -- and the size of its bounding box, as
+"Compound: 1 solid, 1 shell, 7 faces, 15 edges, 10 vertices; volume
+1398.94 mm^3; 10 x 10 x 16 mm" -- a cut's shape is a compound holding its
+solid, and says so.
+
+- `log.value` answers `summary` and `facts` where there is one; the page
+  shows the line, with the log's text under "as the log holds it" to open.
+  The Kept list's value the same.
+- The desktop's value pane puts the line under the ref, above the text.
+
+![a shape's value said in a line](images/transaction-log/16-log-browser-summary.png)
+
+**Tests.** `web/src/widgets/gate.ts` (281, +9): the graph of a fork and a
+merge -- two lanes, the merge's lane, the fork converging, the first row
+ending its lane, the heads; a row left out; a record hollow; a parent not
+loaded; the colours. `tests/gui/serve-log.py` (27, +2): the cut's shape
+says it is a compound of one solid of 7 faces, its volume and height; a length says
+nothing more. `tests/gui/serve-log-browser.py` (15, +2): every row a node
+on the one lane, the branch named at its head; the shape's value said in a
+line. The browser drives read a row's name by its cell's class now, the
+graph's column being first.
+
+### 32.36 A file larger than one message, sent in pieces (2026-10-15)
+
+**Asked** ("continue"): item 8 of the same list, the last -- a file larger
+than one message of the socket carries. The server reads messages of 64 MB
+at most and a file travels as base64, so one message took 46 MB, which was
+also the most `UploadLimitMB` could be set to (sec 30.23: "Sending in
+pieces would lift that and is not built").
+
+**Three ops, and the two that take a file name the pieces.** All three
+mutating, as the ops they feed are: what may not be sent whole may not be
+sent in pieces.
+
+- `upload.begin {size, for}` -- the size first, so a file the host will not
+  take is refused before a byte travels: `TooLarge` past the upload limit,
+  and with `for: "requests.send"` also `TooMany` past what may wait (sec
+  30.29). The answer is the upload's number and the size of a piece, 4 MB.
+- `upload.piece {upload, at, data}` -- the next bytes, in order: a piece
+  that does not start where the last ended is refused, not placed, and one
+  that would run past the size given is `TooLarge`. The answer is how much
+  has come.
+- `upload.cancel {upload}` -- let go of it now.
+- `requests.send` and `widgets.upload` take `upload` in place of `data`:
+  `SceneRequests::decode()` hands over what the pieces brought, all of it,
+  and lets the upload go. Named before all of it has come is `BadRequest`;
+  the limit is read again there, since it may have been lowered meanwhile.
+
+**Found on the way.** The check made before decoding -- that the base64
+is not longer than the bytes allowed -- counted its last four characters as
+three bytes when they may stand for one or two, the rest padding: a file of
+exactly the limit whose length is not a multiple of three was refused as
+too large. Whole, that was a file at the limit to the byte and nobody met
+it; in pieces every last piece is exactly what is left, and the 60 MB send
+failed on it. The check allows the two.
+
+**Whose it is.** An upload is held for the connection that began it, and
+its number is no handle for any other: a piece or a send naming another
+connection's upload is `UnknownUpload`, as one that never was. One at a
+time per connection -- a new `upload.begin` replaces what the last left
+half sent -- and four at a time in all (`Busy` past that). One no piece has
+come for in two minutes is let go: a connection that leaves in the middle
+says nothing. The bytes are held in memory until taken, so the ceiling no
+setting passes is now 1 GB, where it was one message; the control in the
+sharing dialogs goes to 1024, its tip saying a large file goes in pieces
+and that a copy to merge must also fit in what may wait.
+
+**The page.** `sendFile()` (`web/src/control.ts`) sends a file of 4 MB or
+less whole, as before -- one round trip -- and a larger one in pieces:
+begin, the pieces one after the other, then the op naming the upload; it
+cancels what it left half sent when anything fails. Both callers use it:
+"Send my copy to merge..." and a mirrored panel's file chooser. The menu's
+send says how far it has got in a line at the foot of the page ("Sending
+large.FCStd: 24.0 of 60.0 MB") while it goes.
+
+**Tests.** `scripts/transaction-log-request-check.py` (rq, 49, +18): a size past
+the limit and past what may wait refused before a byte goes; a view-only
+connection may not begin; a piece out of order refused and nothing placed;
+another connection's upload unknown to it, for a piece and for the send;
+the send named before all has come refused; 60 MB in fifteen pieces taken
+as a request, its bytes the bytes sent, its number let go after; cancelled
+and replaced uploads hold nothing; the panel's upload in three pieces,
+written whole, and under the same limit. `scripts/share-panel-check.py`:
+the control's top is 1024. `tests/gui/serve-request-browser.py` (new, 7, ctest
+`GuiServeRequestBrowser`):
+Chrome sends 60 MB through the menu -- the page says how far it has got,
+more than once, and ends at the whole; the host has it waiting under the
+page's name, its bytes the file's, and nothing of the pieces held after.
+`scripts/request-drive.js` reads the progress line.
+
+### 32.37 The pieces on disk, and taken up again after a drop (2026-10-16)
+
+**Asked** ("do the small follow ups on upload first"): the two 32.36 left
+-- the pieces were held in memory until the file was taken, up to the
+ceiling for each of four uploads; and a connection that dropped in the
+middle began again from nothing.
+
+**On disk as they come.** `upload.begin` makes a file of the host's,
+`<temp>/BrowserUploads.pieces/<upload>.part`, and each piece is appended to
+it; what an upload holds in memory is one piece while it is decoded. The
+op that takes the file is handed the path (`SceneRequests::takeUpload()`,
+beside `decode()` for a file sent whole):
+
+- `widgets.upload` moves it into place, a rename within the temp
+  directory;
+- `requests.send` copies it into the log's store with
+  `Document::keepSentFileAt()`, which `insertFile()`s it -- hashed as it is
+  copied -- where `keepSentFile()` adopts bytes; the row is the same; a
+  document with no log moves it into the requests' directory.
+
+An upload let go -- cancelled, replaced, idle, refused -- takes its file
+with it, and a process that ended in the middle of one leaves files that
+the first upload of the next clears.
+
+**Taken up again.** `upload.begin` answers a `resume` token too, 128 bits
+from the system's generator, said only to the connection that began it.
+`upload.begin {resume}` on another connection -- the page's socket dropped
+and came back -- finds the upload whose token it is, when the connection is
+the same someone as the roster knows them, binds it to the new connection
+and answers where it stood: `received` and `size`. The connection it left
+knows it no more. A token that is no upload's is `UnknownUpload`, as is one
+from someone else; a connection that may only look may not ask. What the
+host keeps meanwhile is what it kept: two minutes after the last piece.
+
+The page (`sendFile()`): a piece or the closing op that fails because the
+connection went -- `Offline` or `Timeout` -- is waited out, asking again
+with the token every second for up to 90 s, and the pieces go on from what
+the host says it has; a piece sent before the drop that the host had
+written does not go again. The line at the foot of the page says "waiting
+for the connection..." meanwhile. And `control.ts` rejects every op still
+waiting when the socket drops, as `Offline`: its answer was the dropped
+connection's and will not come, where before each waited out its timeout.
+
+**Tests.** `scripts/transaction-log-request-check.py` (rq, 57, +8): the pieces
+in a file as they come, the size of what came; a token that is not the
+upload's, and a view-only connection, take nothing up; taken up on another
+connection where it stood, the one it left refused; the rest sent from
+there and taken whole, the file gone, its bytes the bytes sent; one
+cancelled takes its file with it. `tests/gui/serve-request-browser.py`
+(9, +2): the page reaches the host through a TCP relay of the test's, which
+cuts every connection once a third of the file has come -- a network that
+dropped, which the viewer reconnects after, where a kick would tell it not
+to; the page says it waits, goes on, and what it sent through the relay is
+the file once and not much more. Measured, not assumed: the socket deflates
+its messages, so 60 MB as base64 crossed as 60.3 MB -- 1.01 a byte up to the
+cut, at 20 MB, and the same after it, where beginning again would have sent
+a third more.
 
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
@@ -19148,8 +20837,8 @@ legacy renderer and the Linux title bar -- is in `docs/Testing.md`.
 
 - **A sketch's automatic colours were saved.** Ruled and built: 33.15.
 - **A colour set on the object ends no mapping.** The rule that a
-  colour picked ends a binder's mapping is the view provider's;
-  `obj.ShapeColor = ...` leaves the flags. Not looked into further.
+  colour picked ends a binder's mapping was the view provider's;
+  `obj.ShapeColor = ...` left the flags. Settled: 33.16.
 - **A binder of a file from before the looks were the object's.** A
   file made to look like one lost the binder's flag and colour at
   open; it was not a faithful old file, and no real one is on this
@@ -19212,8 +20901,9 @@ edges, and nothing is written then either.
   from the object while the option is on, and what the sketch showed
   kept as the object's when it is turned off.
 - **While on**, the colour properties are hidden from the property
-  editor, as before: a write to one changes the object and nothing on
-  the screen.
+  editor, as before. A write to one all the same -- a script, the
+  object's names under Data -- changed the object and nothing on the
+  screen; it turns the option off now (33.16).
 - `getDrawnColors()` on a Part view provider (Python too) says what the
   nodes hold, by kind, with a sketch's faces: the one way to ask what
   is on the screen, where the properties no longer say.
@@ -19236,3 +20926,84 @@ again once it is off; reopened, and the files from before AutoColor,
 as before. `sketch-auto-face-color.py` (16) the same for the faces;
 `sketch-color-map-automatic.py` reads the drawn colour for its
 premise.
+
+### 33.16 A colour picked: a binder's mapping, a sketch's automatic colours
+
+Two things a colour set by hand is to do, each of which it did by one
+of its two names only, or not at all (user, 2026-10-13: "fix binder
+color setting, also sketch manual color setting shall turn off auto
+color").
+
+**What a colour picked is.** A look's names are twice there: the view
+provider's (`ViewObject.ShapeColor`), and the object's own since the
+looks are the object's (`obj.ShapeColor`, docs/ShapeAppearanceDesign.md
+sec 14.6.1) -- what the property editor shows under Data, and what a
+script with no view writes. Either is written by somebody, and either
+is also given a value by the program: read from a file, put back by an
+undo, and each time the object's looks change the names take what the
+object has (`Feature::mirrorLooks()`, the view provider's
+`mirrorAppearance()`). Only the first is a colour picked.
+`Part::Feature::isLookWrite(prop)` says so of a change of the object's
+name while it is told; the view provider's test is the one the binder
+had (not restoring, not in a transaction replayed, not mirroring).
+
+**A binder.** A `SubShapeBinder` shows its sources' colours
+(`MapFaceColor` and the rest), and a colour picked for it ends the
+mapping of that colour, or it would not be seen.
+
+- *By the object's name it ended nothing* (33.14, not settled there).
+  `Part::SubShapeBinder::onChanged` ends it now: `ShapeColor` ends
+  `MapFaceColor`, `LineColor` `MapLineColor`, `PointColor`
+  `MapPointColor`, `Transparency` `MapTransparency`, each its own and
+  no other. In the transaction of the write: undone, the colour and
+  the mapping are both as they were.
+- *By the view provider's name the mapping ended and the colour was
+  lost.* The flag was switched off first and the colour handed to the
+  object after. A flag changed makes the object's looks again, the
+  names take what the object has then -- the colour it had -- and that
+  was what went to the object as the colour picked. The binder kept
+  mapping nothing and stayed the colour it was; the check of 33.14 read
+  the flags and not the colour. The colour is taken first now, on both
+  sides, and the mapping ended after it.
+
+Nothing but a binder does this: a box given a colour keeps its flags.
+
+**A sketch.** Under `AutoColor` a sketch is drawn in the theme's
+colours and its own are not looked at (33.15), so a colour set for it
+was nowhere seen: by the view provider's name only from a script, the
+properties being hidden while the option is on; by the object's name
+from the property editor too, where a sketch's `LineColor`,
+`PointColor`, `ShapeColor` and `Transparency` stand under Data like any
+object's. A colour picked turns `AutoColor` off now, by either name,
+and what is drawn is the sketch's own from then on: the colour set, and
+its own for the rest -- white edges and points where nobody set them.
+
+- The view provider's `LineColor`, `PointColor`, `ShapeColor`,
+  `Transparency`, `ShapeAppearance`, `LineMaterial` and
+  `PointMaterial`, in `ViewProviderSketch::onChanged`.
+- The object's names, in `ViewProviderSketch::updateData`, asked of
+  `Part::Feature::isWritingLook(prop)`. That is true only while the
+  change of the name is told: a view provider is also handed every
+  property of its object when it is first shown
+  (`ViewProviderDocumentObject::updateView()`), which is no change, and
+  the first cut took that for a write and turned the option off in
+  every new sketch.
+- Nothing is written to a colour by this (33.15 stands): `AutoColor`
+  alone changes, a property of the view, in the transaction of the
+  write -- one undo puts back the colour and the option.
+- Turned on again by hand, the theme's are drawn and the sketch keeps
+  the colour it was given.
+
+**Tests.** `parttests.ElementAppearanceTest` (+1, headless): a binder's
+four mappings ended one by one by the object's names, the colour the
+binder's, undone and redone, and a box keeping its flag.
+`tests/gui/binder-map-color-restore.py` (9, were 5): the mapping ended
+by the object's name after the eager open and by the view provider's
+after the progressive one, the binder the colour picked by both names
+and as the object draws its faces, the other mappings as they were.
+`sketch-auto-color.py` (45, were 33): a colour set under AutoColor by
+the view provider's name and by the object's turns it off and is
+drawn, the rest in the sketch's own; undone, the sketch is automatic
+again; a setting changed is nothing to it; turned on by hand it keeps
+its colour. `sketch-auto-face-color.py` (19, were 16) the same for the
+face colour and the transparency.

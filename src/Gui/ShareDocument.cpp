@@ -75,6 +75,7 @@
 #include "MainWindow.h"
 #include "NaviCube.h"
 #include "Renderer/SceneServer.h"
+#include "SceneLog.h"
 #include "SceneRequests.h"
 #include "SceneServeSource.h"
 #include "View3DInventor.h"
@@ -682,8 +683,9 @@ QSpinBox *uploadLimitSpin(QWidget *parent)
         "a file a task panel asks for, or their copy of the document, sent "
         "to be merged. A copy that was sent is kept unread until you bring "
         "it in from the transaction log panel.\n\n"
-        "%1 MB is the most one message carries. A larger file is handed "
-        "over some other way and brought in with \"Merge from file...\".")
+        "A file larger than one message carries is sent in pieces; %1 MB "
+        "is the most any setting allows. A copy sent to be merged must also "
+        "fit in what may wait.")
         .arg(most);
     if (!SceneRequests::uploadLimitIsPreference()) {
         spin->setEnabled(false);
@@ -856,6 +858,24 @@ public:
         tree->header()->setStretchLastSection(false);
         tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
         layout->addWidget(tree, 1);
+
+        // The branches served in documents of their own (docs/
+        // TransactionLog.md sec 32.23, 32.31): which document each is, for
+        // a client joins it by that name, and who is in it. Such a document
+        // has no window; it is given one, or closed, from here.
+        branchTree = new QTreeWidget(this);
+        branchTree->setObjectName(QStringLiteral("shareBranches"));
+        branchTree->setColumnCount(4);
+        branchTree->setHeaderLabels({tr("Branch served"), tr("Document"), tr("Clients in it"),
+                                     QString()});
+        branchTree->setToolTip(tr(
+            "Branches served in documents of their own, with no window: a "
+            "client joins one by the document's name (?doc=)."));
+        branchTree->setRootIsDecorated(false);
+        branchTree->setSelectionMode(QAbstractItemView::NoSelection);
+        branchTree->setMaximumHeight(110);
+        branchTree->hide();
+        layout->addWidget(branchTree);
 
         // Invite by identity: the one-field shape of a grant, for the
         // common case behind a sign-in front door — an email, an
@@ -1059,11 +1079,77 @@ public:
             inviteMode->setCurrentIndex(0);
     }
 
+    /// The branches served, rebuilt where which or who is in them moved
+    void refreshBranches(const std::vector<Render::SceneClientInfo> &clients)
+    {
+        std::vector<std::string> sig;
+        std::vector<int> inIt;
+        std::vector<bool> windowed;
+        const auto served = servedLogBranches();
+        for (const auto &b : served) {
+            int in = 0;
+            for (const auto &c : clients)
+                in += c.doc == b.document ? 1 : 0;
+            App::Document *adoc = App::GetApplication().getDocument(b.document.c_str());
+            Gui::Document *gdoc = adoc ? Application::Instance->getDocument(adoc) : nullptr;
+            inIt.push_back(in);
+            windowed.push_back(gdoc && !gdoc->getMDIViews().empty());
+            sig.push_back(b.document + '\n' + b.branch + '\n' + std::to_string(in)
+                          + (windowed.back() ? "+" : ""));
+        }
+        if (sig == lastBranches)
+            return;
+        lastBranches = sig;
+        branchTree->clear();
+        branchTree->setVisible(!served.empty());
+        for (size_t i = 0; i < served.size(); ++i) {
+            const std::string name = served[i].document;
+            auto *item = new QTreeWidgetItem(branchTree);
+            item->setText(0, QString::fromStdString(served[i].branch));
+            item->setText(1, QString::fromStdString(name));
+            const bool shown = windowed[i];
+            item->setText(2, QString::number(inIt[i]));
+            auto *actions = new QWidget(branchTree);
+            auto *row = new QHBoxLayout(actions);
+            row->setContentsMargins(0, 0, 0, 0);
+            auto *show = new QPushButton(tr("Show"), actions);
+            show->setObjectName(QStringLiteral("shareBranchShow"));
+            show->setEnabled(!shown);
+            show->setToolTip(shown ? tr("It has a window") : tr("Give it a window"));
+            connect(show, &QPushButton::clicked, this, [name]() {
+                App::Document *adoc = App::GetApplication().getDocument(name.c_str());
+                Gui::Document *gdoc = adoc ? Application::Instance->getDocument(adoc) : nullptr;
+                if (gdoc && gdoc->getMDIViews().empty())
+                    gdoc->createView(View3DInventor::getClassTypeId());
+            });
+            auto *close = new QPushButton(tr("Close"), actions);
+            close->setObjectName(QStringLiteral("shareBranchClose"));
+            close->setToolTip(tr("Close the document: whoever is in it is left with none. "
+                                 "The branch stays in the log."));
+            connect(close, &QPushButton::clicked, this, [this, name]() {
+                if (QMessageBox::question(this, tr("Close a served branch"),
+                                          tr("Close %1? Whoever is in it is left with no "
+                                             "document; the branch stays in the log.")
+                                              .arg(QString::fromStdString(name)))
+                        != QMessageBox::Yes)
+                    return;
+                if (App::GetApplication().getDocument(name.c_str()))
+                    App::GetApplication().closeDocument(name.c_str());
+            });
+            row->addWidget(show);
+            row->addWidget(close);
+            branchTree->setItemWidget(item, 3, actions);
+        }
+        for (int c = 0; c < 3; ++c)
+            branchTree->resizeColumnToContents(c);
+    }
+
     void refresh(const QString &url,
                  const std::vector<Render::SceneClientInfo> &clients,
                  const std::vector<ShareGrant> &grants)
     {
         urlEdit->setText(url);
+        refreshBranches(clients);
         // The limit as it holds now: a script or another dialog may have
         // moved the preference.
         const int limit = int(SceneRequests::uploadLimit() / (1024 * 1024));
@@ -1773,6 +1859,8 @@ private:
     QString shareToken;
     QTreeWidget *tree = nullptr;
     std::vector<std::pair<uint64_t, bool>> lastSig;
+    QTreeWidget *branchTree = nullptr;
+    std::vector<std::string> lastBranches;
 };
 
 }  // namespace

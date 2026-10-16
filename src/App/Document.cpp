@@ -6035,6 +6035,47 @@ std::set<int64_t> chainPoints(TransactionStore& store, int64_t head)
     return points;
 }
 
+/** The version the state at row `seq` is reached from by the rows: the
+ * newest on the row's chain; with none there, the one whose chain meets it
+ * latest (sec 31.15). False where none does.
+ */
+bool versionReaching(TransactionStore& store, int64_t seq, LogVersion& anchor)
+{
+    const std::set<int64_t> onChain = chainPoints(store, seq);
+    bool haveAnchor = false;
+    for (const auto& v : store.versions()) {
+        if (!onChain.count(v.seq))
+            continue;
+        if (!haveAnchor || v.seq > anchor.seq || (v.seq == anchor.seq && v.num > anchor.num)) {
+            anchor = v;
+            haveAnchor = true;
+        }
+    }
+    if (!haveAnchor) {
+        // No version behind the row (sec 31.15): the file as found is not
+        // kept for good, and a row an earlier import replayed has only
+        // that behind it. The rows lead there from any version whose chain
+        // meets the row's -- back to where they meet, then forward -- so:
+        // the one that meets it latest, and of those the oldest.
+        int64_t best = -1;
+        for (const auto& v : store.versions()) {
+            int64_t meet = -1;
+            for (const auto& t : store.chain(v.seq)) {
+                if (onChain.count(t.seq))
+                    meet = std::max(meet, t.seq);
+            }
+            if (meet < 0)
+                continue;
+            if (!haveAnchor || meet > best || (meet == best && v.seq < anchor.seq)) {
+                anchor = v;
+                best = meet;
+                haveAnchor = true;
+            }
+        }
+    }
+    return haveAnchor;
+}
+
 } // namespace
 
 bool Document::recoverFromLog(const std::string& oldDir)
@@ -6539,6 +6580,58 @@ Document* Document::_openReadVersion(int64_t num, const std::string& stem, bool 
     return version;
 }
 
+Document* Document::openRowState(int64_t seq)
+{
+    // Sec 32.33: what the log let go of a state, computed again where it was
+    // -- read as a merge's result is (sec 32.17), into a document of its own
+    // joined to this file's history, so a value it shares with the document
+    // is the one shape.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document has no transaction log");
+    log->resolvePending();
+    auto& store = log->store();
+    bool there = false;
+    for (const auto& t : store.transactions(seq, 1))
+        there = there || t.seq == seq;
+    if (seq <= 0 || !there)
+        THROWM(Base::RuntimeError, "no row " + std::to_string(seq) + " in the log");
+    LogVersion anchor;
+    if (!versionReaching(store, seq, anchor))
+        THROWM(Base::RuntimeError, "no version reaches row " + std::to_string(seq));
+    // Named as no other was: what shows its values knows them by it
+    static int made = 0;
+    Document* state = _openReadVersion(
+        anchor.num, "_row" + std::to_string(seq) + "_" + std::to_string(++made), false);
+    const std::string name = state->getName();
+    try {
+        std::set<long> letGo;
+        if (anchor.seq != seq) {
+            // A value the log does not have touches its object, as for an
+            // import's replay (sec 31.19), and is not refused
+            Base::FlagToggler<> replaying(state->d->replaying);
+            if (!state->_moveAlongLog(anchor.seq, seq, false, log, &letGo))
+                THROWM(Base::RuntimeError, "the rows from version " + std::to_string(anchor.num)
+                                               + " to row " + std::to_string(seq)
+                                               + " could not be folded");
+        }
+        // The version read has its values whole; of the rows' values, what
+        // was let go. Only those: one touched at the row is as the row left it.
+        std::vector<DocumentObject*> again;
+        for (long cid : letGo) {
+            if (auto obj = state->getObjectByID(cid))
+                again.push_back(obj);
+        }
+        if (!again.empty())
+            state->recompute(again);
+    }
+    catch (...) {
+        GetApplication().closeDocument(name.c_str());
+        throw;
+    }
+    return state;
+}
+
 void Document::_readVersion(int64_t num, const std::function<void(Document&)>& fn)
 {
     auto& app = GetApplication();
@@ -6958,7 +7051,14 @@ Document* Document::openFileBranch(const std::shared_ptr<FileHistory>& history,
     }
     if (!haveAnchor)
         THROWM(Base::RuntimeError, "branch '" + branch + "' has no version to open");
-    Document* doc = openFileVersion(history, anchor.num, createView, nullptr, false);
+    // The editable instance of that version, where one is open, is reused
+    // only while it is on no branch of its own: one that is another
+    // branch's tip is that branch's, and is not switched from under it
+    // (sec 32.31) -- a second instance is opened instead.
+    Document* doc = log.documentAt(anchor, false);
+    TransactionLog* open = doc ? doc->getTransactionLog() : nullptr;
+    if (!doc || (open && !open->detached()))
+        doc = _openVersionDocument(history, anchor, createView, nullptr, false);
     TransactionLog* dlog = doc->getTransactionLog();
     if (dlog && dlog->branch() != b.id)
         doc->switchBranch(branch);
@@ -7422,7 +7522,8 @@ bool openRecordJumps(TransactionStore& store, const std::vector<LogVersion>& ver
 
 } // namespace
 
-bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
+bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views,
+                             TransactionLog* through, std::set<long>* letGo)
 {
     // docs/TransactionLog.md sec 27.25 item 1, 27.34. From the state at row
     // `fromHead` to the state at `toSeq` by the rows between them: those on
@@ -7436,7 +7537,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
     // does not have), or a row made the document other than its ops say --
     // an open's record of a file that is not its history's tip, which a
     // save to the log only leaves (sec 27.28).
-    TransactionLog* log = getTransactionLog();
+    TransactionLog* log = through ? through : getTransactionLog();
     if (!log || fromHead < 0 || toSeq < 0)
         return false;
     // The newest rows' values may still be pending (as for a cold undo).
@@ -7642,6 +7743,8 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
         if (auto obj = getObjectByID(cid))
             obj->touch();
     }
+    if (letGo)
+        letGo->insert(fold.touch.begin(), fold.touch.end());
     // 5. What is gone at the end.
     for (const auto& kv : fold.objects) {
         if (kv.second.exists)
@@ -8110,6 +8213,186 @@ Shared sharedWith(TransactionStore& store, int64_t except)
 
 } // namespace
 
+namespace {
+
+/// What is said of a file's branches is every document's of the file to
+/// hear (sec 32.25): each has the one log
+void fileBranchesChanged(TransactionLog* log)
+{
+    for (Document* doc : log->documents())
+        doc->signalBranchesChanged(*doc);
+}
+
+} // namespace
+
+void Document::setBranchAccess(const std::string& kind, const std::string& name,
+                               const std::string& branchName, bool write, int64_t fromVersion)
+{
+    // docs/TransactionLog.md sec 32.25
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    auto& store = log->store();
+    LogBranch branch;
+    if (!store.findBranch(branchName, branch))
+        THROWM(Base::ValueError, "no branch '" + branchName + "'");
+    Actor::Kind known;
+    if (name.empty() || (kind != kLogGroupKind && !Actor::kindFromName(kind, known)))
+        THROWM(Base::ValueError, "no such user: a kind the log has, and a name");
+    LogAccess access;
+    access.kind = kind;
+    access.name = name;
+    access.branch = branch.id;
+    access.write = write;
+    if (write && fromVersion > 0) {
+        // The point is a version of the branch itself: one of another
+        // would let the user go to a state that is not this branch's
+        LogVersion version;
+        if (!store.getVersion(fromVersion, version) || version.branch != branch.id)
+            THROWM(Base::ValueError, "no such version of branch '" + branchName + "'");
+        access.fromVersion = version.num;
+        access.fromSeq = version.seq;
+    }
+    store.setAccess(access);
+    fileBranchesChanged(log);
+}
+
+bool Document::clearBranchAccess(const std::string& kind, const std::string& name,
+                                 const std::string& branchName)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    LogBranch branch;
+    if (!log->store().findBranch(branchName, branch))
+        THROWM(Base::ValueError, "no branch '" + branchName + "'");
+    if (!log->store().clearAccess(kind, name, branch.id))
+        return false;
+    fileBranchesChanged(log);
+    return true;
+}
+
+void Document::addUserGroup(const std::string& group)
+{
+    // docs/TransactionLog.md sec 32.32
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    if (group.empty())
+        THROWM(Base::ValueError, "a group needs a name");
+    log->store().user(kLogGroupKind, group);
+    fileBranchesChanged(log);
+}
+
+void Document::setUserGroup(const std::string& kind, const std::string& name,
+                            const std::string& group)
+{
+    // docs/TransactionLog.md sec 32.32: a group is a user, and a user is in
+    // one by naming it its parent
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    Actor::Kind known;
+    if (name.empty() || (kind != kLogGroupKind && !Actor::kindFromName(kind, known)))
+        THROWM(Base::ValueError, "no such user: a kind the log has, and a name");
+    auto& store = log->store();
+    const int64_t user = store.user(kind, name);
+    int64_t parent = 0;
+    if (!group.empty()) {
+        parent = store.user(kLogGroupKind, group);
+        // Not in itself, however far up
+        std::map<int64_t, int64_t> up;
+        for (const auto& u : store.users())
+            up[u.id] = u.parent;
+        for (int64_t at = parent, guard = 0; at && guard < 1000; at = up[at], ++guard) {
+            if (at == user)
+                THROWM(Base::ValueError, "group '" + group + "' is in '" + name + "' already");
+        }
+    }
+    store.setUserParent(user, parent);
+    fileBranchesChanged(log);
+}
+
+std::vector<std::pair<std::string, std::string>>
+Document::userGroups(const std::string& kind, const std::string& name)
+{
+    std::vector<std::pair<std::string, std::string>> out {{kind, name}};
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return out;
+    std::map<int64_t, LogUser> byId;
+    int64_t at = 0;
+    for (const auto& u : log->store().users()) {
+        byId[u.id] = u;
+        if (u.kind == kind && u.name == name)
+            at = u.parent;
+    }
+    std::set<int64_t> seen;
+    for (; at && byId.count(at) && seen.insert(at).second; at = byId[at].parent)
+        out.emplace_back(byId[at].kind, byId[at].name);
+    return out;
+}
+
+int64_t Document::requestMerge(const std::string& source, const std::string& target,
+                               const std::string& note)
+{
+    // docs/TransactionLog.md sec 32.25
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document keeps no transaction log");
+    auto& store = log->store();
+    LogBranch from;
+    LogBranch into;
+    if (!store.findBranch(source, from))
+        THROWM(Base::ValueError, "no branch '" + source + "'");
+    if (!store.findBranch(target, into))
+        THROWM(Base::ValueError, "no branch '" + target + "'");
+    if (from.id == into.id)
+        THROWM(Base::ValueError, "a branch is not merged into itself");
+    for (const LogMergeRequest& r : store.mergeRequests()) {
+        if (r.state == "open" && r.source == from.id && r.target == into.id)
+            THROWM(Base::ValueError, "that merge is asked for already: request "
+                                         + std::to_string(r.id));
+    }
+    const auto who = log->userOf(ActorScope::current().get());
+    LogMergeRequest request;
+    request.source = from.id;
+    request.target = into.id;
+    request.kind = who.first;
+    request.name = who.second;
+    request.note = note;
+    request.created = std::chrono::duration<double>(
+                          std::chrono::system_clock::now().time_since_epoch()).count();
+    store.addMergeRequest(request);
+    fileBranchesChanged(log);
+    return request.id;
+}
+
+bool Document::closeMergeRequest(int64_t id, const std::string& state, int64_t result)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    if (state != "merged" && state != "rejected" && state != "withdrawn")
+        THROWM(Base::ValueError, "a request ends merged, rejected or withdrawn");
+    auto& store = log->store();
+    for (LogMergeRequest r : store.mergeRequests()) {
+        if (r.id != id || r.state != "open")
+            continue;
+        const auto who = log->userOf(ActorScope::current().get());
+        r.state = state;
+        r.closed = std::chrono::duration<double>(
+                       std::chrono::system_clock::now().time_since_epoch()).count();
+        r.closedKind = who.first;
+        r.closedName = who.second;
+        r.result = result;
+        store.updateMergeRequest(r);
+        fileBranchesChanged(log);
+        return true;
+    }
+    return false;
+}
+
 bool Document::renameBranch(const std::string& name, const std::string& newName)
 {
     TransactionLog* log = getTransactionLog();
@@ -8284,6 +8567,13 @@ size_t Document::deleteBranch(const std::string& name)
         THROWM(Base::ValueError, "no branch '" + name + "'");
     if (branch.id == log->branch())
         THROWM(Base::ValueError, "branch '" + name + "' is the one the document is on");
+    // Nor one another document of the file is on (sec 32.25): its rows
+    // would go from under that document
+    if (Document* holder = log->holderOf(branch.id)) {
+        if (holder != this)
+            THROWM(Base::ValueError, "branch '" + name + "' is the one document "
+                                         + holder->getName() + " is on");
+    }
 
     const Shared shared = sharedWith(store, branch.id);
     // What another branch merged of it stays (sec 31.19, the user's: "keep
@@ -10547,13 +10837,15 @@ std::string Document::logValueAt(int64_t seq, long cid, const std::string& prop)
 }
 
 std::vector<std::string> Document::keepLogValue(long cid, const std::string& prop, int64_t seq,
-                                                bool keep)
+                                                bool keep, const std::string& keeperKind,
+                                                const std::string& keeperName)
 {
     std::vector<std::string> out;
     TransactionLog* log = getTransactionLog();
     if (!log)
         return out;
     auto& store = log->store();
+    bool moved = false;
     if (seq <= 0)
         seq = log->head();
     const std::vector<std::string> props = prop.empty() ? store.derivedPropsOf(cid)
@@ -10568,13 +10860,21 @@ std::vector<std::string> Document::keepLogValue(long cid, const std::string& pro
             kept.cid = cid;
             kept.prop = name;
             kept.seq = seq;
-            store.keepValue(kept);
+            kept.kind = keeperKind;
+            kept.name = keeperName;
+            moved = store.keepValue(kept) || moved;
         }
         else if (!store.releaseValue(ref)) {
             continue;
         }
+        else {
+            moved = true;
+        }
         out.push_back(ref);
     }
+    // Kept again as it was is no change: the file is not marked modified
+    if (moved)
+        signalLogKeptChanged(*this);
     return out;
 }
 
@@ -10590,6 +10890,8 @@ std::vector<Document::KeptValue> Document::keptLogValues()
         v.cid = kept.cid;
         v.prop = kept.prop;
         v.seq = kept.seq;
+        v.kind = kept.kind;
+        v.name = kept.name;
         if (auto obj = getObjectByID(kept.cid)) {
             if (obj->getNameInDocument())
                 v.object = obj->getNameInDocument();
@@ -10602,13 +10904,22 @@ std::vector<Document::KeptValue> Document::keptLogValues()
 bool Document::releaseLogValue(const std::string& ref)
 {
     TransactionLog* log = getTransactionLog();
-    return log && log->store().releaseValue(ref);
+    if (!log || !log->store().releaseValue(ref))
+        return false;
+    signalLogKeptChanged(*this);
+    return true;
 }
 
 void Document::keepLogValuesOf(long cid, bool keep)
 {
-    if (TransactionLog* log = getTransactionLog())
-        log->store().keepObject(cid, keep);
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return;
+    const auto before = log->store().keptObjects();
+    const bool was = std::find(before.begin(), before.end(), cid) != before.end();
+    log->store().keepObject(cid, keep);
+    if (was != keep)
+        signalLogKeptChanged(*this);
 }
 
 std::vector<long> Document::keptLogObjects()
@@ -10650,7 +10961,18 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
                                             const std::map<std::string, std::string>& picks,
                                             const std::string& fallback, int64_t version)
 {
-    return _merge(branch, picks, fallback, version, nullptr);
+    MergeResult result = _merge(branch, picks, fallback, version, nullptr);
+    // The requests that asked for this merge are answered by it (sec
+    // 32.25), by whichever way it was done
+    TransactionLog* log = getTransactionLog();
+    LogBranch source;
+    if (log && result.unresolved.empty() && log->store().findBranch(branch, source)) {
+        for (const LogMergeRequest& r : log->store().mergeRequests()) {
+            if (r.state == "open" && r.source == source.id && r.target == log->branch())
+                closeMergeRequest(r.id, "merged", result.seq);
+        }
+    }
+    return result;
 }
 
 Document::UndoneMerge Document::undoneMerge()
@@ -10756,14 +11078,41 @@ bool tipVersion(TransactionStore& store, int64_t head, LogVersion& tip)
     return true;
 }
 
+/// A result's document a preview made (sec 32.34): the document it is of,
+/// the version it was read from, the step that holds what was written to
+/// it, and each object's touched state as it was read -- what taking that
+/// step back puts back.
+struct PreviewMade
+{
+    std::string of;
+    int64_t tip {0};
+    int step {0};
+    std::map<long, TouchedState> touched;
+};
+
+/// The results made and still open, by their document's name. A name is
+/// never given twice, so one closed is only forgotten.
+std::map<std::string, PreviewMade>& previewsMade()
+{
+    static std::map<std::string, PreviewMade> made;
+    for (auto it = made.begin(); it != made.end();) {
+        if (GetApplication().getDocument(it->first.c_str()))
+            ++it;
+        else
+            it = made.erase(it);
+    }
+    return made;
+}
+
 } // namespace
 
 Document::MergeOutcome Document::previewMergeResult(const std::string& branch,
                                                     const std::map<std::string, std::string>& picks,
-                                                    const std::string& fallback, int64_t version)
+                                                    const std::string& fallback, int64_t version,
+                                                    const std::string& again)
 {
     MergeOutcome outcome;
-    MergeResult result = _merge(branch, picks, fallback, version, nullptr, &outcome);
+    MergeResult result = _merge(branch, picks, fallback, version, nullptr, &outcome, again);
     outcome.preview = std::move(result.preview);
     outcome.unresolved = std::move(result.unresolved);
     outcome.failed = std::move(result.failed);
@@ -10772,10 +11121,11 @@ Document::MergeOutcome Document::previewMergeResult(const std::string& branch,
 
 Document::MergeOutcome Document::previewPickResult(const std::vector<int64_t>& rows,
                                                    const std::map<std::string, std::string>& picks,
-                                                   const std::string& fallback)
+                                                   const std::string& fallback,
+                                                   const std::string& again)
 {
     MergeOutcome outcome;
-    MergeResult result = _merge(pickLabel(rows), picks, fallback, 0, &rows, &outcome);
+    MergeResult result = _merge(pickLabel(rows), picks, fallback, 0, &rows, &outcome, again);
     outcome.preview = std::move(result.preview);
     outcome.unresolved = std::move(result.unresolved);
     outcome.failed = std::move(result.failed);
@@ -10785,7 +11135,8 @@ Document::MergeOutcome Document::previewPickResult(const std::vector<int64_t>& r
 Document::MergeResult Document::_merge(const std::string& branch,
                                        const std::map<std::string, std::string>& picks,
                                        const std::string& fallback, int64_t version,
-                                       const std::vector<int64_t>* rows, MergeOutcome* outcome)
+                                       const std::vector<int64_t>* rows, MergeOutcome* outcome,
+                                       const std::string& again)
 {
     OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 28: theirs' changes since the base, less
@@ -11163,9 +11514,44 @@ Document::MergeResult Document::_merge(const std::string& branch,
         LogVersion tip;
         if (!tipVersion(log->store(), log->head(), tip))
             THROWM(Base::RuntimeError, "the document as it is could not be taken as a version");
-        // Named as no other was: what shows its values knows them by it
-        static int made = 0;
-        scratch = _openReadVersion(tip.num, "_merged" + std::to_string(++made), false);
+        // Sec 32.34: a result made before with other sides, of this
+        // document as it is still -- the same version -- has what was
+        // written to it taken back, and is written again. Reading the
+        // document is what that spares.
+        auto& results = previewsMade();
+        Document* back = again.empty() ? nullptr : GetApplication().getDocument(again.c_str());
+        auto known = back ? results.find(again) : results.end();
+        if (known != results.end() && known->second.of == getName()
+                && known->second.tip == tip.num && back->d->activeUndoTransaction
+                && back->d->activeUndoTransaction->getID() == known->second.step) {
+            back->_abortTransaction();
+            for (auto obj : back->getObjects()) {
+                auto was = known->second.touched.find(obj->getID());
+                if (was != known->second.touched.end())
+                    setTouchedState(*obj, was->second);
+            }
+            scratch = back;
+            outcome->reused = true;
+        }
+        else {
+            if (back)
+                GetApplication().closeDocument(again.c_str());
+            // Named as no other was: what shows its values knows them by it
+            static int made = 0;
+            scratch = _openReadVersion(tip.num, "_merged" + std::to_string(++made), false);
+            PreviewMade& read = results[scratch->getName()];
+            read.of = getName();
+            read.tip = tip.num;
+            for (auto obj : scratch->getObjects())
+                read.touched.emplace(obj->getID(), touchedStateOf(*obj));
+        }
+        // What is written to it is one step, held open, to be taken back
+        // when other sides are asked for
+        auto step = new Transaction(0);
+        step->Name = "preview";
+        scratch->d->activeUndoTransaction = step;
+        scratch->mUndoMap[step->getID()] = step;
+        results[scratch->getName()].step = step->getID();
     }
     Document& into = scratch ? *scratch : *this;
     struct Closer
@@ -12073,40 +12459,8 @@ Document* Document::_importReplay(int64_t base, const std::string& stem, LogBran
     LogTransaction at;
     for (const auto& t : store.transactions(base, 1))
         at = t;
-    const std::set<int64_t> onChain = chainPoints(store, base);
     LogVersion anchor;
-    bool haveAnchor = false;
-    for (const auto& v : store.versions()) {
-        if (!onChain.count(v.seq))
-            continue;
-        if (!haveAnchor || v.seq > anchor.seq || (v.seq == anchor.seq && v.num > anchor.num)) {
-            anchor = v;
-            haveAnchor = true;
-        }
-    }
-    if (!haveAnchor) {
-        // No version behind the row (sec 31.15): the file as found is not
-        // kept for good, and a row an earlier import replayed has only
-        // that behind it. The rows lead there from any version whose chain
-        // meets the row's -- back to where they meet, then forward -- so:
-        // the one that meets it latest, and of those the oldest.
-        int64_t best = -1;
-        for (const auto& v : store.versions()) {
-            int64_t meet = -1;
-            for (const auto& t : store.chain(v.seq)) {
-                if (onChain.count(t.seq))
-                    meet = std::max(meet, t.seq);
-            }
-            if (meet < 0)
-                continue;
-            if (!haveAnchor || meet > best || (meet == best && v.seq < anchor.seq)) {
-                anchor = v;
-                best = meet;
-                haveAnchor = true;
-            }
-        }
-    }
-    if (!haveAnchor)
+    if (!versionReaching(store, base, anchor))
         THROWM(Base::RuntimeError, "no version to reach the row both files hold from");
     replay = _openVersionDocument(d->history, anchor, false, this, false);
     scratch = true;
@@ -13416,6 +13770,26 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     return result;
 }
 
+namespace
+{
+
+/// The row of a sent file whose blob the store holds (sec 30.29).
+int64_t keptSentFile(Document& doc, const FileBlobHandle& blob, const std::string& file,
+                     uint64_t size, const std::string& sender, const std::string& senderKind)
+{
+    nlohmann::json j;
+    j["request"] = {{"name", file},
+                    {"size", size},
+                    {"file", blob->hash()},
+                    {"sender", sender},
+                    {"kind", senderKind}};
+    const int64_t seq = doc.getTransactionLog()->keepFile(blob, file, j.dump());
+    doc.signalBranchesChanged(doc);
+    return seq;
+}
+
+}  // namespace
+
 int64_t Document::keepSentFile(const std::string& bytes, const std::string& name,
                                const std::string& sender, const std::string& senderKind)
 {
@@ -13433,16 +13807,31 @@ int64_t Document::keepSentFile(const std::string& bytes, const std::string& name
     FileBlobHandle blob = getFileBlobManager().adoptBytes(bytes, "FCStd");
     if (!blob)
         THROWM(Base::RuntimeError, "the file's store did not take " + file);
-    nlohmann::json j;
-    j["request"] = {{"name", file},
-                    {"size", bytes.size()},
-                    {"file", blob->hash()},
-                    {"sender", sender},
-                    {"kind", senderKind}};
-    const int64_t seq = log->keepFile(blob, file, j.dump());
-    signalBranchesChanged(*this);
-    return seq;
+    return keptSentFile(*this, blob, file, uint64_t(bytes.size()), sender, senderKind);
 }
+
+int64_t Document::keepSentFileAt(const std::string& path, const std::string& name,
+                                 const std::string& sender, const std::string& senderKind)
+{
+    // As keepSentFile(), the bytes never in memory: insertFile() copies the
+    // file into the store, which hashes it as it goes (sec 32.37).
+    checkNotFrozen("keep a sent file");
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        THROWM(Base::RuntimeError, "the document keeps no log to hold a sent file in");
+    Base::FileInfo fi(path);
+    const uint64_t size = fi.exists() ? uint64_t(fi.size()) : 0;
+    if (size == 0)
+        THROWM(Base::ValueError, "an empty file");
+    std::string file = Base::FileInfo(name).fileName();
+    if (file.empty())
+        file = "sent.FCStd";
+    FileBlobHandle blob = getFileBlobManager().insertFile(path.c_str(), "FCStd");
+    if (!blob)
+        THROWM(Base::RuntimeError, "the file's store did not take " + file);
+    return keptSentFile(*this, blob, file, size, sender, senderKind);
+}
+
 
 std::vector<Document::SentFile> Document::sentFiles()
 {

@@ -59,6 +59,7 @@
 #include "SceneContextMenu.h"
 #include "SceneActors.h"
 #include "SceneControl.h"
+#include "SceneLog.h"
 #include "SceneWidgets.h"
 #include "SceneControlP.h"
 #include "SceneServeSource.h"
@@ -761,7 +762,32 @@ QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
 
     const int mode = req.value(QLatin1String("mode")).toInt(0);
     const QString subname = req.value(QLatin1String("subname")).toString();
+    // The change of one row of the log, where the edit is of a change
+    // (ViewProvider::ValueDiff, docs/TransactionLog.md sec 32.21): said to
+    // the view provider, which the edit that starts next spends it on
+    auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(vp);
+    const qint64 row = req.value(QLatin1String("row")).toInteger(0);
+    // A row of a branch the one who asks does not read is none to it
+    // (sec 32.25), as it is to `log.ops`
+    if (row > 0 && mode == ViewProvider::ValueDiff && !logRowListed(doc, row))
+        return errorReply(id, "UnknownRow", QString::number(row));
+    // Or a value the log keeps in the file, against what the object has now
+    // (sec 32.27): one of the kept the asker is listed, of this object
+    const std::string kept = req.value(QLatin1String("kept")).toString().toStdString();
+    int64_t keptRow = 0;
+    if (!kept.empty() && mode == ViewProvider::ValueDiff
+            && !logKeptListed(doc, vpd ? vpd->getObject() : nullptr, kept, &keptRow))
+        return errorReply(id, "UnknownValue", QString::fromStdString(kept));
+    if (vpd && mode == ViewProvider::ValueDiff) {
+        vpd->setValueChangeRow(row);
+        if (!kept.empty())
+            vpd->setValueChangeRef(kept, keptRow);
+    }
     QJsonObject entered = enterClientEdit(id, gdoc, vp, mode, subname, client);
+    if (vpd) {
+        vpd->setValueChangeRow(0);
+        vpd->setValueChangeRef(std::string());
+    }
     if (!entered.value(QLatin1String("ok")).toBool())
         return entered;
 
@@ -1325,6 +1351,7 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
     OmniControl::install();
     installSceneWidgetOps();
     installSceneContextMenuOps();
+    installSceneLogOps();
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
             QByteArray(json.data(), int(json.size())), &err);
@@ -1404,6 +1431,7 @@ void Gui::installSceneControlHandler(const std::string &docName)
     // the widget stream's ops ride this channel (docs/Sandbox.md 7.18)
     installSceneWidgetOps();
     installSceneContextMenuOps();
+    installSceneLogOps();
     OmniControl::install();
     // Installed on the named document's group (empty = the default
     // group). The document is bound by NAME and re-resolved per request

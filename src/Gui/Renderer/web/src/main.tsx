@@ -5,6 +5,7 @@ import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
 import { SheetPanel } from './sheet';
+import { LogPanel } from './logpanel';
 import { ConsolePanel } from './console';
 import { TaskPanelCard } from './widgets/panel';
 import { HudCard } from './hud';
@@ -18,7 +19,7 @@ import { OmniBox } from './omni';
 import { ToolbarStrip } from './toolbar';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
-import { sendOp, sendRequestFile } from './control';
+import { EDIT_VALUE_DIFF, sendOp, sendRequestFile } from './control';
 import type { CyclesDevice, CyclesState, SelectionItem, Subject } from './control';
 // Extraction only (cssCodeSplit: false emits it as web/inspector.css);
 // the injection below is what actually loads it.
@@ -159,6 +160,9 @@ const askName = () => {
 // A copy of the document, edited elsewhere, offered to whoever is sharing
 // it (docs/TransactionLog.md sec 30.23). The browser's own picker chooses
 // the file; the host keeps it unread until its owner brings it in.
+// How far a copy being sent has got, said while it goes: one larger than a
+// message carries goes in pieces (sec 32.36) and takes a while.
+const [sending, setSending] = createSignal<string | null>(null);
 const sendCopy = () => {
   const input = document.createElement('input');
   input.type = 'file';
@@ -166,11 +170,19 @@ const sendCopy = () => {
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
+    const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
     try {
-      const sent = await sendRequestFile(file.name, await file.arrayBuffer());
+      setSending(`Sending ${file.name}...`);
+      const sent = await sendRequestFile(file.name, await file.arrayBuffer(),
+        (done, size, waiting) => setSending(waiting
+          ? `Sending ${file.name}: ${mb(done)} of ${mb(size)} MB, `
+            + 'waiting for the connection...'
+          : `Sending ${file.name}: ${mb(done)} of ${mb(size)} MB`));
+      setSending(null);
       window.alert(`Sent ${sent.name}. Whoever is sharing the document `
                    + 'decides whether it is merged.');
     } catch (e: any) {
+      setSending(null);
       window.alert(e?.code === 'TooLarge'
         ? `That file is too large to send (${e.message}).`
         : e?.code === 'TooMany'
@@ -217,6 +229,12 @@ const [cardOpen, setCardOpen] = createSignal(false);
 // headless run can screenshot the panel, which no click can reach.
 const [sheetOpen, setSheetOpen] = createSignal(
   new URLSearchParams(location.search).has('sheet'));
+
+// The transaction log's panel (docs/TransactionLog.md sec 32.21): the page's
+// own card of the served document's history. `?log` is the viewer's console
+// overlay, so on load it is `?history`.
+const [logOpen, setLogOpen] = createSignal(
+  new URLSearchParams(location.search).has('history'));
 
 // The Python console (docs/Sandbox.md 7.20 C4): a guest in this page, booted
 // the first time the panel opens, reaching the served document as this
@@ -342,6 +360,24 @@ const toggleToolbars = () => {
 const [taskPanelOpen, setTaskPanelOpen] = createSignal(
   new URLSearchParams(location.search).has('panel'));
 
+// An edit that is worked from its panel and from nothing in the view --
+// the last change of an object, its slider and what was found
+// (docs/TransactionLog.md sec 32.19; Gui::ViewProvider::ValueDiff) --
+// brings the card up with it, and takes it away again if it did.
+let panelOpenedForEdit = false;
+window.addEventListener('fc:edit', (e: Event) => {
+  const d = (e as CustomEvent).detail ?? {};
+  if (d.editing && d.mode === EDIT_VALUE_DIFF) {
+    if (!taskPanelOpen()) {
+      panelOpenedForEdit = true;
+      setTaskPanelOpen(true);
+    }
+  } else if (!d.editing && panelOpenedForEdit) {
+    panelOpenedForEdit = false;
+    setTaskPanelOpen(false);
+  }
+});
+
 const host = document.createElement('div');
 host.id = 'fc-ui';
 document.body.appendChild(host);
@@ -357,6 +393,10 @@ render(() => (
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
                 viewOnly={viewOnly} doc={() => docs().current} />
+    <LogPanel open={logOpen} onClose={() => setLogOpen(false)}
+              viewOnly={viewOnly} doc={() => docs().current}
+              selected={() => [...new Set(selection()
+                .filter((s) => s.obj && s.home !== false).map((s) => s.obj!))]} />
     <OmniBox open={omniOpen} onClose={() => setOmniOpen(false)}
              selection={selection} viewOnly={viewOnly} host={isHost} />
     <ConsolePanel open={consoleOpen} onClose={() => setConsoleOpen(false)}
@@ -368,10 +408,11 @@ render(() => (
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
+    {sending() && <div class="fc-sending" role="status">{sending()}</div>}
     <NaviCubeMenu />
     <SceneContextMenu viewOnly={viewOnly} />
     <LauncherMenu
-      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen() || logOpen()
                      || consoleOpen()) && window.innerWidth <= NARROW}
       items={[
         ...docItems(),
@@ -385,6 +426,9 @@ render(() => (
         { label: 'Spreadsheet',
           checked: () => sheetOpen(),
           onSelect: () => setSheetOpen(!sheetOpen()) },
+        ...(viewOnly() ? [] : [{ label: 'History',
+                                 checked: () => logOpen(),
+                                 onSelect: () => setLogOpen(!logOpen()) }]),
         { label: 'Toolbars',
           checked: () => toolbarsOn(),
           onSelect: toggleToolbars },
@@ -401,7 +445,7 @@ render(() => (
       ]}
     />
     <LauncherMenu
-      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen() || logOpen()
                      || consoleOpen()) && window.innerWidth <= NARROW}
       glyph={
         /* Cursor-arrow "select" icon, inline so every device draws the

@@ -585,6 +585,7 @@ SET(Document_HPP_SRCS
     TransactionMeasure.h
     TransactionStore.h
     TransactionValue.h
+    ValueSummary.h
     TransactionDefs.h
     TransactionalObject.h
     VRMLObject.h

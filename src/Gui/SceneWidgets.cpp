@@ -641,7 +641,7 @@ void Gui::installSceneWidgetOps()
     // session (8.11), and the bytes reach a directory of the host's
     // choosing rather than anywhere the serving user can write.
     registerSceneControlOp(QStringLiteral("widgets.upload"), true,
-                           [](const QJsonObject& req, const std::string&) {
+                           [](const QJsonObject& req, const std::string&, uint64_t client) {
         const QJsonValue id = req.value(QLatin1String("id"));
         const QString base =
             SceneRequests::sanitizedName(req.value(QLatin1String("name")).toString());
@@ -649,9 +649,31 @@ void Gui::installSceneWidgetOps()
             return sceneControlError(id, "BadRequest", QStringLiteral("name required"));
         // The most one upload may carry is a setting (SceneRequests::
         // uploadLimit, docs/TransactionLog.md sec 30.23): 16 MB unless set,
-        // a panel's file being a font, a hatch pattern, a symbol.
-        QByteArray bytes;
+        // a panel's file being a font, a hatch pattern, a symbol. A larger
+        // one comes in pieces and is named by its upload (sec 32.36).
         QJsonObject tooMuch;
+        if (req.contains(QLatin1String("upload"))) {
+            // Its pieces are in a file already (sec 32.37): moved into
+            // place, never read into memory.
+            QString pieces;
+            qint64 size = 0;
+            if (!SceneRequests::takeUpload(req, client, pieces, size, tooMuch))
+                return tooMuch;
+            const QString dir = uploadDir();
+            const QString path = dir.isEmpty() ? QString() : SceneRequests::uniquePath(dir, base);
+            const bool placed = !path.isEmpty()
+                && (QFile::rename(pieces, path) || QFile::copy(pieces, path));
+            QFile::remove(pieces);
+            if (!placed)
+                return sceneControlError(id, "UploadFailed",
+                                         QStringLiteral("the pieces could not be moved"));
+            QJsonObject reply = okReply(id);
+            reply[QLatin1String("path")] = path;
+            reply[QLatin1String("name")] = base;
+            reply[QLatin1String("size")] = double(size);
+            return reply;
+        }
+        QByteArray bytes;
         if (!SceneRequests::decode(req, bytes, tooMuch))
             return tooMuch;
         const QString dir = uploadDir();

@@ -153,6 +153,8 @@ SET(PartGui_SRCS
     PropertyEnumAttacherItem.h
     ShapeDiffView.cpp
     ShapeDiffView.h
+    TaskShapeDiff.cpp
+    TaskShapeDiff.h
     ShapeObserver.cpp
     ShapeObserver.h
     SoFCShapeObject.cpp

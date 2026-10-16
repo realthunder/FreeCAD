@@ -771,6 +771,19 @@ public:
         // Which session's overlay is this client's to draw (8.12 item J).
         if (editing && editSession)
             json += ",\"session\":" + std::to_string(editSession);
+        // Which edit it is, for a client that does something of its own
+        // for one: the last change of an object (ViewProvider::ValueDiff,
+        // docs/TransactionLog.md sec 32.19) is looked at and worked from
+        // its panel -- nothing in the view is the tool's to be clicked, so
+        // the pointer stays the client's camera's.
+        if (editing && doc) {
+            // The document's word on the mode, whatever view is asking
+            int mode = -1;
+            doc->getInEdit(nullptr, nullptr, &mode);
+            json += ",\"mode\":" + std::to_string(mode);
+            if (mode == ViewProvider::ValueDiff)
+                json += ",\"pointer\":false";
+        }
         json += ",\"doc\":\"" + groupName + "\"}";
         auto &server = Render::SceneStreamServer::instance();
         if (onlyClient) {
@@ -2414,6 +2427,7 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
     auto *raw = source.get();
     sources[doc] = std::move(source);
     serveOrder().push_back(doc);
+    signalServed()();
     return raw;
 }
 
@@ -2440,7 +2454,14 @@ void SceneServeSource::unserve(Document *doc)
         }
         logins.clear();
     }
-    servedDocuments().erase(doc);
+    if (servedDocuments().erase(doc) > 0)
+        signalServed()();
+}
+
+fastsignals::signal<void()> &SceneServeSource::signalServed()
+{
+    static fastsignals::signal<void()> served;
+    return served;
 }
 
 App::PropertyContainer *SceneServeSource::ownRenderProperties() const

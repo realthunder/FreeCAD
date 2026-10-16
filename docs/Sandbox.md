@@ -8969,7 +8969,9 @@ host's choosing.  A client's `name` is reduced to a plain file name
 be pointing at, and 16 MB is the cap -- a chooser's file is a font or a
 hatch pattern.  (Since 2026-10-05 the cap is a setting, the preference
 `UploadLimitMB` of `BaseApp/Preferences/SceneShare` or `FC_SERVE_UPLOAD_MB`,
-16 unless set: `docs/ShareAccess.md` sec 2.4.)
+16 unless set: `docs/ShareAccess.md` sec 2.4. Since 2026-10-15 a file
+larger than one message carries goes in pieces and the op names the
+upload: `docs/TransactionLog.md` sec 32.36.)
 
 **The proof, 2026-09-22:** `scripts/demo-filechooserpanel.py` (new -- a
 panel whose chooser is watched on `fileNameSelected`, reporting the path

@@ -44,6 +44,8 @@
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/MaterialAppearance.h>
 #include <App/Origin.h>
+#include <App/TransactionLog.h>
+#include <App/TransactionStore.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 
@@ -411,7 +413,11 @@ void ViewProviderDocumentObject::onChanged(const App::Property* prop)
     }
 
     ViewProvider::onChanged(prop);
-    if (pcObject)
+    // Said through the object, for whoever watches the document: that its
+    // view changed. A view that only the host's own views draw is no view
+    // of the object's to anyone else -- a served document published for
+    // every look set on one, with nothing of it to send.
+    if (pcObject && !testStatus(Gui::ViewStatus::HostOnlyView))
         pcObject->ViewObject.touch();
 }
 
@@ -682,6 +688,100 @@ void ViewProviderDocumentObject::hideValueDiff()
 std::map<std::string, double> ViewProviderDocumentObject::getValueDiff() const
 {
     return {};
+}
+
+bool ViewProviderDocumentObject::lastValueChange(const char *prop, std::string &before,
+                                                 std::string &after, std::string *what) const
+{
+    App::DocumentObject *obj = getObject();
+    App::Document *doc = obj ? obj->getDocument() : nullptr;
+    App::TransactionLog *log = doc ? doc->getTransactionLog() : nullptr;
+    if (!log || !prop || !prop[0])
+        return false;
+    App::LogOp op;
+    try {
+        App::TransactionStore &store = log->store();
+        if (!store.lastOpOn("obj", obj->getID(), prop, 0, log->head(), op) || op.op != "set")
+            return false;
+        if (what) {
+            const auto rows = store.transactions(op.txn, 1);
+            const std::string name = !rows.empty() && rows.front().seq == op.txn
+                ? rows.front().name : std::string();
+            *what = name.empty() ? "row " + std::to_string(op.txn)
+                                 : name + " (row " + std::to_string(op.txn) + ")";
+        }
+    }
+    catch (const Base::Exception &) {
+        return false;
+    }
+    before = op.vbefore.empty() ? std::string("-") : op.vbefore;
+    after = op.vafter;
+    return true;
+}
+
+bool ViewProviderDocumentObject::valueChangeAt(long long row, const char *prop,
+                                               std::string &before, std::string &after,
+                                               std::string *what) const
+{
+    App::DocumentObject *obj = getObject();
+    App::Document *doc = obj ? obj->getDocument() : nullptr;
+    App::TransactionLog *log = doc ? doc->getTransactionLog() : nullptr;
+    if (!log || !prop || !prop[0] || row <= 0)
+        return false;
+    bool found = false;
+    try {
+        App::TransactionStore &store = log->store();
+        // What the row made of it (docs/TransactionLog.md sec 32.10): the
+        // value before the first time it set it, and after the last
+        for (const App::LogOp &op : store.ops(row)) {
+            if (op.ckind != "obj" || op.cid != obj->getID() || op.op != "set"
+                    || op.prop != prop || op.vafter.empty())
+                continue;
+            if (!found)
+                before = op.vbefore.empty() ? std::string("-") : op.vbefore;
+            after = op.vafter;
+            found = true;
+        }
+        if (found && what) {
+            const auto rows = store.transactions(row, 1);
+            const std::string name = !rows.empty() && rows.front().seq == row
+                ? rows.front().name : std::string();
+            *what = name.empty() ? "row " + std::to_string(row)
+                                 : name + " (row " + std::to_string(row) + ")";
+        }
+    }
+    catch (const Base::Exception &) {
+        return false;
+    }
+    return found;
+}
+
+bool ViewProviderDocumentObject::valueChangeToShow(const char *prop, std::string &before,
+                                                   std::string &after, std::string *what)
+{
+    const long long row = _valueChangeRow;
+    _valueChangeRow = 0;
+    const std::string ref = std::move(_valueChangeRef);
+    _valueChangeRef.clear();
+    if (!ref.empty()) {
+        // A kept value against now: an empty after is the object's own
+        before = ref;
+        after.clear();
+        if (what)
+            *what = _valueChangeRefRow > 0
+                ? "the value kept at row " + std::to_string(_valueChangeRefRow)
+                : std::string("the value kept");
+        _valueChangeRefRow = 0;
+        return true;
+    }
+    if (row > 0)
+        return valueChangeAt(row, prop, before, after, what);
+    return lastValueChange(prop, before, after, what);
+}
+
+bool ViewProviderDocumentObject::showsValueDiffOf(const char *) const
+{
+    return false;
 }
 
 void ViewProviderDocumentObject::update(const App::Property* prop)
