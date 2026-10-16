@@ -69,6 +69,16 @@ bool QGIProjGroup::sceneEventFilter(QGraphicsItem* watched, QEvent *event)
 
         QGIView *qAnchor = getAnchorQItem();
         QGIView* qWatched = dynamic_cast<QGIView*>(watched);
+        // The group filters the events of everything under it, and a
+        // dimension or a balloon on one of its views is a QGIView too: the
+        // press on a dimension's line went here, selected nothing and was
+        // taken (docs/HandsOnQueue.md entry 148). Only the group's own
+        // views move it.
+        if (qWatched && qWatched != qAnchor
+            && !(qWatched->getViewObject()
+                 && qWatched->getViewObject()->isDerivedFrom<TechDraw::DrawProjGroupItem>())) {
+            return false;
+        }
         // If AutoDistribute is enabled, catch events and move the anchor directly
         if(qAnchor && (watched == qAnchor || (autoDistributeEnabled() && qWatched != nullptr))) {
             auto *mEvent = dynamic_cast<QGraphicsSceneMouseEvent*>(event);

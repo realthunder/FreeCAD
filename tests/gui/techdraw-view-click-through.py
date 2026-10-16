@@ -18,9 +18,12 @@ the gap between them is empty. Claims:
     view, whose rectangle covers it all, a click on an edge away from the
     dimension's lines still selects the edge. A dimension took a press
     anywhere in its rectangle;
-  - entry 148, the last 10 of Front010's: a click on an edge under a
-    dimension's extension line selects the edge (the lines and arrows
-    selected nothing and took the press); its label still selects it.
+  - entry 148, the last 10 of Front010's (the lines and arrows took the
+    press and selected nothing, on a projection group's view): the
+    reporter, 2026-10-16, "Dimension line will select dimension" -- a click
+    on an extension line lying over an edge selects the dimension, on a
+    part view and on a projection group's view; so does one on the
+    dimension line away from the label, and one on the label.
 """
 import os
 import traceback
@@ -259,10 +262,20 @@ def under_extension():
     page_view().grab().save(os.path.join(OUT, "extension.png"))
     # the left box's left side at its middle: an extension line lies on it
     x, y = EXT["view"]
-    edge = click_mm(VIEW_X + x, VIEW_Y - y)
-    check("entry 148: a click on an edge under a dimension's extension line selects the edge",
-          len(edge) == 1 and edge[0][0] == "View" and edge[0][1]
-          and edge[0][1][0].startswith("Edge"), edge)
+    line = click_mm(VIEW_X + x, VIEW_Y - y)
+    check("entry 148: a click on a dimension's extension line over an edge selects the dimension",
+          len(line) == 1 and line[0][0].startswith("Extension") and line[0][1] in ([], [""]),
+          line)
+    # the dimension line under its label (set 25 mm above the view), 30 mm
+    # to the left: looked for from 14 to 26 mm up, empty page in between
+    line = []
+    for dy in [14.0 + 0.25 * k for k in range(49)]:
+        line = click_mm(VIEW_X - 30.0, VIEW_Y + dy)
+        if line:
+            note("INFO the dimension line picked %.1f mm above the view's middle" % dy)
+            break
+    check("entry 148: a click on the dimension line away from its label selects the dimension",
+          [n for n, _ in line] == ["ExtensionUp"], line)
     label = []
     for dy in (25.0, 24.5, 25.5, 26.0):
         label = click_mm(VIEW_X, VIEW_Y + dy)
@@ -305,11 +318,44 @@ def under_group_extension():
     QtWidgets.QApplication.processEvents()
     v.grab().save(os.path.join(OUT, "group.png"))
     name, fx, fy, x, y = EXT["group"]
-    edge = click_mm(GROUP_X + fx + x, GROUP_Y + fy - y)
-    check("entry 148: on a projection group's view, a click on an edge under a"
-          " dimension's extension line selects the edge",
-          len(edge) == 1 and edge[0][0] == name and edge[0][1]
-          and edge[0][1][0].startswith("Edge"), edge)
+    line = click_mm(GROUP_X + fx + x, GROUP_Y + fy - y)
+    check("entry 148: on a projection group's view, a click on a dimension's"
+          " extension line over an edge selects the dimension",
+          len(line) == 1 and line[0][0].startswith("Group") and line[0][0] != "Group"
+          and line[0][1] in ([], [""]), line)
+
+
+@step(500)
+def drag_group():
+    """The group filters its children's presses to drag itself by its views:
+    that stays for its own views. The Front view's frame line, dragged 10 mm
+    to the right, moves the group by that."""
+    doc = FreeCAD.getDocument(DOC)
+    group = doc.getObject("Group")
+    name, fx, fy, x, y = EXT["group"]
+    frame = None
+    for dy in [8.0 + 0.25 * k for k in range(25)]:
+        got = click_mm(GROUP_X + fx, GROUP_Y + fy + dy)
+        if got and got[0][0] == name and got[0][1] in ([], [""]):
+            frame = dy
+            break
+    note("INFO the Front's frame line %s mm above its middle" % frame)
+    if frame is None:
+        check("the group's Front view has a frame line to drag", False)
+        return
+    x0 = group.X.Value
+    start = at(GROUP_X + fx, GROUP_Y + fy + frame)
+    mouse(QtCore.QEvent.MouseMove, start)
+    mouse(QtCore.QEvent.MouseButtonPress, start, QtCore.Qt.LeftButton, QtCore.Qt.LeftButton)
+    for k in range(1, 11):
+        pos = at(GROUP_X + fx + k, GROUP_Y + fy + frame)
+        mouse(QtCore.QEvent.MouseMove, pos, QtCore.Qt.NoButton, QtCore.Qt.LeftButton)
+        QtWidgets.QApplication.processEvents()
+    end = at(GROUP_X + fx + 10.0, GROUP_Y + fy + frame)
+    mouse(QtCore.QEvent.MouseButtonRelease, end, QtCore.Qt.LeftButton, QtCore.Qt.NoButton)
+    QtWidgets.QApplication.processEvents()
+    check("a projection group's view dragged 10 mm moves the group about that",
+          abs(group.X.Value - x0 - 10.0) < 1.0, (x0, group.X.Value))
 
 
 def finish():

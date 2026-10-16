@@ -164,9 +164,10 @@ public:
     void setViewPartFeature(TechDraw::DrawViewDimension *obj);
     int type() const override { return Type;}
     QRectF boundingRect() const override;
-    /** Its label only -- not the rectangle around it, nor its lines and
-     * arrows, which select nothing: they lay over the view's edges, which
-     * then took no click (docs/HandsOnQueue.md entry 148)
+    /** Where it draws -- its label, its lines and its arrows -- and not the
+     * whole rectangle around them: that lay over the view's edges, which
+     * then took no click (docs/HandsOnQueue.md entry 148). A press on the
+     * lines or the arrows selects the dimension, as one on the label does.
      */
     QPainterPath shape() const override;
     void paint( QPainter * painter,
@@ -202,6 +203,7 @@ protected:
     void mousePressEvent( QGraphicsSceneMouseEvent * event) override;
     void mouseMoveEvent( QGraphicsSceneMouseEvent * event) override;
     void mouseReleaseEvent( QGraphicsSceneMouseEvent * event) override;
+    void hoverMoveEvent(QGraphicsSceneHoverEvent* event) override;
 
     static double getAnglePlacementFactor(double testAngle, double endAngle, double startRotation);
     static int compareAngleStraightness(double straightAngle, double leftAngle, double rightAngle,

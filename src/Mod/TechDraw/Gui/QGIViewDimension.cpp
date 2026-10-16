@@ -468,7 +468,8 @@ QGIViewDimension::QGIViewDimension() : dvDimension(nullptr), hasHover(false), m_
     setHandlesChildEvents(false);
     setFlag(QGraphicsItem::ItemIsMovable, false);
     setFlag(QGraphicsItem::ItemIsSelectable, false);
-    setAcceptHoverEvents(false);
+    // over its lines and arrows; QGIView's hover lights it (setPreselect)
+    setAcceptHoverEvents(true);
     setCacheMode(QGraphicsItem::NoCache);
 
     datumLabel = new QGIDatumLabel();
@@ -612,12 +613,37 @@ void QGIViewDimension::setNormalColorAll()
     aHead2->setFillColor(qc);
 }
 
-//QGIViewDimension does not behave the same as other QGIView derived classes
-//and so mouse events need to be ignored.  Only the QGIDatumLabel mouse events are relevant.
+//QGIViewDimension does not behave the same as other QGIView derived classes:
+//the label is what is selected and dragged. A press that reaches the
+//dimension itself is one on its lines or arrows (shape()); it selects the
+//dimension as a press on the label does, Ctrl adding or taking it away, and
+//drags nothing (docs/HandsOnQueue.md entry 148).
 void QGIViewDimension::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
     //    Base::Console().Message("QGIVD::mousePressEvent() - %s\n", getViewName());
+    if (event->button() == Qt::LeftButton && datumLabel) {
+        if (event->modifiers() & Qt::ControlModifier) {
+            datumLabel->setSelected(!datumLabel->isSelected());
+        }
+        else if (!datumLabel->isSelected() || scene()->selectedItems().size() > 1) {
+            scene()->clearSelection();
+            datumLabel->setSelected(true);
+        }
+        event->accept();
+        return;
+    }
     QGraphicsItem::mousePressEvent(event);
+}
+
+void QGIViewDimension::hoverMoveEvent(QGraphicsSceneHoverEvent* event)
+{
+    // Hover reaches the dimension over its lines and arrows (over the label
+    // it goes to the label, which lights the dimension itself); leaving the
+    // label for a line put the light out
+    if (!hasHover) {
+        hover(true);
+    }
+    QGIView::hoverMoveEvent(event);
 }
 
 void QGIViewDimension::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
@@ -2725,14 +2751,18 @@ QPainterPath QGIViewDimension::shape() const
     // vertexes, and takes a press -- it is movable -- wherever its shape
     // says. With the whole rectangle around it a click on an edge under
     // the rectangle selected nothing: on scanner.FCStd's Page009, Front010,
-    // most of the outline (docs/HandsOnQueue.md entry 148). Its lines and
-    // arrows select nothing either -- only the label selects the dimension
-    // -- and hover lights the edge below them, so they let the press
-    // through as well: an arc under an extension line or an arrow selected
-    // nothing there. The label is all that takes it.
+    // most of the outline (docs/HandsOnQueue.md entry 148). A press on its
+    // lines and arrows selects it (mousePressEvent), and hovering them
+    // lights it.
     QPainterPath path;
-    if (datumLabel && datumLabel->isVisible()) {
-        path.addPath(mapFromItem(datumLabel, datumLabel->shape()));
+    path.setFillRule(Qt::WindingFill);
+    for (QGraphicsItem* item : {static_cast<QGraphicsItem*>(datumLabel),
+                                static_cast<QGraphicsItem*>(dimLines),
+                                static_cast<QGraphicsItem*>(aHead1),
+                                static_cast<QGraphicsItem*>(aHead2)}) {
+        if (item && item->isVisible()) {
+            path.addPath(mapFromItem(item, item->shape()));
+        }
     }
     return path;
 }
