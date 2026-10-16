@@ -7461,3 +7461,37 @@ fixed.
   same in the GUI and headless (where the table was never wrong) --
   Fillet011 "Adaptor" misses ?Edge93 and ?Edge89, Fillet007 "BaseBottom"
   ?Edge177 and ?Edge171; Binder008, Fillet007 and Fillet011 invalid.
+
+## 2026-10-16 evening: entry 160, the missing edges and the hover (r87-r92)
+
+On the user's "push and restage. then look into 160's missing edges"
+(pushed and staged 54b5805b13, 17:32 / 17:34), then "fully complete entry
+160 first" (relayed). All probes on a copy of scanner.FCStd as it was
+before the 18:06 save (entry 167; identical to the 10-06 .FCBak).
+- Fillet007 "BaseBottom" (?Edge177 ?Edge171): not a loss. Chamfer runs
+  twice (a frozen input refused, "Chamfer failed on Edge38"); the first
+  run's shape re-resolved Fillet007's references and marked two missing,
+  never searched again. `920e47cc39`: the re-resolution held over both runs,
+  and no generation kept of a shape set while held (kept, it took the
+  referrers over and moved them to four wrong edges, r88-r90).
+  `d41e92468b`: the rerun's result was "invalid" because every face was new
+  to the base; checked after shareBack.
+- Fillet011 "Adaptor" (?Edge93 ?Edge89): a real change upstream. Pocket040
+  (profile Hole007.Face56, Fit -0.5) offset by the face's orientation flag;
+  the file had the face reversed (r 12.5 -> 13), the full recompute hands
+  it back forward (-> 12; Hole007 alone keeps it reversed). The user leaned
+  to a version: `93b9b8a440`, faces taken forward for new features (sketch
+  rule), older ones keep their file's side (_FitRule/_FitFlip, set at the
+  open; Pocket022, Pad037, Pocket040 flipped in scanner).
+- The kept face of a missing edge: matched along the face's whole history
+  (Fillet011's edges carry the fillet's own tag; the history walked past).
+- Hover: the panel lit the BASE's edge for a present edge and nothing for a
+  missing one, on the stage as well. `a25c1d068b`: the face the edge made
+  (DressUp::getMadeFaces), through each session view's edit highlight;
+  bgfx outlines it in the edit overlay by the selection style. Coin-only:
+  the colour as before.
+- r92: scanner copy -- Fillet007 and Fillet011 up to date, only Binder008
+  invalid (entry 164's binder). Real screen (the user's standing yes):
+  fillet-hover-outlines-face.py 14 of 14. TestFillet 24, TestChamfer 11,
+  TestTopologicalNamingProblem 67, TestPad 16, TestPocket 11, Part
+  ElementAppearanceTest 35, all OK. NOT pushed, NOT staged.
