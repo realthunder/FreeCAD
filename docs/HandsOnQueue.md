@@ -168,6 +168,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 10:37: NEW ENTRY 159 (a change request, a question) -- PartDesign
+on-view edit: a click that selects nothing clears the active handle; why
+the handles have no silhouette outline (144's part not done).** Under the
+entry.
+
 **2026-10-16 10:32: entry 138 RULED -- the overlaid column header follows the
 item background's alpha (`DockOverlayAlpha`); Dark-Outline.qss NOT
 retired, by the note-taker's reading (the default dark overlay sheet).**
@@ -3166,6 +3171,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels |
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit) |
 | 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more |
+| 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21277,6 +21283,43 @@ lasts about 5 s or more. By the note-taker's reading 20 times and more
 the 0.06 to 0.23 s `48b9aaa0ba` measured for a page's first show -- the
 time is mostly elsewhere, or new since; NOT checked.
 
+## 159. PartDesign on-view edit: a click that selects nothing clears the active handle; why the handles have no silhouette outline (a change request, a question) -- OPEN
+
+**2026-10-16 10:37, the reporter:** "new request. in partdesign on view edit. a
+mouse click to 3d view that does not register any new selection shall
+clear the active handle selection. also, why handle (pre)selection does
+not follow silloute outline selection style like I requested? Is it hard
+to do?"
+
+The note-taker's reading:
+- In a PartDesign on-view edit (the fillet's and chamfer's handles and
+  values, entry 117 on): a click in the 3D view that selects NOTHING new
+  (empty space, or something the edit does not take) makes NO handle
+  active any more -- the active handle (and its value) is cleared.
+- A question: entry 144 asked for the handles' hover and selection to
+  look as a mesh's do -- an OUTLINE (silhouette) and the automatic colour;
+  the handles light in the highlight colour, but without the outline.
+  Why, and is it hard?
+NOT said: a click that DOES select (a face, an edge) -- the active handle
+stays, by the note-taker's reading; Esc -- not mentioned.
+READ in the source and the build log, nothing run:
+- `src/Gui/OnViewValue.h` 132 `getActiveHandle()`, 143 `setActive(int
+  index, Gizmo*)` (-1 for none), 207 `activeHandle` -- clearing is
+  `setActive(-1)`, by the note-taker's reading.
+- `docs/HandsOnLog.md` 7282-7283: "144 hovered handles lit
+  (View/HighlightColor, selected ones win); the outline part is NOT done
+  -- it wants the screen under D3D11." -- the build session's report of
+  2026-10-15 evening; the queue's 144 row says the same.
+The note-taker's answer to "why / is it hard" (in the reply; the
+note-taker's reading, NOT checked): it was not left out as hard but as
+unverified -- the build session builds and tests offscreen, and a
+silhouette outline is drawn by the bgfx renderer's outline pass, which
+shows only on a real D3D11 screen (memory: Coin-only drawing changes no
+pixel under Direct3D -- a handle drawn by Coin beside the renderer's feed
+needs feeding through the renderer to get its outline). The work, by
+this reading: put the handles into the renderer's outline pass (as a
+selected mesh is), then look at it on the screen.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -21288,5 +21331,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 158
+the build session, 131 and 132 found by it; entries 134 to 159
 are of 2026-10-15, 134 said to the build session)
