@@ -28,6 +28,10 @@ and then by the backend, once the load has built everything:
   - they are as wide as the view provider says, under half the fallback's
     width;
   - asking the view to paint again changes nothing: it was whole already.
+
+Entry 151, the document saved with no page open and reopened, the page
+opened by hand as soon as the view's view provider exists (the load still
+flagging the document as restoring): a click on the view's edge selects it.
 """
 import os
 import traceback
@@ -41,6 +45,10 @@ OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "PageBeforeProviders"
 PATH = os.path.join(OUT, DOC + ".FCStd")
+# the same document saved before its page was opened, for entry 151's round:
+# opened from this file its name is the file's
+DOC_CLOSED = DOC + "Closed"
+PATH_CLOSED = os.path.join(OUT, DOC_CLOSED + ".FCStd")
 GEN = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/TechDraw/General")
 RENDER = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
 KEYS = (("PageRendererVg", False), ("PageRendererVgComposite", True),
@@ -48,7 +56,9 @@ KEYS = (("PageRendererVg", False), ("PageRendererVgComposite", True),
 HAD = [GEN.GetBool(k, d) for k, d in KEYS]
 FILLERS = 300
 VIEW_X, VIEW_Y = 150.0, 100.0
-ZOOM = 10.0          # pixels to the millimetre
+# pixels to the millimetre: the box, 40 mm wide, inside the page view's
+# width (about 385 px offscreen); at 10 its upright edges fell outside
+ZOOM = 8.0
 WIDTH = 0.18         # mm, the view's line width; the fallback draws 0.6
 STEPS = []
 SEEN = {}
@@ -117,6 +127,15 @@ def save_and_close():
         raise RuntimeError("the page did not open")
     doc = FreeCAD.getDocument(DOC)
     doc.saveAs(PATH)
+    # and once more with no page open, for entry 151's round
+    # by what it holds: the document's name starts with "Page" too, and so
+    # does its 3D view's title -- closed with it, it took the document along
+    for sub in FreeCADGui.getMainWindow().findChild(QtWidgets.QMdiArea).subWindowList():
+        if any(v.metaObject().className() == "TechDrawGui::QGVPage"
+               for v in sub.findChildren(QtWidgets.QGraphicsView)):
+            sub.close()
+    QtCore.QCoreApplication.processEvents()
+    doc.saveAs(PATH_CLOSED)
     FreeCAD.closeDocument(DOC)
 
 
@@ -153,7 +172,8 @@ def measure(tag):
         start = None
         for x in range(max(left, 0), min(right, img.width() - 1) + 1):
             p = img.pixel(x, mid.y())
-            dark = max((p >> 16) & 255, (p >> 8) & 255, p & 255) < 140
+            # 0.18 mm at ZOOM antialiases to a mid grey
+            dark = max((p >> 16) & 255, (p >> 8) & 255, p & 255) < 170
             if dark and start is None:
                 start = x
             elif not dark and start is not None:
@@ -197,7 +217,7 @@ def compare(kind):
         check("%s: the view's outline is drawn as loaded" % kind, len(first) == 2,
               "%d runs of ink where the box has two upright edges" % len(first))
         if len(first) == 2:
-            # 0.18 mm is 1.8 px here, the fallback's 0.6 mm is 6
+            # 0.18 mm is 1.4 px here, the fallback's 0.6 mm is 4.8
             check("%s: its lines are as wide as the view provider says" % kind,
                   max(first) <= 0.5 * 0.6 * ZOOM,
                   "%s px wide; %.1f px asked, the fallback draws %.0f" % (
@@ -209,14 +229,88 @@ def compare(kind):
 
 
 def close():
-    try:
-        FreeCAD.closeDocument(DOC)
-    except Exception:
-        pass
+    for name in (DOC, DOC_CLOSED):
+        try:
+            FreeCAD.closeDocument(name)
+        except Exception:
+            pass
 
 
 def to_backend():
     switch(True)
+
+
+WHILE = {}
+
+
+def open_while_restoring():
+    """Entry 151 (the reporter, 2026-10-16: "when I open scanner document,
+    non of the Techdraw edge or face are selectable ... When render under
+    Qt, non of the face the edges are even drawn"; "the problem occur when
+    first loading"): the page opened by hand once the view's view provider
+    exists but while the load still flags the document as restoring. Its
+    view's item skipped its draw then, and nothing asked again: nothing
+    drawn by Qt and nothing to pick until another page was shown."""
+    switch(False)
+    RENDER.SetBool("ProgressiveLoad", True)
+    RENDER.SetInt("ProgressiveLoadBudgetMS", 1)
+    FreeCAD.openDocument(PATH_CLOSED)
+    WHILE.clear()
+    timer = QtCore.QTimer(FreeCADGui.getMainWindow())
+    WHILE["timer"] = timer
+
+    def poll():
+        try:
+            doc = FreeCAD.getDocument(DOC_CLOSED)
+            gdoc = FreeCADGui.getDocument(DOC_CLOSED)
+        except Exception:
+            return
+        restoring = getattr(doc, "Restoring", False)
+        if gdoc.getObject("View") is not None:
+            timer.stop()
+            WHILE["restoring"] = restoring
+            gdoc.getObject("Page").doubleClicked()
+        elif not restoring and gdoc.getObject("View") is None:
+            WHILE["polls"] = WHILE.get("polls", 0) + 1
+
+    timer.timeout.connect(poll)
+    timer.start(0)
+
+
+def click_edge():
+    """A click on the box's top edge, the page as it was opened"""
+    note("NOTE entry 151: the page was opened with the document %s"
+         % ("still restoring" if WHILE.get("restoring") else "no longer restoring"))
+    v = page_view()
+    if not check("entry 151: the page opened during the load is on screen", v is not None):
+        return
+    v.resetTransform()
+    v.scale(ZOOM / 10.0, ZOOM / 10.0)
+    scene = QtCore.QPointF(VIEW_X * 10.0, -(VIEW_Y + 10.0) * 10.0)
+    v.centerOn(scene)
+    QtCore.QCoreApplication.processEvents()
+    v.grab().save(os.path.join(OUT, "opened-while-restoring.png"))
+    from PySide import QtGui
+    vp = v.viewport()
+    got = []
+    for dy in (0.0, 0.1, -0.1, 0.2, -0.2):
+        pos = v.mapFromScene(QtCore.QPointF(scene.x(), scene.y() - dy * 10.0))
+        FreeCADGui.Selection.clearSelection()
+        for kind, button, buttons in (
+                (QtCore.QEvent.MouseMove, QtCore.Qt.NoButton, QtCore.Qt.NoButton),
+                (QtCore.QEvent.MouseButtonPress, QtCore.Qt.LeftButton, QtCore.Qt.LeftButton),
+                (QtCore.QEvent.MouseButtonRelease, QtCore.Qt.LeftButton, QtCore.Qt.NoButton)):
+            QtWidgets.QApplication.sendEvent(vp, QtGui.QMouseEvent(
+                kind, QtCore.QPointF(pos), QtCore.QPointF(vp.mapToGlobal(pos)),
+                button, buttons, QtCore.Qt.NoModifier))
+        QtCore.QCoreApplication.processEvents()
+        got = [(s.ObjectName, list(s.SubElementNames))
+               for s in FreeCADGui.Selection.getSelectionEx("", 0)]
+        if got:
+            break
+    check("entry 151: a click on the view's edge selects the edge",
+          len(got) == 1 and got[0][0] == "View" and got[0][1]
+          and got[0][1][0].startswith("Edge"), got)
 
 
 def finish():
@@ -259,4 +353,7 @@ for _kind in ("Qt", "backend"):
     STEPS.append((2500, measure(_kind + "-again")))
     STEPS.append((300, compare(_kind)))
     STEPS.append((500, close))
+STEPS.append((1500, open_while_restoring))
+STEPS.append((12000, click_edge))
+STEPS.append((500, close))
 advance()

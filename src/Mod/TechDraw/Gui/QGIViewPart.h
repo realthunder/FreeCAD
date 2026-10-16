@@ -150,6 +150,9 @@ private:
     std::unordered_map<const App::DocumentObject*, std::vector<QGIFace*>> m_hatchedFaces;
     PathBuilder* m_pathBuilder;
     TechDraw::LineGenerator* m_dashedLineGenerator;
+    /// A draw skipped for a restoring document asked to be done once the
+    /// restore is over (draw()); asked once until a draw is done
+    bool m_paintAskedOnceRestored = false;
 
 };
 

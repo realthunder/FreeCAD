@@ -168,8 +168,22 @@ void QGIViewPart::draw()
         // if the document is still restoring, we may not have all the information
         // we need to draw the source objects, so we wait until restore is finished.
         // Base::Console().Message("QGIVP::draw - document is restoring, do not draw\n");
+        //
+        // And ask to be drawn then. A page opened while a progressive load
+        // still flags the document as restoring -- after the view providers
+        // were made, so none of them asked (ViewProviderDrawingView::
+        // finishRestoring) -- had its views' items empty: nothing drawn on
+        // the Qt layer and nothing to pick, until another page was shown
+        // and this one again (docs/HandsOnQueue.md entry 151). A view whose
+        // geometry came with the file signals no paint of its own later.
+        if (doc && !m_paintAskedOnceRestored && viewPart->isAttachedToDocument()) {
+            m_paintAskedOnceRestored = true;
+            ViewProviderDrawingView::paintOnceRestored(doc->getName(),
+                                                       viewPart->getNameInDocument(), 0);
+        }
         return;
     }
+    m_paintAskedOnceRestored = false;
 
     if (!isVisible())
         return;

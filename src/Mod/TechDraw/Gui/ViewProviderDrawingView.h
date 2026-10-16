@@ -105,9 +105,10 @@ public:
     void fixColorAlphaValues();
     static void fixColorAlphaValues(Gui::ViewProviderDocumentObject* vp);
 
-private:
     /// Ask the view to be painted once its document is no longer being
-    /// restored: a page item draws no view of a restoring document
+    /// restored: a page item draws no view of a restoring document. Asked
+    /// by the view provider at the end of its restore, and by a page item
+    /// that skipped its draw for it (QGIViewPart::draw)
     static void paintOnceRestored(const std::string& docName,
                                   const std::string& viewName,
                                   int tries);
