@@ -168,6 +168,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 09:44: entry 151 ANSWERED -- only at the FIRST LOAD of
+scanner.FCStd; switching to another page and back, Page009 selects
+again.** Under the entry.
+
 **2026-10-16 09:42: NEW ENTRY 153 (a change request) -- SHORTEN the overlay's wheel
 capture timeout (zoom, then wheeling over the tree still zooms too long;
 `DockOverlayWheelDelay` 1000 ms by the note-taker's reading).** Under the
@@ -3089,7 +3093,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING. 17:58: the REPORTER's word relayed by the build session: WireJoiner gated by a property, default true for new objects, false for older files (legacy face finder) -- BUILT as DrawViewPart.UseWireJoiner, IN BUILD r63, NOT committed, not pushed, not staged; the hover-but-not-select defect SEPARATE, a probe after r63. 21:26 (build session): FACES DONE `5edea1ed83` (UseWireJoiner; scanner.FCStd's views keep the old finder until set); CLICKS: a CAUSE FOUND and FIXED `eefc466af4` (a dimension took presses over its whole rectangle) -- Front010 clicks selecting nothing at least 54 of 93 before, 10 after; LOCAL, not pushed, not staged; LEFT OPEN for the reporter: overlapping edges (the top one takes the click), the image view ActiveView017 over Rear001 takes clicks, 10 Front010 edges still select nothing. 2026-10-16 08:05: (h) FIXED `3370553582`, LOCAL, not pushed, not staged, on the reporter's "Continue" to the build session (relayed) -- the 10 dead edges were arcs crossed by a dimension's line or arrow; a dimension now takes a press on its LABEL only; 10 -> 0 on the copy; (f), (g) still open. 2026-10-16 09:01: the REPORTER RULED (to the build session, relayed) "Dimension line will select dimension" -- DONE `3a5e7c0239`, replacing the label-only choice; a projection group (AutoDistribute) no longer takes its views' dimensions' presses; no Front010 click selects nothing; PUSHED and STAGED `78fdeb4689`; (f), (g) still open |
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): a part view and a projection group picked by a 2 mm band along the frame (shown or not), label and caption, lines and faces; the empty inside lets the click through; other view kinds unchanged. DONE 21:26 (build session): `7c6d93ba5f`, LOCAL, not pushed, not staged |
 | 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57. DONE 21:26 (build session): `c9417fada7`, LOCAL, not pushed, not staged |
-| 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149) |
+| 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149). ANSWERED 09:44: only on FIRST LOADING the document -- after switching to another page it works, and Page009 works too after switching back |
 | 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
 | 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix |
 
@@ -20681,7 +20685,7 @@ where it went, the view or the panel).
 **2026-10-15 21:26, the build session: DONE, COMMITTED `c9417fada7`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
 "150 DONE (c9417fada7)".
 
-## 151. scanner.FCStd: no TechDraw edge or face selectable any more; under the Qt renderer none drawn (a defect) -- OPEN
+## 151. scanner.FCStd: no TechDraw edge or face selectable any more; under the Qt renderer none drawn (a defect) -- OPEN; ANSWERED 09:44 -- only at the first load, a page switch cures it
 
 **2026-10-16 09:39, the reporter:** "new defect, now when I open scanner document,
 non of the Techdraw edge or face are selectable. Dimensions can be selected
@@ -20717,6 +20721,20 @@ views' presses"). By the note-taker's reading, two candidates for the
 picking, NOT checked: the group's filter now taking presses on its own
 part views (edges and faces are their children), and the part view's
 band-only shape; none read for the drawing under Qt.
+
+**2026-10-16 09:44, the reporter answers:** "entry 151. It worked when I
+switched to other page. Page009 works too after switching back. So the
+problem occur when first loading the scanner document"
+
+The note-taker's reading:
+- The defect shows only right after OPENING the document, on the page
+  shown first (Page009, by the note-taker's reading).
+- Switching to ANOTHER page: there edges and faces select. Switching BACK
+  to Page009: they select there too. So a page switch cures it.
+- a. (which pages): answered in part -- the other page works; whether
+  every page is broken at first load, NOT said.
+NOT said: whether the drawing under the Qt renderer (nothing drawn) also
+comes back after a page switch; b to e of 09:39.
 
 ## 152. The PartDesign task watcher hides itself when the active view is not a 3D view (a change request) -- OPEN
 
