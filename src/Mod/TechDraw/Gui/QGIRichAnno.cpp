@@ -148,6 +148,7 @@ void QGIRichAnno::setPreselect(bool enable)
 void QGIRichAnno::draw()
 {
 //    Base::Console().Log("QGIRA::draw() - %s - parent: %X\n", getFeature()->getNameInDocument(), parentItem());
+    dropOpaqueMask();
     if (!isVisible())
 //        Base::Console().Message("QGIRA::draw - not visible\n");
         return;

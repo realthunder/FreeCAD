@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
+# include <cmath>
 # include <QGraphicsSceneHoverEvent>
 # include <QGraphicsSceneMouseEvent>
 # include <QPainter>
@@ -46,6 +48,8 @@
 #include <Mod/TechDraw/App/DrawProjGroupItem.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawView.h>
+#include <Mod/TechDraw/App/DrawViewBalloon.h>
+#include <Mod/TechDraw/App/DrawViewDimension.h>
 
 #include "QGIView.h"
 #include "MDIViewPage.h"
@@ -377,6 +381,7 @@ QGIViewClip* QGIView::getClipGroup()
 void QGIView::updateView(bool forceUpdate)
 {
 //    Base::Console().Message("QGIV::updateView() - %s\n", getViewObject()->getNameInDocument());
+    dropOpaqueMask();
 
     //allow/prevent dragging
     if (getViewObject()->isLocked()) {
@@ -458,6 +463,7 @@ void QGIView::toggleCache(bool state)
 void QGIView::draw()
 {
 //    Base::Console().Message("QGIV::draw()\n");
+    dropOpaqueMask();
     double xFeat, yFeat;
     if (getViewObject()) {
         xFeat = Rez::guiX(getViewObject()->X.getValue());
@@ -635,13 +641,18 @@ QPainterPath QGIView::shape() const
     if (!passesClicks()) {
         return inherited::shape();
     }
-    // A band along the frame's line, 2 mm on the page
-    QPainterPath frame;
-    frame.addRect(m_border->rect());
-    QPainterPathStroker stroker;
-    stroker.setWidth(Rez::guiX(2.0));
-    QPainterPath path = stroker.createStroke(frame);
+    // A band along the frame's line, 2 mm on the page, while the frame is
+    // shown: "hidden frame shouldn't register click" (the reporter,
+    // docs/HandsOnQueue.md entry 155)
+    QPainterPath path;
     path.setFillRule(Qt::WindingFill);
+    if (m_border->isVisible()) {
+        QPainterPath frame;
+        frame.addRect(m_border->rect());
+        QPainterPathStroker stroker;
+        stroker.setWidth(Rez::guiX(2.0));
+        path.addPath(stroker.createStroke(frame));
+    }
     for (QGraphicsItem* item : {static_cast<QGraphicsItem*>(m_label),
                                 static_cast<QGraphicsItem*>(m_caption)}) {
         if (item && item->isVisible()) {
@@ -649,6 +660,112 @@ QPainterPath QGIView::shape() const
         }
     }
     return path;
+}
+
+bool QGIView::contains(const QPointF& point) const
+{
+    if (!passesClicks()) {
+        return inherited::contains(point);
+    }
+    if (shape().contains(point)) {
+        return true;
+    }
+    return picksByContent() && opaqueAt(point);
+}
+
+bool QGIView::collidesWithPath(const QPainterPath& path, Qt::ItemSelectionMode mode) const
+{
+    if (inherited::collidesWithPath(path, mode)) {
+        return true;
+    }
+    if (!passesClicks() || !picksByContent()) {
+        return false;
+    }
+    // a point asked as a pixel; a rubber band keeps to shape()
+    const QRectF area = path.controlPointRect();
+    if (area.width() > 4.0 || area.height() > 4.0) {
+        return false;
+    }
+    return opaqueAt(area.center());
+}
+
+namespace {
+// Paint an item and what is under it as the page would, onto the mask:
+// where it leaves the image clear nothing is drawn
+void paintForMask(QPainter& painter, QGraphicsItem* item, const QGraphicsItem* top,
+                  const QTransform& toMask)
+{
+    if (!item->isVisible()) {
+        return;
+    }
+    painter.save();
+    painter.setTransform(item->itemTransform(top) * toMask);
+    QStyleOptionGraphicsItem option;
+    option.exposedRect = item->boundingRect();
+    item->paint(&painter, &option, nullptr);
+    if (item->flags() & QGraphicsItem::ItemClipsChildrenToShape) {
+        painter.setClipPath(item->shape(), Qt::IntersectClip);
+    }
+    for (QGraphicsItem* child : item->childItems()) {
+        paintForMask(painter, child, top, toMask);
+    }
+    painter.restore();
+}
+}
+
+bool QGIView::opaqueAt(const QPointF& point) const
+{
+    // The view's own decorations are picked by shape(); the rest is its
+    // content
+    const QGraphicsItem* skip[] = {m_border, m_label, m_caption, m_lock};
+    auto skipped = [&skip](const QGraphicsItem* item) {
+        return std::find(std::begin(skip), std::end(skip), item) != std::end(skip);
+    };
+    if (m_opaqueMask.isNull()) {
+        QRectF area;
+        for (QGraphicsItem* child : childItems()) {
+            if (child->isVisible() && !skipped(child)) {
+                area |= child->mapRectToParent(child->boundingRect()
+                                               | child->childrenBoundingRect());
+            }
+        }
+        if (area.isEmpty()) {
+            return false;
+        }
+        // a pixel a tenth of a millimetre, the page's own unit, at most
+        // 2048 along the longer side
+        m_opaqueScale = std::min(1.0, 2048.0 / std::max(area.width(), area.height()));
+        m_opaqueMap = QTransform::fromTranslate(-area.left(), -area.top())
+            * QTransform::fromScale(m_opaqueScale, m_opaqueScale);
+        QImage mask(int(std::ceil(area.width() * m_opaqueScale)) + 1,
+                    int(std::ceil(area.height() * m_opaqueScale)) + 1,
+                    QImage::Format_ARGB32_Premultiplied);
+        mask.fill(Qt::transparent);
+        QPainter painter(&mask);
+        painter.setRenderHint(QPainter::Antialiasing);
+        for (QGraphicsItem* child : childItems()) {
+            if (!skipped(child)) {
+                paintForMask(painter, child, this, m_opaqueMap);
+            }
+        }
+        painter.end();
+        m_opaqueMask = mask;
+    }
+    // what is drawn within half a millimetre: thin lines and text are hard
+    // to hit on the pixel
+    const QPointF at = m_opaqueMap.map(point);
+    const int reach = int(std::ceil(Rez::guiX(0.5) * m_opaqueScale));
+    const int x0 = int(std::floor(at.x()));
+    const int y0 = int(std::floor(at.y()));
+    for (int y = std::max(0, y0 - reach); y <= std::min(m_opaqueMask.height() - 1, y0 + reach); ++y) {
+        const auto* line = reinterpret_cast<const QRgb*>(m_opaqueMask.constScanLine(y));
+        for (int x = std::max(0, x0 - reach); x <= std::min(m_opaqueMask.width() - 1, x0 + reach); ++x) {
+            if (qAlpha(line[x]) > 24) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 QGIView* QGIView::getQGIVByName(std::string name)
@@ -730,7 +847,49 @@ bool QGIView::getFrameState()
     ViewProviderPage* vpp = dynamic_cast<ViewProviderPage*>(vp);
     if (!vpp) return true;
 
-    return vpp->getFrameState();
+    if (vpp->getFrameState()) {
+        return true;
+    }
+    // Frames hidden: a view shows its frame, and its label, while anything
+    // of it is selected, and can be dragged by it then; a projection group's
+    // views all show theirs (docs/HandsOnQueue.md entry 155, the reporter
+    // 2026-10-16: "it still shows the frame if anything in the view is
+    // selected. so once it's shown, it can be dragged"; "label shows with
+    // frame. no hover. group frame")
+    return selectionInside(dv);
+}
+
+/// The view a selected object belongs to for its frame: a dimension's or a
+/// balloon's view, and for a projection group's view the group
+static App::DocumentObject* frameOwner(App::DocumentObject* obj)
+{
+    if (auto dim = dynamic_cast<TechDraw::DrawViewDimension*>(obj)) {
+        obj = dim->getViewPart();
+    }
+    else if (auto balloon = dynamic_cast<TechDraw::DrawViewBalloon*>(obj)) {
+        obj = balloon->SourceView.getValue();
+    }
+    if (auto item = dynamic_cast<TechDraw::DrawProjGroupItem*>(obj)) {
+        if (auto group = item->getPGroup()) {
+            obj = group;
+        }
+    }
+    return obj;
+}
+
+bool QGIView::selectionInside(TechDraw::DrawView* dv)
+{
+    if (!dv || !dv->getDocument()) {
+        return false;
+    }
+    App::DocumentObject* owner = frameOwner(dv);
+    for (const auto& sel : Gui::Selection().getSelection(dv->getDocument()->getName(),
+                                                          Gui::ResolveMode::NoResolve)) {
+        if (sel.pObject && frameOwner(sel.pObject) == owner) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void QGIView::hideFrame()

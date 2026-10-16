@@ -108,6 +108,7 @@ void QGIViewImage::draw()
         return;
     bool crop = vp->Crop.getValue();
 
+    dropOpaqueMask();
     drawImage();
     if (crop) {
         QRectF cropRect(0.0, 0.0, Rez::guiX(viewImage->Width.getValue()), Rez::guiX(viewImage->Height.getValue()));

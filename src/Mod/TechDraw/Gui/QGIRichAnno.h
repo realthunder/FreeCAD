@@ -85,6 +85,10 @@ public:
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
     void draw() override;
+    /// Picked where the text and its frame draw (docs/HandsOnQueue.md
+    /// entry 155)
+    bool passesClicks() const override { return true; }
+    bool picksByContent() const override { return true; }
 
     void setLineSpacing(int lineSpacing);
     QFont prefFont(void);

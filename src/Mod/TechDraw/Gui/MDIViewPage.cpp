@@ -37,6 +37,8 @@
 #include <QPrintDialog>
 #include <QPrintPreviewDialog>
 #include <QPrinter>
+#include <QPointer>
+#include <QTimer>
 #include <fastsignals/signal.h>
 #include <cmath>
 #endif
@@ -758,9 +760,36 @@ QGIViewPart *MDIViewPage::findViewOfHatch(const App::DocumentObject *obj)
 
 //! invoked by selection change made in Tree via father MDIView
 //really "onTreeSelectionChanged"
+void MDIViewPage::refreshSelectedFrames()
+{
+    if (m_frameRefreshPending || !m_vpPage || m_vpPage->getFrameState()) {
+        return;
+    }
+    m_frameRefreshPending = true;
+    QPointer<MDIViewPage> self(this);
+    QTimer::singleShot(0, this, [self]() {
+        if (!self) {
+            return;
+        }
+        self->m_frameRefreshPending = false;
+        if (!self->m_scene || self->m_vpPage->getFrameState()) {
+            return;
+        }
+        for (QGIView* view : self->m_scene->getViews()) {
+            view->drawBorder();
+        }
+    });
+}
+
 void MDIViewPage::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
     //    Base::Console().Message("MDIVP::onSelectionChanged()\n");
+    if (msg.Type == Gui::SelectionChanges::ClrSelection
+        || msg.Type == Gui::SelectionChanges::SetSelection
+        || msg.Type == Gui::SelectionChanges::AddSelection
+        || msg.Type == Gui::SelectionChanges::RmvSelection) {
+        refreshSelectedFrames();
+    }
     if (msg.Type == Gui::SelectionChanges::ClrSelection) {
         clearSceneSelection();
     }

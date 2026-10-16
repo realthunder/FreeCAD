@@ -59,6 +59,9 @@ public:
 protected:
     virtual void drawSvg();
     void symbolToSvg(QByteArray qba);
+    /// Picked where the symbol draws (docs/HandsOnQueue.md entry 155)
+    bool passesClicks() const override { return true; }
+    bool picksByContent() const override { return true; }
 
     QGDisplayArea* m_displayArea;
     QGCustomSvg *m_svgItem;

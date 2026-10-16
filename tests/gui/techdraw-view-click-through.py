@@ -18,6 +18,9 @@ the gap between them is empty. Claims:
     view, whose rectangle covers it all, a click on an edge away from the
     dimension's lines still selects the edge. A dimension took a press
     anywhere in its rectangle;
+  - entry 155: a click through a picture's clear part selects the edge
+    under it, one on its drawn part the picture; with the frames hidden a
+    click where the frame's line was goes through;
   - entry 148, the last 10 of Front010's (the lines and arrows took the
     press and selected nothing, on a projection group's view): the
     reporter, 2026-10-16, "Dimension line will select dimension" -- a click
@@ -147,6 +150,7 @@ def clicks():
         frame = click_mm(VIEW_X, VIEW_Y + dy)
         if frame:
             note("INFO the frame's line picked %.1f mm above the view's middle" % dy)
+            FRAMES["view"] = dy
             break
     check("a click on the frame's top line selects the view",
           [n for n, _ in frame] == ["View"] and frame[0][1] in ([], [""]), frame)
@@ -248,6 +252,8 @@ def extensions(view, prefix):
 
 
 EXT = {}
+# where the frames' top lines were found, above each view's middle, in mm
+FRAMES = {}
 
 
 @step(500)
@@ -340,6 +346,7 @@ def drag_group():
             frame = dy
             break
     note("INFO the Front's frame line %s mm above its middle" % frame)
+    FRAMES["group"] = frame
     if frame is None:
         check("the group's Front view has a frame line to drag", False)
         return
@@ -347,15 +354,141 @@ def drag_group():
     start = at(GROUP_X + fx, GROUP_Y + fy + frame)
     mouse(QtCore.QEvent.MouseMove, start)
     mouse(QtCore.QEvent.MouseButtonPress, start, QtCore.Qt.LeftButton, QtCore.Qt.LeftButton)
+    mid = None
     for k in range(1, 11):
         pos = at(GROUP_X + fx + k, GROUP_Y + fy + frame)
         mouse(QtCore.QEvent.MouseMove, pos, QtCore.Qt.NoButton, QtCore.Qt.LeftButton)
         QtWidgets.QApplication.processEvents()
+        if k == 5:
+            mid = group.X.Value
+    # entry 154 (the reporter: under the backend's page layer a dragged
+    # group's geometry stays behind until the release): the layer places a
+    # part view's lines by its X and Y, and those of the group
+    check("entry 154: the group's X follows the drag before the release",
+          mid is not None and abs(mid - x0 - 5.0) < 1.0, (x0, mid))
     end = at(GROUP_X + fx + 10.0, GROUP_Y + fy + frame)
     mouse(QtCore.QEvent.MouseButtonRelease, end, QtCore.Qt.LeftButton, QtCore.Qt.NoButton)
     QtWidgets.QApplication.processEvents()
     check("a projection group's view dragged 10 mm moves the group about that",
           abs(group.X.Value - x0 - 10.0) < 1.0, (x0, group.X.Value))
+
+
+@step(500)
+def picture():
+    """Entry 155 (the reporter, 2026-10-16: "every view. if any area is
+    rendered transparency, then it should click through"; "anything non
+    transparent, should register click"): a 40 mm picture, clear but for a
+    10 mm square in its middle, over the right box"""
+    doc = FreeCAD.getDocument(DOC)
+    image = QtGui.QImage(400, 400, QtGui.QImage.Format_ARGB32)
+    image.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(image)
+    painter.fillRect(150, 150, 100, 100, QtGui.QColor(200, 30, 30))
+    painter.end()
+    path = os.path.join(OUT, "picture.png")
+    image.save(path)
+    pic = doc.addObject("TechDraw::DrawViewImage", "Picture")
+    doc.getObject("Page").addView(pic)
+    pic.ImageFile = path
+    pic.X = VIEW_X + 30.0
+    pic.Y = VIEW_Y
+    doc.recompute()
+    # over the part view, as ActiveView017 lies over Rear001
+    FreeCADGui.getDocument(DOC).getObject("Picture").StackOrder = 5
+
+
+@step(3000)
+def through_picture():
+    v = page_view()
+    v.centerOn(QtCore.QPointF((VIEW_X + 30.0) * 10.0, -VIEW_Y * 10.0))
+    QtWidgets.QApplication.processEvents()
+    v.grab().save(os.path.join(OUT, "picture-page.png"))
+    edge = []
+    for dx in (6.0, 6.2, 5.8):
+        edge = click_mm(VIEW_X + 30.0 + dx, VIEW_Y + 10.0)
+        if edge and edge[0][1] and edge[0][1][0].startswith("Edge"):
+            break
+    check("entry 155: a click through a picture's clear part selects the edge under it",
+          len(edge) == 1 and edge[0][0] == "View" and edge[0][1]
+          and edge[0][1][0].startswith("Edge"), edge)
+    solid = click_mm(VIEW_X + 30.0, VIEW_Y)
+    check("entry 155: a click on the picture's drawn part selects the picture",
+          [n for n, _ in solid] == ["Picture"], solid)
+
+
+@step(500)
+def hide_frames():
+    FreeCADGui.getDocument(DOC).getObject("Page").ShowFrames = False
+    # a view lays out its frame when it draws
+    for view in FreeCAD.getDocument(DOC).getObject("Page").Views:
+        if hasattr(view, "requestPaint"):
+            view.requestPaint()
+
+
+@step(1500)
+def hidden_frame():
+    v = page_view()
+    v.centerOn(QtCore.QPointF(VIEW_X * 10.0, -VIEW_Y * 10.0))
+    QtWidgets.QApplication.processEvents()
+    v.grab().save(os.path.join(OUT, "frames-hidden.png"))
+    # where the frame's top line was found, over the gap
+    got = []
+    for dy in (10.2, 10.0, 10.5, 11.0):
+        got = click_mm(VIEW_X, VIEW_Y + dy)
+        if got:
+            break
+    check("entry 155: with the frames hidden a click where the frame's line was goes through",
+          got == [], got)
+
+
+def raw_click_mm(x, y):
+    """A click that keeps the selection as it is until it lands"""
+    click(at(x, y))
+    QtWidgets.QApplication.processEvents()
+    return selected()
+
+
+@step(300)
+def select_an_edge():
+    # entry 155, 11:22 and 11:24: "it still shows the frame if anything in
+    # the view is selected. so once it's shown, it can be dragged"; "label
+    # shows with frame. no hover. group frame"
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(DOC, "View", "Edge1")
+
+
+@step(800)
+def frame_of_the_selected():
+    page_view().grab().save(os.path.join(OUT, "frame-of-selected.png"))
+    # where the frame's line was found with the frames shown: a miss would
+    # clear the selection, and the frame with it
+    got = raw_click_mm(VIEW_X, VIEW_Y + FRAMES.get("view", 10.5))
+    check("entry 155: frames hidden, a view with something selected shows its frame,"
+          " which a click takes", [n for n, _ in got] == ["View"] and got[0][1] in ([], [""]),
+          got)
+
+
+@step(300)
+def select_in_the_group():
+    name = EXT["group"][0]
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(DOC, name, "Edge1")
+
+
+@step(800)
+def group_frame():
+    name, fx, fy, x, y = EXT["group"]
+    # where the group is now: dragged above
+    group = FreeCAD.getDocument(DOC).getObject("Group")
+    gx, gy = group.X.Value, group.Y.Value
+    v = page_view()
+    v.centerOn(QtCore.QPointF(gx * 10.0, -gy * 10.0))
+    QtWidgets.QApplication.processEvents()
+    v.grab().save(os.path.join(OUT, "group-frame-of-selected.png"))
+    got = raw_click_mm(gx + fx, gy + fy + FRAMES.get("group", 11.0))
+    check("entry 155: frames hidden, something of a projection group's view selected:"
+          " its frame shows, which a click takes",
+          bool(got) and got[0][0] == name and got[0][1] in ([], [""]), got)
 
 
 def finish():

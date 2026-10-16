@@ -168,6 +168,12 @@ private:
 
     QList<QGraphicsItem*> m_qgSceneSelected;        //items in selection order
 
+    /// With the page's frames hidden, the views' frames laid out again a
+    /// turn after the selection changed: a view shows its frame while
+    /// anything of it is selected (QGIView::getFrameState, entry 155)
+    void refreshSelectedFrames();
+    bool m_frameRefreshPending = false;
+
     void getPaperAttributes();
     PagePrinter* m_pagePrinter;
 

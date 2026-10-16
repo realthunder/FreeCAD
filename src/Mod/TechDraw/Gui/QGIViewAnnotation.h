@@ -59,6 +59,9 @@ public:
 
 protected:
     void drawAnnotation();
+    /// Picked where the text draws (docs/HandsOnQueue.md entry 155)
+    bool passesClicks() const override { return true; }
+    bool picksByContent() const override { return true; }
 
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;

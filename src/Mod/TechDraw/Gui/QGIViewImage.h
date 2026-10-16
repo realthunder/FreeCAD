@@ -53,6 +53,9 @@ public:
 
 protected:
     virtual void drawImage();
+    /// Picked where the picture is not clear (docs/HandsOnQueue.md entry 155)
+    bool passesClicks() const override { return true; }
+    bool picksByContent() const override { return true; }
 
     QGCustomImage* m_imageItem;
     QGCustomClip*  m_cliparea;

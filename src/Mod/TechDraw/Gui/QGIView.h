@@ -30,7 +30,9 @@
 #include <QColor>
 #include <QFont>
 #include <QGraphicsItemGroup>
+#include <QImage>
 #include <QObject>
+#include <QTransform>
 #include <QPen>
 #include <QPointF>
 
@@ -84,11 +86,21 @@ public:
     QRectF boundingRect() const override;
     /** Where a click or the pointer picks the view. Its whole frame, or,
      * for a view that passes clicks (passesClicks()), its frame's line --
-     * a band along it, shown or not -- its label and its caption: its
-     * lines and faces are picked themselves, and a click on the rest goes
-     * through to what is under it (docs/HandsOnQueue.md entry 149)
+     * a band along it, while the frame is shown -- its label and its
+     * caption: its lines and faces are picked themselves, and a click on
+     * the rest goes through to what is under it (docs/HandsOnQueue.md
+     * entries 149 and 155)
      */
     QPainterPath shape() const override;
+    /** shape(), and for a view that picks by its content
+     * (picksByContent()) wherever that is drawn: "anything non transparent
+     * should register click" (entry 155). Qt asks this for a point.
+     */
+    bool contains(const QPointF& point) const override;
+    /// The same for a press or the pointer: Qt picks an item at a point
+    /// by a pixel-sized path, through this, not contains()
+    bool collidesWithPath(const QPainterPath& path,
+                          Qt::ItemSelectionMode mode = Qt::IntersectsItemShape) const override;
     void paint( QPainter *painter,
                         const QStyleOptionGraphicsItem *option,
                         QWidget *widget = nullptr ) override;
@@ -104,6 +116,10 @@ public:
     void hideFrame();               //used by derived classes that don't display a frame
 
     virtual bool getFrameState();
+    /// Whether anything of \a dv -- of its projection group, for a group's
+    /// view -- is selected: with the page's frames hidden, its frame shows
+    /// then (getFrameState(), docs/HandsOnQueue.md entry 155)
+    static bool selectionInside(TechDraw::DrawView* dv);
     virtual void toggleCache(bool state);
     virtual void updateView(bool update = false);
     virtual void drawBorder();
@@ -193,6 +209,12 @@ protected:
     void dumpRect(const char* text, QRectF rect);
     /// Whether a click on the view's empty inside goes through (shape())
     virtual bool passesClicks() const { return false; }
+    /// Whether, passing clicks, the view is picked where its content --
+    /// its items but the frame, label, caption and lock -- is drawn
+    /// (contains()); a part view's are picked themselves
+    virtual bool picksByContent() const { return false; }
+    /// Forget what contains() found drawn: the content changed
+    void dropOpaqueMask() { m_opaqueMask = QImage(); }
 
     Base::Reference<ParameterGrp> getParmGroupCol();
 
@@ -221,6 +243,15 @@ private:
     double m_lockHeight;
     int m_zOrder;
     bool m_hasHover = false;
+
+    /// Whether the content is drawn at a point of the view (contains())
+    bool opaqueAt(const QPointF& point) const;
+    /// What of the content is drawn, painted once and kept until the view
+    /// draws again (dropOpaqueMask()), and the map from the view's
+    /// coordinates to its pixels
+    mutable QImage m_opaqueMask;
+    mutable QTransform m_opaqueMap;
+    mutable double m_opaqueScale = 1.0;
 };
 
 } // namespace
