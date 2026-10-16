@@ -3343,7 +3343,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 164 | 2026-10-16 | a change request: the FULL OBJECT NAME (docname@objname) in the error message "<Exception> SubShapeBinder.cpp(330): No context, please double click the binder in the desired context to refresh"; and an AUDIT of the code base for this kind of message reported by an object's execute(), each to mention the object's name | OPEN; read by the note-taker, nothing run: a recompute's exception is printed by `e.ReportException()` in Document::_recomputeFeature (Document.cpp 15286-15290) WITHOUT the object; the name goes only to an FC_LOG line (log level, not shown by default), as getFullName = "doc#obj". 17:41 ADDED: "check why this error does not mark the binder as recompute error" -- read by the note-taker, nothing run: BOTH of the message's paths mark the object (setErrorDescription and the recompute's catch reach addRecomputeLog, which sets ObjectStatus::Error), so the mark is either SWALLOWED (slotRecomputedObject, SubShapeBinder.cpp 1124-1134, catches update()'s throw with ReportException only) or CLEARED by a later successful update/recompute; NOT found by reading. 17:46 the build session takes it after 160; it would use the existing "doc#obj" unless told '@'. 17:52 the 17:41 question WITHDRAWN by the reporter: the binder found, Binder008, and it IS marked as an error -- the note-taker's two candidates (swallowed, cleared) moot; the request (the name in the message, the audit) stands |
 | 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors. 18:05 ANSWERED: the EXPRESSION EDITORS too; /error over ALL OPEN DOCUMENTS; the list built per showing, no live refresh; a clash -- typing NOT led by << favours the LABEL, led by << favours the INTERNAL NAME (as said; the note-taker asks whether the two are the other way round). 18:10 ANSWERED b: "usual description" = what the expression editor's previous build showed as the object's TOOLTIP (internal name, label, Description/Label2 -- ExpressionCompleter.cpp 610-626) |
 | 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt. 18:04 the build session: the SAME four warnings, TWICE, in the FIRST recompute after a FRESH HEADLESS open of a scanner copy (r86, ~17:40, no revert) -- so NOT the revert's doing; the reporter's GUI first open at 17:36 printed NONE (the note-taker re-checked the live copy: all 8 lines are after the revert); why the GUI first open is silent not known. 18:10 ANSWERED: the recompute after the revert BY HAND; NOTHING looked wrong |
-| 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked. 18:18 the 18:06:05 step READ: ONE op, a VIEW property ShowFrames set (a TechDraw page's frames toggled), 47 s before the save; no TechDraw code that saves found |
+| 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked. 18:18 the 18:06:05 step READ: ONE op, a VIEW property ShowFrames set (a TechDraw page's frames toggled), 47 s before the save; no TechDraw code that saves found. 18:19 the build session (read only): NO save call added in src since 10-13 except tests; its probes open COPIES headless (FreeCADCmd) and none ran at 18:06; the session's "closed" time is written when the log is copied into the saved file, not a close -> the trigger is a SAVE ACTION in the GUI between 18:06:05 and 18:06:52; the question to the reporter: what was done in those 47 s, which window was active, did a box appear |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -22373,6 +22373,34 @@ ProjectedGeometry set on an object (a dimension's references after the
 recompute). Then the save at 18:06:52. No save call found in TechDraw's
 Gui sources (READ, nothing run). NOT known: what came between the frames
 toggle and the save.
+
+**2026-10-16 18:19, the build session's reading (its ~18:25; read only,
+nothing run in any FreeCAD):**
+- New code: NO save call added in `src` since 2026-10-13 except in test
+  scripts (git log -S on save/saveAs/Std_Save/saveDocument/SaveAll/
+  doCommand save; the hits are tests' self.Doc.saveAs and QPainter::save).
+- Its own probes since 17:30 copy scanner.FCStd into the probe folder and
+  open the COPY, headless (ExeName FreeCADCmd); none saves, and none ran
+  at 18:06 (r87 was compiling). The history's ExeName FreeCAD and the
+  stage's build fit the reporter's own session.
+- The history's session "closed" 1792145212.97 = 18:06:52.97, the
+  save_date second: by the code, that time is written when the log is
+  copied into the saved file -- NOT a document close. So: a save at
+  18:06:52, 47 s after the last change (txn 21, a page view's
+  ShowFrames, 18:06:05), and nothing after. The version row (num 1,
+  unnamed, seq 12, schema 5) is 17:59:36, the revert.
+- At the exit (18:11:51) no save prompt was needed: nothing changed after
+  the save.
+- Its conclusion: the trigger is a SAVE ACTION in the GUI between
+  18:06:05 and 18:06:52 -- Std_Save by menu, tool bar or Ctrl+S, Save
+  All, or Save in a close-confirm box when a window or the document was
+  closed. No code found that saves by itself.
+- Its question to the reporter: what was done in those 47 s, which
+  window was active (a TechDraw page, by the ShowFrames toggle), and did
+  any box appear?
+Not investigated further: 160 first, r87 compiling.
+The note-taker's reading: the build session and the note-taker agree --
+one save, by the reporter's own session, no self-saving code found.
 
 ## Inbox
 
