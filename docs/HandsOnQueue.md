@@ -173,6 +173,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 17:40: NEW entry 164 -- the object's full name (docname@objname)
+in execute()'s error messages, the binder's "No context" first, and an
+audit of the code base.** Under the entry.
+
 **2026-10-16 17:34: STAGED 17:34:10 CLEAN (`0bcd954c01`, code = pushed
 `54b5805b13`, build r86): entries 138, 151 to 156, 152, 160's kept face,
 162; FreeCAD.exe back (161).** The build session now looks into 160's
@@ -3286,6 +3290,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 161 | 2026-10-16 | a question (said to the build session, relayed): the company's malware defender, APEX, flagged FreeCAD.exe as UNAUTHORIZED FILE ENCRYPTION -- any clue? | OPEN; the reporter: "continue, I'll see what to do if it got triggered again"; the build session's guess (not confirmed): the .FCStd save, a zip written to a temp file and renamed over. 15:43 the STAGED copy's FreeCAD.exe is GONE (found by the build session; SEEN by the note-taker 15:43, nothing run: `.conda/user-app/bin` has FreeCADCmd.exe, FreeCAD.pdb and the DLLs but no FreeCAD.exe, the folder's mtime 10-16 13:13, the time of the alarm) -- by the build session's reading, not confirmed, Apex QUARANTINED it; the dev build's exe untouched; the reporter's copy does not start until it is back. 17:33 the restage RUNNING puts the staged FreeCAD.exe back (the file present again at 17:33, INSTALLED.txt not yet rewritten). 17:34 STAGED 17:34:10 CLEAN (INSTALLED.txt: fcad `0bcd954c01`, code = pushed `54b5805b13`, FreeCADGui 15:49:19 = build r86); FreeCAD.exe back (469504 bytes) |
 | 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed. 15:43 ROOT CAUSE FOUND and FIXED by the build session, NOT committed: in a GUI open Document::Restore takes the file's string table ("kept apart", d522d3064a of 09-27) but left index 0 (every shape's HasherIndex) on the table set aside -> element maps built against the wrong table; fix: the taken table re-registered as index 0; on r85 0 warnings (21 before); the settle pass runs (264 of 264); 313 objects' face colours identical before/after; a link to 160 not checked. 16:12 DONE `15289190d8` + `1bcd48431b` LOCAL, not pushed, not staged (r86: 0 warnings; new GUI tests 3/3 and 4; Document.py 236, Part appearance 35 OK). A VISIBLE CHANGE for the reporter to look at: 20 scanner objects now draw their faces in their source features' colours (each drew in ONE colour before) -- by the build session's reading the mapping working again as before ~10-11, NOT confirmed by the reporter. 17:33 PUSHED 17:32:50 (`54b5805b13`, by the reflog), on the reporter's word to the build session; the restage from build r86 RUNNING. 17:34 STAGED 17:34:10 CLEAN (INSTALLED.txt: fcad `0bcd954c01`, code = pushed `54b5805b13`, FreeCADGui 15:49:19 = build r86) |
 | 163 | 2026-10-16 | a question (said to the build session, relayed): why a DIALOG keeps POPPING UP saying some DLL is not accessible | OPEN; the exact text asked of the reporter by the build session; candidates (the build session's): its own launches without the conda PATH (0xC0000135, a Windows system box even for a hidden process), or Apex blocking the staged copy's DLLs (see 161) |
+| 164 | 2026-10-16 | a change request: the FULL OBJECT NAME (docname@objname) in the error message "<Exception> SubShapeBinder.cpp(330): No context, please double click the binder in the desired context to refresh"; and an AUDIT of the code base for this kind of message reported by an object's execute(), each to mention the object's name | OPEN; read by the note-taker, nothing run: a recompute's exception is printed by `e.ReportException()` in Document::_recomputeFeature (Document.cpp 15286-15290) WITHOUT the object; the name goes only to an FC_LOG line (log level, not shown by default), as getFullName = "doc#obj" |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21942,6 +21947,47 @@ NOT said: a. the box's exact text and title; b. when it shows -- at the
 reporter's own start of FreeCAD, or with nothing of theirs running (then
 the build session's launches); c. which program it names.
 
+## 164. The object's full name in execute()'s error messages, the binder's "No context" first; an audit (a change request) -- OPEN
+
+**2026-10-16 17:40, the reporter:** "new request, add full object name
+(docname@objname) to error message '17:36:33  <Exception>
+SubShapeBinder.cpp(330): No context, please double click the binder in
+the desired context to refresh'. audit the code base for this kind of
+message reported by object execute() function and make sure it mentions
+the object name"
+The note-taker's reading:
+- Two parts: (1) the binder's "No context" message names its object as
+  docname@objname; (2) an AUDIT of every such message raised from an
+  object's execute() (a recompute), each to name its object.
+- The time 17:36:33 is two minutes after the 17:34 stage -- by the
+  note-taker's reading seen on the staged copy, on a recompute (the
+  message comes from the throwing branch, which runs only while the
+  binder recomputes).
+Pointers, READ in the source, nothing run:
+- `src/Mod/Part/App/SubShapeBinder.cpp` 322-331: the message is one
+  static string; while NOT recomputing it goes to
+  `Document::setErrorDescription(this, ...)` (the object attached, but
+  the text without its name); while recomputing it is thrown with
+  FC_THROWM, which logs "<Exception> file(line): text" -- the line the
+  reporter quoted.
+- `src/App/Document.cpp` 15286-15290 (`_recomputeFeature`): a
+  Base::Exception from execute() is printed by `e.ReportException()`,
+  WITHOUT the object; the object's name goes only to
+  `FC_LOG("Failed to recompute " << Feat->getFullName() ...)`, a LOG-level
+  line not shown by default. The neighbouring branches (std::exception,
+  unknown, a returned error code) already print the name with FC_ERR.
+  So ONE place -- the report of an execute() exception at the recompute
+  -- may cover most messages at once, beside the per-message audit.
+- `DocumentObject::getFullName` (DocumentObject.cpp 533-545) gives
+  "doc#obj" -- '#', not the '@' the reporter typed.
+NOT said: a. the separator -- '@' as typed, or the fork's existing
+"doc#obj" of getFullName; b. whether the NAME (internal) or the LABEL
+too (a user sees labels in the tree); c. whether the name goes into the
+message TEXT itself (so the task panel, the tree's error tooltip and
+Python's exception also carry it) or only into the report-view line;
+d. the audit's scope -- every module's execute() messages (Part, PD,
+Sketcher, TechDraw, Draft's Python features...), or the C++ ones only.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -21953,5 +21999,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 163
+the build session, 131 and 132 found by it; entries 134 to 164
 are of 2026-10-15, 134 said to the build session)
