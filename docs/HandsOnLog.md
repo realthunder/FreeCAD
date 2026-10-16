@@ -7515,3 +7515,31 @@ before the 18:06 save (entry 167; identical to the 10-06 .FCBak).
 - r94: Document 236, FileBlobs 95, TestFillet 24, TestSketcherApp 146 OK.
   NOT pushed, NOT staged. The separator '@' the reporter typed was not
   used (FreeCAD's full name is doc#obj); theirs to rule.
+
+## 2026-10-16 night: entry 165 (r95), and a lead on 163
+
+- 165 (one completer row per object, the label in its description; Tab
+  takes <<label>>; omni search /error): `d89d378aa8`. One row, the
+  internal name; description and tooltip "<<Label>>" then the old tooltip
+  text. Insert rule: a leading "<<" -> the label unless the rest begins
+  the internal name too; no "<<" -> the label when the typing is part of
+  it. That is the reporter's clash rule as written ("if not leading with
+  << then favor lable, else favor internal name"); the note-taker's
+  question whether it is the wrong way round is still open. "/error": every
+  open document, made again at each showing of the box. Same rule in the
+  expression editors (the same completer).
+- r95: omni-search-label-one-row.py 10 of 10 (offscreen),
+  object-typing 16, slash-word 10, highlighted-row 20, expression-editor 45;
+  recent-items 18 of 18 on the real screen -- offscreen two claims fail
+  (the box comes back with no focus after the parameter editor), as since
+  r29 (2026-10-14): the platform's. ctest OmniSearch_Tests_run,
+  OmniControl_Tests_run, ExpressionEditor_tests_run passed. NOT pushed,
+  NOT staged.
+- 163 ("some dll is not accessible" dialogs): a test exe started bare
+  through runx.cmd (tests\src\Gui\*_run.exe tonight, tests\Tests_run.exe
+  from chain301 at about 15:40) stops in the Windows loader on a hard error
+  box -- the stack is NtRaiseHardError under LdrInitializeThunk; FreeCAD's
+  DLLs are in build\bin, which only ctest puts on PATH. Chain301's log has
+  nothing past the console's start codes, and the reporter asked about the
+  dialog at about 15:55. Test exes run through ctest from now on. If the
+  dialog comes again with nothing of mine running, its text is wanted.
