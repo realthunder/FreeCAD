@@ -173,6 +173,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 18:03: NEW entry 166 -- after a REVERT of scanner.FCStd, the blob
+manager's "Included file ... is missing from the document" (four hashes,
+twice, in the recompute after the revert; none after the first open) --
+read in the reporter's live console on their word.** Under the entry.
+
 **2026-10-16 17:59: NEW entry 165 -- omni search: /error for objects in
 recompute error; one completer row per object with <<label>> leading
 its description and tooltip; Tab to <<label>> when typed so, in both
@@ -3322,6 +3327,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 163 | 2026-10-16 | a question (said to the build session, relayed): why a DIALOG keeps POPPING UP saying some DLL is not accessible | OPEN; the exact text asked of the reporter by the build session; candidates (the build session's): its own launches without the conda PATH (0xC0000135, a Windows system box even for a hidden process), or Apex blocking the staged copy's DLLs (see 161) |
 | 164 | 2026-10-16 | a change request: the FULL OBJECT NAME (docname@objname) in the error message "<Exception> SubShapeBinder.cpp(330): No context, please double click the binder in the desired context to refresh"; and an AUDIT of the code base for this kind of message reported by an object's execute(), each to mention the object's name | OPEN; read by the note-taker, nothing run: a recompute's exception is printed by `e.ReportException()` in Document::_recomputeFeature (Document.cpp 15286-15290) WITHOUT the object; the name goes only to an FC_LOG line (log level, not shown by default), as getFullName = "doc#obj". 17:41 ADDED: "check why this error does not mark the binder as recompute error" -- read by the note-taker, nothing run: BOTH of the message's paths mark the object (setErrorDescription and the recompute's catch reach addRecomputeLog, which sets ObjectStatus::Error), so the mark is either SWALLOWED (slotRecomputedObject, SubShapeBinder.cpp 1124-1134, catches update()'s throw with ReportException only) or CLEARED by a later successful update/recompute; NOT found by reading. 17:46 the build session takes it after 160; it would use the existing "doc#obj" unless told '@'. 17:52 the 17:41 question WITHDRAWN by the reporter: the binder found, Binder008, and it IS marked as an error -- the note-taker's two candidates (swallowed, cleared) moot; the request (the name in the message, the audit) stands |
 | 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors |
+| 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -22190,6 +22196,51 @@ typing matches BOTH an internal name and a different object's label;
 e. the description when the label equals the name -- the usual
 description alone, by the note-taker's reading.
 
+## 166. After a revert of scanner.FCStd the blob manager warns included files are missing (a defect) -- OPEN
+
+**2026-10-16 18:01, the reporter:** "new defect, check console error in my live
+session. I revert a opened scanner file, and I am getting some error from
+bolbs manager saying some included file not found. this shouldn't happen"
+**What the note-taker READ in the reporter's live session, on their word**
+(the MCP console's log through `scripts/mcp_run.py --log` with
+FC_MCP_ENDPOINT_DIR=%USERPROFILE%\.freecad-mcp-user, pid 134000, the copy
+staged 17:34; a log read, NOTHING run in the session). The console keeps
+600 lines, from the session's start at 17:36:06; a copy is kept at
+`D:\works\sw\dl\handson\2026-10-16\e166-live-console-600.txt`.
+- 17:36:24 the first open (a progressive restore), 17:36:31-17:36:56 its
+  recompute: Binder's "No context", Fillet011 and Fillet007 failed -- NO
+  blob warning.
+- ~17:59:35 the REVERT (a second progressive restore: "159 document
+  changes suppressed while replaying the view providers").
+- 17:59:49 on, a recompute: at 17:59:52 and again at 17:59:57 the SAME
+  four warnings, "<App> FileBlobManager.cpp(2203): Included file <hash>
+  is missing from the document":
+    11e3007a4af23fb62750fa1b792768fef6e8efb7 (", named by 3 properties")
+    d48374a0f4b0d266bd9fb7d6e1df195e8663a883
+    e37c6b4aed1616c4119f65dc7f606686b77d8b91
+    f1cbabe1f148d0b57cd4299a3adea9c8cdf281e4
+  Then the same Fillet011 (18:00:00) and Fillet007 (18:00:29) failures as
+  after the first open; "Recompute failed!" 18:00:33.
+- They are WARNINGS, not errors; none says "stood in for it", so by the
+  source no property stood in for the content.
+Pointers, READ in the source, nothing run: the line is
+`FileBlobManager::dispatchPending` (src/App/FileBlobManager.cpp
+2159-2203) -- a referrer queued for a blob the archive did not produce
+once the archive is drained. It ran during the RECOMPUTE, not the revert's
+read, and twice.
+The note-taker's reading (a guess, NOT checked): something restores
+objects from saved data DURING the recompute after the revert and asks the
+blob manager for blobs the reverted document no longer holds -- e.g. the
+recompute "on copies" the build session found under entry 160 ("a frozen
+input was refused (Chamfer failed on Edge38), recomputing on copies"),
+which would also explain TWO rounds; or the reverted document's archive
+store not the one the copies read from.
+NOT said: a. whether the reporter recomputed after the revert by hand,
+or the recompute ran by itself; b. whether anything looks wrong in the
+document (a missing texture, material, embedded file) or only the
+warnings; c. whether a plain close and reopen, without the revert, shows
+them.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -22201,5 +22252,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 165
+the build session, 131 and 132 found by it; entries 134 to 166
 are of 2026-10-15, 134 said to the build session)
