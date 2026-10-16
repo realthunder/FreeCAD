@@ -4028,6 +4028,20 @@ std::set<App::DocumentObjectT> _AdoptedObjects;
 
 namespace {
 
+/// The documents a pass is waiting for (settleAdopted())
+std::set<std::string> _SettlePending;
+
+/// Whether \a doc is still being read: by the App, or by a progressive
+/// load still making its view providers in slices
+bool stillReading(const App::Document &doc)
+{
+    if(doc.testStatus(App::Document::Restoring))
+        return true;
+    auto gdoc = Gui::Application::Instance
+        ? Gui::Application::Instance->getDocument(&doc) : nullptr;
+    return gdoc && gdoc->isRestoringViewProviders();
+}
+
 /** The looks of what was taken from an older file, made once more when the
  * document has been read
  *
@@ -4039,8 +4053,28 @@ namespace {
  * with its own look saying another colour. So, with every view provider
  * done: each again, what the others are made from first.
  */
-void settleAdopted(const App::Document &doc)
+void settleAdopted(const App::Document &doc, int tries = 0)
 {
+    // The GUI makes the view providers after the App has said the document
+    // is read, or, in a progressive load, in slices after it: the signal
+    // found the list empty or the document still flagged, and the pass was
+    // never made (0 of 264 objects on scanner.FCStd, docs/HandsOnQueue.md
+    // entry 162) -- what was made inside the read stayed, the flags set
+    // and sources taken after an object's turn missed. So the pass waits
+    // for the load to end, the list kept. A minute at most.
+    if(stillReading(doc) && tries < 1200) {
+        const std::string name = doc.getName();
+        if(tries == 0 && !_SettlePending.insert(name).second)
+            return;
+        QTimer::singleShot(50, qApp, [name, tries]() {
+            if(auto later = App::GetApplication().getDocument(name.c_str()))
+                settleAdopted(*later, tries + 1);
+            else
+                _SettlePending.erase(name);
+        });
+        return;
+    }
+    _SettlePending.erase(doc.getName());
     std::vector<App::DocumentObject*> objs;
     for(auto it = _AdoptedObjects.begin(); it != _AdoptedObjects.end();) {
         if(it->getDocumentName() != doc.getName()) {
@@ -4074,7 +4108,8 @@ void settleAdoptedWhenRead()
     if(connected)
         return;
     connected = true;
-    App::GetApplication().signalFinishRestoreDocument.connect(settleAdopted);
+    App::GetApplication().signalFinishRestoreDocument.connect(
+        [](const App::Document &doc) { settleAdopted(doc); });
     App::GetApplication().signalDeleteDocument.connect([](const App::Document &doc) {
         for(auto it = _AdoptedObjects.begin(); it != _AdoptedObjects.end();) {
             if(it->getDocumentName() == doc.getName())
@@ -4380,6 +4415,9 @@ void ViewProviderPartExt::finishAppearance()
         feat->updateAppearance(nullptr, false, true);
         _AdoptedObjects.emplace(feat);
         settleAdoptedWhenRead();
+        // and when a progressive load has made the rest, which the App's
+        // word that the document is read comes before
+        settleAdopted(*feat->getDocument());
         std::set<App::DocumentObject*> inset;
         feat->getInListEx(inset, true);
         std::vector<App::DocumentObject*> objs(inset.begin(), inset.end());
