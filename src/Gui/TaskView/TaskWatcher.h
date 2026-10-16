@@ -47,12 +47,20 @@ public:
     std::vector<QWidget*> &getWatcherContent();
 
 public:
-    /// is called wenn the document or the Selection changes. 
+    /// is called wenn the document or the Selection changes.
     virtual bool shouldShow();
+
+    /// Shown only while the active view is a 3D view: its commands work in
+    /// one, and over a TechDraw page or a spreadsheet they only take room
+    void setNeeds3DView(bool on) { needs3DView = on; }
+    bool getNeeds3DView() const { return needs3DView; }
 
 protected:
     /// List of TaskBoxes of that dialog
     std::vector<QWidget*> Content;
+
+private:
+    bool needs3DView = false;
 
 };
 

@@ -47,6 +47,7 @@
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
+#include <Gui/View3DInventor.h>
 #include <Gui/ViewerContext.h>
 #include <Gui/ViewParams.h>
 #include <Gui/ViewProviderDocumentObject.h>
@@ -704,6 +705,9 @@ void TaskView::slotActivateView(const Gui::MDIView *view)
 {
     Q_UNUSED(view);
     showForActiveView();
+    // A watcher may want a 3D view (TaskWatcher::setNeeds3DView)
+    if (watchersShown())
+        updateWatcher();
     // A view that went without being closed leaves its dialog to nobody,
     // and while only one dialog may be open nothing else could be shown.
     // Not from here: this is in the middle of an activation.
@@ -1516,9 +1520,14 @@ void TaskView::onUpdateWatcher(void)
         fw = fw->parentWidget();
     }
 
+    // The active view: a container (a split view) answers with its focused
+    // view (MainWindow::setActiveWindow)
+    const bool in3DView =
+        dynamic_cast<View3DInventor*>(getMainWindow()->activeWindow()) != nullptr;
+
     // add all widgets for all watcher to the task view
     for (const auto & it : ActiveWatcher) {
-        bool match = it->shouldShow();
+        bool match = (in3DView || !it->getNeeds3DView()) && it->shouldShow();
         std::vector<QWidget*> &cont = it->getWatcherContent();
         for (auto & it2 : cont) {
             if (match)

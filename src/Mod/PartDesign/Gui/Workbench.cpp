@@ -477,6 +477,10 @@ void Workbench::activated()
     //PartDesignGui::ActivePartObject = NULL;
     _switchToDocument(App::GetApplication().getActiveDocument());
 
+    // Their commands work in a 3D view; over a TechDraw page or a
+    // spreadsheet they are gone (docs/HandsOnQueue.md entry 152)
+    for (auto watcher : Watcher)
+        watcher->setNeeds3DView(true);
     addTaskWatcher(Watcher);
     if(PartDesign::PartDesignParams::getSwitchToTask())
         Gui::Control().showTaskView();
