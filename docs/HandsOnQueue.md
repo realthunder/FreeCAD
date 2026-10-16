@@ -168,6 +168,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 13:28: entry 158 -- the reporter's words for the real-screen run
+relayed; NEW entry 161 (relayed) -- Apex flagged FreeCAD.exe as
+unauthorized file encryption.** Under the entries.
+
 **2026-10-16 13:26: the build session's state (its 14:00) -- LOCAL commits,
 NOT pushed, NOT staged:** 151 fixed `b6e4813887` (Qt "nothing drawn" the
 same cause); 154 fixed `0c28946f6d`; 155 done `6af132eb0b`; 153 done
@@ -3238,9 +3242,10 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame). 11:02 in build r77, NOT committed, not pushed, not staged: part views and groups by the frame band only while the frame is shown, plus label and caption; image, symbol, spreadsheet, annotation, rich text where drawn (alpha mask, 0.5 mm); CONSEQUENCE: a view with a hidden frame and no label cannot be grabbed to drag. 11:20: the reporter asks what a hidden frame is -- the page's frames toggled off: border AND label not drawn (the label kept only by KeepLabel); "if not [shown] then non-draggable is only natural" -- the consequence ACCEPTED. 11:22 CHANGED: with the page's frames HIDDEN, a view still SHOWS ITS FRAME while ANYTHING IN IT is SELECTED; once shown it can be dragged. ANSWERED 11:24: the LABEL shows with the frame; NO hover; a projection group shows the GROUP's frame. 13:26 DONE `6af132eb0b` LOCAL, not pushed, not staged: picture/symbol/annotation/rich annotation picked where drawn; the frame band only while shown; frames hidden -> a view with something selected shows frame+label and can be dragged; a group's view -> the group frame; no hover |
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels. 11:02 in build r77, NOT committed, not pushed, not staged: each pack writes NaviCube/ThemeAxisLabelColor (light grey dark packs, black light); AxisLabelColor by hand first. 13:26 DONE `5cdcce4ece` LOCAL, not pushed, not staged: ThemeAxisLabelColor in each pack; a hand-set AxisLabelColor wins |
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit). 11:29 RULED case 2: a tree selection EXCLUDES the editing view and BLOCKS the switch to it ONLY IF that view is NOT SHOWN; if it is VISIBLE, switch and broadcast as usual. 11:38 CONFIRMED both: the click reaches a visible editing view's task selection too; "shown" = on screen now; the rationale: what the user SEES, the tree reaches |
-| 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77. 13:26 NOT REPRODUCED offscreen by the build session; a run on the REAL SCREEN OK'd by the reporter (said to the build session, relayed), queued after r81 |
+| 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77. 13:26 NOT REPRODUCED offscreen by the build session; a run on the REAL SCREEN OK'd by the reporter (said to the build session, relayed), queued after r81. 13:28 the reporter's words, relayed: "entry 158, you launch using real graphics and try" |
 | 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it. 10:52 RULED: way B -- the handles stay in the editing root, the edit capture gets an outline (bgfx overlay highlight; a render cache for the Coin edit root); A rejected, it "defeats per view edit". 10:54: element-name routing ONLY IF NECESSARY -- by the note-taker's reading NOT needed (a handle's hover is found by its own node, its path can feed the edit highlight directly) |
 | 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143. ANSWERED 11:08: scanner.FCStd, OPEN then RECOMPUTE -> a missing edge on Adaptor, the failed fillet face MISSING; yesterday the same operation showed it. 13:26 a FIX (a missing edge keeps its fillet face after a reopen) building r81, its test being re-run; NOT committed; the hover request not started |
+| 161 | 2026-10-16 | a question (said to the build session, relayed): the company's malware defender, APEX, flagged FreeCAD.exe as UNAUTHORIZED FILE ENCRYPTION -- any clue? | OPEN; the reporter: "continue, I'll see what to do if it got triggered again"; the build session's guess (not confirmed): the .FCStd save, a zip written to a temp file and renamed over |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21511,6 +21516,12 @@ reproduced offscreen. The build session reports the reporter OK'd a run
 on the REAL SCREEN -- said to the build session; the note-taker did not
 hear it and has no words to quote. Queued after build r81.
 
+**2026-10-16 13:28, the reporter's words, relayed by the build session
+(said to it about 13:20; the note-taker did not hear them):** "entry 158,
+you launch using real graphics and try"
+The note-taker's reading: the OK for a run on the real screen (not
+offscreen) that the build session reported at its 14:00 state above.
+
 ## 159. PartDesign on-view edit: a click that selects nothing clears the active handle; why the handles have no silhouette outline (a change request, a question) -- OPEN
 
 **2026-10-16 10:37, the reporter:** "new request. in partdesign on view edit. a
@@ -21724,6 +21735,21 @@ a missing edge keeps its fillet face after a reopen -- building in r81,
 its test being re-run; NOT committed. The hover-highlight request: not
 reported started.
 
+## 161. Apex flags FreeCAD.exe as unauthorized file encryption (a question) -- OPEN; relayed, said to the build session
+
+**2026-10-16, said to the build session (the note-taker did not hear it;
+relayed 13:28):** "My company malware defender software Apex just flag
+FreeCAD.exe as unauthorized file encryption. any clue?"
+**About 13:15, also to the build session:** "continue, I'll see what to do
+if it got triggered again"
+The build session's reading (NOT confirmed): Apex's ransomware heuristic
+firing on the .FCStd save -- the zip written to a temp file, then renamed
+over the original.
+NOT said: a. which document or action was running when it fired (a save,
+an auto-save/recovery write, a test run of the build session's); b.
+whether Apex blocked or quarantined anything, or only warned; c. whether
+the staged copy or a build tree's FreeCAD.exe was flagged.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -21735,5 +21761,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 160
+the build session, 131 and 132 found by it; entries 134 to 161
 are of 2026-10-15, 134 said to the build session)
