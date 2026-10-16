@@ -168,6 +168,9 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 10:02: entry 156 ANSWERED -- from each theme, a colour set by hand
+wins, the axis labels only.** Under the entry.
+
 **2026-10-16 09:59: NEW ENTRY 156 (a change request) -- the navigation cube's
 axis cross labels: a theme-aware font colour (black on every theme now,
 by the note-taker's reading).** Under the entry.
@@ -3126,7 +3129,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix. ANSWERED 09:57: 300 ms; ONLY the DEFAULT changes; the timer RESTARTS on each turn as now (current logic kept) |
 | 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN. ANSWERED 09:50: the LATEST STAGED copy (`78fdeb4689`); a view IN A PROJECTION GROUP; before -- not sure |
 | 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame) |
-| 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack |
+| 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20938,7 +20941,7 @@ NOT said: a SHOWN frame's band -- its drawn line takes the click by the
 rule; whether the 2 mm width around the line stays (an easier target) --
 NOT said.
 
-## 156. The navigation cube's axis cross labels: a theme-aware font colour (a change request) -- OPEN
+## 156. The navigation cube's axis cross labels: a theme-aware font colour (a change request) -- OPEN; ANSWERED 10:02 -- from each theme, by hand wins, labels only
 
 **2026-10-16 09:59, the reporter:** "new request. make the navicube axis cross
 label font color theme aware"
@@ -20962,6 +20965,12 @@ label colour into the scene. NO theme pack sets `AxisLabelColor` (grep
 of `src/Gui/PreferencePacks/*/*.cfg`: 0 in each); the reporter's
 `user.cfg` NaviCube group (line 1392) holds no colour -- so black on
 every theme, by the note-taker's reading.
+
+**2026-10-16 10:02, the reporter answers a to c:** "from each theme. by hand
+wins. only axis label"
+The note-taker's reading: a -- each theme (preference pack) carries its
+own axis label colour; b -- a colour the user set by hand wins over the
+theme's; c -- only the axis labels, the cube's other colours unchanged.
 
 ## Inbox
 
