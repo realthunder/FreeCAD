@@ -164,6 +164,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 08:05: entry 148 (h) FIXED -- a dimension took the press where its
+lines and arrows cross an edge; now only its label takes a press (the
+build session's choice, not put to the reporter); Front010's dead edges 10
+-> 0 on the copy. `3370553582`, LOCAL, not pushed, not staged.** Under the
+entry. Still open: 148 (f), (g); 138, 144's outline, 146, 130/133.
+
 **2026-10-16 07:02 (written; the build session's message arrived overnight):
 PUSHED 2026-10-15 22:18 (origin `9c68e150ad`, was `1df007d0f2`) and
 STAGED 22:20 CLEAN (`9c68e150ad`, INSTALL-USER OK, exit 0; occt
@@ -3056,7 +3062,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 145 | 2026-10-15 | a defect: a drag of a DEFAULT-RADIUS edge's arrow ABORTED by another click (entry 136) -- the OTHER default edges' arrows do NOT go back to their positions | OPEN. ANSWERED 15:44: ONLY the other arrows are wrong (the dragged arrow and the value restored); Esc the SAME; the chamfer NOT TRIED yet by the reporter. DONE by the build log (seen 16:57): `1f31e03f49`, LOCAL, not pushed, not staged -- a cancelled drag puts back the other handles of its value; undo test 17; r59 |
 | 146 | 2026-10-15 | a defect: the NAVIGATION CUBE's MENU button -- its hover HIGHLIGHT hides (obscures) the button's own ICON | OPEN. ANSWERED 15:50: under BGFX, in BOTH themes, the menu button ONLY; the fix asked: draw only a BORDER of the present highlight shape (an outline, not a filled backdrop). 15:53: the border for BGFX ONLY (the Coin GL drawing unchanged). 15:55: a ONE-PIXEL border; nothing left open. BUILT r60 (build session, 18:00): the menu button's highlight as an outline under bgfx; cannot be checked offscreen; in r63 too, NOT committed. COMMITTED 21:26 (build session): `01ac931be2`, LOCAL, not pushed, not staged; not checkable offscreen |
 | 147 | 2026-10-15 | a change request: TechDraw's new PRINT icon (entry 137, staged 14:47) has LOW CONTRAST and a greyish colour -- it LOOKS DISABLED; make it SHARPER, with DARKER EDGES | OPEN; the icon is the SHARED `document-print.svg`, also Std_Print's (File > Print) -- whether both change, under the entry. ADDED 16:30: also MORE CONTRAST INSIDE the icon -- the INNER EDGES for example. ALL POINTS ANSWERED 16:34 ("entry 147 agree"): the shared icon changes for both commands; the same icon under both themes; the body fills kept. DONE by the build log (seen 16:57): `ffa839b1b6`, LOCAL, not pushed, not staged -- darker edges, inner lines and arrow; looked at rendered under both themes |
-| 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING. 17:58: the REPORTER's word relayed by the build session: WireJoiner gated by a property, default true for new objects, false for older files (legacy face finder) -- BUILT as DrawViewPart.UseWireJoiner, IN BUILD r63, NOT committed, not pushed, not staged; the hover-but-not-select defect SEPARATE, a probe after r63. 21:26 (build session): FACES DONE `5edea1ed83` (UseWireJoiner; scanner.FCStd's views keep the old finder until set); CLICKS: a CAUSE FOUND and FIXED `eefc466af4` (a dimension took presses over its whole rectangle) -- Front010 clicks selecting nothing at least 54 of 93 before, 10 after; LOCAL, not pushed, not staged; LEFT OPEN for the reporter: overlapping edges (the top one takes the click), the image view ActiveView017 over Rear001 takes clicks, 10 Front010 edges still select nothing |
+| 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING. 17:58: the REPORTER's word relayed by the build session: WireJoiner gated by a property, default true for new objects, false for older files (legacy face finder) -- BUILT as DrawViewPart.UseWireJoiner, IN BUILD r63, NOT committed, not pushed, not staged; the hover-but-not-select defect SEPARATE, a probe after r63. 21:26 (build session): FACES DONE `5edea1ed83` (UseWireJoiner; scanner.FCStd's views keep the old finder until set); CLICKS: a CAUSE FOUND and FIXED `eefc466af4` (a dimension took presses over its whole rectangle) -- Front010 clicks selecting nothing at least 54 of 93 before, 10 after; LOCAL, not pushed, not staged; LEFT OPEN for the reporter: overlapping edges (the top one takes the click), the image view ActiveView017 over Rear001 takes clicks, 10 Front010 edges still select nothing. 2026-10-16 08:05: (h) FIXED `3370553582`, LOCAL, not pushed, not staged, on the reporter's "Continue" to the build session (relayed) -- the 10 dead edges were arcs crossed by a dimension's line or arrow; a dimension now takes a press on its LABEL only; 10 -> 0 on the copy; (f), (g) still open |
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): a part view and a projection group picked by a 2 mm band along the frame (shown or not), label and caption, lines and faces; the empty inside lets the click through; other view kinds unchanged. DONE 21:26 (build session): `7c6d93ba5f`, LOCAL, not pushed, not staged |
 | 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57. DONE 21:26 (build session): `c9417fada7`, LOCAL, not pushed, not staged |
 
@@ -20461,6 +20467,28 @@ f. overlapping edges (Front010 Edge0-4 on Edge28): the top one takes the
 g. image views (ActiveView017 over Rear001): pass clicks through their
    empty inside too, like part views under 149?
 h. the 10 Front010 edges still selecting nothing: to be looked into?
+
+**2026-10-16 08:05, the build session: (h) FIXED, COMMITTED `3370553582` (log
+`51f85c622e`), LOCAL, not pushed, not staged.** From its message, received
+and written here 08:05; the commits SEEN in `git log`, nothing run by the
+note-taker. The reporter's word, said to the build session after it named
+(h) as next (relayed; the note-taker did not hear it): "Continue".
+"All ten Front010 edges that still selected nothing are arcs crossed by a
+dimension's extension line or arrow. On a projection group's view, the
+dimension item took the press and nothing was selected. The fix: a
+dimension now takes a press on its label only. Its lines and arrows let
+the click through to the edge below, which is what hover already lights
+there. On the copy of scanner.FCStd, 10 selected nothing before and 0
+after. 32 of 93 still do not select themselves: 25 select an end vertex
+(short arcs) and 7 select the edge lying over them, which is (f). Rear001
+is unchanged; that is (g), the image view."
+"One choice of mine, not put to the user: a click on a dimension's line
+goes through rather than selecting the dimension."
+"Test techdraw-view-click-through now has 9 claims; its projection-group
+case fails with the old shape. Build r72; the section-line click test
+passes 10 of 10."
+OPEN for the reporter: (f), (g); and the build session's choice above (a
+dimension selectable by its label only).
 
 ## 149. A TechDraw view takes a click anywhere inside its frame; let it through the transparent background, keep the border pickable (a change request) -- OPEN
 
