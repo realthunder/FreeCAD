@@ -6591,15 +6591,29 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 for (bool ontop : {false, true}) {
                     for (const auto &draw : ov.second->draws) {
                         if (bool(draw.material.ontop) == ontop
-                                && !layered(draw))
+                                && !layered(draw) && !outlineOnly(draw))
                             view->submit(draw, viewMat);
                     }
                 }
                 for (int16_t layer : layers) {
                     for (const auto &draw : ov.second->draws) {
                         if (layered(draw)
-                                && draw.material.ontoplayer == layer)
+                                && draw.material.ontoplayer == layer
+                                && !outlineOnly(draw))
                             view->submit(draw, viewMat);
+                    }
+                }
+                // A highlighted face of the feed -- the edit capture's, an
+                // edited feature's preview face lit from its task panel
+                // (docs/HandsOnQueue.md entry 160) -- outlined as step 9
+                // outlines the scene's, after the feed's own draws, and
+                // without its fill where the selection style says so
+                for (const auto &draw : ov.second->draws) {
+                    if (isTriangle(draw) && draw.partIndex >= 0
+                            && draw.material.faceoutline) {
+                        auto spec = faceOutlineSpec(draw);
+                        spec.view = uint16_t(view->overlayView);
+                        view->submitOutline(draw, ++outlineRef, spec);
                     }
                 }
             }

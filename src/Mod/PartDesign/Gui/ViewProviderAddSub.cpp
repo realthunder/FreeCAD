@@ -32,6 +32,8 @@
 # include <Inventor/nodes/SoPickStyle.h>
 # include <Inventor/nodes/SoAnnotation.h>
 # include <Inventor/nodes/SoTransform.h>
+# include <Inventor/actions/SoSearchAction.h>
+# include <Inventor/SoPath.h>
 # include <Bnd_Box.hxx>
 # include <BRep_Tool.hxx>
 # include <BRepBndLib.hxx>
@@ -48,6 +50,8 @@
 #include <App/Application.h>
 #include "ViewProviderAddSub.h"
 #include <Mod/Part/Gui/PartParams.h>
+#include <Mod/Part/Gui/SoBrepFaceSet.h>
+#include <Gui/Inventor/SoFCDetail.h>
 #include <Mod/PartDesign/App/FeatureAddSub.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 #include <Gui/TaskView/TaskDialog.h>
@@ -188,7 +192,64 @@ void ViewProviderAddSub::highlightPreviewFace(int face)
     if (!view || face == previewLitFace)
         return;
     previewLitFace = face;
+    previewLitInViews =lightPreviewFaceInViews(face) && face > 0;
     applyPreviewFaceColors();
+}
+
+bool ViewProviderAddSub::lightPreviewFaceInViews(int face)
+{
+    // The views showing the session the preview is the own node of
+    Gui::EditingRoot *root = nullptr;
+    if (isPreviewInSession()) {
+        auto doc = App::GetApplication().getDocument(previewSession.c_str());
+        auto gdoc = doc ? Gui::Application::Instance->getDocument(doc) : nullptr;
+        root = gdoc ? gdoc->editingRoot() : nullptr;
+    }
+    const std::vector<Gui::ViewerContext*> none;
+    const auto &views = root ? root->views() : none;
+    const std::vector<SoFCRenderCacheManager::HighlightItem> nothing;
+    auto clear = [&]() {
+        if (previewLitInViews) {
+            for (auto *v : views)
+                v->setEditingHighlight(nothing);
+        }
+        previewLitInViews = false;
+        return false;
+    };
+    if (views.empty())
+        return clear();
+    for (auto *v : views) {
+        if (!v->canEditingHighlight())
+            return clear();
+    }
+
+    // The face by its number in the preview's face set, as a pick of it
+    // would name it
+    SoFCDetail detail;
+    std::vector<SoFCRenderCacheManager::HighlightItem> items;
+    if (face > 0) {
+        auto view = getAddSubView();
+        SoSearchAction sa;
+        sa.setType(PartGui::SoBrepFaceSet::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        if (view)
+            sa.apply(view->getRoot());
+        SoNode *faces = sa.getPath() ? sa.getPath()->getTail() : nullptr;
+        if (!faces)
+            return clear();
+        detail.setContext(SoFCDetail::Face, faces);
+        detail.addIndex(SoFCDetail::Face, face - 1);
+        SbColor color;
+        float transparency = 0.0f;
+        color.setPackedValue(static_cast<uint32_t>(Gui::ViewParams::getHighlightColor()),
+                             transparency);
+        items.push_back({&detail, color.getPackedValue()});
+    }
+    for (auto *v : views) {
+        if (!v->setEditingHighlight(items))
+            return clear();
+    }
+    return true;
 }
 
 void ViewProviderAddSub::applyPreviewFaceColors()
@@ -214,8 +275,8 @@ void ViewProviderAddSub::applyPreviewFaceColors()
         own.setTransparency(view->Transparency.getValue() / 100.0f);
         colors.assign(count, own);
     }
-    // but the one lit
-    if (previewLitFace > 0) {
+    // but the one lit, unless the views light it
+    if (previewLitFace > 0 && !previewLitInViews) {
         App::Color lit;
         lit.setPackedValue(static_cast<uint32_t>(Gui::ViewParams::getHighlightColor()));
         lit.setTransparency(0.0f);
@@ -365,6 +426,12 @@ bool ViewProviderAddSub::dropPreviewFromSession()
 {
     if (!isPreviewInSession())
         return false;
+    // a face it lit in the views goes with it
+    if (previewLitInViews) {
+        lightPreviewFaceInViews(0);
+        previewLitInViews = false;
+        previewLitFace = 0;
+    }
     auto doc = App::GetApplication().getDocument(previewSession.c_str());
     auto gdoc = doc ? Gui::Application::Instance->getDocument(doc) : nullptr;
     previewSession.clear();
@@ -392,7 +459,11 @@ bool ViewProviderAddSub::isPreviewMode() const
 }
 
 void ViewProviderAddSub::setPreviewDisplayMode(bool on, const App::SubObjectT &occurrence) {
-    // (a preview switched on or off is in its own colours: no face of it is lit)
+    // (a preview switched on or off is in its own colours: no face of it is
+    // lit, by its colour or in the views)
+    if (previewLitInViews)
+        lightPreviewFaceInViews(0);
+    previewLitInViews = false;
     previewLitFace = 0;
     SoFCSwitch *fcSwitch =  nullptr;
     if (pcModeSwitch->isOfType(SoFCSwitch::getClassTypeId()))

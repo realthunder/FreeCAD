@@ -113,12 +113,21 @@ void DressUp::seedMadeFaces(const std::vector<std::string> &names)
         TopoDS_Compound comp;
         builder.MakeCompound(comp);
         bool any = false;
+        const Data::MappedName edge(edgeName);
         for (std::size_t i = 0; i < faceNames.size(); ++i) {
             if (!faceNames[i])
                 continue;
+            // The edge is where the face's history ends, or a step on the
+            // way: an edge whose name carries the dress-up's own tag, and
+            // sources of its own (one a cut made of two), is gone through
+            // to its first source (Fillet011 in scanner.FCStd, entry 160)
             Data::MappedName original;
-            last.getElementHistory(faceNames[i], &original);
-            if (original && original == Data::MappedName(edgeName)) {
+            std::vector<Data::MappedName> history;
+            last.getElementHistory(faceNames[i], &original, &history);
+            bool hit = original && original == edge;
+            for (const auto &step : history)
+                hit = hit || step == edge;
+            if (hit) {
                 builder.Add(comp, last.getSubShape(TopAbs_FACE, static_cast<int>(i) + 1));
                 any = true;
             }
@@ -126,6 +135,15 @@ void DressUp::seedMadeFaces(const std::vector<std::string> &names)
         if (any)
             madeFaces[name] = comp;
     }
+}
+
+TopoDS_Shape DressUp::getMadeFaces(const std::string &edge) const
+{
+    auto it = madeFaces.find(edge);
+    // a missing one by the name it had when its faces were made
+    if (it == madeFaces.end() && boost::starts_with(edge, Data::missingPrefix()))
+        it = madeFaces.find(edge.substr(Data::missingPrefix().size()));
+    return it == madeFaces.end() ? TopoDS_Shape() : it->second;
 }
 
 void DressUp::setFailedEdges(const std::vector<std::string> &names)

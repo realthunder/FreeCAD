@@ -104,6 +104,14 @@ protected:
     /// The faces of \a names' dress-ups not made in this session, found in
     /// the result about to be replaced (docs/HandsOnQueue.md entry 160)
     void seedMadeFaces(const std::vector<std::string> &names);
+public:
+    /** The faces \a edge's dress-up had when last made in this session, or
+     * as the file's result had them for an edge missing since the open;
+     * null for none. \a edge as Base names it, '?Edge3' for a missing one.
+     */
+    TopoDS_Shape getMadeFaces(const std::string &edge) const;
+
+protected:
     /// The error of a result that left \a names out, nullptr for none
     static App::DocumentObjectExecReturn *failedEdgesError(const char *what,
                                                            const std::vector<std::string> &names);

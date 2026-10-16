@@ -96,6 +96,11 @@ public:
      * session's own node (isPreviewInSession()): the path a highlight goes
      * by starts at this feature's switch, and the preview is not under it
      * there. A colour needs no path.
+     *
+     * Where every view of the session can, the face is lit there instead,
+     * as a preselection is drawn, outline and all, by the selection style
+     * (Gui::ViewerContext::setEditingHighlight, docs/HandsOnQueue.md entry
+     * 160); the colour is what is left for a view that cannot.
      */
     void highlightPreviewFace(int face);
 
@@ -128,6 +133,12 @@ protected:
     Gui::CoinPtr<Gui::SoFCPathAnnotation>   previewGroup;
     /// The face highlightPreviewFace() has lit, 0 for none
     int previewLitFace = 0;
+    /// That face is lit by the session's views, not by its colour
+    bool previewLitInViews = false;
+    /** Lights \a face of the preview in every view of the session, 0 for
+     * none; false, and nothing lit there, where a view cannot
+     */
+    bool lightPreviewFaceInViews(int face);
     Gui::CoinPtr<SoTransform>   previewTransform;
 
 private:

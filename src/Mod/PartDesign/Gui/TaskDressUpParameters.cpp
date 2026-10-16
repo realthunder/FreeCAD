@@ -38,6 +38,8 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <TopExp_Explorer.hxx>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
@@ -694,14 +696,51 @@ bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &s
         return false;
     if (auto parent = item->parent())
         item = parent;
+    PartDesign::DressUp* pcDressUp = static_cast<PartDesign::DressUp*>(DressUpView->getObject());
+    Data::IndexedName indexed;
+    // The face of the preview the edge's dress-up made, as the feature keeps
+    // it by the edge's name: a present edge's own fillet face, not the base's
+    // edge, and a missing one's face as last made, which has no name to be
+    // traced by (docs/HandsOnQueue.md entry 160)
+    auto previewFace = [&]() {
+        TopoDS_Shape made = pcDressUp->getMadeFaces(getGeometryItemText(item).constData());
+        auto preview = pcDressUp->DressUpShape.getShape();
+        if (made.IsNull() || preview.isNull())
+            return false;
+        for (int i = 1, c = preview.countSubShapes(TopAbs_FACE); i <= c; ++i) {
+            const TopoDS_Shape face = preview.getSubShape(TopAbs_FACE, i);
+            for (TopExp_Explorer exp(made, TopAbs_FACE); exp.More(); exp.Next()) {
+                if (face.IsPartner(exp.Current())) {
+                    indexed = Data::IndexedName::fromConst("Face", i);
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    // The element named, under the edited object: the preview's behind its
+    // prefix, else the feature's own
+    auto under = [&](bool preview) {
+        subname.clear();
+        ViewProviderDocumentObject *editVp = nullptr;
+        auto editDoc = Gui::Application::Instance->editDocument();
+        if (!editDoc)
+            return false;
+        editDoc->getInEdit(&editVp,&subname);
+        if (preview)
+            subname += PartDesign::FeatureAddSub::addsubElementPrefix();
+        indexed.appendToStringBuffer(subname);
+        return true;
+    };
+    if (previewFace())
+        return under(true);
+
     QByteArray _ref = getGeometryItemReference(item);
     const char *ref = Data::isMappedElement(_ref.constData());
     if (!ref) {
         subname += getGeometryItemText(item).constData();
         return true;
     }
-    PartDesign::DressUp* pcDressUp = static_cast<PartDesign::DressUp*>(DressUpView->getObject());
-    Data::IndexedName indexed;
     std::string tmp;
     App::StringHasherRef docHasher;
     if (auto doc = pcDressUp->getDocument())
@@ -762,17 +801,7 @@ bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &s
     }
     if (!found)
         return false;
-
-    subname.clear();
-    ViewProviderDocumentObject *editVp = nullptr;
-    auto editDoc = Gui::Application::Instance->editDocument();
-    if (!editDoc)
-        return false;
-    editDoc->getInEdit(&editVp,&subname);
-    if (!kept)
-        subname += PartDesign::FeatureAddSub::addsubElementPrefix();
-    indexed.appendToStringBuffer(subname);
-    return true;
+    return under(!kept);
 }
 
 void TaskDressUpParameters::onTimer() {
