@@ -168,6 +168,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 09:42: NEW ENTRY 153 (a change request) -- SHORTEN the overlay's wheel
+capture timeout (zoom, then wheeling over the tree still zooms too long;
+`DockOverlayWheelDelay` 1000 ms by the note-taker's reading).** Under the
+entry.
+
 **2026-10-16 09:39: NEW ENTRY 151 (a defect) -- opening scanner.FCStd, NO TechDraw
 edge or face selects (dimensions do); under the Qt renderer none are
 drawn. 09:40: NEW ENTRY 152 (a change request) -- the PartDesign task
@@ -3086,6 +3091,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57. DONE 21:26 (build session): `c9417fada7`, LOCAL, not pushed, not staged |
 | 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149) |
 | 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
+| 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20737,6 +20743,38 @@ READ in the source, nothing run: `src/Mod/PartDesign/Gui/Workbench.cpp`
 `src/Gui/TaskView/TaskView.cpp` 1485 (`updateWatcher()`, a 200 ms timer)
 and 1123 (`showForActiveView()`).
 
+## 153. Shorten the overlay's wheel capture timeout: zoom, then the tree's wheel still zooms too long (a change request) -- OPEN
+
+**2026-10-16 09:42, the reporter:** "new request, reduce wheel capture timeout,
+because zooming with wheel, then move mouse to tree to scroll with wheel
+continues to zoom, which I understand is what the timer is for to prevent
+accidental breaking a continuous zooming action. but the grace time period
+seems a bit too long"
+
+The note-taker's reading:
+- The reporter zooms the 3D view with the wheel, moves the pointer onto
+  the overlaid TREE VIEW and wheels there to scroll it -- the wheel still
+  ZOOMS the view, for a while.
+- The reporter accepts the reason (entry 150's fix: within the delay the
+  wheel keeps going where it went, so a continuous zoom does not break
+  when the pointer drifts onto a panel), but the grace time is a bit TOO
+  LONG: SHORTEN it.
+- By the note-taker's reading this behaviour is NEW with entry 150's fix
+  (`c9417fada7`, staged 2026-10-15 22:20): before it the wheel went to the
+  panel under the pointer within the delay.
+NOT said:
+a. a value -- how short;
+b. the default only (new users), or the reporter's own setting too (it
+   holds 1000, the default);
+c. whether every wheel turn should keep re-extending the delay (it does,
+   by the source) or the delay should count from the zoom's first turn.
+READ in the source and the reporter's config, nothing run:
+`src/Gui/OverlayParams.py` 121 -- `DockOverlayWheelDelay`, 1000 ms by
+default, "Delay mouse wheel pass through (ms)", 0 to 99999;
+`src/Gui/OverlayManager.cpp` 2139 and 2176 -- EVERY wheel event sets the
+delay again to now + that value (so it runs 1000 ms from the LAST turn);
+`%APPDATA%\FreeCAD\user.cfg` line 812 -- `DockOverlayWheelDelay` = 1000.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20748,5 +20786,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 152
+the build session, 131 and 132 found by it; entries 134 to 153
 are of 2026-10-15, 134 said to the build session)
