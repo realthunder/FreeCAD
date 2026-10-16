@@ -101,6 +101,9 @@ protected:
                         std::vector<std::string> &failedNames);
     /// FailedEdges set to \a names, FailedShape to their faces as last made
     void setFailedEdges(const std::vector<std::string> &names);
+    /// The faces of \a names' dress-ups not made in this session, found in
+    /// the result about to be replaced (docs/HandsOnQueue.md entry 160)
+    void seedMadeFaces(const std::vector<std::string> &names);
     /// The error of a result that left \a names out, nullptr for none
     static App::DocumentObjectExecReturn *failedEdgesError(const char *what,
                                                            const std::vector<std::string> &names);

@@ -76,8 +76,61 @@ DressUp::DressUp()
             "The faces the failed edges' dress-ups had when they last were made.");
 }
 
+void DressUp::seedMadeFaces(const std::vector<std::string> &names)
+{
+    // The faces an edge's dress-up has in the result this recompute
+    // replaces -- the one the file brought, after a reopen -- for an edge
+    // whose faces this session has not made: its reference gone at the
+    // first recompute, its fillet face was gone too, where an erroring
+    // feature had kept it (docs/HandsOnQueue.md entry 160). A face of the
+    // result whose history leads to the edge's name, as the link keeps it,
+    // is the edge's.
+    TopoShape last = Shape.getShape();
+    if (last.isNull() || !last.getElementMapSize())
+        return;
+    last.setPlacement(Base::Placement());
+    const auto shadows = Base.getShadowSubs();
+    std::vector<Data::MappedName> faceNames;
+    for (const auto &name : names) {
+        if (madeFaces.count(name))
+            continue;
+        std::string mapped;
+        for (const auto &v : shadows) {
+            if (v.second == name && !v.first.empty()) {
+                mapped = Data::newElementName(v.first.c_str());
+                break;
+            }
+        }
+        const char *edgeName = mapped.empty() ? nullptr : Data::isMappedElement(mapped.c_str());
+        if (!edgeName || !edgeName[0])
+            continue;
+        if (faceNames.empty()) {
+            int count = last.countSubShapes(TopAbs_FACE);
+            for (int i = 1; i <= count; ++i)
+                faceNames.push_back(last.getMappedName(Data::IndexedName::fromConst("Face", i)));
+        }
+        BRep_Builder builder;
+        TopoDS_Compound comp;
+        builder.MakeCompound(comp);
+        bool any = false;
+        for (std::size_t i = 0; i < faceNames.size(); ++i) {
+            if (!faceNames[i])
+                continue;
+            Data::MappedName original;
+            last.getElementHistory(faceNames[i], &original);
+            if (original && original == Data::MappedName(edgeName)) {
+                builder.Add(comp, last.getSubShape(TopAbs_FACE, static_cast<int>(i) + 1));
+                any = true;
+            }
+        }
+        if (any)
+            madeFaces[name] = comp;
+    }
+}
+
 void DressUp::setFailedEdges(const std::vector<std::string> &names)
 {
+    seedMadeFaces(names);
     BRep_Builder builder;
     TopoDS_Compound comp;
     builder.MakeCompound(comp);
@@ -98,6 +151,8 @@ void DressUp::setFailedEdges(const TopoShape &baseShape, const std::vector<TopoS
                              const std::vector<std::string> &missing,
                              std::vector<std::string> &failedNames)
 {
+    // before the faces made now: those are the edges that did not fail
+    seedMadeFaces(missing);
     failedNames = missing;
     for (std::size_t k = 0; k < edges.size(); ++k) {
         int index = baseShape.findShape(edges[k].getShape());

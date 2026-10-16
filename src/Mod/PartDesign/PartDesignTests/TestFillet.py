@@ -203,6 +203,47 @@ class TestFillet(unittest.TestCase):
         self.assertEqual(list(fillet.FailedEdges), ['Edge50'])
         self.assertLess(fillet.Shape.Volume, 1000.0 - 1e-6)
 
+    def testMissingEdgeKeepsItsFaceAfterReopen(self):
+        # entry 160 (the reporter, 2026-10-16: "scanner document, open then
+        # recompute got missing edge on Adaptor, failed fillet face
+        # missing"): a reference gone at the first recompute after a reopen
+        # shows its fillet face as the file had it -- this session never
+        # made it
+        import os
+        import tempfile
+
+        body = self.Doc.addObject('PartDesign::Body', 'ReopenBody')
+        wedge = body.newObject('PartDesign::AdditiveWedge', 'ReopenWedge')
+        self.Doc.recompute()
+        # a top edge along X: both ends at the top, at Z2min
+        top = wedge.Shape.BoundBox.YMax
+        name = None
+        for i, e in enumerate(wedge.Shape.Edges):
+            ends = e.Vertexes
+            if (len(ends) == 2 and all(abs(v.Point.y - top) < 1e-7 for v in ends)
+                    and all(abs(v.Point.z - wedge.Z2min.Value) < 1e-7 for v in ends)):
+                name = 'Edge%d' % (i + 1)
+        self.assertIsNotNone(name)
+        fillet = body.newObject('PartDesign::Fillet', 'ReopenFillet')
+        fillet.Base = (wedge, [name])
+        fillet.Radius = 0.5
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        # the document's name kept: tearDown closes it by that
+        path = os.path.join(tempfile.mkdtemp(), 'PartDesignTestFillet.FCStd')
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        wedge = self.Doc.getObject('ReopenWedge')
+        fillet = self.Doc.getObject('ReopenFillet')
+        # the top collapses to a line: the edge is gone
+        wedge.X2min = 5
+        wedge.X2max = 5
+        self.Doc.recompute()
+        # a reference gone is kept marked missing: '?Edge11'
+        self.assertEqual([n.lstrip('?') for n in fillet.FailedEdges], [name])
+        self.assertGreaterEqual(len(fillet.FailedShape.Faces), 1)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestFillet")
