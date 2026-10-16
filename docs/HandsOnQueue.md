@@ -168,6 +168,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 15:43: entry 161 -- the STAGED copy's FreeCAD.exe is GONE since
+13:13 (Apex's quarantine, by the build session's reading; seen by the
+note-taker); 162 -- ROOT CAUSE found and fixed, not committed (index 0
+left on the set-aside string table); NEW entry 163 (relayed) -- a dialog
+keeps saying some DLL is not accessible.** Under the entries.
+
 **2026-10-16 14:29: NEW entry 162 (relayed) -- the "invalid name length"
 warnings at a GUI open of scanner.FCStd, cause found by the build
 session, fix building r83; 158 measured on the real screen (the page adds
@@ -3252,8 +3258,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77. 13:26 NOT REPRODUCED offscreen by the build session; a run on the REAL SCREEN OK'd by the reporter (said to the build session, relayed), queued after r81. 13:28 the reporter's words, relayed: "entry 158, you launch using real graphics and try". 14:29 MEASURED on the real screen by the build session: Page009 opened 45 s after the load -> no stall; opened 8 s after -> 5.5-5.9 s of stalls (longest 1.5-1.9 s), Qt or vector; control without the page 3.4-3.6 s (the progressive load finishing) -> the page adds about 2 s when opened before the load ends; NOT fixed yet |
 | 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it. 10:52 RULED: way B -- the handles stay in the editing root, the edit capture gets an outline (bgfx overlay highlight; a render cache for the Coin edit root); A rejected, it "defeats per view edit". 10:54: element-name routing ONLY IF NECESSARY -- by the note-taker's reading NOT needed (a handle's hover is found by its own node, its path can feed the edit highlight directly) |
 | 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143. ANSWERED 11:08: scanner.FCStd, OPEN then RECOMPUTE -> a missing edge on Adaptor, the failed fillet face MISSING; yesterday the same operation showed it. 13:26 a FIX (a missing edge keeps its fillet face after a reopen) building r81, its test being re-run; NOT committed; the hover request not started. 14:29 the missing-face fix DONE `c33e177bcf` LOCAL, not pushed, not staged (TestFillet 24 OK on r81); the hover request not reported started |
-| 161 | 2026-10-16 | a question (said to the build session, relayed): the company's malware defender, APEX, flagged FreeCAD.exe as UNAUTHORIZED FILE ENCRYPTION -- any clue? | OPEN; the reporter: "continue, I'll see what to do if it got triggered again"; the build session's guess (not confirmed): the .FCStd save, a zip written to a temp file and renamed over |
-| 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed |
+| 161 | 2026-10-16 | a question (said to the build session, relayed): the company's malware defender, APEX, flagged FreeCAD.exe as UNAUTHORIZED FILE ENCRYPTION -- any clue? | OPEN; the reporter: "continue, I'll see what to do if it got triggered again"; the build session's guess (not confirmed): the .FCStd save, a zip written to a temp file and renamed over. 15:43 the STAGED copy's FreeCAD.exe is GONE (found by the build session; SEEN by the note-taker 15:43, nothing run: `.conda/user-app/bin` has FreeCADCmd.exe, FreeCAD.pdb and the DLLs but no FreeCAD.exe, the folder's mtime 10-16 13:13, the time of the alarm) -- by the build session's reading, not confirmed, Apex QUARANTINED it; the dev build's exe untouched; the reporter's copy does not start until it is back |
+| 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed. 15:43 ROOT CAUSE FOUND and FIXED by the build session, NOT committed: in a GUI open Document::Restore takes the file's string table ("kept apart", d522d3064a of 09-27) but left index 0 (every shape's HasherIndex) on the table set aside -> element maps built against the wrong table; fix: the taken table re-registered as index 0; on r85 0 warnings (21 before); the settle pass runs (264 of 264); 313 objects' face colours identical before/after; a link to 160 not checked |
+| 163 | 2026-10-16 | a question (said to the build session, relayed): why a DIALOG keeps POPPING UP saying some DLL is not accessible | OPEN; the exact text asked of the reporter by the build session; candidates (the build session's): its own launches without the conda PATH (0xC0000135, a Windows system box even for a hidden process), or Apex blocking the staged copy's DLLs (see 161) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21782,6 +21789,22 @@ an auto-save/recovery write, a test run of the build session's); b.
 whether Apex blocked or quarantined anything, or only warned; c. whether
 the staged copy or a build tree's FreeCAD.exe was flagged.
 
+**2026-10-16 15:43, found by the build session (its ~16:00) and SEEN by
+the note-taker (a directory listing, nothing run):** the STAGED copy's
+FreeCAD.exe is GONE. `.conda/user-app/bin` holds FreeCADCmd.exe,
+FreeCADCmd.pdb, FreeCAD.pdb, FreeCAD.pyd and the DLLs, but no
+FreeCAD.exe; the folder's mtime is 10-16 13:13 -- the time of the
+alarm. INSTALLED.txt still says 2026-10-16 09:01:13, `78fdeb4689`. The
+build session found it when its test run against the staged copy failed
+("not recognized as an internal or external command"). The dev build's
+exe is untouched.
+The build session's reading, NOT confirmed: Apex QUARANTINED it.
+The note-taker's reading: this answers point b (Apex did more than warn,
+if the reading holds) and point c (the staged copy was flagged); the
+reporter's `tools\fcad-user.cmd` cannot start until the exe is back --
+restored from Apex's quarantine or by a restage, which is the
+reporter's word to give.
+
 ## 162. The "invalid name length" warnings when opening scanner.FCStd (a request) -- OPEN; relayed, said to the build session; a fix building
 
 **2026-10-16, said to the build session (the note-taker did not hear it;
@@ -21809,6 +21832,39 @@ build session's before/after colour check covers that.
 NOT said: a. whether the reporter saw any wrong face colour on
 `scanner.FCStd` (only the warnings were asked about).
 
+**2026-10-16 15:43, the build session's ROOT CAUSE and FIX (its ~16:00),
+NOT committed:** in a GUI open the document's string table already holds
+99 strings when the file's table is read; they disagree, so
+Document::Restore takes the file's table ("kept apart", `d522d3064a` of
+09-27) but LEFT INDEX 0 -- the index every shape names in the file
+(HasherIndex) -- on the table set aside. Every shape's element map was
+built against the wrong table, so its names read back as other
+features' strings. Fix: the taken table re-registered as index 0. On
+r85: 0 warnings on scanner (21 before); Pad's table is the document's;
+Document.py 236 OK; Part appearance tests 35 OK; a new GUI test 2/2.
+Also fixed: the after-load colour pass (settleAdopted) never ran under a
+GUI open (0 of 264 objects), now 264; scanner's 313 objects' face
+colours identical before and after. A possible link to 160 (names bound
+to the wrong table -> renames on a recompute) NOT checked yet.
+The note-taker's reading: the earlier reading under this entry (the
+in-read colour walk as the source of the warnings) is superseded --
+that walk only exposed the wrong table.
+
+## 163. A dialog keeps popping up saying some DLL is not accessible (a question) -- OPEN; relayed, said to the build session; the exact text asked
+
+**2026-10-16 about 15:55, said to the build session (the note-taker did not
+hear it; relayed 15:43):** "why there is always dialog popping up saying
+some dll is not accessible or something"
+The build session's reading (NOT confirmed), two candidates: its OWN
+launches -- FreeCADCmd.exe once without the conda PATH about 14:20 ->
+0xC0000135 (DLL not found), which Windows shows as a system box even for
+a hidden process; Tests_run.exe twice since 15:30 with empty output --
+or Apex blocking DLLs of the staged copy (entry 161). It asked the
+reporter for the exact text.
+NOT said: a. the box's exact text and title; b. when it shows -- at the
+reporter's own start of FreeCAD, or with nothing of theirs running (then
+the build session's launches); c. which program it names.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -21820,5 +21876,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 162
+the build session, 131 and 132 found by it; entries 134 to 163
 are of 2026-10-15, 134 said to the build session)
