@@ -1188,12 +1188,18 @@ SoFCRenderCacheManagerP::applyHighlights()
         RenderCachePtr cache = pathCache(item.path, false);
         if (cache && !cache->isEmpty())
           caches = cache->buildHighlightCache(this->sharedcache, 0, nullptr, item.color,
-                                              SoFCRenderCache::PreselectHighlight);
+                                              SoFCRenderCache::PreselectHighlight
+                                              | SoFCRenderCache::AnySelectStyle);
       }
       else
+        // Whatever the shape's selection style: the caller named the
+        // element, no pick found it. An edited dress-up's preview is
+        // unpickable in the edit, and its face lit from the task panel
+        // came out of here empty (docs/HandsOnQueue.md entry 160).
         caches = scene->buildHighlightCache(this->sharedcache, 0,
                                             item.detail.get(), item.color,
-                                            SoFCRenderCache::PreselectHighlight);
+                                            SoFCRenderCache::PreselectHighlight
+                                            | SoFCRenderCache::AnySelectStyle);
       for (auto & v : caches) {
         auto & entries = res[v.first];
         entries.insert(entries.end(), v.second.begin(), v.second.end());

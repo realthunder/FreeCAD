@@ -816,13 +816,33 @@ void TaskDressUpParameters::onTimer() {
     }
     std::string subname;
     auto obj = getInEdit(subname);
+    // A present edge (an item without a kept reference) is preselected on
+    // the base feature as well, its fillet face lit beside it: "hovering
+    // normal edge should highlight the edge on base feature too"
+    // (docs/HandsOnQueue.md entry 160). A missing one has no edge there;
+    // its kept face alone is preselected.
+    std::string baseEdge;
+    if (obj) {
+        auto top = item->parent() ? item->parent() : item;
+        if (getGeometryItemReference(top).isEmpty())
+            baseEdge = subname + getGeometryItemText(top).constData();
+    }
     if(obj && getItemElement(item, subname)) {
         Gui::Selection().setPreselect(obj->getDocument()->getName(),
                                       obj->getNameInDocument(),
-                                      subname.c_str(),0,0,0,
+                                      baseEdge.empty() ? subname.c_str() : baseEdge.c_str(),
+                                      0,0,0,
                                       Gui::SelectionChanges::MsgSource::TreeView,
                                       true);
         lightPreviewFace(subname);
+    }
+    else if (!baseEdge.empty()) {
+        Gui::Selection().setPreselect(obj->getDocument()->getName(),
+                                      obj->getNameInDocument(),
+                                      baseEdge.c_str(),0,0,0,
+                                      Gui::SelectionChanges::MsgSource::TreeView,
+                                      true);
+        lightPreviewFace(std::string());
     }
     else {
         Gui::Selection().rmvPreselect();

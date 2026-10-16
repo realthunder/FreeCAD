@@ -15,8 +15,10 @@ the top then collapses to a line, so the top edge's reference is gone and
 its face is kept as last made (FailedShape). In edit. Claims, each from a
 picture of the view (saveRenderDump):
   - the pointer on no item: no highlight colour in the view;
-  - on the bottom edge's item: the highlight colour around its fillet face,
-    and not at the face's middle (the outline, not a fill);
+  - on the bottom edge's item: the base feature's edge preselected
+    ("hovering normal edge should highlight the edge on base feature too",
+    the reporter 23:50), and the highlight colour around its fillet face,
+    not at the face's middle (the outline, not a fill);
   - on the missing top edge's item: the same for its kept face;
   - the pointer off the items again: the highlight colour gone.
 
@@ -64,7 +66,8 @@ def mw():
 
 
 def view():
-    return FreeCADGui.getDocument(DOC).ActiveView
+    # the view the edit was started in, once there are two
+    return state.get("v1") or FreeCADGui.getDocument(DOC).ActiveView
 
 
 def highlight_rgb():
@@ -73,9 +76,9 @@ def highlight_rgb():
     return ((packed >> 24) & 0xFF, (packed >> 16) & 0xFF, (packed >> 8) & 0xFF)
 
 
-def picture(tag):
+def picture(tag, v=None):
     path = os.path.join(OUT, "%s.png" % tag)
-    view().saveRenderDump(path)
+    (v or view()).saveRenderDump(path)
     image = QtGui.QImage(path)
     return image
 
@@ -157,8 +160,8 @@ def hover(widget, item):
 
 
 def preselected():
-    # the element the panel preselects: a face of the preview, not the
-    # base's edge
+    # the element the panel preselects: the base's edge for a present edge,
+    # the preview's kept face for a missing one
     sel = FreeCADGui.Selection.getPreselection()
     names = list(sel.SubElementNames) if sel and sel.Object else []
     return names[0] if names else ""
@@ -213,6 +216,24 @@ def run():
         FreeCADGui.activeDocument().activeView().viewIsometric()
         pump()
         gdoc = FreeCADGui.getDocument(DOC)
+        # A second view outside the edit (PerViewEdit): the base's edge and
+        # the face light "only in the edit view" (the reporter, 23:54)
+        FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetBool("PerViewEdit", True)
+        v1 = gdoc.activeView()
+        FreeCADGui.runCommand("Std_ViewCreate")
+        pump(40)
+        views = gdoc.mdiViewsOfType("Gui::View3DInventor")
+        # the new view, told from the first by its widget: a wrapper is new
+        # at each call
+        v2 = gdoc.activeView()
+        if not check("a second 3D view", len(views) == 2
+                     and v2.graphicsView() is not v1.graphicsView(), len(views)):
+            return
+        state["v1"] = v1
+        mw().setActiveWindow(v1)
+        pump(20)
+        v2.viewIsometric()
+        v2.fitAll()
         gdoc.setEdit(fillet, 0)
         pump(80)
         check("the fillet is in edit", gdoc.getInEdit() is not None)
@@ -240,12 +261,14 @@ def run():
         hover(widget, None)
         base = count_lit(picture("0-none"), rgb)
         check("on no item: no highlight colour in the view", base < 20, base)
+        base2 = count_lit(picture("0-none-v2", v2), rgb)
 
         face_on(normal[0])
         hover(widget, present[0])
         name = preselected()
-        check("on the bottom edge's item: a face of the preview is preselected, not the edge",
-              re.search(r"Face[0-9]+$", name) is not None, name)
+        check("on the bottom edge's item: the base feature's edge is preselected (entry 160, "
+              "'highlight the edge on base feature too')",
+              re.search(r"Edge[0-9]+$", name) is not None and "Fillet" not in name, name)
         image = picture("1-bottom")
         n = count_lit(image, rgb)
         mid = middle_lit(image, normal[0], rgb)
@@ -253,6 +276,9 @@ def run():
               n - base > 40, "lit %d (none %d)" % (n, base))
         check("... and not at the face's middle: an outline, not a fill", mid[0] == 0,
               "middle %s lit %d of 9" % (mid[1], mid[0]))
+        n2 = count_lit(picture("1-bottom-v2", v2), rgb)
+        check("... and nothing lit in the view outside the edit", n2 < base2 + 20,
+              "lit %d (none %d)" % (n2, base2))
 
         face_on(kept.Faces[0])
         hover(widget, missing[0])
@@ -280,6 +306,7 @@ def finish():
     if state["done"]:
         return
     state["done"] = True
+    FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").RemBool("PerViewEdit")
     try:
         FreeCADGui.getDocument(DOC).resetEdit()
         pump()

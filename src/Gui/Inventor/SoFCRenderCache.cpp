@@ -2736,6 +2736,7 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
   bool checkindices = (flags & CheckIndices) ? true : false;
   bool wholeontop = (flags & WholeOnTop) ? true : false;
   bool preselect = (flags & PreselectHighlight) ? true : false;
+  bool anystyle = (flags & AnySelectStyle) ? true : false;
 
   const SoPointDetail * pd = nullptr;
   const SoLineDetail * ld = nullptr;
@@ -2788,7 +2789,8 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
       // 'wholeontop' and there is some highlight detail, it means we are
       // highlighting some sub-element of a shape node.
 
-      if (child.first.selectstyle == Material::Unpickable && !ViewParams::getOverrideSelectability()) {
+      if (child.first.selectstyle == Material::Unpickable && !anystyle
+          && !ViewParams::getOverrideSelectability()) {
         // Either the parent is not selectable, or the shape is not
         // sub-element selectable (checked in the loop below).
         continue;
@@ -2813,7 +2815,7 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
       color = _color;
 
       bool elementselectable = ventry.cache->isElementSelectable()
-        && child.first.selectstyle != Material::Unpickable;
+        && (anystyle || child.first.selectstyle != Material::Unpickable);
 
       if (detail) {
         if (pctx || fctx || lctx) {

@@ -1017,6 +1017,9 @@ public:
     CheckIndices = 2,
     WholeOnTop = 4,
     AltGroup = 8,
+    /// Light the element even where the shape is not pickable: the caller
+    /// names it itself, where a preselection is what a pick found
+    AnySelectStyle = 16,
   };
   VertexCacheMap buildHighlightCache(SbFCMap<int, Gui::CoinPtr<SoFCVertexCache> > &sharedcache,
                                      int order,
