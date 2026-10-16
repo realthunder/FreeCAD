@@ -477,9 +477,14 @@ TEST_F(DeferredLoadTest, VanishedArchiveFailsQuietly)
         GTEST_SKIP() << "the platform keeps an open archive undeletable";
     }
 
+    // Nothing throws, and what is read is nothing or what was saved. Which
+    // one depends on whether a handle on the archive was still open when it
+    // went: the reader keeps the handles its entries are done with
+    // (Base::ZipFileReader's pool), and on POSIX an unlinked file is still
+    // read through a handle opened before.
     EXPECT_NO_THROW({
         std::string text = feature(0)->Payload.text();
-        EXPECT_TRUE(text.empty());
+        EXPECT_TRUE(text.empty() || text == payloadFor(0)) << text.substr(0, 80);
     });
     EXPECT_NO_THROW(doc->serveDeferredFiles(60.0));
     for (int i = 0; i < 3; ++i) {
